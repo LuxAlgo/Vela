@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.scratchpad/
+*.log
+.env.local
+.DS_Store

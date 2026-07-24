@@ -1,0 +1,255 @@
+# Drawing tools
+
+Vela ships an interactive **drawing-tools** layer: a docked toolbar and ~66 on-chart
+tools — trend lines, channels, Fibonacci, harmonic patterns, annotations, and more — that a user
+draws, edits, and keeps on the chart. Drawings are anchored in **data space** (time + price), so
+they stay locked to the bars across pan, zoom, timeframe changes, and reload — the same durability
+the Pine engine's own drawings get.
+
+The toolbar is **on by default** on the native renderer. Everything it does is also reachable from
+code through the [`chart.drawings`](#driving-drawings-from-code) surface, and the whole model
+persists to JSON.
+
+> **Drawing tools vs Pine drawings.** This page is about the *interactive* tools a person places on
+> the chart. They are distinct from the lines/boxes/labels a Pine **indicator** emits as output —
+> those are part of the neutral model and are covered under indicators.
+
+---
+
+## The toolbar
+
+A flush vertical bar docked in a gutter on the **left** of the plot (the chart insets to its
+right, so the bar never overlaps candles, the legend, or the axes).
+
+- **Tool groups.** Each group is a single cell showing its **last-used** tool's icon. **Click the
+  icon** to arm that tool. Multi-tool groups also show a small **arrow** on hover — click the arrow
+  to open a **flyout** listing every tool in the group; pick one to arm it (and it becomes the
+  group's new last-used icon). Click the arrow again to close the flyout.
+- **Cursor.** The top button returns to select/idle (no tool armed).
+- **Modes** (bottom of the bar) — renderer-local, mutually exclusive with each other and with any
+  armed tool:
+  - **Measure** — a transient ruler (click–move–click) that reports the price/%/bar delta. It is
+    not saved as a drawing; it clears on the next press, pan, or zoom.
+  - **Eraser** — click a drawing to delete it, or press-and-drag across several to wipe them.
+  - **Magnet** — a 3-state snap toggle: **off → weak → strong**. *Strong* always snaps a new
+    anchor to the nearest candle's time + OHLC; *weak* snaps only when a candle point is within a
+    few pixels of the cursor. Holding **Ctrl/Cmd** is a momentary *strong* override.
+- **Tooltips.** Hovering any control for ~2 seconds shows a small label beside it.
+
+Arm a tool, then **click** to place its anchors (most tools, including shapes, are
+click-then-move-then-click; freehand/brush is the exception and captures the drag path; the
+polyline takes any number of clicks and finishes on **Enter** or double-click).
+
+## Editing a drawing
+
+Select a drawing (click it) to show its **handles** and a compact **quick-settings popup** floating
+beside it. The popup is built from each tool's own schema, so it shows only the controls that tool
+supports — line color/width/style, fill, text, and (for Fibonacci tools) a **gear** panel to
+enable/recolor/label each level. The popup also locks, reorders (bring-to-front /
+send-to-back), and deletes the drawing. Double-click a callout to edit its text inline.
+
+Drag a handle to reshape; drag the body to move the whole drawing.
+
+### Keyboard shortcuts
+
+When a drawing is selected (or hovered), with focus on the chart:
+
+| Action | Shortcut |
+|---|---|
+| Undo | `Ctrl/Cmd + Z` |
+| Redo | `Ctrl/Cmd + Shift + Z` or `Ctrl/Cmd + Y` |
+| Copy / Paste / Duplicate | `Ctrl/Cmd + C` / `V` / `D` |
+| Delete | `Delete` or `Backspace` |
+| Nudge | Arrow keys (1px; `Shift` + arrow = 10px) |
+| Cancel placement / clear selection | `Escape` |
+
+Shortcuts stand down while a text field (e.g. a label editor) is focused, so typing is never
+hijacked.
+
+---
+
+## Tool catalogue
+
+**66 tools across 9 groups.** The **Type key** is the string you pass to
+`chart.drawings.setTool('…')` or [`chart.drawings.add('…')`](#driving-drawings-from-code). Eraser,
+Magnet, and Measure are toolbar *modes*, not placeable types, so they have no key.
+
+### Lines
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Trend Line | `trendline` | A segment between two points. |
+| Horizontal Line | `hline` | A full-width line at one price. |
+| Ray | `ray` | A line from a point, extended one way. |
+| Extended Line | `extendedline` | A line through two points, extended both ways. |
+| Vertical Line | `vline` | A full-height line at one time. |
+| Horizontal Ray | `hray` | A horizontal line from a point, extended right. |
+| Cross Line | `crossline` | A full-width + full-height cross through one point. |
+| Info Line | `infoline` | A segment with a readout of its price/%/bar delta. |
+| Trend Angle | `trendangle` | A ray with its angle (°) labelled off the horizontal. |
+
+### Channels
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Parallel Channel | `parallelchannel` | A baseline plus a parallel line offset by a third point; optional fill. |
+| Disjoint Channel | `disjointchannel` | Two independent segments forming a channel. |
+| Flat Top/Bottom | `flattopbottom` | A sloped baseline with a flat (constant-price) opposite side. |
+
+### Pitchforks
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Pitchfork | `pitchfork` | Andrews' median line with parallel tines from three pivots. |
+| Schiff Pitchfork | `schiffpitchfork` | Pitchfork with the handle origin shifted in price only. |
+| Modified Schiff Pitchfork | `modifiedschiffpitchfork` | Pitchfork with the origin at the full pivot midpoint. |
+| Inside Pitchfork | `insidepitchfork` | Pitchfork median anchored inside the pivots. |
+
+### Shapes
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Rectangle | `box` | An axis-aligned filled box. |
+| Arrow | `arrow` | A straight arrow between two points. |
+| Ellipse | `ellipse` | A data-space ellipse in a bounding box. |
+| Triangle | `triangle` | A three-point filled triangle. |
+| Polyline | `polyline` | A multi-point connected path (finish on Enter/double-click). |
+| Brush | `freehand` | A freehand stroke captured from the drag path. |
+| Circle | `circle` | A true pixel circle (round at any zoom) from center + edge. |
+| Rotated Rectangle | `rotatedrect` | A box rotated to a baseline plus a width. |
+| Path | `path` | A multi-point path with an end arrowhead. |
+| Arc | `arc` | A half-ellipse dome over a chord. |
+| Curve | `curve` | A quadratic Bézier curve with an off-curve control point. |
+| Arrow Mark Up | `arrowmarkup` | A fixed-size up-arrow marker stamped at a point (green). |
+| Arrow Mark Down | `arrowmarkdown` | A fixed-size down-arrow marker stamped at a point (red). |
+
+### Annotations
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Text | `text` | A free text label pinned to a point. |
+| Callout | `callout` | A text box with a leader pointing at a target. |
+| Note | `note` | Free text on a small rounded plate. |
+| Price Note | `pricenote` | A draggable box + leader that shows the pinned point's price. |
+| Comment | `comment` | A rounded speech balloon pointing at a target. |
+| Price Label | `pricelabel` | A pinned tag that auto-renders the price at its anchor. |
+| Signpost | `signpost` | A sign plate on a pole rising from a pinned level. |
+
+### Stamps
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Flag | `flagmark` | A flag glyph stamped at a point (size + glyph editable). |
+| Icon | `iconstamp` | A unicode icon stamp; the glyph is chosen from a picker. |
+
+### Fibonacci & Gann
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Fib Retracement | `fibretracement` | Horizontal retracement levels between two points. |
+| Fib Extension | `fibextension` | Extension levels projected from two points. |
+| Trend-Based Fib Extension | `fibextensiontrend` | Extension levels from a three-point move. |
+| Fib Fan | `fibfan` | Fan of rays at the Fibonacci ratios. |
+| Fib Time Zones | `fibtimezones` | Vertical lines at Fibonacci time intervals. |
+| Fib Channel | `fibchannel` | Parallel Fibonacci levels along a sloped baseline. |
+| Fib Speed Resistance Fan | `fibspeedfan` | Price + time rays subdividing a box at the ratios. |
+| Trend-Based Fib Time | `trendfibtime` | Vertical Fibonacci-time lines from a three-point move. |
+| Fib Circles | `fibcircles` | Concentric circles at the Fibonacci ratios. |
+| Fib Speed Resistance Arcs | `fibarcs` | Concentric semicircle arcs from a pivot. |
+| Fib Wedge | `fibwedge` | Fibonacci arcs between two rays from an apex. |
+| Fib Spiral | `fibspiral` | A golden (φ) spiral. |
+| Gann Fan | `gannfan` | A fan of Gann angles from a point. |
+| Gann Box | `gannbox` | A box gridded at Gann ratios. |
+| Gann Square | `gannsquare` | A Gann grid + angle fan + concentric arcs over a box. |
+| Dedekind Tessellation | `dedekind` | Modular-group tiling of a user-defined time×price range (semicircles + verticals). Density via max curvature. |
+| Sonic | `sonic` | Mach-1 wavefront figure: circles sized from a user-drawn diameter, piled into a perpendicular shock wall. Per-circle colors via the levels gear. |
+| Supersonic | `supersonic` | Mach cone (M>1): same diameter-sized first circle, with a conical envelope. Mach number is adjustable. Per-circle colors via the levels gear. |
+| Golden Sonic | `goldensonic` | Sonic Mach figure whose circle radii follow Fibonacci ratios (including under 1: 0.236…0.786, then 1, φ, φ², …). |
+| Golden Supersonic | `goldensupersonic` | Supersonic Mach cone with the same Fibonacci radii (under-1 through extensions). |
+
+### Patterns
+
+| Tool | Type key | What it does |
+|---|---|---|
+| XABCD Pattern | `xabcd` | A 5-point labelled pattern with leg ratios. |
+| ABCD Pattern | `abcd` | A 4-point ABCD pattern. |
+| Elliott Impulse Wave (1-5) | `elliottimpulse` | A 5-wave impulse labelled 1–5. |
+| Elliott Correction Wave (ABC) | `elliottcorrection` | A 3-wave correction labelled A–B–C. |
+| Head & Shoulders | `headshoulders` | A labelled head-and-shoulders with a neckline. |
+| Gartley | `gartley` | Harmonic pattern; legs validated against Gartley's Fib bands. |
+| Bat | `bat` | Harmonic pattern validated against Bat ratios. |
+| Butterfly | `butterfly` | Harmonic pattern validated against Butterfly ratios. |
+| Crab | `crab` | Harmonic pattern validated against Crab ratios. |
+| Shark | `shark` | Harmonic pattern validated against Shark ratios. |
+| Cypher | `cypher` | Harmonic pattern validated against Cypher's (non-adjacent) ratios. |
+
+The harmonic patterns (Gartley…Cypher) draw a **✓/✗ badge** and color each leg ratio green/red by
+whether it falls in that pattern's ideal Fibonacci band.
+
+### Forecast & Measure
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Date & Price Range | `datepricerange` | A box reporting the time span + price/% change it covers. |
+| Long/Short Position | `position` | An entry/stop/target box with the risk:reward ratio (long or short by geometry). |
+
+---
+
+## Driving drawings from code
+
+Every chart exposes a `chart.drawings` control surface (a sibling of `chart.renderer` and
+`chart.data`). It is chainable, and the model is **core-owned** — so reading/serializing/undo work
+even on a renderer that can't paint drawings.
+
+```js
+import { Vela } from 'vela';
+
+const chart = new Vela('#chart', { data: bars });
+await chart.ready();
+
+// Arm a tool so the next clicks place it:
+chart.drawings.setTool('trendline');
+
+// …or place one directly (no clicking):
+const d = chart.drawings.add('trendline', {
+    paneId: 'price',
+    anchors: [
+        { time: bars[10].time, price: bars[10].low },
+        { time: bars[40].time, price: bars[40].high },
+    ],
+});
+
+chart.drawings.update(d.id, { style: { lineColor: '#ff9800', lineWidth: 2 } });
+chart.drawings.lock(d.id);          // make it non-interactive
+chart.drawings.showToolbar(false);  // hide the toolbar (drawings still work from code)
+```
+
+See the [`chart.drawings` reference](./api-reference.md#chartdrawings-control-surface) for the full
+method list and which methods are gated by renderer support.
+
+---
+
+## Persistence, undo & clipboard
+
+- **Save / restore.** `chart.drawings.toJSON()` returns a versioned `DrawingsDocument`; pass it
+  back to `chart.drawings.fromJSON(doc)` to restore. The restore path is lenient with untrusted
+  input — malformed or unknown-type entries are dropped, never thrown. Drawings are **not**
+  auto-persisted; storing the document is up to your app.
+- **Undo / redo.** `chart.drawings.undo()` / `redo()` (and `canUndo()` / `canRedo()`) walk a
+  snapshot history. A multi-target action (multi-drag, multi-delete, duplicate, paste) is one
+  undo step.
+- **Clipboard.** `copyToClipboard(ids)` + `paste()`, or `duplicate(ids)` / `clone(id)`, mint fresh
+  copies (new ids) and select them — an in-memory, per-chart clipboard.
+
+---
+
+## Renderer support
+
+Interactive drawing requires a renderer that declares the `userDrawings` capability — the **native
+renderer** does; a minimal custom adapter may not. When unsupported,
+`chart.drawings.supported` is `false`, the interactive methods warn and no-op, **but** the
+core-owned methods (`add` of the model, `all`, `toJSON`/`fromJSON`, `undo`/`redo`) still work, so a
+document round-trips even without an on-chart toolbar.
+
+> **Stability:** the drawing-tools API is young and may change before a 1.0 release. The persisted
+> `DrawingsDocument` is versioned and migrated forward.

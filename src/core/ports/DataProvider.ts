@@ -1,0 +1,90 @@
+import type { OHLCV } from '../model/ohlcv';
+import type { BarRange, SymbolInfo } from './MarketDataFeed';
+import type { Unsubscribe } from '../util/types';
+
+/**
+ * A descriptor for one symbol a provider serves. Powers the eager index built at
+ * registration (for bare-symbol resolution) and symbol autocomplete.
+ */
+export interface SymbolDescriptor {
+    /** The ticker exactly as the provider expects it (e.g. `BTCUSDT`, `BTCUSDT.P`). */
+    ticker: string;
+    /** Human-readable label (e.g. `Bitcoin / TetherUS`). */
+    description?: string;
+    /** Instrument class, free-form (e.g. `crypto`, `futures`, `stock`). */
+    type?: string;
+    /** Owning provider name — annotated by the registry aggregation (badges in pickers). */
+    provider?: string;
+}
+
+/** What a provider can do — lets the registry/UI reason without provider-specific checks. */
+export interface ProviderCapabilities {
+    /** Implements `listSymbols()` (enumeration → eager index + autocomplete). */
+    enumerate: boolean;
+    /** Implements `subscribe()` (true streaming; otherwise the feed polls `getBars`). */
+    stream: boolean;
+    /** Implements `getSymbolInfo()` (per-symbol metadata for engine `syminfo.*`). */
+    symbolInfo: boolean;
+}
+
+/** Provider metadata, surfaced via `chart.data.providers()`. */
+export interface ProviderInfo {
+    /** Stable id (the registration name, lower-cased). */
+    name: string;
+    /** Display label (e.g. `Binance`). */
+    displayName?: string;
+    /** Whether the provider needs `configure()` before use. */
+    requiresApiKey?: boolean;
+    /** Timeframes the provider serves (canonical strings); informational. */
+    supportedTimeframes?: readonly string[];
+    capabilities: ProviderCapabilities;
+}
+
+/**
+ * A market-data source for ONE venue, neutral to Vela (no `pinets`). Register
+ * one with `chart.data.registerProvider(name, provider)`; the registry routes any
+ * `name:SYMBOL` (or bare `SYMBOL` it indexes) to it.
+ *
+ * Only `getBars` is required. Everything else is a progressive capability the
+ * registry uses when present and degrades around when absent — the same
+ * philosophy as the {@link MarketDataFeed} port.
+ */
+export interface DataProvider {
+    /**
+     * Fetch bars for `ticker`/`timeframe`. `ticker` is exactly what the user typed
+     * minus any `provider:` prefix; any `.ext` suffix is KEPT (the provider owns its
+     * meaning — e.g. Binance `.P` = perpetual). The newest bar is treated as the
+     * forming candle. Bars: `{ time (open, epoch ms), open, high, low, close, volume? }`,
+     * sorted + de-duplicated by open-time.
+     */
+    getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]>;
+
+    /** Provider metadata. Absent ⇒ the registry synthesizes a record from the methods present. */
+    info?(): ProviderInfo;
+
+    /**
+     * Enumerate the symbols this provider serves — drives the eager index built when
+     * the provider registers. Absent ⇒ no index: the provider can only be reached by
+     * an explicit `name:SYMBOL` prefix, never by resolving a bare symbol.
+     */
+    listSymbols?(): Promise<SymbolDescriptor[]>;
+
+    /** Per-symbol metadata for engine `syminfo.*`. Absent ⇒ the engine synthesizes a fallback. */
+    getSymbolInfo?(ticker: string): Promise<SymbolInfo | undefined>;
+
+    /**
+     * Open a true live stream for `ticker`/`timeframe`. Each call to `onBar` delivers
+     * the forming candle (or a freshly-closed one). Returns an unsubscribe fn. Absent
+     * ⇒ the feed polls `getBars` for ticks instead.
+     */
+    subscribe?(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void): Unsubscribe;
+
+    /** Apply runtime config (e.g. API keys). Absent ⇒ no configuration needed. */
+    configure?(config: unknown): void;
+
+    /**
+     * Capabilities for ONE ticker, when they vary by instrument class within the venue.
+     * Absent ⇒ {@link ProviderInfo.capabilities} applies uniformly to every symbol.
+     */
+    capabilitiesFor?(ticker: string): ProviderCapabilities;
+}

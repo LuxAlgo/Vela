@@ -1,0 +1,100 @@
+{
+  "name": "@luxalgo/vela",
+  "version": "0.1.0",
+  "description": "Open-source charting library with a native high-performance renderer, drawing tools, pluggable chart types and Pine Script indicators (via PineTS).",
+  "license": "Apache-2.0",
+  "homepage": "https://luxalgo.com/vela",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luxalgo/vela.git"
+  },
+  "bugs": {
+    "url": "https://github.com/luxalgo/vela/issues"
+  },
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./providers/binance": {
+      "types": "./dist/providers/binance.d.ts",
+      "import": "./dist/providers/binance.js",
+      "require": "./dist/providers/binance.cjs"
+    },
+    "./providers/hyperliquid": {
+      "types": "./dist/providers/hyperliquid.d.ts",
+      "import": "./dist/providers/hyperliquid.js",
+      "require": "./dist/providers/hyperliquid.cjs"
+    },
+    "./providers/coinbase": {
+      "types": "./dist/providers/coinbase.d.ts",
+      "import": "./dist/providers/coinbase.js",
+      "require": "./dist/providers/coinbase.cjs"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js",
+      "require": "./dist/plugin.cjs"
+    },
+    "./ui": {
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js",
+      "require": "./dist/ui.cjs"
+    },
+    "./widget": {
+      "types": "./dist/widget.d.ts",
+      "import": "./dist/widget.js",
+      "require": "./dist/widget.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "NOTICE",
+    "LICENSE",
+    "README.md"
+  ],
+  "author": "Alaa-eddine Kaddouri",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "playground": "vite"
+  },
+  "peerDependencies": {
+    "pinets": ">=0.9.29"
+  },
+  "peerDependenciesMeta": {
+    "pinets": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "eslint": "^9.0.0",
+    "pinets": "^0.9.29",
+    "tsup": "^8.0.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.0"
+  },
+  "dependencies": {
+    "@zag-js/core": "^1.42.0",
+    "@zag-js/dialog": "^1.42.0",
+    "@zag-js/dom-query": "^1.42.0",
+    "@zag-js/menu": "^1.42.0",
+    "@zag-js/tooltip": "^1.42.0",
+    "@zag-js/types": "^1.42.0",
+    "@zag-js/vanilla": "^1.42.0"
+  }
+}

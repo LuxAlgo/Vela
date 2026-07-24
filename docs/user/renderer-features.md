@@ -1,0 +1,139 @@
+# Renderer features
+
+`chart.renderer` is the control surface for the active renderer — read and change **how
+the chart is drawn** at runtime, with **no indicator re-run**.
+
+```js
+chart.renderer.set('logScale', true); // one feature
+chart.renderer.set({ upColor: '#fff', glow: 0.6 }); // several at once → one repaint
+chart.renderer.get('logScale'); // read the current value
+chart.renderer.supports('glow'); // is it available on this renderer?
+chart.renderer.name; // 'native'
+chart.renderer.capabilities; // what the renderer can draw
+```
+
+A key the active renderer **doesn't support emits a console warning and is ignored** — the
+chart is never touched. Use `supports()` to check first (e.g. to hide a UI control on a
+renderer that lacks the feature).
+
+These are the **same keys** you can pass at construction (as [options](./options.md));
+setting them through `chart.renderer.set` applies them **live** instead of rebuilding the
+chart — so toggling them never re-executes your indicators.
+
+## Common features
+
+Available on every renderer:
+
+| Feature | Type | Default | Notes |
+|---|---|---|---|
+| `logScale` | boolean | `false` | Logarithmic price scale on the price pane. |
+| `currentPriceLine` | boolean | `true` | The dashed line at the latest price. The axis label is a separate feature — see `priceLabel` (native renderer). |
+| `upColor` | color string | `#0d98c6` | Bullish candle body/wick color. |
+| `downColor` | color string | `#ffffff` | Bearish candle body/wick color. |
+
+## Native renderer
+
+`name === 'native'`. Supports every common feature, plus its own. They group into
+**appearance**, **interaction**, **axes & scale**, and **in-chart UI**.
+
+### Appearance
+
+| Feature | Type | Default | Notes |
+|---|---|---|---|
+| `glow` | number (0 – ~0.7) | `0` | Neon glow/bloom on line series. **WebGL2 only** — the canvas2d backend stores the value but draws no glow. |
+| `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn. (Heikin Ashi is not yet available.) |
+| `priceBaseline` | number \| `null` | `null` | Reference price for `priceStyle: 'baseline'`. `null` uses the first visible bar's close. |
+| `candleZOrder` | number | `0` | Draw-order key of the price candles relative to overlay indicators. Indicators default to z ≥ 1, so candles sit behind all overlays by default. |
+| `seriesOrder` | `{ id, to: 'front' \| 'back' }` or `{ id, z }` | — | Reorder one indicator's series layer — move it to front/back, or set an explicit z key. |
+| `highlights` | `HighlightArea[]` | `[]` | Shaded vertical time bands (session highlighting, e.g. weekends or pre/regular/post), drawn behind grid + data. Malformed entries are dropped; bands are sorted by start time. |
+
+### Interaction
+
+| Feature | Type | Default | Notes |
+|---|---|---|---|
+| `animZoom` | boolean | `true` | Eased wheel-zoom; takes effect on the next interaction. |
+| `animPan` | boolean | `true` | Inertial pan glide; takes effect on the next interaction. |
+| `intro` | `'settle' \| 'grow' \| false` | `'settle'` | Reveal animation on first paint. Setting it replays the intro (handy for comparing styles from the console). |
+| `zoomAnchor` | `'right' \| 'cursor'` | `'right'` | Wheel-zoom anchor: pin the right edge / latest bar, or the bar under the cursor. Affects the next wheel-zoom. |
+| `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; double-clicking an axis strip resets it. |
+| `paneResize` | boolean | `true` | Drag the separator between panes to resize them; double-clicking a separator restores the two adjacent panes to an even split. |
+| `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
+
+> **Double-click behavior changed.** Double-clicking the **chart data area** no longer fits the
+> content to the view. Instead it maximizes the double-clicked pane so it fills the chart and every
+> other pane is fully hidden: double-clicking the **price pane** hides all study panes, and
+> double-clicking a **study pane** hides the price pane (and any other studies). A second
+> double-click on the maximized pane restores the previous layout. Double-click on an **axis strip**
+> (reset that axis) and on a **pane separator** (even split) is unchanged. To **fit content** the
+> way the old data-area double-click did, press the **`0`** key.
+
+### Axes & scale
+
+| Feature | Type | Default | Notes |
+|---|---|---|---|
+| `scaleMode` | `'price' \| 'percent'` | `'price'` | Price-axis display: absolute price, or percent change vs the first visible bar. Gridlines, axis labels, and the crosshair chip all follow it. |
+| `timezone` | IANA zone string | `'UTC'` | Time zone for the time-axis ticks and crosshair / data-window stamps, e.g. `'America/New_York'`. |
+| `gridlines` | boolean | `true` | Master toggle for the background gridlines (per-axis visibility/colors live in the rich config). |
+| `axisLabels` | boolean | `true` | Draw the price/time axis tick labels. |
+| `priceLabel` | boolean | `true` | The last-price axis tag. Independent of `currentPriceLine` — either can show without the other. |
+| `countdown` | boolean | `true` | The bar-close countdown tag next to the price axis. |
+| `autoScale` | boolean | `true` | Whether the price pane auto-scales to fit visible data. Setting it to `false` freezes the current window (unlocking vertical price pan/drag); setting it to `true` drops the freeze and resumes autoscale. |
+
+### In-chart UI
+
+| Feature | Type | Default | Notes |
+|---|---|---|---|
+| `dataWindow` | boolean | `false` | A floating panel showing the OHLCV of the hovered bar plus every indicator's value at the crosshair. |
+| `attribution` | The in-chart attribution mark (bottom-left logomark linking to the Vela project). **On by default.** Disabling it is allowed only when an equivalent visible attribution is displayed elsewhere on the page — see the repository's `NOTICE` file. |
+| `settings` | boolean | `false` | An in-chart gear button + dialog to edit a curated slice of the rich config (colors, fonts, scale, timezone) with export/import. |
+
+> **Pane controls.** Hovering a pane reveals a small button cluster in its top-right corner: move
+> the pane up/down, collapse/expand it, and maximize/restore it. Each indicator's legend row also
+> carries a **Move to** control for moving or merging it into another pane — merging gives the
+> moved indicator its **own price-scale column** to the
+> right of the pane's scale, autoscaled independently. This is a **native-renderer** capability
+> (`capabilities.paneManagement`); on a renderer that lacks it the pane operations warn and no-op.
+
+> **The drawing toolbar** is also in-chart UI, but it lives on its own facade — `chart.drawings`,
+> not `chart.renderer` — and is **shown by default**. It adds its own keyboard shortcuts
+> (undo/redo, copy/paste/duplicate, delete, nudge) on top of the navigation keys above.
+
+## Screenshot export
+
+`chart.renderer.screenshot()` returns a **PNG data URL** of the current chart (or `null`
+on a renderer that doesn't support it, with a warning). It composites only the geometry +
+chrome canvas layers; DOM overlays (tables, legend, data window) and the drawings,
+and volume-profile canvas layers are **not** included.
+
+```js
+const url = chart.renderer.screenshot();
+if (url) { const a = document.createElement('a'); a.href = url; a.download = 'chart.png'; a.click(); }
+```
+
+## Rich config (templates / persistence)
+
+`chart.renderer.getConfig()` returns the renderer's full cosmetics as a **serializable,
+versioned JSON document** — every inherited value is resolved to a concrete one, so an
+exported template stands on its own. Feed it back with `applyConfig()` to restore saved
+settings or load a template. Untrusted/partial JSON is validated and merged, so malformed
+fields are dropped and a partial patch changes only what it names. No indicator re-run.
+
+```js
+const template = chart.renderer.getConfig(); // snapshot
+localStorage.setItem('chartConfig', JSON.stringify(template));
+
+chart.renderer.applyConfig(JSON.parse(localStorage.getItem('chartConfig'))); // restore
+chart.renderer.applyConfig({ candles: { upColor: '#26a69a' } }); // partial patch
+```
+
+The covered cosmetics include layout (background, text, font), grid colors/visibility,
+crosshair (color/width/style/opacity/label), price scale (mode, log, border, labels,
+current-price line), time-scale timezone, candle border/wick, and per-style colors for
+bars / line / area / baseline.
+
+## Custom renderers
+
+The native renderer is the only bundled backend, but the multi-renderer port stays:
+a custom `IChartRenderer` class passed as `options.renderer` declares its own
+`features` list, and every `chart.renderer` call degrades gracefully (unsupported
+keys warn and no-op). See [adding a renderer](../contributing/adding-a-renderer.md).

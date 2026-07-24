@@ -1,0 +1,65 @@
+// The chart-type SDK registry (src/chart-types) — registration semantics, the dynamic
+// extended-ticker modifiers, and the dynamic price-style id list the renderer validates
+// against. Heikin Ashi is registered through the SAME public API (builtins.ts).
+import { describe, it, expect, afterEach } from 'vitest';
+import { registerChartType, unregisterChartType, chartType, chartTypes, tickerModifierIds } from '../src/chart-types/registry';
+import { registerBuiltinChartTypes } from '../src/chart-types/builtins';
+import { barTransformFor, parseExtendedTicker } from '../src/core/price-styles/BarTransform';
+import { priceStyleIds } from '../src/renderers/native/core/chartConfig';
+import { heikinAshiFull } from '../src/core/price-styles/heikin-ashi';
+import type { OHLCV } from '../src/core/model/ohlcv';
+
+registerBuiltinChartTypes(); // normally done by the Vela constructor
+
+const identity = { full: (r: readonly OHLCV[]) => [...r], next: (r: OHLCV) => r };
+
+afterEach(() => {
+    unregisterChartType('renko-like');
+    registerBuiltinChartTypes(); // restore in case a test replaced a built-in
+});
+
+describe('chart-type registry', () => {
+    it('heikinashi is registered through the public registry and resolves its transform', () => {
+        expect(chartType('heikinashi')?.label).toBe('Heikin Ashi');
+        const t = barTransformFor('heikinashi')!;
+        const raw: OHLCV[] = [
+            { time: 0, open: 10, high: 12, low: 9, close: 11 },
+            { time: 1, open: 11, high: 13, low: 10, close: 12 },
+        ];
+        expect(t.full(raw)).toEqual(heikinAshiFull(raw));
+        expect(barTransformFor('heikinashi')).toBe(t); // singleton — identity-comparable
+    });
+
+    it('registration is id-keyed (last wins) and unregister removes it', () => {
+        registerChartType({ id: 'renko-like', barTransform: identity });
+        expect(chartType('renko-like')).toBeDefined();
+        expect(chartTypes().some((d) => d.id === 'renko-like')).toBe(true);
+        unregisterChartType('renko-like');
+        expect(chartType('renko-like')).toBeUndefined();
+        expect(barTransformFor('renko-like')).toBeNull();
+    });
+
+    it('ticker modifiers are dynamic: a transform type participates by default, an engine-only type does not', () => {
+        expect(tickerModifierIds()).toContain('heikinashi');
+        registerChartType({ id: 'renko-like', dataEngine: () => ({ start() {}, suspend() {}, resume() {}, stop() {} }) });
+        expect(tickerModifierIds()).not.toContain('renko-like');
+
+        registerChartType({ id: 'renko-like', barTransform: identity });
+        expect(tickerModifierIds()).toContain('renko-like');
+        expect(parseExtendedTicker('BTCUSDT;renko-like').modifier).toBe('renko-like');
+        unregisterChartType('renko-like');
+        // Unknown modifiers stay part of the symbol — never mangled.
+        expect(parseExtendedTicker('BTCUSDT;renko-like')).toEqual({ symbol: 'BTCUSDT;renko-like', modifier: null, transform: null });
+        expect(parseExtendedTicker('BTCUSDT;heikinashi').modifier).toBe('heikinashi');
+        expect(parseExtendedTicker('SYM;standard').modifier).toBe('standard');
+    });
+
+    it('priceStyleIds() = built-ins + registered types; the settings/validation layers read it live', () => {
+        const base = priceStyleIds();
+        expect(base).toEqual(['candles', 'bars', 'line', 'area', 'baseline', 'heikinashi']);
+        registerChartType({ id: 'renko-like', barTransform: identity });
+        expect(priceStyleIds()).toContain('renko-like');
+        unregisterChartType('renko-like');
+        expect(priceStyleIds()).not.toContain('renko-like');
+    });
+});

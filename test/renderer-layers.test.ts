@@ -1,0 +1,63 @@
+// The SDK renderer-layer seam (src/renderers/native/layers.ts): registry semantics and the
+// generic native-data channel routing on the renderer (unmounted — mounted painting is
+// exercised in the browser playground; the channel/scene plumbing is the unit-testable part).
+import { describe, it, expect, afterEach } from 'vitest';
+import { registerRendererLayer, unregisterRendererLayer, rendererLayers } from '../src/renderers/native/layers';
+import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
+import { SceneGraph } from '../src/renderers/native/core/SceneGraph';
+
+afterEach(() => unregisterRendererLayer('demo'));
+
+describe('renderer-layer registry', () => {
+    it('register / replace-by-id / unregister / list', () => {
+        const create = () => ({ mount() {}, render() {} });
+        registerRendererLayer({ id: 'demo', create });
+        expect(rendererLayers().some((d) => d.id === 'demo')).toBe(true);
+        registerRendererLayer({ id: 'demo', placement: 'below-data', create });
+        expect(rendererLayers().find((d) => d.id === 'demo')?.placement).toBe('below-data'); // last wins
+        unregisterRendererLayer('demo');
+        expect(rendererLayers().some((d) => d.id === 'demo')).toBe(false);
+    });
+});
+
+describe('generic native-data channels', () => {
+    it('unknown channel ids land in scene.nativeData; -pending routes to scene.nativePending', () => {
+        const r = new NativeRenderer();
+        const scene = (r as unknown as { scene: SceneGraph }).scene;
+        r.setNativeData('demo', { rows: [1, 2, 3] });
+        expect(scene.nativeData.get('demo')).toEqual({ rows: [1, 2, 3] });
+        r.setNativeData('demo-pending', [[10, 20]]);
+        expect(scene.nativePending.get('demo')).toEqual([[10, 20]]);
+        r.setNativeData('demo-pending', undefined);
+        expect(scene.nativePending.get('demo')).toEqual([]); // cleared, never undefined
+    });
+
+    it('the volume and vpvr channels keep their dedicated scene fields (not the generic map)', () => {
+        const r = new NativeRenderer();
+        const scene = (r as unknown as { scene: SceneGraph }).scene;
+        r.setNativeData('volume', { upColor: 'x' });
+        expect(scene.volumeLayer).toEqual({ upColor: 'x' });
+        expect(scene.nativeData.has('volume')).toBe(false);
+    });
+});
+
+describe('chart-type SDK settings (config bag + channel + notification)', () => {
+    it('applyConfig persists chartTypes values, pushes the -settings channel, and notifies', () => {
+        const r = new NativeRenderer();
+        const scene = (r as unknown as { scene: SceneGraph }).scene;
+        const notified: Array<[string, unknown]> = [];
+        r.onChartTypeSettingsChange((id, values) => notified.push([id, values]));
+
+        r.applyConfig({ chartTypes: { demo: { levels: 20, on: true } } });
+        expect((r.getConfig() as { chartTypes: Record<string, unknown> }).chartTypes.demo).toEqual({ levels: 20, on: true });
+        expect(scene.nativeData.get('demo-settings')).toEqual({ levels: 20, on: true });
+        expect(notified).toEqual([['demo', { levels: 20, on: true }]]);
+
+        // Partial update merges per type; unchanged types do not re-notify.
+        r.applyConfig({ chartTypes: { demo: { levels: 30 } } });
+        expect(scene.nativeData.get('demo-settings')).toEqual({ levels: 30, on: true });
+        expect(notified).toHaveLength(2);
+        r.applyConfig({ layout: { fontSize: 12 } }); // untouched bag → no notification
+        expect(notified).toHaveLength(2);
+    });
+});

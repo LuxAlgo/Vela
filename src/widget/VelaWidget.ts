@@ -1,0 +1,867 @@
+// VelaWidget — the batteries-included chart app: topbar + chart host (statusline,
+// watermark overlays) + bottombar, built on the vela/ui kit around a headless Vela core.
+// Symbol/timeframe changes REBUILD the inner chart (destroy + recreate) and re-register
+// providers/engines/indicators — the reference behavior of the original playground app.
+// Cosmetic state (price style, timezone) survives rebuilds via renderer features.
+import { Vela } from '../Vela';
+import { registerBuiltinChartTypes } from '../chart-types/builtins';
+import type { VelaOptions } from '../core/options';
+import { resolveTheme } from '../core/theme';
+import type { DataProvider } from '../core/ports/DataProvider';
+import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
+import { ensureUIHost, injectStyles } from '../ui';
+import { KeymapManager } from '../ui/keymap';
+import { Topbar } from './topbar';
+import { Statusline } from './statusline';
+import { Watermark } from './watermark';
+import { Bottombar, type RangePreset } from './bottombar';
+import { SymbolPicker } from './symbol-picker';
+import { ObjectTree } from './object-tree';
+import { ShortcutsHelp } from './shortcuts-help';
+import { ChartContextMenu } from './context-menu';
+import type { WidgetContext } from './contributions';
+import { IndicatorPicker } from './indicator-picker';
+import { TimeframeQuick } from './timeframe-quick';
+import { loadPersisted, savePersisted, localStorageAdapter, type WidgetStorage, type PersistedState } from './persist';
+import { readUrlState, writeUrlState } from './url-state';
+import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
+import { WidgetHistory } from './history';
+import { Toast } from './toast';
+import { Menu } from '../ui/components/menu';
+import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from './indicators';
+import type { IndicatorHandle } from '../core/IndicatorHandle';
+
+export interface VelaWidgetOptions extends VelaOptions {
+    /** Provider factories, keyed by provider name — called on every chart (re)build. */
+    providers?: Record<string, () => DataProvider>;
+    /** Scripting-engine factories, keyed by language — called on every chart (re)build. */
+    engines?: Record<string, () => ScriptingEngine>;
+    /** Indicator manifest (inline JSON) or a URL returning it — see widget/indicators.ts. */
+    indicators?: string | IndicatorManifest;
+    /** Topbar timeframe presets (chart timeframe values). */
+    timeframes?: string[];
+    /** Initial price style (default 'candles'); changed live via the topbar dropdown. */
+    priceStyle?: string;
+    /** Initial display timezone (IANA; default 'Etc/UTC'). */
+    timezone?: string;
+    /** Chrome toggles (all default true). */
+    statusline?: boolean;
+    watermark?: boolean;
+    bottombar?: boolean;
+    /** Persist symbol/timeframe/style/timezone and restore them as defaults.
+     *  `true` uses the key 'vela-widget'; a string is the storage key. */
+    persist?: boolean | string;
+    /** Storage backend for `persist` — defaults to localStorage. Inject any
+     *  `WidgetStorage` (sync or async) for custom backends (REST, IndexedDB, …). */
+    storage?: WidgetStorage;
+    /** Mirror symbol/timeframe/style/timezone in the URL query (shareable links). A URL
+     *  param wins over persisted state at load. Default false. */
+    urlState?: boolean;
+}
+
+const DEFAULT_TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
+
+const WIDGET_STYLE_ID = 'vela-widget';
+const WIDGET_CSS = `
+.vela-widget { display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--vela-bg); }
+.vela-widget-topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--vela-space-2);
+    padding: var(--vela-space-1) var(--vela-space-2);
+    border-bottom: 1px solid var(--vela-border-soft);
+    color: var(--vela-fg);
+    font-size: var(--vela-font-size-md);
+    flex: none;
+}
+.vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 9px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--vela-fg-muted);
+    font-size: 13px;
+    font-weight: 550;
+    white-space: nowrap;
+}
+.vela-widget-symbol {
+    color: var(--vela-fg-bright);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 0 10px;
+    gap: 7px;
+}
+.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover { background: var(--vela-hover); color: var(--vela-fg); }
+.vela-widget-symbol:hover { color: var(--vela-fg-bright); }
+.vela-widget-topbar .vela-icon { color: inherit; font-size: 14px; }
+.vela-sep { width: 1px; height: 22px; margin: 0 4px; flex: none; background: rgba(255, 255, 255, 0.22); }
+.vela-ind-count {
+    background: var(--vela-surface-elev);
+    border: 1px solid var(--vela-border);
+    border-radius: 8px;
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--vela-fg);
+}
+.vela-alerts-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 13px;
+    height: 13px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--vela-accent);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.vela-widget-actions { margin-left: auto; display: inline-flex; gap: var(--vela-space-1); }
+.vela-widget-tool {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--vela-fg-muted);
+    font-size: 14px;
+}
+.vela-widget-tool:hover { background: var(--vela-hover); color: var(--vela-fg); }
+.vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-action {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: var(--vela-radius-sm);
+    cursor: pointer;
+    color: var(--vela-fg);
+}
+.vela-widget-action:hover { background: var(--vela-hover); }
+.vela-widget-symbol { font-weight: 600; }
+.vela-widget-main { display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
+.vela-widget-chart { position: relative; flex: 1 1 auto; min-width: 0; }
+`;
+
+export class VelaWidget {
+    readonly root: HTMLElement;
+    /** The shortcut system — widget modules and plugins register their bindings here. */
+    readonly keymap: KeymapManager;
+
+    private readonly opts: VelaWidgetOptions;
+    private readonly chartHost: HTMLElement;
+    private readonly topbar: Topbar;
+    private readonly statusline: Statusline | null;
+    private readonly watermark: Watermark | null;
+    private readonly bottombar: Bottombar | null;
+    private readonly objectTree: ObjectTree;
+    private shortcutsHelp: ShortcutsHelp | null = null;
+    private readonly contextMenu: ChartContextMenu;
+    private readonly symbolPicker: SymbolPicker;
+    private readonly indicatorPicker: IndicatorPicker;
+    private readonly tfQuick: TimeframeQuick;
+    private inner: Vela | null = null;
+    /** The manifest library (loaded once). */
+    private manifest: ResolvedIndicator[] = [];
+    /** Live instances — the SAME entry may be added several times. */
+    private instances: Array<{ entry: ResolvedIndicator; handle: IndicatorHandle | null }> = [];
+    /** Native-indicator catalog of the CURRENT chart (refreshed per rebuild/change). */
+    private nativeCatalog: Array<{ type: string; title: string; supported: boolean; present: boolean; beta?: boolean }> = [];
+    private readonly storageKey: string | null;
+    private readonly storage: WidgetStorage;
+    private openDialogs = 0;
+    private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
+    private symbol: string;
+    private timeframe: string;
+    private priceStyle: string;
+    private timezone: string;
+    private bars: number;
+    private watermarkOn: boolean;
+    private pendingRange: RangePreset | null = null;
+    private toast: Toast | null = null;
+    private alerts: Array<{ title: string; message: string; time: number }> = [];
+    private alertsMenu: Menu | null = null;
+    private readonly glider = new Glider(() => this.inner);
+    /** Unified app+drawings undo timeline (Ctrl+Z / Ctrl+Y). */
+    readonly history = new WidgetHistory();
+    private lastCrossPrice: number | null = null;
+    private lastCrossTime: number | null = null;
+    /** Renderer cosmetic template carried across rebuilds (and persisted when enabled). */
+    private savedConfig: unknown = null;
+    private readonly onUnload = (): void => this.persistConfigNow();
+    private indicatorsPromise: Promise<ResolvedIndicator[]> | null = null;
+    private destroyed = false;
+    private buildSeq = 0;
+
+    constructor(container: HTMLElement | string, opts: VelaWidgetOptions) {
+        const hostEl = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container;
+        if (!hostEl) throw new Error(`VelaWidget: container not found: ${String(container)}`);
+        // The topbar style dropdown reads chart-type labels — register the built-ins
+        // before any chrome renders (idempotent; the Vela constructor does it too).
+        registerBuiltinChartTypes();
+        this.opts = opts;
+        this.storageKey = opts.persist === undefined || opts.persist === false ? null : opts.persist === true ? 'vela-widget' : opts.persist;
+        this.storage = opts.storage ?? localStorageAdapter();
+        // Sync storages (the localStorage default) restore BEFORE construction; async
+        // adapters resolve later and are late-applied (see applyPersisted).
+        const loaded = this.storageKey !== null ? loadPersisted(this.storage, this.storageKey) : {};
+        const persisted: PersistedState = loaded instanceof Promise ? {} : loaded;
+        if (loaded instanceof Promise) {
+            void loaded.then((state) => {
+                if (!this.destroyed) this.applyPersisted(state);
+            });
+        }
+        const fromUrl = opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
+        this.symbol = fromUrl.symbol ?? persisted.symbol ?? opts.symbol ?? '';
+        this.timeframe = fromUrl.timeframe ?? persisted.timeframe ?? opts.timeframe ?? '60';
+        this.priceStyle = fromUrl.priceStyle ?? persisted.priceStyle ?? opts.priceStyle ?? 'candles';
+        this.timezone = fromUrl.timezone ?? persisted.timezone ?? opts.timezone ?? 'Etc/UTC';
+        this.bars = Number(fromUrl.bars ?? persisted.bars ?? opts.bars ?? 1000);
+        this.watermarkOn = persisted.watermark !== undefined ? persisted.watermark === '1' : opts.watermark !== false;
+        if (this.storageKey !== null) {
+            const rawCfg = this.storage.get(`${this.storageKey}:config`);
+            const applyCfg = (raw: string | null): void => {
+                if (!raw) return;
+                try {
+                    this.savedConfig = JSON.parse(raw);
+                    // An async adapter resolves after the first build — re-skin it live.
+                    if (this.inner) this.inner.renderer.applyConfig(this.savedConfig);
+                } catch {
+                    /* best-effort */
+                }
+            };
+            if (rawCfg instanceof Promise) void rawCfg.then((raw) => !this.destroyed && applyCfg(raw));
+            else applyCfg(rawCfg);
+            window.addEventListener('beforeunload', this.onUnload);
+        }
+
+        const doc = hostEl.ownerDocument;
+        injectStyles(WIDGET_STYLE_ID, WIDGET_CSS, doc);
+        this.root = doc.createElement('div');
+        this.root.className = 'vela-widget';
+        ensureUIHost(this.root, resolveTheme(opts.theme));
+
+        this.symbolPicker = new SymbolPicker({
+            host: this.root,
+            onSelect: (ticker) => this.setSymbol(ticker),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.indicatorPicker = new IndicatorPicker({
+            host: this.root,
+            library: () => [
+                ...this.nativeCatalog
+                    .filter((n) => n.supported)
+                    .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
+                ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
+            ],
+            onChart: () => [
+                ...this.nativeCatalog.filter((n) => n.present).map((n) => ({ name: n.title, native: true, nativeType: n.type })),
+                ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
+            ],
+            onAdd: (i) => {
+                const natives = this.nativeCatalog.filter((n) => n.supported);
+                if (i < natives.length) this.addNative(natives[i]!.type);
+                else this.addInstance(i - natives.length);
+            },
+            onRemove: (i) => {
+                const present = this.nativeCatalog.filter((n) => n.present);
+                if (i < present.length) this.removeNative(present[i]!.type);
+                else this.removeInstance(i - present.length);
+            },
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.tfQuick = new TimeframeQuick({
+            host: this.root,
+            onApply: (tf) => {
+                this.bottombar?.setActiveRange(null);
+                this.setTimeframe(tf);
+            },
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.topbar = new Topbar(this.root, {
+            symbol: this.symbol,
+            onSymbolClick: () => this.symbolPicker.open(),
+            onIndicatorsClick: () => this.indicatorPicker.open(),
+            onObjectsClick: () => this.objectTree.toggle(),
+            onScreenshotClick: () => this.downloadScreenshot(),
+            onSettingsClick: () => this.inner?.renderer.openSettings(),
+            onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
+            onDataWindowClick: () => {
+                const next = !this.inner?.renderer.get('dataWindow');
+                this.inner?.renderer.set('dataWindow', next);
+                return next;
+            },
+            dataWindowOn: false,
+            timeframe: this.timeframe,
+            timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            priceStyle: this.priceStyle,
+            onTimeframe: (tf) => {
+                this.bottombar?.setActiveRange(null); // manual change leaves range mode
+                this.setTimeframe(tf);
+            },
+            onPriceStyle: (style) => this.setPriceStyle(style),
+            getContext: () => this.context(),
+        });
+
+        const main = doc.createElement('div');
+        main.className = 'vela-widget-main';
+        this.chartHost = doc.createElement('div');
+        this.chartHost.className = 'vela-widget-chart';
+        main.appendChild(this.chartHost);
+        this.objectTree = new ObjectTree(main);
+        this.root.appendChild(main);
+
+        this.contextMenu = new ChartContextMenu(this.chartHost, {
+            screenshot: () => this.downloadScreenshot(),
+            resetView: () => this.inner?.renderer.set('autoScale', true),
+            getContext: () => this.context(),
+        });
+        this.toast = new Toast(this.chartHost);
+        this.watermark = opts.watermark !== false ? new Watermark(this.chartHost, this.symbol, this.timeframe) : null;
+        this.watermark?.setVisible(this.watermarkOn);
+        this.statusline = opts.statusline !== false ? new Statusline(this.chartHost, this.symbol) : null;
+        this.statusline?.setMeta(this.timeframe, typeof opts.provider === 'string' ? opts.provider : '');
+        this.bottombar =
+            opts.bottombar !== false
+                ? new Bottombar(this.root, {
+                      timezone: this.timezone,
+                      onRange: (preset) => this.applyRange(preset),
+                      onTimezone: (zone) => this.setTimezone(zone),
+                  })
+                : null;
+
+        hostEl.appendChild(this.root);
+
+        this.keymap = new KeymapManager();
+        this.keymap.attach(this.root);
+        this.keymap.register({
+            id: 'chart.screenshot',
+            keys: 'mod+alt+s',
+            label: 'Download a chart screenshot',
+            category: 'Chart',
+            run: () => this.downloadScreenshot(),
+        });
+        this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: 'Reset view (all history)', category: 'Chart', run: () => this.inner?.setVisibleRangePreset('ALL') });
+        this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: 'Toggle logarithmic scale', category: 'Chart', run: () => this.inner?.renderer.set('logScale', !this.inner.renderer.get('logScale')) });
+        this.keymap.register({
+            id: 'chart.toggle-percent',
+            keys: 'alt+p',
+            label: 'Toggle percent scale',
+            category: 'Chart',
+            run: () => {
+                const mode = this.inner?.renderer.get('scaleMode');
+                this.inner?.renderer.set('scaleMode', mode === 'percent' ? 'price' : 'percent');
+            },
+        });
+        this.keymap.register({ id: 'drawings.trendline', keys: 'alt+t', label: 'Arm the trend line tool', category: 'Drawings', run: () => this.inner?.drawings.setTool('trendline') });
+        this.keymap.register({
+            id: 'drawings.hline-cursor',
+            keys: 'alt+h',
+            label: 'Horizontal line at the cursor price',
+            category: 'Drawings',
+            run: () => {
+                if (this.lastCrossPrice != null && this.lastCrossTime != null)
+                    this.inner?.drawings.add('hline', { anchors: [{ time: this.lastCrossTime, price: this.lastCrossPrice }] });
+            },
+        });
+        this.keymap.register({
+            id: 'drawings.vline-cursor',
+            keys: 'alt+v',
+            label: 'Vertical line at the cursor time',
+            category: 'Drawings',
+            run: () => {
+                if (this.lastCrossTime != null && this.lastCrossPrice != null)
+                    this.inner?.drawings.add('vline', { anchors: [{ time: this.lastCrossTime, price: this.lastCrossPrice }] });
+            },
+        });
+        this.keymap.register({ id: 'history.undo', keys: ['mod+z'], label: 'Undo', category: 'Edit', run: () => this.history.undo() });
+        this.keymap.register({ id: 'history.redo', keys: ['mod+y', 'mod+shift+z'], label: 'Redo', category: 'Edit', run: () => this.history.redo() });
+        this.keymap.register({ id: 'view.zoom-in', keys: 'mod+arrowup', label: 'Zoom in', category: 'Chart', run: () => this.glider.zoom(ZOOM_IN) });
+        this.keymap.register({ id: 'view.zoom-out', keys: 'mod+arrowdown', label: 'Zoom out', category: 'Chart', run: () => this.glider.zoom(ZOOM_OUT) });
+        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.glider.pan(-PAN_FAST) });
+        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.glider.pan(PAN_FAST) });
+        this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
+        this.keymap.register({
+            id: 'help.shortcuts',
+            keys: '?',
+            label: 'Show this shortcuts panel',
+            category: 'Help',
+            run: () => {
+                this.shortcutsHelp ??= new ShortcutsHelp(this.keymap, this.root, (open) => this.trackDialog(open));
+                this.shortcutsHelp.open();
+            },
+        });
+        // Type-to-act routing (any printable, so outside keymap chords): letters open the
+        // symbol search seeded with the char, digits open the timeframe quick entry.
+        this.root.addEventListener('keydown', this.onRootKeydown);
+        this.root.tabIndex = -1; // focusable host so bare keystrokes land here
+
+        this.rebuild();
+    }
+
+    /** The context handed to contributed actions (see `registerWidgetAction`). */
+    context(): WidgetContext {
+        // `chart` resolves lazily: the context is also built during early construction
+        // (topbar projection) when no inner chart exists yet — only touching `.chart`
+        // then would throw, and only if an action's `when()` actually reads it.
+        const self = this;
+        return {
+            get chart() {
+                return self.chart;
+            },
+            symbol: this.symbol,
+            timeframe: this.timeframe,
+            priceStyle: this.priceStyle,
+            setSymbol: (symbol) => this.setSymbol(symbol),
+            setTimeframe: (tf) => this.setTimeframe(tf),
+            setPriceStyle: (style) => this.setPriceStyle(style),
+            openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
+            host: this.root,
+            toast: (message, kind) => this.toast?.show(message, kind),
+        };
+    }
+
+    /** The recent engine alerts (topbar bell). */
+    private openAlertsMenu(anchor: HTMLElement): void {
+        this.alertsMenu?.destroy();
+        const items = this.alerts.length
+            ? this.alerts.map((a, i) => ({
+                  id: String(i),
+                  label: `${new Date(a.time).toLocaleTimeString()} · ${a.title}: ${a.message}`.slice(0, 70),
+              }))
+            : [{ id: 'none', label: 'No alerts yet', disabled: true }];
+        this.alertsMenu = new Menu({ host: this.root, items, onSelect: () => {} });
+        const r = anchor.getBoundingClientRect();
+        this.alertsMenu.openAt(r.left, r.bottom + 4);
+    }
+
+    /** Re-project contributed topbar actions (after late registrations). */
+    refreshActions(): void {
+        this.topbar.renderActions();
+    }
+
+    /** The inner headless chart of the CURRENT build — becomes a new instance after a
+     *  symbol/timeframe change; don't cache it across awaits. */
+    get chart(): Vela {
+        if (!this.inner) throw new Error('VelaWidget is destroyed');
+        return this.inner;
+    }
+
+    setTimeframe(tf: string): void {
+        if (tf === this.timeframe || this.destroyed) return;
+        this.timeframe = tf;
+        this.topbar.setTimeframe(tf);
+        this.watermark?.update(this.symbol, tf);
+        this.statusline?.setMeta(tf, typeof this.opts.provider === 'string' ? this.opts.provider : '');
+        this.persist();
+        this.rebuild();
+    }
+
+    setSymbol(symbol: string): void {
+        if (symbol === this.symbol || this.destroyed) return;
+        this.symbol = symbol;
+        this.topbar.setSymbol(symbol);
+        this.statusline?.setSymbol(symbol);
+        this.objectTree.setSymbol(symbol);
+        this.watermark?.update(symbol, this.timeframe);
+        this.persist();
+        this.rebuild();
+    }
+
+    /** Late-apply a persisted state (async storage adapters resolve after construction).
+     *  URL params still win; a market change triggers ONE rebuild at the end. */
+    private applyPersisted(state: PersistedState): void {
+        const fromUrl = this.opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
+        const pick = <K extends keyof PersistedState>(k: K): string | undefined => fromUrl[k] ?? state[k];
+        let marketDirty = false;
+        const symbol = pick('symbol');
+        if (symbol && symbol !== this.symbol) {
+            this.symbol = symbol;
+            this.topbar.setSymbol(symbol);
+            this.statusline?.setSymbol(symbol);
+            this.objectTree.setSymbol(symbol);
+            this.watermark?.update(symbol, this.timeframe);
+            marketDirty = true;
+        }
+        const tf = pick('timeframe');
+        if (tf && tf !== this.timeframe) {
+            this.timeframe = tf;
+            this.topbar.setTimeframe(tf);
+            this.watermark?.update(this.symbol, tf);
+            marketDirty = true;
+        }
+        const bars = pick('bars');
+        if (bars && Number(bars) !== this.bars) {
+            this.bars = Number(bars);
+            marketDirty = true;
+        }
+        const style = pick('priceStyle');
+        if (style && style !== this.priceStyle) this.setPriceStyle(style);
+        const tz = pick('timezone');
+        if (tz && tz !== this.timezone) this.setTimezone(tz);
+        const wm = pick('watermark');
+        if (wm !== undefined) this.setWatermarkVisible(wm === '1');
+        if (marketDirty) this.rebuild();
+    }
+
+    /** Show/hide the symbol watermark behind the chart (persisted). */
+    setWatermarkVisible(visible: boolean): void {
+        this.watermarkOn = visible;
+        this.watermark?.setVisible(visible);
+        this.persist();
+    }
+
+    /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
+    setPriceStyle(style: string): void {
+        this.priceStyle = style;
+        this.topbar.setPriceStyle(style);
+        this.inner?.renderer.set('priceStyle', style);
+        this.persist();
+    }
+
+    /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
+    setTimezone(zone: string): void {
+        this.timezone = zone;
+        this.bottombar?.setTimezone(zone);
+        this.inner?.renderer.set('timezone', zone);
+        this.persist();
+    }
+
+    /** Range chip: switch to the preset's timeframe and frame its window once ready. */
+    applyRange(preset: RangePreset): void {
+        if (this.destroyed) return;
+        this.pendingRange = preset;
+        if (preset.tf !== this.timeframe) {
+            this.timeframe = preset.tf;
+            this.topbar.setTimeframe(preset.tf);
+            this.watermark?.update(this.symbol, preset.tf);
+            this.rebuild(); // framing happens after the new chart is ready
+        } else {
+            this.inner?.setVisibleRangePreset(preset.preset);
+            this.pendingRange = null;
+        }
+    }
+
+    destroy(): void {
+        this.destroyed = true;
+        this.inner?.destroy();
+        this.inner = null;
+        this.persistConfigNow();
+        window.removeEventListener('beforeunload', this.onUnload);
+        this.root.removeEventListener('keydown', this.onRootKeydown);
+        this.topbar.destroy();
+        this.objectTree.destroy();
+        this.shortcutsHelp?.destroy();
+        this.contextMenu.destroy();
+        this.symbolPicker.destroy();
+        this.indicatorPicker.destroy();
+        this.tfQuick.destroy();
+        this.statusline?.destroy();
+        this.watermark?.destroy();
+        this.bottombar?.destroy();
+        this.toast?.destroy();
+        this.alertsMenu?.destroy();
+        this.glider.stop();
+        this.history.destroy();
+        this.keymap.destroy();
+        this.root.remove();
+    }
+
+    /** Destroy + recreate the inner chart with the current symbol/timeframe, then
+     *  re-register providers/engines, rebind chrome, and re-add manifest indicators. */
+    private rebuild(): void {
+        const seq = ++this.buildSeq;
+        if (this.inner) this.savedConfig = this.inner.renderer.getConfig();
+        this.inner?.destroy();
+
+        const {
+            providers,
+            engines,
+            indicators,
+            timeframes: _timeframes,
+            priceStyle: _priceStyle,
+            timezone: _timezone,
+            statusline: _statusline,
+            watermark: _watermark,
+            bottombar: _bottombar,
+            ...chartOpts
+        } = this.opts;
+        const chart = new Vela(this.chartHost, { ...chartOpts, symbol: this.symbol, timeframe: this.timeframe, bars: this.bars });
+        for (const [name, make] of Object.entries(providers ?? {})) chart.data.registerProvider(name, make());
+        for (const [language, make] of Object.entries(engines ?? {})) chart.registerEngine(language, make());
+        this.inner = chart;
+
+        this.symbolPicker.setSource(() => chart.data.symbols());
+        this.objectTree.setSymbol(this.symbol);
+        this.objectTree.onChart(chart);
+        this.contextMenu.onChart(chart);
+        this.refreshNativeCatalog();
+        chart.on('indicator:added', () => this.refreshNativeCatalog());
+        chart.on('indicator:removed', () => this.refreshNativeCatalog());
+        this.history.onChart(chart);
+        chart.on('alert', (alert) => {
+            this.alerts.unshift({ title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
+            if (this.alerts.length > 20) this.alerts.pop();
+            this.toast?.show(`${alert.title ? alert.title + ' — ' : ''}${alert.message}`, 'info', 4000);
+            this.topbar.setAlertCount(this.alerts.length);
+        });
+        chart.on('indicator:error', ({ error }) => this.toast?.show(error.message, 'error', 5000));
+        chart.renderer.onCrosshairMove((e) => {
+            this.lastCrossPrice = e.price;
+            this.lastCrossTime = e.time;
+        });
+        this.topbar.renderActions(); // when() gates may depend on the new chart/context
+        if (this.savedConfig != null) chart.renderer.applyConfig(this.savedConfig);
+        // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).
+        if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
+        if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
+        this.statusline?.onChart(chart);
+        const advanced = {
+            title: 'Advanced',
+            placement: 'end' as const,
+            rows: [
+                {
+                    kind: 'select' as const,
+                    label: 'Bars to fetch',
+                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
+                    get: () => String(this.bars),
+                    set: (v: string) => {
+                        this.bars = Number(v);
+                        this.persist();
+                        this.rebuild();
+                    },
+                },
+            ],
+        };
+        const watermarkSection = {
+            title: 'Watermark',
+            placement: 'symbol' as const,
+            rows: [
+                {
+                    kind: 'toggle' as const,
+                    label: 'Symbol watermark',
+                    get: () => this.watermarkOn,
+                    set: (v: boolean) => this.setWatermarkVisible(v),
+                },
+            ],
+        };
+        if (this.statusline) {
+            const sl = this.statusline;
+            chart.renderer.setSettingsSections([
+                {
+                    title: 'Status line',
+                    rows: [
+                        { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
+                        { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
+                        { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
+                        { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                    ],
+                },
+                advanced,
+                watermarkSection,
+            ]);
+        } else {
+            chart.renderer.setSettingsSections([advanced, watermarkSection]);
+        }
+
+        void chart.ready().then(() => {
+            if (this.buildSeq !== seq || this.destroyed) return;
+            if (this.pendingRange) {
+                chart.setVisibleRangePreset(this.pendingRange.preset);
+                this.pendingRange = null;
+            }
+        });
+
+        if (this.manifest.length || this.instances.length) {
+            // Later rebuilds: re-mount every live instance on the fresh chart.
+            for (const it of this.instances) it.handle = this.addToChart(chart, it.entry);
+            this.syncIndicatorCount();
+        } else if (indicators !== undefined) {
+            this.indicatorsPromise ??= resolveIndicators(indicators).then((list) => {
+                // First resolution: the library + one instance per `enabled` entry.
+                this.manifest = list;
+                this.instances = list.filter((e) => e.enabled).map((entry) => ({ entry, handle: null }));
+                return list;
+            });
+            void this.indicatorsPromise.then(() => {
+                // A newer rebuild (or destroy) may have superseded this chart while resolving.
+                if (this.buildSeq !== seq || this.destroyed) return;
+                for (const it of this.instances) {
+                    it.handle = this.addToChart(chart, it.entry);
+                }
+                this.syncIndicatorCount();
+            });
+        }
+    }
+
+    /** Refresh the native catalog (supported/present flags) for the current chart. */
+    private refreshNativeCatalog(): void {
+        const chart = this.inner;
+        if (!chart) return;
+        void chart.availableNativeIndicators().then((list) => {
+            if (this.inner !== chart || this.destroyed) return;
+            this.nativeCatalog = list.map((n) => ({ type: n.type, title: n.title, supported: n.supported, present: n.present, beta: n.beta }));
+            this.syncIndicatorCount();
+            this.indicatorPicker.sync(); // the dialog may be open while the catalog lands
+        });
+    }
+
+    /** Add a native indicator (single-instance per type — the core dedupes). */
+    private addNative(type: string): void {
+        this.inner?.addNativeIndicator(type);
+        this.refreshNativeCatalog();
+        this.history.push({
+            undo: () => {
+                this.inner?.addNativeIndicator(type).remove();
+                this.refreshNativeCatalog();
+            },
+            redo: () => {
+                this.inner?.addNativeIndicator(type);
+                this.refreshNativeCatalog();
+            },
+        });
+    }
+
+    private removeNative(type: string): void {
+        // addNativeIndicator on a present type returns the EXISTING handle.
+        this.inner?.addNativeIndicator(type).remove();
+        this.refreshNativeCatalog();
+        this.history.push({
+            undo: () => {
+                this.inner?.addNativeIndicator(type);
+                this.refreshNativeCatalog();
+            },
+            redo: () => {
+                this.inner?.addNativeIndicator(type).remove();
+                this.refreshNativeCatalog();
+            },
+        });
+    }
+
+    /** Add ONE instance of a manifest entry (repeatable — duplicates are legitimate). */
+    private addInstance(libraryIndex: number): void {
+        const entry = this.manifest[libraryIndex];
+        if (!entry || this.destroyed) return;
+        const it = { entry, handle: this.inner ? this.addToChart(this.inner, entry) : null };
+        this.instances.push(it);
+        this.syncIndicatorCount();
+        const snapshot = it;
+        this.history.push({
+            undo: () => this.dropInstance(snapshot),
+            redo: () => {
+                snapshot.handle = this.inner ? this.addToChart(this.inner, snapshot.entry) : null;
+                this.instances.push(snapshot);
+                this.syncIndicatorCount();
+            },
+        });
+    }
+
+    /** Remove one live instance (picker trash). */
+    private removeInstance(instanceIndex: number): void {
+        const it = this.instances[instanceIndex];
+        if (!it || this.destroyed) return;
+        this.dropInstance(it);
+        const snapshot = it;
+        this.history.push({
+            undo: () => {
+                snapshot.handle = this.inner ? this.addToChart(this.inner, snapshot.entry) : null;
+                this.instances.push(snapshot);
+                this.syncIndicatorCount();
+            },
+            redo: () => this.dropInstance(snapshot),
+        });
+    }
+
+    private dropInstance(it: { entry: ResolvedIndicator; handle: IndicatorHandle | null }): void {
+        const idx = this.instances.indexOf(it);
+        if (idx >= 0) this.instances.splice(idx, 1);
+        try {
+            it.handle?.remove();
+        } catch {
+            /* already gone */
+        }
+        it.handle = null;
+        this.syncIndicatorCount();
+    }
+
+    private syncIndicatorCount(): void {
+        this.topbar.setIndicatorCount(this.instances.length + this.nativeCatalog.filter((n) => n.present).length);
+    }
+
+    private addToChart(chart: Vela, ind: ResolvedIndicator): IndicatorHandle | null {
+        try {
+            return chart.addIndicator(ind.script, ind.language !== undefined ? { language: ind.language } : undefined);
+        } catch (err) {
+            console.warn(`[vela] indicator "${ind.name}" failed to add:`, err);
+            return null;
+        }
+    }
+
+    /** Bare-typing router: letters → symbol search (seeded), digits → timeframe entry. */
+    private routeTyping(ev: KeyboardEvent): void {
+        if (this.destroyed || this.openDialogs > 0) return;
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        const t = ev.target as Partial<HTMLElement> | null;
+        const tag = (t?.tagName ?? '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable === true) return;
+        const key = ev.key;
+        if (/^[a-zA-Z]$/.test(key)) {
+            ev.preventDefault();
+            this.symbolPicker.open(key.toUpperCase());
+        } else if (/^[0-9]$/.test(key)) {
+            ev.preventDefault();
+            this.tfQuick.open(key);
+        }
+    }
+
+    private trackDialog(open: boolean): void {
+        this.openDialogs = Math.max(0, this.openDialogs + (open ? 1 : -1));
+        if (open) this.keymap.pushScope('dialog');
+        else this.keymap.popScope('dialog');
+    }
+
+    private downloadScreenshot(): void {
+        const url = this.inner?.renderer.screenshot();
+        if (!url) return;
+        const a = this.root.ownerDocument.createElement('a');
+        a.href = url;
+        a.download = `${this.symbol || 'chart'}-${this.timeframe}.png`;
+        a.click();
+    }
+
+    /** Snapshot the full renderer template into storage (persist mode only). */
+    private persistConfigNow(): void {
+        if (this.storageKey === null || !this.inner) return;
+        try {
+            void this.storage.set(`${this.storageKey}:config`, JSON.stringify(this.inner.renderer.getConfig()));
+        } catch {
+            /* best-effort */
+        }
+    }
+
+    private persist(): void {
+        const state = {
+            symbol: this.symbol,
+            timeframe: this.timeframe,
+            priceStyle: this.priceStyle,
+            timezone: this.timezone,
+            bars: String(this.bars),
+            watermark: this.watermarkOn ? '1' : '0',
+        };
+        if (this.storageKey !== null) savePersisted(this.storage, this.storageKey, state);
+        if (this.opts.urlState) writeUrlState(state);
+    }
+}
