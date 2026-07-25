@@ -27,7 +27,7 @@ import { DataWindow, type DataWindowData, type DataWindowRow, type DataWindowOHL
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
 import { CoordinateSystem, type PriceScale } from './core/CoordinateSystem';
-import { Scheduler, InvalidateLevel, repaintsData } from './core/Scheduler';
+import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from './core/Scheduler';
 import { Animator, easeToward } from './core/Animator';
 import { InputController } from './core/InputController';
 import { KeyboardController } from './core/KeyboardController';
@@ -178,6 +178,9 @@ export class NativeRenderer implements IChartRenderer {
 
     private bars: OHLCV[] = [];
     private didInitialFit = false;
+    /** A data-tier paint has happened (scales + drawing resolvers are real) — gates the
+     *  cheap chrome-only repaint so it never draws over placeholder state. */
+    private paintedData = false;
 
     private skeletonClockMs = 0; // monotonic clock for the loading-skeleton pulse (advanced per animator frame)
     private candleBodyAlpha = 1; // candle body-fill opacity (constant; style layers may modulate later)
@@ -1291,12 +1294,15 @@ export class NativeRenderer implements IChartRenderer {
         this.syncSize();
     }
 
-    /** Run a 1 Hz repaint pump while the countdown chip is on (so it ticks); stop it otherwise. */
+    /** Run a 1 Hz repaint pump while the countdown chip is on (so it ticks); stop it otherwise.
+     *  Chrome tier: only the chip's wall-clock text moves — an idle chart must not recompute
+     *  scales or repaint the geometry/volume/VPVR/SDK layers once a second (that cost
+     *  multiplies by the cell count in a multi-chart workspace). */
     private syncCountdownTimer(): void {
         if (this.scene.showCountdown) {
             if (this.countdownTimer == null) {
                 this.countdownTimer = setInterval(() => {
-                    if (this.scene.showCountdown && this.scene.bars.length > 0) this.scheduler?.invalidate(InvalidateLevel.Full);
+                    if (this.scene.showCountdown && this.scene.bars.length > 0) this.scheduler?.invalidate(InvalidateLevel.Chrome);
                 }, 1000);
             }
         } else if (this.countdownTimer != null) {
@@ -2389,6 +2395,13 @@ export class NativeRenderer implements IChartRenderer {
         if (repaintsData(level)) {
             this.computeScales();
             this.paintData();
+        } else if (repaintsChrome(level) && this.paintedData) {
+            // Chrome-only tier (the countdown's wall-clock tick): neither data nor viewport
+            // changed, so repaint just the chrome canvas over the frame's existing scales —
+            // the geometry backend, volume/VPVR and SDK layers stay untouched. prepare()
+            // re-wires the drawing resolvers (three closures over live refs — cheap).
+            this.chrome.prepare(this.scene, this.coords, this.theme);
+            this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
         }
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY); // L2 crosshair
     }
@@ -2456,7 +2469,7 @@ export class NativeRenderer implements IChartRenderer {
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair
 
         if (easeLive && liveActual) this.bars[li] = liveActual; // restore the true forming bar
-
+        this.paintedData = true; // scales are real from here on — the chrome-only tier may run
     }
 
     /** Build the data→pixel projector user drawings resolve their anchors through. */

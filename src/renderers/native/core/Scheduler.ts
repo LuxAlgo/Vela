@@ -2,27 +2,38 @@
  * Invalidation level — higher levels subsume lower ones within a frame.
  *  - None:   nothing to redraw.
  *  - Cursor: only the crosshair/overlay moved (cheapest; viewport unchanged).
+ *  - Chrome: only the chrome layer's content moved (the countdown chip's wall-clock
+ *            tick) — repaint chrome + crosshair over the frame's existing scales;
+ *            the geometry/volume/VPVR/SDK layers stay untouched.
  *  - Light:  data unchanged but a value/style changed; repaint data + chrome.
  *  - Full:   viewport/layout/data changed; repaint everything.
  *
  * Invariant enforced by callers: any ViewportState change must invalidate at
- * Light or Full (never Cursor) so data and chrome repaint in the SAME frame.
+ * Light or Full (never Cursor/Chrome) so data and chrome repaint in the SAME frame.
  */
 export enum InvalidateLevel {
     None = 0,
     Cursor = 1,
-    Light = 2,
-    Full = 3,
+    Chrome = 2,
+    Light = 3,
+    Full = 4,
 }
 
 /**
  * Whether a frame at this level must repaint the DATA layer (series/fills/
- * drawings/axes/grid). `Cursor` repaints only the crosshair overlay; `Light`/
- * `Full` repaint the data layer too. The crosshair overlay is repainted on
- * every frame regardless (it's cheap and must stay aligned after a pan/zoom).
+ * drawings/axes/grid). `Cursor` repaints only the crosshair overlay and `Chrome`
+ * only the chrome canvas; `Light`/`Full` repaint the data layer too. The crosshair
+ * overlay is repainted on every frame regardless (it's cheap and must stay aligned
+ * after a pan/zoom).
  */
 export function repaintsData(level: InvalidateLevel): boolean {
     return level >= InvalidateLevel.Light;
+}
+
+/** Whether a frame at this level must repaint the CHROME layer (axes, Pine drawings,
+ *  price line + countdown chips). Data-tier frames repaint chrome too (paintData). */
+export function repaintsChrome(level: InvalidateLevel): boolean {
+    return level >= InvalidateLevel.Chrome;
 }
 
 type FrameFn = (level: InvalidateLevel) => void;
