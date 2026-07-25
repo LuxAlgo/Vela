@@ -28,7 +28,7 @@ Vela keeps a deliberately thin set of npm scripts. Each maps to one well-known t
 | **lint** | `npm run lint` | Lints the source (eslint). This also enforces the architecture boundaries. |
 | **test** | `npm test` | Runs the fast Node unit suite once (vitest). |
 | **test:watch** | `npm run test:watch` | Re-runs the unit suite on change (vitest). |
-| **playground** | `npm run playground` | Serves `playground/` (vite, `http://localhost:5190`) — a bare page mounting the Vela widget straight from `src/` (no build step, HMR). The Binance provider talks to the public API directly, so no server is needed. |
+| **playground** | `npm run playground` | Serves `playground/` (vite, `http://localhost:5190`, no build step, HMR). The index links two pages mounting straight from `src/`: `/widget.html` (the single-chart widget) and `/workspace.html` (the multi-chart workspace). The Binance provider talks to the public API directly, so no server is needed. |
 
 > One npm quirk worth internalizing: **`test` runs as `npm test`**, while everything else needs the `run` keyword (`npm run build`, `npm run lint`, and so on).
 
