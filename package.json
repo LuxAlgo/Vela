@@ -51,6 +51,11 @@
       "types": "./dist/widget.d.ts",
       "import": "./dist/widget.js",
       "require": "./dist/widget.cjs"
+    },
+    "./workspace": {
+      "types": "./dist/workspace.d.ts",
+      "import": "./dist/workspace.js",
+      "require": "./dist/workspace.cjs"
     }
   },
   "files": [
