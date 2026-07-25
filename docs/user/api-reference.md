@@ -191,6 +191,7 @@ chart is never left half-changed.
 | `getConfig()` | Snapshot the renderer's full cosmetics as a serializable, versioned JSON document (or `null`). |
 | `applyConfig(config)` | Apply a full or partial config document from `getConfig()`; malformed/unknown fields are ignored. |
 | `onCrosshairMove(cb)` | Subscribe to crosshair movement — `time`/`price` under the cursor, per-series values, and the hovered bar's OHLC (null fields when the cursor leaves the chart). Returns an unsubscribe fn. The public seam for host status lines and data windows. |
+| `focus()` | Move keyboard focus back onto the chart's interactive surface — call after a host control (e.g. a shared toolbar button) stole focus, so chart/drawing shortcuts keep working. Silent no-op on a renderer without a focusable surface. |
 
 Feature-detect, read, and change how the chart is drawn at runtime — with no indicator re-run:
 
@@ -261,6 +262,9 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 |---|---|---|
 | `supported` | — | Whether the renderer can paint interactive drawings. |
 | `setTool(type \| null)` | yes | Arm a tool for the next clicks; `null` returns to select/idle. |
+| `getTool()` | no | The armed tool (`null` = select/idle). Follow changes on `drawing:tool`. |
+| `setSnapMode(mode)` · `getSnapMode()` | yes / no | The magnet: `'off' \| 'weak' \| 'strong'`. Changes land on `drawing:snap`. |
+| `setMode(mode)` · `getMode()` | yes / no | Renderer-local mode: `'measure' \| 'eraser' \| null`. Mutually exclusive with armed tools (the renderer enforces it); changes land on `drawing:mode`. |
 | `showToolbar(visible?)` | yes | Show/hide the on-chart toolbar. |
 | `setToolbar(option)` | yes | Reconfigure the toolbar groups/tools live. |
 | `add(type, init?)` | yes | Create a drawing from code; returns the `Drawing` (or `null` if unsupported). |
@@ -276,7 +280,8 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `getConfig()` / `applyConfig(doc)` | no | Aliases of `toJSON` / `fromJSON`, mirroring `chart.renderer`. |
 
 Drawing lifecycle is also surfaced as chart events (`drawing:created` / `drawing:edited` /
-`drawing:removed` / `drawing:selected` / `drawing:settings`). See
+`drawing:removed` / `drawing:selected` / `drawing:settings`), and the tool/mode state as
+`drawing:tool` / `drawing:snap` / `drawing:mode` — the seam an external toolbar mirrors. See
 [Drawing tools](./drawing-tools.md) for the tool catalogue, toolbar UX, and keyboard shortcuts.
 
 ---

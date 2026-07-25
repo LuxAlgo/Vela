@@ -99,6 +99,16 @@ export class RendererControl {
     }
 
     /**
+     * Move keyboard focus back onto the chart's interactive surface — call after a host
+     * control (a shared toolbar button) stole focus, so chart/drawing shortcuts keep
+     * working. Silent no-op on a renderer without a focusable surface.
+     */
+    focus(): this {
+        this.renderer.focus?.();
+        return this;
+    }
+
+    /**
      * Close any in-chart dialogs the active renderer owns (indicator settings, chart-settings
      * gear) — for keeping host dialogs mutually exclusive with the renderer's. Silent no-op if
      * the renderer has no such dialogs; safe to call speculatively.

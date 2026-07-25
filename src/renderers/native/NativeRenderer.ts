@@ -2504,6 +2504,13 @@ export class NativeRenderer implements IChartRenderer {
         return this.userDrawings ?? undefined;
     }
 
+    /** Focus the data canvas — the element chart/drawing keyboard shortcuts key off
+     *  (tabIndex 0 while the `keyboard` feature is on). Host UIs call it after their
+     *  own controls steal focus (e.g. a shared workspace toolbar click). */
+    focus(): void {
+        this.dataCanvas?.focus({ preventScroll: true });
+    }
+
     /** Sticky magnet mode for user drawings (off/weak/strong); the drawings toolbar drives it. */
     private snapMode: SnapMode = 'off';
 

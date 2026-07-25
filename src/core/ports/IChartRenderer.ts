@@ -234,6 +234,13 @@ export interface IChartRenderer {
     applyConfig?(config: unknown): void;
 
     /**
+     * Move keyboard focus onto the chart's interactive surface (the element its keyboard
+     * shortcuts key off). Optional — a host UI calls it after its own controls steal focus
+     * (e.g. a shared workspace toolbar click) so chart/drawing keys keep working.
+     */
+    focus?(): void;
+
+    /**
      * Close any in-chart dialogs the renderer owns (the indicator settings dialog, the
      * chart-settings gear dialog). Optional — used by a host to keep its own dialogs mutually
      * exclusive with the renderer's. A no-op when nothing is open.

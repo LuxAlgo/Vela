@@ -3,6 +3,9 @@ export { Vela } from './Vela';
 export type { VelaDeps, RunIndicatorResult } from './Vela';
 export { RendererControl } from './core/RendererControl';
 export { NativeRenderer } from './renderers/native/NativeRenderer';
+// The drawing-toolbar VIEW as a standalone component — a workspace shell mounts ONE
+// shared bar (dock:'static') and routes it to the active chart's `chart.drawings`.
+export { DrawingToolbar, type DrawingToolbarOptions } from './renderers/native/drawings/DrawingToolbar';
 export type { ChartConfig, ChartStyle } from './renderers/native/core/chartConfig';
 export { PineEngine } from './engines/pinets/PineEngine';
 export { PineWorkerEngine } from './engines/pinets-worker/PineWorkerEngine';
@@ -44,7 +47,9 @@ export type {
     SettingsSchema,
     SettingsField,
     Projector,
+    SnapMode,
     DrawingIntent,
+    DrawingMode,
     IDrawingsRendererPort,
 } from './core/drawings';
 

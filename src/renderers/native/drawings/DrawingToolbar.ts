@@ -3,6 +3,18 @@ import type { DrawingTypeKey, SnapMode } from '../../../core/drawings';
 import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/drawings';
 import { CHROME_BORDER_COLOR } from '../core/chartConfig';
 
+/** Cosmetic/placement options — defaults reproduce the in-renderer docked bar exactly. */
+export interface DrawingToolbarOptions {
+    /** Border/divider color. Default: the chrome divider color. */
+    borderColor?: string;
+    /** Bar width in px. In docked (`'absolute'`) use it MUST match the host renderer's
+     *  left-gutter reservation (NativeRenderer's `LEFT_GUTTER_W`, 44). Default 44. */
+    width?: number;
+    /** `'absolute'` (default): pinned over the renderer's left gutter. `'static'`: a
+     *  normal column child — a workspace docks ONE shared bar in its own layout. */
+    dock?: 'absolute' | 'static';
+}
+
 /**
  * The vertical drawing toolbar (renderer chrome), docked as a flush bar in the left gutter. Each
  * {@link ToolGroup} is a cell: clicking the icon arms the group's last-used tool; a chevron beside
@@ -40,6 +52,10 @@ export class DrawingToolbar {
     private tooltipEl: HTMLDivElement | null = null;
     private tooltipTimer: number | null = null;
 
+    private readonly borderColor: string;
+    private readonly width: number;
+    private readonly dock: 'absolute' | 'static';
+
     constructor(
         private readonly host: HTMLElement,
         private theme: VelaTheme,
@@ -48,7 +64,11 @@ export class DrawingToolbar {
         private readonly onMeasure: () => void = () => {},
         private readonly onEraser: () => void = () => {},
         private readonly onToggleFavorite: (type: DrawingTypeKey, on: boolean) => void = () => {},
+        options: DrawingToolbarOptions = {},
     ) {
+        this.borderColor = options.borderColor ?? CHROME_BORDER_COLOR;
+        this.width = options.width ?? 44;
+        this.dock = options.dock ?? 'absolute';
         ensureStyles();
         this.root = document.createElement('div');
         this.styleRoot();
@@ -60,9 +80,16 @@ export class DrawingToolbar {
      *  every hover/active state without any per-frame JS. */
     private styleRoot(): void {
         const t = this.theme;
+        // Docked (default): pinned over the renderer's left gutter — width must match
+        // NativeRenderer's LEFT_GUTTER_W. Static: a normal column child (a workspace's
+        // shared bar) — the host's own layout places it.
+        const placement = this.dock === 'absolute'
+            ? `position:absolute;left:0;top:0;height:100%;width:${this.width}px;z-index:21;`
+            : `position:relative;height:100%;width:${this.width}px;flex:none;`;
         this.root.style.cssText =
-            `position:absolute;left:0;top:0;height:100%;width:44px;z-index:21;display:${this.visible ? 'flex' : 'none'};flex-direction:column;gap:4px;` + // width matches NativeRenderer LEFT_GUTTER_W
-            `padding:6px 0;box-sizing:border-box;background:${t.background};border-right:1px solid ${CHROME_BORDER_COLOR};color:${t.textColor};` + // no h-padding → buttons span the bar width
+            placement +
+            `display:${this.visible ? 'flex' : 'none'};flex-direction:column;gap:4px;` +
+            `padding:6px 0;box-sizing:border-box;background:${t.background};border-right:1px solid ${this.borderColor};color:${t.textColor};` + // no h-padding → buttons span the bar width
             `pointer-events:auto;overflow-y:auto;overflow-x:hidden;` +
             `--vela-dtb-hover:${withAlpha(t.textColor, HOVER_A)};--vela-dtb-active:${withAlpha(t.textColor, ACTIVE_A)};--vela-dtb-item-hover:${withAlpha(t.textColor, ITEM_HOVER_A)};--vela-dtb-hover-fg:${t.textColor};`;
     }
@@ -299,7 +326,7 @@ export class DrawingToolbar {
         fly.style.cssText =
             `position:absolute;z-index:23;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:0 8px 8px 0;` +
             // same soft tint as the selected button (opaque) so the bar → menu reads as one region
-            `background:${blend(t.background, t.textColor, ACTIVE_A)};border:1px solid ${CHROME_BORDER_COLOR};border-left:none;box-shadow:4px 6px 18px rgba(0,0,0,0.4);pointer-events:auto;` +
+            `background:${blend(t.background, t.textColor, ACTIVE_A)};border:1px solid ${this.borderColor};border-left:none;box-shadow:4px 6px 18px rgba(0,0,0,0.4);pointer-events:auto;` +
             `overflow-y:auto;overscroll-behavior:contain;` +
             `--vela-dtb-item-hover:${withAlpha(t.textColor, ITEM_HOVER_A)};`;
         this.host.appendChild(fly);
@@ -387,7 +414,7 @@ export class DrawingToolbar {
 
     private flyoutSeparator(): HTMLElement {
         const div = document.createElement('div');
-        div.style.cssText = `height:1px;margin:4px 8px;background:${CHROME_BORDER_COLOR};`;
+        div.style.cssText = `height:1px;margin:4px 8px;background:${this.borderColor};`;
         return div;
     }
 
@@ -525,7 +552,7 @@ export class DrawingToolbar {
         const tip = document.createElement('div');
         tip.textContent = text;
         tip.style.cssText =
-            `position:absolute;z-index:25;background:${t.background};border:1px solid ${CHROME_BORDER_COLOR};color:${t.textColor};` +
+            `position:absolute;z-index:25;background:${t.background};border:1px solid ${this.borderColor};color:${t.textColor};` +
             `border-radius:6px;padding:4px 9px;font:12px ${t.fontFamily};white-space:nowrap;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,0.35);`;
         this.host.appendChild(tip);
         const r = anchor.getBoundingClientRect();
@@ -537,7 +564,7 @@ export class DrawingToolbar {
 
     private divider(): HTMLElement {
         const d = document.createElement('div');
-        d.style.cssText = `width:24px;height:1px;margin:2px auto;flex:none;background:${CHROME_BORDER_COLOR};`;
+        d.style.cssText = `width:24px;height:1px;margin:2px auto;flex:none;background:${this.borderColor};`;
         return d;
     }
 }
