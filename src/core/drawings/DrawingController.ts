@@ -2,7 +2,7 @@ import type { Unsubscribe } from '../util/types';
 import type { IChartRenderer } from '../ports/IChartRenderer';
 import type { TypedEventBus } from '../events/EventBus';
 import type { VelaEventMap } from '../events/types';
-import type { IDrawingsRendererPort, DrawingIntent } from './port';
+import type { IDrawingsRendererPort, DrawingIntent, DrawingMode } from './port';
 import type { DrawingsOption } from './toolbar';
 import { getDrawingType } from './registry';
 import { buildToolbar } from './toolbar';
@@ -10,6 +10,7 @@ import { DrawingStore } from './DrawingStore';
 import { DrawingHistory } from './DrawingHistory';
 import { createDrawing, deserializeDrawing } from './registry';
 import type { Drawing, DrawingTypeKey, SerializedDrawing } from './Drawing';
+import type { SnapMode } from './geometry';
 import type { DrawingStyle } from './style';
 import { clonePlain, type DrawingsDocument } from './document';
 
@@ -36,6 +37,10 @@ export class DrawingController {
     private readonly port: IDrawingsRendererPort | null;
     private readonly enabled: boolean;
     private activeTool: DrawingTypeKey | null = null;
+    /** Mirror of the renderer's sticky magnet mode (the renderer default is 'off'). */
+    private snapMode: SnapMode = 'off';
+    /** Mirror of the renderer-local mode (measure/eraser/none). */
+    private mode: DrawingMode = null;
     /** FAVORITE tool types (insertion-ordered) — user prefs, not document data. */
     private favs = new Set<DrawingTypeKey>();
     private selectedIds: string[] = []; // ordered; [0] is the primary (settings-popup) selection
@@ -67,14 +72,45 @@ export class DrawingController {
     // ── tool / toolbar control ──
     setTool(type: DrawingTypeKey | null): void {
         if (!this.port) return;
+        const changed = type !== this.activeTool;
         this.activeTool = type;
         // Seed the renderer's placement preview with the tool's last-used style so the
         // ghost matches what will be committed (the `create` intent re-applies it too).
         this.port.setActiveTool(type, type ? this.lastStyle.get(type) : undefined);
+        // Announce every ACTUAL change — arm, one-shot tool-finished, or programmatic —
+        // so external toolbars (a workspace's shared bar) reflect the armed tool.
+        if (changed) this.events.emit('drawing:tool', { type });
     }
 
     getTool(): DrawingTypeKey | null {
         return this.activeTool;
+    }
+
+    // ── magnet + renderer-local modes (measure/eraser) ──
+    // The renderer owns the states and their mutual exclusion; the core holds a MIRROR
+    // driven from both ends: facade setters push port commands, in-chart toolbar clicks
+    // arrive as intents. Equal values no-op on either path, which keeps the
+    // command→intent echo loop convergent.
+    getSnapMode(): SnapMode {
+        return this.snapMode;
+    }
+
+    setSnapMode(mode: SnapMode): void {
+        if (!this.port || mode === this.snapMode) return;
+        this.snapMode = mode;
+        this.port.setSnapMode?.(mode);
+        this.events.emit('drawing:snap', { mode });
+    }
+
+    getMode(): DrawingMode {
+        return this.mode;
+    }
+
+    setMode(mode: DrawingMode): void {
+        if (!this.port || mode === this.mode) return;
+        this.mode = mode;
+        this.port.setMode?.(mode);
+        this.events.emit('drawing:mode', { mode });
     }
 
     showToolbar(visible: boolean): void {
@@ -405,6 +441,20 @@ export class DrawingController {
                 break;
             case 'favorite':
                 this.setFavorite(i.type, i.on);
+                break;
+            case 'snap-mode':
+                // In-chart magnet click (already applied renderer-side) — mirror + announce.
+                if (i.mode !== this.snapMode) {
+                    this.snapMode = i.mode;
+                    this.events.emit('drawing:snap', { mode: i.mode });
+                }
+                break;
+            case 'mode':
+                // Measure/eraser toggled in-chart, or exited as a mutual-exclusion side effect.
+                if (i.mode !== this.mode) {
+                    this.mode = i.mode;
+                    this.events.emit('drawing:mode', { mode: i.mode });
+                }
                 break;
             case 'tool-finished':
                 // Most tools are one-shot (revert to the pointer once placed); brush-family tools

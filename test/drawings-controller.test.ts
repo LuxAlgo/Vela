@@ -37,6 +37,14 @@ class FakePort implements IDrawingsRendererPort {
     setFavorites(types: readonly string[]): void {
         this.favoritesPushed.push([...types]);
     }
+    snapModes: string[] = [];
+    setSnapMode(mode: string): void {
+        this.snapModes.push(mode);
+    }
+    modes: Array<string | null> = [];
+    setMode(mode: string | null): void {
+        this.modes.push(mode);
+    }
     settingsOpenedFor: string | null = null;
     openSettings(id: string): void {
         this.settingsOpenedFor = id;
@@ -507,5 +515,67 @@ describe('drawing-tool favorites', () => {
         expect(ctrl.isFavorite('box')).toBe(true);
         port.fire({ kind: 'favorite', type: 'box', on: false });
         expect(ctrl.isFavorite('box')).toBe(false);
+    });
+});
+
+describe('DrawingController — tool/mode seams (the external-toolbar surface)', () => {
+    it('setTool emits drawing:tool on CHANGE only (arm, re-arm no-op, tool-finished)', () => {
+        const { port, events, ctrl } = setup();
+        const tools: Array<string | null> = [];
+        events.on('drawing:tool', (e) => tools.push(e.type));
+
+        ctrl.setTool('trendline');
+        ctrl.setTool('trendline'); // re-arm same tool → port push, but no duplicate event
+        port.fire({ kind: 'tool-finished', type: 'trendline' }); // one-shot → back to pointer
+        expect(tools).toEqual(['trendline', null]);
+        expect(ctrl.getTool()).toBe(null);
+    });
+
+    it('setSnapMode pushes the port command, mirrors, emits — and equal values no-op', () => {
+        const { port, events, ctrl } = setup();
+        const snaps: string[] = [];
+        events.on('drawing:snap', (e) => snaps.push(e.mode));
+
+        ctrl.setSnapMode('strong');
+        ctrl.setSnapMode('strong'); // no-op
+        expect(port.snapModes).toEqual(['strong']);
+        expect(ctrl.getSnapMode()).toBe('strong');
+        expect(snaps).toEqual(['strong']);
+    });
+
+    it('an in-chart magnet click arrives as a snap-mode intent: mirror + event, echo-safe', () => {
+        const { port, events, ctrl } = setup();
+        const snaps: string[] = [];
+        events.on('drawing:snap', (e) => snaps.push(e.mode));
+
+        port.fire({ kind: 'snap-mode', mode: 'weak' });
+        port.fire({ kind: 'snap-mode', mode: 'weak' }); // renderer echo of an equal value → dropped
+        expect(ctrl.getSnapMode()).toBe('weak');
+        expect(snaps).toEqual(['weak']);
+        expect(port.snapModes).toEqual([]); // an intent must never bounce back as a command
+    });
+
+    it('setMode pushes the port command; the renderer intent reports the outcome', () => {
+        const { port, events, ctrl } = setup();
+        const modes: Array<string | null> = [];
+        events.on('drawing:mode', (e) => modes.push(e.mode));
+
+        ctrl.setMode('measure');
+        expect(port.modes).toEqual(['measure']);
+        expect(ctrl.getMode()).toBe('measure');
+        // The renderer applies + echoes the same value — dropped (no duplicate event).
+        port.fire({ kind: 'mode', mode: 'measure' });
+        // A mutual-exclusion side effect (user armed a tool in-chart) exits the mode.
+        port.fire({ kind: 'mode', mode: null });
+        expect(ctrl.getMode()).toBe(null);
+        expect(modes).toEqual(['measure', null]);
+    });
+
+    it('mode/snap setters are inert without a port (headless), like the other interactive ops', () => {
+        const { ctrl } = setup(false);
+        ctrl.setSnapMode('strong');
+        ctrl.setMode('eraser');
+        expect(ctrl.getSnapMode()).toBe('off'); // mirrors keep their defaults
+        expect(ctrl.getMode()).toBe(null);
     });
 });

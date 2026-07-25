@@ -1,6 +1,8 @@
 import type { DrawingController, AddInit } from './drawings/DrawingController';
 import type { Drawing, DrawingTypeKey, SerializedDrawing } from './drawings/Drawing';
 import type { DrawingsDocument } from './drawings/document';
+import type { SnapMode } from './drawings/geometry';
+import type { DrawingMode } from './drawings/port';
 import type { DrawingsOption } from './drawings/toolbar';
 
 /**
@@ -23,6 +25,36 @@ export class DrawingsControl {
     setTool(type: DrawingTypeKey | null): this {
         if (this.ok('setTool')) this.ctrl.setTool(type);
         return this;
+    }
+
+    /** The currently armed tool (`null` = select/idle). Mirrors in-chart toolbar clicks
+     *  and one-shot tools disarming — listen on `drawing:tool` to follow changes. */
+    getTool(): DrawingTypeKey | null {
+        return this.ctrl.getTool();
+    }
+
+    /** Set the sticky magnet snap mode (`'off' | 'weak' | 'strong'`). */
+    setSnapMode(mode: SnapMode): this {
+        if (this.ok('setSnapMode')) this.ctrl.setSnapMode(mode);
+        return this;
+    }
+
+    /** The current magnet snap mode — follow changes on `drawing:snap`. */
+    getSnapMode(): SnapMode {
+        return this.ctrl.getSnapMode();
+    }
+
+    /** Enter/exit a renderer-local mode: `'measure'` (transient ruler), `'eraser'`, or
+     *  `null` (none). Mutually exclusive with each other and with any armed tool — the
+     *  renderer enforces the exclusion and the outcome lands on `drawing:mode`. */
+    setMode(mode: DrawingMode): this {
+        if (this.ok('setMode')) this.ctrl.setMode(mode);
+        return this;
+    }
+
+    /** The current renderer-local mode — follow changes on `drawing:mode`. */
+    getMode(): DrawingMode {
+        return this.ctrl.getMode();
     }
 
     /** Show or hide the on-chart drawing toolbar. */

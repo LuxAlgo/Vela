@@ -1,5 +1,8 @@
 import type { EngineAlert, EngineWarning } from '../ports/ScriptingEngine';
 import type { OHLCV } from '../model/ohlcv';
+import type { DrawingTypeKey } from '../drawings/Drawing';
+import type { SnapMode } from '../drawings/geometry';
+import type { DrawingMode } from '../drawings/port';
 
 /** Chart-level events emitted on `chart.on(...)`. */
 export interface VelaEventMap extends Record<string, unknown> {
@@ -31,6 +34,14 @@ export interface VelaEventMap extends Record<string, unknown> {
     'drawing:selected': { id: string | null };
     /** The favorite-tool set changed (star toggles or a bulk restore). */
     'drawing:favorites': { favorites: string[] };
+    /** The armed drawing tool changed — toolbar click, one-shot tool finishing (back to
+     *  the pointer, `null`), or a programmatic `drawings.setTool`. */
+    'drawing:tool': { type: DrawingTypeKey | null };
+    /** The magnet snap mode changed (in-chart toolbar or `drawings.setSnapMode`). */
+    'drawing:snap': { mode: SnapMode };
+    /** The renderer-local mode changed: measure ruler, eraser, or none — including the
+     *  mutual-exclusion exits (arming a tool leaves measure/eraser). */
+    'drawing:mode': { mode: DrawingMode };
     /** A user drawing was removed. */
     'drawing:removed': { id: string };
     /** The user requested a drawing's settings popup. */

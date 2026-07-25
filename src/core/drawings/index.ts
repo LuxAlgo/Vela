@@ -134,7 +134,7 @@ export { migrate, isValidSerialized, clonePlain, DRAWINGS_DOC_VERSION, type Draw
 export { DrawingStore } from './DrawingStore';
 export { DrawingHistory } from './DrawingHistory';
 export * from './hittest';
-export type { DrawingIntent, IDrawingsRendererPort } from './port';
+export type { DrawingIntent, DrawingMode, IDrawingsRendererPort } from './port';
 export {
     buildToolbar,
     defaultToolbar,
