@@ -1,7 +1,9 @@
 // VelaWidget — the batteries-included chart app: topbar + chart host (statusline,
 // watermark overlays) + bottombar, built on the vela/ui kit around a headless Vela core.
-// Symbol/timeframe changes REBUILD the inner chart (destroy + recreate) and re-register
-// providers/engines/indicators — the reference behavior of the original playground app.
+// Symbol/timeframe/depth changes switch the market IN PLACE (`chart.setMarket`) — the
+// inner chart instance survives, so indicators, user drawings, renderer config and event
+// subscriptions all carry over. `rebuild()` (destroy + recreate + re-register
+// providers/engines/indicators) remains only for construction-level changes.
 // Cosmetic state (price style, timezone) survives rebuilds via renderer features.
 import { Vela } from '../Vela';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
@@ -198,8 +200,9 @@ export class VelaWidget {
     private alerts: Array<{ title: string; message: string; time: number }> = [];
     private alertsMenu: Menu | null = null;
     private readonly glider = new Glider(() => this.inner);
-    /** Unified app+drawings undo timeline (Ctrl+Z / Ctrl+Y). */
-    readonly history = new WidgetHistory();
+    /** Unified app+drawings undo timeline (Ctrl+Z / Ctrl+Y). Late-resolves the CURRENT
+     *  inner chart so steps recorded before a rebuild never act on a destroyed instance. */
+    readonly history = new WidgetHistory(() => this.inner);
     private lastCrossPrice: number | null = null;
     private lastCrossTime: number | null = null;
     /** Renderer cosmetic template carried across rebuilds (and persisted when enabled). */
@@ -495,7 +498,9 @@ export class VelaWidget {
         this.rangeBars = 0;
         this.syncTimeframeChrome(tf);
         this.persist();
-        this.rebuild();
+        // In-place switch (no rebuild): indicators re-execute, drawings/config survive.
+        // `bars` re-asserts the user's own depth, shedding a range chip's deeper budget.
+        void this.inner?.setMarket({ timeframe: tf, bars: this.bars });
     }
 
     setSymbol(symbol: string): void {
@@ -506,7 +511,8 @@ export class VelaWidget {
         this.objectTree.setSymbol(symbol);
         this.watermark?.update(symbol, this.timeframe);
         this.persist();
-        this.rebuild();
+        // In-place switch (no rebuild) — the chart instance, indicators, and drawings survive.
+        void this.inner?.setMarket({ symbol });
     }
 
     /** Late-apply a persisted state (async storage adapters resolve after construction).
@@ -547,7 +553,7 @@ export class VelaWidget {
             this.favs = fav.split(',').filter(Boolean);
             this.chart.drawings.setFavorites(this.favs as never[]);
         }
-        if (marketDirty) this.rebuild();
+        if (marketDirty) void this.inner?.setMarket({ symbol: this.symbol, timeframe: this.timeframe, bars: Math.max(this.bars, this.rangeBars) });
     }
 
     /** Show/hide the symbol watermark behind the chart (persisted). */
@@ -575,8 +581,8 @@ export class VelaWidget {
 
     /**
      * Range chip: switch to the preset's timeframe, fetch enough history for its window,
-     * and frame it once ready. The rebuild is what loads the depth, so it also runs when
-     * only the DEPTH grows (same timeframe, deeper window).
+     * and frame it once ready. The in-place `setMarket` loads the depth, so it also runs
+     * when only the DEPTH grows (same timeframe, deeper window).
      */
     applyRange(preset: RangePreset): void {
         if (this.destroyed) return;
@@ -586,7 +592,16 @@ export class VelaWidget {
         this.rangeBars = preset.bars;
         if (tfChanged) this.syncTimeframeChrome(preset.tf);
         if (tfChanged || deeper) {
-            this.rebuild(); // framing happens after the new chart is ready
+            // The preset frames the FIRST paint of the new depth (no flash), then is
+            // re-asserted once painted so a deeper backfill landing behind stays framed.
+            void this.inner
+                ?.setMarket({ timeframe: preset.tf, bars: Math.max(this.bars, this.rangeBars), visibleRange: preset.preset })
+                .then(() => {
+                    if (!this.destroyed && this.pendingRange === preset) {
+                        this.inner?.setVisibleRangePreset(preset.preset);
+                        this.pendingRange = null;
+                    }
+                });
         } else {
             this.inner?.setVisibleRangePreset(preset.preset);
             this.pendingRange = null;
@@ -664,6 +679,23 @@ export class VelaWidget {
         this.refreshNativeCatalog();
         chart.on('indicator:added', () => this.refreshNativeCatalog());
         chart.on('indicator:removed', () => this.refreshNativeCatalog());
+        // Market switches happen IN PLACE (`setMarket`) — the chart instance survives, so
+        // reflect them from the event: per-symbol native support may differ, the statusline's
+        // resting OHLC belongs to the old market, and an out-of-band switch (host code calling
+        // chart.setMarket directly) must still update the chrome. The widget's own setters
+        // already synced most of it — the guards make this a cheap no-op then.
+        chart.on('market:changed', ({ symbol, timeframe }) => {
+            this.refreshNativeCatalog();
+            if (this.statusline) this.statusline.onChart(chart); // drop the old market's resting OHLC
+            if (symbol !== this.symbol) {
+                this.symbol = symbol;
+                this.topbar.setSymbol(symbol);
+                this.statusline?.setSymbol(symbol);
+                this.objectTree.setSymbol(symbol);
+                this.watermark?.update(symbol, this.timeframe);
+            }
+            if (timeframe !== this.timeframe) this.syncTimeframeChrome(timeframe);
+        });
         this.history.onChart(chart);
         chart.on('alert', (alert) => {
             this.alerts.unshift({ title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
@@ -700,7 +732,7 @@ export class VelaWidget {
                     set: (v: string) => {
                         this.bars = Number(v);
                         this.persist();
-                        this.rebuild();
+                        void this.inner?.setMarket({ bars: Math.max(this.bars, this.rangeBars) });
                     },
                 },
             ],

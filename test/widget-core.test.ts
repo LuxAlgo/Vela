@@ -282,3 +282,36 @@ describe('range chips: timeframe + fetch depth per window', () => {
         }
     });
 });
+
+describe('WidgetHistory late-resolves the current chart', () => {
+    function fakeChart(): { drawings: { undo: ReturnType<typeof vi.fn>; redo: ReturnType<typeof vi.fn> }; on(ev: string, cb: (p: unknown) => void): () => void; emit(ev: string): void } {
+        const listeners = new Map<string, Set<(p: unknown) => void>>();
+        return {
+            drawings: { undo: vi.fn(), redo: vi.fn() },
+            on(ev, cb) {
+                if (!listeners.has(ev)) listeners.set(ev, new Set());
+                listeners.get(ev)!.add(cb);
+                return () => listeners.get(ev)!.delete(cb);
+            },
+            emit(ev) {
+                for (const cb of listeners.get(ev) ?? []) cb({ id: 'd1' });
+            },
+        };
+    }
+
+    it('drawing steps act on the chart that exists at undo time, not at record time', async () => {
+        const { WidgetHistory } = await import('../src/widget/history');
+        const a = fakeChart();
+        const b = fakeChart();
+        let current: unknown = a;
+        const h = new WidgetHistory(() => current as never);
+        h.onChart(a as never);
+        a.emit('drawing:created'); // a step recorded while A was the live chart
+        current = b; // the widget rebuilt — A is destroyed, B is live
+        h.undo();
+        expect(b.drawings.undo).toHaveBeenCalledTimes(1); // late-resolved to the CURRENT chart
+        expect(a.drawings.undo).not.toHaveBeenCalled(); // never the destroyed instance
+        h.redo();
+        expect(b.drawings.redo).toHaveBeenCalledTimes(1);
+    });
+});

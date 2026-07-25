@@ -133,13 +133,19 @@ Semantics to know:
   write also fires on `beforeunload`; a remote adapter that must survive tab-close
   should use `navigator.sendBeacon` in its `set`.
 
-## Rebuild semantics
+## Market switches are in place
 
-A symbol or timeframe change **rebuilds** the inner chart: destroy, recreate with the
-same options, re-register providers/engines from their factories, re-add the active
-manifest indicators. Cosmetic state (price style, timezone) is carried across rebuilds.
-`widget.chart` always points at the **current** inner chart — don't cache it across
-awaits; subscribe again after a rebuild if you hold event listeners.
+A symbol, timeframe, or fetch-depth change switches the inner chart's market **in
+place** (`chart.setMarket`): the chart instance survives, so **indicators, user
+drawings, renderer config, and your event subscriptions all carry over** — the chart
+reloads its bars and re-executes what's running over the new market. The widget
+reflects out-of-band switches too (host code calling `widget.chart.setMarket`
+directly) via the chart's `market:changed` event.
+
+The inner chart is destroyed and recreated (providers/engines re-registered from
+their factories, manifest indicators re-added) only at construction. `widget.chart`
+still points at the **current** inner chart — prefer reading it at the point of use
+rather than caching it long-term.
 
 ## Customization
 

@@ -4,6 +4,14 @@ import type { OHLCV } from '../model/ohlcv';
 /** Chart-level events emitted on `chart.on(...)`. */
 export interface VelaEventMap extends Record<string, unknown> {
     ready: undefined;
+    /**
+     * The chart's market switched IN PLACE via `setMarket` — symbol, provider, timeframe,
+     * or offline data changed (a depth-only reload does not fire). Fires after the new
+     * market's history is painted and every consumer restarted. `prev` carries the
+     * previous identity so hosts can re-key per-symbol state (e.g. swap user-drawing
+     * documents between symbols).
+     */
+    'market:changed': { symbol: string; timeframe: string; prev: { symbol: string; timeframe: string } };
     'indicator:added': { id: string };
     'indicator:removed': { id: string };
     'indicator:error': { id: string; error: Error };

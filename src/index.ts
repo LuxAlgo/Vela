@@ -53,6 +53,7 @@ export type * from './core/model';
 export type {
     VelaOptions,
     MarketConfig,
+    MarketSwitch,
     VelaTheme,
     ThemeName,
     ProviderName,

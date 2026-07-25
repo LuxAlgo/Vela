@@ -28,6 +28,22 @@ export interface MarketConfig {
     data?: OHLCV[];
 }
 
+/**
+ * One in-place market switch — the argument of `chart.setMarket(next)`. Only the fields
+ * given change; the rest of the market keeps its current value. `data` switches to
+ * offline bars (and giving `symbol`/`provider` WITHOUT `data` drops a previous offline
+ * dataset — back to the provider path). `visibleRange` frames the FIRST paint of the
+ * new market (a range chip switching timeframe + depth + window in one call).
+ */
+export interface MarketSwitch {
+    symbol?: string;
+    provider?: ProviderName;
+    timeframe?: string;
+    bars?: number;
+    data?: OHLCV[];
+    visibleRange?: VisibleRangePreset | VisibleRange;
+}
+
 export interface VelaTheme {
     background: string;
     textColor: string;
