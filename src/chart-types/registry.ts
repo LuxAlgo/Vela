@@ -72,6 +72,14 @@ export interface ChartTypeDefinition {
     tickerModifier?: boolean;
     /** Factory for the style's per-chart data engine (created lazily on first activation). */
     dataEngine?: () => SeriesDataEngine;
+    /**
+     * What the renderer paints for the PRICE SERIES while this style is active.
+     * `'candles'` (default) keeps the base candle painting under the type's layers;
+     * `'none'` suppresses it — for types whose renderer layer fully REPLACES the
+     * price representation (an order-flow grid, bricks, …). Axes, grid, volume,
+     * indicators and drawings are unaffected.
+     */
+    basePainting?: 'candles' | 'none';
 }
 
 /** One declarative settings row. To add a NEW kind, see docs/architecture/settings-rows.md. */

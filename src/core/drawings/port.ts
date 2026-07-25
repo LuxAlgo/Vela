@@ -18,6 +18,7 @@ export type DrawingIntent =
     | { kind: 'reorder'; id: string; to: 'front' | 'back' }
     | { kind: 'settings'; id: string }
     | { kind: 'tool-finished'; type: DrawingTypeKey }
+    | { kind: 'favorite'; type: DrawingTypeKey; on: boolean } // flyout star toggled
     | { kind: 'undo' }
     | { kind: 'redo' }
     | { kind: 'duplicate'; ids: string[] } // clone in place + select the clones
@@ -43,6 +44,9 @@ export interface IDrawingsRendererPort {
     setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style']): void;
     /** Reflect which drawings are selected (drives handle painting); `[]` = none. */
     setSelection(ids: readonly string[]): void;
+    /** Push the FAVORITE tool set (flyout stars + any favorites-driven UI). Optional —
+     *  favorites still work headless without a renderer reflection. */
+    setFavorites?(types: readonly DrawingTypeKey[]): void;
     /** Open a drawing's settings popup (selecting it too) — the programmatic twin of a click on it. */
     openSettings(id: string): void;
     /** The one channel up — create/edit/select/delete/settings/tool-finished. */

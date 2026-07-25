@@ -102,7 +102,8 @@ class FakeRenderer implements IChartRenderer {
     onCrosshairMove(_cb: (e: CrosshairEvent) => void): Unsubscribe { return () => {}; }
     onClick(_cb: (e: ClickEvent) => void): Unsubscribe { return () => {}; }
     getVisibleRange(): VisibleRange | null { return null; }
-    setVisibleRange(): void {}
+    visibleRangeCalls: VisibleRange[] = [];
+    setVisibleRange(r: VisibleRange): void { this.visibleRangeCalls.push(r); }
     onViewportChange(cb: (r: VisibleRange) => void): Unsubscribe { this.viewportCb = cb; return () => { this.viewportCb = null; }; }
     /** Test helper: simulate a pan/zoom viewport change. */
     fireViewport(range: VisibleRange): void { this.viewportCb?.(range); }
@@ -728,6 +729,36 @@ describe('EngineOrchestrator', () => {
             { n: 300, preserveView: false },
             { n: 2000, preserveView: true },
         ]);
+    });
+
+    it('a requested initial window loads in ONE pass and is framed BEFORE the first paint', async () => {
+        const renderer = new FakeRenderer();
+        const chart = new Vela(
+            {} as unknown as HTMLElement,
+            { bars: 2000, visibleRange: '1D' }, // deep enough that it would normally preview-split
+            { renderer, engines: [new MockEngine()], dataFeed: new SizedDataFeed() },
+        );
+        await chart.ready();
+        await flush();
+        // No preview pass: its recent-bars window would paint the WRONG range for a moment.
+        expect(renderer.setBarsCalls).toEqual([{ n: 2000, preserveView: false }]);
+        // …and the window was framed in the same turn as the bars (so the first paint has it).
+        expect(renderer.visibleRangeCalls.length).toBe(1);
+        const framed = renderer.visibleRangeCalls[0]!;
+        expect(framed.to - framed.from).toBe(86_400_000); // exactly one day
+    });
+
+    it('an explicit initial {from,to} is framed as given', async () => {
+        const renderer = new FakeRenderer();
+        const range = { from: 1_000, to: 5_000 };
+        const chart = new Vela(
+            {} as unknown as HTMLElement,
+            { bars: 2000, visibleRange: range },
+            { renderer, engines: [new MockEngine()], dataFeed: new SizedDataFeed() },
+        );
+        await chart.ready();
+        await flush();
+        expect(renderer.visibleRangeCalls).toEqual([range]);
     });
 
     it('small charts load in one shot (no preview split)', async () => {

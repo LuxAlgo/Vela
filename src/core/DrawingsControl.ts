@@ -161,6 +161,27 @@ export class DrawingsControl {
         return this;
     }
 
+    /** The favorite tool types (starred in the toolbar flyouts), insertion-ordered. */
+    favorites(): DrawingTypeKey[] {
+        return this.ctrl.favorites();
+    }
+
+    isFavorite(type: DrawingTypeKey): boolean {
+        return this.ctrl.isFavorite(type);
+    }
+
+    /** Star/unstar one tool type. */
+    setFavorite(type: DrawingTypeKey, on: boolean): this {
+        if (this.ok('setFavorite')) this.ctrl.setFavorite(type, on);
+        return this;
+    }
+
+    /** Replace the whole favorite set (e.g. restoring persisted prefs). */
+    setFavorites(types: readonly DrawingTypeKey[]): this {
+        if (this.ok('setFavorites')) this.ctrl.setFavorites([...types]);
+        return this;
+    }
+
     /** Aliases mirroring `renderer.getConfig()/applyConfig()` for symmetry. */
     getConfig(): DrawingsDocument {
         return this.ctrl.toJSON();

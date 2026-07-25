@@ -107,6 +107,8 @@ export class SceneGraph {
     crosshair: { x: number; y: number } | null = null;
     /** How the base price series is drawn on the price pane (candles by default). */
     priceStyle: PriceStyle = 'candles';
+    /** Price-series base painting for the ACTIVE style (see ChartTypeDefinition.basePainting). */
+    basePainting: 'candles' | 'none' = 'candles';
     /** Explicit baseline reference price for `priceStyle:'baseline'`; when null the
      *  baseline follows `style.baseline.baselineLevel` as a percent of the visible pane
      *  range (resolved per frame via `baselinePriceFor`). */

@@ -14,6 +14,7 @@ How the chart obtains its candles.
 | `provider` | string | Default provider for a **bare** `symbol` (same as prefixing it `provider:symbol`). Omit when the symbol carries its own `EXCHANGE:` prefix. |
 | `timeframe` | string | Bar interval, e.g. `'1h'`. |
 | `bars` | number | How many bars of history to load. Depths beyond one ~10k-bar chunk paint the recent window first, then backfill older bars in the background — watch `history:progress` / await `chart.historyComplete()` for the full depth. |
+| `visibleRange` | `VisibleRangePreset \| {from,to}` | — | The window to frame on the **first paint** (`'1D'`, `'YTD'`, an explicit range…). The chart then loads its depth in one pass and paints that window straight away, instead of flashing a recent-bars preview and re-framing a moment later. |
 | `data` | `OHLCV[]` | **Offline bars.** When set, no network fetch happens. |
 
 > **`data` and provider fetch are mutually exclusive.** Supply `data` to run fully offline (recommended for first runs and tests), or set `symbol`/`timeframe`/`bars` to fetch.

@@ -11,7 +11,7 @@ import { filterSymbols } from '../src/widget/symbol-picker';
 import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, panTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
-import { registerWidgetAction, unregisterWidgetAction, widgetActions } from '../src/widget/contributions';
+import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments } from '../src/widget/contributions';
 import { loadPersisted, savePersisted, type WidgetStorage } from '../src/widget/persist';
 
 describe('parseTimeframe', () => {
@@ -122,7 +122,7 @@ describe('widget chrome pure helpers', () => {
 
     it('every range chip maps to a core visible-range preset', () => {
         for (const r of RANGE_PRESETS) {
-            expect(['1D', '1W', '1M', '3M', '6M', '1Y', 'YTD', 'ALL']).toContain(r.preset);
+            expect(['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'YTD', 'ALL']).toContain(r.preset);
             expect(r.tf.length).toBeGreaterThan(0);
         }
     });
@@ -243,5 +243,42 @@ describe('WidgetStorage adapter (pluggable persistence)', () => {
         expect(loadPersisted(bad, 'k')).toEqual({});
         const rejecting: WidgetStorage = { get: async () => Promise.reject(new Error('offline')), set: () => {} };
         expect(await loadPersisted(rejecting, 'k')).toEqual({});
+    });
+});
+
+describe('widget attachments (per-widget contributed behavior)', () => {
+    it('registers, lists in order, last-id-wins, and stale disposers are inert', () => {
+        const d1 = registerWidgetAttachment({ id: 'a', mount: () => () => {} });
+        registerWidgetAttachment({ id: 'b', mount: () => () => {} });
+        expect(widgetAttachments().map((a) => a.id)).toEqual(['a', 'b']);
+        const replacement = { id: 'a', mount: () => () => {} };
+        registerWidgetAttachment(replacement);
+        expect(widgetAttachments().find((x) => x.id === 'a')).toBe(replacement);
+        d1(); // stale disposer must NOT remove the replacement
+        expect(widgetAttachments().some((x) => x.id === 'a')).toBe(true);
+        unregisterWidgetAttachment('a');
+        unregisterWidgetAttachment('b');
+        expect(widgetAttachments()).toHaveLength(0);
+    });
+});
+
+describe('range chips: timeframe + fetch depth per window', () => {
+    const MIN = 60_000;
+    const TF_MS: Record<string, number> = { '1': MIN, '5': 5 * MIN, '30': 30 * MIN, '60': 60 * MIN, '240': 240 * MIN, D: 1440 * MIN, W: 7 * 1440 * MIN };
+    const SPAN_DAYS: Record<string, number> = { '1D': 1, '7D': 7, '1M': 30, '3M': 90, '6M': 180, YTD: 366, '1Y': 365, '5Y': 5 * 365 };
+
+    it('exposes the reference chip set, finest bars on the shortest range', () => {
+        expect(RANGE_PRESETS.map((r) => r.id)).toEqual(['1D', '7D', '1M', '3M', '6M', 'YTD', '1Y', '5Y', 'ALL']);
+        expect(RANGE_PRESETS.map((r) => r.tf)).toEqual(['1', '5', '30', '60', '240', 'D', 'D', 'W', 'W']);
+    });
+
+    it('every chip fetches ENOUGH bars to actually fill its window', () => {
+        for (const r of RANGE_PRESETS) {
+            if (r.id === 'ALL') continue; // ALL frames whatever history exists
+            const needed = (SPAN_DAYS[r.id]! * 1440 * MIN) / TF_MS[r.tf]!;
+            // the budget must cover the window (this is what a fixed 1000-bar load got wrong)
+            expect(r.bars).toBeGreaterThanOrEqual(needed);
+            expect(r.bars).toBeLessThan(needed * 2); // …without fetching absurd depth
+        }
     });
 });

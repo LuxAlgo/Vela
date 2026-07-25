@@ -48,7 +48,7 @@ import { zonedDate } from './chrome/tz';
 import { computePaneScale } from './core/autoscale';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { createAttributionMark } from './chrome/AttributionMark';
@@ -261,6 +261,7 @@ export class NativeRenderer implements IChartRenderer {
             this.candleUp = opts.upColor;
             this.candleDown = opts.downColor;
             this.scene.priceStyle = opts.priceStyle;
+            this.scene.basePainting = basePaintingOf(opts.priceStyle);
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
         // it with the real, Vela-resolved theme). Candle colors follow opts.
@@ -1676,6 +1677,7 @@ export class NativeRenderer implements IChartRenderer {
     private setPriceStyle(style: PriceStyle): void {
         if (style === this.scene.priceStyle) return;
         this.scene.priceStyle = style;
+        this.scene.basePainting = basePaintingOf(style);
         for (const cb of this.priceStyleCbs) cb(style);
     }
 

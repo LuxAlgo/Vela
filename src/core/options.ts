@@ -1,4 +1,6 @@
 import type { OHLCV } from './model/ohlcv';
+import type { VisibleRangePreset } from './visible-range';
+import type { VisibleRange } from './ports/IChartRenderer';
 import type { InputValue } from './model/inputs';
 import type { IChartRenderer } from './ports/IChartRenderer';
 import type { DrawingsOption } from './drawings/toolbar';
@@ -14,6 +16,14 @@ export interface MarketConfig {
     symbol?: string;
     timeframe?: string;
     bars?: number;
+    /**
+     * The window to frame on the FIRST paint — a preset name (`'1D'`, `'YTD'`, …) or an
+     * explicit `{from, to}`. Set it when the initial view is known up front (a range
+     * chip, a shared link): the chart then loads the depth in ONE pass and paints the
+     * requested window straight away, instead of flashing its fast recent-bars preview
+     * and re-framing a moment later.
+     */
+    visibleRange?: VisibleRangePreset | VisibleRange;
     /** Offline bars instead of a provider; when set, no network fetch happens. */
     data?: OHLCV[];
 }

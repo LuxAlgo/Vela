@@ -17,6 +17,10 @@ export class DrawingToolbar {
     private def: ToolbarDefinition = { groups: [] };
     private active: DrawingTypeKey | null = null;
     private readonly lastUsed = new Map<string, DrawingTypeKey>();
+    /** FAVORITE tool types (core-authoritative; pushed via setFavorites). */
+    private favorites = new Set<DrawingTypeKey>();
+    /** Star elements of the currently open flyout, by tool type (live-updated, never stale). */
+    private readonly starEls = new Map<DrawingTypeKey, HTMLElement>();
     private flyout: HTMLDivElement | null = null;
     private flyoutOwnerId: string | null = null; // group id (or MAGNET_ID) whose flyout is open
     private flyoutCell: HTMLElement | null = null; // the cell the open flyout is anchored to
@@ -43,6 +47,7 @@ export class DrawingToolbar {
         private readonly onMagnet: (mode: SnapMode) => void = () => {},
         private readonly onMeasure: () => void = () => {},
         private readonly onEraser: () => void = () => {},
+        private readonly onToggleFavorite: (type: DrawingTypeKey, on: boolean) => void = () => {},
     ) {
         ensureStyles();
         this.root = document.createElement('div');
@@ -69,6 +74,22 @@ export class DrawingToolbar {
             if (first && !this.lastUsed.has(g.id)) this.lastUsed.set(g.id, first.type);
         }
         this.rebuild();
+    }
+
+    /** Reflect the core's favorite set. An OPEN flyout updates its stars IN PLACE — starring
+     *  is a side action, so it must never close the menu the user is still browsing. */
+    setFavorites(types: readonly DrawingTypeKey[]): void {
+        this.favorites = new Set(types);
+        for (const [type, el] of this.starEls) this.paintStar(el, type);
+    }
+
+    /** Paint one star for the current favorite state (filled + gold, or outline). */
+    private paintStar(el: HTMLElement, type: DrawingTypeKey): void {
+        const on = this.favorites.has(type);
+        el.classList.toggle('vela-fav', on);
+        el.setAttribute('aria-label', on ? 'Remove from favorites' : 'Add to favorites');
+        el.setAttribute('aria-pressed', on ? 'true' : 'false');
+        el.innerHTML = sizedIcon(on ? STAR_FILLED_ICON : STAR_ICON);
     }
 
     setVisible(visible: boolean): void {
@@ -320,6 +341,10 @@ export class DrawingToolbar {
                         label: tool.label,
                         selected: tool.type === this.active,
                         onSelect: () => this.onArm(tool.type),
+                        favorite: {
+                            type: tool.type,
+                            toggle: () => this.onToggleFavorite(tool.type, !this.favorites.has(tool.type)),
+                        },
                     }),
                 );
             }
@@ -368,7 +393,14 @@ export class DrawingToolbar {
 
     /** A flyout row: optional leading icon, label, and a trailing check when it's the selected entry.
      *  Hover tint is CSS (`.vela-dtb-item:hover`), so navigating the menu stays smooth. */
-    private makeFlyoutItem(opts: { icon?: string; label: string; selected?: boolean; onSelect: () => void }): HTMLButtonElement {
+    private makeFlyoutItem(opts: {
+        icon?: string;
+        label: string;
+        selected?: boolean;
+        onSelect: () => void;
+        /** Star toggle (tool rows only — mode rows have no favorites). */
+        favorite?: { type: DrawingTypeKey; toggle: () => void };
+    }): HTMLButtonElement {
         const t = this.theme;
         const item = document.createElement('button');
         item.type = 'button';
@@ -385,6 +417,25 @@ export class DrawingToolbar {
         label.textContent = opts.label;
         label.style.cssText = 'flex:1 1 auto;text-align:left;';
         item.appendChild(label);
+        if (opts.favorite) {
+            const star = document.createElement('span');
+            star.className = 'vela-dtb-star';
+            star.setAttribute('role', 'button');
+            this.paintStar(star, opts.favorite.type);
+            this.starEls.set(opts.favorite.type, star);
+            // Swallow the WHOLE pointer sequence: the row arms its tool on click, and a
+            // pointerdown that starts on the star must never reach it (nor the flyout's
+            // outside-dismiss listener).
+            for (const ev of ['pointerdown', 'pointerup', 'mousedown', 'mouseup'] as const) {
+                star.addEventListener(ev, (e) => e.stopPropagation());
+            }
+            star.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                opts.favorite!.toggle();
+            });
+            item.appendChild(star);
+        }
         const check = document.createElement('span');
         check.style.cssText = 'width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none;';
         if (opts.selected) check.innerHTML = sizedIcon(CHECK_ICON);
@@ -404,6 +455,7 @@ export class DrawingToolbar {
     };
 
     private closeFlyout(): void {
+        this.starEls.clear();
         if (this.flyout) {
             this.flyout.remove();
             this.flyout = null;
@@ -523,6 +575,11 @@ function ensureStyles(): void {
 .vela-dtb-cell.vela-open .vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-dtb-hover);}
 .vela-dtb-item{background:transparent;border:none;transition:background .1s ease;}
 .vela-dtb-item:hover{background:var(--vela-dtb-item-hover);}
+.vela-dtb-star{width:26px;height:22px;margin:-3px -5px -3px 0;padding:3px 5px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;opacity:0;color:inherit;border-radius:4px;transition:opacity .1s ease,color .1s ease,background .1s ease;}
+.vela-dtb-star svg{width:16px;height:16px;}
+.vela-dtb-item:hover .vela-dtb-star{opacity:.55;}
+.vela-dtb-star:hover{opacity:1 !important;background:var(--vela-dtb-item-hover);}
+.vela-dtb-star.vela-fav{opacity:.95;color:#e0b400;}
 /* Thin thumb-only scrollbar. Avoid scrollbar-width in Chromium — it disables ::-webkit-scrollbar. */
 @supports not selector(::-webkit-scrollbar){
 .vela-dtb-flyout{scrollbar-width:thin;scrollbar-color:rgba(148,163,184,0.35) transparent;}
@@ -547,6 +604,10 @@ const ARROW_ICON =
 /** A check mark for the selected entry in a flyout (e.g. the current magnet strength). */
 const CHECK_ICON =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const STAR_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.8z"/></svg>';
+const STAR_FILLED_ICON =
+    '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.8z"/></svg>';
 
 /** Force an inline SVG icon to fill its 18px slot. */
 function sizedIcon(svg: string): string {

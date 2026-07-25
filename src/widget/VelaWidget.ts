@@ -19,7 +19,7 @@ import { SymbolPicker } from './symbol-picker';
 import { ObjectTree } from './object-tree';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
-import type { WidgetContext } from './contributions';
+import { widgetAttachments, type WidgetContext } from './contributions';
 import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
 import { loadPersisted, savePersisted, localStorageAdapter, type WidgetStorage, type PersistedState } from './persist';
@@ -191,6 +191,9 @@ export class VelaWidget {
     private bars: number;
     private watermarkOn: boolean;
     private pendingRange: RangePreset | null = null;
+    /** Extra fetch depth the ACTIVE range chip needs — a view concern, kept apart from the
+     *  user's own `bars` setting so a preset never overwrites their preference. */
+    private rangeBars = 0;
     private toast: Toast | null = null;
     private alerts: Array<{ title: string; message: string; time: number }> = [];
     private alertsMenu: Menu | null = null;
@@ -201,6 +204,10 @@ export class VelaWidget {
     private lastCrossTime: number | null = null;
     /** Renderer cosmetic template carried across rebuilds (and persisted when enabled). */
     private savedConfig: unknown = null;
+    /** Favorite drawing-tool types — mirrored from chart events, reapplied on rebuilds. */
+    private favs: string[] = [];
+    /** Mounted attachment disposers (by id), torn down at destroy. */
+    private readonly attachmentDisposers = new Map<string, () => void>();
     private readonly onUnload = (): void => this.persistConfigNow();
     private indicatorsPromise: Promise<ResolvedIndicator[]> | null = null;
     private destroyed = false;
@@ -231,6 +238,7 @@ export class VelaWidget {
         this.timezone = fromUrl.timezone ?? persisted.timezone ?? opts.timezone ?? 'Etc/UTC';
         this.bars = Number(fromUrl.bars ?? persisted.bars ?? opts.bars ?? 1000);
         this.watermarkOn = persisted.watermark !== undefined ? persisted.watermark === '1' : opts.watermark !== false;
+        this.favs = persisted.favorites ? persisted.favorites.split(',').filter(Boolean) : [];
         if (this.storageKey !== null) {
             const rawCfg = this.storage.get(`${this.storageKey}:config`);
             const applyCfg = (raw: string | null): void => {
@@ -285,10 +293,7 @@ export class VelaWidget {
         });
         this.tfQuick = new TimeframeQuick({
             host: this.root,
-            onApply: (tf) => {
-                this.bottombar?.setActiveRange(null);
-                this.setTimeframe(tf);
-            },
+            onApply: (tf) => this.setTimeframe(tf),
             onOpenChange: (open) => this.trackDialog(open),
         });
         this.topbar = new Topbar(this.root, {
@@ -308,10 +313,7 @@ export class VelaWidget {
             timeframe: this.timeframe,
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: this.priceStyle,
-            onTimeframe: (tf) => {
-                this.bottombar?.setActiveRange(null); // manual change leaves range mode
-                this.setTimeframe(tf);
-            },
+            onTimeframe: (tf) => this.setTimeframe(tf),
             onPriceStyle: (style) => this.setPriceStyle(style),
             getContext: () => this.context(),
         });
@@ -410,6 +412,19 @@ export class VelaWidget {
         this.root.tabIndex = -1; // focusable host so bare keystrokes land here
 
         this.rebuild();
+        this.mountAttachments();
+    }
+
+    /** Mount registered attachments not yet mounted on this widget (idempotent per id). */
+    private mountAttachments(): void {
+        for (const att of widgetAttachments()) {
+            if (this.attachmentDisposers.has(att.id)) continue;
+            try {
+                this.attachmentDisposers.set(att.id, att.mount(this.context()));
+            } catch (err) {
+                console.warn(`[vela] widget attachment "${att.id}" failed to mount:`, err);
+            }
+        }
     }
 
     /** The context handed to contributed actions (see `registerWidgetAction`). */
@@ -450,6 +465,7 @@ export class VelaWidget {
 
     /** Re-project contributed topbar actions (after late registrations). */
     refreshActions(): void {
+        this.mountAttachments();
         this.topbar.renderActions();
     }
 
@@ -460,12 +476,24 @@ export class VelaWidget {
         return this.inner;
     }
 
-    setTimeframe(tf: string): void {
-        if (tf === this.timeframe || this.destroyed) return;
+    /** Chrome that must follow the timeframe wherever it changes from (menu, quick entry,
+     *  range chip, API). Keeping it in one place is what stopped the status line from
+     *  drifting out of sync with the topbar. */
+    private syncTimeframeChrome(tf: string): void {
         this.timeframe = tf;
         this.topbar.setTimeframe(tf);
         this.watermark?.update(this.symbol, tf);
         this.statusline?.setMeta(tf, typeof this.opts.provider === 'string' ? this.opts.provider : '');
+    }
+
+    setTimeframe(tf: string): void {
+        if (tf === this.timeframe || this.destroyed) return;
+        // Leaving range mode: drop the chip highlight AND its fetch budget (back to the
+        // user's own `bars`). Done HERE so every path — menu, quick entry, keyboard,
+        // public API, plugins — behaves the same.
+        this.bottombar?.setActiveRange(null);
+        this.rangeBars = 0;
+        this.syncTimeframeChrome(tf);
         this.persist();
         this.rebuild();
     }
@@ -514,6 +542,11 @@ export class VelaWidget {
         if (tz && tz !== this.timezone) this.setTimezone(tz);
         const wm = pick('watermark');
         if (wm !== undefined) this.setWatermarkVisible(wm === '1');
+        const fav = pick('favorites');
+        if (fav !== undefined) {
+            this.favs = fav.split(',').filter(Boolean);
+            this.chart.drawings.setFavorites(this.favs as never[]);
+        }
         if (marketDirty) this.rebuild();
     }
 
@@ -540,14 +573,19 @@ export class VelaWidget {
         this.persist();
     }
 
-    /** Range chip: switch to the preset's timeframe and frame its window once ready. */
+    /**
+     * Range chip: switch to the preset's timeframe, fetch enough history for its window,
+     * and frame it once ready. The rebuild is what loads the depth, so it also runs when
+     * only the DEPTH grows (same timeframe, deeper window).
+     */
     applyRange(preset: RangePreset): void {
         if (this.destroyed) return;
         this.pendingRange = preset;
-        if (preset.tf !== this.timeframe) {
-            this.timeframe = preset.tf;
-            this.topbar.setTimeframe(preset.tf);
-            this.watermark?.update(this.symbol, preset.tf);
+        const tfChanged = preset.tf !== this.timeframe;
+        const deeper = preset.bars > Math.max(this.bars, this.rangeBars);
+        this.rangeBars = preset.bars;
+        if (tfChanged) this.syncTimeframeChrome(preset.tf);
+        if (tfChanged || deeper) {
             this.rebuild(); // framing happens after the new chart is ready
         } else {
             this.inner?.setVisibleRangePreset(preset.preset);
@@ -559,6 +597,14 @@ export class VelaWidget {
         this.destroyed = true;
         this.inner?.destroy();
         this.inner = null;
+        for (const dispose of this.attachmentDisposers.values()) {
+            try {
+                dispose();
+            } catch {
+                /* attachment cleanup must never block destroy */
+            }
+        }
+        this.attachmentDisposers.clear();
         this.persistConfigNow();
         window.removeEventListener('beforeunload', this.onUnload);
         this.root.removeEventListener('keydown', this.onRootKeydown);
@@ -599,7 +645,14 @@ export class VelaWidget {
             bottombar: _bottombar,
             ...chartOpts
         } = this.opts;
-        const chart = new Vela(this.chartHost, { ...chartOpts, symbol: this.symbol, timeframe: this.timeframe, bars: this.bars });
+        const chart = new Vela(this.chartHost, {
+            ...chartOpts,
+            symbol: this.symbol,
+            timeframe: this.timeframe,
+            bars: Math.max(this.bars, this.rangeBars),
+            // A pending range chip frames the FIRST paint (no preview flash, no re-frame).
+            ...(this.pendingRange ? { visibleRange: this.pendingRange.preset } : {}),
+        });
         for (const [name, make] of Object.entries(providers ?? {})) chart.data.registerProvider(name, make());
         for (const [language, make] of Object.entries(engines ?? {})) chart.registerEngine(language, make());
         this.inner = chart;
@@ -619,6 +672,12 @@ export class VelaWidget {
             this.topbar.setAlertCount(this.alerts.length);
         });
         chart.on('indicator:error', ({ error }) => this.toast?.show(error.message, 'error', 5000));
+        // Favorite drawing tools: reapply across rebuilds, mirror + persist user toggles.
+        if (this.favs.length > 0) chart.drawings.setFavorites(this.favs as never[]);
+        chart.on('drawing:favorites', ({ favorites }) => {
+            this.favs = favorites;
+            this.persist();
+        });
         chart.renderer.onCrosshairMove((e) => {
             this.lastCrossPrice = e.price;
             this.lastCrossTime = e.time;
@@ -679,6 +738,9 @@ export class VelaWidget {
 
         void chart.ready().then(() => {
             if (this.buildSeq !== seq || this.destroyed) return;
+            // The chart already framed this window on its first paint (`visibleRange`
+            // above). Re-assert it once at ready so a deeper backfill landing behind the
+            // first paint still ends on the requested window, then drop the request.
             if (this.pendingRange) {
                 chart.setVisibleRangePreset(this.pendingRange.preset);
                 this.pendingRange = null;
@@ -860,6 +922,7 @@ export class VelaWidget {
             timezone: this.timezone,
             bars: String(this.bars),
             watermark: this.watermarkOn ? '1' : '0',
+            favorites: this.favs.join(','),
         };
         if (this.storageKey !== null) savePersisted(this.storage, this.storageKey, state);
         if (this.opts.urlState) writeUrlState(state);

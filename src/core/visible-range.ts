@@ -2,7 +2,7 @@ import type { OHLCV } from './model/ohlcv';
 import type { VisibleRange } from './ports/IChartRenderer';
 
 /** A named visible-range shortcut, resolved against the loaded bars. */
-export type VisibleRangePreset = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | 'YTD' | 'ALL';
+export type VisibleRangePreset = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'YTD' | 'ALL';
 
 const DAY_MS = 86_400_000;
 
@@ -13,6 +13,7 @@ const PRESET_SPAN_MS: Record<Exclude<VisibleRangePreset, 'YTD' | 'ALL'>, number>
     '3M': 90 * DAY_MS,
     '6M': 180 * DAY_MS,
     '1Y': 365 * DAY_MS,
+    '5Y': 5 * 365 * DAY_MS,
 };
 
 /**

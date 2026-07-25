@@ -33,6 +33,10 @@ class FakePort implements IDrawingsRendererPort {
         this.selectionIds = [...ids];
         this.selection = ids[0] ?? null;
     }
+    favoritesPushed: string[][] = [];
+    setFavorites(types: readonly string[]): void {
+        this.favoritesPushed.push([...types]);
+    }
     settingsOpenedFor: string | null = null;
     openSettings(id: string): void {
         this.settingsOpenedFor = id;
@@ -462,5 +466,46 @@ describe('add() forwards per-type props', () => {
         const d = ctrl.add('iconstamp', { paneId: 'price', anchors: [{ time: 0, price: 100 }], props: { glyph: '▲' } });
         expect((d as unknown as { glyph?: string })?.glyph).toBe('▲');
         expect(d?.serialize().props).toMatchObject({ glyph: '▲' });
+    });
+});
+
+describe('drawing-tool favorites', () => {
+    it('setFavorite round-trips, pushes the port, and emits drawing:favorites', () => {
+        const { ctrl, port, events } = setup();
+        const seen: string[][] = [];
+        events.on('drawing:favorites', ({ favorites }) => seen.push(favorites));
+        ctrl.setFavorite('trendline', true);
+        ctrl.setFavorite('box', true);
+        expect(ctrl.favorites()).toEqual(['trendline', 'box']);
+        expect(ctrl.isFavorite('trendline')).toBe(true);
+        expect(port.favoritesPushed[port.favoritesPushed.length - 1]).toEqual(['trendline', 'box']);
+        expect(seen[seen.length - 1]).toEqual(['trendline', 'box']);
+        // no-op toggles don't emit
+        const n = seen.length;
+        ctrl.setFavorite('trendline', true);
+        expect(seen.length).toBe(n);
+        ctrl.setFavorite('trendline', false);
+        expect(ctrl.favorites()).toEqual(['box']);
+    });
+
+    it('starring NEVER arms a tool (the star is a side action on the flyout row)', () => {
+        const { ctrl, port } = setup();
+        ctrl.setTool('hline');
+        port.activeTool = 'hline';
+        port.fire({ kind: 'favorite', type: 'trendline', on: true }); // star a DIFFERENT tool
+        expect(ctrl.isFavorite('trendline')).toBe(true);
+        expect(ctrl.getTool()).toBe('hline'); // the armed tool is untouched
+        expect(port.activeTool).toBe('hline'); // and the renderer was never re-armed
+    });
+
+    it('setFavorites bulk-replaces and drops unknown types; the star intent routes', () => {
+        const { ctrl, port } = setup();
+        ctrl.setFavorites(['hline', 'nope-tool' as never, 'ray']);
+        expect(ctrl.favorites()).toEqual(['hline', 'ray']);
+        // renderer star click → intent → state
+        port.fire({ kind: 'favorite', type: 'box', on: true });
+        expect(ctrl.isFavorite('box')).toBe(true);
+        port.fire({ kind: 'favorite', type: 'box', on: false });
+        expect(ctrl.isFavorite('box')).toBe(false);
     });
 });

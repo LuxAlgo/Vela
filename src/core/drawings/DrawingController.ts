@@ -4,6 +4,7 @@ import type { TypedEventBus } from '../events/EventBus';
 import type { VelaEventMap } from '../events/types';
 import type { IDrawingsRendererPort, DrawingIntent } from './port';
 import type { DrawingsOption } from './toolbar';
+import { getDrawingType } from './registry';
 import { buildToolbar } from './toolbar';
 import { DrawingStore } from './DrawingStore';
 import { DrawingHistory } from './DrawingHistory';
@@ -35,6 +36,8 @@ export class DrawingController {
     private readonly port: IDrawingsRendererPort | null;
     private readonly enabled: boolean;
     private activeTool: DrawingTypeKey | null = null;
+    /** FAVORITE tool types (insertion-ordered) — user prefs, not document data. */
+    private favs = new Set<DrawingTypeKey>();
     private selectedIds: string[] = []; // ordered; [0] is the primary (settings-popup) selection
     private clipboard: SerializedDrawing[] = []; // in-memory copy buffer (per chart)
     private readonly lastStyle = new Map<DrawingTypeKey, DrawingStyle>(); // per-tool "last used" style
@@ -76,6 +79,38 @@ export class DrawingController {
 
     showToolbar(visible: boolean): void {
         this.port?.showToolbar(visible);
+    }
+
+    /** The favorite tool types, in the order they were starred. */
+    favorites(): DrawingTypeKey[] {
+        return [...this.favs];
+    }
+
+    isFavorite(type: DrawingTypeKey): boolean {
+        return this.favs.has(type);
+    }
+
+    /** Star/unstar one tool. Unknown types are ignored; no-ops don't emit. */
+    setFavorite(type: DrawingTypeKey, on: boolean): void {
+        if (!getDrawingType(type)) return;
+        if (on === this.favs.has(type)) return;
+        if (on) this.favs.add(type);
+        else this.favs.delete(type);
+        this.pushFavorites();
+    }
+
+    /** Replace the whole favorite set (bulk restore) — unknown types are dropped. */
+    setFavorites(types: readonly DrawingTypeKey[]): void {
+        const next = types.filter((t) => getDrawingType(t) != null);
+        if (next.length === this.favs.size && next.every((t) => this.favs.has(t))) return;
+        this.favs = new Set(next);
+        this.pushFavorites();
+    }
+
+    private pushFavorites(): void {
+        const list = [...this.favs];
+        this.port?.setFavorites?.(list);
+        this.events.emit('drawing:favorites', { favorites: list });
     }
 
     setToolbar(option: DrawingsOption): void {
@@ -367,6 +402,9 @@ export class DrawingController {
                 break;
             case 'settings':
                 this.events.emit('drawing:settings', { id: i.id });
+                break;
+            case 'favorite':
+                this.setFavorite(i.type, i.on);
                 break;
             case 'tool-finished':
                 // Most tools are one-shot (revert to the pointer once placed); brush-family tools

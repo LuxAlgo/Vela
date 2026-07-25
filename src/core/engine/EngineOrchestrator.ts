@@ -265,7 +265,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // interactive meanwhile; sessions started now are stamped 'backfill' and the engines
         // hold their first run until the 'complete' notification (policy A). Skip for offline
         // data (already in memory) and small charts (a single request is already fast).
-        if (!market.data?.length && requested > SINGLE_REQUEST_BARS) {
+        // A requested initial window skips the fast preview: its recent-bars viewport would
+        // paint the WRONG range for a moment, then jump. One load, one paint, framed.
+        const initialRange = market.visibleRange;
+        if (!market.data?.length && requested > SINGLE_REQUEST_BARS && initialRange == null) {
             this.setBarSeries(await this.feed.load({ ...market, bars: PREVIEW_BARS }));
             this.activateBarLayers(); // bar-following layers (volume, chart-type engines) follow the FIRST candles, not the deep chunk
             this.setBarSeries(await this.feed.load({ ...market, bars: Math.min(requested, CHUNK_BARS) }), { preserveView: true });
@@ -283,6 +286,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             this.setBarSeries(await this.feed.load(market));
             this.activateBarLayers();
             this.completeHistory('depth');
+        }
+        // Frame the requested window NOW: `setBarSeries` only invalidated, so this lands in the
+        // very first painted frame — no wrong-window flash, no re-frame jump.
+        if (initialRange != null) {
+            if (typeof initialRange === 'string') this.setVisibleRangePreset(initialRange);
+            else this.renderer.setVisibleRange(initialRange);
         }
         // Price-axis precision: try the (already cached) tick size now, then resolve async so the
         // axis switches from the zoom formula to the symbol's true precision as soon as it lands.

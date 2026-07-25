@@ -78,6 +78,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
             (mode) => this.deps.setSnapMode(mode),
             () => this.toggleMeasure(),
             () => this.toggleEraser(),
+            (type, on) => this.emit({ kind: 'favorite', type, on }),
         );
         this.interaction = new DrawingInteraction({
             projector: () => this.deps.projector(),
@@ -140,6 +141,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
         if (type == null) this.interaction.onToolCleared();
         else this.clearSelection(); // arming a tool dismisses an open settings popup + selection
         this.render();
+    }
+
+    /** Core push: the favorite tool set changed — reflect the flyout stars. */
+    setFavorites(types: readonly DrawingTypeKey[]): void {
+        this.toolbar.setFavorites(types);
     }
 
     setSelection(ids: readonly string[]): void {

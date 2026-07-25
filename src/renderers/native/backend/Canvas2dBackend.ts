@@ -141,6 +141,7 @@ export class Canvas2dBackend implements IRenderBackend {
         barColors: ReadonlyMap<number, string>,
         dataW: number,
     ): void {
+        if (scene.basePainting === 'none') return; // plugin style fully replaces the price series
         const bars = scene.bars;
         const st = scene.style;
         switch (scene.priceStyle) {

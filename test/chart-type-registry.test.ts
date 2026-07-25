@@ -3,6 +3,7 @@
 // against. Heikin Ashi is registered through the SAME public API (builtins.ts).
 import { describe, it, expect, afterEach } from 'vitest';
 import { registerChartType, unregisterChartType, chartType, chartTypes, tickerModifierIds } from '../src/chart-types/registry';
+import { basePaintingOf } from '../src/renderers/native/core/chartConfig';
 import { registerBuiltinChartTypes } from '../src/chart-types/builtins';
 import { barTransformFor, parseExtendedTicker } from '../src/core/price-styles/BarTransform';
 import { priceStyleIds } from '../src/renderers/native/core/chartConfig';
@@ -61,5 +62,18 @@ describe('chart-type registry', () => {
         expect(priceStyleIds()).toContain('renko-like');
         unregisterChartType('renko-like');
         expect(priceStyleIds()).not.toContain('renko-like');
+    });
+});
+
+describe('basePainting (plugin styles replacing the price series)', () => {
+    it("defaults to 'candles' for built-ins and undeclared plugin types, honors 'none'", () => {
+        expect(basePaintingOf('candles')).toBe('candles');
+        registerChartType({ id: 'bp-default' });
+        registerChartType({ id: 'bp-none', basePainting: 'none' });
+        expect(basePaintingOf('bp-default')).toBe('candles');
+        expect(basePaintingOf('bp-none')).toBe('none');
+        unregisterChartType('bp-default');
+        unregisterChartType('bp-none');
+        expect(basePaintingOf('bp-none')).toBe('candles'); // unregistered -> default
     });
 });

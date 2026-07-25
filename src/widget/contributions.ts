@@ -40,7 +40,38 @@ export interface WidgetActionDescriptor {
     run: (ctx: WidgetContext) => void;
 }
 
+/**
+ * A widget ATTACHMENT — a contributed unit of per-widget behavior/UI beyond a single
+ * button: overlays, gesture handlers, custom key handling. `mount` runs once per
+ * widget (at construction, or on `refreshActions()` for late registrations) with the
+ * widget's {@link WidgetContext}; the returned disposer runs at widget destroy.
+ * Everything the attachment touches must come from `ctx` (never module globals).
+ */
+export interface WidgetAttachment {
+    /** Stable id — re-registering an id replaces it (mounted widgets keep the old one until destroy). */
+    id: string;
+    mount(ctx: WidgetContext): () => void;
+}
+
 const registry = new Map<string, WidgetActionDescriptor>();
+const attachments = new Map<string, WidgetAttachment>();
+
+/** Register (or replace) a widget attachment. Returns an unregister disposer. */
+export function registerWidgetAttachment(att: WidgetAttachment): () => void {
+    attachments.set(att.id, att);
+    return () => {
+        if (attachments.get(att.id) === att) attachments.delete(att.id);
+    };
+}
+
+export function unregisterWidgetAttachment(id: string): void {
+    attachments.delete(id);
+}
+
+/** Every registered attachment (registration order). */
+export function widgetAttachments(): WidgetAttachment[] {
+    return [...attachments.values()];
+}
 
 /** Register (or replace) a widget action. Widgets read the registry live. */
 export function registerWidgetAction(desc: WidgetActionDescriptor): () => void {

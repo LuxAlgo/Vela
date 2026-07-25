@@ -7,23 +7,36 @@ import { injectStyles } from '../ui/styles';
 import { TIMEZONES, tzMenuLabel, tzButtonLabel } from './timezones';
 
 export interface RangePreset {
+    /** Button label. */
     id: string;
     /** Timeframe to switch to for this range. */
     tf: string;
     /** The core visible-range preset framed once the chart is ready. */
     preset: VisibleRangePreset;
+    /**
+     * Bars the window needs AT `tf` — the fetch budget for the rebuild. Without it the
+     * chart loads its default depth and the framed window is clipped to whatever
+     * history happens to be loaded (a "1D" that only shows 16 hours). Includes a small
+     * margin; `ALL` asks for as much history as the provider will serve.
+     */
+    bars: number;
 }
 
-/** Range chips — each pairs a timeframe with a core visible-range preset. */
+/**
+ * Range chips — each pairs a timeframe, a visible window, and the fetch depth that
+ * window needs. Resolutions follow the reference: the shorter the range, the finer the
+ * bars (1 day of 1-minute bars … 5 years of weekly bars).
+ */
 export const RANGE_PRESETS: readonly RangePreset[] = [
-    { id: '1D', tf: '5', preset: '1D' },
-    { id: '1W', tf: '30', preset: '1W' },
-    { id: '1M', tf: '60', preset: '1M' },
-    { id: '3M', tf: '240', preset: '3M' },
-    { id: '6M', tf: 'D', preset: '6M' },
-    { id: 'YTD', tf: 'D', preset: 'YTD' },
-    { id: '1Y', tf: 'D', preset: '1Y' },
-    { id: 'ALL', tf: 'W', preset: 'ALL' },
+    { id: '1D', tf: '1', preset: '1D', bars: 1500 }, //   1 day  @ 1m  = 1440 bars
+    { id: '7D', tf: '5', preset: '1W', bars: 2100 }, //   7 days @ 5m  = 2016
+    { id: '1M', tf: '30', preset: '1M', bars: 1500 }, //  30 days @ 30m = 1440
+    { id: '3M', tf: '60', preset: '3M', bars: 2200 }, //  90 days @ 1h  = 2160
+    { id: '6M', tf: '240', preset: '6M', bars: 1150 }, // 180 days @ 4h  = 1080
+    { id: 'YTD', tf: 'D', preset: 'YTD', bars: 400 }, //  ≤366 days @ 1D
+    { id: '1Y', tf: 'D', preset: '1Y', bars: 400 }, //    365 days @ 1D
+    { id: '5Y', tf: 'W', preset: '5Y', bars: 300 }, //    5 years  @ 1W = 261
+    { id: 'ALL', tf: 'W', preset: 'ALL', bars: 5000 }, // everything the provider serves
 ];
 
 const STYLE_ID = 'vela-widget-bottombar';

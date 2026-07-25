@@ -21,6 +21,8 @@ export interface VelaEventMap extends Record<string, unknown> {
     'drawing:edited': { id: string };
     /** Selection changed (`id` is null when nothing is selected). */
     'drawing:selected': { id: string | null };
+    /** The favorite-tool set changed (star toggles or a bulk restore). */
+    'drawing:favorites': { favorites: string[] };
     /** A user drawing was removed. */
     'drawing:removed': { id: string };
     /** The user requested a drawing's settings popup. */

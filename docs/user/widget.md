@@ -39,7 +39,7 @@ On top of every [chart option](./options.md), the widget adds:
 | `priceStyle` | string | `'candles'` | Initial chart style; changed live from the topbar dropdown. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
 | `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles. |
-| `persist` | boolean \| string | `false` | Persist symbol/timeframe/style/timezone/bars/watermark and restore them as defaults (`true` = key `'vela-widget'`; a string is the key). |
+| `persist` | boolean \| string | `false` | Persist symbol/timeframe/style/timezone/bars/watermark/favorite drawing tools and restore them as defaults (`true` = key `'vela-widget'`; a string is the key). |
 | `storage` | `WidgetStorage` | localStorage | The persistence backend — inject a custom adapter (see below). |
 | `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark flag) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
 
@@ -89,8 +89,10 @@ its dialogs is open, muting chart-scope bindings.
   live bar), stacked above the renderer's indicator legend.
 - **Object tree** — a docked panel listing every pane's indicators and the user drawings,
   with hide/show and remove actions, kept in sync with the chart's events.
-- **Bottom bar** — range chips (`1D` … `ALL`: each switches the timeframe and frames the
-  matching window), a live clock, and the timezone picker.
+- **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
+  the timeframe, **fetches the depth its window needs**, and frames it: `1D`→1m, `7D`→5m,
+  `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing the timeframe by hand
+  leaves range mode (the chip clears and the fetch depth returns to your `bars` setting).
 - **Context menus** — right-click the chart body, the price axis, or the time axis for
   zone-specific actions (copy price, reset view, screenshot, scale toggles).
 

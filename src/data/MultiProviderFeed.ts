@@ -66,6 +66,11 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.registry.resolve(raw, { default: this.primaryProvider });
     }
 
+    /** The registered provider INSTANCE under `name` (undefined if unknown). */
+    providerInstance(name: string): DataProvider | undefined {
+        return this.registry.get(name);
+    }
+
     symbols(name?: string): SymbolDescriptor[] {
         return this.registry.symbolsOf(name);
     }

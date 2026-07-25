@@ -37,7 +37,7 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 | `on(event, handler)` | Subscribe to a chart-level event. Returns an unsubscribe function. |
 | `getVisibleRange()` | The current visible time range (`{ from, to }` in epoch-ms), or `null` before data loads. |
 | `setVisibleRange(range)` | Set the visible time range explicitly (epoch-ms). Returns the chart for chaining. |
-| `setVisibleRangePreset(preset)` | Frame a named date range over the loaded bars: `'1D'`, `'1W'`, `'1M'`, `'3M'`, `'6M'`, `'1Y'`, `'YTD'`, or `'ALL'`. A preset deeper than the loaded history just frames everything (it doesn't fetch more bars). Returns the chart for chaining. |
+| `setVisibleRangePreset(preset)` | Frame a named date range over the loaded bars: `'1D'`, `'1W'`, `'1M'`, `'3M'`, `'6M'`, `'1Y'`, `'5Y'`, `'YTD'`, or `'ALL'`. A preset deeper than the loaded history just frames everything (it doesn't fetch more bars — the widget's range chips do that for you). Returns the chart for chaining. |
 | `inspect()` | A renderer-agnostic snapshot of the graphic elements the core has generated (series, fills, drawings, tables, …) — a deterministic check that a feature was produced, independent of which renderer drew it. |
 | `resize()` | Re-measure the container and relayout. Call after the container's size changes. |
 | `destroy()` | Tear down the chart, renderer, engines, and subscriptions — no leaks. |

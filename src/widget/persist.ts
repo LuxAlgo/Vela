@@ -44,9 +44,11 @@ export interface PersistedState {
     timezone?: string;
     bars?: string;
     watermark?: string;
+    /** Comma-joined favorite drawing-tool types. */
+    favorites?: string;
 }
 
-const KEYS: readonly (keyof PersistedState)[] = ['symbol', 'timeframe', 'priceStyle', 'timezone', 'bars', 'watermark'];
+const KEYS: readonly (keyof PersistedState)[] = ['symbol', 'timeframe', 'priceStyle', 'timezone', 'bars', 'watermark', 'favorites'];
 
 function parseState(raw: string | null): PersistedState {
     if (!raw) return {};

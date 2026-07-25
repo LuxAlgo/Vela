@@ -318,3 +318,21 @@ describe('DataControl.capabilities', () => {
         expect(dc.capabilities('x:TEST')?.stream).toBe(false);
     });
 });
+
+describe('providerInstance (extended-surface seam)', () => {
+    it('returns the registered instance so consumers can narrow extra interfaces', async () => {
+        const feed = new MultiProviderFeed();
+        const provider = {
+            getBars: async () => [],
+            // an EXTENDED surface beyond the DataProvider port (capability narrowing)
+            getFootprints: async () => ['slice'],
+        };
+        await feed.registerProvider('lux', provider as never);
+        const got = feed.providerInstance('lux');
+        expect(got).toBe(provider);
+        const extended = got as { getFootprints?: () => Promise<string[]> };
+        expect(typeof extended.getFootprints).toBe('function');
+        expect(await extended.getFootprints!()).toEqual(['slice']);
+        expect(feed.providerInstance('nope')).toBeUndefined();
+    });
+});
