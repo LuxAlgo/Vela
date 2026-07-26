@@ -49,6 +49,35 @@ void widget.chart.ready().then(() => console.log('[vela-dev] chart ready'));
 // Handy for poking around from the browser console.
 (window as unknown as { widget: VelaWidget }).widget = widget;
 
+// ── State surface demo (uncomment to try) ─────────────────────────────────────
+// The widget speaks the SAME state triplet and document format as the workspace —
+// it is the single-cell case (layout '1', one `c1` cell). `persist` above writes
+// exactly this document; the calls below are how a host composes custom flows
+// (server snapshots, share links, templates) on top of it.
+//
+// // READ — one versioned document: market, prefs, renderer config, user drawings,
+// // and the indicator ledger. JSON-safe: `JSON.stringify(snapshot)` is the payload.
+// const snapshot = widget.getState();
+// console.log('[state] widget document:', snapshot);
+//
+// // EVENT — fires debounced (~500ms) after ANY persistable change (draw a line,
+// // switch the symbol, add an indicator…). Re-pull getState() for the fresh doc.
+// // Returns an unsubscribe function.
+// const offState = widget.on('state:changed', () => {
+//     console.log('[state] changed →', widget.getState().cells.c1);
+// });
+//
+// // WRITE — applied IN PLACE: the chart instance survives (the market switches via
+// // setMarket), config/drawings/indicators are replaced. Untrusted-safe: malformed
+// // fields are dropped by the shared codec, never thrown on.
+// setTimeout(() => {
+//     const doc = widget.getState();
+//     doc.cells.c1!.symbol = 'SOLUSDT'; // retarget the chart…
+//     doc.cells.c1!.drawings = { version: 1, drawings: [] }; // …and wipe its drawings
+//     widget.applyState(doc);
+//     offState();
+// }, 5000);
+
 
 // ── "Code" topbar entry — paste a script, Run it, injected on success (SDK showcase:
 // contributed action + kit Dialog + chart.runIndicator; errors surface inline). ──

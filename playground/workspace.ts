@@ -37,3 +37,36 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
 
 // Handy for poking around from the browser console (and for the automated probes).
 (window as unknown as { __ws: VelaWorkspace }).__ws = ws;
+
+// ── State surface demo (uncomment to try) ─────────────────────────────────────
+// The workspace speaks the SAME state triplet and document format as the widget —
+// multi-cell here. `persist` above writes exactly this document; the calls below
+// are how a host composes custom flows (server snapshots, share links, templates).
+//
+// // READ — the WHOLE grid as one versioned document: layout, splitter tracks,
+// // active cell, sync links, timezone, favorites, and per cell (live AND dormant)
+// // the market, renderer config, user drawings, and indicator ledger.
+// const snapshot = ws.getState();
+// console.log('[state] workspace document:', snapshot);
+//
+// // EVENT — fires debounced (~500ms) after any persistable change in ANY cell
+// // (pan-synced viewports excluded; drawings, markets, layout, prefs included).
+// const offState = ws.on('state:changed', () => {
+//     console.log('[state] changed → active cell:', ws.getState().activeCellId);
+// });
+//
+// // WRITE — the whole grid rebuilds from the document (cells diff by slot id; a
+// // layout id must be registered — registerLayout — before applying). Untrusted-
+// // safe: malformed fields are dropped by the shared codec.
+// setTimeout(() => {
+//     const doc = ws.getState();
+//     doc.layout = '2h'; // switch the grid…
+//     doc.cells.c1!.symbol = 'DOGEUSDT'; // …retarget slot c1…
+//     doc.sync = { viewport: true }; // …and link every cell's viewport
+//     ws.applyState(doc);
+//     offState();
+// }, 5000);
+//
+// // CROSS-SHELL — one format: a WIDGET document (layout '1', one `c1` cell)
+// // applies here verbatim, and a workspace cell's state restores into a widget.
+// // ws.applyState(widget.getState());
