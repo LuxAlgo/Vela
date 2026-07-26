@@ -140,6 +140,10 @@ export interface TopbarOptions {
         current: string;
         options: () => Array<{ id: string; label: string }>;
         onSelect: (id: string) => void;
+        /** Optional TOGGLE rows appended under the layout presets (e.g. the workspace's
+         *  "Sync crosshair"). Re-read on every open/refresh; `onToggle` flips one. */
+        toggles?: () => Array<{ id: string; label: string; checked: boolean }>;
+        onToggle?: (id: string) => void;
     };
     onIndicatorsClick?: () => void;
     onObjectsClick?: () => void;
@@ -260,7 +264,16 @@ export class Topbar {
                 triggerId: 'vela-topbar-layout',
                 host,
                 items: this.layoutItems(),
-                onSelect: (id) => opts.layout!.onSelect(id),
+                onSelect: (id) => {
+                    // Toggle rows flip their setting and stay reflected on next open;
+                    // every other id is a layout preset.
+                    if (id.startsWith('toggle:')) {
+                        opts.layout!.onToggle?.(id.slice('toggle:'.length));
+                        this.layoutMenu?.setItems(this.layoutItems());
+                        return;
+                    }
+                    opts.layout!.onSelect(id);
+                },
             });
         }
         this.tfMenu = new Menu({
@@ -314,7 +327,9 @@ export class Topbar {
     }
 
     private layoutItems(): MenuItemDescriptor[] {
-        return (this.opts.layout?.options() ?? []).map((l) => ({ id: l.id, label: l.label, checked: l.id === this.layoutId }));
+        const presets = (this.opts.layout?.options() ?? []).map((l) => ({ id: l.id, label: l.label, checked: l.id === this.layoutId }));
+        const toggles = (this.opts.layout?.toggles?.() ?? []).map((t, i) => ({ id: `toggle:${t.id}`, label: t.label, checked: t.checked, separatorBefore: i === 0 }));
+        return [...presets, ...toggles];
     }
 
     private renderStyleButton(doc: Document): void {

@@ -68,9 +68,12 @@ The load-bearing rules:
   Accepted for v1. **Future work:** `VelaWidget` should delegate to a one-cell
   workspace; the unified state document already makes the two interchangeable
   (a widget document restores into a workspace slot verbatim, and back).
-- Crosshair sync is API-reserved (`sync.crosshair` warns and no-ops) pending a
-  renderer capability; viewport sync guarantees **right-edge alignment** across
-  mixed timeframes (a finer cell clamps to its own minimum zoom).
+- Crosshair sync shipped as the port's first OPTIONAL interaction seam:
+  `setExternalCrosshair?(time, price?)`, detected by presence (no capability flag).
+  Followers show a dimmed data-space ghost; the contract's one rule — a ghost never
+  re-emits `onCrosshairMove` — makes the flow one-way, so no echo guard exists or is
+  needed. Viewport sync guarantees **right-edge alignment** across mixed timeframes
+  (a finer cell clamps to its own minimum zoom).
 - Per-symbol drawing documents remain a HOST policy (`toJSON`/`fromJSON` keyed off
   `market:changed`); cells keep one document across symbol switches by default.
 

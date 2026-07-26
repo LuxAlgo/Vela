@@ -209,6 +209,17 @@ export interface IChartRenderer {
     onCrosshairMove(cb: (e: CrosshairEvent) => void): Unsubscribe;
     onClick(cb: (e: ClickEvent) => void): Unsubscribe;
 
+    /**
+     * Display an EXTERNAL crosshair at a data-space position — a ghost marker driven by
+     * another chart (multi-chart crosshair sync), not by this chart's own pointer.
+     * `time` is epoch-ms (`null` clears); `price` optionally adds the horizontal line
+     * when the caller knows the scales are comparable (same-symbol groups). The ghost
+     * must NEVER re-emit `onCrosshairMove` — that one-way rule is what makes the sync
+     * loop-free. OPTIONAL — detect by presence (`RendererControl.supportsExternalCrosshair`);
+     * a renderer without the seam simply never shows foreign crosshairs.
+     */
+    setExternalCrosshair?(time: Millis | null, price?: number | null): void;
+
     getVisibleRange(): VisibleRange | null;
     setVisibleRange(range: VisibleRange): void;
     onViewportChange(cb: (range: VisibleRange) => void): Unsubscribe;

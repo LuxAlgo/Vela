@@ -195,6 +195,8 @@ chart is never left half-changed.
 | `getConfig()` | Snapshot the renderer's full cosmetics as a serializable, versioned JSON document (or `null`). |
 | `applyConfig(config)` | Apply a full or partial config document from `getConfig()`; malformed/unknown fields are ignored. |
 | `onCrosshairMove(cb)` | Subscribe to crosshair movement — `time`/`price` under the cursor, per-series values, and the hovered bar's OHLC (null fields when the cursor leaves the chart). Returns an unsubscribe fn. The public seam for host status lines and data windows. |
+| `setExternalCrosshair(time, price?)` | Show (or clear, with `null`) a **ghost crosshair** at a data-space position driven from OUTSIDE this chart — the multi-chart crosshair-sync seam ([the workspace](./workspace.md) drives it from the linked cells' pointers). A ghost never re-emits `onCrosshairMove` (one-way by contract — no echo loops). Silent no-op on a renderer without the optional port seam; feature-detect with `supportsExternalCrosshair`. |
+| `supportsExternalCrosshair` (getter) | Whether the active renderer implements the optional `setExternalCrosshair` seam (the native renderer does). |
 | `focus()` | Move keyboard focus back onto the chart's interactive surface — call after a host control (e.g. a shared toolbar button) stole focus, so chart/drawing shortcuts keep working. Silent no-op on a renderer without a focusable surface. |
 
 Feature-detect, read, and change how the chart is drawn at runtime — with no indicator re-run:

@@ -76,8 +76,10 @@ export interface VelaWorkspaceOptions {
      *  cell (per-cell in-chart bars stay hidden either way). Default true. */
     drawingToolbar?: boolean;
     /** Sync links between cells: per kind, `true` = all cells, or a `{cellId: group}`
-     *  record (only same-group cells follow each other). `crosshair` is reserved.
-     *  Default: everything off. Change at runtime via `ws.sync.set(kind, setting)`. */
+     *  record (only same-group cells follow each other). `crosshair` mirrors the
+     *  pointer time as ghost crosshairs on the followers (also toggleable from the
+     *  layout dropdown). Default: everything off. Change at runtime via
+     *  `ws.sync.set(kind, setting)`. */
     sync?: SyncOptions;
     /** Persist the workspace state and restore it as defaults (`true` = key
      *  'vela-workspace'; a string is the key). The state document is what
@@ -163,7 +165,7 @@ export class VelaWorkspace {
     private globalSnap: SnapMode = 'off';
     /** Favorite drawing tools — a WORKSPACE preference (one star set, every cell). */
     private favs: string[] = [];
-    /** Live sync configuration (mutable copy of the option; `crosshair` never stored). */
+    /** Live sync configuration (mutable copy of the option). */
     private readonly syncOpts: SyncOptions = {};
     // ── persistence (state surface + adapter plumbing) ──
     private readonly persistKey: string | null;
@@ -270,6 +272,13 @@ export class VelaWorkspace {
                 current: this.def.id,
                 options: () => layouts().map((l) => ({ id: l.id, label: l.label })),
                 onSelect: (id) => this.setLayout(id),
+                // Workspace-wide view toggles live under the grid presets. The check
+                // reflects the simple all-cells form; flipping OVERRIDES a host-set
+                // group record with plain on/off (groups stay an API-only shape).
+                toggles: () => [{ id: 'crosshair-sync', label: 'Sync crosshair', checked: this.syncOpts.crosshair === true }],
+                onToggle: (id) => {
+                    if (id === 'crosshair-sync') this.sync.set('crosshair', this.syncOpts.crosshair ? false : true);
+                },
             },
             getContext: () => this.context(),
         });
@@ -447,8 +456,10 @@ export class VelaWorkspace {
     }
 
     /** The sync-link control surface: `set(kind, true | {cellId: group} | false)`,
-     *  `get(kind)`, `state()`. Enabling a link aligns the followers to the ACTIVE cell
-     *  once, so the grid starts coherent. `crosshair` is reserved (warn + no-op). */
+     *  `get(kind)`, `state()`. Enabling a market/viewport link aligns the followers to
+     *  the ACTIVE cell once, so the grid starts coherent; `crosshair` mirrors the
+     *  pointer time as ghost crosshairs on the followers (also a toggle in the layout
+     *  dropdown). */
     readonly sync = {
         set: (kind: SyncKind, setting: SyncSetting | false | undefined): void => this.applySyncSetting(kind, setting === false ? undefined : setting, true),
         get: (kind: SyncKind): SyncSetting | undefined => this.syncOpts[kind],
@@ -489,7 +500,7 @@ export class VelaWorkspace {
             this.bottombar?.setTimezone(st.timezone);
         }
         if (st.favorites) this.favs = [...st.favorites]; // newborn cells inherit below (buildCells)
-        for (const kind of ['viewport', 'symbol', 'timeframe'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
+        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
         this.trackSizes.clear();
         if (st.trackSizes) for (const [id, ts] of Object.entries(st.trackSizes)) this.trackSizes.set(id, ts);
         // Full rebuild from the document — every current slot is replaced by the restored one.
@@ -766,6 +777,9 @@ export class VelaWorkspace {
             this.drawToolbar?.setFavorites(favorites as never[]);
             this.markStateDirty();
         });
+        // Crosshair sync: mirror THIS cell's pointer time onto its same-group followers
+        // as ghost markers. Leave already emits `time: null` — the clear rides along.
+        chart.renderer.onCrosshairMove((e) => this.propagateCrosshair(cell.id, e.time));
         // Drawing edits are cell state (the per-slot drawings document) — persistable.
         chart.on('drawing:created', () => this.markStateDirty());
         chart.on('drawing:edited', () => this.markStateDirty());
@@ -794,12 +808,22 @@ export class VelaWorkspace {
 
     // ── sync links ──────────────────────────────────────────────
     private applySyncSetting(kind: SyncKind, setting: SyncSetting | undefined, align = false): void {
-        if (kind === 'crosshair') {
-            if (setting) console.warn('[vela] crosshair sync needs a renderer capability that has not shipped yet — ignored.');
-            return;
-        }
         if (setting == null || setting === false) delete this.syncOpts[kind];
         else this.syncOpts[kind] = setting;
+        if (kind === 'crosshair') {
+            // Any setting change invalidates current ghosts — they rebuild on the next
+            // pointer move under the NEW grouping (and vanish entirely when disabled).
+            for (const cell of this.cellsById.values()) cell.chart.renderer.setExternalCrosshair(null);
+            // A renderer without the seam silently never shows ghosts — warn only when
+            // enabling while NO cell can display one (e.g. minimal custom renderers).
+            if (setting && ![...this.cellsById.values()].some((c) => c.chart.renderer.supportsExternalCrosshair)) {
+                console.warn('[vela] crosshair sync: no cell renderer supports an external crosshair — nothing will show.');
+            }
+            // Refresh the layout dropdown's toggle check (absent during constructor boot).
+            if (this.topbar && this.def) this.topbar.setLayout(this.def.id);
+            this.markStateDirty();
+            return; // no market/viewport alignment applies to a pointer link
+        }
         this.markStateDirty();
         if (align && setting && this.activeId) {
             if (kind === 'viewport') {
@@ -808,6 +832,22 @@ export class VelaWorkspace {
             } else {
                 this.propagateMarket(this.activeId);
             }
+        }
+    }
+
+    /**
+     * Mirror an origin cell's pointer time onto its same-group followers as GHOST
+     * crosshairs (`renderer.setExternalCrosshair`). Leaving the origin propagates
+     * `null` (the event already carries it) and clears every ghost. No busy guard
+     * needed: an external crosshair never re-emits `onCrosshairMove` — the flow is
+     * one-way by port contract, so no echo loop can exist.
+     */
+    private propagateCrosshair(originId: string, time: number | null): void {
+        if (this.destroyed) return;
+        const setting = this.syncOpts.crosshair;
+        if (!setting) return;
+        for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+            this.cellsById.get(id)?.chart.renderer.setExternalCrosshair(time);
         }
     }
 

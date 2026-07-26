@@ -12,6 +12,7 @@ import type {
 } from '../../core/ports/IChartRenderer';
 import type { VelaTheme } from '../../core/options';
 import type { OHLCV } from '../../core/model/ohlcv';
+import type { Millis } from '../../core/model/time';
 import type { VolumeLayerData, VpvrLayerData } from '../../core/model/volume-layers';
 import type { Pane } from '../../core/model/scene';
 import type { IndicatorModel } from '../../core/model/indicator';
@@ -1869,7 +1870,7 @@ export class NativeRenderer implements IChartRenderer {
         if (this.easeLiveBar(dtMs)) active = true; // glide the forming bar toward the latest tick
         this.skeletonClockMs += dtMs; // drives the loading-skeleton pulse (harmless when none show)
         this.paintData();
-        this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY);
+        this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx());
         this.emitViewportChange();
         return active;
     }
@@ -2409,7 +2410,7 @@ export class NativeRenderer implements IChartRenderer {
             this.chrome.prepare(this.scene, this.coords, this.theme);
             this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
         }
-        this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY); // L2 crosshair
+        this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx()); // L2 crosshair
     }
 
     /** Paint the below-data (L-1) + geometry (L0) + chrome (L1) layers from the current scene/coords. */
@@ -2515,6 +2516,38 @@ export class NativeRenderer implements IChartRenderer {
      *  own controls steal focus (e.g. a shared workspace toolbar click). */
     focus(): void {
         this.dataCanvas?.focus({ preventScroll: true });
+    }
+
+    /** EXTERNAL (synced) crosshair — a ghost marker driven by another chart. Kept in
+     *  DATA space (epoch-ms + optional price) so it stays glued through pan/zoom. */
+    private externalCross: { time: Millis; price: number | null } | null = null;
+
+    /** Show/clear the external ghost crosshair (port seam — see IChartRenderer). It only
+     *  repaints the cursor overlay (Cursor tier) and NEVER re-emits onCrosshairMove. */
+    setExternalCrosshair(time: Millis | null, price: number | null = null): void {
+        const next = time == null ? null : { time, price };
+        const prev = this.externalCross;
+        if (!next && !prev) return;
+        if (next && prev && prev.time === next.time && prev.price === next.price) return; // idempotent — 60Hz streams stay cheap
+        this.externalCross = next;
+        this.scheduler.invalidate(InvalidateLevel.Cursor);
+    }
+
+    /** Resolve the ghost to pixels for THIS frame (null when off-window or dataless). */
+    private externalCrossPx(): { x: number; y: number | null } | null {
+        const ext = this.externalCross;
+        if (!ext || this.coords.barCount === 0) return null;
+        const x = this.coords.timeToX(ext.time);
+        if (!Number.isFinite(x) || x < 0 || x > this.coords.width) return null;
+        let y: number | null = null;
+        if (ext.price != null) {
+            const pricePane = this.scene.orderedPanes().find((p) => p.kind === 'price');
+            if (pricePane) {
+                y = this.coords.priceToY(ext.price, pricePane.scale, pricePane.bounds);
+                if (!Number.isFinite(y) || y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) y = null;
+            }
+        }
+        return { x, y };
     }
 
     /** Sticky magnet mode for user drawings (off/weak/strong); the drawings toolbar drives it. */

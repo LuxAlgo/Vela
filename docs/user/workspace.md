@@ -55,17 +55,24 @@ resize the grid tracks (double-click a divider for an even split).
 
 ## Sync links
 
-Per kind — `viewport`, `symbol`, `timeframe` — link every cell (`true`) or named
-groups (`{ c1: 'a', c2: 'a', c3: 'b' }`: only same-group cells follow each other).
-Cross-timeframe viewport groups align on the **right edge** (a finer-timeframe cell
-clamps the window to its own minimum zoom). `crosshair` is reserved for a future
-renderer capability — setting it warns and is ignored.
+Per kind — `viewport`, `symbol`, `timeframe`, `crosshair` — link every cell (`true`)
+or named groups (`{ c1: 'a', c2: 'a', c3: 'b' }`: only same-group cells follow each
+other). Cross-timeframe viewport groups align on the **right edge** (a finer-timeframe
+cell clamps the window to its own minimum zoom).
+
+`crosshair` mirrors the pointer's TIME onto same-group cells as a **ghost crosshair**
+(a dimmed vertical line snapped to each follower's own bar, with its time chip);
+leaving the origin clears every ghost. It is also a **toggle in the topbar's layout
+dropdown** ("Sync crosshair"). The ghost needs the renderer's optional
+`setExternalCrosshair` seam — the native renderer has it; a custom renderer without it
+simply never shows one (enabling warns only when NO cell could).
 
 ```ts
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
 ws.sync.set('symbol', { c1: 'watch', c2: 'watch' });
+ws.sync.set('crosshair', true); // hover c1 → ghost time-line on c2/c3/c4
 ws.sync.get('viewport'); // true
-ws.sync.state(); // { viewport: true, symbol: {...} }
+ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true }
 ```
 
 ## State & persistence

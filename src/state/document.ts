@@ -10,8 +10,9 @@
 // the storage seam. Nothing here touches the URL — hosts wanting shareable links
 // compose them from `getState()` themselves.
 
-/** The linkable dimensions. `crosshair` is RESERVED: it needs a renderer capability
- *  that has not shipped yet — setting it warns and is ignored. */
+/** The linkable dimensions. `crosshair` mirrors the pointer time onto same-group
+ *  cells as GHOST crosshairs (renderers without the optional `setExternalCrosshair`
+ *  seam simply never display one). */
 export type SyncKind = 'viewport' | 'symbol' | 'timeframe' | 'crosshair';
 
 /**
@@ -142,7 +143,7 @@ function sanitizeSync(raw: unknown): SyncOptions | null {
     if (raw == null || typeof raw !== 'object') return null;
     const s = raw as Record<string, unknown>;
     const out: SyncOptions = {};
-    for (const kind of ['viewport', 'symbol', 'timeframe'] as const) {
+    for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) {
         const v = s[kind];
         if (v === true) out[kind] = true;
         else if (v != null && typeof v === 'object') {

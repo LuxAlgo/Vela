@@ -11,7 +11,7 @@ const fullDoc: WorkspaceState = {
     activeCellId: 'c2',
     timezone: 'Europe/Paris',
     favorites: ['trendline', 'hline'],
-    sync: { viewport: true, symbol: { c1: 'a', c2: 'a' } },
+    sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true },
     trackSizes: { '4': { cols: [1.4, 0.6], rows: [1, 1] } },
     cells: {
         c1: {
@@ -51,7 +51,7 @@ describe('sanitizeState (the applyState gate)', () => {
             layout: '2h',
             activeCellId: 7, // wrong type → dropped
             timezone: '', // empty → dropped
-            sync: { viewport: 'yes', crosshair: true }, // bad value + reserved kind → dropped
+            sync: { viewport: 'yes', crosshair: true }, // bad value dropped; crosshair is a REAL kind now
             trackSizes: { '2h': { cols: [1, -1] }, '4': { cols: [2, 1] } }, // negative weight kills the axis
             cells: {
                 c1: { symbol: 'BTCUSDT', bars: -5, rendererConfig: 'oops' }, // bad bars/config dropped
@@ -62,6 +62,7 @@ describe('sanitizeState (the applyState gate)', () => {
         expect(doc).toEqual({
             version: 1,
             layout: '2h',
+            sync: { crosshair: true }, // ghost-crosshair link — persisted like every kind
             trackSizes: { '4': { cols: [2, 1] } },
             cells: {
                 c1: { symbol: 'BTCUSDT' },
