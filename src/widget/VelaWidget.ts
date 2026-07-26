@@ -63,97 +63,11 @@ export interface VelaWidgetOptions extends VelaOptions {
 
 const DEFAULT_TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
 
+// The topbar's own styles live in the Topbar component (it injects them itself, so a
+// workspace reusing the component gets them too); only the widget SHELL layout stays here.
 const WIDGET_STYLE_ID = 'vela-widget';
 const WIDGET_CSS = `
 .vela-widget { display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--vela-bg); }
-.vela-widget-topbar {
-    display: flex;
-    align-items: center;
-    gap: var(--vela-space-2);
-    padding: var(--vela-space-1) var(--vela-space-2);
-    border-bottom: 1px solid var(--vela-border-soft);
-    color: var(--vela-fg);
-    font-size: var(--vela-font-size-md);
-    flex: none;
-}
-.vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators {
-    all: unset;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 30px;
-    padding: 0 9px;
-    border-radius: 4px;
-    cursor: pointer;
-    color: var(--vela-fg-muted);
-    font-size: 13px;
-    font-weight: 550;
-    white-space: nowrap;
-}
-.vela-widget-symbol {
-    color: var(--vela-fg-bright);
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    padding: 0 10px;
-    gap: 7px;
-}
-.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover { background: var(--vela-hover); color: var(--vela-fg); }
-.vela-widget-symbol:hover { color: var(--vela-fg-bright); }
-.vela-widget-topbar .vela-icon { color: inherit; font-size: 14px; }
-.vela-sep { width: 1px; height: 22px; margin: 0 4px; flex: none; background: rgba(255, 255, 255, 0.22); }
-.vela-ind-count {
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
-    border-radius: 8px;
-    padding: 0 6px;
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--vela-fg);
-}
-.vela-alerts-badge {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    min-width: 13px;
-    height: 13px;
-    padding: 0 3px;
-    border-radius: 7px;
-    background: var(--vela-accent);
-    color: #fff;
-    font-size: 9px;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-.vela-widget-actions { margin-left: auto; display: inline-flex; gap: var(--vela-space-1); }
-.vela-widget-tool {
-    all: unset;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 30px;
-    border-radius: 4px;
-    cursor: pointer;
-    color: var(--vela-fg-muted);
-    font-size: 14px;
-}
-.vela-widget-tool:hover { background: var(--vela-hover); color: var(--vela-fg); }
-.vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-widget-action {
-    all: unset;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    border-radius: var(--vela-radius-sm);
-    cursor: pointer;
-    color: var(--vela-fg);
-}
-.vela-widget-action:hover { background: var(--vela-hover); }
-.vela-widget-symbol { font-weight: 600; }
 .vela-widget-main { display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-widget-chart { position: relative; flex: 1 1 auto; min-width: 0; }
 `;

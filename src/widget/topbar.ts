@@ -3,10 +3,104 @@
 import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
 import { Tooltip } from '../ui/components/tooltip';
 import { iconEl, iconMarkup, registerIcon } from '../ui/icons';
+import { injectStyles } from '../ui/styles';
 import { chartType } from '../chart-types/registry';
 import { widgetActions, type WidgetContext } from './contributions';
 import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { timeframeLabel } from './timeframe';
+
+// The component owns its stylesheet (id-guarded, injected at construction) so EVERY
+// host that mounts a Topbar — the widget, a multi-chart workspace — gets the same look.
+const STYLE_ID = 'vela-topbar';
+const CSS = `
+.vela-widget-topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--vela-space-2);
+    padding: var(--vela-space-1) var(--vela-space-2);
+    border-bottom: 1px solid var(--vela-border-soft);
+    color: var(--vela-fg);
+    font-size: var(--vela-font-size-md);
+    flex: none;
+}
+.vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 9px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--vela-fg-muted);
+    font-size: 13px;
+    font-weight: 550;
+    white-space: nowrap;
+}
+.vela-widget-symbol {
+    color: var(--vela-fg-bright);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 0 10px;
+    gap: 7px;
+}
+.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover { background: var(--vela-hover); color: var(--vela-fg); }
+.vela-widget-symbol:hover { color: var(--vela-fg-bright); }
+.vela-widget-topbar .vela-icon { color: inherit; font-size: 14px; }
+.vela-sep { width: 1px; height: 22px; margin: 0 4px; flex: none; background: rgba(255, 255, 255, 0.22); }
+.vela-ind-count {
+    background: var(--vela-surface-elev);
+    border: 1px solid var(--vela-border);
+    border-radius: 8px;
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--vela-fg);
+}
+.vela-alerts-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 13px;
+    height: 13px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--vela-accent);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.vela-widget-actions { margin-left: auto; display: inline-flex; gap: var(--vela-space-1); }
+.vela-widget-tool {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--vela-fg-muted);
+    font-size: 14px;
+}
+.vela-widget-tool:hover { background: var(--vela-hover); color: var(--vela-fg); }
+.vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-action {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: var(--vela-radius-sm);
+    cursor: pointer;
+    color: var(--vela-fg);
+}
+.vela-widget-action:hover { background: var(--vela-hover); }
+`;
 
 const BUILTIN_STYLE_LABELS: Record<string, string> = {
     candles: 'Candles',
@@ -83,6 +177,7 @@ export class Topbar {
         this.timeframe = opts.timeframe;
         this.priceStyle = opts.priceStyle;
         const doc = host.ownerDocument;
+        injectStyles(STYLE_ID, CSS, doc);
 
         this.el = doc.createElement('div');
         this.el.className = 'vela-widget-topbar';
