@@ -4,7 +4,7 @@
 import { VelaWidget } from '../src/widget';
 import { PineWorkerEngine } from '../src';
 import { BinanceProvider } from '../src/data/providers/binance';
-import { playgroundStorage, persistDrawings } from './persistence';
+import { playgroundStorage } from './persistence';
 
 // Worker-path test instrumentation: count real Web Worker spawns so a browser probe
 // can PROVE Pine runs off the main thread (window.__workerSpawns >= 1). Temporary,
@@ -18,11 +18,10 @@ window.Worker = class extends RealWorker {
     }
 } as typeof Worker;
 
-// The playground's CUSTOM persistence (shared with the workspace page). The widget's
-// own `persist` covers the prefs (symbol/timeframe/style/timezone/bars/favorites);
-// drawings are content, persisted host-side below through the SAME adapter. No
-// `urlState` here — a URL param would win over the stored state and mask the system
-// this page is exercising.
+// The playground's CUSTOM persistence (shared with the workspace page): with `persist`
+// on, the widget saves and restores EVERYTHING through this adapter — prefs, renderer
+// config, and user drawings. No `urlState` here — a URL param would win over the
+// stored state and mask the system this page is exercising.
 const storage = playgroundStorage();
 
 const widget = new VelaWidget('#chart', {
@@ -46,10 +45,6 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
 });
 
 void widget.chart.ready().then(() => console.log('[vela-dev] chart ready'));
-
-// Drawings restore + save through the custom adapter. `widget.chart` is stable for the
-// widget's whole life (market switches are in-place), so one subscription is enough.
-persistDrawings(widget.chart, storage, 'vela-widget:drawings');
 
 // Handy for poking around from the browser console.
 (window as unknown as { widget: VelaWidget }).widget = widget;

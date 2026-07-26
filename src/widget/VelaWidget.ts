@@ -121,11 +121,17 @@ export class VelaWidget {
     private lastCrossTime: number | null = null;
     /** Renderer cosmetic template carried across rebuilds (and persisted when enabled). */
     private savedConfig: unknown = null;
+    /** User-drawings document carried across rebuilds (and persisted when enabled). */
+    private savedDrawings: unknown = null;
+    private drawingsTimer: ReturnType<typeof setTimeout> | null = null;
     /** Favorite drawing-tool types — mirrored from chart events, reapplied on rebuilds. */
     private favs: string[] = [];
     /** Mounted attachment disposers (by id), torn down at destroy. */
     private readonly attachmentDisposers = new Map<string, () => void>();
-    private readonly onUnload = (): void => this.persistConfigNow();
+    private readonly onUnload = (): void => {
+        this.persistConfigNow();
+        this.persistDrawingsNow();
+    };
     private indicatorsPromise: Promise<ResolvedIndicator[]> | null = null;
     private destroyed = false;
     private buildSeq = 0;
@@ -170,6 +176,20 @@ export class VelaWidget {
             };
             if (rawCfg instanceof Promise) void rawCfg.then((raw) => !this.destroyed && applyCfg(raw));
             else applyCfg(rawCfg);
+            // User drawings — same lifecycle as the renderer config: content documents
+            // stored beside the prefs, restored at build (or late-applied when async).
+            const rawDraw = this.storage.get(`${this.storageKey}:drawings`);
+            const applyDraw = (raw: string | null): void => {
+                if (!raw) return;
+                try {
+                    this.savedDrawings = JSON.parse(raw);
+                    if (this.inner) this.inner.drawings.fromJSON(this.savedDrawings);
+                } catch {
+                    /* best-effort */
+                }
+            };
+            if (rawDraw instanceof Promise) void rawDraw.then((raw) => !this.destroyed && applyDraw(raw));
+            else applyDraw(rawDraw);
             window.addEventListener('beforeunload', this.onUnload);
         }
 
@@ -524,6 +544,9 @@ export class VelaWidget {
 
     destroy(): void {
         this.destroyed = true;
+        // Flush BEFORE tearing the chart down — getConfig/toJSON need it alive.
+        this.persistConfigNow();
+        this.persistDrawingsNow();
         this.inner?.destroy();
         this.inner = null;
         for (const dispose of this.attachmentDisposers.values()) {
@@ -534,7 +557,6 @@ export class VelaWidget {
             }
         }
         this.attachmentDisposers.clear();
-        this.persistConfigNow();
         window.removeEventListener('beforeunload', this.onUnload);
         this.root.removeEventListener('keydown', this.onRootKeydown);
         this.topbar.destroy();
@@ -559,7 +581,10 @@ export class VelaWidget {
      *  re-register providers/engines, rebind chrome, and re-add manifest indicators. */
     private rebuild(): void {
         const seq = ++this.buildSeq;
-        if (this.inner) this.savedConfig = this.inner.renderer.getConfig();
+        if (this.inner) {
+            this.savedConfig = this.inner.renderer.getConfig();
+            this.savedDrawings = this.inner.drawings.toJSON();
+        }
         this.inner?.destroy();
 
         const {
@@ -624,12 +649,18 @@ export class VelaWidget {
             this.favs = favorites;
             this.persist();
         });
+        // User drawings: every change path (mouse tools, eraser, undo/redo, programmatic
+        // add/remove) converges on these three events — persist debounced off them.
+        chart.on('drawing:created', () => this.persistDrawingsSoon());
+        chart.on('drawing:edited', () => this.persistDrawingsSoon());
+        chart.on('drawing:removed', () => this.persistDrawingsSoon());
         chart.renderer.onCrosshairMove((e) => {
             this.lastCrossPrice = e.price;
             this.lastCrossTime = e.time;
         });
         this.topbar.renderActions(); // when() gates may depend on the new chart/context
         if (this.savedConfig != null) chart.renderer.applyConfig(this.savedConfig);
+        if (this.savedDrawings != null) chart.drawings.fromJSON(this.savedDrawings);
         // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).
         if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
         if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
@@ -858,6 +889,31 @@ export class VelaWidget {
         } catch {
             /* best-effort */
         }
+    }
+
+    /** Snapshot the user-drawings document into storage (persist mode only). */
+    private persistDrawingsNow(): void {
+        if (this.drawingsTimer != null) {
+            clearTimeout(this.drawingsTimer);
+            this.drawingsTimer = null;
+        }
+        if (this.storageKey === null || !this.inner) return;
+        try {
+            this.savedDrawings = this.inner.drawings.toJSON();
+            void this.storage.set(`${this.storageKey}:drawings`, JSON.stringify(this.savedDrawings));
+        } catch {
+            /* best-effort */
+        }
+    }
+
+    /** Debounced drawings save — a drag emits a burst of edits, one write comes out. */
+    private persistDrawingsSoon(): void {
+        if (this.storageKey === null) return;
+        if (this.drawingsTimer != null) clearTimeout(this.drawingsTimer);
+        this.drawingsTimer = setTimeout(() => {
+            this.drawingsTimer = null;
+            this.persistDrawingsNow();
+        }, 500);
     }
 
     private persist(): void {

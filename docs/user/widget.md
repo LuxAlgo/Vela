@@ -39,7 +39,7 @@ On top of every [chart option](./options.md), the widget adds:
 | `priceStyle` | string | `'candles'` | Initial chart style; changed live from the topbar dropdown. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
 | `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles. |
-| `persist` | boolean \| string | `false` | Persist symbol/timeframe/style/timezone/bars/watermark/favorite drawing tools and restore them as defaults (`true` = key `'vela-widget'`; a string is the key). |
+| `persist` | boolean \| string | `false` | Bring the chart back as you left it: symbol/timeframe/style/timezone/bars/watermark/favorite tools restored as defaults, plus the renderer config and **user drawings** documents (`true` = key `'vela-widget'`; a string is the key). |
 | `storage` | `WidgetStorage` | localStorage | The persistence backend — inject a custom adapter (see below). |
 | `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark flag) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
 
@@ -119,8 +119,11 @@ const restStorage: WidgetStorage = {
 new VelaWidget('#chart', { persist: true, storage: restStorage, /* … */ });
 ```
 
-Two keys are written: the state key (symbol/timeframe/style/timezone/bars/watermark as
-one JSON document) and `<key>:config` (the full renderer cosmetic template).
+Three keys are written: the state key (symbol/timeframe/style/timezone/bars/watermark
+as one JSON document), `<key>:config` (the full renderer cosmetic template), and
+`<key>:drawings` (the user-drawings document — `persist: true` brings your chart back
+**as you left it**, drawings included; saves are debounced ~500ms off the
+`drawing:created/edited/removed` events and flushed on unload/destroy).
 
 Semantics to know:
 
