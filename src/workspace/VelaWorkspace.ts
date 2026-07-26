@@ -29,6 +29,8 @@ import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
+import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
+import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
 import { ChartCell, type CellSeed, type PooledCellState } from './ChartCell';
 import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
@@ -67,6 +69,9 @@ export interface VelaWorkspaceOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
+    /** The ONE shared drawing toolbar, docked left of the grid and acting on the active
+     *  cell (per-cell in-chart bars stay hidden either way). Default true. */
+    drawingToolbar?: boolean;
     /** Above this many cells, EVERY cell uses the canvas2d backend (uniform look inside
      *  the browser's WebGL-context budget; glow is unavailable there). Default 8. */
     maxWebglCells?: number;
@@ -89,7 +94,8 @@ const ALERT_CAP = 50;
 const STYLE_ID = 'vela-workspace';
 const CSS = `
 .vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--vela-bg); }
-.vela-ws-main { display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
+.vela-ws-main { position: relative; display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
+.vela-ws-toolbar { position: relative; flex: none; }
 .vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
 .vela-cell { background: var(--vela-bg); }
 .vela-cell[data-active='1'] { outline: 1px solid var(--vela-accent); outline-offset: -1px; z-index: 1; }
@@ -131,6 +137,12 @@ export class VelaWorkspace {
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly toast: Toast;
     private readonly glider = new Glider(() => (this.activeId ? (this.cellsById.get(this.activeId)?.chart ?? null) : null));
+    private readonly drawToolbar: DrawingToolbar | null;
+    /** The GLOBAL armed tool/magnet (workspace policy) — re-applied to whichever cell
+     *  takes the focus; only the ACTIVE cell ever holds a non-null tool. Measure/eraser
+     *  stay transient and per-cell: they exit when the focus leaves. */
+    private globalTool: DrawingTypeKey | null = null;
+    private globalSnap: SnapMode = 'off';
     private manifest: ResolvedIndicator[] = [];
     private timezone: string;
     private openDialogs = 0;
@@ -209,15 +221,55 @@ export class VelaWorkspace {
             getContext: () => this.context(),
         });
 
-        // ── main row: the grid + the docked object tree ──
+        // ── main row: the shared drawing toolbar + the grid + the docked object tree ──
         const main = doc.createElement('div');
         main.className = 'vela-ws-main';
+        let toolbarHost: HTMLElement | null = null;
+        if (opts.drawingToolbar !== false) {
+            toolbarHost = doc.createElement('div');
+            toolbarHost.className = 'vela-ws-toolbar';
+            main.appendChild(toolbarHost);
+        }
         this.gridEl = doc.createElement('div');
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
         this.objectTree = new ObjectTree(main);
         this.root.appendChild(main);
         this.toast = new Toast(this.gridEl);
+
+        // ONE drawing toolbar for the whole grid: commands go to the ACTIVE cell's
+        // `chart.drawings` facade; the cell's own in-chart bar stays hidden (the cells
+        // are built with `drawings: { toolbar: false }`). Focus returns to the active
+        // chart after every press so drawing/chart shortcuts keep working.
+        this.drawToolbar = toolbarHost
+            ? new DrawingToolbar(
+                  toolbarHost,
+                  resolveTheme(opts.theme),
+                  (type) => {
+                      this.active.chart.drawings.setTool(type);
+                      this.refocusActive();
+                  },
+                  (mode) => {
+                      this.active.chart.drawings.setSnapMode(mode);
+                      this.refocusActive();
+                  },
+                  () => {
+                      const d = this.active.chart.drawings;
+                      d.setMode(d.getMode() === 'measure' ? null : 'measure');
+                      this.refocusActive();
+                  },
+                  () => {
+                      const d = this.active.chart.drawings;
+                      d.setMode(d.getMode() === 'eraser' ? null : 'eraser');
+                      this.refocusActive();
+                  },
+                  // No refocus on a star: the flyout stays open for more browsing.
+                  (type, on) => this.active.chart.drawings.setFavorite(type, on),
+                  { dock: 'static' },
+              )
+            : null;
+        this.drawToolbar?.setDefinition(defaultToolbar());
+        this.drawToolbar?.setVisible(true);
 
         this.bottombar =
             opts.bottombar !== false
@@ -299,7 +351,14 @@ export class VelaWorkspace {
             const el = this.cellsById.get(prev)?.host;
             if (el) delete el.dataset.active;
         }
-        this.activeId = id;
+        this.activeId = id; // switch FIRST — the departing cell's drawing:* events must not re-enter the mirrors
+        const prevCell = prev ? this.cellsById.get(prev) : undefined;
+        if (prevCell) {
+            // Only the ACTIVE cell ever holds an armed tool or a transient mode: the
+            // global tool re-arms on the next activation; measure/eraser don't follow.
+            prevCell.chart.drawings.setTool(null);
+            prevCell.chart.drawings.setMode(null);
+        }
         if (id) {
             const el = this.cellsById.get(id)?.host;
             if (el) el.dataset.active = '1';
@@ -399,6 +458,7 @@ export class VelaWorkspace {
         this.attachmentDisposers.clear();
         this.root.removeEventListener('keydown', this.onRootKeydown);
         this.keymap.destroy();
+        this.drawToolbar?.destroy();
         this.topbar.destroy();
         this.bottombar?.destroy();
         this.objectTree.destroy();
@@ -430,6 +490,25 @@ export class VelaWorkspace {
         this.bottombar?.setActiveRange(cell.activeRangeId);
         this.indicatorPicker.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
+        // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet to
+        // the cell taking focus, and reflect its (fresh) state on the bar.
+        const d = cell.chart.drawings;
+        if (d.getTool() !== this.globalTool) d.setTool(this.globalTool);
+        if (d.getSnapMode() !== this.globalSnap) d.setSnapMode(this.globalSnap);
+        if (this.drawToolbar) {
+            this.drawToolbar.setActiveTool(this.globalTool);
+            this.drawToolbar.setMagnetMode(this.globalSnap);
+            const mode = d.getMode();
+            this.drawToolbar.setMeasureActive(mode === 'measure');
+            this.drawToolbar.setEraserActive(mode === 'eraser');
+            this.drawToolbar.setFavorites(d.favorites());
+        }
+    }
+
+    /** Put keyboard focus back on the active cell's chart surface (after a toolbar press
+     *  stole it) so chart/drawing shortcuts keep working. */
+    private refocusActive(): void {
+        if (this.activeId) this.cellsById.get(this.activeId)?.chart.renderer.focus();
     }
 
     // ── internals ───────────────────────────────────────────────
@@ -524,11 +603,30 @@ export class VelaWorkspace {
             this.topbar.setAlertCount(this.alerts.length);
         });
         // Favorites are a WORKSPACE preference: one shared toolbar, one star set — a star
-        // toggled in any cell re-applies to every other cell.
+        // toggled in any cell re-applies to every other cell (and the shared bar).
         chart.on('drawing:favorites', ({ favorites }) => {
             for (const other of this.cellsById.values()) {
                 if (other !== cell) other.chart.drawings.setFavorites(favorites as never[]);
             }
+            this.drawToolbar?.setFavorites(favorites as never[]);
+        });
+        // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
+        // the shared bar and the global mirrors — whatever the source (bar press, keymap,
+        // API, a one-shot tool disarming itself after placement).
+        chart.on('drawing:tool', ({ type }) => {
+            if (cell.id !== this.activeId) return;
+            this.globalTool = type;
+            this.drawToolbar?.setActiveTool(type);
+        });
+        chart.on('drawing:snap', ({ mode }) => {
+            if (cell.id !== this.activeId) return;
+            this.globalSnap = mode;
+            this.drawToolbar?.setMagnetMode(mode);
+        });
+        chart.on('drawing:mode', ({ mode }) => {
+            if (cell.id !== this.activeId) return;
+            this.drawToolbar?.setMeasureActive(mode === 'measure');
+            this.drawToolbar?.setEraserActive(mode === 'eraser');
         });
     }
 
