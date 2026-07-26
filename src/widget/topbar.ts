@@ -40,6 +40,13 @@ export interface TopbarOptions {
     priceStyle: string;
     onTimeframe: (tf: string) => void;
     onPriceStyle: (style: string) => void;
+    /** Optional workspace LAYOUT dropdown (rendered after the style dropdown when given).
+     *  `options` is read live, so plugin-registered layouts appear automatically. */
+    layout?: {
+        current: string;
+        options: () => Array<{ id: string; label: string }>;
+        onSelect: (id: string) => void;
+    };
     onIndicatorsClick?: () => void;
     onObjectsClick?: () => void;
     onScreenshotClick?: () => void;
@@ -57,6 +64,9 @@ export class Topbar {
     private readonly symbolEl: HTMLElement;
     private readonly tfButton: HTMLElement;
     private readonly styleButton: HTMLElement;
+    private layoutButton: HTMLElement | null = null;
+    private layoutMenu: Menu | null = null;
+    private layoutId: string | null = null;
     private readonly tfMenu: Menu;
     private readonly styleMenu: Menu;
     private readonly tooltips: Tooltip[] = [];
@@ -127,17 +137,37 @@ export class Topbar {
         this.alertsBadge.style.display = 'none';
         this.alertsBtn.appendChild(this.alertsBadge);
 
+        // Workspace layout dropdown — present only when the host supplies the option.
+        if (opts.layout) {
+            this.layoutId = opts.layout.current;
+            this.layoutButton = doc.createElement('button');
+            this.layoutButton.className = 'vela-widget-style';
+            this.renderLayoutButton(doc);
+        }
+
         const sep = (): HTMLElement => {
             const d = doc.createElement('span');
             d.className = 'vela-sep';
             return d;
         };
-        this.el.append(this.symbolEl, sep(), this.tfButton, sep(), this.styleButton, sep(), indicatorsBtn, this.actionsHost, this.alertsBtn, dataWindowBtn, screenshotBtn, objectsBtn, settingsBtn);
+        const leading: Array<HTMLElement> = [this.symbolEl, sep(), this.tfButton, sep(), this.styleButton, sep()];
+        if (this.layoutButton) leading.push(this.layoutButton, sep());
+        this.el.append(...leading, indicatorsBtn, this.actionsHost, this.alertsBtn, dataWindowBtn, screenshotBtn, objectsBtn, settingsBtn);
         host.appendChild(this.el);
         this.renderActions();
 
         this.tooltips.push(new Tooltip(this.tfButton, { content: 'Timeframe', triggerId: 'vela-topbar-tf', host }));
         this.tooltips.push(new Tooltip(this.styleButton, { content: 'Chart style', triggerId: 'vela-topbar-style', host }));
+        if (this.layoutButton && opts.layout) {
+            this.tooltips.push(new Tooltip(this.layoutButton, { content: 'Layout', triggerId: 'vela-topbar-layout', host }));
+            this.layoutMenu = new Menu({
+                trigger: this.layoutButton,
+                triggerId: 'vela-topbar-layout',
+                host,
+                items: this.layoutItems(),
+                onSelect: (id) => opts.layout!.onSelect(id),
+            });
+        }
         this.tfMenu = new Menu({
             trigger: this.tfButton,
             triggerId: 'vela-topbar-tf',
@@ -168,6 +198,28 @@ export class Topbar {
         this.priceStyle = style;
         this.renderStyleButton(this.styleButton.ownerDocument);
         this.styleMenu.setItems(this.styleItems());
+    }
+
+    /** Reflect the current workspace layout (no-op without the layout dropdown). */
+    setLayout(id: string): void {
+        if (!this.layoutButton) return;
+        this.layoutId = id;
+        this.renderLayoutButton(this.layoutButton.ownerDocument);
+        this.layoutMenu?.setItems(this.layoutItems());
+    }
+
+    private renderLayoutButton(doc: Document): void {
+        if (!this.layoutButton) return;
+        this.layoutButton.replaceChildren();
+        // Icon when a 'layout' icon is registered (the workspace registers one);
+        // otherwise fall back to the current layout id as text.
+        if (iconMarkup('layout')) this.layoutButton.appendChild(iconEl('layout', doc));
+        else this.layoutButton.appendChild(doc.createTextNode(this.layoutId ?? ''));
+        this.layoutButton.setAttribute('aria-label', `Layout — ${this.layoutId ?? ''}`);
+    }
+
+    private layoutItems(): MenuItemDescriptor[] {
+        return (this.opts.layout?.options() ?? []).map((l) => ({ id: l.id, label: l.label, checked: l.id === this.layoutId }));
     }
 
     private renderStyleButton(doc: Document): void {
@@ -211,6 +263,7 @@ export class Topbar {
     destroy(): void {
         this.tfMenu.destroy();
         this.styleMenu.destroy();
+        this.layoutMenu?.destroy();
         for (const t of this.tooltips) t.destroy();
         this.el.remove();
     }

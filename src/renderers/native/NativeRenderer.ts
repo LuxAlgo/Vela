@@ -1355,6 +1355,12 @@ export class NativeRenderer implements IChartRenderer {
     // ── price data ──
     setBars(bars: OHLCV[], opts?: { preserveView?: boolean }): void {
         if (this.introRaf != null) { cancelAnimationFrame(this.introRaf); this.introRaf = null; this.modelAlpha = 1; } // a re-set interrupts a running reveal
+        // A series replacement invalidates the forming-bar glide: after an in-place market
+        // switch the NEW market's forming bar shares the same bucket open-time, so a stale
+        // eased close/high/low would paint a full-height candle (old-market prices on the
+        // new scale) until the next tick re-seeds. The bars given here carry real values —
+        // drop the ease; the next tick snaps fresh (liveEaseTime no longer matches).
+        this.liveEaseTime = 0;
         const prevHeadTime = this.bars[0]?.time;
         this.bars = normalizeBars(bars);
         this.scene.bars = this.bars;

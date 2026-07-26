@@ -1,8 +1,12 @@
 // VelaWorkspace — the multi-chart shell: a CSS-Grid of ChartCells behind ONE shared
-// data feed, with stable slot ids (`c1`…`cN`), an ACTIVE cell, resizable splitters,
-// and a state pool so layout changes never lose a slot's market/config/drawings.
-// The shared chrome (topbar, pickers, drawing toolbar…) projects onto the active
-// cell and lands in the next phase — this file is the skeleton it plugs into.
+// data feed, wrapped in ONE shared chrome (topbar + layout dropdown, pickers, object
+// tree, bottombar, keymap, alerts) that PROJECTS the ACTIVE cell and acts on it.
+//
+// The projection rule has exactly two triggers, and the chrome holds no state of its
+// own: ① on `cell:active` the chrome rebinds wholesale (`projectActiveCell`); ② a
+// cell's own events re-project only while that cell IS the active one (alerts are the
+// exception — always aggregated, tagged by cell). Statusline/watermark/context-menu/
+// undo-history are per-cell; everything else is shared.
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { ThemeName, VelaTheme, NativeBackend } from '../core/options';
@@ -10,12 +14,27 @@ import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
-import { ensureUIHost, injectStyles } from '../ui';
+import { ensureUIHost, injectStyles, registerIcon } from '../ui';
+import { KeymapManager } from '../ui/keymap';
+import { Menu } from '../ui/components/menu';
 import type { Vela } from '../Vela';
+import { Topbar } from '../widget/topbar';
+import { Bottombar } from '../widget/bottombar';
+import { ObjectTree } from '../widget/object-tree';
+import { SymbolPicker } from '../widget/symbol-picker';
+import { IndicatorPicker } from '../widget/indicator-picker';
+import { TimeframeQuick } from '../widget/timeframe-quick';
+import { ShortcutsHelp } from '../widget/shortcuts-help';
+import { Toast } from '../widget/toast';
+import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
+import { widgetAttachments } from '../widget/contributions';
+import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { ChartCell, type CellSeed, type PooledCellState } from './ChartCell';
+import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
     registerBuiltinLayouts,
     layoutDefinition,
+    layouts,
     gridStyles,
     activeAfterLayout,
     type LayoutDefinition,
@@ -35,11 +54,19 @@ export interface VelaWorkspaceOptions {
     providers?: Record<string, () => DataProvider>;
     /** Scripting-engine factories — called once PER CELL (e.g. a worker engine per cell). */
     engines?: Record<string, () => ScriptingEngine>;
+    /** Indicator manifest (inline JSON or a URL) — resolved ONCE; `enabled` entries
+     *  auto-add to every FRESH cell (pool-restored cells re-add their own set). */
+    indicators?: string | IndicatorManifest;
+    /** Topbar timeframe presets. */
+    timeframes?: string[];
+    /** Workspace-global display timezone (IANA; applied to EVERY cell). Default 'Etc/UTC'. */
+    timezone?: string;
     theme?: ThemeName | VelaTheme;
     live?: boolean;
     volume?: boolean;
     statusline?: boolean;
     watermark?: boolean;
+    bottombar?: boolean;
     /** Above this many cells, EVERY cell uses the canvas2d backend (uniform look inside
      *  the browser's WebGL-context budget; glow is unavailable there). Default 8. */
     maxWebglCells?: number;
@@ -54,20 +81,32 @@ export interface WorkspaceEventMap extends Record<string, unknown> {
     'cell:destroyed': { id: string };
 }
 
+const DEFAULT_TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
 const GAP_PX = 2; // grid gap — the visible seam between cells (splitter strips center on it)
 const POOL_CAP = 16; // dormant slot states kept across layout shrinks
+const ALERT_CAP = 50;
 
 const STYLE_ID = 'vela-workspace';
 const CSS = `
 .vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--vela-bg); }
-.vela-ws-grid { position: relative; flex: 1 1 auto; min-height: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
+.vela-ws-main { display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
+.vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
 .vela-cell { background: var(--vela-bg); }
 .vela-cell[data-active='1'] { outline: 1px solid var(--vela-accent); outline-offset: -1px; z-index: 1; }
 .vela-ws-splitter:hover { background: var(--vela-accent); opacity: 0.35; }
 `;
 
+/** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
+registerIcon(
+    'layout',
+    '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/></svg>',
+);
+
 export class VelaWorkspace {
     readonly root: HTMLElement;
+    /** The shortcut system — one manager for the whole workspace, routed to the active cell. */
+    readonly keymap: KeymapManager;
+
     private readonly gridEl: HTMLElement;
     private readonly events = new TypedEventBus<WorkspaceEventMap>();
     private readonly feed = new MultiProviderFeed();
@@ -82,11 +121,30 @@ export class VelaWorkspace {
     private cellBackend: NativeBackend = 'auto';
     private destroyed = false;
 
+    // ── shared chrome ──
+    private readonly topbar: Topbar;
+    private readonly bottombar: Bottombar | null;
+    private readonly objectTree: ObjectTree;
+    private readonly symbolPicker: SymbolPicker;
+    private readonly indicatorPicker: IndicatorPicker;
+    private readonly tfQuick: TimeframeQuick;
+    private shortcutsHelp: ShortcutsHelp | null = null;
+    private readonly toast: Toast;
+    private readonly glider = new Glider(() => (this.activeId ? (this.cellsById.get(this.activeId)?.chart ?? null) : null));
+    private manifest: ResolvedIndicator[] = [];
+    private timezone: string;
+    private openDialogs = 0;
+    private alerts: Array<{ cellId: string; symbol: string; title: string; message: string; time: number }> = [];
+    private alertsMenu: Menu | null = null;
+    private readonly attachmentDisposers = new Map<string, () => void>();
+    private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
+
     constructor(container: HTMLElement | string, opts: VelaWorkspaceOptions = {}) {
         registerBuiltinLayouts(); // idempotent — pickers and `layout` ids resolve from the registry
         const hostEl = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container;
         if (!hostEl) throw new Error(`VelaWorkspace: container not found: ${String(container)}`);
         this.opts = opts;
+        this.timezone = opts.timezone ?? 'Etc/UTC';
         this.def = this.resolveLayout(opts.layout ?? '4');
 
         const doc = hostEl.ownerDocument;
@@ -94,10 +152,6 @@ export class VelaWorkspace {
         this.root = doc.createElement('div');
         this.root.className = 'vela-workspace';
         ensureUIHost(this.root, resolveTheme(opts.theme));
-        this.gridEl = doc.createElement('div');
-        this.gridEl.className = 'vela-ws-grid';
-        this.root.appendChild(this.gridEl);
-        hostEl.appendChild(this.root);
 
         // ONE shared feed: providers registered once; every cell's `chart.data` operates
         // on the same registry, symbol index, and closed-bar cache.
@@ -105,6 +159,79 @@ export class VelaWorkspace {
         void this.feed.ready().then(() => {
             if (!this.destroyed) this.refreshRetention(); // re-key on canonical tickers once indexes settle
         });
+
+        // ── shared dialogs/pickers (they act on the ACTIVE cell at call time) ──
+        this.symbolPicker = new SymbolPicker({
+            host: this.root,
+            onSelect: (ticker) => this.active.setSymbol(ticker),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.symbolPicker.setSource(() => this.feed.symbols());
+        this.indicatorPicker = new IndicatorPicker({
+            host: this.root,
+            library: () => this.active.libraryRows(),
+            onChart: () => this.active.onChartRows(),
+            onAdd: (i) => this.active.addFromLibrary(i),
+            onRemove: (i) => this.active.removeFromChart(i),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.tfQuick = new TimeframeQuick({
+            host: this.root,
+            onApply: (tf) => this.setActiveTimeframe(tf),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+
+        // ── topbar (shared) — reflects the active cell; the layout dropdown reads the registry live ──
+        this.topbar = new Topbar(this.root, {
+            symbol: '',
+            onSymbolClick: () => this.symbolPicker.open(),
+            onIndicatorsClick: () => this.indicatorPicker.open(),
+            onObjectsClick: () => this.objectTree.toggle(),
+            onScreenshotClick: () => this.active.downloadScreenshot(),
+            onSettingsClick: () => this.active.chart.renderer.openSettings(),
+            onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
+            onDataWindowClick: () => {
+                const next = !this.active.chart.renderer.get('dataWindow');
+                this.active.chart.renderer.set('dataWindow', next);
+                return next;
+            },
+            dataWindowOn: false,
+            timeframe: '60',
+            timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            priceStyle: 'candles',
+            onTimeframe: (tf) => this.setActiveTimeframe(tf),
+            onPriceStyle: (style) => this.active.setPriceStyle(style),
+            layout: {
+                current: this.def.id,
+                options: () => layouts().map((l) => ({ id: l.id, label: l.label })),
+                onSelect: (id) => this.setLayout(id),
+            },
+            getContext: () => this.context(),
+        });
+
+        // ── main row: the grid + the docked object tree ──
+        const main = doc.createElement('div');
+        main.className = 'vela-ws-main';
+        this.gridEl = doc.createElement('div');
+        this.gridEl.className = 'vela-ws-grid';
+        main.appendChild(this.gridEl);
+        this.objectTree = new ObjectTree(main);
+        this.root.appendChild(main);
+        this.toast = new Toast(this.gridEl);
+
+        this.bottombar =
+            opts.bottombar !== false
+                ? new Bottombar(this.root, {
+                      timezone: this.timezone,
+                      onRange: (preset) => {
+                          this.active.applyRange(preset);
+                          this.bottombar?.setActiveRange(preset.id);
+                      },
+                      onTimezone: (zone) => this.setTimezone(zone),
+                  })
+                : null;
+
+        hostEl.appendChild(this.root);
 
         this.splitters = new SplitterLayer(this.gridEl, {
             tracks: () => this.currentTracks(),
@@ -117,10 +244,28 @@ export class VelaWorkspace {
             this.resizeObserver.observe(this.gridEl);
         }
 
+        // ── one keymap at the workspace root, every binding routed to the ACTIVE cell ──
+        this.keymap = new KeymapManager();
+        this.keymap.attach(this.root);
+        this.registerDefaultKeys();
+        this.root.addEventListener('keydown', this.onRootKeydown);
+        this.root.tabIndex = -1; // focusable host so bare keystrokes land here
+
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
         this.setActiveCell(this.def.cells[0]?.id ?? null);
+
+        // The shared manifest resolves once; every FRESH cell seeds its enabled entries.
+        if (opts.indicators !== undefined) {
+            void resolveIndicators(opts.indicators).then((list) => {
+                if (this.destroyed) return;
+                this.manifest = list;
+                for (const cell of this.cellsById.values()) cell.setManifest(list, true);
+                this.projectActiveCell();
+            });
+        }
+        this.mountAttachments();
     }
 
     // ── access ──────────────────────────────────────────────────
@@ -159,11 +304,40 @@ export class VelaWorkspace {
             const el = this.cellsById.get(id)?.host;
             if (el) el.dataset.active = '1';
         }
-        if (id) this.events.emit('cell:active', { id, prev });
+        if (id) {
+            this.projectActiveCell(); // trigger ① — the chrome rebinds to the new active cell
+            this.events.emit('cell:active', { id, prev });
+        }
     }
 
     on<K extends keyof WorkspaceEventMap>(event: K, handler: (payload: WorkspaceEventMap[K]) => void): () => void {
         return this.events.on(event, handler);
+    }
+
+    /** The context handed to contributed actions/attachments (rebuilt per invocation). */
+    context(): WorkspaceWidgetContext {
+        return buildContext({
+            // Null during early construction (the topbar projects actions before cells exist).
+            active: () => (this.activeId ? (this.cellsById.get(this.activeId) ?? null) : null),
+            cells: () => this.cells(),
+            setActiveCell: (id) => this.setActiveCell(id),
+            openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
+            root: this.root,
+            toast: (message, kind) => this.toast.show(message, kind),
+        });
+    }
+
+    /** Re-project contributed topbar actions + mount late-registered attachments. */
+    refreshActions(): void {
+        this.mountAttachments();
+        this.topbar.renderActions();
+    }
+
+    /** Set the workspace-global display timezone — applied to EVERY cell. */
+    setTimezone(zone: string): void {
+        this.timezone = zone;
+        this.bottombar?.setTimezone(zone);
+        for (const cell of this.cellsById.values()) cell.chart.renderer.set('timezone', zone);
     }
 
     // ── layout ──────────────────────────────────────────────────
@@ -195,7 +369,10 @@ export class VelaWorkspace {
         this.cellBackend = nextBackend;
         this.applyGrid();
         this.buildCells();
-        this.setActiveCell(activeAfterLayout(this.activeId, next.cells.map((c) => c.id)));
+        this.topbar.setLayout(next.id);
+        const nextActive = activeAfterLayout(this.activeId, next.cells.map((c) => c.id));
+        if (nextActive === this.activeId) this.projectActiveCell(); // same slot, maybe a rebuilt cell
+        else this.setActiveCell(nextActive);
         this.refreshRetention();
         this.events.emit('layout:changed', { layout: next.id });
     }
@@ -212,9 +389,47 @@ export class VelaWorkspace {
             cell.destroy();
             this.cellsById.delete(id);
         }
+        for (const dispose of this.attachmentDisposers.values()) {
+            try {
+                dispose();
+            } catch {
+                /* attachment cleanup must never block destroy */
+            }
+        }
+        this.attachmentDisposers.clear();
+        this.root.removeEventListener('keydown', this.onRootKeydown);
+        this.keymap.destroy();
+        this.topbar.destroy();
+        this.bottombar?.destroy();
+        this.objectTree.destroy();
+        this.symbolPicker.destroy();
+        this.indicatorPicker.destroy();
+        this.tfQuick.destroy();
+        this.shortcutsHelp?.destroy();
+        this.toast.destroy();
+        this.alertsMenu?.destroy();
+        this.glider.stop();
         sharedBarStore.retain(new Set()); // back to the single-chart retention policy
         this.root.remove();
         this.events.clear();
+    }
+
+    // ── the projection rule (trigger ① — full rebind on activation) ──
+    /** Re-project the shared chrome from the ACTIVE cell. The chrome holds no state of
+     *  its own — this is a pure read of the cell, safe to call redundantly. */
+    private projectActiveCell(): void {
+        const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
+        if (!cell) return;
+        this.topbar.setSymbol(cell.symbol);
+        this.topbar.setTimeframe(cell.timeframe);
+        this.topbar.setPriceStyle(cell.priceStyle);
+        this.topbar.setIndicatorCount(cell.indicatorCount);
+        this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
+        this.objectTree.setSymbol(cell.symbol);
+        this.objectTree.onChart(cell.chart);
+        this.bottombar?.setActiveRange(cell.activeRangeId);
+        this.indicatorPicker.sync(); // the dialog may be open while the active cell changes
+        this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
     }
 
     // ── internals ───────────────────────────────────────────────
@@ -263,7 +478,8 @@ export class VelaWorkspace {
         const { perCell } = gridStyles(this.def, this.trackSizes.get(this.def.id));
         for (const slot of this.def.cells) {
             if (this.cellsById.has(slot.id)) continue;
-            const seed: PooledCellState = this.pool.get(slot.id) ?? { ...(this.opts.defaults ?? {}), ...(this.opts.cells?.[slot.id] ?? {}) };
+            const pooled = this.pool.get(slot.id);
+            const seed: PooledCellState = pooled ?? { ...(this.opts.defaults ?? {}), ...(this.opts.cells?.[slot.id] ?? {}) };
             this.pool.delete(slot.id); // the slot is live again — its pooled state is consumed
             const cell = new ChartCell(slot.id, this.gridEl, seed, {
                 feed: this.feed,
@@ -274,11 +490,19 @@ export class VelaWorkspace {
                 statusline: this.opts.statusline !== false,
                 watermark: this.opts.watermark !== false,
                 nativeBackend: this.cellBackend,
+                timezone: () => this.timezone,
+                context: () => this.context(),
                 activate: (id) => this.setActiveCell(id),
-                onMarketChanged: () => this.refreshRetention(),
+                onMarketChanged: (id) => this.onCellMarketChanged(id),
+                onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(slot.id, cell);
+            this.wireCell(cell);
+            // The indicator ledger: a pool-restored cell re-adds ITS recorded set; a fresh
+            // cell seeds the manifest's enabled entries (once the manifest has resolved).
+            cell.setManifest(this.manifest, pooled?.indicators == null);
+            if (pooled?.indicators) cell.restoreIndicators(pooled.indicators);
             this.events.emit('cell:created', { id: slot.id });
         }
         // DOM order = slot order (auto-flow layouts place row-major by child order).
@@ -286,6 +510,163 @@ export class VelaWorkspace {
             const host = this.cellsById.get(slot.id)?.host;
             if (host) this.gridEl.appendChild(host);
         }
+    }
+
+    /** Per-cell chart subscriptions (trigger ② — the chart instance is stable for the
+     *  cell's whole life, so these live and die with the cell). */
+    private wireCell(cell: ChartCell): void {
+        const chart = cell.chart;
+        chart.on('indicator:error', ({ error }) => this.toast.show(`[${cell.id}] ${error.message}`, 'error', 5000));
+        chart.on('alert', (alert) => {
+            this.alerts.unshift({ cellId: cell.id, symbol: cell.symbol, title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
+            if (this.alerts.length > ALERT_CAP) this.alerts.pop();
+            this.toast.show(`[${cell.id} · ${cell.symbol}] ${alert.title ? alert.title + ' — ' : ''}${alert.message}`, 'info', 4000);
+            this.topbar.setAlertCount(this.alerts.length);
+        });
+        // Favorites are a WORKSPACE preference: one shared toolbar, one star set — a star
+        // toggled in any cell re-applies to every other cell.
+        chart.on('drawing:favorites', ({ favorites }) => {
+            for (const other of this.cellsById.values()) {
+                if (other !== cell) other.chart.drawings.setFavorites(favorites as never[]);
+            }
+        });
+    }
+
+    /** Trigger ② — a cell's market changed: retention always; chrome only if active. */
+    private onCellMarketChanged(id: string): void {
+        this.refreshRetention();
+        if (id !== this.activeId) return;
+        const cell = this.cellsById.get(id);
+        if (!cell) return;
+        this.topbar.setSymbol(cell.symbol);
+        this.topbar.setTimeframe(cell.timeframe);
+        this.objectTree.setSymbol(cell.symbol);
+    }
+
+    /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */
+    private onCellIndicatorsChanged(id: string): void {
+        if (id !== this.activeId) return;
+        const cell = this.cellsById.get(id);
+        if (!cell) return;
+        this.topbar.setIndicatorCount(cell.indicatorCount);
+        this.indicatorPicker.sync();
+    }
+
+    /** Timeframe changes routed from the topbar menu / quick entry (chip state follows). */
+    private setActiveTimeframe(tf: string): void {
+        this.bottombar?.setActiveRange(null);
+        this.active.setTimeframe(tf);
+    }
+
+    /** The aggregated alerts bell — entries carry their cell; selecting one activates it. */
+    private openAlertsMenu(anchor: HTMLElement): void {
+        this.alertsMenu?.destroy();
+        const items = this.alerts.length
+            ? this.alerts.map((a, i) => ({
+                  id: String(i),
+                  label: `[${a.cellId} · ${a.symbol}] ${new Date(a.time).toLocaleTimeString()} · ${a.title}: ${a.message}`.slice(0, 80),
+              }))
+            : [{ id: 'none', label: 'No alerts yet', disabled: true }];
+        this.alertsMenu = new Menu({
+            host: this.root,
+            items,
+            onSelect: (id) => {
+                const alert = this.alerts[Number(id)];
+                if (alert && this.cellsById.has(alert.cellId)) this.setActiveCell(alert.cellId);
+            },
+        });
+        const r = anchor.getBoundingClientRect();
+        this.alertsMenu.openAt(r.left, r.bottom + 4);
+    }
+
+    /** Mount registered attachments not yet mounted on this workspace (idempotent per id). */
+    private mountAttachments(): void {
+        for (const att of widgetAttachments()) {
+            if (this.attachmentDisposers.has(att.id)) continue;
+            try {
+                this.attachmentDisposers.set(att.id, att.mount(this.context()));
+            } catch (err) {
+                console.warn(`[vela] workspace attachment "${att.id}" failed to mount:`, err);
+            }
+        }
+    }
+
+    /** The default shortcut set — every binding acts on the ACTIVE cell. */
+    private registerDefaultKeys(): void {
+        this.keymap.register({ id: 'chart.screenshot', keys: 'mod+alt+s', label: 'Download a chart screenshot', category: 'Chart', run: () => this.active.downloadScreenshot() });
+        this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: 'Reset view (all history)', category: 'Chart', run: () => this.active.chart.setVisibleRangePreset('ALL') });
+        this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: 'Toggle logarithmic scale', category: 'Chart', run: () => this.active.chart.renderer.set('logScale', !this.active.chart.renderer.get('logScale')) });
+        this.keymap.register({
+            id: 'chart.toggle-percent',
+            keys: 'alt+p',
+            label: 'Toggle percent scale',
+            category: 'Chart',
+            run: () => {
+                const mode = this.active.chart.renderer.get('scaleMode');
+                this.active.chart.renderer.set('scaleMode', mode === 'percent' ? 'price' : 'percent');
+            },
+        });
+        this.keymap.register({ id: 'drawings.trendline', keys: 'alt+t', label: 'Arm the trend line tool', category: 'Drawings', run: () => this.active.chart.drawings.setTool('trendline') });
+        this.keymap.register({
+            id: 'drawings.hline-cursor',
+            keys: 'alt+h',
+            label: 'Horizontal line at the cursor price',
+            category: 'Drawings',
+            run: () => {
+                const c = this.active;
+                if (c.lastCrossTime != null && c.lastCrossPrice != null) c.chart.drawings.add('hline', { anchors: [{ time: c.lastCrossTime, price: c.lastCrossPrice }] });
+            },
+        });
+        this.keymap.register({
+            id: 'drawings.vline-cursor',
+            keys: 'alt+v',
+            label: 'Vertical line at the cursor time',
+            category: 'Drawings',
+            run: () => {
+                const c = this.active;
+                if (c.lastCrossTime != null && c.lastCrossPrice != null) c.chart.drawings.add('vline', { anchors: [{ time: c.lastCrossTime, price: c.lastCrossPrice }] });
+            },
+        });
+        this.keymap.register({ id: 'history.undo', keys: ['mod+z'], label: 'Undo (active chart)', category: 'Edit', run: () => this.active.history.undo() });
+        this.keymap.register({ id: 'history.redo', keys: ['mod+y', 'mod+shift+z'], label: 'Redo (active chart)', category: 'Edit', run: () => this.active.history.redo() });
+        this.keymap.register({ id: 'view.zoom-in', keys: 'mod+arrowup', label: 'Zoom in', category: 'Chart', run: () => this.glider.zoom(ZOOM_IN) });
+        this.keymap.register({ id: 'view.zoom-out', keys: 'mod+arrowdown', label: 'Zoom out', category: 'Chart', run: () => this.glider.zoom(ZOOM_OUT) });
+        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.glider.pan(-PAN_FAST) });
+        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.glider.pan(PAN_FAST) });
+        this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
+        this.keymap.register({
+            id: 'help.shortcuts',
+            keys: '?',
+            label: 'Show this shortcuts panel',
+            category: 'Help',
+            run: () => {
+                this.shortcutsHelp ??= new ShortcutsHelp(this.keymap, this.root, (open) => this.trackDialog(open));
+                this.shortcutsHelp.open();
+            },
+        });
+    }
+
+    /** Bare-typing router: letters → symbol search (seeded), digits → timeframe entry. */
+    private routeTyping(ev: KeyboardEvent): void {
+        if (this.destroyed || this.openDialogs > 0) return;
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        const t = ev.target as Partial<HTMLElement> | null;
+        const tag = (t?.tagName ?? '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable === true) return;
+        const key = ev.key;
+        if (/^[a-zA-Z]$/.test(key)) {
+            ev.preventDefault();
+            this.symbolPicker.open(key.toUpperCase());
+        } else if (/^[0-9]$/.test(key)) {
+            ev.preventDefault();
+            this.tfQuick.open(key);
+        }
+    }
+
+    private trackDialog(open: boolean): void {
+        this.openDialogs = Math.max(0, this.openDialogs + (open ? 1 : -1));
+        if (open) this.keymap.pushScope('dialog');
+        else this.keymap.popScope('dialog');
     }
 
     /** Pool a dehydrated slot state (bounded — oldest entries drop past the cap). */

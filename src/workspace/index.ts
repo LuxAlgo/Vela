@@ -4,7 +4,8 @@
 export { VelaWorkspace } from './VelaWorkspace';
 export type { VelaWorkspaceOptions, WorkspaceEventMap } from './VelaWorkspace';
 export { ChartCell } from './ChartCell';
-export type { CellSeed, PooledCellState } from './ChartCell';
+export type { CellSeed, PooledCellState, CellNativeInfo } from './ChartCell';
+export type { WorkspaceWidgetContext } from './context';
 export {
     registerLayout,
     unregisterLayout,
