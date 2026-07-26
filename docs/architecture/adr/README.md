@@ -24,3 +24,4 @@ Vela is a new, modern charting library: a robust **core** surrounded by three in
 | [0003](./0003-no-default-scripting-engine.md) | No default scripting engine | Accepted |
 | [0004](./0004-enforce-layering-with-import-acl.md) | Enforce layering with an import ACL | Accepted |
 | [0005](./0005-core-owns-user-drawings.md) | Core owns user drawings | Accepted |
+| [0006](./0006-workspace-composes-charts.md) | Workspace composes charts; chrome is a projection of the active cell | Accepted |
