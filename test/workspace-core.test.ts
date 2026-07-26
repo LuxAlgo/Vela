@@ -124,3 +124,36 @@ describe('splitter track math (pure)', () => {
         expect(trackOffsets([1], 800, 4)).toEqual([]); // no internal boundary
     });
 });
+
+describe('sync model (pure)', () => {
+    const IDS = ['c1', 'c2', 'c3', 'c4'];
+
+    it('off/absent settings follow nothing', async () => {
+        const { syncTargets } = await import('../src/workspace/sync');
+        expect(syncTargets('c1', undefined, IDS)).toEqual([]);
+        expect(syncTargets('c1', false, IDS)).toEqual([]);
+    });
+
+    it('true links every cell into one implicit group (origin excluded)', async () => {
+        const { syncTargets } = await import('../src/workspace/sync');
+        expect(syncTargets('c1', true, IDS)).toEqual(['c2', 'c3', 'c4']);
+        expect(syncTargets('c3', true, IDS)).toEqual(['c1', 'c2', 'c4']);
+    });
+
+    it('a record links same-group cells only; unlisted cells are unlinked', async () => {
+        const { syncTargets } = await import('../src/workspace/sync');
+        const groups = { c1: 'a', c2: 'a', c3: 'b' };
+        expect(syncTargets('c1', groups, IDS)).toEqual(['c2']); // c3 other group, c4 unlisted
+        expect(syncTargets('c3', groups, IDS)).toEqual([]); // alone in its group
+        expect(syncTargets('c4', groups, IDS)).toEqual([]); // an unlisted origin follows nothing
+    });
+
+    it('rangesWithin: the epsilon short-circuit on both edges', async () => {
+        const { rangesWithin } = await import('../src/workspace/sync');
+        const a = { from: 1000, to: 2000 };
+        expect(rangesWithin(a, { from: 1400, to: 1600 }, 500)).toBe(true);
+        expect(rangesWithin(a, { from: 1600, to: 2000 }, 500)).toBe(false); // from drifted past eps
+        expect(rangesWithin(a, { from: 1000, to: 2601 }, 500)).toBe(false); // to drifted past eps
+        expect(rangesWithin(a, a, 0)).toBe(true);
+    });
+});

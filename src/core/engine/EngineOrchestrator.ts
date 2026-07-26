@@ -246,6 +246,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     private onViewportChange(range: VisibleRange): void {
         this.visibleRange = { left: range.from, right: range.to };
+        this.events.emit('viewport:changed', { from: range.from, to: range.to });
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportTimer = setTimeout(() => {
             this.viewportTimer = null;

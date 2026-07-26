@@ -51,6 +51,12 @@ export interface VelaEventMap extends Record<string, unknown> {
     'context:changed': { id: string };
     /** A live tick: the forming bar was updated or a new bar appended. */
     bar: OHLCV;
+    /**
+     * The visible time range moved (pan/zoom/fit — fires per applied change, NOT
+     * debounced; the engine re-run debounce is separate). Payload = `{from, to}` in
+     * epoch-ms. The seam viewport-sync links between charts build on.
+     */
+    'viewport:changed': { from: number; to: number };
     /** A deep-history backfill chunk landed (`loaded` of `target` bars are on the chart). */
     'history:progress': { loaded: number; target: number };
     /**

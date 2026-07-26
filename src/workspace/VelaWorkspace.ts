@@ -31,6 +31,8 @@ import { widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
+import { timeframeToMs } from '../data/timeframe';
+import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { ChartCell, type CellSeed, type PooledCellState } from './ChartCell';
 import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
@@ -72,6 +74,10 @@ export interface VelaWorkspaceOptions {
     /** The ONE shared drawing toolbar, docked left of the grid and acting on the active
      *  cell (per-cell in-chart bars stay hidden either way). Default true. */
     drawingToolbar?: boolean;
+    /** Sync links between cells: per kind, `true` = all cells, or a `{cellId: group}`
+     *  record (only same-group cells follow each other). `crosshair` is reserved.
+     *  Default: everything off. Change at runtime via `ws.sync.set(kind, setting)`. */
+    sync?: SyncOptions;
     /** Above this many cells, EVERY cell uses the canvas2d backend (uniform look inside
      *  the browser's WebGL-context budget; glow is unavailable there). Default 8. */
     maxWebglCells?: number;
@@ -143,6 +149,11 @@ export class VelaWorkspace {
      *  stay transient and per-cell: they exit when the focus leaves. */
     private globalTool: DrawingTypeKey | null = null;
     private globalSnap: SnapMode = 'off';
+    /** Live sync configuration (mutable copy of the option; `crosshair` never stored). */
+    private readonly syncOpts: SyncOptions = {};
+    /** Re-entrance guard around one propagation tick: followers' synchronous echoes
+     *  (their setVisibleRange re-emits viewport:changed) must not re-propagate. */
+    private syncBusy = false;
     private manifest: ResolvedIndicator[] = [];
     private timezone: string;
     private openDialogs = 0;
@@ -157,6 +168,9 @@ export class VelaWorkspace {
         if (!hostEl) throw new Error(`VelaWorkspace: container not found: ${String(container)}`);
         this.opts = opts;
         this.timezone = opts.timezone ?? 'Etc/UTC';
+        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) {
+            this.applySyncSetting(kind, opts.sync?.[kind]);
+        }
         this.def = this.resolveLayout(opts.layout ?? '4');
 
         const doc = hostEl.ownerDocument;
@@ -391,6 +405,15 @@ export class VelaWorkspace {
         this.mountAttachments();
         this.topbar.renderActions();
     }
+
+    /** The sync-link control surface: `set(kind, true | {cellId: group} | false)`,
+     *  `get(kind)`, `state()`. Enabling a link aligns the followers to the ACTIVE cell
+     *  once, so the grid starts coherent. `crosshair` is reserved (warn + no-op). */
+    readonly sync = {
+        set: (kind: SyncKind, setting: SyncSetting | false | undefined): void => this.applySyncSetting(kind, setting === false ? undefined : setting, true),
+        get: (kind: SyncKind): SyncSetting | undefined => this.syncOpts[kind],
+        state: (): SyncOptions => ({ ...this.syncOpts }),
+    };
 
     /** Set the workspace-global display timezone — applied to EVERY cell. */
     setTimezone(zone: string): void {
@@ -628,11 +651,81 @@ export class VelaWorkspace {
             this.drawToolbar?.setMeasureActive(mode === 'measure');
             this.drawToolbar?.setEraserActive(mode === 'eraser');
         });
+        // Viewport sync: every applied pan/zoom/fit propagates to the same-group cells.
+        chart.on('viewport:changed', (range) => this.propagateViewport(cell.id, range));
     }
 
-    /** Trigger ② — a cell's market changed: retention always; chrome only if active. */
+    // ── sync links ──────────────────────────────────────────────
+    private applySyncSetting(kind: SyncKind, setting: SyncSetting | undefined, align = false): void {
+        if (kind === 'crosshair') {
+            if (setting) console.warn('[vela] crosshair sync needs a renderer capability that has not shipped yet — ignored.');
+            return;
+        }
+        if (setting == null || setting === false) delete this.syncOpts[kind];
+        else this.syncOpts[kind] = setting;
+        if (align && setting && this.activeId) {
+            if (kind === 'viewport') {
+                const range = this.cellsById.get(this.activeId)?.chart.getVisibleRange();
+                if (range) this.propagateViewport(this.activeId, range);
+            } else {
+                this.propagateMarket(this.activeId);
+            }
+        }
+    }
+
+    /**
+     * Push an origin cell's visible range onto its same-group followers. Loop-safe two
+     * ways: the busy guard eats the followers' SYNCHRONOUS echoes (their setVisibleRange
+     * re-emits `viewport:changed` in the same tick), and the half-bar epsilon
+     * short-circuits any async residue — a follower already within half of ITS OWN bar
+     * interval is left alone, so cross-timeframe groups settle instead of oscillating.
+     */
+    private propagateViewport(originId: string, range: { from: number; to: number }): void {
+        if (this.syncBusy || this.destroyed) return;
+        const targets = syncTargets(originId, this.syncOpts.viewport, [...this.cellsById.keys()]);
+        if (targets.length === 0) return;
+        this.syncBusy = true;
+        try {
+            for (const id of targets) {
+                const cell = this.cellsById.get(id);
+                if (!cell) continue;
+                const current = cell.chart.getVisibleRange();
+                const tfMs = timeframeToMs(cell.timeframe);
+                const eps = Number.isFinite(tfMs) ? tfMs / 2 : 0;
+                if (current && rangesWithin(current, range, eps)) continue;
+                cell.chart.setVisibleRange(range);
+            }
+        } finally {
+            this.syncBusy = false;
+        }
+    }
+
+    /**
+     * Push an origin cell's symbol/timeframe onto its same-group followers (fired from
+     * `market:changed`). Convergence comes from IDEMPOTENCE, not the guard: a follower's
+     * own (async) `market:changed` propagates back, but every peer already carries the
+     * value, so the cell setters no-op and the wave dies.
+     */
+    private propagateMarket(originId: string): void {
+        if (this.syncBusy || this.destroyed) return;
+        const origin = this.cellsById.get(originId);
+        if (!origin) return;
+        const ids = [...this.cellsById.keys()];
+        this.syncBusy = true;
+        try {
+            if (origin.symbol) {
+                for (const id of syncTargets(originId, this.syncOpts.symbol, ids)) this.cellsById.get(id)?.setSymbol(origin.symbol);
+            }
+            for (const id of syncTargets(originId, this.syncOpts.timeframe, ids)) this.cellsById.get(id)?.setTimeframe(origin.timeframe);
+        } finally {
+            this.syncBusy = false;
+        }
+    }
+
+    /** Trigger ② — a cell's market changed: retention + sync always; chrome only if active. */
     private onCellMarketChanged(id: string): void {
         this.refreshRetention();
+        this.propagateMarket(id);
         if (id !== this.activeId) return;
         const cell = this.cellsById.get(id);
         if (!cell) return;

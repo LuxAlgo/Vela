@@ -169,6 +169,7 @@ Subscribe with `chart.on(event, handler)`; every subscription returns an unsubsc
 | `indicator:error` | `{ id, error }` | An indicator failed. |
 | `context:changed` | `{ id }` | An indicator's execution context advanced (run finished; throttled to ~1/s while streaming). Re-pull `handle.context()` if you consume it. Fires only for context-capable engines. |
 | `bar` | the bar (OHLCV) | A live tick — the forming bar updated or a new bar appended. |
+| `viewport:changed` | `{ from, to }` (epoch-ms) | The visible time range moved (pan/zoom/fit) — fires per applied change, not debounced. The seam viewport-sync links between charts build on. |
 | `alert` | engine alert | A script raised an alert. |
 | `warning` | engine warning | A script raised a warning. |
 
