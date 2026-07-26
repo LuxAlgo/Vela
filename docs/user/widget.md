@@ -39,7 +39,7 @@ On top of every [chart option](./options.md), the widget adds:
 | `priceStyle` | string | `'candles'` | Initial chart style; changed live from the topbar dropdown. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
 | `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles. |
-| `persist` | boolean \| string | `false` | Bring the chart back as you left it: symbol/timeframe/style/timezone/bars/watermark/favorite tools restored as defaults, plus the renderer config and **user drawings** documents (`true` = key `'vela-widget'`; a string is the key). |
+| `persist` | boolean \| string | `false` | Bring the chart back as you left it — the widget persists its FULL state (the unified `getState()` document: market, prefs, renderer config, user drawings, indicators) and restores it at construction (`true` = key `'vela-widget'`; a string is the key). Old three-key payloads migrate transparently. |
 | `storage` | `WidgetStorage` | localStorage | The persistence backend — inject a custom adapter (see below). |
 | `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark flag) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
 
@@ -96,6 +96,29 @@ its dialogs is open, muting chart-scope bindings.
 - **Context menus** — right-click the chart body, the price axis, or the time axis for
   zone-specific actions (copy price, reset view, screenshot, scale toggles).
 
+## Widget state — the same surface as the workspace
+
+The widget exposes the SAME state triplet as [the workspace](./workspace.md), speaking
+the SAME document format — a widget is the single-cell case (`layout: '1'`, one `c1`
+cell):
+
+```ts
+const state = widget.getState();
+// → { version: 1, layout: '1', activeCellId: 'c1', timezone, favorites?,
+//     cells: { c1: { symbol, provider?, timeframe, priceStyle, bars?, watermark?,
+//                    rendererConfig, drawings, indicators } } }
+
+widget.applyState(state); // untrusted-safe; applied IN PLACE (the chart survives)
+widget.on('state:changed', () => {
+    /* debounced (~500ms) — re-pull getState() */
+});
+```
+
+One format means state moves freely between shells: a saved widget document drops into
+a workspace slot as-is, and a workspace cell's state restores into a widget. Custom
+flows — server snapshots, share links, templates — compose `getState`/`applyState`
+directly.
+
 ## Custom persistence storage
 
 `persist` writes through a **storage adapter** — localStorage by default. Inject any
@@ -119,19 +142,20 @@ const restStorage: WidgetStorage = {
 new VelaWidget('#chart', { persist: true, storage: restStorage, /* … */ });
 ```
 
-Three keys are written: the state key (symbol/timeframe/style/timezone/bars/watermark
-as one JSON document), `<key>:config` (the full renderer cosmetic template), and
-`<key>:drawings` (the user-drawings document — `persist: true` brings your chart back
-**as you left it**, drawings included; saves are debounced ~500ms off the
-`drawing:created/edited/removed` events and flushed on unload/destroy).
+ONE key is written: the unified state document (`getState()`, JSON-encoded) —
+`persist: true` brings your chart back **as you left it**: market, prefs, renderer
+config, user drawings, and indicators. Saves are debounced ~500ms and flushed on
+unload/destroy. A pre-unified payload (the old three-key layout: prefs +
+`<key>:config` + `<key>:drawings`) is migrated transparently — read once at boot,
+rewritten unified on the first save, legacy sub-keys dropped.
 
 Semantics to know:
 
 - **Synchronous adapters** (localStorage-like) restore *before* the first chart build —
   no flash of defaults.
 - **Asynchronous adapters** resolve after construction: the widget builds with its
-  option defaults, then **late-applies** the persisted values when they arrive (one
-  rebuild if the market changed; cosmetics re-skin live). URL params still win.
+  option defaults, then **late-applies** the document when it arrives (one in-place
+  market switch if it changed; cosmetics re-skin live). URL params still win.
 - Writes are **fire-and-forget** — the widget never blocks the UI on storage. The last
   write also fires on `beforeunload`; a remote adapter that must survive tab-close
   should use `navigator.sendBeacon` in its `set`.

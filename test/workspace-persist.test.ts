@@ -10,6 +10,7 @@ const fullDoc: WorkspaceState = {
     layout: '4',
     activeCellId: 'c2',
     timezone: 'Europe/Paris',
+    favorites: ['trendline', 'hline'],
     sync: { viewport: true, symbol: { c1: 'a', c2: 'a' } },
     trackSizes: { '4': { cols: [1.4, 0.6], rows: [1, 1] } },
     cells: {
@@ -19,6 +20,7 @@ const fullDoc: WorkspaceState = {
             timeframe: '60',
             priceStyle: 'candles',
             bars: 500,
+            watermark: false,
             rendererConfig: { theme: 'dark', nested: { any: ['shape'] } },
             drawings: { version: 1, items: [{ type: 'trendline' }] },
             indicators: { manifest: ['EMA 20'], natives: ['volume'] },
@@ -85,6 +87,20 @@ describe('sanitizeState (the applyState gate)', () => {
             sync: { symbol: { c1: 'a', c2: 9 }, timeframe: { c1: 3 } },
         });
         expect(doc!.sync).toEqual({ symbol: { c1: 'a' } }); // timeframe record emptied → dropped
+    });
+
+    it('filters shared favorites and per-cell watermark by type', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            favorites: ['trendline', 7, null, 'hline'],
+            cells: { c1: { watermark: 'yes' }, c2: { watermark: false } },
+        });
+        expect(doc!.favorites).toEqual(['trendline', 'hline']); // non-strings dropped
+        expect(doc!.cells.c1).toEqual({}); // non-boolean watermark dropped
+        expect(doc!.cells.c2).toEqual({ watermark: false });
+        // an all-junk favorites array disappears entirely
+        expect(sanitizeState({ version: 1, layout: '1', favorites: [1, 2], cells: {} })!.favorites).toBeUndefined();
     });
 });
 

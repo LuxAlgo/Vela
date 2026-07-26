@@ -161,6 +161,8 @@ export class VelaWorkspace {
      *  stay transient and per-cell: they exit when the focus leaves. */
     private globalTool: DrawingTypeKey | null = null;
     private globalSnap: SnapMode = 'off';
+    /** Favorite drawing tools — a WORKSPACE preference (one star set, every cell). */
+    private favs: string[] = [];
     /** Live sync configuration (mutable copy of the option; `crosshair` never stored). */
     private readonly syncOpts: SyncOptions = {};
     // ── persistence (state surface + adapter plumbing) ──
@@ -200,6 +202,7 @@ export class VelaWorkspace {
             if (typeof window !== 'undefined') window.addEventListener('beforeunload', this.onUnload);
         }
         this.timezone = boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
+        if (boot?.favorites) this.favs = [...boot.favorites];
         const sync = boot?.sync ?? opts.sync;
         for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) {
             this.applySyncSetting(kind, sync?.[kind]);
@@ -466,6 +469,7 @@ export class VelaWorkspace {
         for (const [id, cell] of this.cellsById) cells[id] = cell.dehydrate(); // live slots win
         const state: WorkspaceState = { version: 1, layout: this.def.id, timezone: this.timezone, sync: { ...this.syncOpts }, cells };
         if (this.activeId) state.activeCellId = this.activeId;
+        if (this.favs.length > 0) state.favorites = [...this.favs];
         if (this.trackSizes.size > 0) state.trackSizes = Object.fromEntries([...this.trackSizes].map(([k, v]) => [k, { ...v }]));
         return state;
     }
@@ -484,6 +488,7 @@ export class VelaWorkspace {
             this.timezone = st.timezone;
             this.bottombar?.setTimezone(st.timezone);
         }
+        if (st.favorites) this.favs = [...st.favorites]; // newborn cells inherit below (buildCells)
         for (const kind of ['viewport', 'symbol', 'timeframe'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
         this.trackSizes.clear();
         if (st.trackSizes) for (const [id, ts] of Object.entries(st.trackSizes)) this.trackSizes.set(id, ts);
@@ -724,6 +729,9 @@ export class VelaWorkspace {
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(slot.id, cell);
             this.wireCell(cell);
+            // The shared star set is a workspace pref — every newborn cell inherits it
+            // silently (equal-set idempotence keeps the favorites event from echoing).
+            if (this.favs.length > 0) cell.chart.drawings.setFavorites(this.favs as never[]);
             // The indicator ledger: a restored cell re-adds ITS recorded set (held until
             // the manifest resolves); a fresh cell seeds the manifest's enabled entries.
             cell.setManifest(this.manifest, pooled?.indicators == null);
@@ -748,8 +756,10 @@ export class VelaWorkspace {
             this.topbar.setAlertCount(this.alerts.length);
         });
         // Favorites are a WORKSPACE preference: one shared toolbar, one star set — a star
-        // toggled in any cell re-applies to every other cell (and the shared bar).
+        // toggled in any cell re-applies to every other cell (and the shared bar), and
+        // the mirror is what `getState()` persists.
         chart.on('drawing:favorites', ({ favorites }) => {
+            this.favs = favorites;
             for (const other of this.cellsById.values()) {
                 if (other !== cell) other.chart.drawings.setFavorites(favorites as never[]);
             }

@@ -6,23 +6,11 @@
 // workspace (it owns the cells); this module answers the one pure question — "which
 // cells follow this origin?" — plus the epsilon test that keeps viewport loops quiet.
 
-/** The linkable dimensions. `crosshair` is RESERVED: it needs a renderer capability
- *  that has not shipped yet — setting it warns and is ignored. */
-export type SyncKind = 'viewport' | 'symbol' | 'timeframe' | 'crosshair';
+// The link TYPES live in the shared state document (`src/state/document.ts`) — sync
+// settings are part of the persisted format. Re-exported here unchanged.
+import type { SyncSetting } from '../state/document';
 
-/**
- * One link's configuration: `false`/absent = off; `true` = ALL cells linked (one
- * implicit group); a record maps cell id → group name, and only cells sharing a group
- * follow each other (a cell absent from the record is unlinked).
- */
-export type SyncSetting = boolean | Readonly<Record<string, string>>;
-
-export interface SyncOptions {
-    viewport?: SyncSetting;
-    symbol?: SyncSetting;
-    timeframe?: SyncSetting;
-    crosshair?: SyncSetting;
-}
+export type { SyncKind, SyncSetting, SyncOptions } from '../state/document';
 
 /** The cells that follow `originId` under `setting` — PURE (never includes the origin). */
 export function syncTargets(originId: string, setting: SyncSetting | undefined, cellIds: readonly string[]): string[] {

@@ -31,10 +31,10 @@ export interface LayoutDefinition {
 }
 
 /** Grid track sizes overriding a layout's declared weights (splitter drags). */
-export interface TrackSizes {
-    cols?: number[];
-    rows?: number[];
-}
+// TrackSizes is part of the shared state document (`src/state/document.ts`).
+import type { TrackSizes } from '../state/document';
+
+export type { TrackSizes } from '../state/document';
 
 const registry = new Map<string, LayoutDefinition>();
 

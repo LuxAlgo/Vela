@@ -18,6 +18,7 @@ import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import type { ResolvedIndicator } from '../widget/indicators';
 import type { WidgetContext } from '../widget/contributions';
+import type { CellState } from '../state/document';
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks). */
 export interface CellSeed {
@@ -28,15 +29,9 @@ export interface CellSeed {
     bars?: number;
 }
 
-/** A destroyed cell's state, kept by the workspace pool so its slot restores later. */
-export interface PooledCellState extends CellSeed {
-    /** The renderer's cosmetic config document (`renderer.getConfig()`). */
-    rendererConfig?: unknown;
-    /** The user-drawings document (`drawings.toJSON()`). */
-    drawings?: unknown;
-    /** The indicator ledger: manifest entries by name + present native types. */
-    indicators?: { manifest: string[]; natives: string[] };
-}
+/** A destroyed cell's state, kept by the workspace pool so its slot restores later —
+ *  the per-cell entry of the SHARED state document (`src/state/document.ts`). */
+export type PooledCellState = CellState;
 
 /** One entry of the shared indicator picker's native catalog, per cell. */
 export interface CellNativeInfo {
@@ -97,6 +92,8 @@ export class ChartCell {
     /** A restored ledger's manifest entry NAMES, waiting for the manifest to resolve
      *  (a pool/persisted cell can be built before the shared manifest has loaded). */
     private pendingManifestNames: string[] | null = null;
+    /** Restored natives not yet visible in the async catalog — `dehydrate` fallback. */
+    private seedNatives: string[] | null = null;
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
     private destroyed = false;
@@ -143,9 +140,12 @@ export class ChartCell {
         if (seed.drawings != null) this.inner.drawings.fromJSON(seed.drawings);
         // A restored ledger: natives re-add immediately (no manifest needed); manifest
         // entries wait for setManifest (the shared manifest may still be resolving).
+        // Both halves stay reported by `dehydrate` until they materialize, so an early
+        // snapshot (persist flush racing the async resolutions) never wipes them.
         if (seed.indicators) {
             for (const type of seed.indicators.natives) this.inner.addNativeIndicator(type);
             this.pendingManifestNames = [...seed.indicators.manifest];
+            this.seedNatives = [...seed.indicators.natives];
         }
         const tz = deps.timezone();
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
@@ -411,6 +411,7 @@ export class ChartCell {
         void chart.availableNativeIndicators().then((list) => {
             if (this.destroyed || this.inner !== chart) return;
             this.nativeCatalog = list.map((n) => ({ type: n.type, title: n.title, supported: n.supported, present: n.present, beta: n.beta }));
+            if (this.nativeCatalog.some((n) => n.present)) this.seedNatives = null; // materialized — the live catalog is the truth now
             this.deps.onIndicatorsChanged(this.id);
         });
     }
@@ -438,10 +439,15 @@ export class ChartCell {
             priceStyle: this.priceStyle,
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
-            indicators: {
-                manifest: this.instances.map((it) => it.entry.name),
-                natives: this.nativeCatalog.filter((n) => n.present).map((n) => n.type),
-            },
+            indicators: (() => {
+                // A restored ledger still waiting for its async halves (shared-manifest
+                // resolution, native-catalog probe) must not be wiped by an early save.
+                const present = this.nativeCatalog.filter((n) => n.present).map((n) => n.type);
+                return {
+                    manifest: this.instances.length > 0 ? this.instances.map((it) => it.entry.name) : (this.pendingManifestNames ?? []),
+                    natives: present.length > 0 ? present : (this.seedNatives ?? []),
+                };
+            })(),
         };
     }
 

@@ -12,7 +12,8 @@ import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, panTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
 import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments } from '../src/widget/contributions';
-import { loadPersisted, savePersisted, type WidgetStorage } from '../src/widget/persist';
+import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
+import { sanitizeState } from '../src/state/document';
 
 describe('parseTimeframe', () => {
     it('bare numbers are minutes; canonical collapses to bare minutes', () => {
@@ -160,6 +161,42 @@ describe('readUrlState', () => {
         expect(readUrlState('?interval=240')).toEqual({ timeframe: '240' });
         expect(readUrlState('')).toEqual({});
         expect(readUrlState('?symbol=')).toEqual({});
+    });
+});
+
+describe('legacyWidgetState (pre-unified three-key migration)', () => {
+    it('folds prefs + config + drawings keys into one single-cell unified document', () => {
+        const doc = legacyWidgetState(
+            { symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'bars', timezone: 'Europe/Paris', bars: '2000', watermark: '0', favorites: 'trendline,hline' },
+            JSON.stringify({ theme: 'dark' }),
+            JSON.stringify({ version: 1, drawings: [{ type: 'hline' }] }),
+        );
+        expect(doc).toEqual({
+            version: 1,
+            layout: '1',
+            activeCellId: 'c1',
+            timezone: 'Europe/Paris',
+            favorites: ['trendline', 'hline'],
+            cells: {
+                c1: {
+                    symbol: 'ETHUSDT',
+                    timeframe: '15',
+                    priceStyle: 'bars',
+                    bars: 2000,
+                    watermark: false,
+                    rendererConfig: { theme: 'dark' },
+                    drawings: { version: 1, drawings: [{ type: 'hline' }] },
+                },
+            },
+        });
+        // The migrated document must survive the shared sanitizer untouched.
+        expect(sanitizeState(doc)).toEqual(doc);
+    });
+
+    it('tolerates junk: corrupt sub-documents are dropped, an empty payload is null', () => {
+        const doc = legacyWidgetState({ symbol: 'BTCUSDT', bars: 'not-a-number' }, '{corrupt', 'also corrupt');
+        expect(doc!.cells.c1).toEqual({ symbol: 'BTCUSDT' });
+        expect(legacyWidgetState({}, null, null)).toBeNull(); // nothing usable → no migration
     });
 });
 

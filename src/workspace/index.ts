@@ -20,4 +20,4 @@ export { evenTracks, resizeTracks, trackOffsets } from './splitters';
 export { syncTargets, rangesWithin } from './sync';
 export type { SyncKind, SyncSetting, SyncOptions } from './sync';
 export { encodeState, decodeState, sanitizeState, memoryStorageAdapter } from './persist';
-export type { WorkspaceState, WorkspaceStorage } from './persist';
+export type { WorkspaceState, CellState, WorkspaceStorage } from './persist';

@@ -76,8 +76,8 @@ The state SURFACE is the product; persistence is an adapter on top of it.
 
 ```ts
 const state = ws.getState();
-// → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, cells: {…} }
-// Per slot (live AND dormant): { symbol, provider?, timeframe, priceStyle, bars?,
+// → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?, cells: {…} }
+// Per slot (live AND dormant): { symbol, provider?, timeframe, priceStyle, bars?, watermark?,
 //   rendererConfig (renderer.getConfig() document), drawings (drawings.toJSON() document),
 //   indicators: { manifest: string[], natives: string[] } }
 
@@ -92,6 +92,11 @@ chart**; `applyState()` is its inverse. Custom flows — server-side snapshots, 
 links, layout templates — compose these two directly and need none of the plumbing
 below. There is deliberately **no built-in URL persistence**: a host wanting shareable
 links encodes `getState()` into its own URL scheme and calls `applyState()` at boot.
+
+The document format is **shared with [the widget](./widget.md)** — same triplet
+(`getState`/`applyState`/`state:changed`), same codec, the widget being the
+single-cell case (`layout: '1'`, one `c1` cell). A saved widget chart drops into a
+workspace slot as-is, and a cell's state restores into a widget.
 
 ### The `persist` option and the storage interface
 
