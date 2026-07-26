@@ -30,6 +30,7 @@ import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
+import { createAttributionMark } from '../renderers/native/chrome/AttributionMark';
 import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
@@ -109,6 +110,7 @@ export interface WorkspaceEventMap extends Record<string, unknown> {
 const DEFAULT_TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
 const GAP_PX = 2; // grid gap — the visible seam between cells (splitter strips center on it)
 const POOL_CAP = 16; // dormant slot states kept across layout shrinks
+const TIME_AXIS_H = 22; // px the renderer reserves for a time axis (mirrors NativeRenderer's)
 const ALERT_CAP = 50;
 
 const STYLE_ID = 'vela-workspace';
@@ -117,8 +119,17 @@ const CSS = `
 .vela-ws-main { position: relative; display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-ws-toolbar { position: relative; flex: none; }
 .vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
-.vela-cell { background: var(--vela-bg); }
-.vela-cell[data-active='1'] { outline: 1px solid var(--vela-accent); outline-offset: -1px; z-index: 1; }
+.vela-cell { background: var(--vela-bg); position: relative; }
+/* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
+   outline on the cell is painted under them) — inert to the pointer. */
+.vela-cell[data-active='1']::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--vela-accent-bright, var(--vela-accent));
+    pointer-events: none;
+    z-index: 10;
+}
 .vela-ws-splitter:hover { background: var(--vela-accent); opacity: 0.35; }
 `;
 
@@ -298,6 +309,13 @@ export class VelaWorkspace {
         this.objectTree = new ObjectTree(main);
         this.root.appendChild(main);
         this.toast = new Toast(this.gridEl);
+
+        // ONE attribution mark for the whole grid (bottom-left, floating above the
+        // bottom-left cell's time axis) — the cells disable their per-chart marks, and
+        // this single mark is the NOTICE-required equivalent visible attribution.
+        const mark = createAttributionMark(doc, resolveTheme(opts.theme).textColor);
+        Object.assign(mark.style, { left: '12px', bottom: `${TIME_AXIS_H + 10}px`, zIndex: '11' });
+        this.gridEl.appendChild(mark);
 
         // ONE drawing toolbar for the whole grid: commands go to the ACTIVE cell's
         // `chart.drawings` facade; the cell's own in-chart bar stays hidden (the cells

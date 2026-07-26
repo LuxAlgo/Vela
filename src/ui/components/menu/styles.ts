@@ -46,5 +46,32 @@ export const MENU_CSS = `
 }
 .vela-menu-item[data-checked] { color: var(--vela-accent); }
 .vela-menu-item[data-checked] .vela-icon { color: var(--vela-accent); }
+/* Switch rows (boolean settings in a dropdown): a right-aligned toggle pill — the
+   same control language as the settings dialog's toggles. */
+.vela-menu-switch {
+    order: 99;
+    margin-left: auto;
+    position: relative;
+    flex: none;
+    width: 34px;
+    height: 18px;
+    border-radius: 9px;
+    background: var(--vela-surface-overlay);
+    border: 1px solid var(--vela-border-soft);
+    transition: background 0.16s ease, border-color 0.16s ease;
+}
+.vela-menu-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--vela-fg-muted);
+    transition: transform 0.16s ease, background 0.16s ease;
+}
+.vela-menu-switch.on { background: var(--vela-accent-bright, var(--vela-accent)); border-color: var(--vela-accent-bright, var(--vela-accent)); }
+.vela-menu-switch.on::after { transform: translateX(16px); background: var(--vela-bg); }
 .vela-menu-sep { height: 1px; margin: 4px 6px; background: var(--vela-border); }
 `;

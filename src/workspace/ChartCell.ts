@@ -135,6 +135,10 @@ export class ChartCell {
             { dataFeed: deps.feed },
         );
         for (const [language, make] of Object.entries(deps.engines)) this.inner.registerEngine(language, make());
+        // ONE attribution mark per WORKSPACE, not per cell: each cell disables its own
+        // in-chart mark; the workspace mounts the single grid-level mark that satisfies
+        // the NOTICE's equivalent-visible-attribution requirement.
+        this.inner.renderer.set('attribution', false);
         // Pool restore: cosmetics + drawings round-trip (both validate untrusted input).
         if (seed.rendererConfig != null) this.inner.renderer.applyConfig(seed.rendererConfig);
         if (seed.drawings != null) this.inner.drawings.fromJSON(seed.drawings);

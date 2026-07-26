@@ -328,7 +328,7 @@ export class Topbar {
 
     private layoutItems(): MenuItemDescriptor[] {
         const presets = (this.opts.layout?.options() ?? []).map((l) => ({ id: l.id, label: l.label, checked: l.id === this.layoutId }));
-        const toggles = (this.opts.layout?.toggles?.() ?? []).map((t, i) => ({ id: `toggle:${t.id}`, label: t.label, checked: t.checked, separatorBefore: i === 0 }));
+        const toggles = (this.opts.layout?.toggles?.() ?? []).map((t, i) => ({ id: `toggle:${t.id}`, label: t.label, checked: t.checked, toggle: true, separatorBefore: i === 0 }));
         return [...presets, ...toggles];
     }
 

@@ -63,6 +63,9 @@ export function applyThemeTokens(el: HTMLElement, t: VelaTheme): void {
     set('--vela-focus-soft', withAlpha(t.textColor, 0.12));
     set('--vela-scroll', withAlpha(t.textColor, 0.3));
     set('--vela-accent', '#2962ff');
+    // The LuxAlgo-flavored LIGHT blue (also the default drawing-tool color): switches
+    // and other "on" affordances that should read brighter than the menu accent.
+    set('--vela-accent-bright', '#38c0fd');
     set('--vela-up', t.upColor);
     set('--vela-down', t.downColor);
     set('--vela-danger', t.downColor);
