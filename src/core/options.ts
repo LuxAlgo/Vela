@@ -44,6 +44,21 @@ export interface MarketSwitch {
     visibleRange?: VisibleRangePreset | VisibleRange;
 }
 
+/**
+ * The chart's current market identity — `chart.market`, the read counterpart of
+ * `setMarket`. A SNAPSHOT of the requested market (mutating it changes nothing): it
+ * reflects a switch as soon as `setMarket` is called, not when the load lands — the
+ * "what is this chart showing/loading right now" answer. `offline` is true when the
+ * chart runs on an inline `data` array instead of a provider.
+ */
+export interface MarketSnapshot {
+    symbol?: string;
+    provider?: ProviderName;
+    timeframe?: string;
+    bars?: number;
+    offline: boolean;
+}
+
 export interface VelaTheme {
     background: string;
     textColor: string;

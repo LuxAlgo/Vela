@@ -2,7 +2,7 @@ import type { IChartRenderer, VisibleRange } from './core/ports/IChartRenderer';
 import type { ScriptingEngine } from './core/ports/ScriptingEngine';
 import type { MarketDataFeed } from './core/ports/MarketDataFeed';
 import type { VisibleRangePreset } from './core/visible-range';
-import type { VelaOptions, MarketSwitch, AddIndicatorOptions } from './core/options';
+import type { VelaOptions, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
 import type { InputValue } from './core/model/inputs';
 import type { IndicatorHandle } from './core/IndicatorHandle';
 import type { EngineContextSnapshot } from './core/ports/ScriptingEngine';
@@ -207,6 +207,13 @@ export class Vela {
      */
     setMarket(next: MarketSwitch): Promise<void> {
         return this.orchestrator.setMarket(next);
+    }
+
+    /** The current market identity — the read counterpart of {@link setMarket}. A snapshot
+     *  of the REQUESTED market: it reflects an in-flight switch immediately (before the
+     *  new bars land). Listen to `market:changed` for committed identity changes. */
+    get market(): MarketSnapshot {
+        return this.orchestrator.marketSnapshot();
     }
 
     /** Resolves once the chart is painted and interactive. For a symbol-backed chart this

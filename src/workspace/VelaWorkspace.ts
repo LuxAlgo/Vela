@@ -33,6 +33,7 @@ import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
+import { encodeState, decodeState, sanitizeState, memoryStorageAdapter, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { ChartCell, type CellSeed, type PooledCellState } from './ChartCell';
 import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
@@ -78,6 +79,14 @@ export interface VelaWorkspaceOptions {
      *  record (only same-group cells follow each other). `crosshair` is reserved.
      *  Default: everything off. Change at runtime via `ws.sync.set(kind, setting)`. */
     sync?: SyncOptions;
+    /** Persist the workspace state and restore it as defaults (`true` = key
+     *  'vela-workspace'; a string is the key). The state document is what
+     *  `getState()` returns; writes are debounced and flushed on unload/destroy. */
+    persist?: boolean | string;
+    /** Storage backend for `persist` — DEFAULT: an in-memory, session-lived adapter
+     *  (a destroyed and re-created workspace restores; a reload starts fresh).
+     *  Plug any {@link WorkspaceStorage} (sync or async) for durable persistence. */
+    storage?: WorkspaceStorage;
     /** Above this many cells, EVERY cell uses the canvas2d backend (uniform look inside
      *  the browser's WebGL-context budget; glow is unavailable there). Default 8. */
     maxWebglCells?: number;
@@ -90,6 +99,9 @@ export interface WorkspaceEventMap extends Record<string, unknown> {
     'layout:changed': { layout: string };
     'cell:created': { id: string };
     'cell:destroyed': { id: string };
+    /** The persistable state changed (debounced ~500ms) — re-pull `getState()` if you
+     *  consume it. The signal custom persistence flows build on. */
+    'state:changed': undefined;
 }
 
 const DEFAULT_TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
@@ -151,6 +163,11 @@ export class VelaWorkspace {
     private globalSnap: SnapMode = 'off';
     /** Live sync configuration (mutable copy of the option; `crosshair` never stored). */
     private readonly syncOpts: SyncOptions = {};
+    // ── persistence (state surface + adapter plumbing) ──
+    private readonly persistKey: string | null;
+    private readonly storage: WorkspaceStorage;
+    private stateTimer: ReturnType<typeof setTimeout> | null = null;
+    private readonly onUnload = (): void => this.persistNow();
     /** Re-entrance guard around one propagation tick: followers' synchronous echoes
      *  (their setVisibleRange re-emits viewport:changed) must not re-propagate. */
     private syncBusy = false;
@@ -167,11 +184,30 @@ export class VelaWorkspace {
         const hostEl = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container;
         if (!hostEl) throw new Error(`VelaWorkspace: container not found: ${String(container)}`);
         this.opts = opts;
-        this.timezone = opts.timezone ?? 'Etc/UTC';
-        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) {
-            this.applySyncSetting(kind, opts.sync?.[kind]);
+        // ── persistence boot: a SYNC storage restores before the first build (no flash
+        // of defaults); an async adapter resolves later and late-applies via applyState.
+        this.persistKey = opts.persist === undefined || opts.persist === false ? null : opts.persist === true ? 'vela-workspace' : opts.persist;
+        this.storage = opts.storage ?? memoryStorageAdapter();
+        let boot: WorkspaceState | null = null;
+        if (this.persistKey !== null) {
+            const raw = this.storage.get(this.persistKey);
+            if (typeof raw === 'string') boot = decodeState(raw);
+            else if (raw != null && typeof raw === 'object') {
+                void raw.then((r) => {
+                    if (!this.destroyed && r) this.applyState(decodeState(r));
+                });
+            }
+            if (typeof window !== 'undefined') window.addEventListener('beforeunload', this.onUnload);
         }
-        this.def = this.resolveLayout(opts.layout ?? '4');
+        this.timezone = boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
+        const sync = boot?.sync ?? opts.sync;
+        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) {
+            this.applySyncSetting(kind, sync?.[kind]);
+        }
+        this.def = this.resolveLayout(boot?.layout && layoutDefinition(boot.layout) ? boot.layout : (opts.layout ?? '4'));
+        if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
+        if (boot?.cells) for (const [id, cs] of Object.entries(boot.cells)) this.pool.set(id, cs);
+        const bootActive = boot?.activeCellId ?? null;
 
         const doc = hostEl.ownerDocument;
         injectStyles(STYLE_ID, CSS, doc);
@@ -320,7 +356,7 @@ export class VelaWorkspace {
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
-        this.setActiveCell(this.def.cells[0]?.id ?? null);
+        this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.def.cells[0]?.id ?? null));
 
         // The shared manifest resolves once; every FRESH cell seeds its enabled entries.
         if (opts.indicators !== undefined) {
@@ -380,6 +416,7 @@ export class VelaWorkspace {
         if (id) {
             this.projectActiveCell(); // trigger ① — the chrome rebinds to the new active cell
             this.events.emit('cell:active', { id, prev });
+            this.markStateDirty();
         }
     }
 
@@ -415,11 +452,69 @@ export class VelaWorkspace {
         state: (): SyncOptions => ({ ...this.syncOpts }),
     };
 
+    // ── state surface (the SDK's read/restore of the whole grid's config + content) ──
+    /**
+     * Snapshot the COMPLETE workspace state as a versioned, serializable document:
+     * layout + splitter sizes, active cell, sync links, timezone, and — per slot, live
+     * AND dormant — the market, the renderer's cosmetic config, the user-drawings
+     * document, and the indicator ledger. This is what `persist` writes; hosts build
+     * custom flows on it (server snapshots, share links, templates).
+     */
+    getState(): WorkspaceState {
+        const cells: Record<string, PooledCellState> = {};
+        for (const [id, cs] of this.pool) cells[id] = cs; // dormant slots
+        for (const [id, cell] of this.cellsById) cells[id] = cell.dehydrate(); // live slots win
+        const state: WorkspaceState = { version: 1, layout: this.def.id, timezone: this.timezone, sync: { ...this.syncOpts }, cells };
+        if (this.activeId) state.activeCellId = this.activeId;
+        if (this.trackSizes.size > 0) state.trackSizes = Object.fromEntries([...this.trackSizes].map(([k, v]) => [k, { ...v }]));
+        return state;
+    }
+
+    /**
+     * Restore a state document produced by {@link getState} (untrusted-safe: malformed
+     * fields are dropped). Replaces the WHOLE workspace state: prefs, sync links,
+     * layout, and every slot — current cells are rebuilt from the document. A layout id
+     * that is not registered keeps the current grid (register custom layouts first).
+     */
+    applyState(state: unknown): void {
+        if (this.destroyed) return;
+        const st = sanitizeState(state);
+        if (!st) return;
+        if (st.timezone) {
+            this.timezone = st.timezone;
+            this.bottombar?.setTimezone(st.timezone);
+        }
+        for (const kind of ['viewport', 'symbol', 'timeframe'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
+        this.trackSizes.clear();
+        if (st.trackSizes) for (const [id, ts] of Object.entries(st.trackSizes)) this.trackSizes.set(id, ts);
+        // Full rebuild from the document — every current slot is replaced by the restored one.
+        for (const [id, cell] of [...this.cellsById]) {
+            cell.destroy();
+            this.cellsById.delete(id);
+            this.events.emit('cell:destroyed', { id });
+        }
+        this.pool.clear();
+        for (const [id, cs] of Object.entries(st.cells)) this.pool.set(id, cs);
+        const def = layoutDefinition(st.layout);
+        if (def) this.def = def;
+        this.cellBackend = this.backendFor(this.def);
+        this.applyGrid();
+        this.buildCells();
+        this.topbar.setLayout(this.def.id);
+        const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.def.cells[0]?.id ?? null);
+        if (nextActive === this.activeId) this.projectActiveCell();
+        else this.setActiveCell(nextActive);
+        this.refreshRetention();
+        this.events.emit('layout:changed', { layout: this.def.id });
+        this.markStateDirty();
+    }
+
     /** Set the workspace-global display timezone — applied to EVERY cell. */
     setTimezone(zone: string): void {
         this.timezone = zone;
         this.bottombar?.setTimezone(zone);
         for (const cell of this.cellsById.values()) cell.chart.renderer.set('timezone', zone);
+        this.markStateDirty();
     }
 
     // ── layout ──────────────────────────────────────────────────
@@ -457,6 +552,7 @@ export class VelaWorkspace {
         else this.setActiveCell(nextActive);
         this.refreshRetention();
         this.events.emit('layout:changed', { layout: next.id });
+        this.markStateDirty();
     }
 
     resize(): void {
@@ -464,7 +560,11 @@ export class VelaWorkspace {
     }
 
     destroy(): void {
+        if (this.destroyed) return;
+        this.persistNow(); // snapshot while the cells are still alive
         this.destroyed = true;
+        if (this.stateTimer != null) clearTimeout(this.stateTimer);
+        if (this.persistKey !== null && typeof window !== 'undefined') window.removeEventListener('beforeunload', this.onUnload);
         this.resizeObserver?.disconnect();
         this.splitters.destroy();
         for (const [id, cell] of [...this.cellsById]) {
@@ -534,6 +634,28 @@ export class VelaWorkspace {
         if (this.activeId) this.cellsById.get(this.activeId)?.chart.renderer.focus();
     }
 
+    /** Debounced dirty mark: one `state:changed` (+ one storage write in persist mode)
+     *  per burst of edits, flushed hard on unload/destroy. */
+    private markStateDirty(): void {
+        if (this.destroyed) return;
+        if (this.stateTimer != null) clearTimeout(this.stateTimer);
+        this.stateTimer = setTimeout(() => {
+            this.stateTimer = null;
+            this.events.emit('state:changed', undefined);
+            this.persistNow();
+        }, 500);
+    }
+
+    /** Write the current state through the storage adapter now (fire-and-forget). */
+    private persistNow(): void {
+        if (this.persistKey === null || this.destroyed) return;
+        try {
+            void this.storage.set(this.persistKey, encodeState(this.getState()));
+        } catch {
+            /* best-effort — a failing adapter must never break the workspace */
+        }
+    }
+
     // ── internals ───────────────────────────────────────────────
     private resolveLayout(layout: string | LayoutDefinition): LayoutDefinition {
         if (typeof layout !== 'string') return layout;
@@ -559,6 +681,7 @@ export class VelaWorkspace {
         sizes[axis] = weights;
         this.trackSizes.set(this.def.id, sizes);
         this.applyGrid();
+        this.markStateDirty();
     }
 
     /** Apply the grid template (+ per-cell areas) and reposition the splitter strips. */
@@ -601,10 +724,9 @@ export class VelaWorkspace {
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(slot.id, cell);
             this.wireCell(cell);
-            // The indicator ledger: a pool-restored cell re-adds ITS recorded set; a fresh
-            // cell seeds the manifest's enabled entries (once the manifest has resolved).
+            // The indicator ledger: a restored cell re-adds ITS recorded set (held until
+            // the manifest resolves); a fresh cell seeds the manifest's enabled entries.
             cell.setManifest(this.manifest, pooled?.indicators == null);
-            if (pooled?.indicators) cell.restoreIndicators(pooled.indicators);
             this.events.emit('cell:created', { id: slot.id });
         }
         // DOM order = slot order (auto-flow layouts place row-major by child order).
@@ -632,7 +754,12 @@ export class VelaWorkspace {
                 if (other !== cell) other.chart.drawings.setFavorites(favorites as never[]);
             }
             this.drawToolbar?.setFavorites(favorites as never[]);
+            this.markStateDirty();
         });
+        // Drawing edits are cell state (the per-slot drawings document) — persistable.
+        chart.on('drawing:created', () => this.markStateDirty());
+        chart.on('drawing:edited', () => this.markStateDirty());
+        chart.on('drawing:removed', () => this.markStateDirty());
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).
@@ -663,6 +790,7 @@ export class VelaWorkspace {
         }
         if (setting == null || setting === false) delete this.syncOpts[kind];
         else this.syncOpts[kind] = setting;
+        this.markStateDirty();
         if (align && setting && this.activeId) {
             if (kind === 'viewport') {
                 const range = this.cellsById.get(this.activeId)?.chart.getVisibleRange();
@@ -726,6 +854,7 @@ export class VelaWorkspace {
     private onCellMarketChanged(id: string): void {
         this.refreshRetention();
         this.propagateMarket(id);
+        this.markStateDirty();
         if (id !== this.activeId) return;
         const cell = this.cellsById.get(id);
         if (!cell) return;
@@ -736,6 +865,7 @@ export class VelaWorkspace {
 
     /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */
     private onCellIndicatorsChanged(id: string): void {
+        this.markStateDirty();
         if (id !== this.activeId) return;
         const cell = this.cellsById.get(id);
         if (!cell) return;

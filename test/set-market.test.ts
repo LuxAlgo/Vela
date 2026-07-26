@@ -240,6 +240,25 @@ describe('setMarket — in-place market switch', () => {
         expect(feed.loads[feed.loads.length - 1]).toMatchObject({ symbol: 'BBB', timeframe: '240' });
     });
 
+    it('chart.market snapshots the REQUESTED identity — an in-flight switch shows immediately', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        expect(chart.market).toMatchObject({ symbol: 'AAA', timeframe: '60', offline: false });
+
+        const done = chart.setMarket({ symbol: 'BBB', timeframe: '240' });
+        // Before the load lands: the snapshot already answers with the new identity
+        // (persist-on-close must capture the INTENT, not the last committed market).
+        expect(chart.market).toMatchObject({ symbol: 'BBB', timeframe: '240' });
+        await done;
+        expect(chart.market).toMatchObject({ symbol: 'BBB', timeframe: '240', offline: false });
+        // A snapshot, not the live config — mutating it changes nothing.
+        const snap = chart.market;
+        snap.symbol = 'ZZZ';
+        expect(chart.market.symbol).toBe('BBB');
+    });
+
     it('frames a requested visibleRange on the first paint of the new market', async () => {
         const feed = new SwitchFeed();
         const renderer = new FakeRenderer();

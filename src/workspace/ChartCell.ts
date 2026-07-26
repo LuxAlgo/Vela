@@ -94,6 +94,9 @@ export class ChartCell {
     private readonly offMarket: () => void;
     private state: CellSeed;
     private manifest: readonly ResolvedIndicator[] = [];
+    /** A restored ledger's manifest entry NAMES, waiting for the manifest to resolve
+     *  (a pool/persisted cell can be built before the shared manifest has loaded). */
+    private pendingManifestNames: string[] | null = null;
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
     private destroyed = false;
@@ -138,6 +141,12 @@ export class ChartCell {
         // Pool restore: cosmetics + drawings round-trip (both validate untrusted input).
         if (seed.rendererConfig != null) this.inner.renderer.applyConfig(seed.rendererConfig);
         if (seed.drawings != null) this.inner.drawings.fromJSON(seed.drawings);
+        // A restored ledger: natives re-add immediately (no manifest needed); manifest
+        // entries wait for setManifest (the shared manifest may still be resolving).
+        if (seed.indicators) {
+            for (const type of seed.indicators.natives) this.inner.addNativeIndicator(type);
+            this.pendingManifestNames = [...seed.indicators.manifest];
+        }
         const tz = deps.timezone();
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
@@ -263,11 +272,23 @@ export class ChartCell {
     }
 
     // ── indicator ledger (shared manifest, per-cell instances) ──
-    /** Hand the cell the workspace's resolved manifest. `seedEnabled` auto-adds the
-     *  manifest's `enabled` entries — used for FRESH cells only (a pool-restored cell
-     *  re-adds its own recorded set instead). */
+    /**
+     * Hand the cell the workspace's resolved manifest. A RESTORED ledger (pool or
+     * persisted state) re-adds its recorded entries by name — held until the manifest
+     * actually carries them. Otherwise `seedEnabled` auto-adds the manifest's `enabled`
+     * entries (fresh cells only).
+     */
     setManifest(list: readonly ResolvedIndicator[], seedEnabled: boolean): void {
         this.manifest = list;
+        if (this.pendingManifestNames) {
+            if (list.length === 0) return; // the manifest hasn't resolved yet — keep waiting
+            for (const name of this.pendingManifestNames) {
+                const entry = list.find((e) => e.name === name);
+                if (entry) this.addManifestInstance(entry, { record: false });
+            }
+            this.pendingManifestNames = null;
+            return;
+        }
         if (seedEnabled) {
             for (const entry of list) if (entry.enabled) this.addManifestInstance(entry, { record: false });
         }
@@ -383,16 +404,6 @@ export class ChartCell {
         });
     }
 
-    /** Restore a pooled ledger: recorded manifest entries (by name) + native types. */
-    restoreIndicators(record: { manifest: string[]; natives: string[] }): void {
-        for (const name of record.manifest) {
-            const entry = this.manifest.find((e) => e.name === name);
-            if (entry) this.addManifestInstance(entry, { record: false });
-        }
-        for (const type of record.natives) this.inner?.addNativeIndicator(type);
-        this.refreshNativeCatalog();
-    }
-
     /** Refresh the native catalog (supported/present flags) for this cell's market. */
     refreshNativeCatalog(): void {
         const chart = this.inner;
@@ -414,10 +425,16 @@ export class ChartCell {
     }
 
     // ── lifecycle ──
-    /** Snapshot everything the pool needs to restore this slot later. */
+    /** Snapshot everything the pool needs to restore this slot later. The market fields
+     *  come from the LIVE config (`chart.market`) — the requested identity — so a switch
+     *  still loading when the snapshot is taken (persist-on-close) is not lost. */
     dehydrate(): PooledCellState {
+        // Identity from the live config; depth (`bars`) stays the cell's own durable
+        // budget — in range mode the config carries the chip's transient fetch budget.
+        const live = this.inner?.market;
         return {
             ...this.state,
+            ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
             priceStyle: this.priceStyle,
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,

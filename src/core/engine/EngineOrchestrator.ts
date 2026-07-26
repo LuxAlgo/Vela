@@ -7,7 +7,7 @@ import type { IndicatorModel } from '../model/indicator';
 import type { ValuePatch, SeriesValueDelta } from '../model/patch';
 import { isLineLikeSeries } from '../model/series';
 import type { InputValue } from '../model/inputs';
-import type { VelaTheme, MarketConfig, MarketSwitch, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
+import type { VelaTheme, MarketConfig, MarketSwitch, MarketSnapshot, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
 import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
 import type { IndicatorHandle } from '../IndicatorHandle';
@@ -377,6 +377,13 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.historyCompletePromise = new Promise<void>((resolve) => {
             this.resolveHistoryComplete = resolve;
         });
+    }
+
+    /** The current market identity — a snapshot of the REQUESTED market, so it reflects
+     *  an in-flight `setMarket` immediately (the config mutates before the load). */
+    marketSnapshot(): MarketSnapshot {
+        const m = this.config.market;
+        return { symbol: m.symbol, provider: m.provider, timeframe: m.timeframe, bars: m.bars, offline: m.data !== undefined };
     }
 
     /**

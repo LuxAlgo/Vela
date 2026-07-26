@@ -10,6 +10,8 @@ The **neutral model** — bars, series, pane overlays, drawings, inputs, update 
 
 > Vela installs **from source**; the `'vela'` imports in these snippets refer to the local workspace package (see [installation.md](./installation.md)).
 
+Higher-level shells are documented on their own pages: [the widget](./widget.md) (`vela/widget` — one chart, full chrome) and [the workspace](./workspace.md) (`vela/workspace` — a multi-chart grid with one shared chrome, sync links, and a `getState()`/`applyState()` state surface).
+
 ---
 
 ## `class Vela(container, options?, deps?)`
@@ -33,6 +35,7 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 | `indicators()` | Live `IndicatorHandle[]` of everything on the chart (script + native), in insertion order — the seam for host panels (object trees, indicator lists) that need per-id visibility/removal. |
 | `availableNativeIndicators()` | Returns `Promise<NativeIndicatorInfo[]>` — the catalog of built-in native indicators with their live state on this chart, for building an "add indicator" picker UI (lets a host list them, gate unsupported ones, avoid duplicates). Async because support may need to probe the provider (a type may need data the symbol lacks). |
 | `setMarket(next)` | Switch the chart's market **in place** — `{ symbol?, provider?, timeframe?, bars?, data?, visibleRange? }` — without destroying the chart. Only the fields given change. Indicators re-execute over the new bars, native indicators restart, and panes, user drawings, renderer config and event subscriptions all **survive**. Resolves once the new market's history is painted (a deep backfill continues behind it — await `historyComplete()`); a call superseded by a newer `setMarket` resolves silently. Emits `market:changed` when the market identity changed (a depth-only `bars` reload is silent). `visibleRange` frames the first paint of the new market. Drawings are kept as-is — per-symbol drawing documents are a host policy (`chart.drawings.toJSON()/fromJSON()` keyed off `market:changed`). |
+| `market` (getter) | The current market identity — the read counterpart of `setMarket`. A **snapshot** `{ symbol?, provider?, timeframe?, bars?, offline }` of the *requested* market: it reflects an in-flight switch immediately (before the new bars land), which is what persist-on-close flows want. Listen to `market:changed` for *committed* identity changes. Mutating the returned object changes nothing. |
 | `ready()` | Returns a promise that resolves once the chart is painted and interactive. On a deep-history chart (beyond one ~10k-bar chunk) older bars keep backfilling **behind** this — await `historyComplete()` for the full depth. |
 | `historyComplete()` | Returns a promise that resolves once the **current load's** full requested history has loaded — immediately for small/offline charts, after the background backfill for deep ones. **Per-load**: each `setMarket` re-arms the cycle (the superseded load's promise resolves rather than hanging), so call it again after a switch for the new market's depth. Never rejects: on destroy or a failed backfill it resolves with whatever depth loaded. |
 | `on(event, handler)` | Subscribe to a chart-level event. Returns an unsubscribe function. |
