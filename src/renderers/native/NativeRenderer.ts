@@ -2533,11 +2533,17 @@ export class NativeRenderer implements IChartRenderer {
         this.scheduler.invalidate(InvalidateLevel.Cursor);
     }
 
-    /** Resolve the ghost to pixels for THIS frame (null when off-window or dataless). */
-    private externalCrossPx(): { x: number; y: number | null } | null {
+    /** Resolve the ghost to pixels for THIS frame (null when off-window or dataless).
+     *  Snaps by FLOOR to the bar CONTAINING the foreign time — never by rounding: a 1h
+     *  pointer at 14:00 must light THIS day's daily candle, not tomorrow's (a time past
+     *  a bar's midpoint still belongs to that bar). Before the first open or past the
+     *  forming bar there is no containing bar — no ghost. */
+    private externalCrossPx(): { x: number; y: number | null; time: Millis } | null {
         const ext = this.externalCross;
         if (!ext || this.coords.barCount === 0) return null;
-        const x = this.coords.timeToX(ext.time);
+        const logical = Math.floor(this.coords.timeToLogical(ext.time));
+        if (logical < 0 || logical >= this.coords.barCount) return null;
+        const x = this.coords.logicalToX(logical);
         if (!Number.isFinite(x) || x < 0 || x > this.coords.width) return null;
         let y: number | null = null;
         if (ext.price != null) {
@@ -2547,7 +2553,7 @@ export class NativeRenderer implements IChartRenderer {
                 if (!Number.isFinite(y) || y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) y = null;
             }
         }
-        return { x, y };
+        return { x, y, time: this.coords.logicalToTime(logical) };
     }
 
     /** Sticky magnet mode for user drawings (off/weak/strong); the drawings toolbar drives it. */
