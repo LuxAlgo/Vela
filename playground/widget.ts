@@ -4,6 +4,7 @@
 import { VelaWidget } from '../src/widget';
 import { PineWorkerEngine } from '../src';
 import { BinanceProvider } from '../src/data/providers/binance';
+import { playgroundStorage, persistDrawings } from './persistence';
 
 // Worker-path test instrumentation: count real Web Worker spawns so a browser probe
 // can PROVE Pine runs off the main thread (window.__workerSpawns >= 1). Temporary,
@@ -17,14 +18,21 @@ window.Worker = class extends RealWorker {
     }
 } as typeof Worker;
 
+// The playground's CUSTOM persistence (shared with the workspace page). The widget's
+// own `persist` covers the prefs (symbol/timeframe/style/timezone/bars/favorites);
+// drawings are content, persisted host-side below through the SAME adapter. No
+// `urlState` here — a URL param would win over the stored state and mask the system
+// this page is exercising.
+const storage = playgroundStorage();
+
 const widget = new VelaWidget('#chart', {
     provider: 'binance',
     symbol: 'BTCUSDT',
     timeframe: '60',
     live: true,
     theme: 'dark',
-    persist: true,
-    urlState: true,
+    persist: true, // key 'vela-widget' → 'vela-play:vela-widget' in devtools
+    storage,
     providers: { binance: () => new BinanceProvider() },
     engines: { pine: () => new PineWorkerEngine() },
     indicators: [
@@ -38,6 +46,10 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
 });
 
 void widget.chart.ready().then(() => console.log('[vela-dev] chart ready'));
+
+// Drawings restore + save through the custom adapter. `widget.chart` is stable for the
+// widget's whole life (market switches are in-place), so one subscription is enough.
+persistDrawings(widget.chart, storage, 'vela-widget:drawings');
 
 // Handy for poking around from the browser console.
 (window as unknown as { widget: VelaWidget }).widget = widget;
@@ -112,8 +124,8 @@ widget.refreshActions();
 
 // ── Execution-context listener demo — how host code intercepts Vela's engine context.
 // 'context:changed' fires after the initial run and (throttled ~1/s) on live candles;
-// pull a read-only snapshot and inspect it. NOTE: subscriptions live on the CURRENT
-// inner chart — re-subscribe after a symbol/timeframe change (the widget rebuilds it).
+// pull a read-only snapshot and inspect it. Subscriptions survive symbol/timeframe
+// changes — the widget switches markets IN PLACE (setMarket), same chart instance.
 void widget.chart.ready().then(() => {
     const chart = widget.chart;
     chart.on('context:changed', ({ id }) => {

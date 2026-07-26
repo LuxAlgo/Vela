@@ -5,6 +5,7 @@
 import { VelaWorkspace } from '../src/workspace';
 import { PineWorkerEngine } from '../src';
 import { BinanceProvider } from '../src/data/providers/binance';
+import { playgroundStorage } from './persistence';
 
 const ws = new VelaWorkspace('#workspace', {
     layout: '4',
@@ -27,6 +28,11 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
     ],
     live: true,
     theme: 'dark',
+    // The playground's CUSTOM persistence (shared with the widget page): the whole
+    // workspace document — layout, sync, timezone, and per cell the market, renderer
+    // config, DRAWINGS and indicators — survives a reload via localStorage.
+    persist: true, // key 'vela-workspace' → 'vela-play:vela-workspace' in devtools
+    storage: playgroundStorage(),
 });
 
 // Handy for poking around from the browser console (and for the automated probes).
