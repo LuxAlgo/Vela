@@ -226,6 +226,9 @@ export class NativeRenderer implements IChartRenderer {
 
     // ── settings dialog (rich, serializable config — item 15) ──
     private settingsDialog: SettingsDialog | null = null;
+    /** Where modal dialogs mount — a HOST override (multi-chart shells pass their root
+     *  so dialogs center globally instead of clipping inside one cell). Null = the plot. */
+    private dialogHost: HTMLElement | null = null;
     private settingsButton: HTMLButtonElement | null = null;
     private settingsEnabled = false;
 
@@ -273,7 +276,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'dataWindow', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'dataWindow', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -399,6 +402,16 @@ export class NativeRenderer implements IChartRenderer {
                 this.attributionEnabled = Boolean(value);
                 if (this.attributionEl) this.attributionEl.style.display = this.attributionEnabled ? 'flex' : 'none';
                 return; // own DOM, no repaint needed
+            case 'dialogHost':
+                // Where MODAL dialogs mount (chart settings, indicator settings). A
+                // multi-chart shell passes its root so dialogs center over the whole
+                // grid instead of clipping inside one cell. Runtime-only, never part
+                // of the cosmetic config template.
+                this.dialogHost = value instanceof HTMLElement ? value : null;
+                this.settingsDialog?.close();
+                this.settingsDialog = null; // recreated lazily against the new host
+                this.inputsUI?.setDialogHost(this.dialogHost);
+                return; // own DOM, no repaint needed
             default:
                 return;
         }
@@ -441,6 +454,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'keyboard': return this.keyboardEnabled;
             case 'settings': return this.settingsEnabled;
             case 'attribution': return this.attributionEnabled;
+            case 'dialogHost': return this.dialogHost ?? undefined;
             default: return undefined;
         }
     }
@@ -698,7 +712,7 @@ export class NativeRenderer implements IChartRenderer {
                 this.plot.appendChild(this.settingsButton);
             }
             if (this.settingsButton) this.settingsButton.style.display = 'flex';
-            if (this.plot && !this.settingsDialog) this.settingsDialog = new SettingsDialog(this.plot, this.theme);
+            if (this.plot && !this.settingsDialog) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
         } else {
             this.settingsButton?.style.setProperty('display', 'none');
             this.settingsDialog?.close();
@@ -740,7 +754,7 @@ export class NativeRenderer implements IChartRenderer {
     /** Port surface: hosts (topbar buttons) open the same dialog as the in-chart gear —
      *  created on demand, independent of the gear feature being enabled. */
     openSettingsDialog(): void {
-        if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.plot, this.theme);
+        if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
         this.toggleSettingsDialog();
     }
 
@@ -1145,6 +1159,7 @@ export class NativeRenderer implements IChartRenderer {
         this.setKeyboardEnabled(this.keyboardEnabled); // accessible by default; wires focus + ARIA
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
+        this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setOnChange((c) => {
             for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value });

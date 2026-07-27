@@ -105,6 +105,16 @@ export class InputsUI {
         this.clearSelection();
     };
 
+    /** Where the MODAL settings dialog mounts (default: the container). Multi-chart
+     *  shells point this at their root so the dialog centers globally — the inline
+     *  pane-anchored rows always stay in the container. */
+    private dialogHost: HTMLElement | null = null;
+
+    setDialogHost(host: HTMLElement | null): void {
+        this.dialogHost = host;
+        if (host && getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    }
+
     constructor(
         private readonly container: HTMLElement,
         private theme: VelaTheme,
@@ -641,7 +651,7 @@ export class InputsUI {
         card.appendChild(footer);
 
         backdrop.appendChild(card);
-        this.container.appendChild(backdrop);
+        (this.dialogHost ?? this.container).appendChild(backdrop);
         this.dialog = card;
         this.backdrop = backdrop;
         document.addEventListener('keydown', this.onDialogKey);

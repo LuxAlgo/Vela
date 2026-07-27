@@ -750,11 +750,13 @@ export class VelaWorkspace {
                 statusline: this.opts.statusline !== false,
                 watermark: this.opts.watermark !== false,
                 nativeBackend: this.cellBackend,
+                dialogHost: this.root,
                 timezone: () => this.timezone,
                 context: () => this.context(),
                 activate: (id) => this.setActiveCell(id),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
+                onStateDirty: () => this.markStateDirty(),
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(slot.id, cell);

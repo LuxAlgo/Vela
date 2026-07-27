@@ -55,6 +55,9 @@ export interface CellDeps {
     watermark: boolean;
     /** Geometry backend for cells under the current layout (the WebGL budget policy). */
     nativeBackend: NativeBackend;
+    /** Where the renderer mounts its MODAL dialogs (chart/indicator settings) — the
+     *  workspace root, so dialogs center over the whole grid instead of one cell. */
+    dialogHost: HTMLElement;
     /** The workspace-global display timezone (applied to every cell's renderer). */
     timezone(): string;
     /** The live widget-context builder (per-cell context menus project contributed actions). */
@@ -65,6 +68,9 @@ export interface CellDeps {
     onMarketChanged(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
+    /** Persistable per-cell state changed outside the market/indicator channels
+     *  (bars budget, watermark toggle) — the workspace debounces a save. */
+    onStateDirty(): void;
 }
 
 export class ChartCell {
@@ -96,6 +102,7 @@ export class ChartCell {
     private seedNatives: string[] | null = null;
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
+    private watermarkOn: boolean;
     private destroyed = false;
 
     constructor(
@@ -142,6 +149,9 @@ export class ChartCell {
         // in-chart mark; the workspace mounts the single grid-level mark that satisfies
         // the NOTICE's equivalent-visible-attribution requirement.
         this.inner.renderer.set('attribution', false);
+        // Modal dialogs (chart settings, indicator settings) escape the cell's
+        // overflow clip and center over the whole grid.
+        this.inner.renderer.set('dialogHost', deps.dialogHost);
         // Pool restore: cosmetics + drawings round-trip (both validate untrusted input).
         if (seed.rendererConfig != null) this.inner.renderer.applyConfig(seed.rendererConfig);
         if (seed.drawings != null) this.inner.drawings.fromJSON(seed.drawings);
@@ -157,7 +167,9 @@ export class ChartCell {
         const tz = deps.timezone();
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
+        this.watermarkOn = seed.watermark ?? deps.watermark;
         this.watermark = deps.watermark ? new Watermark(this.host, seed.symbol ?? '', seed.timeframe ?? '60') : null;
+        if (!this.watermarkOn) this.watermark?.setVisible(false);
         this.statusline = deps.statusline ? new Statusline(this.host, seed.symbol ?? '') : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', seed.provider ?? '');
         this.statusline?.onChart(this.inner);
@@ -185,6 +197,58 @@ export class ChartCell {
         });
         this.refreshNativeCatalog();
 
+        // HOST settings sections — the same set the widget contributes, per cell
+        // (the shared topbar gear opens the ACTIVE cell's dialog): status line parts,
+        // the per-cell fetch depth, and the per-cell watermark toggle. Bars/watermark
+        // are persistable cell state; a depth-only reload is silent, so mark dirty here.
+        const advanced = {
+            title: 'Advanced',
+            placement: 'end' as const,
+            rows: [
+                {
+                    kind: 'select' as const,
+                    label: 'Bars to fetch',
+                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
+                    get: () => String(this.state.bars ?? 1000),
+                    set: (v: string) => {
+                        this.state.bars = Number(v);
+                        this.deps.onStateDirty();
+                        void this.inner?.setMarket({ bars: Math.max(this.state.bars, this.rangeBars) });
+                    },
+                },
+            ],
+        };
+        const watermarkSection = {
+            title: 'Watermark',
+            placement: 'symbol' as const,
+            rows: [
+                {
+                    kind: 'toggle' as const,
+                    label: 'Symbol watermark',
+                    get: () => this.watermarkOn,
+                    set: (v: boolean) => this.setWatermarkVisible(v),
+                },
+            ],
+        };
+        if (this.statusline) {
+            const sl = this.statusline;
+            this.inner.renderer.setSettingsSections([
+                {
+                    title: 'Status line',
+                    rows: [
+                        { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
+                        { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
+                        { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
+                        { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                    ],
+                },
+                advanced,
+                watermarkSection,
+            ]);
+        } else {
+            this.inner.renderer.setSettingsSections([advanced, watermarkSection]);
+        }
+
         // The ONE bookkeeping seam: every market change — cell setters, sync links, or
         // host code calling chart.setMarket directly — lands here and updates the cell
         // state + overlays, then notifies the workspace (chrome projection, retention).
@@ -198,6 +262,13 @@ export class ChartCell {
             this.refreshNativeCatalog(); // per-symbol support flags may differ
             this.deps.onMarketChanged(this.id);
         });
+    }
+
+    /** Show/hide this cell's symbol watermark (persisted per cell). */
+    setWatermarkVisible(visible: boolean): void {
+        this.watermarkOn = visible;
+        this.watermark?.setVisible(visible);
+        this.deps.onStateDirty();
     }
 
     /** The LIVE chart of this cell — never cache it across a layout change (the cell's
@@ -452,6 +523,7 @@ export class ChartCell {
             ...this.state,
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
             priceStyle: this.priceStyle,
+            watermark: this.watermarkOn,
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
             indicators: (() => {
