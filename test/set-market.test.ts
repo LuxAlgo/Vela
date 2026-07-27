@@ -361,6 +361,50 @@ describe('setMarket — in-place market switch', () => {
         expect(hosts[1]!.symbol).toBe('BBB');
     });
 
+    it('a chart CONSTRUCTED in a plugin style starts its data engine only after the first load', async () => {
+        // The restore path: a persisted plugin style comes back through the chart
+        // OPTIONS. The engine seed must await the REAL readyPromise — seeding before
+        // its assignment awaited `undefined`, started the engine with no market, and
+        // a later style re-select only resumed the empty engine (nothing painted).
+        let startedBeforeData: boolean | null = null;
+        let dataLanded = false;
+        registerChartType({
+            id: 'probe-style',
+            dataEngine: () => ({
+                start: () => { startedBeforeData ??= !dataLanded; },
+                suspend: () => {}, resume: () => {}, stop: () => {},
+            }),
+        });
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('AAA'); // hold the FIRST load — construction must wait behind it
+        const renderer = new FakeRenderer();
+        renderer.priceStyleFeature = 'probe-style';
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await flush(); // without the ctor-order fix the engine starts HERE, before any data
+        dataLanded = true;
+        feed.release();
+        await chart.ready();
+        await flush();
+        expect(startedBeforeData).toBe(false); // the engine saw a loaded market at start
+    });
+
+    it('a REMOVED auto-added volume stays removed across market switches (opt-out sticks)', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: true }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        await flush();
+        const volume = chart.indicators().find((h) => h.title === 'Volume');
+        expect(volume).toBeDefined(); // default-on auto-add
+        volume!.remove();
+        expect(chart.indicators().some((h) => h.title === 'Volume')).toBe(false);
+
+        await chart.setMarket({ symbol: 'BBB' });
+        await flush();
+        // The auto-add fires on every load's first paint — the user's removal must win.
+        expect(chart.indicators().some((h) => h.title === 'Volume')).toBe(false);
+    });
+
     it('re-targets the live subscription', async () => {
         const feed = new SwitchFeed();
         const renderer = new FakeRenderer();

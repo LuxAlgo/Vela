@@ -37,6 +37,7 @@ const widget = new VelaWidget('#chart', {
     indicators: [
         {
             name: 'EMA 20',
+            enabled: false, // library-only: pick it from the indicators dialog, never auto-added
             script: `//@version=5
 indicator("EMA 20", overlay=true)
 plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
@@ -64,7 +65,7 @@ void widget.chart.ready().then(() => console.log('[vela-dev] chart ready'));
 // // switch the symbol, add an indicator…). Re-pull getState() for the fresh doc.
 // // Returns an unsubscribe function.
 // const offState = widget.on('state:changed', () => {
-//     console.log('[state] changed →', widget.getState().cells.c1);
+//     console.log('[state] changed →', widget.getState().charts[0]);
 // });
 //
 // // WRITE — applied IN PLACE: the chart instance survives (the market switches via
@@ -72,8 +73,8 @@ void widget.chart.ready().then(() => console.log('[vela-dev] chart ready'));
 // // fields are dropped by the shared codec, never thrown on.
 // setTimeout(() => {
 //     const doc = widget.getState();
-//     doc.cells.c1!.symbol = 'SOLUSDT'; // retarget the chart…
-//     doc.cells.c1!.drawings = { version: 1, drawings: [] }; // …and wipe its drawings
+//     doc.charts[0]!.symbol = 'SOLUSDT'; // retarget the chart…
+//     doc.charts[0]!.drawings = { version: 1, drawings: [] }; // …and wipe its drawings
 //     widget.applyState(doc);
 //     offState();
 // }, 5000);

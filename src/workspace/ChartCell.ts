@@ -126,7 +126,10 @@ export class ChartCell {
                 priceStyle: seed.priceStyle,
                 theme: deps.theme,
                 live: deps.live,
-                volume: deps.volume,
+                // A RESTORED ledger is authoritative for the auto-added volume too: a
+                // slot persisted without it must come back without it (fresh slots
+                // keep the workspace default).
+                volume: seed.indicators ? seed.indicators.natives.includes('volume') : deps.volume,
                 nativeBackend: deps.nativeBackend,
                 // One SHARED toolbar serves the whole workspace (it lands with the shared
                 // chrome); per-cell bars would cost a 44px gutter in every cell.
@@ -171,7 +174,15 @@ export class ChartCell {
             this.lastCrossPrice = e.price;
         });
         this.inner.on('indicator:added', () => this.refreshNativeCatalog());
-        this.inner.on('indicator:removed', () => this.refreshNativeCatalog());
+        this.inner.on('indicator:removed', ({ id }) => {
+            // Out-of-band removals (legend ✕, object tree, handle.remove()) must drop
+            // the matching manifest-instance ledger entry too — a stale entry kept the
+            // name in the persisted document and resurrected the indicator on reload.
+            // The picker path splices first, so this lookup no-ops there (idempotent).
+            const idx = this.instances.findIndex((it) => it.handle?.id === id);
+            if (idx >= 0) this.instances.splice(idx, 1);
+            this.refreshNativeCatalog();
+        });
         this.refreshNativeCatalog();
 
         // The ONE bookkeeping seam: every market change — cell setters, sync links, or

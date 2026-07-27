@@ -5,7 +5,7 @@
 import type { WidgetStorage } from '../widget/persist';
 
 export { encodeState, decodeState, sanitizeState } from '../state/document';
-export type { WorkspaceState, CellState } from '../state/document';
+export type { WorkspaceState, CellState, ChartState } from '../state/document';
 
 /**
  * The pluggable storage backend the workspace persists through — the SAME contract as

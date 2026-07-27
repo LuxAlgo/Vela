@@ -171,16 +171,21 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // (heikinashi) and/or a registered data engine (SDK chart types).
         this.renderer.onPriceStyleChange?.((style) => this.syncPriceStyle(style));
         // Seed the bar transform from the CONSTRUCTED style (a chart created with
-        // `priceStyle: 'heikinashi'`) so the initial load already produces the view. A
-        // chart-type DATA engine seeds later, at ready (it needs `readyPromise` to exist).
+        // `priceStyle: 'heikinashi'`) so the initial load already produces the view.
         const initialStyle = this.renderer.readFeature('priceStyle');
         if (typeof initialStyle === 'string') this.priceStyle = initialStyle as PriceStyle;
         this.barTransform = barTransformFor(initialStyle);
-        if (chartType(initialStyle)?.dataEngine) this.syncChartTypeEngine(initialStyle);
         // User drawings: owns the model + tool/selection state, drives the renderer's
         // drawings port (inert when the renderer lacks the `userDrawings` capability).
         this.drawings = new DrawingController(this.renderer, this.events, config.drawings);
         this.readyPromise = this.init();
+        // Seed a constructed chart-type DATA engine only now — `startChartTypeEngine`
+        // awaits `readyPromise`, so this MUST come after the assignment above. Seeding
+        // earlier awaited `undefined`: the engine started before the first load, could
+        // not resolve its provider surfaces (e.g. a footprint feed), and a later
+        // style re-select only RESUMED the empty engine — a restored plugin style
+        // painted nothing until a market switch recreated it.
+        if (chartType(initialStyle)?.dataEngine) this.syncChartTypeEngine(initialStyle);
     }
 
     /** The user-drawings manager (backs `chart.drawings`). */
@@ -597,8 +602,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     }
 
     /** Auto-add the built-in volume indicator. Bar volume needs no capability probe (always supported). */
+    /** The user removed the volume indicator — the auto-add must never override that. */
+    private volumeOptedOut = false;
+
     private maybeAutoAddVolume(): void {
-        if (!this.config.volume || !this.renderer.setNativeData) return; // off, or a renderer without the layer
+        if (!this.config.volume || this.volumeOptedOut || !this.renderer.setNativeData) return; // off, opted out, or no layer
         if (getNativeIndicator('volume')) this.addNativeIndicator('volume');
     }
 
@@ -926,6 +934,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     removeIndicator(id: string): void {
         const record = this.registry.remove(id);
+        // Removing the auto-added volume is a USER decision — make it stick: the
+        // auto-add fires on every load (first paint of every market), so without the
+        // opt-out a removed volume resurrected on the next symbol/timeframe switch.
+        if (record?.native?.type === 'volume') this.volumeOptedOut = true;
         record?.session?.stop();
         record?.native?.instance.stop();
         this.handles.delete(id);

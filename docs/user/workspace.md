@@ -83,10 +83,10 @@ The state SURFACE is the product; persistence is an adapter on top of it.
 
 ```ts
 const state = ws.getState();
-// → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?, cells: {…} }
-// Per slot (live AND dormant): { symbol, provider?, timeframe, priceStyle, bars?, watermark?,
-//   rendererConfig (renderer.getConfig() document), drawings (drawings.toJSON() document),
-//   indicators: { manifest: string[], natives: string[] } }
+// → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?, charts: […] }
+// One `charts` entry per SLOT (live AND dormant): { id: 'c1', symbol, provider?, timeframe,
+//   priceStyle, bars?, watermark?, rendererConfig (renderer.getConfig() document),
+//   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] } }
 
 ws.applyState(state); // untrusted-safe: malformed fields dropped, whole grid rebuilt
 ws.on('state:changed', () => {
@@ -102,8 +102,8 @@ links encodes `getState()` into its own URL scheme and calls `applyState()` at b
 
 The document format is **shared with [the widget](./widget.md)** — same triplet
 (`getState`/`applyState`/`state:changed`), same codec, the widget being the
-single-cell case (`layout: '1'`, one `c1` cell). A saved widget chart drops into a
-workspace slot as-is, and a cell's state restores into a widget.
+single-chart case (`layout: '1'`, one `charts` entry). A saved widget chart drops into
+a workspace slot as-is, and a cell's state restores into a widget.
 
 ### The `persist` option and the storage interface
 

@@ -99,14 +99,14 @@ its dialogs is open, muting chart-scope bindings.
 ## Widget state — the same surface as the workspace
 
 The widget exposes the SAME state triplet as [the workspace](./workspace.md), speaking
-the SAME document format — a widget is the single-cell case (`layout: '1'`, one `c1`
-cell):
+the SAME document format — a widget is the single-chart case (`layout: '1'`, one
+`charts` entry):
 
 ```ts
 const state = widget.getState();
 // → { version: 1, layout: '1', activeCellId: 'c1', timezone, favorites?,
-//     cells: { c1: { symbol, provider?, timeframe, priceStyle, bars?, watermark?,
-//                    rendererConfig, drawings, indicators } } }
+//     charts: [{ id: 'c1', symbol, provider?, timeframe, priceStyle, bars?, watermark?,
+//                rendererConfig, drawings, indicators }] }
 
 widget.applyState(state); // untrusted-safe; applied IN PLACE (the chart survives)
 widget.on('state:changed', () => {
@@ -141,6 +141,11 @@ const restStorage: WidgetStorage = {
 
 new VelaWidget('#chart', { persist: true, storage: restStorage, /* … */ });
 ```
+
+The default adapter is available as `localStorageAdapter(storageKey?)`: give it a name
+to PIN the physical localStorage entry (every read/write lands there, whatever the
+`persist` key is — one shell instance per pinned adapter); omit it to use the shell's
+own key.
 
 ONE key is written: the unified state document (`getState()`, JSON-encoded) —
 `persist: true` brings your chart back **as you left it**: market, prefs, renderer

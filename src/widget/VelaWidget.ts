@@ -129,6 +129,8 @@ export class VelaWidget {
     private savedDrawings: unknown = null;
     /** A restored indicator ledger waiting for the manifest to resolve. */
     private pendingIndicators: { manifest: string[]; natives: string[] } | null = null;
+    /** Volume presence decided by a RESTORED ledger (null = follow the option). */
+    private ledgerVolume: boolean | null = null;
     /** True when the boot state came from the LEGACY three-key layout — the first
      *  unified save then drops the old `:config`/`:drawings` sub-keys. */
     private legacyKeys = false;
@@ -168,7 +170,7 @@ export class VelaWidget {
             }
             window.addEventListener('beforeunload', this.onUnload);
         }
-        const bootCell = boot ? (boot.cells.c1 ?? Object.values(boot.cells)[0]) : undefined;
+        const bootCell = boot ? (boot.charts.find((c) => c.id === 'c1') ?? boot.charts[0]) : undefined;
         const fromUrl = opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
         this.symbol = fromUrl.symbol ?? bootCell?.symbol ?? opts.symbol ?? '';
         this.timeframe = fromUrl.timeframe ?? bootCell?.timeframe ?? opts.timeframe ?? '60';
@@ -180,6 +182,9 @@ export class VelaWidget {
         this.savedConfig = bootCell?.rendererConfig ?? null;
         this.savedDrawings = bootCell?.drawings ?? null;
         this.pendingIndicators = bootCell?.indicators ?? null;
+        // A restored ledger decides the auto-added volume too (a chart persisted
+        // without it must come back without it); no ledger → the option default.
+        this.ledgerVolume = bootCell?.indicators ? bootCell.indicators.natives.includes('volume') : null;
 
         const doc = hostEl.ownerDocument;
         injectStyles(WIDGET_STYLE_ID, WIDGET_CSS, doc);
@@ -474,7 +479,7 @@ export class VelaWidget {
             manifest: this.instances.length > 0 ? this.instances.map((it) => it.entry.name) : (this.pendingIndicators?.manifest ?? []),
             natives: present.length > 0 ? present : (this.pendingIndicators?.natives ?? []),
         };
-        const state: WorkspaceState = { version: 1, layout: '1', activeCellId: 'c1', timezone: this.timezone, cells: { c1: cell } };
+        const state: WorkspaceState = { version: 1, layout: '1', activeCellId: 'c1', timezone: this.timezone, charts: [{ id: 'c1', ...cell }] };
         if (this.favs.length > 0) state.favorites = [...this.favs];
         return state;
     }
@@ -490,7 +495,7 @@ export class VelaWidget {
         if (this.destroyed) return;
         const st = sanitizeState(state);
         if (!st) return;
-        const cell = st.cells.c1 ?? Object.values(st.cells)[0];
+        const cell = st.charts.find((c) => c.id === 'c1') ?? st.charts[0];
         const fromUrl = this.opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
         const tz = fromUrl.timezone ?? st.timezone;
         if (tz && tz !== this.timezone) this.setTimezone(tz);
@@ -535,17 +540,18 @@ export class VelaWidget {
         return () => this.stateListeners.delete(handler);
     }
 
-    /** Replace the indicator ledger: natives converge to the listed set (the volume
-     *  default follows its own option, exactly like a workspace cell rebuild), manifest
-     *  instances are re-created by name — held until the manifest resolves if needed. */
+    /** Replace the indicator ledger: natives converge to the listed set (volume
+     *  included — removing it sticks, the core's auto-add respects the opt-out),
+     *  manifest instances are re-created by name — held until the manifest resolves. */
     private applyIndicatorLedger(led: { manifest: string[]; natives: string[] }): void {
         const chart = this.inner;
         if (!chart) return;
+        this.ledgerVolume = led.natives.includes('volume');
         for (const type of led.natives) {
             if (!this.nativeCatalog.some((n) => n.type === type && n.present)) chart.addNativeIndicator(type);
         }
         for (const n of this.nativeCatalog) {
-            if (n.present && n.type !== 'volume' && !led.natives.includes(n.type)) chart.addNativeIndicator(n.type).remove();
+            if (n.present && !led.natives.includes(n.type)) chart.addNativeIndicator(n.type).remove();
         }
         for (const it of [...this.instances]) this.dropInstance(it);
         if (this.manifest.length > 0) {
@@ -706,6 +712,7 @@ export class VelaWidget {
             symbol: this.symbol,
             timeframe: this.timeframe,
             bars: Math.max(this.bars, this.rangeBars),
+            volume: this.ledgerVolume ?? chartOpts.volume,
             // A pending range chip frames the FIRST paint (no preview flash, no re-frame).
             ...(this.pendingRange ? { visibleRange: this.pendingRange.preset } : {}),
         });
@@ -722,7 +729,16 @@ export class VelaWidget {
             this.refreshNativeCatalog();
             this.markStateDirty();
         });
-        chart.on('indicator:removed', () => {
+        chart.on('indicator:removed', ({ id }) => {
+            // Out-of-band removals (legend ✕, object tree, handle.remove()) must drop
+            // the matching manifest-instance ledger entry too — a stale entry kept the
+            // name in the persisted document and resurrected the indicator on reload.
+            // The picker path splices first, so this lookup no-ops there (idempotent).
+            const idx = this.instances.findIndex((it) => it.handle?.id === id);
+            if (idx >= 0) {
+                this.instances.splice(idx, 1);
+                this.syncIndicatorCount();
+            }
             this.refreshNativeCatalog();
             this.markStateDirty();
         });

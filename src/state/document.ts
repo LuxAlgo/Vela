@@ -53,6 +53,12 @@ export interface CellState {
     indicators?: { manifest: string[]; natives: string[] };
 }
 
+/** One entry of the document's `charts` array: a chart's state plus its SLOT id. */
+export interface ChartState extends CellState {
+    /** The stable slot id (`c1`…`cN`) — unique within the document. */
+    id: string;
+}
+
 /** The versioned shell-state document — everything `applyState` restores. */
 export interface WorkspaceState {
     version: 1;
@@ -69,8 +75,9 @@ export interface WorkspaceState {
     timezone?: string;
     /** Favorite drawing-tool types — a SHARED preference (one star set per shell). */
     favorites?: string[];
-    /** Per-slot state — a single `c1` entry for the widget. */
-    cells: Record<string, CellState>;
+    /** Per-chart state, one entry per SLOT (a single `c1` entry for the widget).
+     *  Ids are unique — the codec drops id-less entries and keeps the LAST duplicate. */
+    charts: ChartState[];
 }
 
 /** Serialize a state document (the inverse of {@link decodeState}). */
@@ -97,13 +104,18 @@ export function sanitizeState(doc: unknown): WorkspaceState | null {
     if (doc == null || typeof doc !== 'object') return null;
     const d = doc as Record<string, unknown>;
     if (d.version !== 1 || typeof d.layout !== 'string') return null;
-    const out: WorkspaceState = { version: 1, layout: d.layout, cells: {} };
+    const out: WorkspaceState = { version: 1, layout: d.layout, charts: [] };
 
-    if (d.cells != null && typeof d.cells === 'object') {
-        for (const [id, raw] of Object.entries(d.cells as Record<string, unknown>)) {
+    if (Array.isArray(d.charts)) {
+        // Unique by id, LAST duplicate wins (a Map keeps the first-seen position).
+        const byId = new Map<string, ChartState>();
+        for (const raw of d.charts as unknown[]) {
+            const id = raw != null && typeof raw === 'object' ? (raw as Record<string, unknown>).id : undefined;
+            if (typeof id !== 'string' || id.length === 0) continue;
             const cell = sanitizeCell(raw);
-            if (cell) out.cells[id] = cell;
+            if (cell) byId.set(id, { id, ...cell });
         }
+        out.charts = [...byId.values()];
     }
     if (typeof d.activeCellId === 'string') out.activeCellId = d.activeCellId;
     if (typeof d.timezone === 'string' && d.timezone) out.timezone = d.timezone;

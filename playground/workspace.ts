@@ -21,6 +21,7 @@ const ws = new VelaWorkspace('#workspace', {
     indicators: [
         {
             name: 'EMA 20',
+            enabled: false, // library-only: pick it from the indicators dialog, never auto-added
             script: `//@version=5
 indicator("EMA 20", overlay=true)
 plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
@@ -61,7 +62,8 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
 // setTimeout(() => {
 //     const doc = ws.getState();
 //     doc.layout = '2h'; // switch the grid…
-//     doc.cells.c1!.symbol = 'DOGEUSDT'; // …retarget slot c1…
+//     const c1 = doc.charts.find((c) => c.id === 'c1');
+//     if (c1) c1.symbol = 'DOGEUSDT'; // …retarget slot c1…
 //     doc.sync = { viewport: true }; // …and link every cell's viewport
 //     ws.applyState(doc);
 //     offState();

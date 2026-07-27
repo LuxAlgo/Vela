@@ -177,8 +177,9 @@ describe('legacyWidgetState (pre-unified three-key migration)', () => {
             activeCellId: 'c1',
             timezone: 'Europe/Paris',
             favorites: ['trendline', 'hline'],
-            cells: {
-                c1: {
+            charts: [
+                {
+                    id: 'c1',
                     symbol: 'ETHUSDT',
                     timeframe: '15',
                     priceStyle: 'bars',
@@ -187,7 +188,7 @@ describe('legacyWidgetState (pre-unified three-key migration)', () => {
                     rendererConfig: { theme: 'dark' },
                     drawings: { version: 1, drawings: [{ type: 'hline' }] },
                 },
-            },
+            ],
         });
         // The migrated document must survive the shared sanitizer untouched.
         expect(sanitizeState(doc)).toEqual(doc);
@@ -195,7 +196,7 @@ describe('legacyWidgetState (pre-unified three-key migration)', () => {
 
     it('tolerates junk: corrupt sub-documents are dropped, an empty payload is null', () => {
         const doc = legacyWidgetState({ symbol: 'BTCUSDT', bars: 'not-a-number' }, '{corrupt', 'also corrupt');
-        expect(doc!.cells.c1).toEqual({ symbol: 'BTCUSDT' });
+        expect(doc!.charts[0]).toEqual({ id: 'c1', symbol: 'BTCUSDT' });
         expect(legacyWidgetState({}, null, null)).toBeNull(); // nothing usable → no migration
     });
 });

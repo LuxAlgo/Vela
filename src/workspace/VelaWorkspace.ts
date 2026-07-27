@@ -222,7 +222,7 @@ export class VelaWorkspace {
         }
         this.def = this.resolveLayout(boot?.layout && layoutDefinition(boot.layout) ? boot.layout : (opts.layout ?? '4'));
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
-        if (boot?.cells) for (const [id, cs] of Object.entries(boot.cells)) this.pool.set(id, cs);
+        if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
         const bootActive = boot?.activeCellId ?? null;
 
         const doc = hostEl.ownerDocument;
@@ -493,10 +493,11 @@ export class VelaWorkspace {
      * custom flows on it (server snapshots, share links, templates).
      */
     getState(): WorkspaceState {
-        const cells: Record<string, PooledCellState> = {};
-        for (const [id, cs] of this.pool) cells[id] = cs; // dormant slots
-        for (const [id, cell] of this.cellsById) cells[id] = cell.dehydrate(); // live slots win
-        const state: WorkspaceState = { version: 1, layout: this.def.id, timezone: this.timezone, sync: { ...this.syncOpts }, cells };
+        const byId = new Map<string, PooledCellState>();
+        for (const [id, cs] of this.pool) byId.set(id, cs); // dormant slots
+        for (const [id, cell] of this.cellsById) byId.set(id, cell.dehydrate()); // live slots win
+        const charts = [...byId].map(([id, cs]) => ({ id, ...cs }));
+        const state: WorkspaceState = { version: 1, layout: this.def.id, timezone: this.timezone, sync: { ...this.syncOpts }, charts };
         if (this.activeId) state.activeCellId = this.activeId;
         if (this.favs.length > 0) state.favorites = [...this.favs];
         if (this.trackSizes.size > 0) state.trackSizes = Object.fromEntries([...this.trackSizes].map(([k, v]) => [k, { ...v }]));
@@ -528,7 +529,7 @@ export class VelaWorkspace {
             this.events.emit('cell:destroyed', { id });
         }
         this.pool.clear();
-        for (const [id, cs] of Object.entries(st.cells)) this.pool.set(id, cs);
+        for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
         const def = layoutDefinition(st.layout);
         if (def) this.def = def;
         this.cellBackend = this.backendFor(this.def);
