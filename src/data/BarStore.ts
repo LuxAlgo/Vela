@@ -13,7 +13,9 @@ function symbolOf(key: string): string {
  * In-memory cache of CLOSED bars, keyed by `(provider, symbol, timeframe)`. Each
  * series holds a single time-sorted, de-duplicated array. Scoped to the current
  * symbol — `retainSymbol` evicts other symbols' series (the agreed purge policy;
- * smarter eviction comes later).
+ * smarter eviction comes later) — except symbols protected via `retain`, the
+ * multi-chart seam: a workspace declares every cell's symbol so one cell's load
+ * never evicts the others' history.
  *
  * The default instance (`sharedBarStore`) is shared module-wide so it survives
  * chart re-creation — that's the whole point: a fresh run for the same symbol
@@ -24,6 +26,8 @@ export class BarStore {
     /** Earliest bar-open time fetched for a series — what the cache actually covers. */
     private readonly coveredFrom = new Map<string, number>();
     private currentSymbol?: string;
+    /** Symbols protected from the current-symbol purge (multi-chart cells). Empty = legacy single-chart behavior. */
+    private retained: ReadonlySet<string> = new Set();
 
     get(key: string): OHLCV[] | undefined {
         return this.series.get(key);
@@ -60,12 +64,34 @@ export class BarStore {
      * purges other-symbol series when the symbol actually CHANGES — so secondary
      * series (request.security cross-symbol/HTF/LTF) fetched during a run survive
      * re-runs of the same chart, and are dropped only when the chart symbol flips.
+     * Symbols declared via {@link retain} are never purged.
      */
     retainSymbol(symbol: string): void {
         if (this.currentSymbol === symbol) return;
         this.currentSymbol = symbol;
+        this.purgeOutside(symbol);
+    }
+
+    /**
+     * Declare the set of symbols a multi-chart workspace is displaying (CANONICAL
+     * tickers, post-registry resolution — `chart.data.resolve(sym).ticker`). These
+     * survive every {@link retainSymbol} purge, so cells loading different symbols
+     * stop evicting each other's history. Replaces the previous set and purges
+     * anything now outside `symbols ∪ {currentSymbol}` immediately. An empty set
+     * restores the legacy single-chart policy. Note: SECONDARY symbols a script
+     * fetches (`request.security` cross-symbol) are not in this set and still drop
+     * on cross-cell loads — correctness is unaffected (they re-fetch on demand).
+     */
+    retain(symbols: ReadonlySet<string>): void {
+        this.retained = new Set(symbols);
+        this.purgeOutside(this.currentSymbol);
+    }
+
+    /** Drop every series whose symbol is neither `current` nor retained. */
+    private purgeOutside(current: string | undefined): void {
         for (const key of [...this.series.keys()]) {
-            if (symbolOf(key) !== symbol) {
+            const sym = symbolOf(key);
+            if (sym !== current && !this.retained.has(sym)) {
                 this.series.delete(key);
                 this.coveredFrom.delete(key);
             }

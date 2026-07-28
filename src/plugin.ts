@@ -47,10 +47,16 @@ export {
     registerWidgetAction,
     unregisterWidgetAction,
     widgetActions,
+    registerWidgetAttachment,
+    unregisterWidgetAttachment,
+    widgetAttachments,
     type WidgetActionDescriptor,
     type WidgetActionTarget,
+    type WidgetAttachment,
     type WidgetContext,
 } from './widget/contributions';
+export { drawingTypes, getDrawingType, type DrawingTypeMeta } from './core/drawings/registry';
+export type { DrawingTypeKey } from './core/drawings/Drawing';
 export { registerIcon, iconMarkup } from './ui/icons';
 export type { KeyBindingDescriptor, ResolvedBinding } from './ui/keymap';
 export type { PriceStyle } from './core/options';

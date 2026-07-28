@@ -35,6 +35,11 @@ right, so the bar never overlaps candles, the legend, or the axes).
     anchor to the nearest candle's time + OHLC; *weak* snaps only when a candle point is within a
     few pixels of the cursor. Holding **Ctrl/Cmd** is a momentary *strong* override.
 - **Tooltips.** Hovering any control for ~2 seconds shows a small label beside it.
+- **Favorites.** Every tool row in a flyout carries a **star** (revealed on row hover, gold when
+  set). Starring is a user preference, not document data: the set survives symbol/timeframe
+  rebuilds, is persisted by the widget alongside the other UI state (`persist`), and is readable
+  and writable from code — see below. Hosts and plugins can build their own UI on top of it (a
+  favorites bar, a radial picker…).
 
 Arm a tool, then **click** to place its anchors (most tools, including shapes, are
 click-then-move-then-click; freehand/brush is the exception and captures the drag path; the
@@ -228,6 +233,44 @@ See the [`chart.drawings` reference](./api-reference.md#chartdrawings-control-su
 method list and which methods are gated by renderer support.
 
 ---
+
+## Tool and mode state from code
+
+The armed tool, the magnet, and the measure/eraser modes are all readable and drivable
+programmatically — the seam an external toolbar (e.g. a multi-chart workspace's shared
+bar) builds on:
+
+```js
+chart.drawings.getTool();               // 'trendline' | … | null (select/idle)
+chart.drawings.setSnapMode('strong');   // magnet: 'off' | 'weak' | 'strong'
+chart.drawings.getSnapMode();
+chart.drawings.setMode('measure');      // 'measure' | 'eraser' | null (none)
+chart.drawings.getMode();
+
+// Follow every change, whatever its source (in-chart toolbar, keyboard, code):
+chart.on('drawing:tool', ({ type }) => { /* armed tool changed; null = pointer */ });
+chart.on('drawing:snap', ({ mode }) => { /* magnet mode changed */ });
+chart.on('drawing:mode', ({ mode }) => { /* measure/eraser entered or left */ });
+```
+
+The renderer keeps owning the mutual exclusion — arming a tool exits measure/eraser
+(and vice versa), and the outcome always lands on the events, so an external UI only
+ever mirrors. One-shot tools disarm themselves after placing (back to `null` on
+`drawing:tool`); the brush family stays armed.
+
+## Favorite tools
+
+```js
+chart.drawings.favorites();                     // ['trendline', 'box'] — starred, in star order
+chart.drawings.isFavorite('trendline');         // true
+chart.drawings.setFavorite('ray', true);        // star / unstar one type
+chart.drawings.setFavorites(['ray', 'box']);    // replace the whole set (unknown types dropped)
+
+chart.on('drawing:favorites', ({ favorites }) => { /* the set changed (star click or code) */ });
+```
+
+The widget persists the set with its other state when `persist` is enabled, and restores it on
+the next load.
 
 ## Persistence, undo & clipboard
 

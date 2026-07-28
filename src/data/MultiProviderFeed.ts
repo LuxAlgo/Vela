@@ -66,6 +66,11 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.registry.resolve(raw, { default: this.primaryProvider });
     }
 
+    /** The registered provider INSTANCE under `name` (undefined if unknown). */
+    providerInstance(name: string): DataProvider | undefined {
+        return this.registry.get(name);
+    }
+
     symbols(name?: string): SymbolDescriptor[] {
         return this.registry.symbolsOf(name);
     }
@@ -244,6 +249,11 @@ class RegistryFetchFeed implements MarketDataFeed {
                 // Last two bars: the (possibly just-closed) previous bar and the forming
                 // one. onBar dedupes by time, so the older one is harmless.
                 const bars = await provider.getBars(ticker, tf, { limit: 2 });
+                // Re-check AFTER the await: an unsubscribe during the fetch (a market
+                // switch) must not push the OLD market's bars into the new series — on the
+                // same timeframe the forming bar shares its open time, so a stale bar would
+                // silently REPLACE the new market's forming candle.
+                if (stopped) return;
                 for (const b of bars) onBar(b);
             } catch {
                 // transient error — keep polling

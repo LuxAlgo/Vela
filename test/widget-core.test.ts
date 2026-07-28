@@ -11,8 +11,9 @@ import { filterSymbols } from '../src/widget/symbol-picker';
 import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, panTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
-import { registerWidgetAction, unregisterWidgetAction, widgetActions } from '../src/widget/contributions';
-import { loadPersisted, savePersisted, type WidgetStorage } from '../src/widget/persist';
+import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments } from '../src/widget/contributions';
+import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
+import { sanitizeState } from '../src/state/document';
 
 describe('parseTimeframe', () => {
     it('bare numbers are minutes; canonical collapses to bare minutes', () => {
@@ -122,7 +123,7 @@ describe('widget chrome pure helpers', () => {
 
     it('every range chip maps to a core visible-range preset', () => {
         for (const r of RANGE_PRESETS) {
-            expect(['1D', '1W', '1M', '3M', '6M', '1Y', 'YTD', 'ALL']).toContain(r.preset);
+            expect(['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'YTD', 'ALL']).toContain(r.preset);
             expect(r.tf.length).toBeGreaterThan(0);
         }
     });
@@ -160,6 +161,43 @@ describe('readUrlState', () => {
         expect(readUrlState('?interval=240')).toEqual({ timeframe: '240' });
         expect(readUrlState('')).toEqual({});
         expect(readUrlState('?symbol=')).toEqual({});
+    });
+});
+
+describe('legacyWidgetState (pre-unified three-key migration)', () => {
+    it('folds prefs + config + drawings keys into one single-cell unified document', () => {
+        const doc = legacyWidgetState(
+            { symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'bars', timezone: 'Europe/Paris', bars: '2000', watermark: '0', favorites: 'trendline,hline' },
+            JSON.stringify({ theme: 'dark' }),
+            JSON.stringify({ version: 1, drawings: [{ type: 'hline' }] }),
+        );
+        expect(doc).toEqual({
+            version: 1,
+            layout: '1',
+            activeCellId: 'c1',
+            timezone: 'Europe/Paris',
+            favorites: ['trendline', 'hline'],
+            charts: [
+                {
+                    id: 'c1',
+                    symbol: 'ETHUSDT',
+                    timeframe: '15',
+                    priceStyle: 'bars',
+                    bars: 2000,
+                    watermark: false,
+                    rendererConfig: { theme: 'dark' },
+                    drawings: { version: 1, drawings: [{ type: 'hline' }] },
+                },
+            ],
+        });
+        // The migrated document must survive the shared sanitizer untouched.
+        expect(sanitizeState(doc)).toEqual(doc);
+    });
+
+    it('tolerates junk: corrupt sub-documents are dropped, an empty payload is null', () => {
+        const doc = legacyWidgetState({ symbol: 'BTCUSDT', bars: 'not-a-number' }, '{corrupt', 'also corrupt');
+        expect(doc!.charts[0]).toEqual({ id: 'c1', symbol: 'BTCUSDT' });
+        expect(legacyWidgetState({}, null, null)).toBeNull(); // nothing usable → no migration
     });
 });
 
@@ -243,5 +281,75 @@ describe('WidgetStorage adapter (pluggable persistence)', () => {
         expect(loadPersisted(bad, 'k')).toEqual({});
         const rejecting: WidgetStorage = { get: async () => Promise.reject(new Error('offline')), set: () => {} };
         expect(await loadPersisted(rejecting, 'k')).toEqual({});
+    });
+});
+
+describe('widget attachments (per-widget contributed behavior)', () => {
+    it('registers, lists in order, last-id-wins, and stale disposers are inert', () => {
+        const d1 = registerWidgetAttachment({ id: 'a', mount: () => () => {} });
+        registerWidgetAttachment({ id: 'b', mount: () => () => {} });
+        expect(widgetAttachments().map((a) => a.id)).toEqual(['a', 'b']);
+        const replacement = { id: 'a', mount: () => () => {} };
+        registerWidgetAttachment(replacement);
+        expect(widgetAttachments().find((x) => x.id === 'a')).toBe(replacement);
+        d1(); // stale disposer must NOT remove the replacement
+        expect(widgetAttachments().some((x) => x.id === 'a')).toBe(true);
+        unregisterWidgetAttachment('a');
+        unregisterWidgetAttachment('b');
+        expect(widgetAttachments()).toHaveLength(0);
+    });
+});
+
+describe('range chips: timeframe + fetch depth per window', () => {
+    const MIN = 60_000;
+    const TF_MS: Record<string, number> = { '1': MIN, '5': 5 * MIN, '30': 30 * MIN, '60': 60 * MIN, '240': 240 * MIN, D: 1440 * MIN, W: 7 * 1440 * MIN };
+    const SPAN_DAYS: Record<string, number> = { '1D': 1, '7D': 7, '1M': 30, '3M': 90, '6M': 180, YTD: 366, '1Y': 365, '5Y': 5 * 365 };
+
+    it('exposes the reference chip set, finest bars on the shortest range', () => {
+        expect(RANGE_PRESETS.map((r) => r.id)).toEqual(['1D', '7D', '1M', '3M', '6M', 'YTD', '1Y', '5Y', 'ALL']);
+        expect(RANGE_PRESETS.map((r) => r.tf)).toEqual(['1', '5', '30', '60', '240', 'D', 'D', 'W', 'W']);
+    });
+
+    it('every chip fetches ENOUGH bars to actually fill its window', () => {
+        for (const r of RANGE_PRESETS) {
+            if (r.id === 'ALL') continue; // ALL frames whatever history exists
+            const needed = (SPAN_DAYS[r.id]! * 1440 * MIN) / TF_MS[r.tf]!;
+            // the budget must cover the window (this is what a fixed 1000-bar load got wrong)
+            expect(r.bars).toBeGreaterThanOrEqual(needed);
+            expect(r.bars).toBeLessThan(needed * 2); // …without fetching absurd depth
+        }
+    });
+});
+
+describe('WidgetHistory late-resolves the current chart', () => {
+    function fakeChart(): { drawings: { undo: ReturnType<typeof vi.fn>; redo: ReturnType<typeof vi.fn> }; on(ev: string, cb: (p: unknown) => void): () => void; emit(ev: string): void } {
+        const listeners = new Map<string, Set<(p: unknown) => void>>();
+        return {
+            drawings: { undo: vi.fn(), redo: vi.fn() },
+            on(ev, cb) {
+                if (!listeners.has(ev)) listeners.set(ev, new Set());
+                listeners.get(ev)!.add(cb);
+                return () => listeners.get(ev)!.delete(cb);
+            },
+            emit(ev) {
+                for (const cb of listeners.get(ev) ?? []) cb({ id: 'd1' });
+            },
+        };
+    }
+
+    it('drawing steps act on the chart that exists at undo time, not at record time', async () => {
+        const { WidgetHistory } = await import('../src/widget/history');
+        const a = fakeChart();
+        const b = fakeChart();
+        let current: unknown = a;
+        const h = new WidgetHistory(() => current as never);
+        h.onChart(a as never);
+        a.emit('drawing:created'); // a step recorded while A was the live chart
+        current = b; // the widget rebuilt — A is destroyed, B is live
+        h.undo();
+        expect(b.drawings.undo).toHaveBeenCalledTimes(1); // late-resolved to the CURRENT chart
+        expect(a.drawings.undo).not.toHaveBeenCalled(); // never the destroyed instance
+        h.redo();
+        expect(b.drawings.redo).toHaveBeenCalledTimes(1);
     });
 });

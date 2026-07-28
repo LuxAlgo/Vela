@@ -1,4 +1,6 @@
 import type { OHLCV } from './model/ohlcv';
+import type { VisibleRangePreset } from './visible-range';
+import type { VisibleRange } from './ports/IChartRenderer';
 import type { InputValue } from './model/inputs';
 import type { IChartRenderer } from './ports/IChartRenderer';
 import type { DrawingsOption } from './drawings/toolbar';
@@ -14,8 +16,47 @@ export interface MarketConfig {
     symbol?: string;
     timeframe?: string;
     bars?: number;
+    /**
+     * The window to frame on the FIRST paint — a preset name (`'1D'`, `'YTD'`, …) or an
+     * explicit `{from, to}`. Set it when the initial view is known up front (a range
+     * chip, a shared link): the chart then loads the depth in ONE pass and paints the
+     * requested window straight away, instead of flashing its fast recent-bars preview
+     * and re-framing a moment later.
+     */
+    visibleRange?: VisibleRangePreset | VisibleRange;
     /** Offline bars instead of a provider; when set, no network fetch happens. */
     data?: OHLCV[];
+}
+
+/**
+ * One in-place market switch — the argument of `chart.setMarket(next)`. Only the fields
+ * given change; the rest of the market keeps its current value. `data` switches to
+ * offline bars (and giving `symbol`/`provider` WITHOUT `data` drops a previous offline
+ * dataset — back to the provider path). `visibleRange` frames the FIRST paint of the
+ * new market (a range chip switching timeframe + depth + window in one call).
+ */
+export interface MarketSwitch {
+    symbol?: string;
+    provider?: ProviderName;
+    timeframe?: string;
+    bars?: number;
+    data?: OHLCV[];
+    visibleRange?: VisibleRangePreset | VisibleRange;
+}
+
+/**
+ * The chart's current market identity — `chart.market`, the read counterpart of
+ * `setMarket`. A SNAPSHOT of the requested market (mutating it changes nothing): it
+ * reflects a switch as soon as `setMarket` is called, not when the load lands — the
+ * "what is this chart showing/loading right now" answer. `offline` is true when the
+ * chart runs on an inline `data` array instead of a provider.
+ */
+export interface MarketSnapshot {
+    symbol?: string;
+    provider?: ProviderName;
+    timeframe?: string;
+    bars?: number;
+    offline: boolean;
 }
 
 export interface VelaTheme {

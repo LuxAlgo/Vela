@@ -12,6 +12,7 @@ import type {
 } from '../../core/ports/IChartRenderer';
 import type { VelaTheme } from '../../core/options';
 import type { OHLCV } from '../../core/model/ohlcv';
+import type { Millis } from '../../core/model/time';
 import type { VolumeLayerData, VpvrLayerData } from '../../core/model/volume-layers';
 import type { Pane } from '../../core/model/scene';
 import type { IndicatorModel } from '../../core/model/indicator';
@@ -27,7 +28,7 @@ import { DataWindow, type DataWindowData, type DataWindowRow, type DataWindowOHL
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
 import { CoordinateSystem, type PriceScale } from './core/CoordinateSystem';
-import { Scheduler, InvalidateLevel, repaintsData } from './core/Scheduler';
+import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from './core/Scheduler';
 import { Animator, easeToward } from './core/Animator';
 import { InputController } from './core/InputController';
 import { KeyboardController } from './core/KeyboardController';
@@ -48,7 +49,7 @@ import { zonedDate } from './chrome/tz';
 import { computePaneScale } from './core/autoscale';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { createAttributionMark } from './chrome/AttributionMark';
@@ -178,6 +179,9 @@ export class NativeRenderer implements IChartRenderer {
 
     private bars: OHLCV[] = [];
     private didInitialFit = false;
+    /** A data-tier paint has happened (scales + drawing resolvers are real) — gates the
+     *  cheap chrome-only repaint so it never draws over placeholder state. */
+    private paintedData = false;
 
     private skeletonClockMs = 0; // monotonic clock for the loading-skeleton pulse (advanced per animator frame)
     private candleBodyAlpha = 1; // candle body-fill opacity (constant; style layers may modulate later)
@@ -222,6 +226,9 @@ export class NativeRenderer implements IChartRenderer {
 
     // ── settings dialog (rich, serializable config — item 15) ──
     private settingsDialog: SettingsDialog | null = null;
+    /** Where modal dialogs mount — a HOST override (multi-chart shells pass their root
+     *  so dialogs center globally instead of clipping inside one cell). Null = the plot. */
+    private dialogHost: HTMLElement | null = null;
     private settingsButton: HTMLButtonElement | null = null;
     private settingsEnabled = false;
 
@@ -261,6 +268,7 @@ export class NativeRenderer implements IChartRenderer {
             this.candleUp = opts.upColor;
             this.candleDown = opts.downColor;
             this.scene.priceStyle = opts.priceStyle;
+            this.scene.basePainting = basePaintingOf(opts.priceStyle);
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
         // it with the real, Vela-resolved theme). Candle colors follow opts.
@@ -268,7 +276,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'dataWindow', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'dataWindow', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -394,6 +402,16 @@ export class NativeRenderer implements IChartRenderer {
                 this.attributionEnabled = Boolean(value);
                 if (this.attributionEl) this.attributionEl.style.display = this.attributionEnabled ? 'flex' : 'none';
                 return; // own DOM, no repaint needed
+            case 'dialogHost':
+                // Where MODAL dialogs mount (chart settings, indicator settings). A
+                // multi-chart shell passes its root so dialogs center over the whole
+                // grid instead of clipping inside one cell. Runtime-only, never part
+                // of the cosmetic config template.
+                this.dialogHost = value instanceof HTMLElement ? value : null;
+                this.settingsDialog?.close();
+                this.settingsDialog = null; // recreated lazily against the new host
+                this.inputsUI?.setDialogHost(this.dialogHost);
+                return; // own DOM, no repaint needed
             default:
                 return;
         }
@@ -436,6 +454,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'keyboard': return this.keyboardEnabled;
             case 'settings': return this.settingsEnabled;
             case 'attribution': return this.attributionEnabled;
+            case 'dialogHost': return this.dialogHost ?? undefined;
             default: return undefined;
         }
     }
@@ -693,7 +712,7 @@ export class NativeRenderer implements IChartRenderer {
                 this.plot.appendChild(this.settingsButton);
             }
             if (this.settingsButton) this.settingsButton.style.display = 'flex';
-            if (this.plot && !this.settingsDialog) this.settingsDialog = new SettingsDialog(this.plot, this.theme);
+            if (this.plot && !this.settingsDialog) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
         } else {
             this.settingsButton?.style.setProperty('display', 'none');
             this.settingsDialog?.close();
@@ -735,7 +754,7 @@ export class NativeRenderer implements IChartRenderer {
     /** Port surface: hosts (topbar buttons) open the same dialog as the in-chart gear —
      *  created on demand, independent of the gear feature being enabled. */
     openSettingsDialog(): void {
-        if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.plot, this.theme);
+        if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
         this.toggleSettingsDialog();
     }
 
@@ -1140,6 +1159,7 @@ export class NativeRenderer implements IChartRenderer {
         this.setKeyboardEnabled(this.keyboardEnabled); // accessible by default; wires focus + ARIA
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
+        this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setOnChange((c) => {
             for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value });
@@ -1290,12 +1310,15 @@ export class NativeRenderer implements IChartRenderer {
         this.syncSize();
     }
 
-    /** Run a 1 Hz repaint pump while the countdown chip is on (so it ticks); stop it otherwise. */
+    /** Run a 1 Hz repaint pump while the countdown chip is on (so it ticks); stop it otherwise.
+     *  Chrome tier: only the chip's wall-clock text moves — an idle chart must not recompute
+     *  scales or repaint the geometry/volume/VPVR/SDK layers once a second (that cost
+     *  multiplies by the cell count in a multi-chart workspace). */
     private syncCountdownTimer(): void {
         if (this.scene.showCountdown) {
             if (this.countdownTimer == null) {
                 this.countdownTimer = setInterval(() => {
-                    if (this.scene.showCountdown && this.scene.bars.length > 0) this.scheduler?.invalidate(InvalidateLevel.Full);
+                    if (this.scene.showCountdown && this.scene.bars.length > 0) this.scheduler?.invalidate(InvalidateLevel.Chrome);
                 }, 1000);
             }
         } else if (this.countdownTimer != null) {
@@ -1348,6 +1371,12 @@ export class NativeRenderer implements IChartRenderer {
     // ── price data ──
     setBars(bars: OHLCV[], opts?: { preserveView?: boolean }): void {
         if (this.introRaf != null) { cancelAnimationFrame(this.introRaf); this.introRaf = null; this.modelAlpha = 1; } // a re-set interrupts a running reveal
+        // A series replacement invalidates the forming-bar glide: after an in-place market
+        // switch the NEW market's forming bar shares the same bucket open-time, so a stale
+        // eased close/high/low would paint a full-height candle (old-market prices on the
+        // new scale) until the next tick re-seeds. The bars given here carry real values —
+        // drop the ease; the next tick snaps fresh (liveEaseTime no longer matches).
+        this.liveEaseTime = 0;
         const prevHeadTime = this.bars[0]?.time;
         this.bars = normalizeBars(bars);
         this.scene.bars = this.bars;
@@ -1676,6 +1705,7 @@ export class NativeRenderer implements IChartRenderer {
     private setPriceStyle(style: PriceStyle): void {
         if (style === this.scene.priceStyle) return;
         this.scene.priceStyle = style;
+        this.scene.basePainting = basePaintingOf(style);
         for (const cb of this.priceStyleCbs) cb(style);
     }
 
@@ -1855,7 +1885,7 @@ export class NativeRenderer implements IChartRenderer {
         if (this.easeLiveBar(dtMs)) active = true; // glide the forming bar toward the latest tick
         this.skeletonClockMs += dtMs; // drives the loading-skeleton pulse (harmless when none show)
         this.paintData();
-        this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY);
+        this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx());
         this.emitViewportChange();
         return active;
     }
@@ -2387,8 +2417,15 @@ export class NativeRenderer implements IChartRenderer {
         if (repaintsData(level)) {
             this.computeScales();
             this.paintData();
+        } else if (repaintsChrome(level) && this.paintedData) {
+            // Chrome-only tier (the countdown's wall-clock tick): neither data nor viewport
+            // changed, so repaint just the chrome canvas over the frame's existing scales —
+            // the geometry backend, volume/VPVR and SDK layers stay untouched. prepare()
+            // re-wires the drawing resolvers (three closures over live refs — cheap).
+            this.chrome.prepare(this.scene, this.coords, this.theme);
+            this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
         }
-        this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY); // L2 crosshair
+        this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx()); // L2 crosshair
     }
 
     /** Paint the below-data (L-1) + geometry (L0) + chrome (L1) layers from the current scene/coords. */
@@ -2454,7 +2491,7 @@ export class NativeRenderer implements IChartRenderer {
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair
 
         if (easeLive && liveActual) this.bars[li] = liveActual; // restore the true forming bar
-
+        this.paintedData = true; // scales are real from here on — the chrome-only tier may run
     }
 
     /** Build the data→pixel projector user drawings resolve their anchors through. */
@@ -2487,6 +2524,51 @@ export class NativeRenderer implements IChartRenderer {
     /** The interactive user-drawings surface the core DrawingController drives. */
     get userDrawingsPort(): IDrawingsRendererPort | undefined {
         return this.userDrawings ?? undefined;
+    }
+
+    /** Focus the data canvas — the element chart/drawing keyboard shortcuts key off
+     *  (tabIndex 0 while the `keyboard` feature is on). Host UIs call it after their
+     *  own controls steal focus (e.g. a shared workspace toolbar click). */
+    focus(): void {
+        this.dataCanvas?.focus({ preventScroll: true });
+    }
+
+    /** EXTERNAL (synced) crosshair — a ghost marker driven by another chart. Kept in
+     *  DATA space (epoch-ms + optional price) so it stays glued through pan/zoom. */
+    private externalCross: { time: Millis; price: number | null } | null = null;
+
+    /** Show/clear the external ghost crosshair (port seam — see IChartRenderer). It only
+     *  repaints the cursor overlay (Cursor tier) and NEVER re-emits onCrosshairMove. */
+    setExternalCrosshair(time: Millis | null, price: number | null = null): void {
+        const next = time == null ? null : { time, price };
+        const prev = this.externalCross;
+        if (!next && !prev) return;
+        if (next && prev && prev.time === next.time && prev.price === next.price) return; // idempotent — 60Hz streams stay cheap
+        this.externalCross = next;
+        this.scheduler.invalidate(InvalidateLevel.Cursor);
+    }
+
+    /** Resolve the ghost to pixels for THIS frame (null when off-window or dataless).
+     *  Snaps by FLOOR to the bar CONTAINING the foreign time — never by rounding: a 1h
+     *  pointer at 14:00 must light THIS day's daily candle, not tomorrow's (a time past
+     *  a bar's midpoint still belongs to that bar). Before the first open or past the
+     *  forming bar there is no containing bar — no ghost. */
+    private externalCrossPx(): { x: number; y: number | null; time: Millis } | null {
+        const ext = this.externalCross;
+        if (!ext || this.coords.barCount === 0) return null;
+        const logical = Math.floor(this.coords.timeToLogical(ext.time));
+        if (logical < 0 || logical >= this.coords.barCount) return null;
+        const x = this.coords.logicalToX(logical);
+        if (!Number.isFinite(x) || x < 0 || x > this.coords.width) return null;
+        let y: number | null = null;
+        if (ext.price != null) {
+            const pricePane = this.scene.orderedPanes().find((p) => p.kind === 'price');
+            if (pricePane) {
+                y = this.coords.priceToY(ext.price, pricePane.scale, pricePane.bounds);
+                if (!Number.isFinite(y) || y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) y = null;
+            }
+        }
+        return { x, y, time: this.coords.logicalToTime(logical) };
     }
 
     /** Sticky magnet mode for user drawings (off/weak/strong); the drawings toolbar drives it. */

@@ -45,7 +45,11 @@ export class Menu {
             spreadProps(this.list, api.getContentProps(), mid);
             for (const li of this.list.children) {
                 const id = (li as HTMLElement).dataset.veiId;
-                if (id) spreadProps(li as HTMLElement, api.getItemProps({ value: id, disabled: this.byId(id)?.disabled }), mid);
+                if (id) {
+                    const item = this.byId(id);
+                    // Switch rows keep the menu OPEN on selection — flip, see, flip again.
+                    spreadProps(li as HTMLElement, api.getItemProps({ value: id, disabled: item?.disabled, closeOnSelect: item?.toggle ? false : undefined }), mid);
+                }
             }
         });
     }
@@ -97,11 +101,17 @@ export class Menu {
             const li = doc.createElement('li');
             li.className = 'vela-menu-item';
             li.dataset.veiId = item.id;
-            if (item.checked) li.dataset.checked = '1';
-            const check = doc.createElement('span');
-            check.className = 'vela-menu-check';
-            check.textContent = item.checked ? '✓' : '';
-            li.appendChild(check);
+            if (item.toggle) {
+                // Switch row: the pill carries the state — no accent recolor, no checkmark.
+                // (Zag owns the item's ARIA props; the pill below is decorative.)
+                li.dataset.toggle = '1';
+            } else {
+                if (item.checked) li.dataset.checked = '1';
+                const check = doc.createElement('span');
+                check.className = 'vela-menu-check';
+                check.textContent = item.checked ? '✓' : '';
+                li.appendChild(check);
+            }
             if (item.icon) li.appendChild(iconEl(item.icon, doc));
             const label = doc.createElement('span');
             label.className = 'vela-menu-label';
@@ -112,6 +122,12 @@ export class Menu {
                 hint.className = 'vela-menu-hint';
                 hint.textContent = item.hint;
                 li.appendChild(hint);
+            }
+            if (item.toggle) {
+                const sw = doc.createElement('span');
+                sw.className = 'vela-menu-switch' + (item.checked ? ' on' : '');
+                sw.setAttribute('aria-hidden', 'true');
+                li.appendChild(sw);
             }
             this.list.appendChild(li);
         }

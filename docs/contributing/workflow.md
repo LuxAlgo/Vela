@@ -36,11 +36,15 @@ These rules are enforced by lint as an import ACL with named exception buckets. 
 
 ## The playground
 
-`npm run playground` serves `playground/` with vite on `http://localhost:5190` — a bare page that
-mounts the **Vela widget** straight from `src/` (no build step; changes hot-reload on save).
-The page registers the Binance provider (public API, no key, no server) and the in-process
-Pine engine with a starter indicator manifest. Use `window.widget` from the browser console
-to poke at the live instance.
+`npm run playground` serves `playground/` with vite on `http://localhost:5190` (no build step;
+changes hot-reload on save). The index page links the two surfaces:
+
+- **`/widget.html`** (`playground/widget.ts`) — mounts the **Vela widget** straight from `src/`.
+  It registers the Binance provider (public API, no key, no server) and the Pine engine with a
+  starter indicator manifest. Use `window.widget` from the browser console to poke at the live
+  instance.
+- **`/workspace.html`** (`playground/workspace.ts`) — mounts the multi-chart **VelaWorkspace**
+  (placeholder until the workspace phase lands).
 
 ## Where to make a change, by layer
 

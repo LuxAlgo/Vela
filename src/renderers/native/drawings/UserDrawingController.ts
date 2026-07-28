@@ -2,6 +2,7 @@ import type { VelaTheme } from '../../../core/options';
 import type {
     Drawing,
     DrawingIntent,
+    DrawingMode,
     DrawingPoint,
     DrawingTypeKey,
     IDrawingsRendererPort,
@@ -75,9 +76,13 @@ export class UserDrawingController implements IDrawingsRendererPort {
             toolbarHost,
             deps.theme(),
             (type) => this.emit({ kind: 'arm', type }),
-            (mode) => this.deps.setSnapMode(mode),
-            () => this.toggleMeasure(),
-            () => this.toggleEraser(),
+            (mode) => {
+                this.deps.setSnapMode(mode);
+                this.emit({ kind: 'snap-mode', mode }); // keep the core mirror (+ external toolbars) in sync
+            },
+            () => this.withModeIntent(() => this.toggleMeasure()),
+            () => this.withModeIntent(() => this.toggleEraser()),
+            (type, on) => this.emit({ kind: 'favorite', type, on }),
         );
         this.interaction = new DrawingInteraction({
             projector: () => this.deps.projector(),
@@ -131,15 +136,64 @@ export class UserDrawingController implements IDrawingsRendererPort {
     }
 
     setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style']): void {
-        if (type != null) this.closeCalloutEditor(); // arming a real tool cancels an open inline editor
-        if (type != null && this.measureMode) this.exitMeasure(); // picking a drawing tool cancels the ruler
-        if (type != null && this.eraserMode) this.exitEraser(); // …and the eraser
+        if (type != null) {
+            this.closeCalloutEditor(); // arming a real tool cancels an open inline editor
+            // Picking a drawing tool cancels the ruler and the eraser — a mutual-exclusion
+            // side effect the core (and any external toolbar) learns via the mode intent.
+            this.withModeIntent(() => {
+                if (this.measureMode) this.exitMeasure();
+                if (this.eraserMode) this.exitEraser();
+            });
+        }
         this.activeTool = type;
         this.activeToolStyle = lastStyle; // seeds the placement ghost so it matches the last-used color
         this.toolbar.setActiveTool(type);
         if (type == null) this.interaction.onToolCleared();
         else this.clearSelection(); // arming a tool dismisses an open settings popup + selection
         this.render();
+    }
+
+    /** Core push: the favorite tool set changed — reflect the flyout stars. */
+    setFavorites(types: readonly DrawingTypeKey[]): void {
+        this.toolbar.setFavorites(types);
+    }
+
+    /** Core push: set the sticky magnet mode. Applies to the renderer + reflects on the
+     *  in-chart toolbar WITHOUT notifying back (the caller already holds the value). */
+    setSnapMode(mode: SnapMode): void {
+        this.deps.setSnapMode(mode);
+        this.toolbar.setMagnetMode(mode);
+    }
+
+    /** Core push: enter/exit measure or eraser (`null` = none). Reuses the toolbar
+     *  toggles so the mutual exclusion (and the button highlights) stay in one place;
+     *  any ACTUAL change is reported back through the mode intent. */
+    setMode(mode: DrawingMode): void {
+        this.withModeIntent(() => {
+            if (mode === 'measure') {
+                if (!this.measureMode) this.toggleMeasure();
+            } else if (mode === 'eraser') {
+                if (!this.eraserMode) this.toggleEraser();
+            } else {
+                if (this.measureMode) this.exitMeasure();
+                if (this.eraserMode) this.exitEraser();
+            }
+        });
+    }
+
+    /** The current renderer-local mode (measure/eraser/none). */
+    private modeOf(): DrawingMode {
+        return this.measureMode ? 'measure' : this.eraserMode ? 'eraser' : null;
+    }
+
+    /** Run a state transition and report the mode ONCE if it actually changed — the
+     *  single choke point that keeps toggles, mutual exclusions, and core pushes from
+     *  double-emitting (an equal-value intent is dropped core-side anyway). */
+    private withModeIntent(fn: () => void): void {
+        const before = this.modeOf();
+        fn();
+        const after = this.modeOf();
+        if (after !== before) this.emit({ kind: 'mode', mode: after });
     }
 
     setSelection(ids: readonly string[]): void {
@@ -188,7 +242,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
         }
         if (this.measureMode) {
             this.measure.down(x, y);
-            if (this.measure.isFinished()) this.exitMeasure(false); // 2nd click finishes → disarm, keep it shown
+            // 2nd click finishes → disarm (reported as a mode change), keep the ruler shown.
+            if (this.measure.isFinished()) this.withModeIntent(() => this.exitMeasure(false));
             this.render();
             return;
         }
@@ -228,7 +283,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         }
         if (this.measureMode) {
             this.measure.up(x, y); // press-drag-release finishes the ruler in one gesture
-            if (this.measure.isFinished()) this.exitMeasure(false);
+            if (this.measure.isFinished()) this.withModeIntent(() => this.exitMeasure(false));
             this.render();
             return;
         }

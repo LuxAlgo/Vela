@@ -505,6 +505,12 @@ export class WebGL2Backend implements IRenderBackend {
             if (this.quadVbo) gl.deleteBuffer(this.quadVbo);
             if (this.quadVao) gl.deleteVertexArray(this.quadVao);
             this.deleteFbos(gl);
+            // Release the CONTEXT itself, not just its resources: browsers cap live
+            // WebGL contexts per page (~16) and reclaim destroyed ones LAZILY. Without
+            // an explicit loseContext(), chart create/destroy cycles (SPA navigation,
+            // workspace layout churn) evict the OLDEST context — which can be a
+            // still-visible chart's. Our own listeners are already detached above.
+            gl.getExtension('WEBGL_lose_context')?.loseContext();
         }
         this.gl = null;
         this.canvas = null;
@@ -615,6 +621,7 @@ export class WebGL2Backend implements IRenderBackend {
         barColors: ReadonlyMap<number, string>,
         dataW: number,
     ): void {
+        if (scene.basePainting === 'none') return; // plugin style fully replaces the price series
         const bars = scene.bars;
         const st = scene.style;
         switch (scene.priceStyle) {

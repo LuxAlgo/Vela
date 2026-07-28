@@ -207,7 +207,7 @@ export class InputController {
         if (this.deps.drawingsClaim?.(x, y)) {
             this.region = 'drawing';
             this.deps.drawingsPointerDown?.(x, y, this.snapMode(e), e.shiftKey);
-            this.el?.setPointerCapture(e.pointerId);
+            this.capture(e.pointerId);
             return;
         }
         // Freeze any in-flight zoom/fling at its current position before grabbing.
@@ -223,8 +223,18 @@ export class InputController {
         this.lastX = x;
         this.lastT = e.timeStamp;
         this.vx = 0;
-        this.el?.setPointerCapture(e.pointerId);
+        this.capture(e.pointerId);
     };
+
+    /** Capture defensively: a synthetic/already-released pointer can't be captured, and
+     *  the move/up pair still routes through the element listeners without it. */
+    private capture(pointerId: number): void {
+        try {
+            this.el?.setPointerCapture(pointerId);
+        } catch {
+            /* keep the gesture alive uncaptured */
+        }
+    }
 
     private readonly onMove = (e: PointerEvent): void => {
         const { x, y } = this.local(e);
@@ -293,7 +303,11 @@ export class InputController {
             }
         }
         this.dragging = false;
-        this.el?.releasePointerCapture(e.pointerId);
+        try {
+            this.el?.releasePointerCapture(e.pointerId);
+        } catch {
+            // never captured (see capture()) or the pointer vanished — nothing to release
+        }
     };
 
     private readonly onLeave = (): void => {

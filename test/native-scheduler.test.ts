@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Scheduler, InvalidateLevel, repaintsData } from '../src/renderers/native/core/Scheduler';
+import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from '../src/renderers/native/core/Scheduler';
 
 /** Controllable rAF: capture the pending callback so the test can fire frames. */
 function harness() {
@@ -70,7 +70,42 @@ describe('native Scheduler · Cursor-tier gate (repaintsData)', () => {
     it('repaints the data layer only at Light or Full', () => {
         expect(repaintsData(InvalidateLevel.None)).toBe(false);
         expect(repaintsData(InvalidateLevel.Cursor)).toBe(false); // hover → crosshair only
+        expect(repaintsData(InvalidateLevel.Chrome)).toBe(false); // countdown tick → chrome only
         expect(repaintsData(InvalidateLevel.Light)).toBe(true);
         expect(repaintsData(InvalidateLevel.Full)).toBe(true);
+    });
+});
+
+describe('native Scheduler · Chrome tier', () => {
+    it('sits between Cursor and Light (subsumption order)', () => {
+        expect(InvalidateLevel.Cursor).toBeLessThan(InvalidateLevel.Chrome);
+        expect(InvalidateLevel.Chrome).toBeLessThan(InvalidateLevel.Light);
+    });
+
+    it('repaintsChrome: true from Chrome up (data-tier frames repaint chrome too)', () => {
+        expect(repaintsChrome(InvalidateLevel.None)).toBe(false);
+        expect(repaintsChrome(InvalidateLevel.Cursor)).toBe(false);
+        expect(repaintsChrome(InvalidateLevel.Chrome)).toBe(true);
+        expect(repaintsChrome(InvalidateLevel.Light)).toBe(true);
+        expect(repaintsChrome(InvalidateLevel.Full)).toBe(true);
+    });
+
+    it('coalesces with its neighbors at the highest level', () => {
+        const h = harness();
+        h.scheduler.invalidate(InvalidateLevel.Chrome);
+        h.scheduler.invalidate(InvalidateLevel.Cursor);
+        h.fire();
+        h.scheduler.invalidate(InvalidateLevel.Chrome);
+        h.scheduler.invalidate(InvalidateLevel.Light);
+        h.fire();
+        expect(h.frames).toEqual([InvalidateLevel.Chrome, InvalidateLevel.Light]);
+    });
+
+    it('a lone countdown tick flushes as one Chrome frame', () => {
+        const h = harness();
+        h.scheduler.invalidate(InvalidateLevel.Chrome);
+        expect(h.isArmed()).toBe(true);
+        h.fire();
+        expect(h.frames).toEqual([InvalidateLevel.Chrome]);
     });
 });

@@ -48,6 +48,16 @@ registerChartType({
 Lifecycle: the engine is created lazily the first time the chart enters the style
 (after `chart.ready()`), suspended/resumed on style flips, stopped at destroy.
 
+Two more levers for full-replacement types:
+
+- `basePainting: 'none'` suppresses the base candle painting while the style is active —
+  for types whose renderer layer fully replaces the price representation (an order-flow
+  grid, bricks…). Default `'candles'` keeps candles under your layer.
+- `chart.data.providerInstance(name)` returns the registered provider **instance** — the
+  seam for extended provider surfaces: a provider may implement interfaces beyond the
+  `DataProvider` port; your data engine retrieves the instance and narrows it with its
+  own type guard.
+
 A chart type may also declare a **settings section** (`settings: { title, rows,
 visibility }`) that the chart-settings dialog renders as its own tab — values persist in
 the renderer config, reach the type's renderer layer as `args.settings`, and its data
@@ -126,6 +136,34 @@ Two rules keep actions portable:
 - **Kit components get `ctx.host`.** Mounting a `Dialog`/`Menu`/`Tooltip` without an
   explicit host portals it to `<body>`, outside the theme's CSS variables (invisible
   backgrounds). Pass `host: ctx.host`.
+
+## Widget attachments — `registerWidgetAttachment`
+
+An action is one button; an **attachment** is a unit of per-widget behavior — an overlay, a
+gesture, custom key handling. It mounts once per widget with the same `WidgetContext`, and
+returns a disposer the widget runs at destroy:
+
+```ts
+import { registerWidgetAttachment } from 'vela/plugin';
+
+registerWidgetAttachment({
+    id: 'mytool.overlay',
+    mount: (ctx) => {
+        const el = document.createElement('div');
+        ctx.host.appendChild(el);                     // the THEMED widget root
+        const onKey = (e: KeyboardEvent) => { /* … ctx.chart.drawings.setTool('trendline') … */ };
+        document.addEventListener('keydown', onKey, true);
+        return () => {                                // runs when the widget is destroyed
+            document.removeEventListener('keydown', onKey, true);
+            el.remove();
+        };
+    },
+});
+```
+
+Attachments mount at widget construction (and on `widget.refreshActions()` for late
+registrations), once per id per widget. The same portability rules as actions apply: everything
+comes from `ctx`, never from module state.
 
 ## Widget integration
 

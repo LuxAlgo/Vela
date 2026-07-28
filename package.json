@@ -1,6 +1,6 @@
 {
   "name": "@luxalgo/vela",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open-source charting library with a native high-performance renderer, drawing tools, pluggable chart types and Pine Script indicators (via PineTS).",
   "license": "Apache-2.0",
   "homepage": "https://luxalgo.com/vela",
@@ -51,6 +51,11 @@
       "types": "./dist/widget.d.ts",
       "import": "./dist/widget.js",
       "require": "./dist/widget.cjs"
+    },
+    "./workspace": {
+      "types": "./dist/workspace.d.ts",
+      "import": "./dist/workspace.js",
+      "require": "./dist/workspace.cjs"
     }
   },
   "files": [

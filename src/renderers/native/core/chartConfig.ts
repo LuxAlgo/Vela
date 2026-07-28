@@ -292,6 +292,13 @@ export interface ChartConfig {
 const LINE_STYLES: readonly LineStyle[] = ['solid', 'dashed', 'dotted'];
 const BUILTIN_PRICE_STYLES: readonly PriceStyle[] = ['candles', 'bars', 'line', 'area', 'baseline', 'heikinashi'];
 
+/** Base price-series painting for a style: built-ins paint themselves; a plugin type
+ *  may declare `basePainting: 'none'` to suppress candles under its layer. */
+export function basePaintingOf(style: PriceStyle): 'candles' | 'none' {
+    for (const t of chartTypes()) if (t.id === style) return t.basePainting ?? 'candles';
+    return 'candles';
+}
+
 /** Every valid price-style id RIGHT NOW: the built-ins plus SDK-registered chart types. */
 export function priceStyleIds(): PriceStyle[] {
     const out: PriceStyle[] = [...BUILTIN_PRICE_STYLES];

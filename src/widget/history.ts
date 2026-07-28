@@ -15,6 +15,11 @@ export class WidgetHistory {
     private unsubs: Array<() => void> = [];
     private muted = false;
 
+    /** `getChart` late-resolves the CURRENT chart: drawing steps recorded before a chart
+     *  rebuild must undo on the chart that exists when the user presses Ctrl+Z, not on a
+     *  destroyed instance captured at record time. */
+    constructor(private readonly getChart: () => Vela | null = () => null) {}
+
     /** Record a reversible action (a fresh edit forks history: redo branch clears). */
     push(action: HistoryAction): void {
         if (this.muted) return;
@@ -56,9 +61,9 @@ export class WidgetHistory {
     onChart(chart: Vela): void {
         for (const u of this.unsubs) u();
         this.unsubs = [
-            chart.on('drawing:created', () => this.pushDrawingStep(chart)),
-            chart.on('drawing:edited', () => this.pushDrawingStep(chart)),
-            chart.on('drawing:removed', () => this.pushDrawingStep(chart)),
+            chart.on('drawing:created', () => this.pushDrawingStep()),
+            chart.on('drawing:edited', () => this.pushDrawingStep()),
+            chart.on('drawing:removed', () => this.pushDrawingStep()),
         ];
     }
 
@@ -68,8 +73,8 @@ export class WidgetHistory {
         this.listeners.clear();
     }
 
-    private pushDrawingStep(chart: Vela): void {
-        this.push({ undo: () => chart.drawings.undo(), redo: () => chart.drawings.redo() });
+    private pushDrawingStep(): void {
+        this.push({ undo: () => this.getChart()?.drawings.undo(), redo: () => this.getChart()?.drawings.redo() });
     }
 
     /** Replaying an action must not re-record the drawing events it triggers. */

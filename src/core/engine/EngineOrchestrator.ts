@@ -7,7 +7,7 @@ import type { IndicatorModel } from '../model/indicator';
 import type { ValuePatch, SeriesValueDelta } from '../model/patch';
 import { isLineLikeSeries } from '../model/series';
 import type { InputValue } from '../model/inputs';
-import type { VelaTheme, MarketConfig, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
+import type { VelaTheme, MarketConfig, MarketSwitch, MarketSnapshot, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
 import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
 import type { IndicatorHandle } from '../IndicatorHandle';
@@ -121,14 +121,21 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     // ── deep-history backfill (older chunks streaming in behind the interactive chart) ──
     /** Where the history load stands. Stamped into new sessions + every bar notification. */
     private historyState: 'backfill' | 'complete' = 'complete';
-    /** Invalidates the detached backfill loop: bumped by init() and destroy(). */
+    /** Invalidates detached async work (backfill loops, in-flight loads, gap heals):
+     *  bumped by init(), setMarket() and destroy(). */
     private generation = 0;
-    /** `history:complete` fired (the promise resolves once; destroy also resolves it). */
+    /** Awaiters racing a superseded load (setMarket callers) — released on every bump so they never hang. */
+    private readonly supersedeWaiters: Array<() => void> = [];
+    /** `history:complete` fired for the CURRENT load. Each market load re-arms the cycle
+     *  (see {@link resetHistoryTracking}) — `historyComplete()` is per-load, not per-chart. */
     private historyCompleted = false;
     private resolveHistoryComplete!: () => void;
-    private readonly historyCompletePromise = new Promise<void>((resolve) => {
+    private historyCompletePromise = new Promise<void>((resolve) => {
         this.resolveHistoryComplete = resolve;
     });
+    /** A setMarket switch is in flight: bar/viewport pokes to the OLD sessions are held
+     *  (they must not re-run over the incoming market's bars — re-execution follows the load). */
+    private switchingMarket = false;
 
     constructor(
         container: HTMLElement,
@@ -164,16 +171,21 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // (heikinashi) and/or a registered data engine (SDK chart types).
         this.renderer.onPriceStyleChange?.((style) => this.syncPriceStyle(style));
         // Seed the bar transform from the CONSTRUCTED style (a chart created with
-        // `priceStyle: 'heikinashi'`) so the initial load already produces the view. A
-        // chart-type DATA engine seeds later, at ready (it needs `readyPromise` to exist).
+        // `priceStyle: 'heikinashi'`) so the initial load already produces the view.
         const initialStyle = this.renderer.readFeature('priceStyle');
         if (typeof initialStyle === 'string') this.priceStyle = initialStyle as PriceStyle;
         this.barTransform = barTransformFor(initialStyle);
-        if (chartType(initialStyle)?.dataEngine) this.syncChartTypeEngine(initialStyle);
         // User drawings: owns the model + tool/selection state, drives the renderer's
         // drawings port (inert when the renderer lacks the `userDrawings` capability).
         this.drawings = new DrawingController(this.renderer, this.events, config.drawings);
         this.readyPromise = this.init();
+        // Seed a constructed chart-type DATA engine only now — `startChartTypeEngine`
+        // awaits `readyPromise`, so this MUST come after the assignment above. Seeding
+        // earlier awaited `undefined`: the engine started before the first load, could
+        // not resolve its provider surfaces (e.g. a footprint feed), and a later
+        // style re-select only RESUMED the empty engine — a restored plugin style
+        // painted nothing until a market switch recreated it.
+        if (chartType(initialStyle)?.dataEngine) this.syncChartTypeEngine(initialStyle);
     }
 
     /** The user-drawings manager (backs `chart.drawings`). */
@@ -239,9 +251,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     private onViewportChange(range: VisibleRange): void {
         this.visibleRange = { left: range.from, right: range.to };
+        this.events.emit('viewport:changed', { from: range.from, to: range.to });
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportTimer = setTimeout(() => {
             this.viewportTimer = null;
+            if (this.switchingMarket) return; // old sessions must not re-run mid-switch
             const window = this.visibleRange;
             if (!window) return;
             for (const record of this.registry.all()) {
@@ -256,56 +270,229 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     }
 
     private async init(): Promise<void> {
+        const gen = this.bumpGeneration();
+        await this.loadMarket(gen, { firstLoad: true });
+        if (this.generation !== gen) return; // superseded mid-load (a setMarket, or destroy)
+        this.startLive();
+        this.events.emit('ready', undefined);
+    }
+
+    /** Bump the generation — superseding every detached continuation — and release
+     *  superseded setMarket awaiters so their promises resolve instead of hanging. */
+    private bumpGeneration(): number {
+        const gen = ++this.generation;
+        for (const w of this.supersedeWaiters.splice(0)) w();
+        return gen;
+    }
+
+    /**
+     * Load the configured market's history into the chart — THE shared load pipeline
+     * behind {@link init} and {@link setMarket}. Deep histories paint a quick
+     * recent-window preview first (one request) so candles appear immediately, then the
+     * first chunk behind it (preserveView keeps the visible bars put); depth beyond one
+     * chunk BACKFILLS in a detached loop — sessions started meanwhile are stamped
+     * 'backfill' and the bundled engines hold their first run until 'complete'. Offline
+     * data and small charts are a single fetch. A requested initial window skips the
+     * fast preview: its recent-bars viewport would paint the WRONG range for a moment,
+     * then jump — one load, one paint, framed. EVERY await is followed by a generation
+     * check so a superseded load (newer setMarket, destroy) abandons without touching
+     * the chart. `firstLoad` activates the bar-following layers once (volume auto-add)
+     * — a market SWITCH must not re-add what the user has since removed.
+     */
+    private async loadMarket(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         const market = this.config.market;
         const requested = market.bars ?? 500;
-        const gen = ++this.generation;
-        // Deep history: paint a quick recent-window preview first (one request) so candles
-        // appear immediately, then the first chunk behind it (preserveView keeps the visible
-        // bars put). Depth beyond one chunk BACKFILLS in a detached loop — the chart is
-        // interactive meanwhile; sessions started now are stamped 'backfill' and the engines
-        // hold their first run until the 'complete' notification (policy A). Skip for offline
-        // data (already in memory) and small charts (a single request is already fast).
-        if (!market.data?.length && requested > SINGLE_REQUEST_BARS) {
-            this.setBarSeries(await this.feed.load({ ...market, bars: PREVIEW_BARS }));
-            this.activateBarLayers(); // bar-following layers (volume, chart-type engines) follow the FIRST candles, not the deep chunk
-            this.setBarSeries(await this.feed.load({ ...market, bars: Math.min(requested, CHUNK_BARS) }), { preserveView: true });
+        const initialRange = market.visibleRange;
+        if (!market.data?.length && requested > SINGLE_REQUEST_BARS && initialRange == null) {
+            const preview = await this.feed.load({ ...market, bars: PREVIEW_BARS });
+            if (this.generation !== gen) return;
+            this.setBarSeries(preview);
+            if (opts.firstLoad) this.activateBarLayers(); // bar-following layers (volume, chart-type engines) follow the FIRST candles, not the deep chunk
+            const chunk = await this.feed.load({ ...market, bars: Math.min(requested, CHUNK_BARS) });
+            if (this.generation !== gen) return;
+            this.setBarSeries(chunk, { preserveView: true });
             if (requested > CHUNK_BARS && this.feed.loadRange) {
                 this.historyState = 'backfill';
                 void this.backfillHistory(gen, requested);
             } else if (requested > CHUNK_BARS) {
                 // No ranged feed → can't chunk; keep the old single deep fetch behind the preview.
-                this.setBarSeries(await this.feed.load(market), { preserveView: true });
+                const full = await this.feed.load(market);
+                if (this.generation !== gen) return;
+                this.setBarSeries(full, { preserveView: true });
                 this.completeHistory('depth');
             } else {
                 this.completeHistory('depth');
             }
         } else {
-            this.setBarSeries(await this.feed.load(market));
-            this.activateBarLayers();
+            const bars = await this.feed.load(market);
+            if (this.generation !== gen) return;
+            this.setBarSeries(bars);
+            if (opts.firstLoad) this.activateBarLayers();
             this.completeHistory('depth');
+        }
+        // Frame the requested window NOW: `setBarSeries` only invalidated, so this lands in the
+        // very first painted frame — no wrong-window flash, no re-frame jump.
+        if (initialRange != null) {
+            if (typeof initialRange === 'string') this.setVisibleRangePreset(initialRange);
+            else this.renderer.setVisibleRange(initialRange);
         }
         // Price-axis precision: try the (already cached) tick size now, then resolve async so the
         // axis switches from the zoom formula to the symbol's true precision as soon as it lands.
         this.refreshPriceFormat();
         void this.ensurePriceFormat();
-        if (this.config.live) {
-            this.live = new LiveSession(this.feed, market, (bar) => this.onBar(bar));
-            this.live.start();
-            // Tab-restore catch-up: browsers throttle hidden tabs (timers → 1/min, sockets can
-            // freeze), so bars close unseen while backgrounded. On return, backfill from the last
-            // known bar IMMEDIATELY instead of waiting for the next tick to expose the hole (on a
-            // quiet symbol that could be many seconds away).
-            if (typeof document !== 'undefined') {
-                this.onVisible = () => {
-                    if (document.visibilityState !== 'visible') return;
-                    const last = this.bars[this.bars.length - 1];
-                    if (!last || this.healing || !this.canHeal() || Date.now() - this.lastHealAt <= HEAL_COOLDOWN_MS) return;
-                    void this.healGap(last.time);
-                };
-                document.addEventListener('visibilitychange', this.onVisible);
+    }
+
+    /** Start the live tick subscription + the tab-restore catch-up listener. */
+    private startLive(): void {
+        if (!this.config.live) return;
+        this.live = new LiveSession(this.feed, this.config.market, (bar) => this.onBar(bar));
+        this.live.start();
+        // Tab-restore catch-up: browsers throttle hidden tabs (timers → 1/min, sockets can
+        // freeze), so bars close unseen while backgrounded. On return, backfill from the last
+        // known bar IMMEDIATELY instead of waiting for the next tick to expose the hole (on a
+        // quiet symbol that could be many seconds away).
+        if (typeof document !== 'undefined') {
+            this.onVisible = () => {
+                if (document.visibilityState !== 'visible') return;
+                const last = this.bars[this.bars.length - 1];
+                if (!last || this.healing || !this.canHeal() || Date.now() - this.lastHealAt <= HEAL_COOLDOWN_MS) return;
+                void this.healGap(last.time);
+            };
+            document.addEventListener('visibilitychange', this.onVisible);
+        }
+    }
+
+    /** Stop live ticks + the visibility listener and clear the gap-heal state (switch/destroy). */
+    private stopLive(): void {
+        this.live?.stop();
+        this.live = null;
+        if (this.onVisible && typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
+        this.onVisible = null;
+        this.healing = false;
+        this.healBuffer = [];
+        this.lastHealAt = 0;
+    }
+
+    /** Re-arm per-load history tracking: resolve the PREVIOUS load's promise (awaiters must
+     *  never hang on a superseded load), then start a fresh completed-once cycle. */
+    private resetHistoryTracking(): void {
+        this.resolveHistoryComplete();
+        this.historyCompleted = false;
+        this.historyState = 'complete';
+        this.historyCompletePromise = new Promise<void>((resolve) => {
+            this.resolveHistoryComplete = resolve;
+        });
+    }
+
+    /** The current market identity — a snapshot of the REQUESTED market, so it reflects
+     *  an in-flight `setMarket` immediately (the config mutates before the load). */
+    marketSnapshot(): MarketSnapshot {
+        const m = this.config.market;
+        return { symbol: m.symbol, provider: m.provider, timeframe: m.timeframe, bars: m.bars, offline: m.data !== undefined };
+    }
+
+    /**
+     * Switch the chart's market IN PLACE — no destroy/recreate. The renderer stays
+     * mounted (canvases, viewport policy, cosmetic config), panes and indicator records
+     * survive, and user drawings are untouched (per-symbol drawing documents are a HOST
+     * policy via `chart.drawings.toJSON()/fromJSON()`, keyed off `market:changed`). The
+     * bars reload through the shared {@link loadMarket} pipeline, then every consumer
+     * restarts over the new market: Pine sessions re-execute, native indicators restart
+     * with a fresh context, the active chart-type data engine is rebuilt, and the live
+     * subscription re-targets.
+     *
+     * Resolves once the new market's history is painted — a deep backfill continues
+     * BEHIND it (await {@link historyComplete} for full depth). A call superseded by a
+     * newer setMarket (or destroy) resolves silently. Emits `market:changed` (with
+     * `prev`) when the market IDENTITY changed; a depth-only reload (`bars`) is silent.
+     */
+    async setMarket(next: MarketSwitch): Promise<void> {
+        const m = this.config.market;
+        const identityChanged =
+            (next.symbol !== undefined && next.symbol !== m.symbol) ||
+            (next.provider !== undefined && next.provider !== m.provider) ||
+            (next.timeframe !== undefined && next.timeframe !== m.timeframe) ||
+            next.data !== undefined;
+        const depthChanged = next.bars !== undefined && next.bars !== m.bars;
+        if (!identityChanged && !depthChanged) {
+            // Nothing to reload — honor at most a framing request.
+            if (typeof next.visibleRange === 'string') this.setVisibleRangePreset(next.visibleRange);
+            else if (next.visibleRange) this.renderer.setVisibleRange(next.visibleRange);
+            return;
+        }
+        const prev = { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60' };
+
+        const gen = this.bumpGeneration();
+        this.switchingMarket = true;
+        try {
+            // Quiesce the OLD market's inbound flow before touching the config.
+            this.stopLive();
+            if (this.viewportTimer != null) {
+                clearTimeout(this.viewportTimer);
+                this.viewportTimer = null;
+            }
+            this.visibleRange = null; // the old market's window means nothing on the new one
+            this.resetHistoryTracking();
+
+            // Mutate the market in place (the config object is what every reader holds).
+            if (next.symbol !== undefined) m.symbol = next.symbol;
+            if (next.provider !== undefined) m.provider = next.provider;
+            if (next.timeframe !== undefined) m.timeframe = next.timeframe;
+            if (next.bars !== undefined) m.bars = next.bars;
+            if (next.data !== undefined) m.data = next.data;
+            else if (next.symbol !== undefined || next.provider !== undefined) delete m.data; // offline → provider switch
+            m.visibleRange = next.visibleRange; // consumed by THIS load only (overwritten every switch)
+
+            // Reload through the shared pipeline. The race lets a superseded caller resolve
+            // promptly (e.g. a parked load on an unresolvable symbol) instead of hanging.
+            await Promise.race([
+                this.loadMarket(gen, { firstLoad: false }),
+                new Promise<void>((resolve) => this.supersedeWaiters.push(resolve)),
+            ]);
+            if (this.generation !== gen) return; // superseded — the newer switch owns the chart
+        } finally {
+            // A superseding call set its own flag — only the owning generation clears it.
+            if (this.generation === gen) this.switchingMarket = false;
+        }
+
+        // Restart every consumer over the new market (records/panes/drawings survive).
+        this.restartNativeIndicators();
+        this.restartChartTypeEngine();
+        this.reexecuteIndicators();
+        this.startLive();
+        if (identityChanged) {
+            this.events.emit('market:changed', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', prev });
+        }
+    }
+
+    /**
+     * Restart every native indicator over the new market: a `NativeIndicatorContext`
+     * captures symbol/timeframe at start, so the old instance is stopped and a fresh one
+     * created from the descriptor — same record, same id, same legend row. Hidden natives
+     * are only re-instantiated and marked STALE; showing them starts the fresh instance
+     * (a resume() would revive the OLD market's compute).
+     */
+    private restartNativeIndicators(): void {
+        for (const record of this.registry.all()) {
+            if (!record.native) continue;
+            record.native.instance.stop();
+            record.native.instance = record.native.descriptor.create();
+            record.pendingStructural = true; // the next emitted model remounts over the old visuals
+            if (record.hidden) {
+                record.native.stale = true;
+            } else {
+                const handle = this.handles.get(record.id);
+                if (handle) void this.startNativeIndicator(record.id, handle);
             }
         }
-        this.events.emit('ready', undefined);
+    }
+
+    /** Chart-type data engines capture their host (symbol/timeframe) at start — stop them
+     *  all on a market switch and rebuild the active style's engine against the new market. */
+    private restartChartTypeEngine(): void {
+        for (const engine of this.typeEngines.values()) engine.stop();
+        this.typeEngines.clear();
+        if (this.activeEngineStyle) void this.startChartTypeEngine(this.activeEngineStyle);
     }
 
     /**
@@ -415,8 +602,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     }
 
     /** Auto-add the built-in volume indicator. Bar volume needs no capability probe (always supported). */
+    /** The user removed the volume indicator — the auto-add must never override that. */
+    private volumeOptedOut = false;
+
     private maybeAutoAddVolume(): void {
-        if (!this.config.volume || !this.renderer.setNativeData) return; // off, or a renderer without the layer
+        if (!this.config.volume || this.volumeOptedOut || !this.renderer.setNativeData) return; // off, opted out, or no layer
         if (getNativeIndicator('volume')) this.addNativeIndicator('volume');
     }
 
@@ -579,6 +769,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * policy): no reason = live tick, `'backfill'`/`'complete'` bracket a history backfill.
      */
     private notifySessionsBars(reason?: BarsChangeReason): void {
+        if (this.switchingMarket) return; // old sessions must not run over the incoming market's bars
         for (const record of this.registry.all()) {
             if (!record.renderHandle || record.hidden) continue;
             if (record.session) record.session.notifyBars(reason);
@@ -603,21 +794,27 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * the same way: background-tab throttling, socket reconnects, system sleep, network blips.
      */
     private async healGap(fromMs: number): Promise<void> {
+        const gen = this.generation;
         this.healing = true;
         this.lastHealAt = Date.now();
         try {
             const bars = await this.feed.loadRange!(this.config.market, { from: fromMs });
+            if (this.generation !== gen) return; // market switched / chart destroyed mid-heal — drop the stale bars
             for (const b of bars) this.applyBar(b, false);
         } catch {
             // transient — the buffered ticks still apply; a later discontinuity re-triggers the heal
         } finally {
-            this.healing = false;
-            const pending = this.healBuffer;
-            this.healBuffer = [];
-            for (const b of pending) this.applyBar(b, false);
-            // ONE session notification for the whole heal: bars applied per-bar above (renderer +
-            // 'bar' events keep their per-bar granularity), but the engines re-execute just once.
-            this.notifySessionsBars(this.historyState === 'backfill' ? 'backfill' : undefined);
+            // A superseded heal leaves the state alone: setMarket/destroy already reset it,
+            // and replaying its buffer would push the OLD market's bars into the new array.
+            if (this.generation === gen) {
+                this.healing = false;
+                const pending = this.healBuffer;
+                this.healBuffer = [];
+                for (const b of pending) this.applyBar(b, false);
+                // ONE session notification for the whole heal: bars applied per-bar above (renderer +
+                // 'bar' events keep their per-bar granularity), but the engines re-execute just once.
+                this.notifySessionsBars(this.historyState === 'backfill' ? 'backfill' : undefined);
+            }
         }
     }
 
@@ -737,6 +934,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     removeIndicator(id: string): void {
         const record = this.registry.remove(id);
+        // Removing the auto-added volume is a USER decision — make it stick: the
+        // auto-add fires on every load (first paint of every market), so without the
+        // opt-out a removed volume resurrected on the next symbol/timeframe switch.
+        if (record?.native?.type === 'volume') this.volumeOptedOut = true;
         record?.session?.stop();
         record?.native?.instance.stop();
         this.handles.delete(id);
@@ -771,8 +972,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         } else {
             if (record.renderHandle) this.renderer.setIndicatorVisible?.(record.renderHandle, true);
             record.pendingStructural = true; // visuals dropped on hide → next model re-mounts
-            if (record.native) record.native.instance.resume();
-            else {
+            if (record.native) {
+                if (record.native.stale) {
+                    // The instance was re-created for a NEW market while hidden — resume()
+                    // would revive the old market's compute; start the fresh instance instead.
+                    record.native.stale = false;
+                    const handle = this.handles.get(id);
+                    if (handle) void this.startNativeIndicator(id, handle);
+                } else {
+                    record.native.instance.resume();
+                }
+            } else {
                 this.setLoading(record, true); // spinner on the kept legend row while re-executing
                 const handle = this.handles.get(id);
                 if (handle) this.executeIndicator(id, handle);
@@ -817,11 +1027,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     }
 
     destroy(): void {
-        this.generation += 1; // abandon a backfill loop mid-flight
+        this.bumpGeneration(); // abandon backfill loops/loads mid-flight + release superseded setMarket awaiters
         this.resolveHistoryComplete(); // never leave historyComplete() awaiters hanging
-        this.live?.stop();
-        if (this.onVisible && typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
-        this.onVisible = null;
+        this.stopLive();
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportUnsub?.();
         this.paneActionUnsub?.();

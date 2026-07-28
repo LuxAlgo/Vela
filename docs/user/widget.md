@@ -39,7 +39,7 @@ On top of every [chart option](./options.md), the widget adds:
 | `priceStyle` | string | `'candles'` | Initial chart style; changed live from the topbar dropdown. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
 | `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles. |
-| `persist` | boolean \| string | `false` | Persist symbol/timeframe/style/timezone/bars/watermark and restore them as defaults (`true` = key `'vela-widget'`; a string is the key). |
+| `persist` | boolean \| string | `false` | Bring the chart back as you left it — the widget persists its FULL state (the unified `getState()` document: market, prefs, renderer config, user drawings, indicators) and restores it at construction (`true` = key `'vela-widget'`; a string is the key). Old three-key payloads migrate transparently. |
 | `storage` | `WidgetStorage` | localStorage | The persistence backend — inject a custom adapter (see below). |
 | `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark flag) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
 
@@ -89,10 +89,35 @@ its dialogs is open, muting chart-scope bindings.
   live bar), stacked above the renderer's indicator legend.
 - **Object tree** — a docked panel listing every pane's indicators and the user drawings,
   with hide/show and remove actions, kept in sync with the chart's events.
-- **Bottom bar** — range chips (`1D` … `ALL`: each switches the timeframe and frames the
-  matching window), a live clock, and the timezone picker.
+- **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
+  the timeframe, **fetches the depth its window needs**, and frames it: `1D`→1m, `7D`→5m,
+  `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing the timeframe by hand
+  leaves range mode (the chip clears and the fetch depth returns to your `bars` setting).
 - **Context menus** — right-click the chart body, the price axis, or the time axis for
   zone-specific actions (copy price, reset view, screenshot, scale toggles).
+
+## Widget state — the same surface as the workspace
+
+The widget exposes the SAME state triplet as [the workspace](./workspace.md), speaking
+the SAME document format — a widget is the single-chart case (`layout: '1'`, one
+`charts` entry):
+
+```ts
+const state = widget.getState();
+// → { version: 1, layout: '1', activeCellId: 'c1', timezone, favorites?,
+//     charts: [{ id: 'c1', symbol, provider?, timeframe, priceStyle, bars?, watermark?,
+//                rendererConfig, drawings, indicators }] }
+
+widget.applyState(state); // untrusted-safe; applied IN PLACE (the chart survives)
+widget.on('state:changed', () => {
+    /* debounced (~500ms) — re-pull getState() */
+});
+```
+
+One format means state moves freely between shells: a saved widget document drops into
+a workspace slot as-is, and a workspace cell's state restores into a widget. Custom
+flows — server snapshots, share links, templates — compose `getState`/`applyState`
+directly.
 
 ## Custom persistence storage
 
@@ -117,27 +142,42 @@ const restStorage: WidgetStorage = {
 new VelaWidget('#chart', { persist: true, storage: restStorage, /* … */ });
 ```
 
-Two keys are written: the state key (symbol/timeframe/style/timezone/bars/watermark as
-one JSON document) and `<key>:config` (the full renderer cosmetic template).
+The default adapter is available as `localStorageAdapter(storageKey?)`: give it a name
+to PIN the physical localStorage entry (every read/write lands there, whatever the
+`persist` key is — one shell instance per pinned adapter); omit it to use the shell's
+own key.
+
+ONE key is written: the unified state document (`getState()`, JSON-encoded) —
+`persist: true` brings your chart back **as you left it**: market, prefs, renderer
+config, user drawings, and indicators. Saves are debounced ~500ms and flushed on
+unload/destroy. A pre-unified payload (the old three-key layout: prefs +
+`<key>:config` + `<key>:drawings`) is migrated transparently — read once at boot,
+rewritten unified on the first save, legacy sub-keys dropped.
 
 Semantics to know:
 
 - **Synchronous adapters** (localStorage-like) restore *before* the first chart build —
   no flash of defaults.
 - **Asynchronous adapters** resolve after construction: the widget builds with its
-  option defaults, then **late-applies** the persisted values when they arrive (one
-  rebuild if the market changed; cosmetics re-skin live). URL params still win.
+  option defaults, then **late-applies** the document when it arrives (one in-place
+  market switch if it changed; cosmetics re-skin live). URL params still win.
 - Writes are **fire-and-forget** — the widget never blocks the UI on storage. The last
   write also fires on `beforeunload`; a remote adapter that must survive tab-close
   should use `navigator.sendBeacon` in its `set`.
 
-## Rebuild semantics
+## Market switches are in place
 
-A symbol or timeframe change **rebuilds** the inner chart: destroy, recreate with the
-same options, re-register providers/engines from their factories, re-add the active
-manifest indicators. Cosmetic state (price style, timezone) is carried across rebuilds.
-`widget.chart` always points at the **current** inner chart — don't cache it across
-awaits; subscribe again after a rebuild if you hold event listeners.
+A symbol, timeframe, or fetch-depth change switches the inner chart's market **in
+place** (`chart.setMarket`): the chart instance survives, so **indicators, user
+drawings, renderer config, and your event subscriptions all carry over** — the chart
+reloads its bars and re-executes what's running over the new market. The widget
+reflects out-of-band switches too (host code calling `widget.chart.setMarket`
+directly) via the chart's `market:changed` event.
+
+The inner chart is destroyed and recreated (providers/engines re-registered from
+their factories, manifest indicators re-added) only at construction. `widget.chart`
+still points at the **current** inner chart — prefer reading it at the point of use
+rather than caching it long-term.
 
 ## Customization
 

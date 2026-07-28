@@ -10,15 +10,72 @@
                 margin: 0;
                 height: 100%;
                 background: #131722;
+                color: #d1d4dc;
+                font-family: -apple-system, system-ui, sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
-            #chart {
-                position: absolute;
-                inset: 0;
+            main {
+                text-align: center;
+            }
+            h1 {
+                font-size: 22px;
+                font-weight: 600;
+                color: #f0f3fa;
+                margin: 0 0 6px;
+            }
+            p {
+                margin: 0 0 28px;
+                color: #868a96;
+                font-size: 13px;
+            }
+            nav {
+                display: flex;
+                gap: 16px;
+                justify-content: center;
+            }
+            a.card {
+                display: block;
+                width: 220px;
+                padding: 22px 18px;
+                border: 1px solid #2a2b30;
+                border-radius: 8px;
+                background: #1c1d20;
+                color: inherit;
+                text-decoration: none;
+                transition: border-color 120ms ease;
+            }
+            a.card:hover {
+                border-color: #2962ff;
+            }
+            a.card b {
+                display: block;
+                font-size: 15px;
+                color: #f0f3fa;
+                margin-bottom: 6px;
+            }
+            a.card span {
+                font-size: 12px;
+                color: #868a96;
+                line-height: 1.5;
             }
         </style>
     </head>
     <body>
-        <div id="chart"></div>
-        <script type="module" src="./main.ts"></script>
+        <main>
+            <h1>Vela playground</h1>
+            <p>Pick a surface to exercise — both serve straight from <code>src/</code> with hot reload.</p>
+            <nav>
+                <a class="card" href="./widget.html">
+                    <b>VelaWidget</b>
+                    <span>The single-chart app: topbar, pickers, status line, bottom bar.</span>
+                </a>
+                <a class="card" href="./workspace.html">
+                    <b>VelaWorkspace</b>
+                    <span>The multi-chart grid: layouts, active cell, shared chrome.</span>
+                </a>
+            </nav>
+        </main>
     </body>
 </html>

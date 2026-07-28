@@ -55,6 +55,17 @@ export class DataControl {
         return this.registry?.resolveSymbol(symbol) ?? null;
     }
 
+    /**
+     * The registered provider INSTANCE under `name` — the seam for EXTENDED provider
+     * surfaces: a provider may implement interfaces beyond the `DataProvider` port
+     * (extra data kinds, venue-specific APIs); consumers retrieve the instance and
+     * narrow it with their own type guard. Returns undefined if the name is unknown
+     * (or a custom `deps.dataFeed` bypasses the registry).
+     */
+    providerInstance(name: string): DataProvider | undefined {
+        return this.registry?.providerInstance(name);
+    }
+
     /** Indexed symbols for one provider (or all) — for autocomplete. */
     symbols(provider?: string): SymbolDescriptor[] {
         return this.registry?.symbols(provider) ?? [];

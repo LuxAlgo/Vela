@@ -44,8 +44,11 @@ const CSS = `
 .vela-statusline .vela-sl-change[data-dir='up'] { color: var(--vela-accent); }
 .vela-statusline .vela-sl-change[data-dir='down'] { color: var(--vela-danger); }
 /* Stack the renderer's PRICE-pane legend below the status line (study panes stay put).
- * The renderer sets the legend's inline top — shift with a transform, don't fight it. */
-.vela-widget-chart [data-vela-pane='price'] { transform: translateY(26px); }
+ * The renderer sets the legend's inline top — shift with a transform, don't fight it.
+ * Scoped to hosts that actually CARRY a status line (the marker class set by the
+ * Statusline constructor) — the stylesheet is document-global, so a bare container
+ * class here would shift every chart on the page, including statusline-less ones. */
+.vela-has-statusline [data-vela-pane='price'] { transform: translateY(26px); }
 `;
 
 interface BarLike {
@@ -72,9 +75,10 @@ export class Statusline {
     private hoverBar: BarLike | null = null;
     private unsubs: Array<() => void> = [];
 
-    constructor(host: HTMLElement, symbol: string) {
+    constructor(private readonly host: HTMLElement, symbol: string) {
         const doc = host.ownerDocument;
         injectStyles(STYLE_ID, CSS, doc);
+        host.classList.add('vela-has-statusline'); // scopes the price-legend shift to THIS host
         this.el = doc.createElement('div');
         this.el.className = 'vela-statusline';
         this.avatarEl = tickerIconEl(doc, baseOfTicker(symbol), symbol, 'vela-sl-avatar');
@@ -140,6 +144,7 @@ export class Statusline {
 
     destroy(): void {
         this.detach();
+        this.host.classList.remove('vela-has-statusline'); // the legend shift leaves with the line
         this.el.remove();
     }
 

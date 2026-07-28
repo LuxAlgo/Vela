@@ -1,6 +1,15 @@
 import type { Unsubscribe } from '../util/types';
 import type { DrawingTypeKey, SerializedDrawing } from './Drawing';
+import type { SnapMode } from './geometry';
 import type { ToolbarDefinition } from './toolbar';
+
+/**
+ * The renderer-local drawing MODES beyond an armed tool: the transient measure ruler,
+ * the eraser, or none. Mutually exclusive with each other and with any armed tool —
+ * the renderer owns that exclusion; the core mirrors the outcome (see the `mode`
+ * intent) so external UIs (a shared workspace toolbar) can reflect and drive it.
+ */
+export type DrawingMode = 'measure' | 'eraser' | null;
 
 /**
  * Renderer→core INTENT. The renderer proposes a change from a user gesture; the
@@ -18,6 +27,13 @@ export type DrawingIntent =
     | { kind: 'reorder'; id: string; to: 'front' | 'back' }
     | { kind: 'settings'; id: string }
     | { kind: 'tool-finished'; type: DrawingTypeKey }
+    | { kind: 'favorite'; type: DrawingTypeKey; on: boolean } // flyout star toggled
+    // The renderer-local magnet / mode state changed (in-chart toolbar click, or a
+    // mutual-exclusion side effect — arming a tool exits measure/eraser). The core
+    // mirrors the value and re-emits it as a chart event; an equal value is a no-op,
+    // which is what keeps the command↔intent loop convergent.
+    | { kind: 'snap-mode'; mode: SnapMode }
+    | { kind: 'mode'; mode: DrawingMode }
     | { kind: 'undo' }
     | { kind: 'redo' }
     | { kind: 'duplicate'; ids: string[] } // clone in place + select the clones
@@ -43,6 +59,16 @@ export interface IDrawingsRendererPort {
     setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style']): void;
     /** Reflect which drawings are selected (drives handle painting); `[]` = none. */
     setSelection(ids: readonly string[]): void;
+    /** Push the FAVORITE tool set (flyout stars + any favorites-driven UI). Optional —
+     *  favorites still work headless without a renderer reflection. */
+    setFavorites?(types: readonly DrawingTypeKey[]): void;
+    /** Set the sticky magnet snap mode (off/weak/strong). Optional — a renderer without
+     *  a magnet omits it; the in-chart toolbar reflects the pushed value. */
+    setSnapMode?(mode: SnapMode): void;
+    /** Enter/exit a renderer-local mode (measure ruler / eraser; `null` exits). The
+     *  renderer keeps owning the mutual exclusion (with armed tools too) and reports
+     *  every actual change back through the `mode` intent. Optional. */
+    setMode?(mode: DrawingMode): void;
     /** Open a drawing's settings popup (selecting it too) — the programmatic twin of a click on it. */
     openSettings(id: string): void;
     /** The one channel up — create/edit/select/delete/settings/tool-finished. */
