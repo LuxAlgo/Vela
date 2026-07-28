@@ -197,6 +197,34 @@ prose consistency yourself (terminology, cross-links); there is no compiler for 
 
 ---
 
+## The changelog
+
+`CHANGELOG.md` is written for the person **using** the product, not the developer
+reading the diff. When user-visible work lands, add its entry under the upcoming
+version's heading in the same change (the changelog is part of the feature, not an
+afterthought). Follow the house format exactly:
+
+- **Structure.** Newest first; `## [vX.Y.Z]` sections; `### Added` / `### Changed` /
+  `### Fixed` subsections in that order, each present only when non-empty.
+- **Entry shape.** `- **Bold, feature-first lead.** ` followed by short prose that
+  explains what the reader can now do and how it behaves — full sentences, concrete,
+  calm. One entry per feature: merge related sub-features into one narrative entry
+  instead of scattering micro-bullets.
+- **High level only.** No internal identifiers, module paths, event names, or
+  architecture vocabulary. Public names the user actually types (`VelaWorkspace`, an
+  option name) are fine; how it works inside is not. If a sentence only makes sense to
+  someone who read the source, rewrite it.
+- **What goes where.** `Added` = new capabilities. `Changed` = behavior a v-1 user will
+  notice, with breaking changes flagged inline as `_(Breaking: what changed and what to
+  do instead.)_`. `Fixed` = bugs that existed in a **released** version only — a bug
+  introduced and fixed within the same unreleased cycle gets no entry.
+- **What stays out.** Internal refactors, tests/probes, CI, playground-only tweaks with
+  no user-visible effect, and anything that lives in a private extension package.
+- **Prose rules apply.** English, never name other charting products, and keep the
+  restrained tone of the existing entries — read a few before writing yours.
+
+---
+
 ## Commit discipline
 
 - Present the change and **wait for the user's review and approval before committing**.
