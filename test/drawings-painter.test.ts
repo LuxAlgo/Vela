@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DrawingPainter } from '../src/renderers/native/drawings/DrawingPainter';
+import { sliceKeyFor } from '../src/renderers/native/drawings/UserDrawingController';
 import { createDrawing, type Projector } from '../src/core/drawings';
 import type { VelaTheme } from '../src/core/options';
 
@@ -15,16 +16,20 @@ function fakeProjector(): Projector {
     };
 }
 
-/** A canvas context that only counts `arc()` calls (each selection handle is one arc). */
+/** A canvas context that counts `arc()` calls (each selection handle is one arc) and `lineTo()`
+ *  ones (a painted line body — handles are arcs only). */
 function recordingCtx() {
     let arcs = 0;
+    let lines = 0;
     const ctx = {
         globalAlpha: 1,
         setTransform() {},
         clearRect() {},
         beginPath() {},
         moveTo() {},
-        lineTo() {},
+        lineTo() {
+            lines += 1;
+        },
         stroke() {},
         fill() {},
         setLineDash() {},
@@ -38,7 +43,7 @@ function recordingCtx() {
         fillText() {},
         measureText: () => ({ width: 0 }),
     };
-    return { ctx: ctx as unknown as CanvasRenderingContext2D, arcs: () => arcs };
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, arcs: () => arcs, lines: () => lines };
 }
 
 const theme = { textColor: '#fff', fontFamily: 'sans-serif' } as unknown as VelaTheme;
@@ -57,6 +62,38 @@ describe('DrawingPainter.paintAll handle highlighting', () => {
         const { ctx, arcs } = recordingCtx();
         new DrawingPainter().paintAll(ctx, drawings, fakeProjector(), theme, new Set());
         expect(arcs()).toBe(0);
+    });
+
+    // Drawings interleaved into the series stack paint their bodies on the backend-composited
+    // layers, but their handles have to come back to the top canvas — buried under the candles
+    // they'd be unusable.
+    it('paintHighlights draws handles alone, for the highlighted ones only', () => {
+        const drawings = [hline('a', 30), hline('b', 50)];
+        const { ctx, arcs, lines } = recordingCtx();
+        new DrawingPainter().paintHighlights(ctx, drawings, fakeProjector(), new Set(['b']));
+        expect(arcs()).toBe(1); // b's handle …
+        expect(lines()).toBe(0); // … and neither body
+    });
+});
+
+describe('sliceKeyFor — which interleave layer a drawing paints on', () => {
+    // Boundaries: an indicator at -2, the candles at 0, a raised indicator at 5.
+    const bounds = [-2, 0, 5];
+
+    it('a drawing over every boundary stays on the top canvas', () => {
+        expect(sliceKeyFor(6, bounds)).toBeNull();
+        expect(sliceKeyFor(9, [])).toBeNull();
+    });
+
+    it('slots a drawing under the first series at-or-above its z', () => {
+        expect(sliceKeyFor(1, bounds)).toBe(5); // between the candles and the raised indicator
+        expect(sliceKeyFor(-1, bounds)).toBe(0); // under the candles, over the back indicator
+        expect(sliceKeyFor(-9, bounds)).toBe(-2); // under everything
+    });
+
+    it('a tie paints under the series carrying that z', () => {
+        expect(sliceKeyFor(0, bounds)).toBe(0);
+        expect(sliceKeyFor(5, bounds)).toBe(5);
     });
 });
 

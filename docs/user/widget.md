@@ -87,8 +87,18 @@ its dialogs is open, muting chart-scope bindings.
   in the right-hand cluster.
 - **Status line** — symbol + OHLC and change of the hovered bar (resting on the latest
   live bar), stacked above the renderer's indicator legend.
-- **Object tree** — a docked panel listing every pane's indicators and the user drawings,
-  with hide/show and remove actions, kept in sync with the chart's events.
+- **Object tree** — a docked panel grouping every item under the pane it belongs to. Each pane is
+  one column read top to bottom as front to back: its drawings, its indicators and, in the main
+  pane, the price series, all in draw order — new indicators and new drawings both start under
+  the price, so the candles stay readable. Rows carry hide/show, lock and remove; right-clicking one opens the rest
+  (duplicate, restack, and moving an indicator to another pane or a new one), and each pane's
+  header carries its reorder/collapse/maximize controls. Rows are also draggable — onto a pane to
+  move an item there, onto the band between two panes to open a new one, or to any slot in a
+  pane's column to set draw order, a drawing under the candles or between two indicators included
+  — with a ghost label and a drop hint while the drag is live. Drawings can be multi-selected
+  (Ctrl/Cmd-click) and bundled into a named group that hides, locks, deletes and drags as one
+  block; groups live for as long as the chart and are not persisted. Kept in sync with the
+  chart's events.
 - **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
   the timeframe, **fetches the depth its window needs**, and frames it: `1D`→1m, `7D`→5m,
   `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing the timeframe by hand

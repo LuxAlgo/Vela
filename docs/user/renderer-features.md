@@ -101,9 +101,11 @@ Available on every renderer:
 ## Screenshot export
 
 `chart.renderer.screenshot()` returns a **PNG data URL** of the current chart (or `null`
-on a renderer that doesn't support it, with a warning). It composites only the geometry +
-chrome canvas layers; DOM overlays (tables, legend, data window) and the drawings,
-and volume-profile canvas layers are **not** included.
+on a renderer that doesn't support it, with a warning). It composites the canvas layers in the
+order you see them: the series geometry — with any drawings stacked among the series already
+inside it — then the chrome layer that carries script-drawn shapes, then the drawings that sit
+over everything. The crosshair, the DOM overlays (tables, legend, data window) and the
+volume-profile layer are **not** included.
 
 ```js
 const url = chart.renderer.screenshot();

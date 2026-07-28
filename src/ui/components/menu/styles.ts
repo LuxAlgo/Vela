@@ -74,4 +74,15 @@ export const MENU_CSS = `
 .vela-menu-switch.on { background: var(--vela-accent-bright, var(--vela-accent)); border-color: var(--vela-accent-bright, var(--vela-accent)); }
 .vela-menu-switch.on::after { transform: translateX(16px); background: var(--vela-bg); }
 .vela-menu-sep { height: 1px; margin: 4px 6px; background: var(--vela-border); }
+/* Submenu trigger row: a right-aligned chevron, and it stays highlighted while its own
+   list is open so the path you came down remains readable. */
+.vela-menu-item .vela-menu-arrow {
+    order: 99;
+    margin-left: auto;
+    width: 12px;
+    flex: none;
+    font-size: 11px;
+    color: var(--vela-fg-faint);
+}
+.vela-menu-item[data-state='open'] { background: var(--vela-hover); }
 `;

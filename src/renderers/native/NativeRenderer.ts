@@ -559,6 +559,10 @@ export class NativeRenderer implements IChartRenderer {
                 color: s.line.color ?? this.candleUp,
                 width: s.line.width,
             },
+            stacking: {
+                candles: this.scene.candleZ,
+                series: Object.fromEntries(this.scene.indicatorZOrder().map(({ id, z }) => [id, z])),
+            },
             area: (() => {
                 const lineColor = s.area.lineColor ?? this.candleUp;
                 return {
@@ -650,6 +654,11 @@ export class NativeRenderer implements IChartRenderer {
             wickUpColor: next.candles.wickUpColor,
             wickDownColor: next.candles.wickDownColor,
         };
+        // stacking — the candles' draw-order key plus each indicator's. Seeding an id BEFORE its
+        // indicator mounts also works: assignIndicatorZ keeps an existing key, so a restored
+        // stack survives the (async) indicator restore that follows a config restore.
+        this.scene.candleZ = next.stacking.candles;
+        for (const [id, z] of Object.entries(next.stacking.series)) this.scene.setIndicatorZ(id, z);
         // per-price-style cosmetics (independent of the candle palette)
         s.bars = { upColor: next.bars.upColor, downColor: next.bars.downColor };
         s.line = { color: next.line.color, width: next.line.width };
@@ -899,8 +908,9 @@ export class NativeRenderer implements IChartRenderer {
      * background is filled first (the canvas2d data layer is transparent — its bg
      * lives on the wrapper), and a fresh synchronous paint runs first so the WebGL2
      * backend's (non-preserved) drawing buffer is populated before it's read back
-     * this tick — the same paint also repaints the drawings layer, so it's current.
-     * They're drawn bottom-up in DOM stacking order so user drawings (trend lines,
+     * this tick — the same paint also repaints the drawings layers, so they're
+     * current (interleaved drawings are already inside the data composite). They're
+     * drawn bottom-up in DOM stacking order so the front user drawings (trend lines,
      * boxes, etc.) sit above the Pine drawings on the chrome layer, matching what's
      * on screen. The crosshair (L2) and DOM overlays (tables, legend) are
      * intentionally excluded.
@@ -1134,13 +1144,17 @@ export class NativeRenderer implements IChartRenderer {
         this.plot.addEventListener('pointermove', this.onScrollProximityMove);
         this.plot.addEventListener('pointerleave', this.onScrollProximityLeave);
 
-        // User-drawings layer (paints L1.5 + owns the interaction/settings popup). It
+        // User-drawings layer (paints L1.5 plus the interleave layers the geometry backend
+        // composites into the series stack, and owns the interaction/settings popup). It
         // implements the IDrawingsRendererPort the core DrawingController drives.
         this.userDrawings = new UserDrawingController(this.wrapper, this.plot, this.drawingsCanvas, {
             projector: () => this.drawingProjector(),
             dpr: () => this.coords.dpr,
             theme: () => this.theme,
             requestScaleUpdate: () => this.scheduler.invalidate(InvalidateLevel.Light),
+            seriesBoundaries: (paneId) => this.scene.seriesBoundaries(paneId),
+            priceZ: (paneId) => (paneId === PRICE_PANE_ID ? this.scene.candleZ : null),
+            requestDataPaint: () => this.scheduler.invalidate(InvalidateLevel.Light),
             snap: (pt, paneId, mode, cursorPx) => this.snapToCandle(pt, paneId, mode, cursorPx),
             setSnapMode: (mode) => this.setSnapMode(mode),
             setToolbarGutter: (visible) => this.setToolbarGutter(visible),
@@ -2486,6 +2500,9 @@ export class NativeRenderer implements IChartRenderer {
             && (liveActual.high !== this.liveEaseHigh || liveActual.low !== this.liveEaseLow || liveActual.close !== this.liveEaseClose);
         if (easeLive && liveActual) this.bars[li] = { ...liveActual, high: this.liveEaseHigh, low: this.liveEaseLow, close: this.liveEaseClose };
 
+        // Interleave layers: the drawings whose z sits inside a pane's series stack, prepainted
+        // so the backend can composite them mid-stack (under the candles, between indicators).
+        this.scene.drawingSlices = this.userDrawings?.prepareSlices(this.scene.orderedPanes().map((p) => p.id)) ?? new Map();
         this.backend.render(this.scene, this.coords, this.theme);
         this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair

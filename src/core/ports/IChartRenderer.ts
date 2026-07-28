@@ -27,6 +27,11 @@ export interface RendererCapabilities {
     drawings: boolean;
     /** Interactive USER drawing tools (toolbar + hit-test + handles). Distinct from `drawings`. */
     userDrawings: boolean;
+    /** Whether user drawings share ONE draw-order space with the pane's series — a drawing's
+     *  `zIndex` then places it anywhere in the stack: over everything, under the candles, or
+     *  between two indicators. Absent/false: every drawing paints in front, `zIndex` orders
+     *  only the drawings among themselves, and a host UI should not offer depth slots. */
+    drawingDepth?: boolean;
     /** Pine `table.new` dashboards via a DOM overlay. */
     tables: boolean;
     /** Whether the renderer provides the in-chart inputs/settings UI. */

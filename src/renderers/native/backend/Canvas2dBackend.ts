@@ -91,16 +91,30 @@ export class Canvas2dBackend implements IRenderBackend {
             for (const m of models) for (const bg of m.backgrounds) this.drawBackground(ctx, bg, pane, coords);
             for (const m of models) for (const f of m.fills) this.drawFill(ctx, m, f, effPane(m), coords, i0, i1, scene.offsetOf(m.id));
 
+            // User-drawing interleave layers, prepainted by the renderer: each composites just
+            // before the series carrying its `beforeZ`, so a drawing can sit under the candles
+            // or between two indicators. Full-opacity — drawings don't fade with the models.
+            const slices = scene.drawingSlices.get(pane.id) ?? [];
+            let si = 0;
+            const drawSlicesUpTo = (z: number): void => {
+                for (; si < slices.length && slices[si]!.beforeZ <= z; si += 1) {
+                    ctx.globalAlpha = 1;
+                    ctx.drawImage(slices[si]!.canvas, 0, 0, fullW, fullH);
+                }
+            };
+
             // Foreground: candles + each indicator's series, interleaved by z-order.
             // When the price is hidden, the candle layer is skipped entirely (overlays still draw).
             const drawCandles = isPrice && !scene.candlesHidden;
             let candleDrawn = false;
             for (const m of models) {
                 if (drawCandles && !candleDrawn && scene.zOf(m.id) >= scene.candleZ) {
+                    drawSlicesUpTo(scene.candleZ);
                     ctx.globalAlpha = this.candleStructureAlpha; // baseline; drawCandles sets body vs structure per-element
                     this.drawPriceSeries(ctx, scene, i0, i1, coords, pane, theme, barColorMap, dataW);
                     candleDrawn = true;
                 }
+                drawSlicesUpTo(scene.zOf(m.id));
                 ctx.globalAlpha = this.modelAlpha;
                 // Model data is index-aligned from the model's ANCHOR bar (offset 0 = whole-chart).
                 const off = scene.offsetOf(m.id);
@@ -108,9 +122,11 @@ export class Canvas2dBackend implements IRenderBackend {
                 for (const s of m.series) this.drawSeries(ctx, s, mp, coords, i0, i1, theme, off);
             }
             if (drawCandles && !candleDrawn) {
+                drawSlicesUpTo(scene.candleZ);
                 ctx.globalAlpha = this.candleStructureAlpha;
                 this.drawPriceSeries(ctx, scene, i0, i1, coords, pane, theme, barColorMap, dataW);
             }
+            drawSlicesUpTo(Infinity); // layers bound to a hidden/removed series still paint, at the stack top
 
             // On top: price lines.
             ctx.globalAlpha = this.modelAlpha;

@@ -6,6 +6,8 @@ import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
  * canvas. Regression guard: the exported image must include the **user-drawings layer**
  * (L1.5 — trend lines, boxes, fibs, etc.), which lives on its own `drawingsCanvas` and
  * was previously dropped from the composite, so drawings never appeared in screenshots.
+ * (Drawings interleaved into the series stack need no layer of their own here — the
+ * geometry backend composites them inside the data canvas.)
  *
  * The vitest env is `node` (no DOM/canvas), so we stub `document.createElement('canvas')`
  * with a recording canvas that captures every `drawImage` source, and inject tagged fake

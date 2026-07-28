@@ -17,6 +17,7 @@ export const NATIVE_CAPABILITIES: RendererCapabilities = {
     perPointColor: true, // per-point color as a first-class attribute (no series split)
     drawings: true,
     userDrawings: true, // interactive drawing tools (toolbar + hit-test + handles)
+    drawingDepth: true, // drawings share the series' z space (backend-composited interleave layers)
     tables: true, // reuses the DOM TableOverlay
     inputsUI: true, // reuses the DOM InputsUI
 };
