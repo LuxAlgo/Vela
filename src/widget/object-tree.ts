@@ -5,47 +5,10 @@ import type { Vela } from '../Vela';
 import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { tickerIconEl } from './symbol-icon';
+import { SidePanel } from './side-panel';
 
 const STYLE_ID = 'vela-widget-objtree';
 const CSS = `
-.vela-ot[hidden] { display: none !important; }
-.vela-ot {
-    width: 280px;
-    flex: none;
-    border-left: 1px solid var(--vela-border);
-    display: flex;
-    flex-direction: column;
-    color: var(--vela-fg);
-    font-size: 13px;
-    box-sizing: border-box;
-    background: var(--vela-bg);
-}
-.vela-ot-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 8px 10px 14px;
-    border-bottom: 1px solid var(--vela-border);
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--vela-fg-bright);
-}
-.vela-ot-close {
-    all: unset;
-    cursor: pointer;
-    width: 26px;
-    height: 26px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    color: var(--vela-fg-muted);
-    font-size: 13px;
-}
-.vela-ot-close:hover { background: var(--vela-hover); color: var(--vela-fg); }
-.vela-ot-body { flex: 1; overflow: auto; padding: 8px; }
-.vela-ot-body::-webkit-scrollbar { width: 8px; }
-.vela-ot-body::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
 .vela-ot-row {
     display: flex;
     align-items: center;
@@ -103,34 +66,15 @@ const REFRESH_EVENTS = [
     'drawing:selected',
 ] as const;
 
-export class ObjectTree {
-    readonly el: HTMLElement;
-    private header!: HTMLElement;
-    private body!: HTMLElement;
+export class ObjectTree extends SidePanel {
     private chart: Vela | null = null;
     private selectedDrawing: string | null = null;
     private symbolName = '';
     private unsubs: Array<() => void> = [];
 
     constructor(host: HTMLElement) {
+        super(host, 'Object tree', 'vela-ot');
         injectStyles(STYLE_ID, CSS, host.ownerDocument);
-        this.el = host.ownerDocument.createElement('div');
-        this.el.className = 'vela-ot';
-        this.el.hidden = true; // closed by default; the topbar button toggles
-        const doc0 = host.ownerDocument;
-        this.header = doc0.createElement('div');
-        this.header.className = 'vela-ot-header';
-        const hTitle = doc0.createElement('span');
-        hTitle.textContent = 'Object tree';
-        const hClose = doc0.createElement('button');
-        hClose.className = 'vela-ot-close';
-        hClose.textContent = '✕';
-        hClose.addEventListener('click', () => this.toggle(false));
-        this.header.append(hTitle, hClose);
-        this.body = doc0.createElement('div');
-        this.body.className = 'vela-ot-body';
-        this.el.append(this.header, this.body);
-        host.appendChild(this.el);
 
         this.el.addEventListener('click', (e) => {
             const btn = (e.target as HTMLElement).closest<HTMLElement>('.vela-ot-btn');
@@ -152,12 +96,8 @@ export class ObjectTree {
         });
     }
 
-    get open(): boolean {
-        return !this.el.hidden;
-    }
-
-    toggle(open = this.el.hidden): void {
-        this.el.hidden = !open;
+    override toggle(open = this.el.hidden): void {
+        super.toggle(open);
         if (open) this.refresh();
     }
 
@@ -176,9 +116,9 @@ export class ObjectTree {
         this.refresh();
     }
 
-    destroy(): void {
+    override destroy(): void {
         this.detach();
-        this.el.remove();
+        super.destroy();
     }
 
     private detach(): void {

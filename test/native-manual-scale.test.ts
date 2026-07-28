@@ -93,15 +93,13 @@ describe('InputController.regionAt axis hit-testing', () => {
 });
 
 describe('NativeRenderer new feature defaults', () => {
-    it('axisDrag defaults on; candleZOrder 0; dataWindow off; seriesOrder empty', () => {
+    it('axisDrag defaults on; candleZOrder 0; seriesOrder empty', () => {
         const r = new NativeRenderer();
         expect(r.features).toContain('axisDrag');
         expect(r.features).toContain('candleZOrder');
         expect(r.features).toContain('seriesOrder');
-        expect(r.features).toContain('dataWindow');
         expect(r.readFeature('axisDrag')).toBe(true);
         expect(r.readFeature('candleZOrder')).toBe(0);
-        expect(r.readFeature('dataWindow')).toBe(false);
         expect(r.readFeature('seriesOrder')).toEqual([]);
     });
 

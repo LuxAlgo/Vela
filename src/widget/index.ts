@@ -13,7 +13,9 @@ export { loadPersisted, savePersisted, parsePersisted, legacyWidgetState, localS
 export { encodeState, decodeState, sanitizeState } from '../state/document';
 export type { WorkspaceState, CellState, ChartState } from '../state/document';
 export { readUrlState, writeUrlState } from './url-state';
+export { SidePanel } from './side-panel';
 export { ObjectTree } from './object-tree';
+export { DataWindow, dataWindowSections, type DataWindowSection, type DataWindowLine } from './data-window';
 export { ShortcutsHelp } from './shortcuts-help';
 export { ChartContextMenu, type ContextMenuCallbacks } from './context-menu';
 export {
