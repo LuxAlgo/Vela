@@ -1,7 +1,9 @@
 // VelaWidget — the batteries-included chart app: topbar + chart host (statusline,
 // watermark overlays) + bottombar, built on the vela/ui kit around a headless Vela core.
-// Symbol/timeframe changes REBUILD the inner chart (destroy + recreate) and re-register
-// providers/engines/indicators — the reference behavior of the original playground app.
+// Symbol/timeframe/depth changes switch the market IN PLACE (`chart.setMarket`) — the
+// inner chart instance survives, so indicators, user drawings, renderer config and event
+// subscriptions all carry over. `rebuild()` (destroy + recreate + re-register
+// providers/engines/indicators) remains only for construction-level changes.
 // Cosmetic state (price style, timezone) survives rebuilds via renderer features.
 import { Vela } from '../Vela';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
@@ -22,7 +24,8 @@ import { ChartContextMenu } from './context-menu';
 import { widgetAttachments, type WidgetContext } from './contributions';
 import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
-import { loadPersisted, savePersisted, localStorageAdapter, type WidgetStorage, type PersistedState } from './persist';
+import { parsePersisted, legacyWidgetState, localStorageAdapter, type WidgetStorage } from './persist';
+import { encodeState, decodeState, sanitizeState, type WorkspaceState, type CellState } from '../state/document';
 import { readUrlState, writeUrlState } from './url-state';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
 import { WidgetHistory } from './history';
@@ -48,8 +51,11 @@ export interface VelaWidgetOptions extends VelaOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
-    /** Persist symbol/timeframe/style/timezone and restore them as defaults.
-     *  `true` uses the key 'vela-widget'; a string is the storage key. */
+    /** Bring the chart back AS YOU LEFT IT: the widget persists its full state — the
+     *  unified single-cell document `getState()` returns (market, prefs, renderer
+     *  config, user drawings, indicators) — and restores it at construction. `true`
+     *  uses the key 'vela-widget'; a string is the storage key. Legacy three-key
+     *  payloads (pre-unified) migrate transparently on the first save. */
     persist?: boolean | string;
     /** Storage backend for `persist` — defaults to localStorage. Inject any
      *  `WidgetStorage` (sync or async) for custom backends (REST, IndexedDB, …). */
@@ -61,97 +67,11 @@ export interface VelaWidgetOptions extends VelaOptions {
 
 const DEFAULT_TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
 
+// The topbar's own styles live in the Topbar component (it injects them itself, so a
+// workspace reusing the component gets them too); only the widget SHELL layout stays here.
 const WIDGET_STYLE_ID = 'vela-widget';
 const WIDGET_CSS = `
 .vela-widget { display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--vela-bg); }
-.vela-widget-topbar {
-    display: flex;
-    align-items: center;
-    gap: var(--vela-space-2);
-    padding: var(--vela-space-1) var(--vela-space-2);
-    border-bottom: 1px solid var(--vela-border-soft);
-    color: var(--vela-fg);
-    font-size: var(--vela-font-size-md);
-    flex: none;
-}
-.vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators {
-    all: unset;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 30px;
-    padding: 0 9px;
-    border-radius: 4px;
-    cursor: pointer;
-    color: var(--vela-fg-muted);
-    font-size: 13px;
-    font-weight: 550;
-    white-space: nowrap;
-}
-.vela-widget-symbol {
-    color: var(--vela-fg-bright);
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    padding: 0 10px;
-    gap: 7px;
-}
-.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover { background: var(--vela-hover); color: var(--vela-fg); }
-.vela-widget-symbol:hover { color: var(--vela-fg-bright); }
-.vela-widget-topbar .vela-icon { color: inherit; font-size: 14px; }
-.vela-sep { width: 1px; height: 22px; margin: 0 4px; flex: none; background: rgba(255, 255, 255, 0.22); }
-.vela-ind-count {
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
-    border-radius: 8px;
-    padding: 0 6px;
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--vela-fg);
-}
-.vela-alerts-badge {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    min-width: 13px;
-    height: 13px;
-    padding: 0 3px;
-    border-radius: 7px;
-    background: var(--vela-accent);
-    color: #fff;
-    font-size: 9px;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-.vela-widget-actions { margin-left: auto; display: inline-flex; gap: var(--vela-space-1); }
-.vela-widget-tool {
-    all: unset;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 30px;
-    border-radius: 4px;
-    cursor: pointer;
-    color: var(--vela-fg-muted);
-    font-size: 14px;
-}
-.vela-widget-tool:hover { background: var(--vela-hover); color: var(--vela-fg); }
-.vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-widget-action {
-    all: unset;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    border-radius: var(--vela-radius-sm);
-    cursor: pointer;
-    color: var(--vela-fg);
-}
-.vela-widget-action:hover { background: var(--vela-hover); }
-.vela-widget-symbol { font-weight: 600; }
 .vela-widget-main { display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-widget-chart { position: relative; flex: 1 1 auto; min-width: 0; }
 `;
@@ -198,17 +118,29 @@ export class VelaWidget {
     private alerts: Array<{ title: string; message: string; time: number }> = [];
     private alertsMenu: Menu | null = null;
     private readonly glider = new Glider(() => this.inner);
-    /** Unified app+drawings undo timeline (Ctrl+Z / Ctrl+Y). */
-    readonly history = new WidgetHistory();
+    /** Unified app+drawings undo timeline (Ctrl+Z / Ctrl+Y). Late-resolves the CURRENT
+     *  inner chart so steps recorded before a rebuild never act on a destroyed instance. */
+    readonly history = new WidgetHistory(() => this.inner);
     private lastCrossPrice: number | null = null;
     private lastCrossTime: number | null = null;
     /** Renderer cosmetic template carried across rebuilds (and persisted when enabled). */
     private savedConfig: unknown = null;
+    /** User-drawings document carried across rebuilds (and persisted when enabled). */
+    private savedDrawings: unknown = null;
+    /** A restored indicator ledger waiting for the manifest to resolve. */
+    private pendingIndicators: { manifest: string[]; natives: string[] } | null = null;
+    /** Volume presence decided by a RESTORED ledger (null = follow the option). */
+    private ledgerVolume: boolean | null = null;
+    /** True when the boot state came from the LEGACY three-key layout — the first
+     *  unified save then drops the old `:config`/`:drawings` sub-keys. */
+    private legacyKeys = false;
+    private stateTimer: ReturnType<typeof setTimeout> | null = null;
+    private readonly stateListeners = new Set<() => void>();
     /** Favorite drawing-tool types — mirrored from chart events, reapplied on rebuilds. */
     private favs: string[] = [];
     /** Mounted attachment disposers (by id), torn down at destroy. */
     private readonly attachmentDisposers = new Map<string, () => void>();
-    private readonly onUnload = (): void => this.persistConfigNow();
+    private readonly onUnload = (): void => this.persistNow();
     private indicatorsPromise: Promise<ResolvedIndicator[]> | null = null;
     private destroyed = false;
     private buildSeq = 0;
@@ -222,39 +154,37 @@ export class VelaWidget {
         this.opts = opts;
         this.storageKey = opts.persist === undefined || opts.persist === false ? null : opts.persist === true ? 'vela-widget' : opts.persist;
         this.storage = opts.storage ?? localStorageAdapter();
-        // Sync storages (the localStorage default) restore BEFORE construction; async
-        // adapters resolve later and are late-applied (see applyPersisted).
-        const loaded = this.storageKey !== null ? loadPersisted(this.storage, this.storageKey) : {};
-        const persisted: PersistedState = loaded instanceof Promise ? {} : loaded;
-        if (loaded instanceof Promise) {
-            void loaded.then((state) => {
-                if (!this.destroyed) this.applyPersisted(state);
-            });
-        }
-        const fromUrl = opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
-        this.symbol = fromUrl.symbol ?? persisted.symbol ?? opts.symbol ?? '';
-        this.timeframe = fromUrl.timeframe ?? persisted.timeframe ?? opts.timeframe ?? '60';
-        this.priceStyle = fromUrl.priceStyle ?? persisted.priceStyle ?? opts.priceStyle ?? 'candles';
-        this.timezone = fromUrl.timezone ?? persisted.timezone ?? opts.timezone ?? 'Etc/UTC';
-        this.bars = Number(fromUrl.bars ?? persisted.bars ?? opts.bars ?? 1000);
-        this.watermarkOn = persisted.watermark !== undefined ? persisted.watermark === '1' : opts.watermark !== false;
-        this.favs = persisted.favorites ? persisted.favorites.split(',').filter(Boolean) : [];
+        // ── persistence boot (same protocol as the workspace): ONE unified state
+        // document under the main key — the widget is the single-cell case of the
+        // shared format. A SYNC storage restores before the first build; an async
+        // adapter resolves later and late-applies via applyState. A LEGACY three-key
+        // payload (prefs + `:config` + `:drawings`) migrates transparently: read once
+        // here, rewritten unified on the first save.
+        let boot: WorkspaceState | null = null;
         if (this.storageKey !== null) {
-            const rawCfg = this.storage.get(`${this.storageKey}:config`);
-            const applyCfg = (raw: string | null): void => {
-                if (!raw) return;
-                try {
-                    this.savedConfig = JSON.parse(raw);
-                    // An async adapter resolves after the first build — re-skin it live.
-                    if (this.inner) this.inner.renderer.applyConfig(this.savedConfig);
-                } catch {
-                    /* best-effort */
-                }
-            };
-            if (rawCfg instanceof Promise) void rawCfg.then((raw) => !this.destroyed && applyCfg(raw));
-            else applyCfg(rawCfg);
+            const raw = this.storage.get(this.storageKey);
+            if (raw instanceof Promise) void this.bootAsync(raw);
+            else {
+                boot = raw != null ? decodeState(raw) : null;
+                if (!boot) boot = this.bootLegacySync(raw);
+            }
             window.addEventListener('beforeunload', this.onUnload);
         }
+        const bootCell = boot ? (boot.charts.find((c) => c.id === 'c1') ?? boot.charts[0]) : undefined;
+        const fromUrl = opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
+        this.symbol = fromUrl.symbol ?? bootCell?.symbol ?? opts.symbol ?? '';
+        this.timeframe = fromUrl.timeframe ?? bootCell?.timeframe ?? opts.timeframe ?? '60';
+        this.priceStyle = fromUrl.priceStyle ?? bootCell?.priceStyle ?? opts.priceStyle ?? 'candles';
+        this.timezone = fromUrl.timezone ?? boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
+        this.bars = Number(fromUrl.bars ?? bootCell?.bars ?? opts.bars ?? 1000);
+        this.watermarkOn = bootCell?.watermark !== undefined ? bootCell.watermark : opts.watermark !== false;
+        this.favs = boot?.favorites ? [...boot.favorites] : [];
+        this.savedConfig = bootCell?.rendererConfig ?? null;
+        this.savedDrawings = bootCell?.drawings ?? null;
+        this.pendingIndicators = bootCell?.indicators ?? null;
+        // A restored ledger decides the auto-added volume too (a chart persisted
+        // without it must come back without it); no ledger → the option default.
+        this.ledgerVolume = bootCell?.indicators ? bootCell.indicators.natives.includes('volume') : null;
 
         const doc = hostEl.ownerDocument;
         injectStyles(WIDGET_STYLE_ID, WIDGET_CSS, doc);
@@ -494,8 +424,10 @@ export class VelaWidget {
         this.bottombar?.setActiveRange(null);
         this.rangeBars = 0;
         this.syncTimeframeChrome(tf);
-        this.persist();
-        this.rebuild();
+        this.markStateDirty();
+        // In-place switch (no rebuild): indicators re-execute, drawings/config survive.
+        // `bars` re-asserts the user's own depth, shedding a range chip's deeper budget.
+        void this.inner?.setMarket({ timeframe: tf, bars: this.bars });
     }
 
     setSymbol(symbol: string): void {
@@ -505,56 +437,173 @@ export class VelaWidget {
         this.statusline?.setSymbol(symbol);
         this.objectTree.setSymbol(symbol);
         this.watermark?.update(symbol, this.timeframe);
-        this.persist();
-        this.rebuild();
+        this.markStateDirty();
+        // In-place switch (no rebuild) — the chart instance, indicators, and drawings survive.
+        void this.inner?.setMarket({ symbol });
     }
 
-    /** Late-apply a persisted state (async storage adapters resolve after construction).
-     *  URL params still win; a market change triggers ONE rebuild at the end. */
-    private applyPersisted(state: PersistedState): void {
+    // ── state surface (same triplet as the workspace: getState / applyState / state:changed) ──
+
+    /**
+     * Snapshot the COMPLETE widget state as the unified shell document — the SAME
+     * format `VelaWorkspace.getState()` returns, with a single `c1` cell: market,
+     * display prefs, the renderer config document, the user-drawings document, and
+     * the indicator ledger. This is what `persist` writes; hosts build custom flows
+     * on it (server snapshots, share links, templates) — and a saved widget state
+     * drops into a workspace slot as-is.
+     */
+    getState(): WorkspaceState {
+        const cell: CellState = {};
+        // Market identity from the LIVE config when possible — an in-flight setMarket
+        // must be captured as the intent (persist-on-close correctness).
+        const live = this.inner?.market;
+        const symbol = live?.symbol ?? this.symbol;
+        if (symbol) cell.symbol = symbol;
+        const provider = live?.provider ?? (typeof this.opts.provider === 'string' ? this.opts.provider : undefined);
+        if (provider) cell.provider = provider;
+        cell.timeframe = live?.timeframe ?? this.timeframe;
+        cell.priceStyle = this.priceStyle;
+        if (this.bars > 0) cell.bars = this.bars;
+        cell.watermark = this.watermarkOn;
+        if (this.inner) {
+            cell.rendererConfig = this.inner.renderer.getConfig();
+            cell.drawings = this.inner.drawings.toJSON();
+        } else {
+            if (this.savedConfig != null) cell.rendererConfig = this.savedConfig;
+            if (this.savedDrawings != null) cell.drawings = this.savedDrawings;
+        }
+        const present = this.nativeCatalog.filter((n) => n.present).map((n) => n.type);
+        cell.indicators = {
+            // A restored ledger still waiting for the manifest must not be wiped by an
+            // early save — report the pending names until instances materialize.
+            manifest: this.instances.length > 0 ? this.instances.map((it) => it.entry.name) : (this.pendingIndicators?.manifest ?? []),
+            natives: present.length > 0 ? present : (this.pendingIndicators?.natives ?? []),
+        };
+        const state: WorkspaceState = { version: 1, layout: '1', activeCellId: 'c1', timezone: this.timezone, charts: [{ id: 'c1', ...cell }] };
+        if (this.favs.length > 0) state.favorites = [...this.favs];
+        return state;
+    }
+
+    /**
+     * Restore a state document produced by {@link getState} — or by a WORKSPACE (the
+     * first cell of a multi-cell document applies). Untrusted-safe: malformed fields
+     * are dropped. Applied IN PLACE: the chart instance survives (market switches via
+     * `setMarket`), config/drawings/indicators are replaced. With `urlState` enabled,
+     * URL params still win over the document's market/prefs fields.
+     */
+    applyState(state: unknown): void {
+        if (this.destroyed) return;
+        const st = sanitizeState(state);
+        if (!st) return;
+        const cell = st.charts.find((c) => c.id === 'c1') ?? st.charts[0];
         const fromUrl = this.opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
-        const pick = <K extends keyof PersistedState>(k: K): string | undefined => fromUrl[k] ?? state[k];
-        let marketDirty = false;
-        const symbol = pick('symbol');
-        if (symbol && symbol !== this.symbol) {
-            this.symbol = symbol;
-            this.topbar.setSymbol(symbol);
-            this.statusline?.setSymbol(symbol);
-            this.objectTree.setSymbol(symbol);
-            this.watermark?.update(symbol, this.timeframe);
-            marketDirty = true;
-        }
-        const tf = pick('timeframe');
-        if (tf && tf !== this.timeframe) {
-            this.timeframe = tf;
-            this.topbar.setTimeframe(tf);
-            this.watermark?.update(this.symbol, tf);
-            marketDirty = true;
-        }
-        const bars = pick('bars');
-        if (bars && Number(bars) !== this.bars) {
-            this.bars = Number(bars);
-            marketDirty = true;
-        }
-        const style = pick('priceStyle');
-        if (style && style !== this.priceStyle) this.setPriceStyle(style);
-        const tz = pick('timezone');
+        const tz = fromUrl.timezone ?? st.timezone;
         if (tz && tz !== this.timezone) this.setTimezone(tz);
-        const wm = pick('watermark');
-        if (wm !== undefined) this.setWatermarkVisible(wm === '1');
-        const fav = pick('favorites');
-        if (fav !== undefined) {
-            this.favs = fav.split(',').filter(Boolean);
-            this.chart.drawings.setFavorites(this.favs as never[]);
+        if (st.favorites) {
+            this.favs = [...st.favorites];
+            this.inner?.drawings.setFavorites(this.favs as never[]);
         }
-        if (marketDirty) this.rebuild();
+        if (cell) {
+            const style = fromUrl.priceStyle ?? cell.priceStyle;
+            if (style && style !== this.priceStyle) this.setPriceStyle(style);
+            if (cell.watermark !== undefined && cell.watermark !== this.watermarkOn) this.setWatermarkVisible(cell.watermark);
+            if (cell.rendererConfig != null) {
+                this.savedConfig = cell.rendererConfig;
+                this.inner?.renderer.applyConfig(cell.rendererConfig);
+            }
+            if (cell.drawings != null) {
+                this.savedDrawings = cell.drawings;
+                this.inner?.drawings.fromJSON(cell.drawings);
+            }
+            if (cell.indicators) this.applyIndicatorLedger(cell.indicators);
+            // Market last, as ONE in-place switch — `market:changed` re-syncs the chrome.
+            const symbol = fromUrl.symbol ?? cell.symbol;
+            const timeframe = fromUrl.timeframe ?? cell.timeframe;
+            const bars = Number(fromUrl.bars ?? cell.bars ?? 0);
+            const next: { symbol?: string; timeframe?: string; bars?: number } = {};
+            if (symbol && symbol !== this.symbol) next.symbol = symbol;
+            if (timeframe && timeframe !== this.timeframe) next.timeframe = timeframe;
+            if (bars > 0 && bars !== this.bars) {
+                this.bars = bars;
+                next.bars = Math.max(bars, this.rangeBars);
+            }
+            if (Object.keys(next).length > 0) void this.inner?.setMarket(next);
+        }
+        this.markStateDirty();
+    }
+
+    /** Subscribe to `state:changed` — the persistable state changed (debounced ~500ms);
+     *  re-pull {@link getState}. Returns an unsubscribe function. */
+    on(event: 'state:changed', handler: () => void): () => void {
+        if (event !== 'state:changed') return () => undefined;
+        this.stateListeners.add(handler);
+        return () => this.stateListeners.delete(handler);
+    }
+
+    /** Replace the indicator ledger: natives converge to the listed set (volume
+     *  included — removing it sticks, the core's auto-add respects the opt-out),
+     *  manifest instances are re-created by name — held until the manifest resolves. */
+    private applyIndicatorLedger(led: { manifest: string[]; natives: string[] }): void {
+        const chart = this.inner;
+        if (!chart) return;
+        this.ledgerVolume = led.natives.includes('volume');
+        for (const type of led.natives) {
+            if (!this.nativeCatalog.some((n) => n.type === type && n.present)) chart.addNativeIndicator(type);
+        }
+        for (const n of this.nativeCatalog) {
+            if (n.present && !led.natives.includes(n.type)) chart.addNativeIndicator(n.type).remove();
+        }
+        for (const it of [...this.instances]) this.dropInstance(it);
+        if (this.manifest.length > 0) {
+            for (const name of led.manifest) {
+                const entry = this.manifest.find((e) => e.name === name);
+                if (entry) this.instances.push({ entry, handle: this.addToChart(chart, entry) });
+            }
+            this.pendingIndicators = null;
+        } else {
+            this.pendingIndicators = led; // manifest still resolving — consumed on resolution
+        }
+        this.refreshNativeCatalog();
+        this.syncIndicatorCount();
+    }
+
+    /** SYNC boot fallback: a LEGACY three-key payload read at construction. */
+    private bootLegacySync(rawMain: string | null): WorkspaceState | null {
+        if (this.storageKey === null) return null;
+        const cfg = this.storage.get(`${this.storageKey}:config`);
+        const drw = this.storage.get(`${this.storageKey}:drawings`);
+        if (cfg instanceof Promise || drw instanceof Promise) return null; // mixed sync/async adapter — treat as fresh
+        const doc = sanitizeState(legacyWidgetState(parsePersisted(rawMain), cfg, drw));
+        if (doc) this.legacyKeys = true;
+        return doc;
+    }
+
+    /** ASYNC boot: resolve the unified document (or migrate a legacy payload), then
+     *  late-apply it — the widget built with option defaults in the meantime. */
+    private async bootAsync(rawMain: Promise<string | null>): Promise<void> {
+        let doc: WorkspaceState | null = null;
+        try {
+            const raw = await rawMain;
+            doc = raw != null ? decodeState(raw) : null;
+            if (!doc && this.storageKey !== null) {
+                const [cfg, drw] = await Promise.all([
+                    Promise.resolve(this.storage.get(`${this.storageKey}:config`)),
+                    Promise.resolve(this.storage.get(`${this.storageKey}:drawings`)),
+                ]);
+                doc = sanitizeState(legacyWidgetState(parsePersisted(raw), cfg, drw));
+                if (doc) this.legacyKeys = true;
+            }
+        } catch {
+            doc = null;
+        }
+        if (doc && !this.destroyed) this.applyState(doc);
     }
 
     /** Show/hide the symbol watermark behind the chart (persisted). */
     setWatermarkVisible(visible: boolean): void {
         this.watermarkOn = visible;
         this.watermark?.setVisible(visible);
-        this.persist();
+        this.markStateDirty();
     }
 
     /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
@@ -562,7 +611,7 @@ export class VelaWidget {
         this.priceStyle = style;
         this.topbar.setPriceStyle(style);
         this.inner?.renderer.set('priceStyle', style);
-        this.persist();
+        this.markStateDirty();
     }
 
     /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
@@ -570,13 +619,13 @@ export class VelaWidget {
         this.timezone = zone;
         this.bottombar?.setTimezone(zone);
         this.inner?.renderer.set('timezone', zone);
-        this.persist();
+        this.markStateDirty();
     }
 
     /**
      * Range chip: switch to the preset's timeframe, fetch enough history for its window,
-     * and frame it once ready. The rebuild is what loads the depth, so it also runs when
-     * only the DEPTH grows (same timeframe, deeper window).
+     * and frame it once ready. The in-place `setMarket` loads the depth, so it also runs
+     * when only the DEPTH grows (same timeframe, deeper window).
      */
     applyRange(preset: RangePreset): void {
         if (this.destroyed) return;
@@ -586,7 +635,16 @@ export class VelaWidget {
         this.rangeBars = preset.bars;
         if (tfChanged) this.syncTimeframeChrome(preset.tf);
         if (tfChanged || deeper) {
-            this.rebuild(); // framing happens after the new chart is ready
+            // The preset frames the FIRST paint of the new depth (no flash), then is
+            // re-asserted once painted so a deeper backfill landing behind stays framed.
+            void this.inner
+                ?.setMarket({ timeframe: preset.tf, bars: Math.max(this.bars, this.rangeBars), visibleRange: preset.preset })
+                .then(() => {
+                    if (!this.destroyed && this.pendingRange === preset) {
+                        this.inner?.setVisibleRangePreset(preset.preset);
+                        this.pendingRange = null;
+                    }
+                });
         } else {
             this.inner?.setVisibleRangePreset(preset.preset);
             this.pendingRange = null;
@@ -595,6 +653,8 @@ export class VelaWidget {
 
     destroy(): void {
         this.destroyed = true;
+        // Flush BEFORE tearing the chart down — getConfig/toJSON need it alive.
+        this.persistNow();
         this.inner?.destroy();
         this.inner = null;
         for (const dispose of this.attachmentDisposers.values()) {
@@ -605,7 +665,6 @@ export class VelaWidget {
             }
         }
         this.attachmentDisposers.clear();
-        this.persistConfigNow();
         window.removeEventListener('beforeunload', this.onUnload);
         this.root.removeEventListener('keydown', this.onRootKeydown);
         this.topbar.destroy();
@@ -630,7 +689,10 @@ export class VelaWidget {
      *  re-register providers/engines, rebind chrome, and re-add manifest indicators. */
     private rebuild(): void {
         const seq = ++this.buildSeq;
-        if (this.inner) this.savedConfig = this.inner.renderer.getConfig();
+        if (this.inner) {
+            this.savedConfig = this.inner.renderer.getConfig();
+            this.savedDrawings = this.inner.drawings.toJSON();
+        }
         this.inner?.destroy();
 
         const {
@@ -650,6 +712,7 @@ export class VelaWidget {
             symbol: this.symbol,
             timeframe: this.timeframe,
             bars: Math.max(this.bars, this.rangeBars),
+            volume: this.ledgerVolume ?? chartOpts.volume,
             // A pending range chip frames the FIRST paint (no preview flash, no re-frame).
             ...(this.pendingRange ? { visibleRange: this.pendingRange.preset } : {}),
         });
@@ -662,8 +725,43 @@ export class VelaWidget {
         this.objectTree.onChart(chart);
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
-        chart.on('indicator:added', () => this.refreshNativeCatalog());
-        chart.on('indicator:removed', () => this.refreshNativeCatalog());
+        chart.on('indicator:added', () => {
+            this.refreshNativeCatalog();
+            this.markStateDirty();
+        });
+        chart.on('indicator:removed', ({ id }) => {
+            // Out-of-band removals (legend ✕, object tree, handle.remove()) must drop
+            // the matching manifest-instance ledger entry too — a stale entry kept the
+            // name in the persisted document and resurrected the indicator on reload.
+            // The picker path splices first, so this lookup no-ops there (idempotent).
+            const idx = this.instances.findIndex((it) => it.handle?.id === id);
+            if (idx >= 0) {
+                this.instances.splice(idx, 1);
+                this.syncIndicatorCount();
+            }
+            this.refreshNativeCatalog();
+            this.markStateDirty();
+        });
+        // A restored ledger: natives re-add immediately (no manifest needed); manifest
+        // entries wait for the resolution below (the exact set wins over `enabled`).
+        if (this.pendingIndicators) for (const type of this.pendingIndicators.natives) chart.addNativeIndicator(type);
+        // Market switches happen IN PLACE (`setMarket`) — the chart instance survives, so
+        // reflect them from the event: per-symbol native support may differ, the statusline's
+        // resting OHLC belongs to the old market, and an out-of-band switch (host code calling
+        // chart.setMarket directly) must still update the chrome. The widget's own setters
+        // already synced most of it — the guards make this a cheap no-op then.
+        chart.on('market:changed', ({ symbol, timeframe }) => {
+            this.refreshNativeCatalog();
+            if (this.statusline) this.statusline.onChart(chart); // drop the old market's resting OHLC
+            if (symbol !== this.symbol) {
+                this.symbol = symbol;
+                this.topbar.setSymbol(symbol);
+                this.statusline?.setSymbol(symbol);
+                this.objectTree.setSymbol(symbol);
+                this.watermark?.update(symbol, this.timeframe);
+            }
+            if (timeframe !== this.timeframe) this.syncTimeframeChrome(timeframe);
+        });
         this.history.onChart(chart);
         chart.on('alert', (alert) => {
             this.alerts.unshift({ title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
@@ -676,14 +774,20 @@ export class VelaWidget {
         if (this.favs.length > 0) chart.drawings.setFavorites(this.favs as never[]);
         chart.on('drawing:favorites', ({ favorites }) => {
             this.favs = favorites;
-            this.persist();
+            this.markStateDirty();
         });
+        // User drawings: every change path (mouse tools, eraser, undo/redo, programmatic
+        // add/remove) converges on these three events — persist debounced off them.
+        chart.on('drawing:created', () => this.markStateDirty());
+        chart.on('drawing:edited', () => this.markStateDirty());
+        chart.on('drawing:removed', () => this.markStateDirty());
         chart.renderer.onCrosshairMove((e) => {
             this.lastCrossPrice = e.price;
             this.lastCrossTime = e.time;
         });
         this.topbar.renderActions(); // when() gates may depend on the new chart/context
         if (this.savedConfig != null) chart.renderer.applyConfig(this.savedConfig);
+        if (this.savedDrawings != null) chart.drawings.fromJSON(this.savedDrawings);
         // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).
         if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
         if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
@@ -699,8 +803,8 @@ export class VelaWidget {
                     get: () => String(this.bars),
                     set: (v: string) => {
                         this.bars = Number(v);
-                        this.persist();
-                        this.rebuild();
+                        this.markStateDirty();
+                        void this.inner?.setMarket({ bars: Math.max(this.bars, this.rangeBars) });
                     },
                 },
             ],
@@ -753,9 +857,17 @@ export class VelaWidget {
             this.syncIndicatorCount();
         } else if (indicators !== undefined) {
             this.indicatorsPromise ??= resolveIndicators(indicators).then((list) => {
-                // First resolution: the library + one instance per `enabled` entry.
+                // First resolution: the library + one instance per `enabled` entry —
+                // unless a RESTORED ledger names the exact set (then it wins, empty included).
                 this.manifest = list;
-                this.instances = list.filter((e) => e.enabled).map((entry) => ({ entry, handle: null }));
+                const pending = this.pendingIndicators;
+                this.instances = pending
+                    ? pending.manifest
+                          .map((name) => list.find((e) => e.name === name))
+                          .filter((e): e is ResolvedIndicator => e != null)
+                          .map((entry) => ({ entry, handle: null }))
+                    : list.filter((e) => e.enabled).map((entry) => ({ entry, handle: null }));
+                if (pending) this.pendingIndicators = null;
                 return list;
             });
             void this.indicatorsPromise.then(() => {
@@ -904,27 +1016,53 @@ export class VelaWidget {
         a.click();
     }
 
-    /** Snapshot the full renderer template into storage (persist mode only). */
-    private persistConfigNow(): void {
-        if (this.storageKey === null || !this.inner) return;
-        try {
-            void this.storage.set(`${this.storageKey}:config`, JSON.stringify(this.inner.renderer.getConfig()));
-        } catch {
-            /* best-effort */
-        }
+    /** The persistable state changed: debounce (~500ms), then notify `state:changed`
+     *  listeners and flush — the same cadence as the workspace. */
+    private markStateDirty(): void {
+        if (this.destroyed) return;
+        if (this.stateTimer != null) clearTimeout(this.stateTimer);
+        this.stateTimer = setTimeout(() => {
+            this.stateTimer = null;
+            for (const listener of [...this.stateListeners]) listener();
+            this.persistNow();
+        }, 500);
     }
 
-    private persist(): void {
-        const state = {
-            symbol: this.symbol,
-            timeframe: this.timeframe,
-            priceStyle: this.priceStyle,
-            timezone: this.timezone,
-            bars: String(this.bars),
-            watermark: this.watermarkOn ? '1' : '0',
-            favorites: this.favs.join(','),
-        };
-        if (this.storageKey !== null) savePersisted(this.storage, this.storageKey, state);
-        if (this.opts.urlState) writeUrlState(state);
+    /** Write the unified state document through the adapter (persist mode only) — also
+     *  the unload/destroy flush. The first save after a LEGACY boot rewrites the main
+     *  key in the unified format and drops the old `:config`/`:drawings` sub-keys. */
+    private persistNow(): void {
+        if (this.stateTimer != null) {
+            clearTimeout(this.stateTimer);
+            this.stateTimer = null;
+        }
+        const state = this.getState();
+        if (this.storageKey !== null) {
+            try {
+                void this.storage.set(this.storageKey, encodeState(state));
+            } catch {
+                /* best-effort */
+            }
+            if (this.legacyKeys) {
+                this.legacyKeys = false;
+                try {
+                    void this.storage.remove?.(`${this.storageKey}:config`);
+                    void this.storage.remove?.(`${this.storageKey}:drawings`);
+                } catch {
+                    /* best-effort */
+                }
+            }
+        }
+        if (this.opts.urlState) {
+            writeUrlState({
+                symbol: this.symbol,
+                timeframe: this.timeframe,
+                priceStyle: this.priceStyle,
+                timezone: this.timezone,
+                bars: String(this.bars),
+                watermark: this.watermarkOn ? '1' : '0',
+                favorites: this.favs.join(','),
+            });
+        }
     }
 }

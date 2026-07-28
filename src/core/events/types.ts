@@ -1,9 +1,20 @@
 import type { EngineAlert, EngineWarning } from '../ports/ScriptingEngine';
 import type { OHLCV } from '../model/ohlcv';
+import type { DrawingTypeKey } from '../drawings/Drawing';
+import type { SnapMode } from '../drawings/geometry';
+import type { DrawingMode } from '../drawings/port';
 
 /** Chart-level events emitted on `chart.on(...)`. */
 export interface VelaEventMap extends Record<string, unknown> {
     ready: undefined;
+    /**
+     * The chart's market switched IN PLACE via `setMarket` — symbol, provider, timeframe,
+     * or offline data changed (a depth-only reload does not fire). Fires after the new
+     * market's history is painted and every consumer restarted. `prev` carries the
+     * previous identity so hosts can re-key per-symbol state (e.g. swap user-drawing
+     * documents between symbols).
+     */
+    'market:changed': { symbol: string; timeframe: string; prev: { symbol: string; timeframe: string } };
     'indicator:added': { id: string };
     'indicator:removed': { id: string };
     'indicator:error': { id: string; error: Error };
@@ -23,6 +34,14 @@ export interface VelaEventMap extends Record<string, unknown> {
     'drawing:selected': { id: string | null };
     /** The favorite-tool set changed (star toggles or a bulk restore). */
     'drawing:favorites': { favorites: string[] };
+    /** The armed drawing tool changed — toolbar click, one-shot tool finishing (back to
+     *  the pointer, `null`), or a programmatic `drawings.setTool`. */
+    'drawing:tool': { type: DrawingTypeKey | null };
+    /** The magnet snap mode changed (in-chart toolbar or `drawings.setSnapMode`). */
+    'drawing:snap': { mode: SnapMode };
+    /** The renderer-local mode changed: measure ruler, eraser, or none — including the
+     *  mutual-exclusion exits (arming a tool leaves measure/eraser). */
+    'drawing:mode': { mode: DrawingMode };
     /** A user drawing was removed. */
     'drawing:removed': { id: string };
     /** The user requested a drawing's settings popup. */
@@ -32,6 +51,12 @@ export interface VelaEventMap extends Record<string, unknown> {
     'context:changed': { id: string };
     /** A live tick: the forming bar was updated or a new bar appended. */
     bar: OHLCV;
+    /**
+     * The visible time range moved (pan/zoom/fit — fires per applied change, NOT
+     * debounced; the engine re-run debounce is separate). Payload = `{from, to}` in
+     * epoch-ms. The seam viewport-sync links between charts build on.
+     */
+    'viewport:changed': { from: number; to: number };
     /** A deep-history backfill chunk landed (`loaded` of `target` bars are on the chart). */
     'history:progress': { loaded: number; target: number };
     /**

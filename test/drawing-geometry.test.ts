@@ -31,6 +31,21 @@ describe('drawing-geometry / barTimeToLogical', () => {
         expect(barTimeToLogical(10, [10], 0)).toBe(0); // single bar, exact
         expect(barTimeToLogical(5, [10], 0)).toBe(-5); // single bar, extrapolate with unit interval
     });
+
+    it('floor() of the fractional logical is the CONTAINING bar — the crosshair-sync snap', () => {
+        // The external-crosshair ghost must light the bar a foreign time falls INSIDE,
+        // never the nearest boundary: a 1h pointer at 14:00 belongs to TODAY's daily
+        // candle even though it is past the midpoint (rounding would jump to tomorrow).
+        const DAY = 86_400_000;
+        const days = [0, DAY, 2 * DAY, 3 * DAY]; // daily opens
+        const hover = 2 * DAY + 14 * 3_600_000; // a 1h bar open at 14:00 on day 2
+        expect(Math.round(barTimeToLogical(hover, days, DAY))).toBe(3); // the OFF-BY-ONE a round() would cause
+        expect(Math.floor(barTimeToLogical(hover, days, DAY))).toBe(2); // the containing bucket
+        // Boundaries stay exact; inside the FORMING bar floors to it; beyond it, outside.
+        expect(Math.floor(barTimeToLogical(2 * DAY, days, DAY))).toBe(2);
+        expect(Math.floor(barTimeToLogical(3 * DAY + DAY / 2, days, DAY))).toBe(3);
+        expect(Math.floor(barTimeToLogical(4 * DAY + 1, days, DAY))).toBe(4); // out of range → caller drops
+    });
 });
 
 describe('drawing-geometry / medianInterval', () => {

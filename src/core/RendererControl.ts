@@ -99,6 +99,31 @@ export class RendererControl {
     }
 
     /**
+     * Move keyboard focus back onto the chart's interactive surface — call after a host
+     * control (a shared toolbar button) stole focus, so chart/drawing shortcuts keep
+     * working. Silent no-op on a renderer without a focusable surface.
+     */
+    focus(): this {
+        this.renderer.focus?.();
+        return this;
+    }
+
+    /** Whether the active renderer can display an EXTERNAL (synced) crosshair. */
+    get supportsExternalCrosshair(): boolean {
+        return typeof this.renderer.setExternalCrosshair === 'function';
+    }
+
+    /**
+     * Show (or clear, with `null`) a data-space ghost crosshair driven from OUTSIDE
+     * this chart — the multi-chart crosshair-sync seam. Silent no-op on a renderer
+     * without the capability (see {@link supportsExternalCrosshair}).
+     */
+    setExternalCrosshair(time: number | null, price: number | null = null): this {
+        this.renderer.setExternalCrosshair?.(time, price);
+        return this;
+    }
+
+    /**
      * Close any in-chart dialogs the active renderer owns (indicator settings, chart-settings
      * gear) — for keeping host dialogs mutually exclusive with the renderer's. Silent no-op if
      * the renderer has no such dialogs; safe to call speculatively.

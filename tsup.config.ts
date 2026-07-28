@@ -42,6 +42,7 @@ export default defineConfig([
             plugin: 'src/plugin.ts',
             ui: 'src/ui/index.ts',
             widget: 'src/widget/index.ts',
+            workspace: 'src/workspace/index.ts',
 
             'providers/binance': 'src/data/providers/binance/index.ts',
             'providers/hyperliquid': 'src/data/providers/hyperliquid/index.ts',

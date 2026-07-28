@@ -2,7 +2,7 @@ import type { IChartRenderer, VisibleRange } from './core/ports/IChartRenderer';
 import type { ScriptingEngine } from './core/ports/ScriptingEngine';
 import type { MarketDataFeed } from './core/ports/MarketDataFeed';
 import type { VisibleRangePreset } from './core/visible-range';
-import type { VelaOptions, AddIndicatorOptions } from './core/options';
+import type { VelaOptions, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
 import type { InputValue } from './core/model/inputs';
 import type { IndicatorHandle } from './core/IndicatorHandle';
 import type { EngineContextSnapshot } from './core/ports/ScriptingEngine';
@@ -194,6 +194,26 @@ export class Vela {
                     });
             });
         });
+    }
+
+    /**
+     * Switch the chart's market IN PLACE — symbol, provider, timeframe, depth, or offline
+     * data — WITHOUT destroying the chart: indicators re-execute over the new bars, native
+     * indicators restart, and panes, user drawings, renderer config and event
+     * subscriptions all survive. Resolves once the new market's history is painted (a
+     * deep backfill continues behind it — await {@link historyComplete}); a call
+     * superseded by a newer `setMarket` resolves silently. Emits `market:changed`
+     * (with the previous identity) when the market identity changed.
+     */
+    setMarket(next: MarketSwitch): Promise<void> {
+        return this.orchestrator.setMarket(next);
+    }
+
+    /** The current market identity — the read counterpart of {@link setMarket}. A snapshot
+     *  of the REQUESTED market: it reflects an in-flight switch immediately (before the
+     *  new bars land). Listen to `market:changed` for committed identity changes. */
+    get market(): MarketSnapshot {
+        return this.orchestrator.marketSnapshot();
     }
 
     /** Resolves once the chart is painted and interactive. For a symbol-backed chart this

@@ -7,7 +7,11 @@ export { Bottombar, RANGE_PRESETS, type BottombarOptions, type RangePreset } fro
 export { SymbolPicker, filterSymbols, type SymbolPickerOptions } from './symbol-picker';
 export { IndicatorPicker, type IndicatorPickerOptions, type IndicatorRow } from './indicator-picker';
 export { TimeframeQuick, type TimeframeQuickOptions } from './timeframe-quick';
-export { loadPersisted, savePersisted, localStorageAdapter, type WidgetStorage, type PersistedState } from './persist';
+export { loadPersisted, savePersisted, parsePersisted, legacyWidgetState, localStorageAdapter, type WidgetStorage, type PersistedState } from './persist';
+// The unified shell-state document — the SAME format `vela/workspace` exposes; the
+// widget's `getState()`/`applyState()` speak it with a single `c1` cell.
+export { encodeState, decodeState, sanitizeState } from '../state/document';
+export type { WorkspaceState, CellState, ChartState } from '../state/document';
 export { readUrlState, writeUrlState } from './url-state';
 export { ObjectTree } from './object-tree';
 export { ShortcutsHelp } from './shortcuts-help';

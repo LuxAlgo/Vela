@@ -336,3 +336,34 @@ describe('providerInstance (extended-surface seam)', () => {
         expect(feed.providerInstance('nope')).toBeUndefined();
     });
 });
+
+describe('poll-fallback live ticks (a provider without subscribe)', () => {
+    it('a poll in flight when unsubscribe lands must NOT deliver its stale bars', async () => {
+        vi.useFakeTimers();
+        try {
+            // Gate getBars so the poll's fetch is IN FLIGHT when the test unsubscribes —
+            // the market-switch race: stale old-market bars arriving after the switch
+            // would silently replace the new market's forming candle (same open time).
+            let release: (() => void) | null = null;
+            const provider: DataProvider = {
+                getBars: () =>
+                    new Promise((resolve) => {
+                        release = () => resolve(makeBars(2));
+                    }),
+                listSymbols: () => Promise.resolve([{ ticker: 'AAA' }]),
+            };
+            const feed = new MultiProviderFeed(new BarStore());
+            await feed.registerProvider('p', provider);
+            let ticks = 0;
+            const stop = feed.subscribe({ provider: 'p', symbol: 'AAA', timeframe: '60' }, () => { ticks += 1; });
+            await vi.advanceTimersByTimeAsync(3100); // first poll fires → getBars parks on the gate
+            expect(release).not.toBeNull();
+            stop(); // the market switches away while the fetch is in flight
+            release!();
+            await vi.advanceTimersByTimeAsync(10);
+            expect(ticks).toBe(0); // the stale bars were dropped, never delivered
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});

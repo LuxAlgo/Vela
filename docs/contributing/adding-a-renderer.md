@@ -203,6 +203,7 @@ That alone gives you candles, panes, and basic indicator plots — a usable char
 - **Drawings** — Pine line/box/label/polyline/linefill via your drawing layer (reuse the geometry helpers). Flips the `Drawings` flag.
 - **Tables** — `table.new` dashboards via the table overlay. Flips the `Tables` flag.
 - **Inputs UI** — the in-chart settings dialog, the input-change events it raises, and the programmatic-input-sync path from group 4 (reuse the shared inputs UI). Flips the `Inputs UI` flag.
+- **External crosshair** — the optional `setExternalCrosshair(time, price?)` method: draw a dimmed **ghost crosshair** at a data-space position pushed from outside (multi-chart sync). Detected by presence (no capability flag); the one contract rule: a ghost must **never** re-emit `onCrosshairMove` — that one-way flow is what keeps the sync loop-free.
 - **Animations / polish** — transitions and presentation refinements.
 
 The key idea: a flag stays **false and renders blank** until its tier is real, and the core simply won't send that content meanwhile.

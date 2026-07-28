@@ -12,7 +12,8 @@ import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, panTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
 import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments } from '../src/widget/contributions';
-import { loadPersisted, savePersisted, type WidgetStorage } from '../src/widget/persist';
+import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
+import { sanitizeState } from '../src/state/document';
 
 describe('parseTimeframe', () => {
     it('bare numbers are minutes; canonical collapses to bare minutes', () => {
@@ -163,6 +164,43 @@ describe('readUrlState', () => {
     });
 });
 
+describe('legacyWidgetState (pre-unified three-key migration)', () => {
+    it('folds prefs + config + drawings keys into one single-cell unified document', () => {
+        const doc = legacyWidgetState(
+            { symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'bars', timezone: 'Europe/Paris', bars: '2000', watermark: '0', favorites: 'trendline,hline' },
+            JSON.stringify({ theme: 'dark' }),
+            JSON.stringify({ version: 1, drawings: [{ type: 'hline' }] }),
+        );
+        expect(doc).toEqual({
+            version: 1,
+            layout: '1',
+            activeCellId: 'c1',
+            timezone: 'Europe/Paris',
+            favorites: ['trendline', 'hline'],
+            charts: [
+                {
+                    id: 'c1',
+                    symbol: 'ETHUSDT',
+                    timeframe: '15',
+                    priceStyle: 'bars',
+                    bars: 2000,
+                    watermark: false,
+                    rendererConfig: { theme: 'dark' },
+                    drawings: { version: 1, drawings: [{ type: 'hline' }] },
+                },
+            ],
+        });
+        // The migrated document must survive the shared sanitizer untouched.
+        expect(sanitizeState(doc)).toEqual(doc);
+    });
+
+    it('tolerates junk: corrupt sub-documents are dropped, an empty payload is null', () => {
+        const doc = legacyWidgetState({ symbol: 'BTCUSDT', bars: 'not-a-number' }, '{corrupt', 'also corrupt');
+        expect(doc!.charts[0]).toEqual({ id: 'c1', symbol: 'BTCUSDT' });
+        expect(legacyWidgetState({}, null, null)).toBeNull(); // nothing usable → no migration
+    });
+});
+
 describe('widget action contributions', () => {
     it('registers per target, order-sorts, when-filters, and last-id-wins', () => {
         const ran: string[] = [];
@@ -280,5 +318,38 @@ describe('range chips: timeframe + fetch depth per window', () => {
             expect(r.bars).toBeGreaterThanOrEqual(needed);
             expect(r.bars).toBeLessThan(needed * 2); // …without fetching absurd depth
         }
+    });
+});
+
+describe('WidgetHistory late-resolves the current chart', () => {
+    function fakeChart(): { drawings: { undo: ReturnType<typeof vi.fn>; redo: ReturnType<typeof vi.fn> }; on(ev: string, cb: (p: unknown) => void): () => void; emit(ev: string): void } {
+        const listeners = new Map<string, Set<(p: unknown) => void>>();
+        return {
+            drawings: { undo: vi.fn(), redo: vi.fn() },
+            on(ev, cb) {
+                if (!listeners.has(ev)) listeners.set(ev, new Set());
+                listeners.get(ev)!.add(cb);
+                return () => listeners.get(ev)!.delete(cb);
+            },
+            emit(ev) {
+                for (const cb of listeners.get(ev) ?? []) cb({ id: 'd1' });
+            },
+        };
+    }
+
+    it('drawing steps act on the chart that exists at undo time, not at record time', async () => {
+        const { WidgetHistory } = await import('../src/widget/history');
+        const a = fakeChart();
+        const b = fakeChart();
+        let current: unknown = a;
+        const h = new WidgetHistory(() => current as never);
+        h.onChart(a as never);
+        a.emit('drawing:created'); // a step recorded while A was the live chart
+        current = b; // the widget rebuilt — A is destroyed, B is live
+        h.undo();
+        expect(b.drawings.undo).toHaveBeenCalledTimes(1); // late-resolved to the CURRENT chart
+        expect(a.drawings.undo).not.toHaveBeenCalled(); // never the destroyed instance
+        h.redo();
+        expect(b.drawings.redo).toHaveBeenCalledTimes(1);
     });
 });

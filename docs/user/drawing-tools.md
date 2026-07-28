@@ -234,6 +234,30 @@ method list and which methods are gated by renderer support.
 
 ---
 
+## Tool and mode state from code
+
+The armed tool, the magnet, and the measure/eraser modes are all readable and drivable
+programmatically — the seam an external toolbar (e.g. a multi-chart workspace's shared
+bar) builds on:
+
+```js
+chart.drawings.getTool();               // 'trendline' | … | null (select/idle)
+chart.drawings.setSnapMode('strong');   // magnet: 'off' | 'weak' | 'strong'
+chart.drawings.getSnapMode();
+chart.drawings.setMode('measure');      // 'measure' | 'eraser' | null (none)
+chart.drawings.getMode();
+
+// Follow every change, whatever its source (in-chart toolbar, keyboard, code):
+chart.on('drawing:tool', ({ type }) => { /* armed tool changed; null = pointer */ });
+chart.on('drawing:snap', ({ mode }) => { /* magnet mode changed */ });
+chart.on('drawing:mode', ({ mode }) => { /* measure/eraser entered or left */ });
+```
+
+The renderer keeps owning the mutual exclusion — arming a tool exits measure/eraser
+(and vice versa), and the outcome always lands on the events, so an external UI only
+ever mirrors. One-shot tools disarm themselves after placing (back to `null` on
+`drawing:tool`); the brush family stays armed.
+
 ## Favorite tools
 
 ```js

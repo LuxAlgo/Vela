@@ -14,8 +14,10 @@ export interface IndicatorRecord {
      * Present for a NATIVE (core-computed) indicator — its type, the running instance, and the
      * descriptor (metadata + capability). Absent ⇒ an ordinary Pine indicator (driven via `engine`/
      * `prepared`/`session`). The two paths share the registry, handle, legend, and lifecycle events.
+     * `stale` marks an instance re-created for a NEW market while the indicator was hidden —
+     * showing it must START the fresh instance instead of resuming the old market's compute.
      */
-    native?: { type: string; instance: NativeIndicator; descriptor: NativeIndicatorDescriptor };
+    native?: { type: string; instance: NativeIndicator; descriptor: NativeIndicatorDescriptor; stale?: boolean };
     /** Routing/inputs options from addIndicator (used to re-route on a fresh first model). */
     options?: AddIndicatorOptions;
     /** The engine selected for this indicator's language. */

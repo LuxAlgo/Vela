@@ -40,7 +40,7 @@ Each layer ships with a **bundled default backend** that you can replace. One nu
 
 The documentation is grouped by what you are trying to do.
 
-- **User** — get a chart rendering and drive it from your app: [Quickstart](user/quickstart.md), [The widget](user/widget.md), [Options](user/options.md), [API reference](user/api-reference.md), [Drawing tools](user/drawing-tools.md), [Renderer features](user/renderer-features.md), [Data providers](user/data-providers.md), [Examples](user/examples.md), [FAQ](user/faq.md).
+- **User** — get a chart rendering and drive it from your app: [Quickstart](user/quickstart.md), [The widget](user/widget.md), [The workspace (multi-chart)](user/workspace.md), [Options](user/options.md), [API reference](user/api-reference.md), [Drawing tools](user/drawing-tools.md), [Renderer features](user/renderer-features.md), [Data providers](user/data-providers.md), [Examples](user/examples.md), [FAQ](user/faq.md).
 - **Architecture** — understand the core, the three layers, the neutral model, and how data flows: [Overview](architecture/overview.md), [Data flow](architecture/data-flow.md), and the [decision records](architecture/adr/README.md).
 - **Contributing** — set up the project and extend Vela: the [plugin SDK](contributing/plugin-sdk.md) (chart types, renderer layers, widget actions — no fork needed), or extend a layer behind its port in-repo: add a [renderer](contributing/adding-a-renderer.md), an [engine](contributing/adding-an-engine.md), a [data provider](contributing/adding-a-data-provider.md), a [drawing tool](contributing/adding-a-drawing-tool.md), or a [UI-kit component](contributing/adding-a-ui-component.md).
 
@@ -49,6 +49,7 @@ The documentation is grouped by what you are trying to do.
 Pick the path that matches your goal.
 
 - **"I want a full chart app in one line"** → [The widget](user/widget.md)
+- **"I want a grid of charts with one shared UI"** → [The workspace](user/workspace.md)
 - **"I want to render a headless chart fast"** → [User quickstart](user/quickstart.md)
 - **"I want to draw on the chart"** → [Drawing tools](user/drawing-tools.md)
 - **"I want a custom chart type or overlay"** → [Plugin SDK](contributing/plugin-sdk.md)

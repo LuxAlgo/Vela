@@ -27,8 +27,9 @@ export class CrosshairRenderer {
     }
 
     /** Clear the cursor canvas and (re)draw the crosshair lines + axis chips. The optional
-     *  `separatorHoverY` highlights the draggable pane separator under the cursor. */
-    render(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, separatorHoverY: number | null = null): void {
+     *  `separatorHoverY` highlights the draggable pane separator under the cursor;
+     *  `external` is a SYNCED ghost crosshair (another chart's pointer, pixel-resolved). */
+    render(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, separatorHoverY: number | null = null, external: { x: number; y: number | null; time: number } | null = null): void {
         const ctx = this.ctx;
         const canvas = this.canvas;
         if (!ctx || !canvas) return;
@@ -40,6 +41,10 @@ export class CrosshairRenderer {
         // Pane-separator hover affordance — drawn before the crosshair-presence guard so it
         // shows even while a resize drag has the crosshair sitting right on the boundary.
         if (separatorHoverY !== null) this.drawSeparatorHover(ctx, canvas.width / dpr, theme, separatorHoverY);
+
+        // External (synced) ghost — drawn dimmer and FIRST, so a real local pointer
+        // paints over it, and drawn regardless of the local-crosshair presence guard.
+        if (external) this.drawExternal(ctx, external, scene, coords, theme);
 
         const ch = scene.crosshair;
         const dataW = coords.width;
@@ -89,6 +94,39 @@ export class CrosshairRenderer {
     destroy(): void {
         this.canvas = null;
         this.ctx = null;
+    }
+
+    /** The synced ghost: a dimmed vertical line at the bar the renderer resolved as
+     *  CONTAINING the foreign time (+ horizontal line when a comparable price came
+     *  along), with that bar's time chip in this chart's own timezone. The snap
+     *  happened upstream (`externalCrossPx`, floor-to-containing-bar) — this method
+     *  only draws. No price chip — the ghost answers "when", the local crosshair
+     *  answers "where". */
+    private drawExternal(ctx: CanvasRenderingContext2D, ext: { x: number; y: number | null; time: number }, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme): void {
+        const cs = scene.style.crosshair;
+        const dataW = coords.width;
+        const dataH = coords.height;
+        const x = Math.round(ext.x) + 0.5;
+        if (x < 0 || x > dataW) return;
+        ctx.font = `${scene.style.fontSize}px ${theme.fontFamily}`;
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = cs.color ?? theme.textColor;
+        ctx.lineWidth = cs.width;
+        ctx.globalAlpha = cs.opacity * 0.55; // a ghost — dimmer than the local crosshair
+        setDash(ctx, cs.style);
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, dataH);
+        if (ext.y != null) {
+            ctx.moveTo(0, Math.round(ext.y) + 0.5);
+            ctx.lineTo(dataW, Math.round(ext.y) + 0.5);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.8; // the chip stays readable but still reads as foreign
+        this.chip(ctx, x, dataH + 1, formatStamp(ext.time, scene.timezone), cs.labelBackground ?? theme.borderColor, 'center', true, theme.background);
+        ctx.globalAlpha = 1;
     }
 
     /** A soft band + a brighter crisp center line over the hovered separator, so it reads as

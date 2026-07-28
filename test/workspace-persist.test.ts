@@ -1,0 +1,165 @@
+// The workspace state codec (src/workspace/persist.ts): encode/decode round-trip, the
+// field-by-field sanitizer that guards `applyState` against untrusted documents, and
+// the in-memory default storage adapter. DOM-free — node env; the live getState /
+// applyState / persist plumbing is verified in the browser (playground probes).
+import { describe, it, expect } from 'vitest';
+import { encodeState, decodeState, sanitizeState, memoryStorageAdapter, type WorkspaceState } from '../src/workspace/persist';
+import { localStorageAdapter } from '../src/widget/persist';
+
+const fullDoc: WorkspaceState = {
+    version: 1,
+    layout: '4',
+    activeCellId: 'c2',
+    timezone: 'Europe/Paris',
+    favorites: ['trendline', 'hline'],
+    sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true },
+    trackSizes: { '4': { cols: [1.4, 0.6], rows: [1, 1] } },
+    charts: [
+        {
+            id: 'c1',
+            symbol: 'BTCUSDT',
+            provider: 'binance',
+            timeframe: '60',
+            priceStyle: 'candles',
+            bars: 500,
+            watermark: false,
+            rendererConfig: { theme: 'dark', nested: { any: ['shape'] } },
+            drawings: { version: 1, items: [{ type: 'trendline' }] },
+            indicators: { manifest: ['EMA 20'], natives: ['volume'] },
+        },
+        { id: 'c2', symbol: 'ETHUSDT', timeframe: '15' },
+    ],
+};
+
+describe('state codec round-trip', () => {
+    it('decodeState(encodeState(doc)) preserves a full valid document', () => {
+        expect(decodeState(encodeState(fullDoc))).toEqual(fullDoc);
+    });
+
+    it('rejects unusable payloads with null, never throws', () => {
+        expect(decodeState('not json {')).toBeNull();
+        expect(decodeState('"a string"')).toBeNull();
+        expect(decodeState('42')).toBeNull();
+        expect(decodeState('null')).toBeNull();
+        expect(decodeState(JSON.stringify({ version: 2, layout: '4', charts: [] }))).toBeNull(); // future version
+        expect(decodeState(JSON.stringify({ version: 1, charts: [] }))).toBeNull(); // no layout id
+    });
+});
+
+describe('sanitizeState (the applyState gate)', () => {
+    it('drops malformed fields but keeps the healthy remainder', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '2h',
+            activeCellId: 7, // wrong type → dropped
+            timezone: '', // empty → dropped
+            sync: { viewport: 'yes', crosshair: true }, // bad value dropped; crosshair is a REAL kind
+            trackSizes: { '2h': { cols: [1, -1] }, '4': { cols: [2, 1] } }, // negative weight kills the axis
+            charts: [
+                { id: 'c1', symbol: 'BTCUSDT', bars: -5, rendererConfig: 'oops' }, // bad bars/config dropped
+                null, // unusable entry → dropped
+                { symbol: 'GHOST' }, // ID-LESS entry → dropped
+                { id: 'c3', indicators: { manifest: ['EMA', 42], natives: 'volume' } }, // non-strings filtered
+            ],
+        });
+        expect(doc).toEqual({
+            version: 1,
+            layout: '2h',
+            sync: { crosshair: true },
+            trackSizes: { '4': { cols: [2, 1] } },
+            charts: [
+                { id: 'c1', symbol: 'BTCUSDT' },
+                { id: 'c3', indicators: { manifest: ['EMA'], natives: [] } },
+            ],
+        });
+    });
+
+    it('dedupes chart entries by id — the LAST duplicate wins', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '2h',
+            charts: [
+                { id: 'c1', symbol: 'OLD' },
+                { id: 'c2', symbol: 'ETHUSDT' },
+                { id: 'c1', symbol: 'NEW' },
+            ],
+        });
+        expect(doc!.charts).toEqual([
+            { id: 'c1', symbol: 'NEW' },
+            { id: 'c2', symbol: 'ETHUSDT' },
+        ]);
+    });
+
+    it('passes renderer-config and drawings documents through opaquely', () => {
+        const config = { anything: { the: ['renderer', 'owns'] } };
+        const doc = sanitizeState({ version: 1, layout: '1', charts: [{ id: 'c1', rendererConfig: config, drawings: config }] });
+        // Downstream consumers (applyConfig / fromJSON) validate these — the codec only
+        // requires object-ness so JSON primitives cannot masquerade as documents.
+        expect(doc!.charts[0]!.rendererConfig).toEqual(config);
+        expect(doc!.charts[0]!.drawings).toEqual(config);
+    });
+
+    it('keeps sync group records only when at least one valid member remains', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '4',
+            charts: [],
+            sync: { symbol: { c1: 'a', c2: 9 }, timeframe: { c1: 3 } },
+        });
+        expect(doc!.sync).toEqual({ symbol: { c1: 'a' } }); // timeframe record emptied → dropped
+    });
+
+    it('filters shared favorites and per-chart watermark by type', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            favorites: ['trendline', 7, null, 'hline'],
+            charts: [{ id: 'c1', watermark: 'yes' }, { id: 'c2', watermark: false }],
+        });
+        expect(doc!.favorites).toEqual(['trendline', 'hline']); // non-strings dropped
+        expect(doc!.charts[0]).toEqual({ id: 'c1' }); // non-boolean watermark dropped
+        expect(doc!.charts[1]).toEqual({ id: 'c2', watermark: false });
+        // an all-junk favorites array disappears entirely
+        expect(sanitizeState({ version: 1, layout: '1', favorites: [1, 2], charts: [] })!.favorites).toBeUndefined();
+    });
+});
+
+describe('memoryStorageAdapter (default, session-lived)', () => {
+    it('shares one module-level store across adapter instances (SPA recreate restores)', () => {
+        const a = memoryStorageAdapter();
+        const b = memoryStorageAdapter();
+        expect(a.get('ws-test-key')).toBeNull();
+        a.set('ws-test-key', 'payload');
+        expect(b.get('ws-test-key')).toBe('payload'); // a NEW workspace's fresh adapter still sees it
+        b.remove!('ws-test-key');
+        expect(a.get('ws-test-key')).toBeNull();
+    });
+});
+
+describe('localStorageAdapter (pinned-key mode)', () => {
+    it('pins every read/write to the given entry, whatever logical key the shell passes', () => {
+        const store = new Map<string, string>();
+        const g = globalThis as { localStorage?: unknown };
+        const prev = g.localStorage;
+        g.localStorage = {
+            getItem: (k: string) => store.get(k) ?? null,
+            setItem: (k: string, v: string) => void store.set(k, v),
+            removeItem: (k: string) => void store.delete(k),
+        };
+        try {
+            const pinned = localStorageAdapter('my-app-state');
+            pinned.set('vela-widget', 'DOC');
+            expect(store.get('my-app-state')).toBe('DOC'); // landed on the pinned entry
+            expect(store.has('vela-widget')).toBe(false);
+            expect(pinned.get('anything-at-all')).toBe('DOC');
+            void pinned.remove?.('whatever');
+            expect(store.size).toBe(0);
+            // omitted → the logical key is used as-is (historical behavior)
+            const plain = localStorageAdapter();
+            plain.set('vela-widget', 'X');
+            expect(store.get('vela-widget')).toBe('X');
+        } finally {
+            g.localStorage = prev;
+        }
+    });
+});

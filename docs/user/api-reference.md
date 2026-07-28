@@ -10,6 +10,8 @@ The **neutral model** — bars, series, pane overlays, drawings, inputs, update 
 
 > Vela installs **from source**; the `'vela'` imports in these snippets refer to the local workspace package (see [installation.md](./installation.md)).
 
+Higher-level shells are documented on their own pages: [the widget](./widget.md) (`vela/widget` — one chart, full chrome) and [the workspace](./workspace.md) (`vela/workspace` — a multi-chart grid with one shared chrome and sync links). Both expose the SAME state surface — `getState()` / `applyState()` / `state:changed` over one shared document format (the widget is the single-cell case) — which is also what their `persist` option writes.
+
 ---
 
 ## `class Vela(container, options?, deps?)`
@@ -32,8 +34,10 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 | `runIndicator(source, options?)` | Execute a script and **inject it only if the run succeeds** — the seam for host editors/consoles. Resolves `{ ok: true, handle }` after the first successful evaluation, or `{ ok: false, error, context }` on a compile/runtime failure — `context` is the post-mortem execution-context snapshot when the engine had produced one, and the failed indicator is removed again (no dead legend row). Never rejects. |
 | `indicators()` | Live `IndicatorHandle[]` of everything on the chart (script + native), in insertion order — the seam for host panels (object trees, indicator lists) that need per-id visibility/removal. |
 | `availableNativeIndicators()` | Returns `Promise<NativeIndicatorInfo[]>` — the catalog of built-in native indicators with their live state on this chart, for building an "add indicator" picker UI (lets a host list them, gate unsupported ones, avoid duplicates). Async because support may need to probe the provider (a type may need data the symbol lacks). |
+| `setMarket(next)` | Switch the chart's market **in place** — `{ symbol?, provider?, timeframe?, bars?, data?, visibleRange? }` — without destroying the chart. Only the fields given change. Indicators re-execute over the new bars, native indicators restart, and panes, user drawings, renderer config and event subscriptions all **survive**. Resolves once the new market's history is painted (a deep backfill continues behind it — await `historyComplete()`); a call superseded by a newer `setMarket` resolves silently. Emits `market:changed` when the market identity changed (a depth-only `bars` reload is silent). `visibleRange` frames the first paint of the new market. Drawings are kept as-is — per-symbol drawing documents are a host policy (`chart.drawings.toJSON()/fromJSON()` keyed off `market:changed`). |
+| `market` (getter) | The current market identity — the read counterpart of `setMarket`. A **snapshot** `{ symbol?, provider?, timeframe?, bars?, offline }` of the *requested* market: it reflects an in-flight switch immediately (before the new bars land), which is what persist-on-close flows want. Listen to `market:changed` for *committed* identity changes. Mutating the returned object changes nothing. |
 | `ready()` | Returns a promise that resolves once the chart is painted and interactive. On a deep-history chart (beyond one ~10k-bar chunk) older bars keep backfilling **behind** this — await `historyComplete()` for the full depth. |
-| `historyComplete()` | Returns a promise that resolves once the full requested history has loaded — immediately for small/offline charts, after the background backfill for deep ones. Never rejects: on destroy or a failed backfill it resolves with whatever depth loaded. |
+| `historyComplete()` | Returns a promise that resolves once the **current load's** full requested history has loaded — immediately for small/offline charts, after the background backfill for deep ones. **Per-load**: each `setMarket` re-arms the cycle (the superseded load's promise resolves rather than hanging), so call it again after a switch for the new market's depth. Never rejects: on destroy or a failed backfill it resolves with whatever depth loaded. |
 | `on(event, handler)` | Subscribe to a chart-level event. Returns an unsubscribe function. |
 | `getVisibleRange()` | The current visible time range (`{ from, to }` in epoch-ms), or `null` before data loads. |
 | `setVisibleRange(range)` | Set the visible time range explicitly (epoch-ms). Returns the chart for chaining. |
@@ -160,6 +164,7 @@ Subscribe with `chart.on(event, handler)`; every subscription returns an unsubsc
 | Event | Payload | Fires when |
 |---|---|---|
 | `ready` | — | The chart is painted and interactive (a deep chart's history may still be backfilling). |
+| `market:changed` | `{ symbol, timeframe, prev: { symbol, timeframe } }` | The market switched **in place** via `setMarket` — symbol, provider, timeframe, or offline data changed (a depth-only reload does not fire). Fires after the new market's history is painted and every consumer restarted. `prev` lets hosts re-key per-symbol state (e.g. swap user-drawing documents between symbols). |
 | `history:progress` | `{ loaded, target }` | A deep-history backfill chunk landed — `loaded` of `target` bars are on the chart. |
 | `history:complete` | `{ reason, oldestTime, barsLoaded }` | The history load finished. `reason`: `'depth'` (requested count loaded), `'genesis'` (the source has nothing older), or `'aborted'` (a fetch failed — the chart keeps what loaded). Fires exactly once, including for small/offline charts. |
 | `indicator:added` | `{ id }` | An indicator was added. |
@@ -167,6 +172,7 @@ Subscribe with `chart.on(event, handler)`; every subscription returns an unsubsc
 | `indicator:error` | `{ id, error }` | An indicator failed. |
 | `context:changed` | `{ id }` | An indicator's execution context advanced (run finished; throttled to ~1/s while streaming). Re-pull `handle.context()` if you consume it. Fires only for context-capable engines. |
 | `bar` | the bar (OHLCV) | A live tick — the forming bar updated or a new bar appended. |
+| `viewport:changed` | `{ from, to }` (epoch-ms) | The visible time range moved (pan/zoom/fit) — fires per applied change, not debounced. The seam viewport-sync links between charts build on. |
 | `alert` | engine alert | A script raised an alert. |
 | `warning` | engine warning | A script raised a warning. |
 
@@ -189,6 +195,10 @@ chart is never left half-changed.
 | `getConfig()` | Snapshot the renderer's full cosmetics as a serializable, versioned JSON document (or `null`). |
 | `applyConfig(config)` | Apply a full or partial config document from `getConfig()`; malformed/unknown fields are ignored. |
 | `onCrosshairMove(cb)` | Subscribe to crosshair movement — `time`/`price` under the cursor, per-series values, and the hovered bar's OHLC (null fields when the cursor leaves the chart). Returns an unsubscribe fn. The public seam for host status lines and data windows. |
+| `setExternalCrosshair(time, price?)` | Show (or clear, with `null`) a **ghost crosshair** at a data-space position driven from OUTSIDE this chart — the multi-chart crosshair-sync seam ([the workspace](./workspace.md) drives it from the linked cells' pointers). A ghost never re-emits `onCrosshairMove` (one-way by contract — no echo loops). Silent no-op on a renderer without the optional port seam; feature-detect with `supportsExternalCrosshair`. |
+| `set('dialogHost', el)` | Where the renderer mounts its MODAL dialogs (chart settings, indicator settings). Multi-chart shells pass their root element so dialogs center over the whole grid instead of clipping inside one cell — the workspace does this automatically for every cell. Runtime-only; never part of the config template. |
+| `supportsExternalCrosshair` (getter) | Whether the active renderer implements the optional `setExternalCrosshair` seam (the native renderer does). |
+| `focus()` | Move keyboard focus back onto the chart's interactive surface — call after a host control (e.g. a shared toolbar button) stole focus, so chart/drawing shortcuts keep working. Silent no-op on a renderer without a focusable surface. |
 
 Feature-detect, read, and change how the chart is drawn at runtime — with no indicator re-run:
 
@@ -259,6 +269,9 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 |---|---|---|
 | `supported` | — | Whether the renderer can paint interactive drawings. |
 | `setTool(type \| null)` | yes | Arm a tool for the next clicks; `null` returns to select/idle. |
+| `getTool()` | no | The armed tool (`null` = select/idle). Follow changes on `drawing:tool`. |
+| `setSnapMode(mode)` · `getSnapMode()` | yes / no | The magnet: `'off' \| 'weak' \| 'strong'`. Changes land on `drawing:snap`. |
+| `setMode(mode)` · `getMode()` | yes / no | Renderer-local mode: `'measure' \| 'eraser' \| null`. Mutually exclusive with armed tools (the renderer enforces it); changes land on `drawing:mode`. |
 | `showToolbar(visible?)` | yes | Show/hide the on-chart toolbar. |
 | `setToolbar(option)` | yes | Reconfigure the toolbar groups/tools live. |
 | `add(type, init?)` | yes | Create a drawing from code; returns the `Drawing` (or `null` if unsupported). |
@@ -274,7 +287,8 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `getConfig()` / `applyConfig(doc)` | no | Aliases of `toJSON` / `fromJSON`, mirroring `chart.renderer`. |
 
 Drawing lifecycle is also surfaced as chart events (`drawing:created` / `drawing:edited` /
-`drawing:removed` / `drawing:selected` / `drawing:settings`). See
+`drawing:removed` / `drawing:selected` / `drawing:settings`), and the tool/mode state as
+`drawing:tool` / `drawing:snap` / `drawing:mode` — the seam an external toolbar mirrors. See
 [Drawing tools](./drawing-tools.md) for the tool catalogue, toolbar UX, and keyboard shortcuts.
 
 ---

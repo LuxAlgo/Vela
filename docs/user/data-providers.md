@@ -60,6 +60,7 @@ Because registration is explicit and the symbol index builds asynchronously, the
 - `await chart.ready()` resolves after that first load. `chart.addIndicator(...)` already awaits readiness internally, so you can call it before — or after — registering the provider; it queues until data lands.
 - An explicit `PROVIDER:SYMBOL` resolves the moment that provider registers (it doesn't wait for the full symbol index to build).
 - **Deep history loads in chunks.** A `bars` count beyond one ~10k-bar chunk paints the recent window first (that's what `ready()` awaits), then backfills older bars **backward in bounded ranged requests** — each a quick `getBars({ to, limit })` the provider answers from its own pagination. Watch `history:progress`, or `await chart.historyComplete()` for the full depth; indicators compute once, over the complete history, when it lands. A chunk that returns nothing older ends the backfill (`history:complete` with `reason: 'genesis'`) — exactly right for sources with bounded history.
+- **Multi-chart retention.** The closed-bar cache keeps ONE symbol by default (each load purges the rest — right for a single chart). Multi-chart hosts declare the set of live symbols with `BarStore.retain(symbols)` so one chart's load never evicts another's history; [the workspace](./workspace.md) does this automatically for its cells (duplicates share the same cached series and live stream).
 
 ## `chart.data` reference
 

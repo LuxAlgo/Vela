@@ -78,6 +78,17 @@ The core takes the live streaming path only when *all* of these hold:
 
 If any condition fails, the core uses the static re-run path: it pokes the engine to execute again over the current bar snapshot. (This is also why the off-thread Pine form, which declares no streaming capability, always takes the static re-run path — see [modules.md](modules.md).) Both paths end in the same place — a neutral model the core routes and the renderer applies. This routing condition is one of the core invariants; it is restated in [boundaries.md](boundaries.md).
 
+## Switching markets in place
+
+`chart.setMarket({ symbol?, provider?, timeframe?, bars?, data?, visibleRange? })` changes what the chart shows **without destroying it**. The switch is a controlled re-entry into the same load pipeline the chart booted with:
+
+1. **Quiesce** — the live subscription stops, pending gap-heals and viewport pokes are dropped, and history tracking re-arms (the superseded load's `historyComplete()` promise resolves rather than hanging).
+2. **Reload** — the shared load pipeline runs for the new market (preview → chunk → background backfill for deep histories, a single fetch otherwise). Every step is generation-guarded: a newer switch (or destroy) abandons a stale load before it can touch the chart.
+3. **Restart consumers** — Pine sessions are re-executed over the new bars (their next `ExecutionRequest` carries the new market), native indicators restart with a fresh context, the active chart-type data engine is rebuilt, and the live subscription re-targets.
+4. **Announce** — `market:changed` fires with the previous identity, so hosts can re-key per-symbol state (drawing documents, watchlists).
+
+What deliberately survives: panes and indicator records (legend rows, inputs, pane placement), user drawings, the renderer's cosmetic config, and every event subscription. Old sessions are never poked with the new market's bars — bar/viewport notifications are held during the switch, and the re-execution that follows is what computes over the new data.
+
 ## Causal, stateful execution
 
 Scripts in Vela are **causal and stateful**: a value at a bar can depend on every bar before it. Because of that, the engine always runs over the **full history**, never just the visible window.
