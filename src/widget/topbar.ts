@@ -146,13 +146,13 @@ export interface TopbarOptions {
         onToggle?: (id: string) => void;
     };
     onIndicatorsClick?: () => void;
+    /** The two side-panel toggles. Their pressed state is pushed back with `setPanelActive`,
+     *  since the panels also close each other. */
     onObjectsClick?: () => void;
+    onDataWindowClick?: () => void;
     onScreenshotClick?: () => void;
     onAlertsClick?: (anchor: HTMLElement) => void;
     onSettingsClick?: () => void;
-    onDataWindowClick?: () => boolean | void;
-    /** Initial pressed state of the data-window toggle. */
-    dataWindowOn?: boolean;
     /** Live widget context for contributed actions (topbar target). */
     getContext?: () => WidgetContext;
 }
@@ -170,6 +170,7 @@ export class Topbar {
     private readonly tooltips: Tooltip[] = [];
     private readonly actionsHost: HTMLElement;
     private alertsBtn!: HTMLButtonElement;
+    private panelBtns!: { objects: HTMLButtonElement; dataWindow: HTMLButtonElement };
     private indicatorsCount!: HTMLElement;
     private alertsBadge!: HTMLElement;
     private readonly opts: TopbarOptions;
@@ -220,13 +221,10 @@ export class Topbar {
             if (onClick) b.addEventListener('click', onClick);
             return b;
         };
-        const dataWindowBtn = tool('vela-widget-datawindow', 'datawindow', 'Data window', () => {
-            const on = this.opts.onDataWindowClick?.();
-            if (typeof on === 'boolean') dataWindowBtn.dataset.active = on ? '1' : '';
-        });
-        if (opts.dataWindowOn) dataWindowBtn.dataset.active = '1';
+        const dataWindowBtn = tool('vela-widget-datawindow', 'datawindow', 'Data window', opts.onDataWindowClick);
         const screenshotBtn = tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick);
         const objectsBtn = tool('vela-widget-objects', 'objects', 'Object tree', opts.onObjectsClick);
+        this.panelBtns = { objects: objectsBtn, dataWindow: dataWindowBtn };
         const settingsBtn = tool('vela-widget-settings', 'gear', 'Chart settings', opts.onSettingsClick);
         this.alertsBtn = tool('vela-widget-alerts', 'bell', 'Alerts');
         this.alertsBtn.style.position = 'relative';
@@ -368,6 +366,12 @@ export class Topbar {
     setAlertCount(n: number): void {
         this.alertsBadge.textContent = n > 9 ? '9+' : String(n);
         this.alertsBadge.style.display = n > 0 ? '' : 'none';
+    }
+
+    /** Reflect a docked side panel's open state on its button — the panels toggle each other,
+     *  so the shell pushes the state rather than the button assuming it. */
+    setPanelActive(panel: 'objects' | 'dataWindow', open: boolean): void {
+        this.panelBtns[panel].dataset.active = open ? '1' : '';
     }
 
     destroy(): void {

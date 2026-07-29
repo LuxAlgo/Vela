@@ -65,6 +65,44 @@ export interface ClickEvent {
     price: number | null;
 }
 
+/** One indicator plot's readout line in the data window. */
+export interface DataWindowRow {
+    label: string;
+    value: string;
+    color: string;
+}
+
+/** The OHLCV block of a data-window readout, formatted on the price pane's scale. */
+export interface DataWindowOHLC {
+    o: string;
+    h: string;
+    l: string;
+    c: string;
+    vol?: string;
+    /** Close ≥ open → tint the values with the up color, else the down color. */
+    up: boolean;
+}
+
+/** One indicator's readout: its title plus a row per plot. */
+export interface DataWindowGroup {
+    name: string;
+    rows: DataWindowRow[];
+}
+
+/**
+ * A data-window snapshot — the bar's timestamp split into date + time, its OHLCV, and one
+ * group per indicator. Every value arrives pre-formatted on the scale of the pane it belongs
+ * to, so a host panel lays the readout out without doing any numeric formatting itself.
+ */
+export interface DataWindowReadout {
+    /** Bar date, pre-formatted (e.g. `2026-07-03`); empty when there is no bar. */
+    date: string;
+    /** Bar time of day, pre-formatted `HH:MM`; empty when there is no bar. */
+    time: string;
+    ohlc: DataWindowOHLC | null;
+    groups: DataWindowGroup[];
+}
+
 /** Raised by the renderer when the user edits an input in the settings dialog. */
 export interface InputChangeEvent {
     indicatorId: string;
@@ -219,6 +257,14 @@ export interface IChartRenderer {
      * a renderer without the seam simply never shows foreign crosshairs.
      */
     setExternalCrosshair?(time: Millis | null, price?: number | null): void;
+
+    /**
+     * A pre-formatted readout of the bar under the crosshair — or of the latest bar when the
+     * cursor is off the plot, so the snapshot is always useful. Pull it on crosshair movement
+     * to drive a host data-window panel. Optional: a renderer that tracks no hovered bar omits
+     * it (`RendererControl.dataWindowReadout()` then returns null).
+     */
+    getDataWindowReadout?(): DataWindowReadout;
 
     getVisibleRange(): VisibleRange | null;
     setVisibleRange(range: VisibleRange): void;
