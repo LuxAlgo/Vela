@@ -51,7 +51,26 @@ Select a drawing (click it) to show its **handles** and a compact **quick-settin
 beside it. The popup is built from each tool's own schema, so it shows only the controls that tool
 supports — line color/width/style, fill, text, and (for Fibonacci tools) a **gear** panel to
 enable/recolor/label each level. The popup also locks, reorders (bring-to-front /
-send-to-back), and deletes the drawing. Double-click a callout to edit its text inline.
+send-to-back), and deletes the drawing.
+
+**Text is typed on the chart.** Placing a text annotation opens a blinking caret at the click point
+next to an `Enter Text` placeholder, framed by a thin gray box that marks the text as being edited,
+and the glyphs appear exactly where they will be painted as you type, at the annotation's default
+**large** size. **Enter** starts a new line; a click elsewhere (or **Ctrl/Cmd+Enter**) keeps the
+text, and **Escape** restores what was there before — a text annotation that was never typed into is
+discarded rather than left invisible. Double-click existing text, or a callout, to reopen the same
+inline editor.
+
+Finished text keeps that frame as its selection cue: a plain text annotation shows the same thin box
+when it is selected, and a fainter one while the cursor is over it — the words are the drawing, so
+the frame is what tells you where it can be clicked, dragged, or restyled.
+
+The quick-settings popup opens alongside the caret, exactly as it does for every other tool. For
+annotations whose text _is_ the drawing — text, note, callout, comment, signpost — the text color and
+size sit on the popup's bar, so restyling while you type is one click and the words on the chart
+follow immediately; reaching for them does not end the edit. **Bold** and **italic** live under the
+field behind the popup's **Text** button, next to the text they format. On shapes that merely carry a
+label (a trend line, a box), all four controls stay in that panel with the label field.
 
 Drag a handle to reshape; drag the body to move the whole drawing.
 

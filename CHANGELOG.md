@@ -60,6 +60,20 @@ All notable changes to Vela, newest first.
   holds across symbol and timeframe switches and across reloads, whichever way you removed it
   (the indicators dialog, the legend, or the object tree). Before, auto-added indicators could
   quietly return on the next switch or reload.
+- **Text is typed straight onto the chart.** Placing a text annotation now drops a blinking caret
+  where you clicked, next to an "Enter Text" placeholder, and the words appear on the chart as you
+  type them — no settings field in between, and a thin gray frame around the words while you are
+  editing them. Text annotations start out large, so they read at a glance without reaching for the
+  size control. Enter starts a new line; clicking away (or Ctrl/Cmd+Enter) keeps the text and
+  Escape puts back what was there; a text annotation you never typed into is
+  dropped instead of left blank on the chart. Double-clicking existing text — or a callout — opens
+  the same on-chart editor. Finished text keeps that frame as its selection cue: firm when the
+  annotation is selected, fainter under the cursor, so you can see where the words can be grabbed.
+  The quick-settings bar opens alongside the caret, as it does for every other tool, and now carries
+  the text color and size on the bar itself, with bold and italic under the text field where the
+  words are — restyle while you type and the chart follows, without the edit being interrupted.
+  Previously a text annotation arrived pre-filled with the word "Text", had to be edited through the
+  settings popup, and its formatting was two clicks deep.
 - **The data window is a docked panel, not a floating box.** It used to hover over the top-right
   corner of the chart and was switched on with the `dataWindow` option; it is now the side panel
   described above, opened from the top bar, and it never covers the candles. _(Breaking: the

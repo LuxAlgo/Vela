@@ -27,7 +27,7 @@ export abstract class PinnedLabel extends Drawing {
     }
 
     /** Approximate pixel box of the label (the painter renders the precise glyphs). */
-    protected box(proj: Projector): { x: number; y: number; w: number; h: number } | null {
+    box(proj: Projector): { x: number; y: number; w: number; h: number } | null {
         const a = this.anchors[0];
         if (!a) return null;
         const y = proj.yOf(a.price, this.paneId);

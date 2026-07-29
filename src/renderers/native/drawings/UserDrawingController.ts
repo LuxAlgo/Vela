@@ -11,9 +11,10 @@ import type {
     SnapMode,
     ToolbarDefinition,
 } from '../../../core/drawings';
-import { deserializeDrawing, resetDrawingSettings, Callout } from '../../../core/drawings';
+import { deserializeDrawing, resetDrawingSettings, Callout, TextLabel } from '../../../core/drawings';
 import type { Unsubscribe } from '../../../core/util/types';
-import { namedFontSize } from '../../shared/drawing-geometry';
+import { namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
+import { withAlpha } from '../core/chartConfig';
 import { blendOver, splitColor } from './colorPicker';
 import { DrawingPainter } from './DrawingPainter';
 import { DrawingInteraction } from './DrawingInteraction';
@@ -22,6 +23,21 @@ import { DrawingToolbar } from './DrawingToolbar';
 import { MeasureOverlay } from './MeasureOverlay';
 import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
 import { keyToDrawingAction, isEditingText } from './DrawingKeys';
+
+/** Shown in the inline editor while a label carries no text yet. */
+const TEXT_PLACEHOLDER = 'Enter Text';
+/** Extra width past the measured glyphs so the caret has somewhere to sit. */
+const CARET_ROOM = 8;
+/** The editor's border weight; its padding is the shared TEXT_FRAME inset/rise minus this, so the
+ *  border lands exactly on the frame the painter draws — the box doesn't move when editing starts. */
+const EDITOR_BORDER = 1;
+
+/** The drawings whose text is typed straight onto the chart rather than through the settings popup. */
+type InlineEditable = Callout | TextLabel;
+
+function isInlineEditable(d: Drawing | null | undefined): d is InlineEditable {
+    return d instanceof Callout || d instanceof TextLabel;
+}
 
 /** What the controller needs from the native renderer (coords + theme + dpr). */
 export interface UserDrawingDeps {
@@ -57,7 +73,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private measureMode = false; // the ruler is armed (placing a measurement)
     private eraserMode = false; // click/drag over a drawing deletes it
     private erasing = false; // a button is held during eraser mode (so a drag erases multiple)
-    private calloutEditor: HTMLTextAreaElement | null = null; // inline text editor for the focused callout
+    // The inline on-chart text editor: its element, the id of the drawing it edits, the text it
+    // opened with (so Escape can put it back), and the text the core currently holds (so an edit is
+    // reported exactly when it actually changes).
+    private textEditor: { el: HTMLTextAreaElement; id: string; initial: string; stored: string } | null = null;
 
     private readonly painter = new DrawingPainter();
     private readonly interaction: DrawingInteraction;
@@ -110,6 +129,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     syncDrawings(docs: readonly SerializedDrawing[]): void {
         this.drawings = docs.map((d) => deserializeDrawing(d)).filter((d): d is Drawing => d != null);
+        // The edited drawing can vanish from under the editor (deleted, erased, undone) — take the
+        // editor with it instead of leaving a live textarea over nothing.
+        if (this.textEditor && !this.editedDrawing(this.textEditor.id)) this.closeTextEditor();
         this.render();
         this.deps.requestScaleUpdate(); // fold drawing price ranges into autoscale
     }
@@ -137,7 +159,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style']): void {
         if (type != null) {
-            this.closeCalloutEditor(); // arming a real tool cancels an open inline editor
+            this.finishTextEditor(true); // arming a real tool ends an open inline edit (keeping the text)
             // Picking a drawing tool cancels the ruler and the eraser — a mutual-exclusion
             // side effect the core (and any external toolbar) learns via the mode intent.
             this.withModeIntent(() => {
@@ -226,8 +248,12 @@ export class UserDrawingController implements IDrawingsRendererPort {
         if (hit && !hit.locked) this.emit({ kind: 'delete', ids: [hit.id] });
     }
 
-    /** Clear a finished transient measurement (the ruler vanishes on the next press / pan / zoom). */
+    /** A press landed on the chart: a finished transient measurement clears (the ruler vanishes on the
+     *  next press / pan / zoom), and an open inline edit ends. This runs for EVERY press, including the
+     *  ones the drawings layer doesn't claim — a press on empty chart is a pan, and the editor may not
+     *  hold focus (the settings popup can), so neither `pointerDown` nor blur would end the edit. */
     clearTransient(): void {
+        if (this.textEditor) this.finishTextEditor(true); // clicking off the text keeps what was typed
         if (this.measure.isFinished()) {
             this.measure.clear();
             this.render();
@@ -336,60 +362,167 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.render();
     }
 
-    /** Open an inline textarea over a callout's box so its text is edited directly on the chart
-     *  (click the text field and type). Commits on blur / Enter, cancels on Escape. */
-    private editCalloutInline(id: string): void {
-        const d = this.drawings.find((x) => x.id === id);
-        if (!(d instanceof Callout)) return;
-        this.closeCalloutEditor();
-        this.popup.close();
-        const box = d.box(this.deps.projector());
-        if (!box) return;
-        const theme = this.deps.theme();
-        const fs = namedFontSize(d.text?.size ?? 'normal');
+    /**
+     * Open an inline textarea over the drawing's own text so it is typed directly on the chart:
+     * a callout fills its bubble, a plain text label sits exactly where the glyphs paint (the
+     * canvas label is muted meanwhile, so what you type IS what the chart shows) inside a thin frame
+     * that marks the text as being edited. An empty label shows a placeholder. Enter breaks the line,
+     * a press on the chart (or Ctrl/Cmd+Enter) keeps the text, Escape puts back what was there. The
+     * editor and the settings popup are one unit: reaching for a control in the popup does not end
+     * the edit.
+     */
+    private editTextInline(id: string): void {
+        const d = this.editedDrawing(id);
+        if (!d) return;
+        this.closeTextEditor();
+        const initial = d.text?.value ?? '';
+        const css = this.inlineEditorCss(d, initial);
+        if (!css) return;
         const ta = document.createElement('textarea');
-        ta.value = d.text?.value ?? '';
+        ta.value = initial;
+        ta.placeholder = TEXT_PLACEHOLDER;
         ta.spellcheck = false;
-        ta.style.cssText =
-            `position:absolute;left:${Math.round(box.x)}px;top:${Math.round(box.y)}px;width:${Math.round(box.w)}px;height:${Math.round(box.h)}px;` +
-            `z-index:24;box-sizing:border-box;resize:none;overflow:hidden;margin:0;padding:5px 8px;border-radius:5px;` +
-            `border:1px solid ${d.style.lineColor ?? theme.borderColor};background:${blendOver(d.style.fillColor ?? theme.background, theme.background, splitColor(d.style.fillColor ?? theme.background).alpha)};color:${d.text?.color ?? theme.textColor};` +
-            `font:${fs}px ${theme.fontFamily};text-align:left;outline:none;pointer-events:auto;`;
-        ta.addEventListener('input', () => {
-            d.applySettings({ 'text.value': ta.value });
-            this.render(); // live: keep the canvas bubble sized to the text
-            const b = d.box(this.deps.projector());
-            if (b) {
-                ta.style.left = `${Math.round(b.x)}px`;
-                ta.style.top = `${Math.round(b.y)}px`;
-                ta.style.width = `${Math.round(b.w)}px`;
-                ta.style.height = `${Math.round(b.h)}px`;
-            }
-        });
+        ta.style.cssText = css;
+        // live: the canvas bubble / hit box follow the typed text (and the editor re-lays out around it)
+        const sync = (): void => {
+            this.editedDrawing(id)?.applySettings({ 'text.value': ta.value });
+            this.render();
+        };
+        ta.addEventListener('input', sync);
         ta.addEventListener('pointerdown', (e) => e.stopPropagation());
         ta.addEventListener('keydown', (e) => {
             e.stopPropagation();
-            if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) {
+            // Enter breaks the line — the break is inserted here rather than left to the textarea's
+            // default so it lands whatever else handled the key. Ctrl/Cmd+Enter is the keyboard way
+            // to finish, for anyone who'd rather not click off the text.
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
-                ta.blur();
+                const at = ta.selectionStart;
+                ta.setRangeText('\n', at, ta.selectionEnd, 'end');
+                sync();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                this.finishTextEditor(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                this.finishTextEditor(false);
             }
         });
-        ta.addEventListener('blur', () => {
-            d.applySettings({ 'text.value': ta.value });
-            this.emit({ kind: 'edit', doc: d.serialize() });
-            this.closeCalloutEditor();
+        ta.addEventListener('blur', (e) => {
+            // Reaching for a control in the settings popup keeps the edit alive — but hand the text
+            // over to the core first, so the popup's own patches build on it instead of a re-sync
+            // dropping it.
+            if (this.popup.contains((e as FocusEvent).relatedTarget as Node | null)) this.storeText(ta.value);
+            else this.finishTextEditor(true); // clicking away keeps the text
         });
         this.overlayHost.appendChild(ta);
-        this.calloutEditor = ta;
+        this.textEditor = { el: ta, id, initial, stored: initial };
         ta.focus();
-        ta.select();
+        // Caret at the end, nothing selected: reopening existing text with everything highlighted
+        // reads as a rename/resize box rather than in-place editing (and one keystroke would
+        // replace the whole annotation).
+        ta.setSelectionRange(ta.value.length, ta.value.length);
     }
 
-    private closeCalloutEditor(): void {
-        const ta = this.calloutEditor;
-        if (!ta) return;
-        this.calloutEditor = null; // null first: removing a focused textarea fires blur → re-entrant close
-        ta.remove();
+    /** Hand the edited text to the core (once per actual change) without ending the edit. */
+    private storeText(value: string): void {
+        const ed = this.textEditor;
+        const d = ed && this.editedDrawing(ed.id);
+        if (!ed || !d) return;
+        d.applySettings({ 'text.value': value });
+        if (value !== ed.stored) {
+            ed.stored = value;
+            this.emit({ kind: 'edit', doc: d.serialize() });
+        }
+    }
+
+    /** The drawing an inline editor may edit, resolved fresh from the current projection (a core
+     *  sync replaces the instances, so the editor holds an id rather than the object). */
+    private editedDrawing(id: string): InlineEditable | null {
+        const d = this.drawings.find((x) => x.id === id);
+        return isInlineEditable(d) ? d : null;
+    }
+
+    /** Close the inline editor, keeping (`commit`) or reverting the typed text. A text label left
+     *  with nothing in it would paint nothing at all, so it's dropped rather than left invisible. */
+    private finishTextEditor(commit: boolean): void {
+        const ed = this.textEditor;
+        if (!ed) return;
+        const value = commit ? ed.el.value : ed.initial;
+        this.closeTextEditor();
+        const d = this.editedDrawing(ed.id);
+        if (!d) return; // deleted from under the editor
+        d.applySettings({ 'text.value': value });
+        this.render();
+        if (d instanceof TextLabel && value.trim() === '') {
+            this.clearSelection(); // its settings popup would outlive the drawing
+            this.emit({ kind: 'delete', ids: [d.id] });
+        } else if (value !== ed.stored) this.emit({ kind: 'edit', doc: d.serialize() });
+    }
+
+    /** Absolute position + text metrics for the inline editor, so the typed glyphs land where the
+     *  painter would draw them. Null when the drawing has no on-screen box (off-pane anchor). */
+    private inlineEditorCss(d: InlineEditable, value: string): string | null {
+        const proj = this.deps.projector();
+        const theme = this.deps.theme();
+        const text = d.text;
+        const fs = namedFontSize(text?.size ?? 'normal');
+        const font = `${text?.italic ? 'italic ' : ''}${text?.bold ? 'bold ' : ''}${fs}px ${theme.fontFamily}`;
+        const base = 'position:absolute;z-index:24;box-sizing:border-box;resize:none;overflow:hidden;margin:0;outline:none;pointer-events:auto;text-align:left;';
+        if (d instanceof Callout) {
+            const box = d.box(proj);
+            if (!box) return null;
+            const fill = d.style.fillColor ?? theme.background;
+            return (
+                base +
+                `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px;width:${Math.round(box.w)}px;height:${Math.round(box.h)}px;` +
+                `padding:5px 8px;border-radius:5px;border:1px solid ${d.style.lineColor ?? theme.borderColor};` +
+                `background:${blendOver(fill, theme.background, splitColor(fill).alpha)};color:${text?.color ?? theme.textColor};font:${font};`
+            );
+        }
+        const anchor = d.handlePoints(proj)[0];
+        if (!anchor) return null;
+        const lh = labelLineHeight(fs);
+        const lines = (value || TEXT_PLACEHOLDER).split('\n');
+        const w = Math.ceil(this.measureTextWidth(lines, font)) + CARET_ROOM;
+        // The painter draws the label at (anchor + 2) with a `top` baseline; a textarea centers each
+        // glyph in its line box, so lift it by half the leading to keep both in the same place. The
+        // frame then grows outwards around that origin rather than pushing the text off it.
+        return (
+            base +
+            `left:${Math.round(anchor[0] + 2) - TEXT_FRAME_INSET}px;top:${Math.round(anchor[1] + 2 - (lh - fs) / 2) - TEXT_FRAME_RISE}px;` +
+            `width:${w + TEXT_FRAME_INSET * 2}px;height:${lines.length * lh + TEXT_FRAME_RISE * 2}px;` +
+            `padding:${TEXT_FRAME_RISE - EDITOR_BORDER}px ${TEXT_FRAME_INSET - EDITOR_BORDER}px;` +
+            `border:${EDITOR_BORDER}px solid ${withAlpha(theme.textColor, 0.3)};border-radius:4px;` +
+            `background:transparent;color:${text?.color ?? theme.textColor};font:${font};line-height:${lh}px;white-space:pre;`
+        );
+    }
+
+    /** Widest of `lines` at `font`, measured on the drawings canvas (transform-independent). */
+    private measureTextWidth(lines: readonly string[], font: string): number {
+        const ctx = this.ctx;
+        if (!ctx) return 120;
+        const prev = ctx.font;
+        ctx.font = font;
+        const w = Math.max(8, ...lines.map((l) => ctx.measureText(l).width));
+        ctx.font = prev;
+        return w;
+    }
+
+    /** Keep an open editor glued to its drawing (typing, panning, zooming all move the anchor). */
+    private layoutTextEditor(): void {
+        const ed = this.textEditor;
+        if (!ed) return;
+        const d = this.editedDrawing(ed.id);
+        const css = d && this.inlineEditorCss(d, ed.el.value);
+        if (css) ed.el.style.cssText = css;
+    }
+
+    private closeTextEditor(): void {
+        const ed = this.textEditor;
+        if (!ed) return;
+        this.textEditor = null; // null first: removing a focused textarea fires blur → re-entrant close
+        ed.el.remove();
         this.render();
     }
 
@@ -404,8 +537,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
     dblClick(x: number, y: number): boolean {
         if (this.interaction.finishPlacing(true)) return true; // double-click finishes a polyline (drops the dup point)
         const hit = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE);
-        if (hit instanceof Callout) {
-            this.editCalloutInline(hit.id); // double-click a callout → edit its text in place
+        if (isInlineEditable(hit)) {
+            this.editTextInline(hit.id); // double-click a callout / text label → edit its text in place
             return true;
         }
         return hit != null;
@@ -415,6 +548,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
      *  delete (multi), and arrow-nudge. Stands down while a label text field is focused. */
     handleKey(e: KeyboardEvent): boolean {
         if (e.key === 'Escape') {
+            if (this.textEditor) {
+                this.finishTextEditor(false); // cancel the edit before the popup/selection
+                return true;
+            }
             if (this.popup.isOpen()) {
                 this.clearSelection();
                 return true;
@@ -494,7 +631,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     }
 
     onResize(): void {
-        this.closeCalloutEditor();
+        this.finishTextEditor(true);
         this.popup.close();
         this.render();
     }
@@ -507,13 +644,16 @@ export class UserDrawingController implements IDrawingsRendererPort {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, this.canvas.width / dpr, this.canvas.height / dpr);
         const proj = this.deps.projector();
-        // Handles show for the selected drawings, the one being dragged, and the one under
-        // the cursor — so they appear on hover/selection and vanish when you leave / deselect.
-        const highlight = new Set(this.selectedIds);
-        const drag = this.interaction.activeDragId();
-        if (drag) highlight.add(drag);
-        if (this.hoveredId) highlight.add(this.hoveredId);
-        this.painter.paintAll(ctx, this.drawings, proj, this.deps.theme(), highlight);
+        // A transparent inline editor overlays the label it edits — mute the canvas copy so the
+        // typed text isn't drawn twice (the callout editor is opaque, so its label stays).
+        const edited = this.textEditor ? this.editedDrawing(this.textEditor.id) : null;
+        this.painter.paintAll(ctx, this.drawings, proj, this.deps.theme(), {
+            selected: this.selectedIds,
+            hovered: this.hoveredId,
+            dragged: this.interaction.activeDragId(),
+            mutedLabel: edited instanceof TextLabel ? edited.id : null,
+        });
+        this.layoutTextEditor();
         const ghost = this.interaction.ghost();
         if (ghost) this.painter.paintGhost(ctx, ghost, proj, this.deps.theme());
         // While placing, show control circles on the points clicked so far (so the user
@@ -529,7 +669,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     }
 
     destroy(): void {
-        this.closeCalloutEditor();
+        this.closeTextEditor();
         this.popup.destroy();
         this.toolbar.destroy();
         this.intentCb = null;
@@ -576,6 +716,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.openSettingsById(id, 0, 0);
             },
             remove: () => {
+                this.closeTextEditor(); // else the editor floats over the deleted label until it loses focus
                 this.popup.close();
                 this.emit({ kind: 'delete', ids: [id] });
             },
@@ -583,10 +724,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
     }
 
     private emit(i: DrawingIntent): void {
-        // A freshly-placed drawing surfaces its editing UI by default once it's set: a callout opens
-        // its inline text editor, every other type opens its settings menu. Works for both click +
-        // drag finalize — the core reassigns the id, so we diff the drawing set around the create to
-        // find the new one.
+        // A freshly-placed drawing surfaces its editing UI by default once it's set: every type opens
+        // its settings menu, and a text label / callout additionally opens its inline editor so the
+        // caret is already waiting. Works for both click + drag finalize — the core reassigns the id,
+        // so we diff the drawing set around the create to find the new one.
         if (i.kind === 'create') {
             const before = new Set(this.drawings.map((d) => d.id));
             this.intentCb?.(i);
@@ -595,8 +736,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
             setTimeout(() => {
                 const fresh = this.drawings.find((d) => !before.has(d.id));
                 if (!fresh) return;
-                if (fresh instanceof Callout) this.editCalloutInline(fresh.id);
-                else this.openSettingsById(fresh.id, 0, 0);
+                this.openSettingsById(fresh.id, 0, 0);
+                if (isInlineEditable(fresh)) this.editTextInline(fresh.id); // focus lands in the editor, not the bar
             }, 0);
             return;
         }

@@ -115,13 +115,15 @@ describe('drawings/Ray Box TextLabel', () => {
         expect(b.priceRange()).toEqual({ min: 0, max: 50 });
         expect(b.handlePoints(proj)).toEqual([[0, 100], [50, 50]]);
     });
-    it('TextLabel seeds default text + an approximate hit box', () => {
+    it('TextLabel starts empty (typed inline) with an approximate hit box', () => {
         const t = createDrawing('text', { paneId: 'price', anchors: [{ time: 10, price: 50 }] })!;
-        expect(t.text?.value).toBe('Text');
+        expect(t.text?.value).toBe(''); // no seeded literal — the inline editor's placeholder invites the text
+        expect(t.text?.size).toBe('large'); // reads at a glance without reaching for the size control
         expect(t.hitTest(20, 60, proj, 5)).toBe(true);
         expect(t.hitTest(400, 400, proj, 5)).toBe(false);
         // round-trips the text block
-        expect(deserializeDrawing(t.serialize())!.serialize().text?.value).toBe('Text');
+        t.applySettings({ 'text.value': 'Buy zone' });
+        expect(deserializeDrawing(t.serialize())!.serialize().text?.value).toBe('Buy zone');
     });
 });
 
@@ -131,6 +133,17 @@ describe('drawings/text on every type', () => {
             const d = createDrawing(type, { paneId: 'price', anchors: [{ time: 0, price: 1 }, { time: 1, price: 2 }] })!;
             const paths = d.schema().fields.map((f) => f.path);
             expect(paths).toEqual(expect.arrayContaining(['text.value', 'text.color', 'text.size', 'text.bold', 'text.italic']));
+        }
+    });
+    it('annotations whose text IS the drawing declare it, shapes that merely carry a label do not', () => {
+        // Drives where the popup puts the text controls: on the bar, or under the label field.
+        for (const type of ['text', 'note', 'callout', 'comment', 'signpost'] as const) {
+            const d = createDrawing(type, { paneId: 'price', anchors: [{ time: 0, price: 1 }, { time: 1, price: 2 }] })!;
+            expect(d.schema().textIsContent).toBe(true);
+        }
+        for (const type of ['trendline', 'hline', 'ray', 'box'] as const) {
+            const d = createDrawing(type, { paneId: 'price', anchors: [{ time: 0, price: 1 }, { time: 1, price: 2 }] })!;
+            expect(d.schema().textIsContent).toBeFalsy();
         }
     });
     it('setting text on a line lazily creates a well-formed text block', () => {
@@ -203,7 +216,7 @@ describe('drawings/resetDrawingSettings', () => {
         resetDrawingSettings(d);
         expect(d.text?.value).toBe('Buy zone');
         expect(d.text?.color).toBeUndefined();
-        expect(d.text?.size).toBe('normal');
+        expect(d.text?.size).toBe('large'); // back to the type's own default, not the global one
         expect(d.text?.bold).toBeUndefined();
     });
 

@@ -95,6 +95,13 @@ export class DrawingSettingsPopup {
         return this.el != null;
     }
 
+    /** Whether `node` belongs to this popup — the bar or either of its floating children (color
+     *  picker / dropdown menu), which live outside `el`. */
+    contains(node: Node | null): boolean {
+        if (!node) return false;
+        return this.el?.contains(node) === true || this.colorPop?.contains(node) === true || this.menuEl?.contains(node) === true;
+    }
+
     /** Open the quick toolbar for `drawing`, floating clear of its `anchor` box.
      *  `onClose` fires on an outside-click dismissal (not a programmatic close). */
     open(drawing: Drawing, anchor: PopupAnchor | null, actions: SettingsActions, onClose?: () => void): void {
@@ -102,7 +109,11 @@ export class DrawingSettingsPopup {
         ensureStyles();
         this.onClose = onClose ?? null;
         const t = this.theme;
-        const paths = new Set(drawing.schema().fields.map((f) => f.path));
+        const schema = drawing.schema();
+        const paths = new Set(schema.fields.map((f) => f.path));
+        // Text-first annotations (and computed labels) wear their text controls on the bar; on a
+        // shape that merely CAN carry a label they stay beside the label field.
+        const textOnBar = schema.textIsContent === true || !paths.has('text.value');
 
         const el = document.createElement('div');
         el.className = 'vela-dpop';
@@ -204,9 +215,12 @@ export class DrawingSettingsPopup {
         const toggles = drawing as unknown as { showPrice?: boolean; showDate?: boolean };
         if (paths.has('showPrice')) bar.appendChild(this.toggle('Show price', PRICE_DELTA_ICON, toggles.showPrice !== false, (v) => actions.patch({ showPrice: v })));
         if (paths.has('showDate')) bar.appendChild(this.toggle('Show date', DATE_DELTA_ICON, toggles.showDate !== false, (v) => actions.patch({ showDate: v })));
-        if (paths.has('text.color') && !paths.has('text.value')) bar.appendChild(this.colorButton('Text color', TYPE_ICON, drawing.text?.color || '#d1d4dc', (v) => actions.patch({ 'text.color': v })));
-        if (paths.has('text.size') && !paths.has('text.value')) bar.appendChild(this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), drawing.text?.size ?? 'normal', (s) => labelSizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }));
-        if (paths.has('text.value')) bar.appendChild(this.iconBtn('Text', TYPE_ICON, () => this.toggleTextPanel(drawing, actions)));
+        if (paths.has('text.color') && textOnBar) bar.appendChild(this.colorButton('Text color', TYPE_ICON, drawing.text?.color || t.textColor, (v) => actions.patch({ 'text.color': v })));
+        if (paths.has('text.size') && textOnBar) bar.appendChild(this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), drawing.text?.size ?? 'normal', (s) => labelSizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }));
+        // Bold/italic live under the text field; a computed label has no field, so they go on the bar.
+        if (paths.has('text.bold') && !paths.has('text.value')) bar.appendChild(this.toggle('Bold', BOLD_ICON, !!drawing.text?.bold, (v) => actions.patch({ 'text.bold': v })));
+        if (paths.has('text.italic') && !paths.has('text.value')) bar.appendChild(this.toggle('Italic', ITALIC_ICON, !!drawing.text?.italic, (v) => actions.patch({ 'text.italic': v })));
+        if (paths.has('text.value')) bar.appendChild(this.iconBtn('Text', TYPE_ICON, () => this.toggleTextPanel(drawing, actions, !textOnBar)));
         const editableLevels = drawing.editableLevels();
         if (editableLevels && !(drawing instanceof MachFigure)) {
             const fib = drawing as unknown as { numbersSize?: string; labelsSize?: string };
@@ -269,8 +283,9 @@ export class DrawingSettingsPopup {
         }
     };
 
-    /** The expandable text editor (toggled by the Text button). */
-    private toggleTextPanel(drawing: Drawing, actions: SettingsActions): void {
+    /** The expandable text editor (toggled by the Text button): the field itself, with bold/italic
+     *  under it, plus color and size when those aren't already on the bar. */
+    private toggleTextPanel(drawing: Drawing, actions: SettingsActions, withColorAndSize: boolean): void {
         if (this.textPanel) {
             this.textPanel.remove();
             this.textPanel = null;
@@ -304,10 +319,14 @@ export class DrawingSettingsPopup {
 
         const tools = document.createElement('div');
         tools.style.cssText = `display:flex;align-items:center;justify-content:flex-start;gap:0;transform:scale(0.8);transform-origin:left center;`;
-        // text color defaults to the ACTUAL rendered color (theme text color when unset)
+        if (withColorAndSize) {
+            // text color defaults to the ACTUAL rendered color (theme text color when unset)
+            tools.append(
+                this.colorButton('Text color', TYPE_ICON, text?.color || this.theme.textColor, (v) => actions.patch({ 'text.color': v }), 14),
+                this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), text?.size ?? 'normal', (s) => sizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }),
+            );
+        }
         tools.append(
-            this.colorButton('Text color', TYPE_ICON, text?.color || this.theme.textColor, (v) => actions.patch({ 'text.color': v }), 14),
-            this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), text?.size ?? 'normal', (s) => sizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }),
             this.toggle('Bold', BOLD_ICON, !!text?.bold, (v) => actions.patch({ 'text.bold': v })),
             this.toggle('Italic', ITALIC_ICON, !!text?.italic, (v) => actions.patch({ 'text.italic': v })),
         );
