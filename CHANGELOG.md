@@ -10,6 +10,19 @@ All notable changes to Vela, newest first.
   armed tool ready after each placement, so you can draw several of the same shape without
   re-picking the tool. Turn it off for the usual one-shot behavior; the brush family still
   stays armed either way.
+- **Position sizing on the long/short tool.** The long/short position drawing now sizes from
+  your account: open its gear settings to set a risk percentage and account balance, and the
+  chart shows the dollar loss at the stop and the matching position size alongside the usual
+  risk:reward and percentage labels. The position size is itself editable — type the size you
+  want and the risk percentage adjusts to match. Drag from the entry in the profit direction —
+  higher for a long, lower for a short — and the profit zone follows that way; the stop lands on
+  the opposite side. A direction switch in the panel turns the whole trade around in place,
+  mirroring the stop and target across the entry with the risk:reward preserved. The stop and
+  target take exact values in your choice of unit — the absolute price or points from the entry —
+  and switching the unit re-expresses the current value without moving the level. Every label has
+  its own toggle: the direction-and-ratio header, the loss-and-size line, the target and stop
+  labels, the level prices inside them, or all text at once; the profit and loss zones recolor
+  from the quick-settings bar, and the label color and size are adjustable too.
 - **Multi-chart workspaces.** The new `VelaWorkspace` puts several full charts on one screen:
   pick a grid from the layout menu in the top bar — single, two side by side, two stacked,
   four, or eight — and resize the cells by dragging the dividers between them (double-click a

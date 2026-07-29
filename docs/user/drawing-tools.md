@@ -219,7 +219,7 @@ whether it falls in that pattern's ideal Fibonacci band.
 | Tool | Type key | What it does |
 |---|---|---|
 | Date & Price Range | `datepricerange` | A box reporting the time span + price/% change it covers. |
-| Long/Short Position | `position` | An entry/stop/target box with the risk:reward ratio (long or short by geometry). |
+| Long/Short Position | `position` | An entry/stop/target box: click the entry, then drag in the profit direction (up for a long, down for a short). Shows risk:reward, percentages, dollar loss, and position size from your risk % and account balance (size is editable and back-solves the risk %). The gear panel has a long/short switch (mirrors the levels across the entry), exact level values in price or points, and per-label display toggles; zone colors and label styling sit on the quick bar. |
 
 ---
 

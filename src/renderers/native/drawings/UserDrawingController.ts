@@ -698,6 +698,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.emit({ kind: 'settings', id });
         const anchor = drawing.bounds(this.deps.projector()); // float the toolbar clear of the drawing
         this.popup.open(drawing, anchor, {
+            // Sync rebuilds instances, so a panel that reads values back after a patch (e.g. the
+            // position tool's price fields, where one edit can flip another level) resolves fresh.
+            resolve: () => live() ?? null,
             patch: (p) => {
                 const d = live();
                 if (!d) return;

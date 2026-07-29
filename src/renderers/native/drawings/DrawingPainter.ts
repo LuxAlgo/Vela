@@ -640,15 +640,14 @@ export class DrawingPainter {
         ctx.textBaseline = 'alphabetic';
     }
 
-    /** Paint a position tool: a green reward zone (entry↔target) + red risk zone (entry↔stop),
-     *  the three level lines, and a `DIR · R:R` + target/stop % label. */
+    /** Paint a position tool: a reward zone (entry↔target) + risk zone (entry↔stop) in the
+     *  tool's own zone colors, the three level lines, and the direction / R:R / % / loss+size
+     *  labels (styled by `text`, hidden wholesale by showText). */
     private paintPosition(ctx: CanvasRenderingContext2D, d: PositionTool, proj: Projector, theme: VelaTheme): void {
         const L = d.layout(proj);
         if (!L) return;
         const { x1, x2, ey, sy, ty } = L;
         const w = x2 - x1;
-        const GREEN = '#0ecb81';
-        const RED = '#f6465d';
         const zone = (yA: number, yB: number, color: string): void => {
             ctx.save();
             ctx.globalAlpha = 0.13 * ctx.globalAlpha;
@@ -656,25 +655,32 @@ export class DrawingPainter {
             ctx.fillRect(x1, Math.min(yA, yB), w, Math.abs(yB - yA));
             ctx.restore();
         };
-        zone(ey, ty, GREEN); // reward
-        zone(ey, sy, RED); // risk
+        zone(ey, ty, d.profitColor); // reward
+        zone(ey, sy, d.lossColor); // risk
         const line = (y: number, color: string): void =>
             this.stroke(ctx, { ...d.style, lineColor: color }, () => {
                 ctx.moveTo(x1, y);
                 ctx.lineTo(x2, y);
             });
-        line(ty, GREEN);
-        line(sy, RED);
+        line(ty, d.profitColor);
+        line(sy, d.lossColor);
         line(ey, d.style.lineColor); // entry — accent
-        const cx = x1 + w / 2;
-        ctx.fillStyle = theme.textColor;
+        if (!d.showText) return;
+        const fs = namedFontSize(d.text?.size ?? 'normal');
+        ctx.fillStyle = d.text?.color ?? theme.textColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = `12px ${theme.fontFamily}`;
-        ctx.fillText(`${d.directionLabel()}  ·  R:R ${d.rr().toFixed(2)}`, cx, Math.min(ey, sy, ty) - 9);
-        ctx.font = `11px ${theme.fontFamily}`;
-        ctx.fillText(`Target +${d.rewardPct().toFixed(2)}%`, cx, (ey + ty) / 2);
-        ctx.fillText(`Stop −${d.riskPct().toFixed(2)}%`, cx, (ey + sy) / 2);
+        ctx.font = `${fs}px ${theme.fontFamily}`;
+        const cx = x1 + w / 2;
+        // Header stack sits above the box (direction · R:R, then the optional loss + size line).
+        // Target/stop % stay centered in their zones.
+        // Header + loss/size stack above the box; whichever is shown alone takes the bottom slot.
+        const topY = Math.min(ey, sy, ty) - 9;
+        if (d.showHeader) ctx.fillText(d.headerLabel(), cx, d.showLossSize ? topY - Math.round(fs * 1.15) : topY);
+        ctx.font = `${Math.max(10, fs - 1)}px ${theme.fontFamily}`;
+        if (d.showLossSize) ctx.fillText(d.lossSizeLabel(), cx, topY);
+        if (d.showTargetLabel) ctx.fillText(d.targetLabel(), cx, (ey + ty) / 2);
+        if (d.showStopLabel) ctx.fillText(d.stopLabel(), cx, (ey + sy) / 2);
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
     }
