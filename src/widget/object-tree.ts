@@ -45,48 +45,10 @@ import {
     type TreeRow,
     type TreeSnapshot,
 } from './object-tree-model';
+import { SidePanel } from './side-panel';
 
 const STYLE_ID = 'vela-widget-objtree';
 const CSS = `
-.vela-ot[hidden] { display: none !important; }
-.vela-ot {
-    width: 280px;
-    flex: none;
-    border-left: 1px solid var(--vela-border);
-    display: flex;
-    flex-direction: column;
-    color: var(--vela-fg);
-    font-size: 13px;
-    box-sizing: border-box;
-    background: var(--vela-bg);
-}
-.vela-ot-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 8px 10px 14px;
-    border-bottom: 1px solid var(--vela-border);
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--vela-fg-bright);
-}
-.vela-ot-close {
-    all: unset;
-    cursor: pointer;
-    width: 26px;
-    height: 26px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    color: var(--vela-fg-muted);
-    font-size: 13px;
-}
-.vela-ot-close:hover { background: var(--vela-hover); color: var(--vela-fg); }
-.vela-ot-body { flex: 1; overflow: auto; padding: 8px; }
-.vela-ot-body::-webkit-scrollbar { width: 8px; }
-.vela-ot-body::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
-
 /* One pane's block. The transparent border reserves the drop-target outline. */
 .vela-ot-pane {
     border: 1px solid transparent;
@@ -215,11 +177,11 @@ const CSS = `
 
 /* ── drag-and-drop ── */
 .vela-ot-row[data-drag] { cursor: grab; }
-.vela-ot-body[data-dragging] .vela-ot-row[data-drag] { cursor: grabbing; }
+.vela-ot .vela-panel-body[data-dragging] .vela-ot-row[data-drag] { cursor: grabbing; }
 /* The row in flight fades: the ghost under the pointer is the thing being moved. */
 .vela-ot-row[data-source] { opacity: 0.4; }
 /* Buttons would only invite a click that a drag is about to swallow. */
-.vela-ot-body[data-dragging] .vela-ot-btn { visibility: hidden; }
+.vela-ot .vela-panel-body[data-dragging] .vela-ot-btn { visibility: hidden; }
 
 /* The band between two pane blocks: a hairline at rest, an accent bar when dropping there
    would open a new pane. Doubles as the plain separator when dragging isn't available. */
@@ -371,9 +333,7 @@ class MenuBuilder {
     }
 }
 
-export class ObjectTree {
-    readonly el: HTMLElement;
-    private readonly body: HTMLElement;
+export class ObjectTree extends SidePanel {
     private chart: Vela | null = null;
     private selectedDrawing: string | null = null;
     private symbolName = '';
@@ -408,36 +368,15 @@ export class ObjectTree {
     private drag: DragSession | null = null;
 
     constructor(host: HTMLElement) {
-        const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
-        this.el = doc.createElement('div');
-        this.el.className = 'vela-ot';
-        this.el.hidden = true; // closed by default; the topbar button toggles
-        const header = doc.createElement('div');
-        header.className = 'vela-ot-header';
-        const hTitle = doc.createElement('span');
-        hTitle.textContent = 'Object tree';
-        const hClose = doc.createElement('button');
-        hClose.className = 'vela-ot-close';
-        hClose.textContent = '✕';
-        hClose.title = 'Close';
-        hClose.addEventListener('click', () => this.toggle(false));
-        header.append(hTitle, hClose);
-        this.body = doc.createElement('div');
-        this.body.className = 'vela-ot-body';
-        this.el.append(header, this.body);
-        host.appendChild(this.el);
+        super(host, 'Object tree', 'vela-ot');
+        injectStyles(STYLE_ID, CSS, host.ownerDocument);
 
         this.body.addEventListener('contextmenu', (e) => this.onContextMenu(e));
         this.body.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     }
 
-    get open(): boolean {
-        return !this.el.hidden;
-    }
-
-    toggle(open = this.el.hidden): void {
-        this.el.hidden = !open;
+    override toggle(open = this.el.hidden): void {
+        super.toggle(open);
         if (open) this.refresh();
     }
 
@@ -469,12 +408,12 @@ export class ObjectTree {
         this.refresh();
     }
 
-    destroy(): void {
+    override destroy(): void {
         this.detach();
         this.endDrag(false); // a drag in flight has nothing left to drop onto
         this.menu?.destroy();
         this.menu = null;
-        this.el.remove();
+        super.destroy();
     }
 
     private detach(): void {

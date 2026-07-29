@@ -224,6 +224,7 @@ That alone gives you candles, panes, and basic indicator plots — a usable char
 - **Tables** — `table.new` dashboards via the table overlay. Flips the `Tables` flag.
 - **Inputs UI** — the in-chart settings dialog, the input-change events it raises, and the programmatic-input-sync path from group 4 (reuse the shared inputs UI). Flips the `Inputs UI` flag.
 - **External crosshair** — the optional `setExternalCrosshair(time, price?)` method: draw a dimmed **ghost crosshair** at a data-space position pushed from outside (multi-chart sync). Detected by presence (no capability flag); the one contract rule: a ghost must **never** re-emit `onCrosshairMove` — that one-way flow is what keeps the sync loop-free.
+- **Data-window readout** — the optional `getDataWindowReadout()` method: hand back the bar under the crosshair (the latest bar when the cursor is off the plot) with its values already formatted on the scale of the pane each one belongs to, grouped per indicator. Detected by presence (no capability flag); host panels such as the widget's data window read it through `chart.renderer.dataWindowReadout()` and simply show nothing without it.
 - **Animations / polish** — transitions and presentation refinements.
 
 The key idea: a flag stays **false and renders blank** until its tier is real, and the core simply won't send that content meanwhile.

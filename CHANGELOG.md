@@ -75,6 +75,13 @@ All notable changes to Vela, newest first.
   stays fully yours to work with — click it, move it, reshape it as before, and its handles still
   draw on top so you can see what you have hold of. The whole stacking order is saved with your
   chart, comes back on reload, and drawing moves can be undone.
+- **A data window beside the chart.** The data-window button in the top bar opens a panel docked
+  to the right, the object tree's sibling: the date and time of the bar under your pointer, its
+  open, high, low, close and volume tinted with the bar's direction, then one section per
+  indicator showing each plot's value in the plot's own color. It follows the crosshair as you
+  move across the chart and falls back to the latest bar when the pointer leaves, so it always
+  shows something useful. The two panels share the dock — opening one closes the other — and in a
+  workspace the readout follows the active chart as you switch cells.
 
 ### Changed
 
@@ -91,6 +98,11 @@ All notable changes to Vela, newest first.
   holds across symbol and timeframe switches and across reloads, whichever way you removed it
   (the indicators dialog, the legend, or the object tree). Before, auto-added indicators could
   quietly return on the next switch or reload.
+- **The data window is a docked panel, not a floating box.** It used to hover over the top-right
+  corner of the chart and was switched on with the `dataWindow` option; it is now the side panel
+  described above, opened from the top bar, and it never covers the candles. _(Breaking: the
+  `dataWindow` option is gone. If you drove it from code, or built your own readout beside it,
+  call `chart.renderer.dataWindowReadout()` — it hands back the same values, ready to display.)_
 
 ### Fixed
 

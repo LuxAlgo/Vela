@@ -19,6 +19,7 @@ import { Watermark } from './watermark';
 import { Bottombar, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
 import { ObjectTree } from './object-tree';
+import { DataWindow } from './data-window';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
 import { widgetAttachments, type WidgetContext } from './contributions';
@@ -88,6 +89,7 @@ export class VelaWidget {
     private readonly watermark: Watermark | null;
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
+    private readonly dataWindow: DataWindow;
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly contextMenu: ChartContextMenu;
     private readonly symbolPicker: SymbolPicker;
@@ -234,12 +236,7 @@ export class VelaWidget {
             onScreenshotClick: () => this.downloadScreenshot(),
             onSettingsClick: () => this.inner?.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
-            onDataWindowClick: () => {
-                const next = !this.inner?.renderer.get('dataWindow');
-                this.inner?.renderer.set('dataWindow', next);
-                return next;
-            },
-            dataWindowOn: false,
+            onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: this.timeframe,
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: this.priceStyle,
@@ -254,6 +251,16 @@ export class VelaWidget {
         this.chartHost.className = 'vela-widget-chart';
         main.appendChild(this.chartHost);
         this.objectTree = new ObjectTree(main);
+        this.dataWindow = new DataWindow(main);
+        // The docked panels are exclusive — one column at a time, so the chart keeps its width.
+        this.objectTree.onOpenChange = (open) => {
+            this.topbar.setPanelActive('objects', open);
+            if (open) this.dataWindow.toggle(false);
+        };
+        this.dataWindow.onOpenChange = (open) => {
+            this.topbar.setPanelActive('dataWindow', open);
+            if (open) this.objectTree.toggle(false);
+        };
         this.root.appendChild(main);
 
         this.contextMenu = new ChartContextMenu(this.chartHost, {
@@ -669,6 +676,7 @@ export class VelaWidget {
         this.root.removeEventListener('keydown', this.onRootKeydown);
         this.topbar.destroy();
         this.objectTree.destroy();
+        this.dataWindow.destroy();
         this.shortcutsHelp?.destroy();
         this.contextMenu.destroy();
         this.symbolPicker.destroy();
@@ -723,6 +731,7 @@ export class VelaWidget {
         this.symbolPicker.setSource(() => chart.data.symbols());
         this.objectTree.setSymbol(this.symbol);
         this.objectTree.onChart(chart);
+        this.dataWindow.onChart(chart);
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
         chart.on('indicator:added', () => {

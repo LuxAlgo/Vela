@@ -82,7 +82,7 @@ its dialogs is open, muting chart-scope bindings.
 
 - **Topbar** — symbol button (opens the search), timeframe dropdown, chart-style dropdown
   (built-ins ∪ [plugin chart types](../contributing/plugin-sdk.md), with their icons and
-  labels), Indicators picker, Objects panel toggle, then any
+  labels), Indicators picker, data-window and object-tree panel toggles, then any
   [contributed actions](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)
   in the right-hand cluster.
 - **Status line** — symbol + OHLC and change of the hovered bar (resting on the latest
@@ -99,6 +99,10 @@ its dialogs is open, muting chart-scope bindings.
   (Ctrl/Cmd-click) and bundled into a named group that hides, locks, deletes and drags as one
   block; groups live for as long as the chart and are not persisted. Kept in sync with the
   chart's events.
+- **Data window** — the other docked panel: the date and time of the bar under the crosshair,
+  its OHLCV tinted with the bar's direction, then one section per indicator showing each plot's
+  value in its own color. It follows the crosshair and falls back to the latest bar when the
+  pointer leaves the chart. The two panels share the dock, so opening one closes the other.
 - **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
   the timeframe, **fetches the depth its window needs**, and frames it: `1D`→1m, `7D`→5m,
   `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing the timeframe by hand

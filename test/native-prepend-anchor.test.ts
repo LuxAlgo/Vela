@@ -18,7 +18,6 @@ function makeRenderer() {
     if (!anyR.scheduler) anyR.scheduler = { invalidate: () => {} }; // mount-owned; stub for the unmounted path
     if (!anyR.animator) anyR.animator = { active: false, start: () => {}, stop: () => {} };
     anyR.introPlayed = true; // the mount-owned intro reveal is irrelevant to viewport math
-    anyR.refreshDataWindow = () => {}; // chrome-owned; irrelevant here
     return { r, anyR };
 }
 
