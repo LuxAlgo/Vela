@@ -21,6 +21,7 @@ import type { Vela } from '../Vela';
 import { Topbar } from '../widget/topbar';
 import { Bottombar } from '../widget/bottombar';
 import { ObjectTree } from '../widget/object-tree';
+import { DataWindow } from '../widget/data-window';
 import { SymbolPicker } from '../widget/symbol-picker';
 import { IndicatorPicker } from '../widget/indicator-picker';
 import { TimeframeQuick } from '../widget/timeframe-quick';
@@ -167,6 +168,7 @@ export class VelaWorkspace {
     private readonly topbar: Topbar;
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
+    private readonly dataWindow: DataWindow;
     private readonly symbolPicker: SymbolPicker;
     private readonly indicatorPicker: IndicatorPicker;
     private readonly tfQuick: TimeframeQuick;
@@ -273,12 +275,7 @@ export class VelaWorkspace {
             onScreenshotClick: () => this.active.downloadScreenshot(),
             onSettingsClick: () => this.active.chart.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
-            onDataWindowClick: () => {
-                const next = !this.active.chart.renderer.get('dataWindow');
-                this.active.chart.renderer.set('dataWindow', next);
-                return next;
-            },
-            dataWindowOn: false,
+            onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: '60',
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: 'candles',
@@ -299,7 +296,7 @@ export class VelaWorkspace {
             getContext: () => this.context(),
         });
 
-        // ── main row: the shared drawing toolbar + the grid + the docked object tree ──
+        // ── main row: the shared drawing toolbar + the grid + the docked side panels ──
         const main = doc.createElement('div');
         main.className = 'vela-ws-main';
         let toolbarHost: HTMLElement | null = null;
@@ -312,6 +309,16 @@ export class VelaWorkspace {
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
         this.objectTree = new ObjectTree(main);
+        this.dataWindow = new DataWindow(main);
+        // The docked panels are exclusive — one column at a time, so the grid keeps its width.
+        this.objectTree.onOpenChange = (open) => {
+            this.topbar.setPanelActive('objects', open);
+            if (open) this.dataWindow.toggle(false);
+        };
+        this.dataWindow.onOpenChange = (open) => {
+            this.topbar.setPanelActive('dataWindow', open);
+            if (open) this.objectTree.toggle(false);
+        };
         this.root.appendChild(main);
         this.toast = new Toast(this.gridEl);
 
@@ -630,6 +637,7 @@ export class VelaWorkspace {
         this.topbar.destroy();
         this.bottombar?.destroy();
         this.objectTree.destroy();
+        this.dataWindow.destroy();
         this.symbolPicker.destroy();
         this.indicatorPicker.destroy();
         this.tfQuick.destroy();
@@ -655,6 +663,7 @@ export class VelaWorkspace {
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
         this.objectTree.setSymbol(cell.symbol);
         this.objectTree.onChart(cell.chart);
+        this.dataWindow.onChart(cell.chart); // the readout follows the active cell
         this.bottombar?.setActiveRange(cell.activeRangeId);
         this.indicatorPicker.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport

@@ -33,6 +33,13 @@ export class DrawingPainter {
             if (!d.visible) continue;
             this.paintClipped(ctx, d, proj, () => this.paintOne(ctx, d, proj, theme));
         }
+        this.paintHighlights(ctx, drawings, proj, highlightIds);
+    }
+
+    /** Selection handles alone, for drawings whose body was painted elsewhere: the ones sent
+     *  behind the series paint on the layer under the data, and handles left down there would be
+     *  buried under the candles — you could not see what you had grabbed. */
+    paintHighlights(ctx: CanvasRenderingContext2D, drawings: readonly Drawing[], proj: Projector, highlightIds: ReadonlySet<string>): void {
         if (highlightIds.size === 0) return;
         for (const d of drawings) {
             if (d.visible && highlightIds.has(d.id)) {

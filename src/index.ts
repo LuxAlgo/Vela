@@ -77,6 +77,10 @@ export type {
     ClickEvent,
     InputChangeEvent,
     VisibleRange,
+    DataWindowReadout,
+    DataWindowGroup,
+    DataWindowRow,
+    DataWindowOHLC,
 } from './core/ports/IChartRenderer';
 export type {
     ScriptingEngine,

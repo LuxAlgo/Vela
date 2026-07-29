@@ -286,6 +286,13 @@ export interface ChartConfig {
          *  center-to-center pitch (and the crosshair step) without changing body width. 1 = default. */
         spacing: number;
     };
+    /** Draw-order keys — what paints in front of what. The candles' own key plus one per
+     *  indicator id; user drawings persist their keys in the drawings document, in the same
+     *  space, so a saved chart keeps a drawing under the candles or between two indicators. */
+    stacking: {
+        candles: number;
+        series: Record<string, number>;
+    };
 }
 
 // ── validators (loose but safe: a chart consumes arbitrary CSS color strings) ──
@@ -394,6 +401,8 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const area = asObject(p.area);
     const baseline = asObject(p.baseline);
     const series = asObject(p.series);
+    const stacking = asObject(p.stacking);
+    const stackSeries = asObject(stacking.series);
 
     return {
         version: CHART_CONFIG_VERSION,
@@ -476,6 +485,15 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             style: isPriceStyle(series.style) ? series.style : base.series.style,
             baseline: series.baseline === null ? null : isNum(series.baseline) ? series.baseline : base.series.baseline,
             spacing: isNum(series.spacing) ? clampSpacing(series.spacing) : base.series.spacing,
+        },
+        stacking: {
+            candles: isNum(stacking.candles) ? stacking.candles : base.stacking.candles,
+            // Additive like `chartTypes`: a patch names only the ids it carries; the rest keep
+            // their current keys (ids belong to the session's indicators, not the template).
+            series: {
+                ...base.stacking.series,
+                ...Object.fromEntries(Object.entries(stackSeries).filter(([, z]) => isNum(z)) as Array<[string, number]>),
+            },
         },
     };
 }

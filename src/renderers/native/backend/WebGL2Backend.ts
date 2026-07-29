@@ -150,6 +150,9 @@ export class WebGL2Backend implements IRenderBackend {
     private fboW = 0;
     private fboH = 0;
     private readonly glowBatch = new Batch();
+    /** One texture per user-drawing interleave layer, keyed by its (stable, reused) canvas;
+     *  re-uploaded every data frame — the layer repaints with the scene. */
+    private readonly sliceTex = new Map<HTMLCanvasElement, WebGLTexture>();
 
     private readonly onLost = (e: Event): void => {
         e.preventDefault(); // keep the context recoverable
@@ -198,6 +201,7 @@ export class WebGL2Backend implements IRenderBackend {
         this.fboA = this.fboB = null;
         this.texA = this.texB = null;
         this.fboW = this.fboH = 0;
+        this.sliceTex.clear(); // context-lost handles are invalid; textures re-upload on demand
         const vs = compile(gl, gl.VERTEX_SHADER, VERT_SRC);
         const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG_SRC);
         const prog = gl.createProgram();
@@ -234,12 +238,14 @@ export class WebGL2Backend implements IRenderBackend {
         gl.bindVertexArray(null);
         // Glow is optional — if its program/quad can't be built, disable it but keep
         // the base backend working.
-        if (this.glow > 0 && !this.initGlow()) this.glow = 0;
+        if (this.glow > 0 && !this.ensureScreenPipeline()) this.glow = 0;
         return true;
     }
 
-    /** Compile the glow post-process program + fullscreen quad. FBOs are created lazily. */
-    private initGlow(): boolean {
+    /** Compile the screen-quad program + fullscreen quad, shared by the glow post-process and
+     *  the user-drawing interleave layers. Idempotent; FBOs (glow-only) are created lazily. */
+    private ensureScreenPipeline(): boolean {
+        if (this.screenProgram && this.quadVao) return true;
         const gl = this.gl;
         if (!gl) return false;
         const vs = compile(gl, gl.VERTEX_SHADER, SCREEN_VERT);
@@ -336,18 +342,45 @@ export class WebGL2Backend implements IRenderBackend {
         const i1 = Math.min(n - 1, Math.ceil(vr.to));
         if (i1 < i0) return;
 
+        // Blend/scissor are enabled once; the program/VAO/uniform bindings live in each pane's
+        // `flush`, since an interleave-layer quad swaps them mid-pane anyway.
         gl.enable(gl.BLEND);
-        gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        gl.useProgram(this.program);
-        gl.bindVertexArray(this.vao);
-        gl.uniform2f(this.uRes, canvas.width / dpr, canvas.height / dpr);
         gl.enable(gl.SCISSOR_TEST);
 
         const barColorMap = mergeBarColors(scene.indicators);
         const panes = scene.orderedPanes();
+        const liveSlices = new Set<HTMLCanvasElement>();
         for (const pane of panes) {
             const b = this.batch;
             b.reset();
+            // Pane scissor up-front: geometry flushes AND interleave-layer quads clip to it.
+            const topDev = Math.round(pane.bounds.top * dpr);
+            const botDev = Math.round((pane.bounds.top + pane.bounds.height) * dpr);
+            gl.scissor(0, canvas.height - botDev, Math.round(dataW * dpr), botDev - topDev);
+            // Draw whatever geometry accumulated so far — called at each interleave point (a
+            // texture quad has to land BETWEEN geometry draws) and once at the pane's end. The
+            // quad pass swaps program/VAO/blend, so every flush rebinds the geometry pipeline.
+            const flush = (): void => {
+                if (b.vertexCount === 0) return;
+                gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                gl.useProgram(this.program);
+                gl.bindVertexArray(this.vao);
+                gl.uniform2f(this.uRes, canvas.width / dpr, canvas.height / dpr);
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+                gl.bufferData(gl.ARRAY_BUFFER, b.view, gl.DYNAMIC_DRAW);
+                gl.drawArrays(gl.TRIANGLES, 0, b.vertexCount);
+                b.reset();
+            };
+            // User-drawing interleave layers, prepainted by the renderer: each composites just
+            // before the series carrying its `beforeZ` — under the candles, between indicators.
+            const slices = pane.collapsed ? [] : (scene.drawingSlices.get(pane.id) ?? []);
+            let si = 0;
+            const drawSlicesUpTo = (z: number): void => {
+                for (; si < slices.length && slices[si]!.beforeZ <= z; si += 1) {
+                    flush();
+                    if (this.drawSliceTexture(gl, slices[si]!.canvas)) liveSlices.add(slices[si]!.canvas);
+                }
+            };
             // z-order within the batch (painter's): grid, bg, fills, then the candles +
             // each indicator's series interleaved by `scene.candleZ`/per-indicator z, then hlines.
             b.alpha = 1;
@@ -372,10 +405,12 @@ export class WebGL2Backend implements IRenderBackend {
                 let candleDrawn = false;
                 for (const m of models) {
                     if (drawCandles && !candleDrawn && scene.zOf(m.id) >= scene.candleZ) {
+                        drawSlicesUpTo(scene.candleZ);
                         b.alpha = this.candleStructureAlpha; // baseline; emitCandles sets body vs structure per-element
                         this.emitPriceSeries(b, scene, i0, i1, coords, pane, theme, barColorMap, dataW);
                         candleDrawn = true;
                     }
+                    drawSlicesUpTo(scene.zOf(m.id));
                     b.alpha = this.modelAlpha;
                     // Model data is index-aligned from the model's ANCHOR bar (offset 0 = whole-chart).
                     const off = scene.offsetOf(m.id);
@@ -383,28 +418,31 @@ export class WebGL2Backend implements IRenderBackend {
                     for (const s of m.series) this.emitSeries(b, s, mp, coords, i0, i1, theme, off);
                 }
                 if (drawCandles && !candleDrawn) {
+                    drawSlicesUpTo(scene.candleZ);
                     b.alpha = this.candleStructureAlpha;
                     this.emitPriceSeries(b, scene, i0, i1, coords, pane, theme, barColorMap, dataW);
                 }
+                drawSlicesUpTo(Infinity); // layers bound to a hidden/removed series still paint, at the stack top
                 b.alpha = this.modelAlpha;
                 for (const m of models) { const mp = effPane(m); for (const pl of m.priceLines) this.emitHline(b, pl, mp, coords, dataW, theme); }
                 b.alpha = 1;
             }
-
-            if (b.vertexCount === 0) continue;
-            const topDev = Math.round(pane.bounds.top * dpr);
-            const botDev = Math.round((pane.bounds.top + pane.bounds.height) * dpr);
-            gl.scissor(0, canvas.height - botDev, Math.round(dataW * dpr), botDev - topDev);
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
-            gl.bufferData(gl.ARRAY_BUFFER, b.view, gl.DYNAMIC_DRAW);
-            gl.drawArrays(gl.TRIANGLES, 0, b.vertexCount);
+            flush();
         }
         gl.disable(gl.SCISSOR_TEST);
+        // Drop textures whose layer disappeared this frame (the canvas cache in the drawings
+        // controller prunes the same way, so this stays a handful of entries).
+        for (const [cv, tex] of this.sliceTex) {
+            if (!liveSlices.has(cv)) {
+                gl.deleteTexture(tex);
+                this.sliceTex.delete(cv);
+            }
+        }
 
         // Build the glow program on first use: it's compiled in initGL only when glow starts > 0,
         // so a runtime toggle (off → on) must compile it lazily here — otherwise the bloom never
         // appears until the next full backend (re)init. Disable glow if it can't compile.
-        if (this.glow > 0 && !this.screenProgram && !this.initGlow()) this.glow = 0;
+        if (this.glow > 0 && !this.screenProgram && !this.ensureScreenPipeline()) this.glow = 0;
         if (this.glow > 0 && this.screenProgram) {
             this.glowBatch.alpha = this.modelAlpha; // the glow of faded series fades too
             this.renderGlow(gl, scene, coords, i0, i1);
@@ -478,6 +516,41 @@ export class WebGL2Backend implements IRenderBackend {
         gl.bindVertexArray(null);
     }
 
+    /** Composite one user-drawing interleave layer: upload its canvas (premultiplied, y-flipped —
+     *  the framebuffer holds premultiplied pixels, see mount) and draw it as a fullscreen quad
+     *  through the screen pipeline. The pane scissor is already set, so it clips to the pane.
+     *  Returns false when the screen pipeline can't compile — the layer is skipped, not fatal. */
+    private drawSliceTexture(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): boolean {
+        if (!this.ensureScreenPipeline() || !this.screenProgram) return false;
+        let tex = this.sliceTex.get(canvas) ?? null;
+        if (!tex) {
+            tex = gl.createTexture();
+            if (!tex) return false;
+            this.sliceTex.set(canvas, tex);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        }
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas); // fresh pixels — the layer repaints with the scene
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.useProgram(this.screenProgram);
+        gl.bindVertexArray(this.quadVao);
+        gl.uniform1i(this.uTex, 0);
+        gl.uniform2f(this.uDir, 0, 0); // passthrough (no blur)
+        gl.uniform1f(this.uIntensity, 1);
+        gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.bindVertexArray(null);
+        return true;
+    }
+
     /** The "neon" elements that glow: line/area/step lines + point markers (not candles/fills/bars). */
     private emitGlowSources(b: Batch, models: IndicatorModel[], pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number, offsetOf: (id: string) => number = () => 0): void {
         for (const m of models) {
@@ -504,6 +577,8 @@ export class WebGL2Backend implements IRenderBackend {
             if (this.screenProgram) gl.deleteProgram(this.screenProgram);
             if (this.quadVbo) gl.deleteBuffer(this.quadVbo);
             if (this.quadVao) gl.deleteVertexArray(this.quadVao);
+            for (const tex of this.sliceTex.values()) gl.deleteTexture(tex);
+            this.sliceTex.clear();
             this.deleteFbos(gl);
             // Release the CONTEXT itself, not just its resources: browsers cap live
             // WebGL contexts per page (~16) and reclaim destroyed ones LAZILY. Without

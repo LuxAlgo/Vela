@@ -3,8 +3,8 @@
 `vela/workspace` is the multi-chart shell: a grid of full Vela charts behind **one
 shared data feed**, wrapped in **one shared chrome** — topbar (symbol / timeframe /
 style / **layout** dropdowns, indicator picker, alerts), one drawing toolbar, object
-tree, bottom bar, one keyboard map — that always **reflects and acts on the ACTIVE
-cell**. Cells are switched in place (`setMarket` under the hood), so indicators,
+tree, data window, bottom bar, one keyboard map — that always **reflects and acts on the
+ACTIVE cell**. Cells are switched in place (`setMarket` under the hood), so indicators,
 drawings, and your subscriptions survive every symbol/timeframe change.
 
 ```ts

@@ -22,6 +22,7 @@ import { DrawingToolbar } from './DrawingToolbar';
 import { MeasureOverlay } from './MeasureOverlay';
 import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
 import { keyToDrawingAction, isEditingText } from './DrawingKeys';
+import type { DrawingSlice } from '../core/SceneGraph';
 
 /** What the controller needs from the native renderer (coords + theme + dpr). */
 export interface UserDrawingDeps {
@@ -30,6 +31,14 @@ export interface UserDrawingDeps {
     theme(): VelaTheme;
     /** Ask the renderer to recompute per-pane autoscale (so a drawing folds into the price range). */
     requestScaleUpdate(): void;
+    /** The pane's series z keys (candles + indicators), ascending — the boundaries a drawing's
+     *  z is slotted against to decide which interleave layer (if any) it paints on. */
+    seriesBoundaries(paneId: string): readonly number[];
+    /** The candles' own z key, or null off the price pane — a new drawing starts just under it. */
+    priceZ(paneId: string): number | null;
+    /** Ask the renderer for a data-layer repaint — needed when a drawing that paints INSIDE the
+     *  series stack changed, since its pixels live in the backend composite, not on this layer. */
+    requestDataPaint(): void;
     /** Snap a data point to the nearest candle (time + OHLC), per magnet `mode` + the cursor pixel. */
     snap(point: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }): DrawingPoint;
     /** Set the sticky magnet mode (driven by the toolbar's 3-state button). */
@@ -38,16 +47,40 @@ export interface UserDrawingDeps {
     setToolbarGutter(visible: boolean): void;
 }
 
+/** No drawing highlights on the interleave layers — handles always paint in front. */
+const EMPTY_HIGHLIGHT: ReadonlySet<string> = new Set();
+
 /**
- * The native renderer's implementation of {@link IDrawingsRendererPort}. Owns the
- * L1.5 drawings canvas (paint), the interaction state machine (place/select), the
- * settings popup, and hit-testing. The core `DrawingController` is the source of
- * truth — this projects its `syncDrawings` snapshots and reports gestures back as
- * intents. It never holds authoritative state beyond the current projection.
+ * Which interleave layer a drawing belongs to: the first series boundary at-or-above its z —
+ * the slice painted just before that series, so a drawing TYING a series' z paints under it.
+ * Null when the drawing clears every boundary and belongs on the top canvas instead.
+ */
+export function sliceKeyFor(zIndex: number, boundaries: readonly number[]): number | null {
+    if (boundaries.length === 0 || zIndex > boundaries[boundaries.length - 1]!) return null;
+    return boundaries.find((b) => b >= zIndex)!;
+}
+
+/**
+ * The native renderer's implementation of {@link IDrawingsRendererPort}. Owns the top
+ * drawings canvas (L1.5, over the series) plus the INTERLEAVE layers — prepainted
+ * plot-sized canvases handed to the geometry backend for the drawings whose z puts
+ * them under a series (below the candles, between two indicators) — the interaction
+ * state machine (place/select), the settings popup, and hit-testing. The core
+ * `DrawingController` is the source of truth — this projects its `syncDrawings`
+ * snapshots and reports gestures back as intents. It never holds authoritative
+ * state beyond the current projection.
  */
 export class UserDrawingController implements IDrawingsRendererPort {
     private ctx: CanvasRenderingContext2D | null = null;
     private drawings: Drawing[] = [];
+    /** Ids painted on an interleave layer this frame — the top canvas paints only their handles. */
+    private sliced = new Set<string>();
+    /** Cached slice canvases, keyed `paneId|beforeZ`, reused across frames to avoid churn. */
+    private readonly sliceCache = new Map<string, HTMLCanvasElement>();
+    /** Series boundaries per pane as of the last `prepareSlices` — lets a repaint between data
+     *  frames split front/interleaved consistently instead of flickering a drawing onto the
+     *  wrong layer for a frame. */
+    private lastBounds = new Map<string, readonly number[]>();
     private selectedIds = new Set<string>(); // selected drawings (handles shown); [first] drives the popup
     private hoveredId: string | null = null; // the drawing under the cursor (its handles show)
     private activeTool: DrawingTypeKey | null = null;
@@ -91,7 +124,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
             hoveredId: () => this.hoveredId,
             selectedIds: () => this.selectedIds,
             emit: (i) => this.emit(i),
-            changed: () => this.render(),
+            changed: () => {
+                this.invalidateSlices(); // a live drag can be moving a drawing that paints inside the stack
+                this.render();
+            },
             openSettings: (id, x, y) => this.openSettingsById(id, x, y),
             snap: (pt, paneId, mode, cursorPx) => this.deps.snap(pt, paneId, mode, cursorPx),
             lastStyle: () => this.activeToolStyle,
@@ -110,8 +146,16 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     syncDrawings(docs: readonly SerializedDrawing[]): void {
         this.drawings = docs.map((d) => deserializeDrawing(d)).filter((d): d is Drawing => d != null);
+        this.invalidateSlices();
         this.render();
         this.deps.requestScaleUpdate(); // fold drawing price ranges into autoscale
+    }
+
+    /** The pane's series stack in z terms — how the core places a new drawing (just under
+     *  `price`) and computes "front of everything" / "behind everything" for the reorders. */
+    stackRange(paneId: string): { front: number; back: number; price?: number } {
+        const b = this.deps.seriesBoundaries(paneId);
+        return { front: Math.max(0, ...b), back: Math.min(0, ...b), price: this.deps.priceZ(paneId) ?? undefined };
     }
 
     /**
@@ -519,7 +563,71 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.render();
     }
 
-    /** Repaint the drawings layer (called every data frame + on internal changes). */
+    /** Whether the drawing's z puts it INSIDE the series stack (per the last-known boundaries)
+     *  rather than over it — i.e. its body belongs to an interleave layer, not the top canvas. */
+    private isInterleaved(d: Drawing): boolean {
+        return sliceKeyFor(d.zIndex, this.lastBounds.get(d.paneId) ?? []) !== null;
+    }
+
+    /** A drawing that paints inside the series stack changed (content, not hover): its pixels
+     *  live in the backend composite, so this layer alone can't show the change — ask for a
+     *  data frame, which re-runs `prepareSlices` before the backend composites. */
+    private invalidateSlices(): void {
+        if (this.sliced.size > 0 || this.drawings.some((d) => this.isInterleaved(d))) this.deps.requestDataPaint();
+    }
+
+    /**
+     * Rebuild the interleave layers for this data frame: bucket the visible drawings whose z
+     * sits at-or-under a series boundary by the FIRST boundary at-or-above them (a tie paints
+     * under that series), and paint each bucket on its own cached plot-sized canvas. Runs from
+     * the renderer's data paint, just before the backend composites the scene.
+     */
+    prepareSlices(paneIds: readonly string[]): ReadonlyMap<string, DrawingSlice[]> {
+        this.sliced.clear();
+        this.lastBounds = new Map(paneIds.map((id) => [id, this.deps.seriesBoundaries(id)]));
+        const out = new Map<string, DrawingSlice[]>();
+        const dpr = this.deps.dpr();
+        const proj = this.deps.projector();
+        const theme = this.deps.theme();
+        const buckets = new Map<string, { paneId: string; beforeZ: number; drawings: Drawing[] }>(); // keyed `paneId|beforeZ`
+        for (const d of this.drawings) {
+            if (!d.visible) continue;
+            const beforeZ = sliceKeyFor(d.zIndex, this.lastBounds.get(d.paneId) ?? []);
+            if (beforeZ === null) continue; // over the stack → top canvas
+            const key = `${d.paneId}|${beforeZ}`;
+            const bucket = buckets.get(key);
+            if (bucket) bucket.drawings.push(d);
+            else buckets.set(key, { paneId: d.paneId, beforeZ, drawings: [d] });
+            this.sliced.add(d.id);
+        }
+        for (const [key, { paneId, beforeZ, drawings }] of buckets) {
+            let canvas = this.sliceCache.get(key);
+            if (!canvas) {
+                canvas = document.createElement('canvas');
+                this.sliceCache.set(key, canvas);
+            }
+            if (canvas.width !== this.canvas.width || canvas.height !== this.canvas.height) {
+                canvas.width = this.canvas.width;
+                canvas.height = this.canvas.height;
+            }
+            const sctx = canvas.getContext('2d');
+            if (!sctx) continue;
+            sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            sctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+            this.painter.paintAll(sctx, drawings, proj, theme, EMPTY_HIGHLIGHT);
+            const slices = out.get(paneId) ?? [];
+            slices.push({ beforeZ, canvas });
+            out.set(paneId, slices);
+        }
+        for (const key of [...this.sliceCache.keys()]) if (!buckets.has(key)) this.sliceCache.delete(key); // drop stale layers
+        for (const slices of out.values()) slices.sort((a, b) => a.beforeZ - b.beforeZ);
+        return out;
+    }
+
+    /** Repaint the TOP drawings layer (called every data frame + on internal changes): the
+     *  drawings over the series stack, every selection handle (interleaved drawings' included,
+     *  or a drawing sent under the candles could never show what you grabbed), and the
+     *  transients — the placing ghost, anchor markers, the snap ring, the ruler. */
     render(): void {
         const ctx = this.ctx;
         if (!ctx) return;
@@ -533,7 +641,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
         const drag = this.interaction.activeDragId();
         if (drag) highlight.add(drag);
         if (this.hoveredId) highlight.add(this.hoveredId);
-        this.painter.paintAll(ctx, this.drawings, proj, this.deps.theme(), highlight);
+        const front = this.drawings.filter((d) => !this.isInterleaved(d));
+        this.painter.paintAll(ctx, front, proj, this.deps.theme(), highlight);
+        this.painter.paintHighlights(ctx, this.drawings.filter((d) => this.isInterleaved(d)), proj, highlight);
         const ghost = this.interaction.ghost();
         if (ghost) this.painter.paintGhost(ctx, ghost, proj, this.deps.theme());
         // While placing, show control circles on the points clicked so far (so the user

@@ -80,6 +80,38 @@ hijacked.
 Two mouse shortcuts complement these, and need no selection first: **middle-click** a drawing to
 delete it, and **Shift+click** an empty spot to start the [measure ruler](#the-toolbar) at that
 exact point.
+## Depth: anywhere in the stack
+
+A new drawing starts **just under the price** — the candles read on top of it, the way they read
+on top of the indicators — so it behaves like annotation on the chart's background: a zone, a
+session band, a shaded area you see *through* the candles rather than across them. From there it
+can take **any position in the pane's draw order**: over everything, between two indicators, or
+at the very back.
+
+- **From the object tree.** Each pane is one column, read top to bottom as front to back: its
+  drawings, its indicators and (in the main pane) the price series, all together. Drag a drawing
+  (or a group, which moves as one block) to any slot in that column and the chart repaints in that
+  order.
+- **From the context menu.** Right-click a drawing row for **Bring to front** / **Send to back** —
+  they clear the whole stack, candles and indicators included; a group's row offers the same for
+  all of its members at once.
+- **From code.** The draw-order key is the drawing's `zIndex`, shared with the pane's series:
+
+```js
+chart.drawings.add('box', { anchors }); // a new drawing starts just under the candles
+chart.drawings.bringToFront(d.id); // over the whole stack
+chart.drawings.sendToBack(d.id); // behind the candles and every indicator
+chart.drawings.update(d.id, { zIndex: z }); // an exact slot among the series' keys
+```
+
+A drawing under the data stays fully interactive: it still hit-tests, and its selection handles
+draw on top, so you can always see and grab what you selected.
+
+The position is part of the drawing, so it is saved with `toJSON()`, restored by `fromJSON()`, and
+undoable; the widget also persists the series' own order, so a saved chart comes back stacked as
+you left it. Depth needs a renderer that declares the `drawingDepth` capability (the **native
+renderer** does); where it is missing, drawings all paint over the data, `zIndex` orders only the
+drawings among themselves, and the tree keeps them in one block above the series.
 
 ---
 

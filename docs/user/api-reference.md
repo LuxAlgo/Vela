@@ -196,6 +196,7 @@ chart is never left half-changed.
 | `getConfig()` | Snapshot the renderer's full cosmetics as a serializable, versioned JSON document (or `null`). |
 | `applyConfig(config)` | Apply a full or partial config document from `getConfig()`; malformed/unknown fields are ignored. |
 | `onCrosshairMove(cb)` | Subscribe to crosshair movement — `time`/`price` under the cursor, per-series values, and the hovered bar's OHLC (null fields when the cursor leaves the chart). Returns an unsubscribe fn. The public seam for host status lines and data windows. |
+| `dataWindowReadout()` | The bar under the crosshair (or the latest bar when the cursor is off the plot) as a display-ready snapshot: `date`, `time`, an `ohlc` block, and one `groups` entry per indicator with a row per plot in its own color. Values are pre-formatted on their pane's scale. `null` on a renderer without the seam — see [renderer features](./renderer-features.md#data-window-readout). |
 | `setExternalCrosshair(time, price?)` | Show (or clear, with `null`) a **ghost crosshair** at a data-space position driven from OUTSIDE this chart — the multi-chart crosshair-sync seam ([the workspace](./workspace.md) drives it from the linked cells' pointers). A ghost never re-emits `onCrosshairMove` (one-way by contract — no echo loops). Silent no-op on a renderer without the optional port seam; feature-detect with `supportsExternalCrosshair`. |
 | `set('dialogHost', el)` | Where the renderer mounts its MODAL dialogs (chart settings, indicator settings). Multi-chart shells pass their root element so dialogs center over the whole grid instead of clipping inside one cell — the workspace does this automatically for every cell. Runtime-only; never part of the config template. |
 | `supportsExternalCrosshair` (getter) | Whether the active renderer implements the optional `setExternalCrosshair` seam (the native renderer does). |
@@ -280,7 +281,8 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `remove(id)` | no | Delete a drawing. |
 | `update(id, patch)` | no | Apply a partial serialized record (for a custom settings UI). |
 | `lock(id, v?)` · `show(id, v?)` | no | Lock/unlock · show/hide a single drawing. |
-| `bringToFront(id)` · `sendToBack(id)` | no | Reorder paint order. |
+| `bringToFront(id)` · `sendToBack(id)` | no | Reorder paint order. With the `drawingDepth` capability they clear the whole stack — candles and indicators included, not just the other drawings. |
+| `zIndex` (on `add`'s init and `update`'s patch) | no | The draw-order key. On a `drawingDepth` renderer it shares one space with the pane's series, so a drawing can sit under the candles or between two indicators — see [depth](./drawing-tools.md#depth-anywhere-in-the-stack). Persists with the drawing either way. |
 | `undo()` · `redo()` · `canUndo()` · `canRedo()` | no | Snapshot history (core-owned). |
 | `clone(id)` · `duplicate(ids)` | yes | Copy in place; the copies become the selection. |
 | `copyToClipboard(ids)` · `paste()` | yes | In-memory, per-chart clipboard. |

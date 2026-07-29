@@ -16,7 +16,7 @@ type ConfigPatch = Record<string, unknown>;
  * config as JSON for export/import — the templating surface.
  *
  * It is renderer chrome (a positioned overlay on the chart container), kept
- * dependency-free and themed to match the chart, mirroring `InputsUI`/`DataWindow`.
+ * dependency-free and themed to match the chart, mirroring `InputsUI`.
  */
 
 /** A host-contributed settings row: callback-based (the host owns the state). */
