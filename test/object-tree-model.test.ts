@@ -18,7 +18,6 @@ import {
     paneLabel,
     paneRows,
     paneTokens,
-    paneUnits,
     placeTokens,
     pruneGroups,
     removeFromGroups,
@@ -155,8 +154,7 @@ describe('buildTree — the unified stack', () => {
         const tree = buildTree(snap({ panes: [p], zOrder: [{ id: 'a', z: 0 }], drawings, groups }));
         // The bundle sits where m2 (front-most member, z 5) sits, carrying m1 with it.
         expect(names(tree[0]!)).toEqual(['loose', 'm2', 'm1', 'a', 'price']);
-        const units = paneUnits(tree[0]!);
-        expect(units[1]).toMatchObject({ kind: 'group' });
+        expect(tree[0]!.items[1]).toMatchObject({ kind: 'unit', unit: { kind: 'group' } });
     });
 
     it('is empty only when nothing but the candles is on the chart', () => {

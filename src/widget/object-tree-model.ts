@@ -119,11 +119,6 @@ export function paneRows(pane: TreePane): TreeRow[] {
     return pane.items.flatMap((it) => (it.kind === 'row' ? [it.row] : []));
 }
 
-/** The pane's drawing units, extracted from its stack in rendered (front-first) order. */
-export function paneUnits(pane: TreePane): DrawUnit[] {
-    return pane.items.flatMap((it) => (it.kind === 'unit' ? [it.unit] : []));
-}
-
 // ── the stack as tokens ────────────────────────────────────────────────────
 // A reorder works on the pane's stack FLATTENED to one token per z key: the candles, each
 // indicator, each drawing (a group contributes one token per member, so the bundle stays

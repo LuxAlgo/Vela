@@ -310,7 +310,6 @@ export class SceneGraph {
         return [...keys].sort((a, b) => a - b);
     }
 
-
     /** Raise an indicator above every other layer (other indicators AND the candles). */
     bringIndicatorToFront(id: string): void {
         this.seriesZ.set(id, this.topZ() + 1);

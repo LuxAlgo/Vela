@@ -128,7 +128,6 @@ const CSS = `
 .vela-ot-row[data-picked] { background: var(--vela-active); }
 .vela-ot-row[data-picked] .vela-ot-name { color: var(--vela-fg-bright); }
 .vela-ot-row[data-selected] { box-shadow: inset 2px 0 0 var(--vela-accent); }
-.vela-ot-pricerow > .vela-icon { color: var(--vela-accent); }
 .vela-ot-avatar {
     width: 18px;
     height: 18px;
@@ -675,7 +674,6 @@ export class ObjectTree {
                     },
                 },
             ]);
-            el.classList.add('vela-ot-pricerow');
             el.dataset.rowKind = 'price';
             el.dataset.pane = pane.id;
             // The candles can only be restacked — they never leave the main pane.
