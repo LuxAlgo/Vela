@@ -33,6 +33,9 @@ export type DrawingIntent =
     // mirrors the value and re-emits it as a chart event; an equal value is a no-op,
     // which is what keeps the command↔intent loop convergent.
     | { kind: 'snap-mode'; mode: SnapMode }
+    /** Stay-in-drawing-mode toggled in-chart — when on, finishing a drawing leaves the
+     *  tool armed instead of reverting to the pointer. */
+    | { kind: 'stay-mode'; on: boolean }
     | { kind: 'mode'; mode: DrawingMode }
     | { kind: 'undo' }
     | { kind: 'redo' }
@@ -65,6 +68,9 @@ export interface IDrawingsRendererPort {
     /** Set the sticky magnet snap mode (off/weak/strong). Optional — a renderer without
      *  a magnet omits it; the in-chart toolbar reflects the pushed value. */
     setSnapMode?(mode: SnapMode): void;
+    /** Set stay-in-drawing-mode (tools remain armed after each placement). Optional —
+     *  the in-chart toolbar reflects the pushed value. */
+    setStayMode?(on: boolean): void;
     /** Enter/exit a renderer-local mode (measure ruler / eraser; `null` exits). The
      *  renderer keeps owning the mutual exclusion (with armed tools too) and reports
      *  every actual change back through the `mode` intent. Optional. */

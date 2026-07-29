@@ -34,6 +34,10 @@ right, so the bar never overlaps candles, the legend, or the axes).
   - **Magnet** — a 3-state snap toggle: **off → weak → strong**. *Strong* always snaps a new
     anchor to the nearest candle's time + OHLC; *weak* snaps only when a candle point is within a
     few pixels of the cursor. Holding **Ctrl/Cmd** is a momentary *strong* override.
+  - **Stay in drawing mode** — an on/off toggle (pen with a lock, under the magnet). When on,
+    finishing a drawing leaves the tool armed so you can keep placing the same tool without
+    re-picking it; when off, most tools disarm after one placement (the brush family always stays
+    armed either way). Click the cursor button or press Escape to return to select/idle.
 - **Tooltips.** Hovering any control for ~2 seconds shows a small label beside it.
 - **Favorites.** Every tool row in a flyout carries a **star** (revealed on row hover, gold when
   set). Starring is a user preference, not document data: the set survives symbol/timeframe
@@ -96,7 +100,7 @@ hijacked.
 
 **66 tools across 9 groups.** The **Type key** is the string you pass to
 `chart.drawings.setTool('…')` or [`chart.drawings.add('…')`](#driving-drawings-from-code). Eraser,
-Magnet, and Measure are toolbar *modes*, not placeable types, so they have no key.
+Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable types, so they have no key.
 
 ### Lines
 
@@ -255,27 +259,30 @@ method list and which methods are gated by renderer support.
 
 ## Tool and mode state from code
 
-The armed tool, the magnet, and the measure/eraser modes are all readable and drivable
-programmatically — the seam an external toolbar (e.g. a multi-chart workspace's shared
-bar) builds on:
+The armed tool, the magnet, stay-in-drawing-mode, and the measure/eraser modes are all
+readable and drivable programmatically — the seam an external toolbar (e.g. a multi-chart
+workspace's shared bar) builds on:
 
 ```js
 chart.drawings.getTool();               // 'trendline' | … | null (select/idle)
 chart.drawings.setSnapMode('strong');   // magnet: 'off' | 'weak' | 'strong'
 chart.drawings.getSnapMode();
+chart.drawings.setStayMode(true);       // keep the tool armed after each placement
+chart.drawings.getStayMode();
 chart.drawings.setMode('measure');      // 'measure' | 'eraser' | null (none)
 chart.drawings.getMode();
 
 // Follow every change, whatever its source (in-chart toolbar, keyboard, code):
 chart.on('drawing:tool', ({ type }) => { /* armed tool changed; null = pointer */ });
 chart.on('drawing:snap', ({ mode }) => { /* magnet mode changed */ });
+chart.on('drawing:stay', ({ on }) => { /* stay-in-drawing-mode changed */ });
 chart.on('drawing:mode', ({ mode }) => { /* measure/eraser entered or left */ });
 ```
 
 The renderer keeps owning the mutual exclusion — arming a tool exits measure/eraser
 (and vice versa), and the outcome always lands on the events, so an external UI only
 ever mirrors. One-shot tools disarm themselves after placing (back to `null` on
-`drawing:tool`); the brush family stays armed.
+`drawing:tool`) unless stay-in-drawing-mode is on; the brush family always stays armed.
 
 ## Favorite tools
 

@@ -39,6 +39,9 @@ export interface VelaEventMap extends Record<string, unknown> {
     'drawing:tool': { type: DrawingTypeKey | null };
     /** The magnet snap mode changed (in-chart toolbar or `drawings.setSnapMode`). */
     'drawing:snap': { mode: SnapMode };
+    /** Stay-in-drawing-mode changed (in-chart toolbar or `drawings.setStayMode`) — when
+     *  on, finishing a drawing leaves the tool armed. */
+    'drawing:stay': { on: boolean };
     /** The renderer-local mode changed: measure ruler, eraser, or none — including the
      *  mutual-exclusion exits (arming a tool leaves measure/eraser). */
     'drawing:mode': { mode: DrawingMode };

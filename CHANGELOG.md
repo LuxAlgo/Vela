@@ -6,6 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Stay in drawing mode.** A toolbar toggle under the magnet (pen with a lock) keeps the
+  armed tool ready after each placement, so you can draw several of the same shape without
+  re-picking the tool. Turn it off for the usual one-shot behavior; the brush family still
+  stays armed either way.
 - **Multi-chart workspaces.** The new `VelaWorkspace` puts several full charts on one screen:
   pick a grid from the layout menu in the top bar — single, two side by side, two stacked,
   four, or eight — and resize the cells by dragging the dividers between them (double-click a

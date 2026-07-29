@@ -41,6 +41,10 @@ class FakePort implements IDrawingsRendererPort {
     setSnapMode(mode: string): void {
         this.snapModes.push(mode);
     }
+    stayModes: boolean[] = [];
+    setStayMode(on: boolean): void {
+        this.stayModes.push(on);
+    }
     modes: Array<string | null> = [];
     setMode(mode: string | null): void {
         this.modes.push(mode);
@@ -182,6 +186,19 @@ describe('DrawingController (enabled)', () => {
         port.fire({ kind: 'tool-finished', type: 'highlighter' });
         expect(ctrl.getTool()).toBe('highlighter');
         expect(port.activeTool).toBe('highlighter');
+    });
+
+    it('stay-in-drawing-mode keeps a one-shot tool armed after placement', () => {
+        const { port, ctrl } = setup();
+        ctrl.setStayMode(true);
+        ctrl.setTool('trendline');
+        port.fire({ kind: 'tool-finished', type: 'trendline' });
+        expect(ctrl.getTool()).toBe('trendline');
+        expect(port.activeTool).toBe('trendline');
+        // Turning it off restores one-shot disarm.
+        ctrl.setStayMode(false);
+        port.fire({ kind: 'tool-finished', type: 'trendline' });
+        expect(ctrl.getTool()).toBeNull();
     });
 });
 
@@ -555,6 +572,30 @@ describe('DrawingController — tool/mode seams (the external-toolbar surface)',
         expect(port.snapModes).toEqual([]); // an intent must never bounce back as a command
     });
 
+    it('setStayMode pushes the port command, mirrors, emits — and equal values no-op', () => {
+        const { port, events, ctrl } = setup();
+        const stays: boolean[] = [];
+        events.on('drawing:stay', (e) => stays.push(e.on));
+
+        ctrl.setStayMode(true);
+        ctrl.setStayMode(true); // no-op
+        expect(port.stayModes).toEqual([true]);
+        expect(ctrl.getStayMode()).toBe(true);
+        expect(stays).toEqual([true]);
+    });
+
+    it('an in-chart stay-mode click arrives as a stay-mode intent: mirror + event, echo-safe', () => {
+        const { port, events, ctrl } = setup();
+        const stays: boolean[] = [];
+        events.on('drawing:stay', (e) => stays.push(e.on));
+
+        port.fire({ kind: 'stay-mode', on: true });
+        port.fire({ kind: 'stay-mode', on: true }); // renderer echo of an equal value → dropped
+        expect(ctrl.getStayMode()).toBe(true);
+        expect(stays).toEqual([true]);
+        expect(port.stayModes).toEqual([]); // an intent must never bounce back as a command
+    });
+
     it('setMode pushes the port command; the renderer intent reports the outcome', () => {
         const { port, events, ctrl } = setup();
         const modes: Array<string | null> = [];
@@ -571,11 +612,13 @@ describe('DrawingController — tool/mode seams (the external-toolbar surface)',
         expect(modes).toEqual(['measure', null]);
     });
 
-    it('mode/snap setters are inert without a port (headless), like the other interactive ops', () => {
+    it('mode/snap/stay setters are inert without a port (headless), like the other interactive ops', () => {
         const { ctrl } = setup(false);
         ctrl.setSnapMode('strong');
+        ctrl.setStayMode(true);
         ctrl.setMode('eraser');
         expect(ctrl.getSnapMode()).toBe('off'); // mirrors keep their defaults
+        expect(ctrl.getStayMode()).toBe(false);
         expect(ctrl.getMode()).toBe(null);
     });
 });

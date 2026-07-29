@@ -102,6 +102,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
             () => this.withModeIntent(() => this.toggleMeasure()),
             () => this.withModeIntent(() => this.toggleEraser()),
             (type, on) => this.emit({ kind: 'favorite', type, on }),
+            (on) => this.emit({ kind: 'stay-mode', on }),
         );
         this.interaction = new DrawingInteraction({
             projector: () => this.deps.projector(),
@@ -185,6 +186,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
     setSnapMode(mode: SnapMode): void {
         this.deps.setSnapMode(mode);
         this.toolbar.setMagnetMode(mode);
+    }
+
+    /** Core push: stay-in-drawing-mode — reflect on the toolbar without notifying back. */
+    setStayMode(on: boolean): void {
+        this.toolbar.setStayMode(on);
     }
 
     /** Core push: enter/exit measure or eraser (`null` = none). Reuses the toolbar
