@@ -54,10 +54,10 @@ Available on every renderer:
 | `animZoom` | boolean | `true` | Eased wheel-zoom; takes effect on the next interaction. |
 | `animPan` | boolean | `true` | Inertial pan glide; takes effect on the next interaction. |
 | `intro` | `'settle' \| 'grow' \| false` | `'settle'` | Reveal animation on first paint. Setting it replays the intro (handy for comparing styles from the console). |
-| `zoomAnchor` | `'right' \| 'cursor'` | `'right'` | Wheel-zoom anchor: pin the right edge / latest bar, or the bar under the cursor. Affects the next wheel-zoom. |
+| `zoomAnchor` | `'right' \| 'cursor'` | `'right'` | Wheel-zoom anchor: pin the right edge / latest bar, or the bar under the cursor. Affects the next wheel-zoom. Holding `Shift` (or a horizontal/trackpad swipe) makes the wheel **pan through history** instead of zooming. |
 | `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; double-clicking an axis strip resets it. |
 | `paneResize` | boolean | `true` | Drag the separator between panes to resize them; double-clicking a separator restores the two adjacent panes to an even split. |
-| `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
+| `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. `Ctrl`/`Cmd` chords are left untouched for the host's own shortcuts (the widget's pan/zoom glides, the browser's `Ctrl`+`0`, …). When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
 
 > **Double-click behavior changed.** Double-clicking the **chart data area** no longer fits the
 > content to the view. Instead it maximizes the double-clicked pane so it fills the chart and every
@@ -100,9 +100,11 @@ Available on every renderer:
 ## Screenshot export
 
 `chart.renderer.screenshot()` returns a **PNG data URL** of the current chart (or `null`
-on a renderer that doesn't support it, with a warning). It composites only the geometry +
-chrome canvas layers; DOM overlays (tables, legend) and the drawings,
-and volume-profile canvas layers are **not** included.
+on a renderer that doesn't support it, with a warning). It composites the canvas layers in the
+order you see them: the series geometry — with any drawings stacked among the series already
+inside it — then the chrome layer that carries script-drawn shapes, then the drawings that sit
+over everything. The crosshair, the DOM overlays (tables, legend, data window) and the
+volume-profile layer are **not** included.
 
 ```js
 const url = chart.renderer.screenshot();

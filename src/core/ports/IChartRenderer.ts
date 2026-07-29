@@ -27,6 +27,11 @@ export interface RendererCapabilities {
     drawings: boolean;
     /** Interactive USER drawing tools (toolbar + hit-test + handles). Distinct from `drawings`. */
     userDrawings: boolean;
+    /** Whether user drawings share ONE draw-order space with the pane's series — a drawing's
+     *  `zIndex` then places it anywhere in the stack: over everything, under the candles, or
+     *  between two indicators. Absent/false: every drawing paints in front, `zIndex` orders
+     *  only the drawings among themselves, and a host UI should not offer depth slots. */
+    drawingDepth?: boolean;
     /** Pine `table.new` dashboards via a DOM overlay. */
     tables: boolean;
     /** Whether the renderer provides the in-chart inputs/settings UI. */
@@ -268,6 +273,13 @@ export interface IChartRenderer {
 
     getVisibleRange(): VisibleRange | null;
     setVisibleRange(range: VisibleRange): void;
+    /**
+     * Pan by a fraction of the visible width at constant zoom (positive ⇒ toward the
+     * latest bars), behaving exactly like a pointer drag: same pan limits (including the
+     * bounded whitespace past the newest bar), eased if the renderer animates pans.
+     * OPTIONAL — without it the core falls back to an instant `setVisibleRange` shift.
+     */
+    panBy?(fraction: number): void;
     onViewportChange(cb: (range: VisibleRange) => void): Unsubscribe;
 
     /**

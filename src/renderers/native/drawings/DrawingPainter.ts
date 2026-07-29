@@ -32,6 +32,17 @@ export interface PaintTargets {
     mutedLabel?: string | null;
 }
 
+/** The ids whose handles show for `targets`: selected ∪ dragged ∪ hovered, minus the muted
+ *  label — while an inline editor owns the label the user is typing, not dragging, so the
+ *  anchor grip on the editor's corner would read as a resize handle on a floating window. */
+export function handleIdsFor(targets: PaintTargets): ReadonlySet<string> {
+    const ids = new Set(targets.selected);
+    if (targets.dragged) ids.add(targets.dragged);
+    if (targets.hovered) ids.add(targets.hovered);
+    if (targets.mutedLabel) ids.delete(targets.mutedLabel);
+    return ids;
+}
+
 export class DrawingPainter {
     /** The current `paintAll` call's interaction state, visible to the per-type painters. */
     private targets: PaintTargets = {};
@@ -52,15 +63,16 @@ export class DrawingPainter {
             this.paintClipped(ctx, d, proj, () => this.paintOne(ctx, d, proj, theme));
         }
         this.targets = {};
-        const handleIds = new Set(targets.selected);
-        if (targets.dragged) handleIds.add(targets.dragged);
-        if (targets.hovered) handleIds.add(targets.hovered);
-        // While an inline editor owns the label the user is typing, not dragging — the anchor
-        // grip on the editor's corner would read as a resize handle on a floating window.
-        if (targets.mutedLabel) handleIds.delete(targets.mutedLabel);
-        if (handleIds.size === 0) return;
+        this.paintHighlights(ctx, drawings, proj, handleIdsFor(targets));
+    }
+
+    /** Selection handles alone, for drawings whose body was painted elsewhere: the ones sent
+     *  behind the series paint on the layer under the data, and handles left down there would be
+     *  buried under the candles — you could not see what you had grabbed. */
+    paintHighlights(ctx: CanvasRenderingContext2D, drawings: readonly Drawing[], proj: Projector, highlightIds: ReadonlySet<string>): void {
+        if (highlightIds.size === 0) return;
         for (const d of drawings) {
-            if (d.visible && handleIds.has(d.id)) {
+            if (d.visible && highlightIds.has(d.id)) {
                 this.paintClipped(ctx, d, proj, () => this.paintHandles(ctx, d.handlePoints(proj)));
             }
         }

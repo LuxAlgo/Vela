@@ -29,7 +29,8 @@ right, so the bar never overlaps candles, the legend, or the axes).
 - **Modes** (bottom of the bar) — renderer-local, mutually exclusive with each other and with any
   armed tool:
   - **Measure** — a transient ruler (click–move–click) that reports the price/%/bar delta. It is
-    not saved as a drawing; it clears on the next press, pan, or zoom.
+    not saved as a drawing; it clears on the next press, pan, or zoom. **Shift+click** an empty
+    spot starts a measurement right there, no toolbar trip needed (press-drag-release works too).
   - **Eraser** — click a drawing to delete it, or press-and-drag across several to wipe them.
   - **Magnet** — a 3-state snap toggle: **off → weak → strong**. *Strong* always snaps a new
     anchor to the nearest candle's time + OHLC; *weak* snaps only when a candle point is within a
@@ -39,11 +40,16 @@ right, so the bar never overlaps candles, the legend, or the axes).
     re-picking it; when off, most tools disarm after one placement (the brush family always stays
     armed either way). Click the cursor button or press Escape to return to select/idle.
 - **Tooltips.** Hovering any control for ~2 seconds shows a small label beside it.
-- **Favorites.** Every tool row in a flyout carries a **star** (revealed on row hover, gold when
-  set). Starring is a user preference, not document data: the set survives symbol/timeframe
-  rebuilds, is persisted by the widget alongside the other UI state (`persist`), and is readable
-  and writable from code — see below. Hosts and plugins can build their own UI on top of it (a
-  favorites bar, a radial picker…).
+- **Favorites.** Every tool row in a flyout carries a **star** at its right edge (revealed on row
+  hover, gold when set). Starring is a user preference, not document data: the set survives
+  symbol/timeframe rebuilds, is persisted by the widget alongside the other UI state (`persist`),
+  and is readable and writable from code — see below. Hosts and plugins can build their own UI on
+  top of it (a favorites bar, a radial picker…).
+- **Shortcut hints.** When the host binds a keyboard shortcut that arms or places a tool, the
+  flyout row shows the chord beside the star (the widget binds `Alt+T` for the trend line and
+  `Alt+H` / `Alt+V` for lines at the cursor out of the box). Hints are pushed as display strings
+  via `chart.drawings.setToolShortcuts({ trendline: 'Alt+T', … })`, so they always match the
+  host's actual bindings and platform formatting.
 
 Arm a tool, then **click** to place its anchors (most tools, including shapes, are
 click-then-move-then-click; freehand/brush is the exception and captures the drag path; the
@@ -93,6 +99,42 @@ When a drawing is selected (or hovered), with focus on the chart:
 
 Shortcuts stand down while a text field (e.g. a label editor) is focused, so typing is never
 hijacked.
+
+Two mouse shortcuts complement these, and need no selection first: **middle-click** a drawing to
+delete it, and **Shift+click** an empty spot to start the [measure ruler](#the-toolbar) at that
+exact point.
+## Depth: anywhere in the stack
+
+A new drawing starts **just under the price** — the candles read on top of it, the way they read
+on top of the indicators — so it behaves like annotation on the chart's background: a zone, a
+session band, a shaded area you see *through* the candles rather than across them. From there it
+can take **any position in the pane's draw order**: over everything, between two indicators, or
+at the very back.
+
+- **From the object tree.** Each pane is one column, read top to bottom as front to back: its
+  drawings, its indicators and (in the main pane) the price series, all together. Drag a drawing
+  (or a group, which moves as one block) to any slot in that column and the chart repaints in that
+  order.
+- **From the context menu.** Right-click a drawing row for **Bring to front** / **Send to back** —
+  they clear the whole stack, candles and indicators included; a group's row offers the same for
+  all of its members at once.
+- **From code.** The draw-order key is the drawing's `zIndex`, shared with the pane's series:
+
+```js
+chart.drawings.add('box', { anchors }); // a new drawing starts just under the candles
+chart.drawings.bringToFront(d.id); // over the whole stack
+chart.drawings.sendToBack(d.id); // behind the candles and every indicator
+chart.drawings.update(d.id, { zIndex: z }); // an exact slot among the series' keys
+```
+
+A drawing under the data stays fully interactive: it still hit-tests, and its selection handles
+draw on top, so you can always see and grab what you selected.
+
+The position is part of the drawing, so it is saved with `toJSON()`, restored by `fromJSON()`, and
+undoable; the widget also persists the series' own order, so a saved chart comes back stacked as
+you left it. Depth needs a renderer that declares the `drawingDepth` capability (the **native
+renderer** does); where it is missing, drawings all paint over the data, `zIndex` orders only the
+drawings among themselves, and the tree keeps them in one block above the series.
 
 ---
 

@@ -21,10 +21,12 @@ export class DrawingStore {
         return `dw-${this.seq}`;
     }
 
-    /** Insert a drawing, assigning a mount-order z (later ⇒ painted in front). */
+    /** Insert a drawing, assigning a mount-order z (later ⇒ painted in front) when it carries
+     *  none. The counter only ever grows, so the fallback stays the front among drawings even
+     *  after explicit keys landed below it. */
     add(d: Drawing): Drawing {
         if (!d.zIndex) d.zIndex = this.zCounter;
-        this.zCounter = Math.max(this.zCounter, d.zIndex) + 1;
+        this.zCounter = Math.max(this.zCounter, Math.ceil(d.zIndex)) + 1;
         this.byId.set(d.id, d);
         this.emit();
         return d;
@@ -73,18 +75,22 @@ export class DrawingStore {
         return this.all().filter((d) => d.paneId === paneId);
     }
 
-    bringToFront(id: string): void {
+    /** Raise over every drawing — and over `floorZ`, the top of the pane's series stack when
+     *  the renderer shares one z space with it, so "front" beats the candles too. */
+    bringToFront(id: string, floorZ = 0): void {
         const d = this.byId.get(id);
         if (!d) return;
-        d.zIndex = this.zCounter;
-        this.zCounter += 1;
+        d.zIndex = Math.max(this.zCounter, Math.floor(floorZ) + 1);
+        this.zCounter = d.zIndex + 1;
         this.emit();
     }
 
-    sendToBack(id: string): void {
+    /** Drop under every drawing — and under `ceilZ`, the bottom of the pane's series stack,
+     *  so "back" lands behind the candles and the indicators, not just other drawings. */
+    sendToBack(id: string, ceilZ = 1): void {
         const d = this.byId.get(id);
         if (!d) return;
-        const min = Math.min(...[...this.byId.values()].map((x) => x.zIndex), 1);
+        const min = Math.min(...[...this.byId.values()].map((x) => x.zIndex), Math.ceil(ceilZ));
         d.zIndex = min - 1;
         this.emit();
     }

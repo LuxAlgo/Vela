@@ -32,6 +32,8 @@ export class DrawingToolbar {
     private readonly lastUsed = new Map<string, DrawingTypeKey>();
     /** FAVORITE tool types (core-authoritative; pushed via setFavorites). */
     private favorites = new Set<DrawingTypeKey>();
+    /** Per-tool shortcut display strings (host-pushed via setShortcuts). */
+    private shortcuts = new Map<DrawingTypeKey, string>();
     /** Star elements of the currently open flyout, by tool type (live-updated, never stale). */
     private readonly starEls = new Map<DrawingTypeKey, HTMLElement>();
     private flyout: HTMLDivElement | null = null;
@@ -112,6 +114,12 @@ export class DrawingToolbar {
     setFavorites(types: readonly DrawingTypeKey[]): void {
         this.favorites = new Set(types);
         for (const [type, el] of this.starEls) this.paintStar(el, type);
+    }
+
+    /** Per-tool shortcut hints (pre-formatted display strings, e.g. `'Alt+T'`) shown at the
+     *  right edge of the flyout rows, beside the favorite star. */
+    setShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void {
+        this.shortcuts = new Map(Object.entries(map) as [DrawingTypeKey, string][]);
     }
 
     /** Paint one star for the current favorite state (filled + gold, or outline). */
@@ -394,6 +402,7 @@ export class DrawingToolbar {
                         icon: tool.icon,
                         label: tool.label,
                         selected: tool.type === this.active,
+                        shortcut: this.shortcuts.get(tool.type),
                         onSelect: () => this.onArm(tool.type),
                         favorite: {
                             type: tool.type,
@@ -445,12 +454,15 @@ export class DrawingToolbar {
         return div;
     }
 
-    /** A flyout row: optional leading icon, label, and a trailing check when it's the selected entry.
+    /** A flyout row, left to right: optional leading icon, label, a check when it's the selected
+     *  entry, an optional shortcut hint, and — at the far right — the favorite star (tool rows).
      *  Hover tint is CSS (`.vela-dtb-item:hover`), so navigating the menu stays smooth. */
     private makeFlyoutItem(opts: {
         icon?: string;
         label: string;
         selected?: boolean;
+        /** Shortcut hint (pre-formatted display string) rendered right-aligned, left of the star. */
+        shortcut?: string;
         onSelect: () => void;
         /** Star toggle (tool rows only — mode rows have no favorites). */
         favorite?: { type: DrawingTypeKey; toggle: () => void };
@@ -471,6 +483,17 @@ export class DrawingToolbar {
         label.textContent = opts.label;
         label.style.cssText = 'flex:1 1 auto;text-align:left;';
         item.appendChild(label);
+        const check = document.createElement('span');
+        check.style.cssText = 'width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none;';
+        if (opts.selected) check.innerHTML = sizedIcon(CHECK_ICON);
+        item.appendChild(check);
+        if (opts.shortcut) {
+            const hint = document.createElement('span');
+            hint.className = 'vela-dtb-hint';
+            hint.textContent = opts.shortcut;
+            hint.style.cssText = `flex:none;font:12px ${t.fontFamily};color:${withAlpha(t.textColor, 0.5)};`;
+            item.appendChild(hint);
+        }
         if (opts.favorite) {
             const star = document.createElement('span');
             star.className = 'vela-dtb-star';
@@ -490,10 +513,6 @@ export class DrawingToolbar {
             });
             item.appendChild(star);
         }
-        const check = document.createElement('span');
-        check.style.cssText = 'width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none;';
-        if (opts.selected) check.innerHTML = sizedIcon(CHECK_ICON);
-        item.appendChild(check);
         item.addEventListener('click', (e) => {
             e.stopPropagation();
             opts.onSelect();

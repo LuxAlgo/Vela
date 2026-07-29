@@ -80,6 +80,14 @@ export class DrawingsControl {
         return this;
     }
 
+    /** Show per-tool shortcut hints in the toolbar flyouts. Values are PRE-FORMATTED
+     *  display strings (e.g. `'Alt+T'`, `'⌥T'`) — the host owns the keymap and the
+     *  platform formatting, so hints always match the host's actual bindings. */
+    setToolShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): this {
+        if (this.ok('setToolShortcuts')) this.ctrl.setToolShortcuts(map);
+        return this;
+    }
+
     /** Create a drawing programmatically (no clicking). Returns it, or null if unsupported. */
     add(type: DrawingTypeKey, init: AddInit = {}): Drawing | null {
         if (!this.ok('add')) return null;

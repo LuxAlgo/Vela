@@ -9,7 +9,7 @@ import { priceStyleLabel } from '../src/widget/topbar';
 import { RANGE_PRESETS } from '../src/widget/bottombar';
 import { filterSymbols } from '../src/widget/symbol-picker';
 import { readUrlState } from '../src/widget/url-state';
-import { zoomTarget, panTarget, followStep } from '../src/widget/glide';
+import { zoomTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
 import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments } from '../src/widget/contributions';
 import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
@@ -230,10 +230,6 @@ describe('glide math (reference port)', () => {
     it('zoomTarget anchors the right edge and clamps the span', () => {
         expect(zoomTarget(base, 0.5)).toEqual({ from: 50 * 60_000, to: base.to });
         expect(zoomTarget({ from: 0, to: 60_000 }, 0.1).to - zoomTarget({ from: 0, to: 60_000 }, 0.1).from).toBe(60_000);
-    });
-    it('panTarget shifts by a fraction of the span', () => {
-        expect(panTarget(base, 0.2)).toEqual({ from: 20 * 60_000, to: 120 * 60_000 });
-        expect(panTarget(base, -0.2).from).toBe(-20 * 60_000);
     });
     it('followStep eases toward the target and snaps when close', () => {
         const target = zoomTarget(base, 0.5);

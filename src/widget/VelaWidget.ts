@@ -29,6 +29,7 @@ import { parsePersisted, legacyWidgetState, localStorageAdapter, type WidgetStor
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type CellState } from '../state/document';
 import { readUrlState, writeUrlState } from './url-state';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
+import { toolShortcutHints } from './tool-shortcuts';
 import { WidgetHistory } from './history';
 import { Toast } from './toast';
 import { Menu } from '../ui/components/menu';
@@ -52,6 +53,10 @@ export interface VelaWidgetOptions extends VelaOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
+    /** Focus the chart when it mounts so keyboard shortcuts work from the first
+     *  keystroke — no initial click needed. Default false: an embedded chart must
+     *  never steal the page's focus from the host's own controls. */
+    autofocus?: boolean;
     /** Bring the chart back AS YOU LEFT IT: the widget persists its full state — the
      *  unified single-cell document `getState()` returns (market, prefs, renderer
      *  config, user drawings, indicators) — and restores it at construction. `true`
@@ -330,8 +335,9 @@ export class VelaWidget {
         this.keymap.register({ id: 'history.redo', keys: ['mod+y', 'mod+shift+z'], label: 'Redo', category: 'Edit', run: () => this.history.redo() });
         this.keymap.register({ id: 'view.zoom-in', keys: 'mod+arrowup', label: 'Zoom in', category: 'Chart', run: () => this.glider.zoom(ZOOM_IN) });
         this.keymap.register({ id: 'view.zoom-out', keys: 'mod+arrowdown', label: 'Zoom out', category: 'Chart', run: () => this.glider.zoom(ZOOM_OUT) });
-        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.glider.pan(-PAN_FAST) });
-        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.glider.pan(PAN_FAST) });
+        // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
+        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.inner?.panBy(-PAN_FAST) });
+        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.inner?.panBy(PAN_FAST) });
         this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
         this.keymap.register({
             id: 'help.shortcuts',
@@ -350,6 +356,9 @@ export class VelaWidget {
 
         this.rebuild();
         this.mountAttachments();
+        // Shortcuts only fire while focus is INSIDE the widget (the keymap listens on
+        // the root) — autofocus makes them work before the first click.
+        if (opts.autofocus) this.inner?.renderer.focus();
     }
 
     /** Mount registered attachments not yet mounted on this widget (idempotent per id). */
@@ -785,6 +794,8 @@ export class VelaWidget {
             this.favs = favorites;
             this.markStateDirty();
         });
+        // Shortcut hints beside the bound tools in the toolbar flyouts (e.g. 'Alt+T').
+        if (chart.drawings.supported) chart.drawings.setToolShortcuts(toolShortcutHints(this.keymap));
         // User drawings: every change path (mouse tools, eraser, undo/redo, programmatic
         // add/remove) converges on these three events — persist debounced off them.
         chart.on('drawing:created', () => this.markStateDirty());

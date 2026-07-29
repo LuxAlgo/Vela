@@ -16,13 +16,14 @@ import type { Unsubscribe } from '../../../core/util/types';
 import { namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { withAlpha } from '../core/chartConfig';
 import { blendOver, splitColor } from './colorPicker';
-import { DrawingPainter } from './DrawingPainter';
+import { DrawingPainter, handleIdsFor, type PaintTargets } from './DrawingPainter';
 import { DrawingInteraction } from './DrawingInteraction';
 import { DrawingSettingsPopup } from './DrawingSettingsPopup';
 import { DrawingToolbar } from './DrawingToolbar';
 import { MeasureOverlay } from './MeasureOverlay';
 import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
 import { keyToDrawingAction, isEditingText } from './DrawingKeys';
+import type { DrawingSlice } from '../core/SceneGraph';
 
 /** Shown in the inline editor while a label carries no text yet. */
 const TEXT_PLACEHOLDER = 'Enter Text';
@@ -46,6 +47,14 @@ export interface UserDrawingDeps {
     theme(): VelaTheme;
     /** Ask the renderer to recompute per-pane autoscale (so a drawing folds into the price range). */
     requestScaleUpdate(): void;
+    /** The pane's series z keys (candles + indicators), ascending — the boundaries a drawing's
+     *  z is slotted against to decide which interleave layer (if any) it paints on. */
+    seriesBoundaries(paneId: string): readonly number[];
+    /** The candles' own z key, or null off the price pane — a new drawing starts just under it. */
+    priceZ(paneId: string): number | null;
+    /** Ask the renderer for a data-layer repaint — needed when a drawing that paints INSIDE the
+     *  series stack changed, since its pixels live in the backend composite, not on this layer. */
+    requestDataPaint(): void;
     /** Snap a data point to the nearest candle (time + OHLC), per magnet `mode` + the cursor pixel. */
     snap(point: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }): DrawingPoint;
     /** Set the sticky magnet mode (driven by the toolbar's 3-state button). */
@@ -54,16 +63,40 @@ export interface UserDrawingDeps {
     setToolbarGutter(visible: boolean): void;
 }
 
+/** No interaction targets on the interleave layers — handles always paint in front. */
+const EMPTY_TARGETS: PaintTargets = {};
+
 /**
- * The native renderer's implementation of {@link IDrawingsRendererPort}. Owns the
- * L1.5 drawings canvas (paint), the interaction state machine (place/select), the
- * settings popup, and hit-testing. The core `DrawingController` is the source of
- * truth — this projects its `syncDrawings` snapshots and reports gestures back as
- * intents. It never holds authoritative state beyond the current projection.
+ * Which interleave layer a drawing belongs to: the first series boundary at-or-above its z —
+ * the slice painted just before that series, so a drawing TYING a series' z paints under it.
+ * Null when the drawing clears every boundary and belongs on the top canvas instead.
+ */
+export function sliceKeyFor(zIndex: number, boundaries: readonly number[]): number | null {
+    if (boundaries.length === 0 || zIndex > boundaries[boundaries.length - 1]!) return null;
+    return boundaries.find((b) => b >= zIndex)!;
+}
+
+/**
+ * The native renderer's implementation of {@link IDrawingsRendererPort}. Owns the top
+ * drawings canvas (L1.5, over the series) plus the INTERLEAVE layers — prepainted
+ * plot-sized canvases handed to the geometry backend for the drawings whose z puts
+ * them under a series (below the candles, between two indicators) — the interaction
+ * state machine (place/select), the settings popup, and hit-testing. The core
+ * `DrawingController` is the source of truth — this projects its `syncDrawings`
+ * snapshots and reports gestures back as intents. It never holds authoritative
+ * state beyond the current projection.
  */
 export class UserDrawingController implements IDrawingsRendererPort {
     private ctx: CanvasRenderingContext2D | null = null;
     private drawings: Drawing[] = [];
+    /** Ids painted on an interleave layer this frame — the top canvas paints only their handles. */
+    private sliced = new Set<string>();
+    /** Cached slice canvases, keyed `paneId|beforeZ`, reused across frames to avoid churn. */
+    private readonly sliceCache = new Map<string, HTMLCanvasElement>();
+    /** Series boundaries per pane as of the last `prepareSlices` — lets a repaint between data
+     *  frames split front/interleaved consistently instead of flickering a drawing onto the
+     *  wrong layer for a frame. */
+    private lastBounds = new Map<string, readonly number[]>();
     private selectedIds = new Set<string>(); // selected drawings (handles shown); [first] drives the popup
     private hoveredId: string | null = null; // the drawing under the cursor (its handles show)
     private activeTool: DrawingTypeKey | null = null;
@@ -111,7 +144,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
             hoveredId: () => this.hoveredId,
             selectedIds: () => this.selectedIds,
             emit: (i) => this.emit(i),
-            changed: () => this.render(),
+            changed: () => {
+                this.invalidateSlices(); // a live drag can be moving a drawing that paints inside the stack
+                this.render();
+            },
             openSettings: (id, x, y) => this.openSettingsById(id, x, y),
             snap: (pt, paneId, mode, cursorPx) => this.deps.snap(pt, paneId, mode, cursorPx),
             lastStyle: () => this.activeToolStyle,
@@ -133,8 +169,16 @@ export class UserDrawingController implements IDrawingsRendererPort {
         // The edited drawing can vanish from under the editor (deleted, erased, undone) — take the
         // editor with it instead of leaving a live textarea over nothing.
         if (this.textEditor && !this.editedDrawing(this.textEditor.id)) this.closeTextEditor();
+        this.invalidateSlices();
         this.render();
         this.deps.requestScaleUpdate(); // fold drawing price ranges into autoscale
+    }
+
+    /** The pane's series stack in z terms — how the core places a new drawing (just under
+     *  `price`) and computes "front of everything" / "behind everything" for the reorders. */
+    stackRange(paneId: string): { front: number; back: number; price?: number } {
+        const b = this.deps.seriesBoundaries(paneId);
+        return { front: Math.max(0, ...b), back: Math.min(0, ...b), price: this.deps.priceZ(paneId) ?? undefined };
     }
 
     /**
@@ -179,6 +223,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
     /** Core push: the favorite tool set changed — reflect the flyout stars. */
     setFavorites(types: readonly DrawingTypeKey[]): void {
         this.toolbar.setFavorites(types);
+    }
+
+    /** Core push: per-tool shortcut hints (display strings) shown in the toolbar flyouts. */
+    setToolShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void {
+        this.toolbar.setShortcuts(map);
     }
 
     /** Core push: set the sticky magnet mode. Applies to the renderer + reflects on the
@@ -248,10 +297,25 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return this.interaction.claim(x, y);
     }
 
-    /** Delete the (unlocked) drawing under the cursor, if any. Shared by eraser click + drag. */
-    private eraseAt(x: number, y: number): void {
+    /** Delete the (unlocked) drawing under the cursor. True when one was removed.
+     *  Shared by the eraser (click + drag) and the middle-click shortcut. */
+    deleteAt(x: number, y: number): boolean {
         const hit = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE);
-        if (hit && !hit.locked) this.emit({ kind: 'delete', ids: [hit.id] });
+        if (!hit || hit.locked) return false;
+        this.popup.close();
+        this.emit({ kind: 'delete', ids: [hit.id] });
+        return true;
+    }
+
+    /** Shift+press on the empty plot: arm the measure ruler AND start it at (x, y) in one
+     *  gesture — the equivalent of clicking the toolbar's Measure button, then pressing.
+     *  Returns false when a mode/tool is already active (the normal press path owns it). */
+    beginMeasureAt(x: number, y: number): boolean {
+        if (this.measureMode || this.eraserMode || this.activeTool != null) return false;
+        this.withModeIntent(() => this.toggleMeasure());
+        this.measure.down(x, y);
+        this.render();
+        return true;
     }
 
     /** A press landed on the chart: a finished transient measurement clears (the ruler vanishes on the
@@ -269,7 +333,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     pointerDown(x: number, y: number, snap: SnapMode = 'off', shift = false): void {
         if (this.eraserMode) {
             this.erasing = true; // hold to drag-erase across multiple drawings
-            this.eraseAt(x, y);
+            this.deleteAt(x, y);
             return;
         }
         if (this.measureMode) {
@@ -284,7 +348,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     pointerMove(x: number, y: number, snap: SnapMode = 'off'): void {
         if (this.eraserMode) {
-            if (this.erasing) this.eraseAt(x, y); // erase only while the button is held (not on hover)
+            if (this.erasing) this.deleteAt(x, y); // erase only while the button is held (not on hover)
             return;
         }
         if (this.measureMode) {
@@ -642,7 +706,71 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.render();
     }
 
-    /** Repaint the drawings layer (called every data frame + on internal changes). */
+    /** Whether the drawing's z puts it INSIDE the series stack (per the last-known boundaries)
+     *  rather than over it — i.e. its body belongs to an interleave layer, not the top canvas. */
+    private isInterleaved(d: Drawing): boolean {
+        return sliceKeyFor(d.zIndex, this.lastBounds.get(d.paneId) ?? []) !== null;
+    }
+
+    /** A drawing that paints inside the series stack changed (content, not hover): its pixels
+     *  live in the backend composite, so this layer alone can't show the change — ask for a
+     *  data frame, which re-runs `prepareSlices` before the backend composites. */
+    private invalidateSlices(): void {
+        if (this.sliced.size > 0 || this.drawings.some((d) => this.isInterleaved(d))) this.deps.requestDataPaint();
+    }
+
+    /**
+     * Rebuild the interleave layers for this data frame: bucket the visible drawings whose z
+     * sits at-or-under a series boundary by the FIRST boundary at-or-above them (a tie paints
+     * under that series), and paint each bucket on its own cached plot-sized canvas. Runs from
+     * the renderer's data paint, just before the backend composites the scene.
+     */
+    prepareSlices(paneIds: readonly string[]): ReadonlyMap<string, DrawingSlice[]> {
+        this.sliced.clear();
+        this.lastBounds = new Map(paneIds.map((id) => [id, this.deps.seriesBoundaries(id)]));
+        const out = new Map<string, DrawingSlice[]>();
+        const dpr = this.deps.dpr();
+        const proj = this.deps.projector();
+        const theme = this.deps.theme();
+        const buckets = new Map<string, { paneId: string; beforeZ: number; drawings: Drawing[] }>(); // keyed `paneId|beforeZ`
+        for (const d of this.drawings) {
+            if (!d.visible) continue;
+            const beforeZ = sliceKeyFor(d.zIndex, this.lastBounds.get(d.paneId) ?? []);
+            if (beforeZ === null) continue; // over the stack → top canvas
+            const key = `${d.paneId}|${beforeZ}`;
+            const bucket = buckets.get(key);
+            if (bucket) bucket.drawings.push(d);
+            else buckets.set(key, { paneId: d.paneId, beforeZ, drawings: [d] });
+            this.sliced.add(d.id);
+        }
+        for (const [key, { paneId, beforeZ, drawings }] of buckets) {
+            let canvas = this.sliceCache.get(key);
+            if (!canvas) {
+                canvas = document.createElement('canvas');
+                this.sliceCache.set(key, canvas);
+            }
+            if (canvas.width !== this.canvas.width || canvas.height !== this.canvas.height) {
+                canvas.width = this.canvas.width;
+                canvas.height = this.canvas.height;
+            }
+            const sctx = canvas.getContext('2d');
+            if (!sctx) continue;
+            sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            sctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+            this.painter.paintAll(sctx, drawings, proj, theme, EMPTY_TARGETS);
+            const slices = out.get(paneId) ?? [];
+            slices.push({ beforeZ, canvas });
+            out.set(paneId, slices);
+        }
+        for (const key of [...this.sliceCache.keys()]) if (!buckets.has(key)) this.sliceCache.delete(key); // drop stale layers
+        for (const slices of out.values()) slices.sort((a, b) => a.beforeZ - b.beforeZ);
+        return out;
+    }
+
+    /** Repaint the TOP drawings layer (called every data frame + on internal changes): the
+     *  drawings over the series stack, every selection handle (interleaved drawings' included,
+     *  or a drawing sent under the candles could never show what you grabbed), and the
+     *  transients — the placing ghost, anchor markers, the snap ring, the ruler. */
     render(): void {
         const ctx = this.ctx;
         if (!ctx) return;
@@ -653,12 +781,17 @@ export class UserDrawingController implements IDrawingsRendererPort {
         // A transparent inline editor overlays the label it edits — mute the canvas copy so the
         // typed text isn't drawn twice (the callout editor is opaque, so its label stays).
         const edited = this.textEditor ? this.editedDrawing(this.textEditor.id) : null;
-        this.painter.paintAll(ctx, this.drawings, proj, this.deps.theme(), {
+        const targets: PaintTargets = {
             selected: this.selectedIds,
             hovered: this.hoveredId,
             dragged: this.interaction.activeDragId(),
             mutedLabel: edited instanceof TextLabel ? edited.id : null,
-        });
+        };
+        // Front (non-interleaved) drawings paint fully here; the ones interleaved into the series
+        // stack painted their bodies on the backend layers, so only their handles come back on top
+        // — buried under the candles they'd be unusable.
+        this.painter.paintAll(ctx, this.drawings.filter((d) => !this.isInterleaved(d)), proj, this.deps.theme(), targets);
+        this.painter.paintHighlights(ctx, this.drawings.filter((d) => this.isInterleaved(d)), proj, handleIdsFor(targets));
         this.layoutTextEditor();
         const ghost = this.interaction.ghost();
         if (ghost) this.painter.paintGhost(ctx, ghost, proj, this.deps.theme());
