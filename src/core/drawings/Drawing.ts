@@ -105,6 +105,9 @@ export interface SerializedDrawing {
     text?: DrawingText;
     locked: boolean;
     visible: boolean;
+    /** Draw-order key. On a renderer with `drawingDepth` it shares ONE space with the pane's
+     *  series — the candles and each indicator carry z keys of their own — so a drawing can sit
+     *  anywhere in the stack, under the candles or between two indicators included. */
     zIndex: number;
     createdAt: number;
     /** Per-type extras (e.g. box `extend`) — keeps the base closed. */

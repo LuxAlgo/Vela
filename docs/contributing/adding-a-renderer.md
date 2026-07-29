@@ -101,6 +101,7 @@ The descriptor covers these fields. Some are tri-state (for example `native` / `
 | Fills | yes (`native` / `primitive` / `unsupported`) | Tier 1 |
 | Drawings | no | optional — **Drawings** tier |
 | User drawings (interactive) | `userDrawings` flag + a second port | optional — **User-drawings** tier |
+| User-drawing depth (a drawing can paint anywhere in the series stack) | `drawingDepth` flag | optional — inside the **User-drawings** tier |
 | Tables | no | optional — **Tables** tier |
 | Inputs UI (you provide the in-chart settings dialog) | no | optional — **Inputs UI** tier |
 
@@ -143,6 +144,25 @@ rest of the system, **JSON-only**:
 Everything else — the interaction state machine, hit-testing, the toolbar DOM, the per-drawing
 settings popup, the magnet/eraser/measure modes — lives **behind your port**, on your side, and is
 yours to build however suits your surface. Nothing about it crosses into the core.
+
+### Depth — the optional `drawingDepth` flag
+
+With this flag, a drawing's `zIndex` shares **one draw-order space with the pane's series**: the
+candles and each indicator carry z keys of their own, and a drawing whose key falls inside that
+range is meant to paint there — under the candles, between two indicators. Honouring it means
+compositing drawings **into** your series pass rather than on a layer above it: the native renderer
+prepaints each occupied gap onto its own canvas and composites it mid-pass (a `drawImage` on the
+canvas2d backend, a textured quad on the WebGL2 one). It is gated by its own capability and is
+independent of the rest of the tier: leave the flag off and paint every record in front, ordered
+among themselves by `zIndex`, and the widget stops offering depth slots. The key still round-trips
+through persistence either way, because it lives in the core model.
+
+Declaring it comes with two seams and two usability rules. The seams: implement the port's
+`stackRange(paneId)` query (the stack extremes a new drawing and the reorder commands have to
+beat), and expect z keys to arrive as arbitrary numbers. The rules: paint **selection handles in
+front** regardless of the drawing's depth (handles buried under the candles leave the user unable
+to see what they grabbed), and keep **hit-testing depth-agnostic**, since a drawing under the data
+is still meant to be clickable and draggable.
 
 ---
 

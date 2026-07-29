@@ -77,6 +77,14 @@ describe('mergeConfig — validating reducer (item 15)', () => {
         const base = baseConfig();
         expect(mergeConfig(base, { version: 999 }).version).toBe(CHART_CONFIG_VERSION);
     });
+
+    it('merges stacking additively — named ids apply, unnamed ones keep their keys', () => {
+        const base = baseConfig();
+        base.stacking = { candles: 0, series: { 'ind-1': -1, 'ind-2': -2 } };
+        const out = mergeConfig(base, { stacking: { candles: 3, series: { 'ind-2': 5, 'ind-3': 'junk' } } });
+        expect(out.stacking).toEqual({ candles: 3, series: { 'ind-1': -1, 'ind-2': 5 } });
+        expect(mergeConfig(base, {}).stacking).toEqual(base.stacking);
+    });
 });
 
 describe('defaultChartStyle', () => {
@@ -178,6 +186,15 @@ describe('NativeRenderer.applyConfig — applies + syncs the live scene fields',
         r.applyConfig({ candles: { upColor: '#101010', downColor: '#202020' } });
         expect(r.readFeature('upColor')).toBe('#101010');
         expect(r.readFeature('downColor')).toBe('#202020');
+    });
+
+    it('restores the stacking keys — and pre-seeds an indicator that has not mounted yet', () => {
+        const r = new NativeRenderer();
+        r.applyConfig({ stacking: { candles: 2, series: { 'ind-1': 3 } } });
+        const cfg = r.getConfig();
+        expect(cfg.stacking.candles).toBe(2);
+        expect(cfg.stacking.series['ind-1']).toBe(3); // held for the indicator's (later) mount
+        expect(r.readFeature('candleZOrder')).toBe(2);
     });
 });
 

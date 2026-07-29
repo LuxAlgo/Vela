@@ -22,6 +22,10 @@ export interface AddInit {
     text?: SerializedDrawing['text'];
     /** Per-type extras (e.g. a glyph stamp's `glyph`, a fib tool's `levels`). */
     props?: SerializedDrawing['props'];
+    /** Draw-order key. Defaults to just under the pane's price on a renderer with
+     *  `drawingDepth` — the candles read on top of a fresh drawing; pass an explicit key
+     *  for any other slot in the stack. */
+    zIndex?: number;
 }
 
 /**
@@ -165,6 +169,7 @@ export class DrawingController {
             style,
             text: init.text,
             props: init.props,
+            zIndex: init.zIndex ?? this.startZ(init.paneId ?? 'price'),
         });
         if (!d) return null;
         this.history.record(this.store.serialize());
@@ -215,26 +220,49 @@ export class DrawingController {
         const before = this.store.serialize();
         this.history.record(before);
         this.store.setLocked(id, v);
+        this.events.emit('drawing:edited', { id });
     }
 
     setVisible(id: string, v: boolean): void {
         const before = this.store.serialize();
         this.history.record(before);
         this.store.setVisible(id, v);
+        this.events.emit('drawing:edited', { id });
     }
 
     bringToFront(id: string): void {
         const before = this.store.serialize();
         this.history.record(before);
-        this.store.bringToFront(id);
+        this.store.bringToFront(id, this.seriesTopZ(this.store.get(id)?.paneId));
         this.events.emit('drawing:edited', { id });
     }
 
     sendToBack(id: string): void {
         const before = this.store.serialize();
         this.history.record(before);
-        this.store.sendToBack(id);
+        this.store.sendToBack(id, this.seriesBottomZ(this.store.get(id)?.paneId));
         this.events.emit('drawing:edited', { id });
+    }
+
+    /** The top of the pane's series stack — what a front drawing has to clear. 0 when the
+     *  renderer keeps drawings on their own layer (no shared z space). */
+    private seriesTopZ(paneId: string | undefined): number {
+        return paneId !== undefined ? (this.port?.stackRange?.(paneId)?.front ?? 0) : 0;
+    }
+
+    /** The bottom of the pane's series stack — what a backmost drawing has to undercut. */
+    private seriesBottomZ(paneId: string | undefined): number {
+        return paneId !== undefined ? (this.port?.stackRange?.(paneId)?.back ?? 1) : 1;
+    }
+
+    /** Where a NEW drawing starts: just under the pane's price so the candles read on top of it
+     *  (falling back to just under the pane's top series where there is no price — a study
+     *  pane). Half a key down never ties a series; drawings tying each other paint in insertion
+     *  order, so consecutive new drawings still stack newest-in-front. Undefined without a
+     *  shared z space — the store then places it over the other drawings, its own layer's top. */
+    private startZ(paneId: string): number | undefined {
+        const range = this.port?.stackRange?.(paneId);
+        return range ? (range.price ?? range.front) - 0.5 : undefined;
     }
 
     /** Programmatically select drawings (host UI → chart): shows the on-chart handles + toolbar.
@@ -358,7 +386,9 @@ export class DrawingController {
         this.history.begin(this.store.serialize());
         const clones: Drawing[] = [];
         for (const doc of docs) {
-            const d = deserializeDrawing({ ...doc, id: this.store.nextId(), zIndex: 0 });
+            // A copy keeps its source's DEPTH: the clone lands at the same z and, tying it,
+            // paints just in front of it — "duplicate then drag" without a jump up the stack.
+            const d = deserializeDrawing({ ...doc, id: this.store.nextId() });
             if (!d) continue;
             this.store.add(d);
             this.history.markDirty();
@@ -398,6 +428,7 @@ export class DrawingController {
                 const style = last ? { ...i.doc.style, ...last } : i.doc.style;
                 const d = deserializeDrawing({ ...i.doc, id: this.store.nextId(), style });
                 if (!d) return;
+                if (!d.zIndex) d.zIndex = this.startZ(d.paneId) ?? 0; // a freshly placed drawing starts under the price
                 this.history.record(before);
                 this.store.add(d);
                 this.captureStyle(d.id);

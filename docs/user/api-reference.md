@@ -279,7 +279,8 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `remove(id)` | no | Delete a drawing. |
 | `update(id, patch)` | no | Apply a partial serialized record (for a custom settings UI). |
 | `lock(id, v?)` · `show(id, v?)` | no | Lock/unlock · show/hide a single drawing. |
-| `bringToFront(id)` · `sendToBack(id)` | no | Reorder paint order. |
+| `bringToFront(id)` · `sendToBack(id)` | no | Reorder paint order. With the `drawingDepth` capability they clear the whole stack — candles and indicators included, not just the other drawings. |
+| `zIndex` (on `add`'s init and `update`'s patch) | no | The draw-order key. On a `drawingDepth` renderer it shares one space with the pane's series, so a drawing can sit under the candles or between two indicators — see [depth](./drawing-tools.md#depth-anywhere-in-the-stack). Persists with the drawing either way. |
 | `undo()` · `redo()` · `canUndo()` · `canRedo()` | no | Snapshot history (core-owned). |
 | `clone(id)` · `duplicate(ids)` | yes | Copy in place; the copies become the selection. |
 | `copyToClipboard(ids)` · `paste()` | yes | In-memory, per-chart clipboard. |
