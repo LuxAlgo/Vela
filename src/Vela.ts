@@ -303,6 +303,18 @@ export class Vela {
     }
 
     /**
+     * Pan the view by a fraction of the visible width — positive ⇒ toward the latest
+     * bars, negative ⇒ into history. Behaves exactly like dragging the chart: constant
+     * zoom, the same pan limits (forward stops at the newest candle plus the bounded
+     * empty space), and eased on renderers that animate pans. Repeated calls stack into
+     * one continuous scroll.
+     */
+    panBy(fraction: number): this {
+        this.orchestrator.panBy(fraction);
+        return this;
+    }
+
+    /**
      * Frame a named date-range preset over the loaded bars: `'1D'`, `'1W'`, `'1M'`,
      * `'3M'`, `'6M'`, `'1Y'`, `'YTD'`, or `'ALL'`. A preset deeper than the loaded
      * history simply frames everything (it doesn't fetch more bars).

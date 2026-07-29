@@ -867,15 +867,20 @@ export class NativeRenderer implements IChartRenderer {
     /** Glide the view back to the most recent bars, keeping the current zoom (barSpacing). */
     private scrollToRealtime(): void {
         if (this.coords.barCount === 0) return;
+        this.glideRightOffset(ZOOM_OUT_MARGIN_BARS);
+    }
+
+    /** Ease rightOffset to `target` at constant zoom (see animTick's scroll glide);
+     *  instant when pan animation is off. Shared by scroll-to-latest and panBy. */
+    private glideRightOffset(target: number): void {
         const vp = this.coords.getViewport();
         if (!this.animPan) {
-            this.applyViewport({ barSpacing: vp.barSpacing, rightOffset: ZOOM_OUT_MARGIN_BARS });
+            this.applyViewport({ barSpacing: vp.barSpacing, rightOffset: target });
             return;
         }
-        // Ease rightOffset back to a small margin at constant zoom (see animTick).
         this.panVelocity = 0;
         this.targetBarSpacing = vp.barSpacing; // keep zoom fixed so animTick doesn't re-anchor
-        this.scrollTargetRO = ZOOM_OUT_MARGIN_BARS;
+        this.scrollTargetRO = target;
         this.animator.start();
     }
 
@@ -1109,6 +1114,8 @@ export class NativeRenderer implements IChartRenderer {
             resetView: () => this.resetView(),
             // User drawings claim a gesture before pan when armed / over a drawing.
             drawingsClaim: (x, y) => this.userDrawings?.claim(x, y) ?? false,
+            drawingsMeasureStart: (x, y) => this.userDrawings?.beginMeasureAt(x, y) ?? false,
+            drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
             drawingsSnapMode: () => this.snapMode,
             drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
             drawingsPointerMove: (x, y, snap) => this.userDrawings?.pointerMove(x, y, snap),
@@ -1760,6 +1767,19 @@ export class NativeRenderer implements IChartRenderer {
         const barSpacing = clampBarSpacing(this.coords.width / (span * this.coords.spacingScale));
         const rightOffset = toL - (this.coords.barCount - 1);
         this.applyViewport({ barSpacing, rightOffset });
+    }
+
+    /** Pan by a fraction of the visible width at constant zoom (positive ⇒ toward the
+     *  latest bars). Mirrors a drag exactly: the target is clamped by the same viewport
+     *  bounds (so panning forward stops at the newest candle plus the bounded right
+     *  whitespace) and eases on the scroll-to-latest glide — repeated calls retarget the
+     *  running glide, so a held key reads as one continuous scroll. */
+    panBy(fraction: number): void {
+        if (this.coords.barCount === 0 || this.coords.width === 0) return;
+        const vp = this.coords.getViewport();
+        const visBars = this.coords.width / this.coords.pxPerBar();
+        const base = this.scrollTargetRO ?? vp.rightOffset; // stack onto an in-flight glide
+        this.glideRightOffset(this.clampViewport(vp.barSpacing, base + fraction * visBars).rightOffset);
     }
 
     // ── internals ──

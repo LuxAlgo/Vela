@@ -39,6 +39,7 @@ On top of every [chart option](./options.md), the widget adds:
 | `priceStyle` | string | `'candles'` | Initial chart style; changed live from the topbar dropdown. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
 | `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles. |
+| `autofocus` | boolean | `false` | Focus the chart on mount so keyboard shortcuts work from the first keystroke. Off by default: an embedded chart should not steal the page's focus. |
 | `persist` | boolean \| string | `false` | Bring the chart back as you left it — the widget persists its FULL state (the unified `getState()` document: market, prefs, renderer config, user drawings, indicators) and restores it at construction (`true` = key `'vela-widget'`; a string is the key). Old three-key payloads migrate transparently. |
 | `storage` | `WidgetStorage` | localStorage | The persistence backend — inject a custom adapter (see below). |
 | `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark flag) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
@@ -70,6 +71,13 @@ The widget is keyboard-first:
 - Type a **digit** → the timeframe entry opens (`15`, `4h`, `D`, `3M`, … — a bare
   number is minutes, a bare letter means one unit).
 - `alt+S` → download a PNG screenshot. `?` → the shortcuts panel.
+- `mod+↑/↓` glide-zoom, `mod+←/→` glide-pan with the exact feel and limits of a drag
+  (toward now it rests on the newest candle plus the usual empty space). `alt+T` arms the
+  trend line tool; `alt+H` /
+  `alt+V` drop a horizontal / vertical line at the cursor — the drawing toolbar's menus show
+  these chords beside the tools.
+- Mouse: `Shift`+scroll pans through history instead of zooming, `Shift`+click starts the
+  measure ruler at the cursor, and middle-click deletes the drawing under it.
 - Drawing keys (undo/redo, copy/paste, delete, nudge) come from the core — see
   [Drawing tools](./drawing-tools.md).
 
@@ -77,6 +85,10 @@ Bindings are declarative descriptors on `widget.keymap` — `register({ id, keys
 label, category, scope?, run })` — and are listed automatically in the `?` panel. `'mod'`
 is ⌘ on macOS and Ctrl elsewhere. Scopes stack: the widget pushes `'dialog'` while any of
 its dialogs is open, muting chart-scope bindings.
+
+Shortcuts fire while keyboard focus is **inside the widget** (any click on the chart puts
+it there). For a page where the chart is the main content, set `autofocus: true` so they
+work from the very first keystroke, before any click.
 
 ## The chrome
 

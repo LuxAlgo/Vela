@@ -62,6 +62,10 @@ export interface IDrawingsRendererPort {
     /** Push the FAVORITE tool set (flyout stars + any favorites-driven UI). Optional —
      *  favorites still work headless without a renderer reflection. */
     setFavorites?(types: readonly DrawingTypeKey[]): void;
+    /** Push per-tool shortcut hints — PRE-FORMATTED display strings (e.g. `'Alt+T'`)
+     *  shown beside the tools in the toolbar flyouts. The host owns the keymap and the
+     *  platform formatting; the renderer only displays. Optional. */
+    setToolShortcuts?(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void;
     /** Set the sticky magnet snap mode (off/weak/strong). Optional — a renderer without
      *  a magnet omits it; the in-chart toolbar reflects the pushed value. */
     setSnapMode?(mode: SnapMode): void;

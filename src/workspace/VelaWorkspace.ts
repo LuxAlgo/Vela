@@ -27,6 +27,7 @@ import { TimeframeQuick } from '../widget/timeframe-quick';
 import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
+import { toolShortcutHints } from '../widget/tool-shortcuts';
 import { widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
@@ -73,6 +74,10 @@ export interface VelaWorkspaceOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
+    /** Focus the active chart when the workspace mounts so keyboard shortcuts work from
+     *  the first keystroke — no initial click needed. Default false: an embedded
+     *  workspace must never steal the page's focus from the host's own controls. */
+    autofocus?: boolean;
     /** The ONE shared drawing toolbar, docked left of the grid and acting on the active
      *  cell (per-cell in-chart bars stay hidden either way). Default true. */
     drawingToolbar?: boolean;
@@ -380,6 +385,8 @@ export class VelaWorkspace {
         this.keymap = new KeymapManager();
         this.keymap.attach(this.root);
         this.registerDefaultKeys();
+        // Shortcut hints beside the bound tools in the shared toolbar's flyouts.
+        this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap));
         this.root.addEventListener('keydown', this.onRootKeydown);
         this.root.tabIndex = -1; // focusable host so bare keystrokes land here
 
@@ -387,6 +394,9 @@ export class VelaWorkspace {
         this.applyGrid();
         this.buildCells();
         this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.def.cells[0]?.id ?? null));
+        // Shortcuts only fire while focus is INSIDE the workspace (the keymap listens
+        // on the root) — autofocus makes them work before the first click.
+        if (opts.autofocus) this.refocusActive();
 
         // The shared manifest resolves once; every FRESH cell seeds its enabled entries.
         if (opts.indicators !== undefined) {
@@ -1023,8 +1033,9 @@ export class VelaWorkspace {
         this.keymap.register({ id: 'history.redo', keys: ['mod+y', 'mod+shift+z'], label: 'Redo (active chart)', category: 'Edit', run: () => this.active.history.redo() });
         this.keymap.register({ id: 'view.zoom-in', keys: 'mod+arrowup', label: 'Zoom in', category: 'Chart', run: () => this.glider.zoom(ZOOM_IN) });
         this.keymap.register({ id: 'view.zoom-out', keys: 'mod+arrowdown', label: 'Zoom out', category: 'Chart', run: () => this.glider.zoom(ZOOM_OUT) });
-        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.glider.pan(-PAN_FAST) });
-        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.glider.pan(PAN_FAST) });
+        // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
+        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.active.chart.panBy(-PAN_FAST) });
+        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.active.chart.panBy(PAN_FAST) });
         this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
         this.keymap.register({
             id: 'help.shortcuts',

@@ -37,6 +37,10 @@ class FakePort implements IDrawingsRendererPort {
     setFavorites(types: readonly string[]): void {
         this.favoritesPushed.push([...types]);
     }
+    shortcutsPushed: Array<Record<string, string>> = [];
+    setToolShortcuts(map: Readonly<Record<string, string>>): void {
+        this.shortcutsPushed.push({ ...map });
+    }
     snapModes: string[] = [];
     setSnapMode(mode: string): void {
         this.snapModes.push(mode);
@@ -494,6 +498,12 @@ describe('drawing-tool favorites', () => {
         expect(seen.length).toBe(n);
         ctrl.setFavorite('trendline', false);
         expect(ctrl.favorites()).toEqual(['box']);
+    });
+
+    it('setToolShortcuts pushes the hint map to the port (display strings pass through untouched)', () => {
+        const { ctrl, port } = setup();
+        ctrl.setToolShortcuts({ trendline: 'Alt+T', hline: 'Alt+H', vline: 'Alt+V' });
+        expect(port.shortcutsPushed).toEqual([{ trendline: 'Alt+T', hline: 'Alt+H', vline: 'Alt+V' }]);
     });
 
     it('starring NEVER arms a tool (the star is a side action on the flyout row)', () => {

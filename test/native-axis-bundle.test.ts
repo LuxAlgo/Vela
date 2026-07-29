@@ -131,6 +131,18 @@ describe('keyboard key→action mapping (item 11)', () => {
         expect(keyToAction({ key: 'a', shiftKey: false })).toBeNull();
         expect(keyToAction({ key: 'Enter', shiftKey: false })).toBeNull();
     });
+
+    it('stands down on Ctrl/Cmd chords — those belong to the host keymap', () => {
+        // A held Ctrl+Arrow pans via the widget keymap; if the chart ALSO stepped the
+        // crosshair, its scroll-into-view would fight the glide (a visible bounce).
+        expect(keyToAction({ key: 'ArrowLeft', shiftKey: false, ctrlKey: true })).toBeNull();
+        expect(keyToAction({ key: 'ArrowRight', shiftKey: false, ctrlKey: true })).toBeNull();
+        expect(keyToAction({ key: 'ArrowRight', shiftKey: false, metaKey: true })).toBeNull();
+        expect(keyToAction({ key: '0', shiftKey: false, ctrlKey: true })).toBeNull(); // browser zoom-reset stays free
+        expect(keyToAction({ key: 'Home', shiftKey: false, metaKey: true })).toBeNull();
+        // Alt+Shift+Right (scroll to realtime) is unaffected — alt is not a host-chord modifier here.
+        expect(keyToAction({ key: 'ArrowRight', shiftKey: true, altKey: true })).toEqual({ kind: 'realtime' });
+    });
 });
 
 describe('NativeRenderer new feature defaults + setters (items 9, 11, 14)', () => {

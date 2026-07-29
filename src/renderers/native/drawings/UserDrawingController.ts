@@ -158,6 +158,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.toolbar.setFavorites(types);
     }
 
+    /** Core push: per-tool shortcut hints (display strings) shown in the toolbar flyouts. */
+    setToolShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void {
+        this.toolbar.setShortcuts(map);
+    }
+
     /** Core push: set the sticky magnet mode. Applies to the renderer + reflects on the
      *  in-chart toolbar WITHOUT notifying back (the caller already holds the value). */
     setSnapMode(mode: SnapMode): void {
@@ -220,10 +225,25 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return this.interaction.claim(x, y);
     }
 
-    /** Delete the (unlocked) drawing under the cursor, if any. Shared by eraser click + drag. */
-    private eraseAt(x: number, y: number): void {
+    /** Delete the (unlocked) drawing under the cursor. True when one was removed.
+     *  Shared by the eraser (click + drag) and the middle-click shortcut. */
+    deleteAt(x: number, y: number): boolean {
         const hit = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE);
-        if (hit && !hit.locked) this.emit({ kind: 'delete', ids: [hit.id] });
+        if (!hit || hit.locked) return false;
+        this.popup.close();
+        this.emit({ kind: 'delete', ids: [hit.id] });
+        return true;
+    }
+
+    /** Shift+press on the empty plot: arm the measure ruler AND start it at (x, y) in one
+     *  gesture — the equivalent of clicking the toolbar's Measure button, then pressing.
+     *  Returns false when a mode/tool is already active (the normal press path owns it). */
+    beginMeasureAt(x: number, y: number): boolean {
+        if (this.measureMode || this.eraserMode || this.activeTool != null) return false;
+        this.withModeIntent(() => this.toggleMeasure());
+        this.measure.down(x, y);
+        this.render();
+        return true;
     }
 
     /** Clear a finished transient measurement (the ruler vanishes on the next press / pan / zoom). */
@@ -237,7 +257,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     pointerDown(x: number, y: number, snap: SnapMode = 'off', shift = false): void {
         if (this.eraserMode) {
             this.erasing = true; // hold to drag-erase across multiple drawings
-            this.eraseAt(x, y);
+            this.deleteAt(x, y);
             return;
         }
         if (this.measureMode) {
@@ -252,7 +272,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     pointerMove(x: number, y: number, snap: SnapMode = 'off'): void {
         if (this.eraserMode) {
-            if (this.erasing) this.eraseAt(x, y); // erase only while the button is held (not on hover)
+            if (this.erasing) this.deleteAt(x, y); // erase only while the button is held (not on hover)
             return;
         }
         if (this.measureMode) {

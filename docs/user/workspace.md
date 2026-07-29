@@ -167,6 +167,7 @@ state referencing a custom layout id restores only if that layout is registered
 | `timezone` | `'Etc/UTC'` | Workspace-global display timezone (every cell). |
 | `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |
 | `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
+| `autofocus` | `false` | Focus the active chart on mount so keyboard shortcuts work from the first keystroke. Off by default: an embedded workspace should not steal the page's focus. |
 | `maxWebglCells` | `8` | Above this many cells, every cell uses canvas2d (uniform look inside the browser's WebGL budget; `glow` unavailable there). |
 
 Contributed actions/attachments (`vela/plugin`) work unchanged — `ctx.chart` resolves
