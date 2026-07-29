@@ -29,6 +29,7 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
     ],
     live: true,
     theme: 'dark',
+    autofocus: true, // the workspace IS the page — shortcuts work from the first keystroke
     // The playground's CUSTOM persistence (shared with the widget page): the whole
     // workspace document — layout, sync, timezone, and per cell the market, renderer
     // config, DRAWINGS and indicators — survives a reload via localStorage.

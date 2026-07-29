@@ -273,6 +273,13 @@ export interface IChartRenderer {
 
     getVisibleRange(): VisibleRange | null;
     setVisibleRange(range: VisibleRange): void;
+    /**
+     * Pan by a fraction of the visible width at constant zoom (positive ⇒ toward the
+     * latest bars), behaving exactly like a pointer drag: same pan limits (including the
+     * bounded whitespace past the newest bar), eased if the renderer animates pans.
+     * OPTIONAL — without it the core falls back to an instant `setVisibleRange` shift.
+     */
+    panBy?(fraction: number): void;
     onViewportChange(cb: (range: VisibleRange) => void): Unsubscribe;
 
     /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wheelZoomAnchor, isHorizontalWheel, wheelPanRightOffset, InputController } from '../src/renderers/native/core/InputController';
+import { wheelZoomAnchor, isHorizontalWheel, wheelPanRightOffset, wheelPanDelta, InputController } from '../src/renderers/native/core/InputController';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
 import { CoordinateSystem } from '../src/renderers/native/core/CoordinateSystem';
 
@@ -39,6 +39,21 @@ describe('horizontal wheel / trackpad pans through time', () => {
         // barSpacing 10 ⇒ a 50px swipe pans exactly 5 bars (1:1 with the fingers).
         expect(wheelPanRightOffset(0, 50, 10)).toBeCloseTo(5);
         expect(wheelPanRightOffset(3, -20, 10)).toBeCloseTo(1); // scroll left → back into history
+    });
+});
+
+describe('Shift+wheel scrolls through history instead of zooming', () => {
+    it('a plain vertical notch zooms (null); with shift it pans by deltaY', () => {
+        expect(wheelPanDelta(0, 120, false)).toBeNull(); // normal notch → zoom
+        expect(wheelPanDelta(0, 120, true)).toBe(120); // shift → pan forward
+        expect(wheelPanDelta(0, -120, true)).toBe(-120); // shift + scroll up → back into history
+    });
+
+    it('a horizontal-dominant gesture pans by deltaX with or without shift', () => {
+        // Browsers that remap Shift+wheel into deltaX land here too.
+        expect(wheelPanDelta(120, 0, false)).toBe(120);
+        expect(wheelPanDelta(120, 0, true)).toBe(120);
+        expect(wheelPanDelta(-30, 4, true)).toBe(-30);
     });
 });
 

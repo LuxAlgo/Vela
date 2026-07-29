@@ -1020,6 +1020,20 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.renderer.setVisibleRange(range);
     }
 
+    /** Pan by a fraction of the visible width (positive ⇒ toward the latest bars).
+     *  Prefers the renderer's drag-equivalent pan; falls back to an instant shift of
+     *  the visible range for renderers without one. */
+    panBy(fraction: number): void {
+        if (this.renderer.panBy) {
+            this.renderer.panBy(fraction);
+            return;
+        }
+        const r = this.renderer.getVisibleRange();
+        if (!r) return;
+        const delta = (r.to - r.from) * fraction;
+        this.renderer.setVisibleRange({ from: r.from + delta, to: r.to + delta });
+    }
+
     /** Frame a named preset (e.g. `'1M'`, `'YTD'`, `'ALL'`) over the loaded bars. */
     setVisibleRangePreset(preset: VisibleRangePreset): void {
         const range = presetToRange(preset, this.bars);

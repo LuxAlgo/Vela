@@ -41,6 +41,7 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 | `on(event, handler)` | Subscribe to a chart-level event. Returns an unsubscribe function. |
 | `getVisibleRange()` | The current visible time range (`{ from, to }` in epoch-ms), or `null` before data loads. |
 | `setVisibleRange(range)` | Set the visible time range explicitly (epoch-ms). Returns the chart for chaining. |
+| `panBy(fraction)` | Pan by a fraction of the visible width — positive ⇒ toward the latest bars, negative ⇒ into history. Behaves exactly like dragging the chart: constant zoom, the same pan limits (forward stops at the newest candle plus the bounded empty space), eased on renderers that animate pans; repeated calls stack into one continuous scroll. The widget's `Ctrl/Cmd + ←/→` keys use it. Returns the chart for chaining. |
 | `setVisibleRangePreset(preset)` | Frame a named date range over the loaded bars: `'1D'`, `'1W'`, `'1M'`, `'3M'`, `'6M'`, `'1Y'`, `'5Y'`, `'YTD'`, or `'ALL'`. A preset deeper than the loaded history just frames everything (it doesn't fetch more bars — the widget's range chips do that for you). Returns the chart for chaining. |
 | `inspect()` | A renderer-agnostic snapshot of the graphic elements the core has generated (series, fills, drawings, tables, …) — a deterministic check that a feature was produced, independent of which renderer drew it. |
 | `resize()` | Re-measure the container and relayout. Call after the container's size changes. |
@@ -275,6 +276,7 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `setMode(mode)` · `getMode()` | yes / no | Renderer-local mode: `'measure' \| 'eraser' \| null`. Mutually exclusive with armed tools (the renderer enforces it); changes land on `drawing:mode`. |
 | `showToolbar(visible?)` | yes | Show/hide the on-chart toolbar. |
 | `setToolbar(option)` | yes | Reconfigure the toolbar groups/tools live. |
+| `setToolShortcuts(map)` | yes | Show per-tool shortcut hints in the toolbar flyouts — `{ trendline: 'Alt+T', … }`. Values are pre-formatted display strings: the host owns the keymap and the platform formatting. The widget/workspace push their own bindings automatically. |
 | `add(type, init?)` | yes | Create a drawing from code; returns the `Drawing` (or `null` if unsupported). |
 | `remove(id)` | no | Delete a drawing. |
 | `update(id, patch)` | no | Apply a partial serialized record (for a custom settings UI). |

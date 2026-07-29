@@ -30,6 +30,7 @@ const widget = new VelaWidget('#chart', {
     timeframe: '60',
     live: true,
     theme: 'dark',
+    autofocus: true, // the chart IS the page — shortcuts work from the first keystroke
     persist: true, // key 'vela-widget' → 'vela-play:vela-widget' in devtools
     storage,
     providers: { binance: () => new BinanceProvider() },

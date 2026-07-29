@@ -45,6 +45,11 @@ export interface InputControllerDeps {
     // ── user drawings (optional) — let the drawings layer claim a gesture before pan ──
     /** True when a press at (x,y) belongs to the drawings layer (armed tool, or over a drawing). */
     drawingsClaim?(x: number, y: number): boolean;
+    /** Shift+press on empty plot: arm the measure ruler AND start it at (x,y). True when it started
+     *  (the drawings layer then owns the rest of the gesture). */
+    drawingsMeasureStart?(x: number, y: number): boolean;
+    /** Middle-click: delete the drawing under the cursor. True when one was removed. */
+    drawingsDeleteAt?(x: number, y: number): boolean;
     /** A claimed press began. `snap` = effective magnet mode; `shift` = additive (multi-) select. */
     drawingsPointerDown?(x: number, y: number, snap: SnapMode, shift: boolean): void;
     /** Pointer moved (forwarded for the placing ghost / drag preview). `snap` = effective magnet mode. */
@@ -108,6 +113,19 @@ export function wheelPanRightOffset(rightOffset: number, deltaX: number, barSpac
     return rightOffset + deltaX / barSpacing;
 }
 
+/**
+ * The pixel delta a wheel gesture pans by, or null when it should zoom instead.
+ * Pans on a horizontal-dominant gesture (trackpad swipe / tilt wheel), and on
+ * Shift+wheel — scrolling through history like a document. Most browsers already remap
+ * Shift+wheel into `deltaX` (caught by the horizontal branch); the shift fallback
+ * covers those that keep the delta vertical. Scroll down/right ⇒ toward the latest bars.
+ */
+export function wheelPanDelta(deltaX: number, deltaY: number, shift: boolean): number | null {
+    if (isHorizontalWheel(deltaX, deltaY)) return deltaX;
+    if (shift) return deltaY;
+    return null;
+}
+
 /** The magnet mode actually applied: holding Ctrl/Cmd forces `strong`, else the sticky toolbar mode. */
 export function effectiveSnapMode(momentaryOverride: boolean, sticky: SnapMode): SnapMode {
     return momentaryOverride ? 'strong' : sticky;
@@ -145,6 +163,7 @@ export class InputController {
     private lastX = 0;
     private lastT = 0;
     private vx = 0; // smoothed pointer velocity, px/ms
+    private middleDeleted = false; // the last middle press deleted a drawing (suppress autoscroll/paste)
 
     constructor(private readonly deps: InputControllerDeps) {}
 
@@ -156,6 +175,11 @@ export class InputController {
         el.addEventListener('pointerleave', this.onLeave);
         el.addEventListener('dblclick', this.onDblClick);
         el.addEventListener('wheel', this.onWheel, { passive: false });
+        // Middle-press companions: autoscroll starts on mousedown and Linux paste on
+        // auxclick — both fire AFTER pointerdown, so a middle press that deleted a
+        // drawing (see onDown) can veto them here.
+        el.addEventListener('mousedown', this.onMiddleGuard);
+        el.addEventListener('auxclick', this.onMiddleGuard);
     }
 
     detach(): void {
@@ -167,8 +191,14 @@ export class InputController {
         el.removeEventListener('pointerleave', this.onLeave);
         el.removeEventListener('dblclick', this.onDblClick);
         el.removeEventListener('wheel', this.onWheel);
+        el.removeEventListener('mousedown', this.onMiddleGuard);
+        el.removeEventListener('auxclick', this.onMiddleGuard);
         this.el = null;
     }
+
+    private readonly onMiddleGuard = (e: MouseEvent): void => {
+        if (e.button === 1 && this.middleDeleted) e.preventDefault();
+    };
 
     private local(e: PointerEvent | WheelEvent | MouseEvent): { x: number; y: number } {
         const rect = (this.el as HTMLElement).getBoundingClientRect();
@@ -195,6 +225,14 @@ export class InputController {
     }
 
     private readonly onDown = (e: PointerEvent): void => {
+        if (e.button === 1) {
+            // Middle-click deletes the drawing under the cursor. The flag lets the
+            // mousedown/auxclick companions suppress autoscroll/paste for THIS press only.
+            const { x, y } = this.local(e);
+            this.middleDeleted = this.deps.drawingsDeleteAt?.(x, y) ?? false;
+            if (this.middleDeleted) e.preventDefault();
+            return;
+        }
         if (e.button !== 0) return;
         const { x, y } = this.local(e);
         this.deps.drawingsClearTransient?.(); // a finished ruler vanishes on the next press (pan still proceeds)
@@ -207,6 +245,13 @@ export class InputController {
         if (this.deps.drawingsClaim?.(x, y)) {
             this.region = 'drawing';
             this.deps.drawingsPointerDown?.(x, y, this.snapMode(e), e.shiftKey);
+            this.capture(e.pointerId);
+            return;
+        }
+        // Shift+press on the empty plot starts the measure ruler in one gesture (a press
+        // over a drawing keeps the additive-select meaning of shift, via the claim above).
+        if (e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y)) {
+            this.region = 'drawing';
             this.capture(e.pointerId);
             return;
         }
@@ -330,10 +375,12 @@ export class InputController {
         this.deps.drawingsClearTransient?.(); // a finished ruler vanishes on zoom/pan
         const coords = this.deps.getCoords();
         const vp = coords.getViewport();
-        // A horizontal-dominant gesture (trackpad two-finger swipe / tilt wheel) pans
-        // through time instead of zooming — the renderer clamps the applied viewport.
-        if (isHorizontalWheel(e.deltaX, e.deltaY)) {
-            this.deps.apply({ barSpacing: vp.barSpacing, rightOffset: wheelPanRightOffset(vp.rightOffset, e.deltaX, coords.pxPerBar()) });
+        // A horizontal-dominant gesture (trackpad two-finger swipe / tilt wheel) and
+        // Shift+wheel pan through time instead of zooming — the renderer clamps the
+        // applied viewport.
+        const pan = wheelPanDelta(e.deltaX, e.deltaY, e.shiftKey);
+        if (pan != null) {
+            this.deps.apply({ barSpacing: vp.barSpacing, rightOffset: wheelPanRightOffset(vp.rightOffset, pan, coords.pxPerBar()) });
             return;
         }
         const cursorX = this.local(e).x;

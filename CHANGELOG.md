@@ -42,6 +42,15 @@ All notable changes to Vela, newest first.
   you when to save. Server-side snapshots, shareable links, and layout templates are all built
   from these two calls. The widget speaks the exact same format as the workspace (it is simply
   the one-chart case), so a saved widget chart can be dropped into a workspace slot as-is.
+- **Shortcuts from the first keystroke.** A new `autofocus` option on the widget and the
+  workspace focuses the chart as soon as it mounts, so keyboard shortcuts work the moment
+  the chart appears — no initial click needed. It stays off by default, so a chart embedded
+  next to other page content never steals the keyboard focus.
+- **Quicker mouse control of the view and drawings.** Hold `Shift` and scroll to glide through
+  chart history instead of zooming, `Shift`-click an empty spot to start measuring from that
+  exact point, and middle-click a drawing to delete it — no toolbar round-trip needed. The
+  drawing toolbar's menus now show each tool's keyboard shortcut beside it, with the favorite
+  star at the far edge of the row, and the `?` shortcuts panel lists the mouse gestures too.
 - **A reorganized object tree.** The panel now mirrors how the chart is actually built: every
   item sits under the pane it belongs to, and in the main chart the price series takes its own
   place in the stack among the overlay indicators, in the order they draw. Drawings are listed
@@ -109,6 +118,18 @@ All notable changes to Vela, newest first.
 - **Hiding or locking a drawing now sticks.** Both are saved along with the rest of your chart,
   can be undone, and immediately update everywhere that drawing appears. Before, a hidden or
   locked drawing came back visible and unlocked after a reload.
+
+### Fixed
+
+- **Keyboard zoom and pan no longer wedge the chart.** Zooming or panning with `Ctrl` + arrow
+  keys toward the edge of the chart (or past the zoom limits) could leave the view stuck: the
+  animation silently kept running forever and overrode every later scroll-wheel or drag
+  gesture, so the chart stopped responding to the mouse. The glide now settles cleanly and
+  the mouse always stays in control. `Ctrl` + `←`/`→` also now pans exactly like dragging the
+  chart — same limits, same feel: holding the key scrolls continuously and, toward the most
+  recent bar, comes to rest on the newest candle plus the usual bit of empty space. And with
+  the chart focused, a held `Ctrl` + arrow no longer also moves the crosshair bar — the two
+  used to fight over the view, which read as a stuttering bounce while panning.
 
 ## [v0.1.0]
 

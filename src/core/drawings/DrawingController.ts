@@ -157,6 +157,11 @@ export class DrawingController {
         this.port?.setToolbar(buildToolbar(option).definition);
     }
 
+    /** Push per-tool shortcut hints (pre-formatted display strings) to the toolbar flyouts. */
+    setToolShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void {
+        this.port?.setToolShortcuts?.(map);
+    }
+
     // ── programmatic CRUD (facade-facing) ── each is one undo step
     add(type: DrawingTypeKey, init: AddInit = {}): Drawing | null {
         if (!this.enabled) return null;
