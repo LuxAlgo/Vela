@@ -384,7 +384,7 @@ export class DrawingSettingsPopup {
             input.style.cssText = `width:96px;flex:none;background:transparent;color:inherit;border:1px solid ${CHROME_BORDER_COLOR};border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
             return input;
         };
-        const rowShell = (label: string): { row: HTMLDivElement; } => {
+        const rowShell = (label: string): HTMLDivElement => {
             const row = document.createElement('div');
             row.style.cssText = 'display:flex;align-items:center;gap:10px;';
             const lbl = document.createElement('span');
@@ -392,7 +392,7 @@ export class DrawingSettingsPopup {
             lbl.style.cssText = 'flex:1;opacity:0.9;';
             row.appendChild(lbl);
             panel.appendChild(row);
-            return { row };
+            return row;
         };
         const onEnterCommit = (input: HTMLInputElement, commit: () => void): void => {
             input.addEventListener('change', commit);
@@ -408,7 +408,7 @@ export class DrawingSettingsPopup {
 
         type NumField = 'riskPercent' | 'accountBalance' | 'quantity' | 'entryPrice';
         const numberRow = (label: string, path: NumField, clamp?: { min: number; max: number; step: number }): void => {
-            const { row } = rowShell(label);
+            const row = rowShell(label);
             const input = numberInput();
             if (clamp) {
                 input.min = String(clamp.min);
@@ -447,7 +447,7 @@ export class DrawingSettingsPopup {
          *  typing commits in the selected unit. */
         const levelRow = (label: string, path: 'stopPrice' | 'targetPrice', level: 'stop' | 'target'): void => {
             let mode: PositionLevelMode = 'price';
-            const { row } = rowShell(label);
+            const row = rowShell(label);
             const input = numberInput();
             input.step = 'any';
             input.style.width = '84px';
@@ -484,7 +484,7 @@ export class DrawingSettingsPopup {
         };
 
         const directionRow = (): void => {
-            const { row } = rowShell('Direction');
+            const row = rowShell('Direction');
             const sel = unitSelect();
             sel.style.width = '96px';
             for (const opt of DIRECTION_OPTIONS) {

@@ -684,9 +684,8 @@ export class DrawingPainter {
         ctx.textBaseline = 'middle';
         ctx.font = `${fs}px ${theme.fontFamily}`;
         const cx = x1 + w / 2;
-        // Header stack sits above the box (direction · R:R, then the optional loss + size line).
-        // Target/stop % stay centered in their zones.
-        // Header + loss/size stack above the box; whichever is shown alone takes the bottom slot.
+        // Header + loss/size stack above the box (whichever is shown alone takes the bottom
+        // slot); target/stop % stay centered in their zones.
         const topY = Math.min(ey, sy, ty) - 9;
         if (d.showHeader) ctx.fillText(d.headerLabel(), cx, d.showLossSize ? topY - Math.round(fs * 1.15) : topY);
         ctx.font = `${Math.max(10, fs - 1)}px ${theme.fontFamily}`;
