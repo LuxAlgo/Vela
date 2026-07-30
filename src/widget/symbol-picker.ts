@@ -124,7 +124,8 @@ const CSS = `
 `;
 
 export interface SymbolPickerOptions {
-    onSelect: (ticker: string) => void;
+    /** `provider` is the venue of the chosen row — absent only for a source that has none. */
+    onSelect: (ticker: string, provider?: string) => void;
     onOpenChange?: (open: boolean) => void;
     host?: HTMLElement;
 }
@@ -195,14 +196,14 @@ export class SymbolPicker {
             else if (e.key === 'ArrowUp') this.moveHighlight(-1);
             else if (e.key === 'Enter') {
                 const pick = this.rows[this.highlighted];
-                if (pick) this.select(pick.ticker, opts.onSelect);
+                if (pick) this.select(pick.ticker, pick.provider, opts.onSelect);
                 return;
             } else return;
             e.preventDefault();
         });
         this.list.addEventListener('click', (e) => {
             const row = (e.target as HTMLElement).closest<HTMLElement>('.vela-sp-row');
-            if (row?.dataset.ticker) this.select(row.dataset.ticker, opts.onSelect);
+            if (row?.dataset.ticker) this.select(row.dataset.ticker, row.dataset.provider, opts.onSelect);
         });
     }
 
@@ -224,9 +225,9 @@ export class SymbolPicker {
         this.dialog.destroy();
     }
 
-    private select(ticker: string, onSelect: (t: string) => void): void {
+    private select(ticker: string, provider: string | undefined, onSelect: (t: string, p?: string) => void): void {
         this.close();
-        onSelect(ticker);
+        onSelect(ticker, provider);
     }
 
     private moveHighlight(delta: number): void {
@@ -265,6 +266,9 @@ export class SymbolPicker {
             const row = doc.createElement('div');
             row.className = 'vela-sp-row';
             row.dataset.ticker = s.ticker;
+            // The venue the user is pointing at travels with the pick — the same ticker can be
+            // listed by several providers, and dropping it would silently route to another one.
+            if (s.provider) row.dataset.provider = s.provider;
             const av = tickerIconEl(doc, baseOf(s), s.ticker, 'vela-sp-avatar');
             const main = doc.createElement('span');
             main.className = 'vela-sp-main';

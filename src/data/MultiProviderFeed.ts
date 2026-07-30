@@ -120,7 +120,10 @@ export class MultiProviderFeed implements MarketDataFeed {
             return cfg.data;
         }
         const resolved = await this.registry.whenResolvable(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
-        this.primaryProvider ??= resolved.provider;
+        // The chart's provider FOLLOWS its market: after a switch to another venue, bare
+        // secondary symbols and the metadata/capability probes must default to the venue now on
+        // screen — latching the first one made every later probe answer for the wrong venue.
+        this.primaryProvider = resolved.provider;
         // Warm symbol metadata for the engine. Fire-and-forget: one small request that
         // typically lands before the (heavier, paginated) bar load finishes.
         this.prefetchSymbolInfo(resolved);

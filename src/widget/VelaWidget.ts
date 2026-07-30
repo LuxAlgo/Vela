@@ -203,7 +203,7 @@ export class VelaWidget {
 
         this.symbolPicker = new SymbolPicker({
             host: this.root,
-            onSelect: (ticker) => this.setSymbol(ticker),
+            onSelect: (ticker, provider) => this.setSymbol(ticker, provider),
             onOpenChange: (open) => this.trackDialog(open),
         });
         this.indicatorPicker = new IndicatorPicker({
@@ -458,8 +458,17 @@ export class VelaWidget {
         void this.inner?.setMarket({ timeframe: tf, bars: this.bars });
     }
 
-    setSymbol(symbol: string): void {
-        if (symbol === this.symbol || this.destroyed) return;
+    /**
+     * Switch the chart symbol in place. `provider` names the venue the symbol was CHOSEN
+     * from (the symbol picker passes it) — it disambiguates a ticker several providers
+     * list, and without it the registry picks the first one that has it, which is not
+     * necessarily the one the user pointed at.
+     */
+    setSymbol(symbol: string, provider?: string): void {
+        if (this.destroyed) return;
+        // A no-op only when BOTH identity halves already hold: re-picking the same ticker on a
+        // DIFFERENT venue is a real switch.
+        if (symbol === this.symbol && (provider == null || provider === this.inner?.market.provider)) return;
         this.unresolvedToasted = null; // a new symbol gets a fresh verdict
         this.symbol = symbol;
         this.topbar.setSymbol(symbol);
@@ -468,7 +477,10 @@ export class VelaWidget {
         this.watermark?.update(symbol, this.timeframe);
         this.markStateDirty();
         // In-place switch (no rebuild) — the chart instance, indicators, and drawings survive.
-        void this.inner?.setMarket({ symbol });
+        void this.inner?.setMarket(provider ? { symbol, provider } : { symbol });
+        // The venue shown must follow the symbol, not the construction option: an in-place
+        // switch never rebuilds, so nothing else would refresh it.
+        this.statusline?.setMeta(this.timeframe, provider ?? this.providerLabel());
     }
 
     // ── state surface (same triplet as the workspace: getState / applyState / state:changed) ──

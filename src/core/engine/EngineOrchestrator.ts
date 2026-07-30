@@ -576,13 +576,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         return this.historyCompletePromise;
     }
 
-    /** The provider-qualified primary symbol (e.g. `binance:BTCUSDT`), or null if no symbol is set. */
+    /** The primary symbol as the data layer resolves it, or null if no symbol is set. */
     private qualifiedSymbol(): string | null {
         const market = this.config.market;
         if (!market.symbol) return null;
-        // Resolve via the provider prefix so support + fetch route by the explicit prefix, not the
-        // bare symbol (which depends on the provider's eager index).
-        return market.provider && !market.symbol.includes(':') ? `${market.provider}:${market.symbol}` : market.symbol;
+        // The symbol travels BARE. The `provider` option is a preference the feed already applies
+        // (it resolves with the chart's provider as first candidate), never a prefix: welding it
+        // here made a hard requirement out of it, so metadata and capability probes were aimed at
+        // the configured venue even for a symbol only another venue lists — a 502 on the tick-size
+        // request and a capability verdict from the wrong venue after every cross-venue switch.
+        return market.symbol;
     }
 
     /** Push the active symbol's tick size to the renderer's price axis. No-op when unknown (formula stays). */

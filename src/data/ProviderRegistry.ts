@@ -174,9 +174,12 @@ export class ProviderRegistry {
                 if (r) {
                     stop();
                     resolve(r);
-                } else if (settled) {
-                    // Report only after an index build finishes still unresolved — not on the
-                    // transient re-check fired right after a registration.
+                } else if (settled && this.allSettled()) {
+                    // Report only once EVERY registered provider has finished indexing. One
+                    // index settling proves nothing: with several providers the first to finish
+                    // is usually not the one that serves the symbol, and reporting there is a
+                    // false verdict — the user sees "no provider serves X" on a symbol that
+                    // resolves a moment later.
                     this.reportUnresolved(raw);
                 }
             });
@@ -188,6 +191,12 @@ export class ProviderRegistry {
             };
             this.waits.add(stop);
         });
+    }
+
+    /** Every registered provider has finished building its index (or failed trying). */
+    private allSettled(): boolean {
+        for (const e of this.entries.values()) if (!e.settled) return false;
+        return true;
     }
 
     /** Abandon every parked wait (chart/feed teardown). Their promises simply never settle. */
