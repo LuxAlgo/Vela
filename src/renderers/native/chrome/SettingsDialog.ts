@@ -2,7 +2,7 @@ import type { VelaTheme } from '../../../core/options';
 import type { ChartConfig } from '../core/chartConfig';
 import { chartType, chartTypes } from '../../../chart-types/registry';
 import { colorField, closeColorPopover } from './ColorField';
-import { priceStyleIds } from '../core/chartConfig';
+import { priceStyleIds, CHROME_BORDER_COLOR } from '../core/chartConfig';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -47,6 +47,15 @@ function styleLabel(id: string): string {
 }
 
 const SD_STYLE_ID = 'vela-settings-controls';
+
+/**
+ * The dialog's own surface palette, deliberately independent of the chart theme: the
+ * controls above are fixed-dark, and a dialog painted with the chart background becomes
+ * unreadable the moment the user recolors the chart (white background ⇒ white dialog).
+ */
+export const SETTINGS_SURFACE = '#16181d';
+export const SETTINGS_BORDER = CHROME_BORDER_COLOR;
+export const SETTINGS_TEXT = '#d1d4dc';
 
 /** The reference control styles (checkbox, selects/inputs, swatches, scrollbars). */
 function ensureControlStyles(): void {
@@ -135,7 +144,6 @@ export class SettingsDialog {
         this.onChange = onChange;
         this.onImport = onImport ?? null;
         this.onReset = onReset ?? null;
-        const t = this.theme;
 
         // Scrim + centered box — the reference settings-dialog shell (top-aligned modal,
         // left tab rail, scrollable pane, footer). Section markers emitted by `section()`
@@ -148,10 +156,10 @@ export class SettingsDialog {
         });
 
         const dlg = document.createElement('div');
-        dlg.style.cssText = `width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${t.background};border:1px solid ${withAlpha(t.textColor, 0.16)};border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:${t.textColor};font:13px -apple-system,Segoe UI,sans-serif;overflow:hidden;`;
+        dlg.style.cssText = `width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:${SETTINGS_TEXT};font:13px -apple-system,Segoe UI,sans-serif;overflow:hidden;`;
 
         const header = document.createElement('div');
-        header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${t.borderColor};flex:0 0 auto;user-select:none;`;
+        header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${SETTINGS_BORDER};flex:0 0 auto;user-select:none;`;
         const hTitle = document.createElement('span');
         hTitle.textContent = 'Chart settings';
         hTitle.style.cssText = 'font-size:17px;font-weight:600;letter-spacing:0.2px;';
@@ -159,7 +167,7 @@ export class SettingsDialog {
         closeBtn.type = 'button';
         closeBtn.textContent = '✕';
         closeBtn.title = 'Close';
-        closeBtn.style.cssText = `cursor:pointer;background:transparent;border:none;color:${withAlpha(t.textColor, 0.65)};font-size:15px;line-height:1;width:30px;height:30px;border-radius:4px;`;
+        closeBtn.style.cssText = `cursor:pointer;background:transparent;border:none;color:${withAlpha(SETTINGS_TEXT, 0.65)};font-size:15px;line-height:1;width:30px;height:30px;border-radius:4px;`;
         closeBtn.addEventListener('click', () => this.close());
         header.append(hTitle, closeBtn);
         header.style.cursor = 'move';
@@ -355,7 +363,7 @@ export class SettingsDialog {
         const shell = document.createElement('div');
         shell.style.cssText = 'display:flex;min-height:360px;max-height:calc(70vh - 100px);flex:1 1 auto;';
         const rail = document.createElement('div');
-        rail.style.cssText = `flex:0 0 170px;display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid ${t.borderColor};overflow-y:auto;`;
+        rail.style.cssText = `flex:0 0 170px;display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid ${SETTINGS_BORDER};overflow-y:auto;`;
         const paneHost = document.createElement('div');
         paneHost.className = 'vela-sd-pane';
         paneHost.style.cssText = 'flex:1;overflow-y:auto;padding:6px 18px 14px;';
@@ -370,7 +378,7 @@ export class SettingsDialog {
                 const tab = document.createElement('button');
                 tab.type = 'button';
                 tab.textContent = title;
-                tab.style.cssText = `text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:6px;color:${withAlpha(t.textColor, 0.62)};font:600 13px inherit;font-family:inherit;cursor:pointer;`;
+                tab.style.cssText = `text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:6px;color:${withAlpha(SETTINGS_TEXT, 0.62)};font:600 13px inherit;font-family:inherit;cursor:pointer;`;
                 panes.push({ title, el, tab, style: child.dataset.sdStyle, visibility: child.dataset.sdVisibility });
                 current = el;
                 child.remove();
@@ -393,8 +401,8 @@ export class SettingsDialog {
         const activate = (idx: number): void => {
             panes.forEach((p, i) => {
                 p.el.style.display = i === idx ? 'block' : 'none';
-                p.tab.style.background = i === idx ? withAlpha(t.textColor, 0.07) : 'transparent';
-                p.tab.style.color = i === idx ? t.textColor : withAlpha(t.textColor, 0.62);
+                p.tab.style.background = i === idx ? withAlpha(SETTINGS_TEXT, 0.07) : 'transparent';
+                p.tab.style.color = i === idx ? SETTINGS_TEXT : withAlpha(SETTINGS_TEXT, 0.62);
             });
             this.activeSection = panes[idx]?.title ?? null;
         };
@@ -443,7 +451,7 @@ export class SettingsDialog {
     /** In-pane section title (the reference `set-section-title`). */
     private sectionTitle(text: string): HTMLElement {
         const el = document.createElement('div');
-        el.style.cssText = `margin:14px 0 2px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${withAlpha(this.theme.textColor, 0.55)};`;
+        el.style.cssText = `margin:14px 0 2px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${withAlpha(SETTINGS_TEXT, 0.55)};`;
         el.textContent = text;
         return el;
     }
@@ -451,7 +459,7 @@ export class SettingsDialog {
     /** Thin horizontal rule between row clusters (the reference `set-separator`). */
     private separator(): HTMLElement {
         const el = document.createElement('div');
-        el.style.cssText = `height:1px;margin:8px 0;background:${withAlpha(this.theme.textColor, 0.1)};`;
+        el.style.cssText = `height:1px;margin:8px 0;background:${withAlpha(SETTINGS_TEXT, 0.1)};`;
         return el;
     }
 
@@ -489,7 +497,7 @@ export class SettingsDialog {
 
     private row(label: string): { wrap: HTMLLabelElement } {
         const wrap = document.createElement('label');
-        wrap.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:24px;padding:8px 0;border-bottom:1px solid ${withAlpha(this.theme.textColor, 0.07)};`;
+        wrap.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:24px;padding:8px 0;border-bottom:1px solid ${withAlpha(SETTINGS_TEXT, 0.07)};`;
         const lbl = document.createElement('span');
         lbl.textContent = label;
         lbl.style.cssText = 'opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
@@ -689,17 +697,16 @@ export class SettingsDialog {
 
     /** Footer with the full config as JSON — the export/import (templating) surface. */
     private footer(_config: ChartConfig): HTMLElement {
-        const t = this.theme;
         // Reference footer: actions only (Reset defaults, left-aligned). The JSON
         // export/import lives on the public API (getConfig/applyConfig), not in the UI.
         const foot = document.createElement('div');
-        foot.style.cssText = `border-top:1px solid ${t.borderColor};padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 auto;`;
+        foot.style.cssText = `border-top:1px solid ${SETTINGS_BORDER};padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 auto;`;
         const resetBtn = document.createElement('button');
         resetBtn.type = 'button';
         resetBtn.textContent = 'Reset defaults';
-        resetBtn.style.cssText = `height:30px;padding:0 14px;font-size:12px;color:${t.textColor};background:#1c1d20;border:1px solid ${t.borderColor};border-radius:6px;cursor:pointer;font-family:inherit;`;
+        resetBtn.style.cssText = `height:30px;padding:0 14px;font-size:12px;color:${SETTINGS_TEXT};background:#1c1d20;border:1px solid ${SETTINGS_BORDER};border-radius:6px;cursor:pointer;font-family:inherit;`;
         resetBtn.addEventListener('mouseenter', () => (resetBtn.style.borderColor = '#34353b'));
-        resetBtn.addEventListener('mouseleave', () => (resetBtn.style.borderColor = t.borderColor));
+        resetBtn.addEventListener('mouseleave', () => (resetBtn.style.borderColor = SETTINGS_BORDER));
         resetBtn.addEventListener('click', () => this.onReset?.());
         foot.appendChild(resetBtn);
         return foot;
@@ -715,8 +722,7 @@ export class SettingsDialog {
     }
 
     private ctrlStyle(): string {
-        const t = this.theme;
-        return `background:${withAlpha(t.textColor, 0.08)};border:1px solid ${t.borderColor};color:${t.textColor};border-radius:4px;padding:3px 6px;font:12px inherit;outline:none;`;
+        return `background:${withAlpha(SETTINGS_TEXT, 0.08)};border:1px solid ${SETTINGS_BORDER};color:${SETTINGS_TEXT};border-radius:4px;padding:3px 6px;font:12px inherit;outline:none;`;
     }
 }
 
