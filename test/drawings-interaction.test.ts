@@ -240,28 +240,30 @@ describe('DrawingInteraction: click-move-click placement (measurement / position
         expect(create?.kind === 'create' && create.doc.anchors).toHaveLength(2);
     });
 
-    it('a long position click-move-click → 3 anchors, target above the entry (stop below = long)', () => {
-        const h = harness('position');
-        h.it.down(20, 60); // entry (price 40)
-        h.it.move(40, 80);
-        h.it.down(40, 80); // stop below the entry (price 20) → long
-        const create = h.intents.find((i) => i.kind === 'create');
-        expect(create?.kind === 'create' && create.doc.anchors).toHaveLength(3);
-        if (create?.kind === 'create') {
-            const [entry, , target] = create.doc.anchors;
-            expect(target!.price).toBeGreaterThan(entry!.price); // reward above → long
-        }
-    });
-
-    it('placing the stop the other way flips to short (target below entry)', () => {
+    it('a long position click-move-click → 3 anchors, target above the entry (drag higher = profit)', () => {
         const h = harness('position');
         h.it.down(20, 60); // entry (price 40)
         h.it.move(40, 40);
-        h.it.down(40, 40); // stop above the entry (price 60) → short
+        h.it.down(40, 40); // target above the entry (price 60) → long (profit up)
+        const create = h.intents.find((i) => i.kind === 'create');
+        expect(create?.kind === 'create' && create.doc.anchors).toHaveLength(3);
+        if (create?.kind === 'create') {
+            const [entry, stop, target] = create.doc.anchors;
+            expect(target!.price).toBeGreaterThan(entry!.price); // reward above → long
+            expect(stop!.price).toBeLessThan(entry!.price); // stop opposite, below
+        }
+    });
+
+    it('placing the target the other way flips to short (drag lower = profit)', () => {
+        const h = harness('position');
+        h.it.down(20, 60); // entry (price 40)
+        h.it.move(40, 80);
+        h.it.down(40, 80); // target below the entry (price 20) → short (profit down)
         const create = h.intents.find((i) => i.kind === 'create');
         if (create?.kind === 'create') {
-            const [entry, , target] = create.doc.anchors;
+            const [entry, stop, target] = create.doc.anchors;
             expect(target!.price).toBeLessThan(entry!.price); // reward below → short
+            expect(stop!.price).toBeGreaterThan(entry!.price); // stop opposite, above
         }
     });
 

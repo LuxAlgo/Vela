@@ -43,6 +43,8 @@ export class DrawingController {
     private activeTool: DrawingTypeKey | null = null;
     /** Mirror of the renderer's sticky magnet mode (the renderer default is 'off'). */
     private snapMode: SnapMode = 'off';
+    /** When on, finishing a drawing leaves the tool armed (instead of one-shot disarm). */
+    private stayInDrawingMode = false;
     /** Mirror of the renderer-local mode (measure/eraser/none). */
     private mode: DrawingMode = null;
     /** FAVORITE tool types (insertion-ordered) — user prefs, not document data. */
@@ -104,6 +106,17 @@ export class DrawingController {
         this.snapMode = mode;
         this.port.setSnapMode?.(mode);
         this.events.emit('drawing:snap', { mode });
+    }
+
+    getStayMode(): boolean {
+        return this.stayInDrawingMode;
+    }
+
+    setStayMode(on: boolean): void {
+        if (!this.port || on === this.stayInDrawingMode) return;
+        this.stayInDrawingMode = on;
+        this.port.setStayMode?.(on);
+        this.events.emit('drawing:stay', { on });
     }
 
     getMode(): DrawingMode {
@@ -485,6 +498,13 @@ export class DrawingController {
                     this.events.emit('drawing:snap', { mode: i.mode });
                 }
                 break;
+            case 'stay-mode':
+                // In-chart stay-mode click (already applied renderer-side) — mirror + announce.
+                if (i.on !== this.stayInDrawingMode) {
+                    this.stayInDrawingMode = i.on;
+                    this.events.emit('drawing:stay', { on: i.on });
+                }
+                break;
             case 'mode':
                 // Measure/eraser toggled in-chart, or exited as a mutual-exclusion side effect.
                 if (i.mode !== this.mode) {
@@ -494,8 +514,8 @@ export class DrawingController {
                 break;
             case 'tool-finished':
                 // Most tools are one-shot (revert to the pointer once placed); brush-family tools
-                // stay armed so you can keep drawing strokes without re-picking them each time.
-                if (i.type !== 'freehand' && i.type !== 'highlighter') this.setTool(null);
+                // always stay armed, and stay-in-drawing-mode keeps every tool armed.
+                if (!this.stayInDrawingMode && i.type !== 'freehand' && i.type !== 'highlighter') this.setTool(null);
                 break;
             case 'undo':
                 this.undo();

@@ -10,10 +10,13 @@ export class TextLabel extends PinnedLabel {
 
     constructor(init: Partial<SerializedDrawing> & { paneId: string }) {
         super(init);
-        if (!this.text) this.text = defaultText('Text');
+        // Starts empty on purpose: placing one opens an inline editor whose placeholder invites the
+        // text, so a seeded literal would only have to be selected and deleted. Large by default —
+        // a free-floating annotation is meant to be read at a glance, unlike a label hung on a shape.
+        if (!this.text) this.text = { ...defaultText(), size: 'large' };
     }
 
     schema(): SettingsSchema {
-        return { fields: [...TEXT_FIELDS] };
+        return { fields: [...TEXT_FIELDS], textIsContent: true };
     }
 }

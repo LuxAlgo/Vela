@@ -139,6 +139,18 @@ export function contrastColor(bg: string | undefined): string {
     return relativeLuminance(c.r, c.g, c.b) > 0.55 ? '#000000' : '#ffffff';
 }
 
+/** Line height (px) for multi-line drawing labels — one value shared by the canvas painter and
+ *  the inline text editor, so the glyphs don't shift when an edit starts. */
+export function labelLineHeight(fontSize: number): number {
+    return Math.round(fontSize * 1.4);
+}
+
+/** How far the frame around a targeted/edited text label extends past its glyph box — horizontally
+ *  (`inset`) and vertically (`rise`). Shared by the canvas painter (selection/hover frame) and the
+ *  inline editor (border + padding), which keeps the two frames coincident by construction. */
+export const TEXT_FRAME_INSET = 5;
+export const TEXT_FRAME_RISE = 3;
+
 /** Fixed px for a named box text size; `auto` returns 0 (caller fits to box). */
 export function namedFontSize(size: BoxTextSize): number {
     switch (size) {
