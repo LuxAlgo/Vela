@@ -48,10 +48,10 @@ function ensureStyles(): void {
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
-.vela-dpop input[type=color]{-webkit-appearance:none;appearance:none;border:none;padding:0;background:none;cursor:pointer;border-radius:5px;}
+.vela-dpop input[type=color]{-webkit-appearance:none;appearance:none;border:none;padding:0;background:none;cursor:pointer;border-radius:0;}
 .vela-dpop input[type=color]::-webkit-color-swatch-wrapper{padding:0;}
-.vela-dpop input[type=color]::-webkit-color-swatch{border:none;border-radius:5px;}
-.vela-dpop input[type=color]::-moz-color-swatch{border:none;border-radius:5px;}
+.vela-dpop input[type=color]::-webkit-color-swatch{border:none;border-radius:0;}
+.vela-dpop input[type=color]::-moz-color-swatch{border:none;border-radius:0;}
 .vela-dpop textarea{outline:none;transition:border-color .12s ease,box-shadow .12s ease;}
 .vela-dpop textarea:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
 .vela-dpop textarea::placeholder{color:currentColor;opacity:0.4;}
@@ -413,7 +413,7 @@ export class DrawingSettingsPopup {
             const col = document.createElement('button');
             col.type = 'button';
             let cur = s[path] as string;
-            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:4px;cursor:pointer;background:${cur};padding:0;`;
+            col.style.cssText = `width:18px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:0;cursor:pointer;background:${cur};padding:0;`;
             col.addEventListener('pointerdown', (e) => e.stopPropagation());
             col.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -452,7 +452,7 @@ export class DrawingSettingsPopup {
             const col = document.createElement('button');
             col.type = 'button';
             let cur = s[colorPath] as string;
-            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:4px;cursor:pointer;background:${cur};padding:0;`;
+            col.style.cssText = `width:18px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:0;cursor:pointer;background:${cur};padding:0;`;
             col.addEventListener('pointerdown', (e) => e.stopPropagation());
             col.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -529,7 +529,7 @@ export class DrawingSettingsPopup {
             chk.addEventListener('change', () => actions.patch({ [`levels.${i}.enabled`]: chk.checked }));
             const col = document.createElement('button');
             col.type = 'button';
-            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:4px;cursor:pointer;background:${lv.color};padding:0;`;
+            col.style.cssText = `width:18px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:0;cursor:pointer;background:${lv.color};padding:0;`;
             let curC = lv.color;
             col.addEventListener('pointerdown', (e) => e.stopPropagation());
             col.addEventListener('click', (e) => {

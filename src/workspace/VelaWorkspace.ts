@@ -246,7 +246,13 @@ export class VelaWorkspace {
         this.symbolPicker = new SymbolPicker({
             host: this.root,
             onSelect: (ticker) => this.active.setSymbol(ticker),
-            onOpenChange: (open) => this.trackDialog(open),
+            onOpenChange: (open) => {
+                // In-chart dialogs (indicator inputs, chart settings) live inside a cell's
+                // chart container, so opening the search from the topbar never hits their
+                // outside-dismiss — close them on every cell explicitly.
+                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
         });
         this.symbolPicker.setSource(() => this.feed.symbols());
         this.indicatorPicker = new IndicatorPicker({

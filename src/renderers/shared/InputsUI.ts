@@ -170,7 +170,7 @@ export class InputsUI {
         const currentPane = row?.paneId ?? 'price';
         const panes = api.panes();
         const menu = document.createElement('div');
-        menu.style.cssText = `position:fixed;z-index:var(--vela-z-tooltip);min-width:150px;padding:4px;border-radius:var(--vela-radius-md);background:${this.theme.background};color:${this.theme.textColor};border:1px solid var(--vela-border);box-shadow:var(--vela-shadow);font-size:var(--vela-font-size-md);`;
+        menu.style.cssText = `position:fixed;z-index:var(--vela-z-tooltip);min-width:150px;padding:4px;border-radius:var(--vela-radius-md);background:var(--vela-surface-elev);color:${this.theme.textColor};border:1px solid var(--vela-border);box-shadow:var(--vela-shadow);font-size:var(--vela-font-size-md);`;
         applyChromeTokens(menu, this.theme);
         const items: Array<{ label: string; target: MoveTarget }> = [];
         for (const p of panes) {
@@ -298,9 +298,9 @@ export class InputsUI {
             return;
         }
         const el = document.createElement('div');
-        // No border / background — just the label; hovering reveals the outline and controls,
-        // and leaving hides them again unless the row is selected.
-        el.style.cssText = `pointer-events:auto;display:flex;align-items:center;gap:6px;background:transparent;border-radius:4px;padding:2px 7px;color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
+        // Solid chart-background fill so the label stays readable over candles; hovering
+        // reveals the outline and controls, and leaving hides them again unless selected.
+        el.style.cssText = `pointer-events:auto;display:flex;align-items:center;gap:6px;background:${this.theme.background};border-radius:4px;padding:2px 7px;color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
         el.addEventListener('mouseenter', () => this.setRowHighlighted(id, true));
         el.addEventListener('mouseleave', () => { if (this.selectedId !== id) this.setRowHighlighted(id, false); });
         // Left-click the row (but not one of its control buttons) selects the indicator,
@@ -782,7 +782,7 @@ export class InputsUI {
             ci.type = 'color';
             ci.id = id;
             ci.value = toHex6(String(current));
-            ci.style.cssText = `flex:0 0 auto;box-sizing:border-box;width:32px;height:32px;padding:2px;border:1px solid ${this.neutralBorder()};border-radius:6px;background:transparent;cursor:pointer;`;
+            ci.style.cssText = `flex:0 0 auto;box-sizing:border-box;width:32px;height:32px;padding:2px;border:1px solid ${this.neutralBorder()};border-radius:0;background:transparent;cursor:pointer;`;
             ci.addEventListener('input', () => emit(ci.value));
             return ci;
         }

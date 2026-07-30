@@ -55,7 +55,7 @@ const SD_STYLE_ID = 'vela-settings-controls';
  * the chart container), not the live plot background: recoloring the plot must not repaint
  * the dialog, but switching the app between dark and light must.
  */
-export const SETTINGS_SURFACE = 'var(--vela-surface-elev)';
+export const SETTINGS_SURFACE = 'var(--vela-surface)';
 export const SETTINGS_BORDER = 'var(--vela-border)';
 export const SETTINGS_TEXT = 'var(--vela-fg)';
 
@@ -69,8 +69,11 @@ function ensureControlStyles(): void {
 .vela-sd-check:hover{border-color:var(--vela-fg-muted);}
 .vela-sd-check.on{background:var(--vela-selected-bg);border-color:var(--vela-selected-bg);color:var(--vela-selected-fg);}
 .vela-sd-check svg{display:block;}
-.vela-sd-select,.vela-sd-number{height:28px;background:var(--vela-surface-sunken);border:1px solid var(--vela-border);border-radius:var(--vela-radius-sm);color:var(--vela-fg);padding:0 8px;font-size:13px;outline:none;font-family:inherit;}
-.vela-sd-select:hover,.vela-sd-number:hover{border-color:var(--vela-border-strong);}
+.vela-sd-select,.vela-sd-number{height:28px;background:var(--vela-surface-elev);border:1px solid var(--vela-border-strong);border-radius:var(--vela-radius-sm);color:var(--vela-fg);padding:0 8px;font-size:13px;outline:none;font-family:inherit;}
+.vela-sd-select:hover,.vela-sd-number:hover{border-color:var(--vela-fg-muted);}
+/* Custom caret: the native one hugs the right border; ours gets 8px of air. (A data URI
+   can't read currentColor, so it uses the shared muted-gray ink, legible on both themes.) */
+.vela-sd-select{-webkit-appearance:none;appearance:none;padding-right:26px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23868a96' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;}
 .vela-sd-number{width:64px;}
 .vela-sd-color{width:32px;height:26px;padding:0;border:1px solid var(--vela-border);border-radius:var(--vela-radius-sm);background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none;}
 .vela-sd-color::-webkit-color-swatch-wrapper{padding:2px;}
@@ -163,7 +166,9 @@ export class SettingsDialog {
         });
 
         const dlg = document.createElement('div');
-        dlg.style.cssText = `width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${SETTINGS_TEXT};font:13px var(--vela-font);overflow:hidden;`;
+        // `cursor:default` shields the dialog from the plot's crosshair cursor; interactive
+        // controls re-declare their own.
+        dlg.style.cssText = `width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${SETTINGS_TEXT};font:13px var(--vela-font);overflow:hidden;cursor:default;`;
 
         const header = document.createElement('div');
         header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${SETTINGS_BORDER};flex:0 0 auto;user-select:none;`;
@@ -509,8 +514,11 @@ export class SettingsDialog {
         return el;
     }
 
-    private row(label: string): { wrap: HTMLLabelElement } {
-        const wrap = document.createElement('label');
+    private row(label: string): { wrap: HTMLDivElement } {
+        // A DIV, not a <label>: a label forwards a click anywhere on the row to its embedded
+        // control (opening a color picker from the row's empty space) — only the control
+        // itself should respond.
+        const wrap = document.createElement('div');
         wrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:24px;padding:8px 0;';
         const lbl = document.createElement('span');
         lbl.textContent = label;
@@ -536,7 +544,9 @@ export class SettingsDialog {
      *  controls it reads like a plain toggle row. */
     private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[]): HTMLElement {
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;padding:5px 0;cursor:pointer;';
+        // No cursor on the row itself: only the checkbox is clickable, so a row-wide
+        // pointer would promise a click target that isn't there.
+        wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;padding:5px 0;';
         const cb = document.createElement('button');
         cb.type = 'button';
         cb.className = 'vela-sd-check' + (value ? ' on' : '');

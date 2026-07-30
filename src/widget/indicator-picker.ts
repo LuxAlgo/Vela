@@ -125,7 +125,6 @@ export class IndicatorPicker {
             draggable: true,
             closeOnInteractOutside: true,
             // The picker adds/removes indicators live — keep the chart undimmed behind it.
-            dimBackdrop: false,
             content: (body) => body.append(searchRow, this.list),
             onOpenChange: (open) => {
                 this.isOpen = open;

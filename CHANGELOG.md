@@ -108,7 +108,10 @@ All notable changes to Vela, newest first.
   its levels with the same convention, so the 0.618 of a retracement, a fan, an arc set and a Gann
   box match; the same holds for bullish/bearish reds and greens, which were previously two slightly
   different pairs depending on the tool. Icons across the toolbars and menus are one consistent set
-  at one weight, and they take the color of the control they sit in.
+  at one weight, and they take the color of the control they sit in. Color swatches everywhere are
+  square, inputs and dropdowns in the chart settings share the dialog's own surface, the pointer
+  cursor only appears over things that actually respond to a click, and the indicator legend sits
+  on a solid chart-colored backing so its labels stay readable over the candles.
 - **Reorganized right-click menus.** Each part of the chart now offers what belongs to it. The
   chart body gives you reset the view, remove every drawing, remove every indicator, and the
   settings dialog — the two removals stay in place but grey out when there is nothing to remove.
@@ -144,9 +147,10 @@ All notable changes to Vela, newest first.
 - **Hiding or locking a drawing now sticks.** Both are saved along with the rest of your chart,
   can be undone, and immediately update everywhere that drawing appears. Before, a hidden or
   locked drawing came back visible and unlocked after a reload.
-
-### Fixed
-
+- **One dialog at a time.** Opening the symbol search now closes an open chart settings or
+  indicator settings dialog instead of stacking on top of it. The quick timeframe entry dialog
+  centers its input properly, and the faint dots that appeared under the separator lines of
+  right-click menus are gone.
 - **Keyboard zoom and pan no longer wedge the chart.** Zooming or panning with `Ctrl` + arrow
   keys toward the edge of the chart (or past the zoom limits) could leave the view stuck: the
   animation silently kept running forever and overrode every later scroll-wheel or drag

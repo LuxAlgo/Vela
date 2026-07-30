@@ -90,7 +90,7 @@ const CSS = `
     border-radius: 8px;
     cursor: pointer;
 }
-.vela-sp-row:hover, .vela-sp-row[data-highlighted] { background: var(--vela-surface-elev); }
+.vela-sp-row:hover, .vela-sp-row[data-highlighted] { background: var(--vela-hover); }
 .vela-sp-avatar {
     width: 28px;
     height: 28px;

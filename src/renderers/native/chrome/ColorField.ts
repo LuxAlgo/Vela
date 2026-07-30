@@ -14,9 +14,9 @@ function ensureStyles(): void {
     const st = document.createElement('style');
     st.id = STYLE_ID;
     st.textContent = `
-.vela-color-field{width:38px;height:24px;padding:2px;border:1px solid var(--vela-border);border-radius:5px;background:var(--vela-surface-sunken);cursor:pointer;display:inline-flex;flex:none;}
+.vela-color-field{width:24px;height:24px;padding:2px;border:1px solid var(--vela-border);border-radius:0;background:var(--vela-surface-sunken);cursor:pointer;display:inline-flex;flex:none;}
 .vela-color-field:hover{border-color:var(--vela-fg-muted);}
-.vela-color-field-swatch{display:block;width:100%;height:100%;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.25);}
+.vela-color-field-swatch{display:block;width:100%;height:100%;border-radius:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.25);}
 .vela-color-field-pop{position:fixed;z-index:6000;background:var(--vela-surface-overlay);border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:10px;}
 `;
     document.head.appendChild(st);

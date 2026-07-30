@@ -1,9 +1,7 @@
 import type { VelaTheme } from '../../../core/options';
 import type { DrawingTypeKey, SnapMode } from '../../../core/drawings';
 import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/drawings';
-import { mix, parseRgb } from '../../../core/color';
 import { icon } from '../../../core/icons';
-import { DARK_THEME } from '../../../core/theme';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { CHROME_BORDER_COLOR } from '../core/chartConfig';
 
@@ -338,8 +336,8 @@ export class DrawingToolbar {
         // square LEFT corners (butts flush against the bar), rounded RIGHT corners; no left border so the seam is invisible
         fly.style.cssText =
             `position:absolute;z-index:23;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:0 8px 8px 0;` +
-            // same soft tint as the selected button (opaque) so the bar → menu reads as one region
-            `background:${blend(t.background, t.textColor, ACTIVE_A)};border:1px solid ${this.borderColor};border-left:none;box-shadow:var(--vela-shadow);pointer-events:auto;` +
+            // Same elevated surface as every other menu (chart settings, context menus, …).
+            `background:var(--vela-surface-elev);border:1px solid ${this.borderColor};border-left:none;box-shadow:var(--vela-shadow);pointer-events:auto;` +
             `overflow-y:auto;overscroll-behavior:contain;`;
         // The flyout is hosted OUTSIDE the bar root (it must escape its overflow), so it
         // carries its own copy of the tokens.
@@ -676,15 +674,4 @@ function hitHtml(svg: string, iconSize = 18): string {
 /** The chevron's inner content: same hover/active tint as the icon hit, in a narrow pill beside it. */
 function arrowHitHtml(svg: string): string {
     return `<span class="vela-dtb-hit vela-dtb-hit--arrow">${iconSpan(svg, 11)}</span>`;
-}
-
-// The flyout's OPAQUE base tint matches the selected button's translucent `--vela-active`
-// wash (same alpha), so the bar and its open menu read as one continuous region.
-const ACTIVE_A = 0.1;
-
-/** {@link mix} with the dark theme as the fallback for an unparseable theme color. */
-function blend(base: string, fg: string, alpha: number): string {
-    const b = parseRgb(base) ? base : DARK_THEME.background;
-    const f = parseRgb(fg) ? fg : DARK_THEME.textColor;
-    return mix(b, f, alpha);
 }

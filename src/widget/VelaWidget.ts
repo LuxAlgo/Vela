@@ -202,7 +202,13 @@ export class VelaWidget {
         this.symbolPicker = new SymbolPicker({
             host: this.root,
             onSelect: (ticker) => this.setSymbol(ticker),
-            onOpenChange: (open) => this.trackDialog(open),
+            onOpenChange: (open) => {
+                // The renderer's in-chart dialogs (indicator inputs, chart settings) live
+                // inside the chart container, so opening the search from the topbar never
+                // hits their outside-dismiss — close them explicitly.
+                if (open) this.inner?.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
         });
         this.indicatorPicker = new IndicatorPicker({
             host: this.root,
