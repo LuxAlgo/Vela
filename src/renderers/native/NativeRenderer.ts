@@ -9,6 +9,10 @@ import type {
     VisibleRange,
     IndicatorStatus,
     PaneAction,
+    DataWindowRow,
+    DataWindowOHLC,
+    DataWindowGroup,
+    DataWindowReadout,
 } from '../../core/ports/IChartRenderer';
 import type { VelaTheme } from '../../core/options';
 import type { OHLCV } from '../../core/model/ohlcv';
@@ -24,7 +28,6 @@ import { isLineLikeSeries } from '../../core/model/series';
 import { InputsUI } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
 import { TableOverlay } from '../shared/TableOverlay';
-import { DataWindow, type DataWindowData, type DataWindowRow, type DataWindowOHLC, type DataWindowGroup, type DataWindowReadout } from '../shared/DataWindow';
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
 import { CoordinateSystem, type PriceScale } from './core/CoordinateSystem';
@@ -219,9 +222,7 @@ export class NativeRenderer implements IChartRenderer {
     private paneControls: PaneControls | null = null; // per-pane hover button cluster (top-right)
     private readonly paneActionCbs = new Set<(a: PaneAction) => void>();
 
-    // ── data window (crosshair OHLC + per-series readout) ──
-    private dataWindow: DataWindow | null = null;
-    private dataWindowEnabled = false;
+    // ── data window (crosshair OHLC + per-series readout, pulled by host panels) ──
     private hoverLogical: number | null = null; // bar under the crosshair; null when off a bar
 
     // ── settings dialog (rich, serializable config — item 15) ──
@@ -276,7 +277,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'dataWindow', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -345,9 +346,6 @@ export class NativeRenderer implements IChartRenderer {
             case 'seriesOrder':
                 this.applySeriesOrder(value);
                 break;
-            case 'dataWindow':
-                this.setDataWindowEnabled(Boolean(value));
-                return; // owns its own DOM update
             case 'highlights':
                 this.scene.highlights = sanitizeHighlights(value);
                 break;
@@ -436,7 +434,6 @@ export class NativeRenderer implements IChartRenderer {
             case 'candleZOrder': return this.scene.candleZ;
             case 'candleVisible': return !this.scene.candlesHidden;
             case 'seriesOrder': return this.scene.indicatorZOrder();
-            case 'dataWindow': return this.dataWindowEnabled;
             case 'highlights': return this.scene.highlights;
             case 'gridlines': return this.scene.showGrid;
             case 'axisLabels': return this.scene.showAxisLabels;
@@ -559,6 +556,10 @@ export class NativeRenderer implements IChartRenderer {
                 color: s.line.color ?? this.candleUp,
                 width: s.line.width,
             },
+            stacking: {
+                candles: this.scene.candleZ,
+                series: Object.fromEntries(this.scene.indicatorZOrder().map(({ id, z }) => [id, z])),
+            },
             area: (() => {
                 const lineColor = s.area.lineColor ?? this.candleUp;
                 return {
@@ -650,6 +651,11 @@ export class NativeRenderer implements IChartRenderer {
             wickUpColor: next.candles.wickUpColor,
             wickDownColor: next.candles.wickDownColor,
         };
+        // stacking — the candles' draw-order key plus each indicator's. Seeding an id BEFORE its
+        // indicator mounts also works: assignIndicatorZ keeps an existing key, so a restored
+        // stack survives the (async) indicator restore that follows a config restore.
+        this.scene.candleZ = next.stacking.candles;
+        for (const [id, z] of Object.entries(next.stacking.series)) this.scene.setIndicatorZ(id, z);
         // per-price-style cosmetics (independent of the candle palette)
         s.bars = { upColor: next.bars.upColor, downColor: next.bars.downColor };
         s.line = { color: next.line.color, width: next.line.width };
@@ -678,14 +684,12 @@ export class NativeRenderer implements IChartRenderer {
         if (this.wrapper) this.applyBackground();
         this.inputsUI?.setTheme(this.theme);
         this.paneControls?.setTheme(this.theme);
-        this.dataWindow?.setTheme(this.theme);
         // Re-theme the docked drawing toolbar on the STABLE chrome surface, so editing the
         // plot background (layout.background) never bleeds into the toolbar.
         this.userDrawings?.setTheme(this.chromeTheme());
         // The open settings dialog is NOT rebuilt here — re-seeding mid-edit would
         // steal focus from the control being dragged/typed. It re-themes on next open.
         this.refreshScrollButtonTheme();
-        this.refreshDataWindow();
         this.scheduler?.invalidate(InvalidateLevel.Full);
     }
 
@@ -867,30 +871,21 @@ export class NativeRenderer implements IChartRenderer {
     /** Glide the view back to the most recent bars, keeping the current zoom (barSpacing). */
     private scrollToRealtime(): void {
         if (this.coords.barCount === 0) return;
-        const vp = this.coords.getViewport();
-        if (!this.animPan) {
-            this.applyViewport({ barSpacing: vp.barSpacing, rightOffset: ZOOM_OUT_MARGIN_BARS });
-            return;
-        }
-        // Ease rightOffset back to a small margin at constant zoom (see animTick).
-        this.panVelocity = 0;
-        this.targetBarSpacing = vp.barSpacing; // keep zoom fixed so animTick doesn't re-anchor
-        this.scrollTargetRO = ZOOM_OUT_MARGIN_BARS;
-        this.animator.start();
+        this.glideRightOffset(ZOOM_OUT_MARGIN_BARS);
     }
 
-    private setDataWindowEnabled(enabled: boolean): void {
-        this.dataWindowEnabled = enabled;
-        if (enabled) {
-            if (!this.dataWindow && this.plot) {
-                this.dataWindow = new DataWindow(this.plot, this.theme);
-                this.dataWindow.setRightInset(this.rightAxisW);
-            }
-            this.dataWindow?.setVisible(true);
-            this.refreshDataWindow();
-        } else {
-            this.dataWindow?.setVisible(false);
+    /** Ease rightOffset to `target` at constant zoom (see animTick's scroll glide);
+     *  instant when pan animation is off. Shared by scroll-to-latest and panBy. */
+    private glideRightOffset(target: number): void {
+        const vp = this.coords.getViewport();
+        if (!this.animPan) {
+            this.applyViewport({ barSpacing: vp.barSpacing, rightOffset: target });
+            return;
         }
+        this.panVelocity = 0;
+        this.targetBarSpacing = vp.barSpacing; // keep zoom fixed so animTick doesn't re-anchor
+        this.scrollTargetRO = target;
+        this.animator.start();
     }
 
     /**
@@ -899,8 +894,9 @@ export class NativeRenderer implements IChartRenderer {
      * background is filled first (the canvas2d data layer is transparent — its bg
      * lives on the wrapper), and a fresh synchronous paint runs first so the WebGL2
      * backend's (non-preserved) drawing buffer is populated before it's read back
-     * this tick — the same paint also repaints the drawings layer, so it's current.
-     * They're drawn bottom-up in DOM stacking order so user drawings (trend lines,
+     * this tick — the same paint also repaints the drawings layers, so they're
+     * current (interleaved drawings are already inside the data composite). They're
+     * drawn bottom-up in DOM stacking order so the front user drawings (trend lines,
      * boxes, etc.) sit above the Pine drawings on the chrome layer, matching what's
      * on screen. The crosshair (L2) and DOM overlays (tables, legend) are
      * intentionally excluded.
@@ -1109,6 +1105,8 @@ export class NativeRenderer implements IChartRenderer {
             resetView: () => this.resetView(),
             // User drawings claim a gesture before pan when armed / over a drawing.
             drawingsClaim: (x, y) => this.userDrawings?.claim(x, y) ?? false,
+            drawingsMeasureStart: (x, y) => this.userDrawings?.beginMeasureAt(x, y) ?? false,
+            drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
             drawingsSnapMode: () => this.snapMode,
             drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
             drawingsPointerMove: (x, y, snap) => this.userDrawings?.pointerMove(x, y, snap),
@@ -1122,7 +1120,6 @@ export class NativeRenderer implements IChartRenderer {
         this.input.paneResize = this.paneResizeEnabled;
         // Attach to the data canvas so legend/gear/dialog clicks (above it) don't pan.
         this.input.attach(this.dataCanvas);
-        if (this.dataWindowEnabled) this.setDataWindowEnabled(true); // honor a pre-mount feature set
         if (this.settingsEnabled) this.setSettingsEnabled(true); // honor a pre-mount feature set
         this.syncCountdownTimer(); // start the countdown pump if the feature is on
 
@@ -1134,13 +1131,17 @@ export class NativeRenderer implements IChartRenderer {
         this.plot.addEventListener('pointermove', this.onScrollProximityMove);
         this.plot.addEventListener('pointerleave', this.onScrollProximityLeave);
 
-        // User-drawings layer (paints L1.5 + owns the interaction/settings popup). It
+        // User-drawings layer (paints L1.5 plus the interleave layers the geometry backend
+        // composites into the series stack, and owns the interaction/settings popup). It
         // implements the IDrawingsRendererPort the core DrawingController drives.
         this.userDrawings = new UserDrawingController(this.wrapper, this.plot, this.drawingsCanvas, {
             projector: () => this.drawingProjector(),
             dpr: () => this.coords.dpr,
             theme: () => this.theme,
             requestScaleUpdate: () => this.scheduler.invalidate(InvalidateLevel.Light),
+            seriesBoundaries: (paneId) => this.scene.seriesBoundaries(paneId),
+            priceZ: (paneId) => (paneId === PRICE_PANE_ID ? this.scene.candleZ : null),
+            requestDataPaint: () => this.scheduler.invalidate(InvalidateLevel.Light),
             snap: (pt, paneId, mode, cursorPx) => this.snapToCandle(pt, paneId, mode, cursorPx),
             setSnapMode: (mode) => this.setSnapMode(mode),
             setToolbarGutter: (visible) => this.setToolbarGutter(visible),
@@ -1293,7 +1294,6 @@ export class NativeRenderer implements IChartRenderer {
         this.applyBackground();
         this.inputsUI.setTheme(theme);
         this.paneControls?.setTheme(this.theme);
-        this.dataWindow?.setTheme(this.theme);
         this.settingsDialog?.setTheme(this.theme);
         if (this.settingsButton) {
             this.settingsButton.style.background = this.theme.background;
@@ -1302,7 +1302,6 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.refreshScrollButtonTheme();
         this.userDrawings?.setTheme(this.chromeTheme());
-        this.refreshDataWindow();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -1344,8 +1343,6 @@ export class NativeRenderer implements IChartRenderer {
         this.resizeObserver = null;
         this.dprMedia?.removeEventListener('change', this.onDprChange);
         this.dprMedia = null;
-        this.dataWindow?.destroy();
-        this.dataWindow = null;
         this.userDrawings?.destroy();
         this.userDrawings = null;
         this.settingsDialog?.destroy();
@@ -1414,7 +1411,6 @@ export class NativeRenderer implements IChartRenderer {
                 return;
             }
         }
-        this.refreshDataWindow();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -1436,7 +1432,6 @@ export class NativeRenderer implements IChartRenderer {
             return;
         }
         this.scene.bars = this.bars;
-        if (this.hoverLogical == null) this.refreshDataWindow(); // tracking the latest bar
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -1762,6 +1757,19 @@ export class NativeRenderer implements IChartRenderer {
         this.applyViewport({ barSpacing, rightOffset });
     }
 
+    /** Pan by a fraction of the visible width at constant zoom (positive ⇒ toward the
+     *  latest bars). Mirrors a drag exactly: the target is clamped by the same viewport
+     *  bounds (so panning forward stops at the newest candle plus the bounded right
+     *  whitespace) and eases on the scroll-to-latest glide — repeated calls retarget the
+     *  running glide, so a held key reads as one continuous scroll. */
+    panBy(fraction: number): void {
+        if (this.coords.barCount === 0 || this.coords.width === 0) return;
+        const vp = this.coords.getViewport();
+        const visBars = this.coords.width / this.coords.pxPerBar();
+        const base = this.scrollTargetRO ?? vp.rightOffset; // stack onto an in-flight glide
+        this.glideRightOffset(this.clampViewport(vp.barSpacing, base + fraction * visBars).rightOffset);
+    }
+
     // ── internals ──
     /** Instant viewport set (drag, freeze-on-touch, setVisibleRange) — stops any animation. */
     private applyViewport(vp: ViewportState): void {
@@ -1953,8 +1961,7 @@ export class NativeRenderer implements IChartRenderer {
             this.hoverSeparatorY = null;
             this.lastPointer = null;
             this.scheduler.invalidate(InvalidateLevel.Cursor);
-            this.hoverLogical = null;
-            this.refreshDataWindow(); // off the plot ⇒ fall back to the latest bar
+            this.hoverLogical = null; // off the plot ⇒ the readout falls back to the latest bar
             const empty: CrosshairEvent = { time: null, price: null, values: new Map(), ohlc: null };
             for (const cb of this.crosshairCbs) cb(empty);
             return;
@@ -1992,7 +1999,6 @@ export class NativeRenderer implements IChartRenderer {
             ? { time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume }
             : null;
         this.hoverLogical = onBar ? logical : null;
-        this.refreshDataWindow();
         const event: CrosshairEvent = { time, price, values, ohlc };
         for (const cb of this.crosshairCbs) cb(event);
     }
@@ -2302,29 +2308,22 @@ export class NativeRenderer implements IChartRenderer {
     /** Update the ARIA live region with a spoken summary of bar `idx` (date + OHLC + values). */
     private announceBar(idx: number): void {
         if (!this.liveRegion) return;
-        const d = this.buildDataWindowData(idx);
+        const bar = this.bars[idx];
+        const pricePane = this.dataWindowPricePane();
+        const ohlc = this.dataWindowOHLC(bar, pricePane);
         const parts: string[] = [];
-        if (d.title) parts.push(d.title);
-        if (d.ohlc) parts.push(`Open ${d.ohlc.o}, High ${d.ohlc.h}, Low ${d.ohlc.l}, Close ${d.ohlc.c}`);
-        for (const r of d.rows) parts.push(`${r.label} ${r.value}`);
+        if (bar) parts.push(formatStamp(bar.time, this.scene.timezone));
+        if (ohlc) parts.push(`Open ${ohlc.o}, High ${ohlc.h}, Low ${ohlc.l}, Close ${ohlc.c}`);
+        for (const group of this.dataWindowGroups(idx, pricePane)) {
+            for (const row of group.rows) parts.push(`${row.label} ${row.value}`);
+        }
         this.liveRegion.textContent = parts.join('. ');
     }
 
     // ── data window ──
-    /** Read-only snapshot of the data window — the hovered bar's OHLCV + every indicator's
-     *  value there (or the latest bar when the cursor is off the plot), pre-formatted on each
-     *  pane's scale. Lets a host app render the same readout in its own UI (e.g. a side panel)
-     *  without enabling the built-in floating overlay. */
-    getDataWindowData(): DataWindowData {
-        const n = this.bars.length;
-        if (n === 0) return { title: '', ohlc: null, rows: [] };
-        const idx = this.hoverLogical != null ? this.hoverLogical : n - 1;
-        return this.buildDataWindowData(idx);
-    }
-
-    /** Structured variant of {@link getDataWindowData}: the timestamp split into date + time,
-     *  and one group per indicator (each with a row per plot) instead of a flat row list —
-     *  for hosts that lay the readout out themselves (e.g. a sectioned side panel). */
+    /** The data-window readout (port seam) — the hovered bar's date/time and OHLCV plus every
+     *  indicator's value there, or the latest bar when the cursor is off the plot. Values are
+     *  pre-formatted on the scale of the pane they belong to, so a host panel renders them as-is. */
     getDataWindowReadout(): DataWindowReadout {
         const n = this.bars.length;
         if (n === 0) return { date: '', time: '', ohlc: null, groups: [] };
@@ -2333,27 +2332,6 @@ export class NativeRenderer implements IChartRenderer {
         const pricePane = this.dataWindowPricePane();
         const parts = bar ? formatStampParts(bar.time, this.scene.timezone) : { date: '', time: '' };
         return { date: parts.date, time: parts.time, ohlc: this.dataWindowOHLC(bar, pricePane), groups: this.dataWindowGroups(idx, pricePane) };
-    }
-
-    /** Repaint the data window from the hovered bar, or the latest bar when off the plot. */
-    private refreshDataWindow(): void {
-        if (!this.dataWindow || !this.dataWindowEnabled) return;
-        const n = this.bars.length;
-        if (n === 0) {
-            this.dataWindow.update({ title: '', ohlc: null, rows: [] });
-            return;
-        }
-        const idx = this.hoverLogical != null ? this.hoverLogical : n - 1;
-        this.dataWindow.update(this.buildDataWindowData(idx));
-    }
-
-    /** OHLCV of bar `idx` + every indicator series' value there, formatted on its pane scale. */
-    private buildDataWindowData(idx: number): DataWindowData {
-        const bar = this.bars[idx];
-        const pricePane = this.dataWindowPricePane();
-        const ohlc = this.dataWindowOHLC(bar, pricePane);
-        const rows = this.dataWindowGroups(idx, pricePane).flatMap((g) => g.rows);
-        return { title: bar ? formatStamp(bar.time, this.scene.timezone) : '', ohlc, rows };
     }
 
     private dataWindowPricePane(): PaneNode | null {
@@ -2486,6 +2464,9 @@ export class NativeRenderer implements IChartRenderer {
             && (liveActual.high !== this.liveEaseHigh || liveActual.low !== this.liveEaseLow || liveActual.close !== this.liveEaseClose);
         if (easeLive && liveActual) this.bars[li] = { ...liveActual, high: this.liveEaseHigh, low: this.liveEaseLow, close: this.liveEaseClose };
 
+        // Interleave layers: the drawings whose z sits inside a pane's series stack, prepainted
+        // so the backend can composite them mid-stack (under the candles, between indicators).
+        this.scene.drawingSlices = this.userDrawings?.prepareSlices(this.scene.orderedPanes().map((p) => p.id)) ?? new Map();
         this.backend.render(this.scene, this.coords, this.theme);
         this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair
@@ -2997,7 +2978,6 @@ export class NativeRenderer implements IChartRenderer {
         // Reserve strips for the price axis (right) + time axis (bottom); the
         // data area drives the coordinate transform so series sit clear of them.
         this.coords.setSize(Math.max(1, pw - this.rightAxisW), Math.max(1, ph - TIME_AXIS_H), dpr);
-        this.dataWindow?.setRightInset(this.rightAxisW);
         // Geometry changed — the retained crosshair {x,y} now points at the wrong
         // bar/price, so drop it (LWC hides the crosshair until the next move).
         this.scene.crosshair = null;

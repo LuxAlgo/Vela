@@ -37,9 +37,17 @@ class FakePort implements IDrawingsRendererPort {
     setFavorites(types: readonly string[]): void {
         this.favoritesPushed.push([...types]);
     }
+    shortcutsPushed: Array<Record<string, string>> = [];
+    setToolShortcuts(map: Readonly<Record<string, string>>): void {
+        this.shortcutsPushed.push({ ...map });
+    }
     snapModes: string[] = [];
     setSnapMode(mode: string): void {
         this.snapModes.push(mode);
+    }
+    stayModes: boolean[] = [];
+    setStayMode(on: boolean): void {
+        this.stayModes.push(on);
     }
     modes: Array<string | null> = [];
     setMode(mode: string | null): void {
@@ -49,6 +57,8 @@ class FakePort implements IDrawingsRendererPort {
     openSettings(id: string): void {
         this.settingsOpenedFor = id;
     }
+    /** Assigned per test to emulate a renderer whose drawings share the series' z space. */
+    stackRange?: (paneId: string) => { front: number; back: number };
     onDrawingIntent(cb: (i: DrawingIntent) => void): () => void {
         this.cb = cb;
         return () => (this.cb = null);
@@ -182,6 +192,19 @@ describe('DrawingController (enabled)', () => {
         port.fire({ kind: 'tool-finished', type: 'highlighter' });
         expect(ctrl.getTool()).toBe('highlighter');
         expect(port.activeTool).toBe('highlighter');
+    });
+
+    it('stay-in-drawing-mode keeps a one-shot tool armed after placement', () => {
+        const { port, ctrl } = setup();
+        ctrl.setStayMode(true);
+        ctrl.setTool('trendline');
+        port.fire({ kind: 'tool-finished', type: 'trendline' });
+        expect(ctrl.getTool()).toBe('trendline');
+        expect(port.activeTool).toBe('trendline');
+        // Turning it off restores one-shot disarm.
+        ctrl.setStayMode(false);
+        port.fire({ kind: 'tool-finished', type: 'trendline' });
+        expect(ctrl.getTool()).toBeNull();
     });
 });
 
@@ -331,6 +354,74 @@ describe('DrawingController — editing foundation', () => {
         expect(port.activeToolStyle).toEqual({ lineColor: '#ff0000', lineWidth: 3, lineStyle: 'dashed' });
         ctrl.setTool(null); // disarming carries no style
         expect(port.activeToolStyle).toBeUndefined();
+    });
+
+    it('setLocked / setVisible emit drawing:edited — hosts persist and mirror off that event', () => {
+        const { port, ctrl, seen } = setup();
+        port.fire({ kind: 'create', doc: HLINE_DOC });
+        const id = ctrl.all()[0]!.id;
+        seen.length = 0;
+        ctrl.setLocked(id, true);
+        ctrl.setVisible(id, false);
+        expect(ctrl.all()[0]).toMatchObject({ locked: true, visible: false });
+        expect(seen.filter((e) => e[0] === 'drawing:edited')).toEqual([
+            ['drawing:edited', id],
+            ['drawing:edited', id],
+        ]);
+    });
+
+    it('a drawing sent under the series (a z below the stack) survives a save/restore and is undoable', () => {
+        const { port, ctrl } = setup();
+        const d = ctrl.add('hline', { anchors: [{ time: 1, price: 1 }] })!;
+        expect(ctrl.all()[0]!.zIndex).toBeGreaterThan(0); // no shared z space on this port ⇒ over the other drawings
+        ctrl.update(d.id, { zIndex: -3 });
+        expect(ctrl.all()[0]!.zIndex).toBe(-3);
+        expect(port.synced.find((x) => x.id === d.id)!.zIndex).toBe(-3); // the renderer is told
+        const doc = ctrl.toJSON();
+        ctrl.fromJSON(doc);
+        expect(ctrl.all()[0]!.zIndex).toBe(-3); // persisted, not a session value
+        ctrl.update(d.id, { zIndex: 9 });
+        ctrl.undo();
+        expect(ctrl.all()[0]!.zIndex).toBe(-3);
+    });
+
+    it('add() can place a drawing under the series in one step, via an explicit z', () => {
+        const { port, ctrl } = setup();
+        const d = ctrl.add('hline', { anchors: [{ time: 1, price: 1 }], zIndex: -5 })!;
+        expect(ctrl.all()[0]!.zIndex).toBe(-5);
+        expect(port.synced.find((x) => x.id === d.id)!.zIndex).toBe(-5);
+        ctrl.undo();
+        expect(ctrl.all().length).toBe(0); // one undo step, not two
+    });
+
+    it('a new drawing starts just under the price; front/back clear the whole series stack', () => {
+        const { port, ctrl } = setup();
+        // The renderer's stack: an indicator raised to z 40, the candles at 0, the back at -6.
+        port.stackRange = (paneId: string) => (paneId === 'price' ? { front: 40, back: -6, price: 0 } : { front: 0, back: 0 });
+        const d = ctrl.add('hline', { anchors: [{ time: 1, price: 1 }] })!;
+        expect(d.zIndex).toBeLessThan(0); // under the candles — the price reads on top of it
+        expect(d.zIndex).toBeGreaterThan(-6); // but not sent behind the rest of the stack
+        ctrl.sendToBack(d.id);
+        expect(ctrl.all()[0]!.zIndex).toBeLessThan(-6); // undercuts the whole stack
+        ctrl.bringToFront(d.id);
+        expect(ctrl.all()[0]!.zIndex).toBeGreaterThan(40); // clears the raised indicator, not just other drawings
+    });
+
+    it('without a price key a new drawing starts just under the pane\'s top series (a study pane)', () => {
+        const { port, ctrl } = setup();
+        port.stackRange = () => ({ front: 3, back: 1 });
+        const d = ctrl.add('hline', { paneId: 'pane-1', anchors: [{ time: 1, price: 1 }] })!;
+        expect(d.zIndex).toBeLessThan(3);
+        expect(d.zIndex).toBeGreaterThan(2);
+    });
+
+    it('a duplicate keeps its source\'s depth instead of jumping to the front', () => {
+        const { ctrl } = setup();
+        const d = ctrl.add('hline', { anchors: [{ time: 1, price: 1 }], zIndex: -4 })!;
+        const clone = ctrl.duplicate([d.id])[0]!;
+        expect(clone.zIndex).toBe(-4);
+        // Tying its source, the clone paints just in front of it (insertion order breaks the tie).
+        expect(ctrl.all().map((x) => x.id)).toEqual([d.id, clone.id]);
     });
 
     it('programmatic CRUD are atomic undo steps', () => {
@@ -496,6 +587,12 @@ describe('drawing-tool favorites', () => {
         expect(ctrl.favorites()).toEqual(['box']);
     });
 
+    it('setToolShortcuts pushes the hint map to the port (display strings pass through untouched)', () => {
+        const { ctrl, port } = setup();
+        ctrl.setToolShortcuts({ trendline: 'Alt+T', hline: 'Alt+H', vline: 'Alt+V' });
+        expect(port.shortcutsPushed).toEqual([{ trendline: 'Alt+T', hline: 'Alt+H', vline: 'Alt+V' }]);
+    });
+
     it('starring NEVER arms a tool (the star is a side action on the flyout row)', () => {
         const { ctrl, port } = setup();
         ctrl.setTool('hline');
@@ -555,6 +652,30 @@ describe('DrawingController — tool/mode seams (the external-toolbar surface)',
         expect(port.snapModes).toEqual([]); // an intent must never bounce back as a command
     });
 
+    it('setStayMode pushes the port command, mirrors, emits — and equal values no-op', () => {
+        const { port, events, ctrl } = setup();
+        const stays: boolean[] = [];
+        events.on('drawing:stay', (e) => stays.push(e.on));
+
+        ctrl.setStayMode(true);
+        ctrl.setStayMode(true); // no-op
+        expect(port.stayModes).toEqual([true]);
+        expect(ctrl.getStayMode()).toBe(true);
+        expect(stays).toEqual([true]);
+    });
+
+    it('an in-chart stay-mode click arrives as a stay-mode intent: mirror + event, echo-safe', () => {
+        const { port, events, ctrl } = setup();
+        const stays: boolean[] = [];
+        events.on('drawing:stay', (e) => stays.push(e.on));
+
+        port.fire({ kind: 'stay-mode', on: true });
+        port.fire({ kind: 'stay-mode', on: true }); // renderer echo of an equal value → dropped
+        expect(ctrl.getStayMode()).toBe(true);
+        expect(stays).toEqual([true]);
+        expect(port.stayModes).toEqual([]); // an intent must never bounce back as a command
+    });
+
     it('setMode pushes the port command; the renderer intent reports the outcome', () => {
         const { port, events, ctrl } = setup();
         const modes: Array<string | null> = [];
@@ -571,11 +692,13 @@ describe('DrawingController — tool/mode seams (the external-toolbar surface)',
         expect(modes).toEqual(['measure', null]);
     });
 
-    it('mode/snap setters are inert without a port (headless), like the other interactive ops', () => {
+    it('mode/snap/stay setters are inert without a port (headless), like the other interactive ops', () => {
         const { ctrl } = setup(false);
         ctrl.setSnapMode('strong');
+        ctrl.setStayMode(true);
         ctrl.setMode('eraser');
         expect(ctrl.getSnapMode()).toBe('off'); // mirrors keep their defaults
+        expect(ctrl.getStayMode()).toBe(false);
         expect(ctrl.getMode()).toBe(null);
     });
 });

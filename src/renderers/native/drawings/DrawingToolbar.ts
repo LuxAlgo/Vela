@@ -21,6 +21,7 @@ export interface DrawingToolbarOptions {
  * it — its own hover target, revealed on cell hover — opens a flyout listing the group's tools. A
  * cursor button returns to select/idle; measure/eraser modes sit at the bottom, and the magnet is a
  * cell whose chevron opens an Off/Weak/Strong menu (its icon toggles the last-used strength on/off).
+ * Below the magnet, a stay-in-drawing-mode toggle keeps tools armed after each placement.
  * Hover and active tints are CSS-driven (`:hover` + `[data-active]`) so they never lag. Tooltips
  * appear after a 2s hover. Pure vanilla DOM on the host (a `pointer-events:auto` island).
  */
@@ -31,6 +32,8 @@ export class DrawingToolbar {
     private readonly lastUsed = new Map<string, DrawingTypeKey>();
     /** FAVORITE tool types (core-authoritative; pushed via setFavorites). */
     private favorites = new Set<DrawingTypeKey>();
+    /** Per-tool shortcut display strings (host-pushed via setShortcuts). */
+    private shortcuts = new Map<DrawingTypeKey, string>();
     /** Star elements of the currently open flyout, by tool type (live-updated, never stale). */
     private readonly starEls = new Map<DrawingTypeKey, HTMLElement>();
     private flyout: HTMLDivElement | null = null;
@@ -47,6 +50,8 @@ export class DrawingToolbar {
     private measureActive = false;
     private eraserBtn: HTMLButtonElement | null = null;
     private eraserActive = false;
+    private stayBtn: HTMLButtonElement | null = null;
+    private stayActive = false;
     private visible = false;
     private readonly tipText = new WeakMap<HTMLElement, string>(); // per-anchor tooltip text (magnet's changes with mode)
     private tooltipEl: HTMLDivElement | null = null;
@@ -64,6 +69,7 @@ export class DrawingToolbar {
         private readonly onMeasure: () => void = () => {},
         private readonly onEraser: () => void = () => {},
         private readonly onToggleFavorite: (type: DrawingTypeKey, on: boolean) => void = () => {},
+        private readonly onStayMode: (on: boolean) => void = () => {},
         options: DrawingToolbarOptions = {},
     ) {
         this.borderColor = options.borderColor ?? CHROME_BORDER_COLOR;
@@ -108,6 +114,12 @@ export class DrawingToolbar {
     setFavorites(types: readonly DrawingTypeKey[]): void {
         this.favorites = new Set(types);
         for (const [type, el] of this.starEls) this.paintStar(el, type);
+    }
+
+    /** Per-tool shortcut hints (pre-formatted display strings, e.g. `'Alt+T'`) shown at the
+     *  right edge of the flyout rows, beside the favorite star. */
+    setShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void {
+        this.shortcuts = new Map(Object.entries(map) as [DrawingTypeKey, string][]);
     }
 
     /** Paint one star for the current favorite state (filled + gold, or outline). */
@@ -170,9 +182,12 @@ export class DrawingToolbar {
         this.eraserBtn = this.makeButton(ERASER_ICON, 'Eraser (click/drag to delete)', () => this.onEraser());
         this.root.appendChild(this.eraserBtn);
         this.root.appendChild(this.makeMagnetCell());
+        this.stayBtn = this.makeButton(STAY_ICON, 'Stay in drawing mode', () => this.toggleStay());
+        this.root.appendChild(this.stayBtn);
         this.paintMeasure();
         this.paintEraser();
         this.paintMagnet();
+        this.paintStay();
         this.highlight();
     }
 
@@ -315,6 +330,26 @@ export class DrawingToolbar {
         icon.style.opacity = on ? '1' : '0.5';
     }
 
+    /** Toggle stay-in-drawing-mode on/off and notify the renderer. */
+    private toggleStay(): void {
+        this.stayActive = !this.stayActive;
+        this.onStayMode(this.stayActive);
+        this.paintStay();
+    }
+
+    /** Reflect stay-in-drawing-mode externally without notifying back. */
+    setStayMode(on: boolean): void {
+        this.stayActive = on;
+        this.paintStay();
+    }
+
+    private paintStay(): void {
+        const b = this.stayBtn;
+        if (!b) return;
+        b.dataset.active = this.stayActive ? '1' : '';
+        b.style.opacity = this.stayActive ? '1' : '0.5';
+    }
+
     // ── flyout ──
     /** Create the positioned flyout panel anchored to a cell, register it as open, and start the
      *  outside-dismiss. Callers fill it with items. */
@@ -367,6 +402,7 @@ export class DrawingToolbar {
                         icon: tool.icon,
                         label: tool.label,
                         selected: tool.type === this.active,
+                        shortcut: this.shortcuts.get(tool.type),
                         onSelect: () => this.onArm(tool.type),
                         favorite: {
                             type: tool.type,
@@ -418,12 +454,15 @@ export class DrawingToolbar {
         return div;
     }
 
-    /** A flyout row: optional leading icon, label, and a trailing check when it's the selected entry.
+    /** A flyout row, left to right: optional leading icon, label, a check when it's the selected
+     *  entry, an optional shortcut hint, and — at the far right — the favorite star (tool rows).
      *  Hover tint is CSS (`.vela-dtb-item:hover`), so navigating the menu stays smooth. */
     private makeFlyoutItem(opts: {
         icon?: string;
         label: string;
         selected?: boolean;
+        /** Shortcut hint (pre-formatted display string) rendered right-aligned, left of the star. */
+        shortcut?: string;
         onSelect: () => void;
         /** Star toggle (tool rows only — mode rows have no favorites). */
         favorite?: { type: DrawingTypeKey; toggle: () => void };
@@ -444,6 +483,17 @@ export class DrawingToolbar {
         label.textContent = opts.label;
         label.style.cssText = 'flex:1 1 auto;text-align:left;';
         item.appendChild(label);
+        const check = document.createElement('span');
+        check.style.cssText = 'width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none;';
+        if (opts.selected) check.innerHTML = sizedIcon(CHECK_ICON);
+        item.appendChild(check);
+        if (opts.shortcut) {
+            const hint = document.createElement('span');
+            hint.className = 'vela-dtb-hint';
+            hint.textContent = opts.shortcut;
+            hint.style.cssText = `flex:none;font:12px ${t.fontFamily};color:${withAlpha(t.textColor, 0.5)};`;
+            item.appendChild(hint);
+        }
         if (opts.favorite) {
             const star = document.createElement('span');
             star.className = 'vela-dtb-star';
@@ -463,10 +513,6 @@ export class DrawingToolbar {
             });
             item.appendChild(star);
         }
-        const check = document.createElement('span');
-        check.style.cssText = 'width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none;';
-        if (opts.selected) check.innerHTML = sizedIcon(CHECK_ICON);
-        item.appendChild(check);
         item.addEventListener('click', (e) => {
             e.stopPropagation();
             opts.onSelect();
@@ -514,6 +560,7 @@ export class DrawingToolbar {
         this.paintMeasure();
         this.paintEraser();
         this.paintMagnet();
+        this.paintStay();
     }
 
     private makeButton(icon: string, title: string, onClick: () => void): HTMLButtonElement {
@@ -623,6 +670,9 @@ const RULER_ICON =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 0 1.4l12.6 12.6a1 1 0 0 0 1.4 0l4.6-4.6a1 1 0 0 0 0-1.4Z"/><path d="m7.5 10.5 2 2"/><path d="m10.5 7.5 2 2"/><path d="m13.5 4.5 2 2"/><path d="m4.5 13.5 2 2"/></svg>';
 const MAGNET_ICON =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15"/><path d="m5 8 4 4"/><path d="m12 15 4 4"/></svg>';
+/** Pen with a padlock — stay-in-drawing-mode (tools remain armed after each placement). */
+const STAY_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.8 4.2a2.1 2.1 0 0 1 3 3L8.5 15.5l-3.5 1 1-3.5Z"/><rect x="13" y="14.5" width="8" height="6" rx="1.2"/><path d="M15 14.5v-1.6a2 2 0 0 1 4 0v1.6"/></svg>';
 const ERASER_ICON =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4L13 5a2 2 0 0 1 2.8 0l4.2 4.2a2 2 0 0 1 0 2.8L12 20"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>';
 /** A right-pointing chevron for the group/magnet flyout arrow (beside the icon). */

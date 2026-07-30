@@ -21,12 +21,14 @@ import type { Vela } from '../Vela';
 import { Topbar } from '../widget/topbar';
 import { Bottombar } from '../widget/bottombar';
 import { ObjectTree } from '../widget/object-tree';
+import { DataWindow } from '../widget/data-window';
 import { SymbolPicker } from '../widget/symbol-picker';
 import { IndicatorPicker } from '../widget/indicator-picker';
 import { TimeframeQuick } from '../widget/timeframe-quick';
 import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
+import { toolShortcutHints } from '../widget/tool-shortcuts';
 import { widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
@@ -73,6 +75,10 @@ export interface VelaWorkspaceOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
+    /** Focus the active chart when the workspace mounts so keyboard shortcuts work from
+     *  the first keystroke — no initial click needed. Default false: an embedded
+     *  workspace must never steal the page's focus from the host's own controls. */
+    autofocus?: boolean;
     /** The ONE shared drawing toolbar, docked left of the grid and acting on the active
      *  cell (per-cell in-chart bars stay hidden either way). Default true. */
     drawingToolbar?: boolean;
@@ -162,6 +168,7 @@ export class VelaWorkspace {
     private readonly topbar: Topbar;
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
+    private readonly dataWindow: DataWindow;
     private readonly symbolPicker: SymbolPicker;
     private readonly indicatorPicker: IndicatorPicker;
     private readonly tfQuick: TimeframeQuick;
@@ -169,11 +176,12 @@ export class VelaWorkspace {
     private readonly toast: Toast;
     private readonly glider = new Glider(() => (this.activeId ? (this.cellsById.get(this.activeId)?.chart ?? null) : null));
     private readonly drawToolbar: DrawingToolbar | null;
-    /** The GLOBAL armed tool/magnet (workspace policy) — re-applied to whichever cell
+    /** The GLOBAL armed tool/magnet/stay (workspace policy) — re-applied to whichever cell
      *  takes the focus; only the ACTIVE cell ever holds a non-null tool. Measure/eraser
      *  stay transient and per-cell: they exit when the focus leaves. */
     private globalTool: DrawingTypeKey | null = null;
     private globalSnap: SnapMode = 'off';
+    private globalStay = false;
     /** Favorite drawing tools — a WORKSPACE preference (one star set, every cell). */
     private favs: string[] = [];
     /** Live sync configuration (mutable copy of the option). */
@@ -268,12 +276,7 @@ export class VelaWorkspace {
             onScreenshotClick: () => this.active.downloadScreenshot(),
             onSettingsClick: () => this.active.chart.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
-            onDataWindowClick: () => {
-                const next = !this.active.chart.renderer.get('dataWindow');
-                this.active.chart.renderer.set('dataWindow', next);
-                return next;
-            },
-            dataWindowOn: false,
+            onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: '60',
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: 'candles',
@@ -294,7 +297,7 @@ export class VelaWorkspace {
             getContext: () => this.context(),
         });
 
-        // ── main row: the shared drawing toolbar + the grid + the docked object tree ──
+        // ── main row: the shared drawing toolbar + the grid + the docked side panels ──
         const main = doc.createElement('div');
         main.className = 'vela-ws-main';
         let toolbarHost: HTMLElement | null = null;
@@ -307,6 +310,16 @@ export class VelaWorkspace {
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
         this.objectTree = new ObjectTree(main);
+        this.dataWindow = new DataWindow(main);
+        // The docked panels are exclusive — one column at a time, so the grid keeps its width.
+        this.objectTree.onOpenChange = (open) => {
+            this.topbar.setPanelActive('objects', open);
+            if (open) this.dataWindow.toggle(false);
+        };
+        this.dataWindow.onOpenChange = (open) => {
+            this.topbar.setPanelActive('dataWindow', open);
+            if (open) this.objectTree.toggle(false);
+        };
         this.root.appendChild(main);
         this.toast = new Toast(this.gridEl);
 
@@ -345,6 +358,10 @@ export class VelaWorkspace {
                   },
                   // No refocus on a star: the flyout stays open for more browsing.
                   (type, on) => this.active.chart.drawings.setFavorite(type, on),
+                  (on) => {
+                      this.active.chart.drawings.setStayMode(on);
+                      this.refocusActive();
+                  },
                   { dock: 'static' },
               )
             : null;
@@ -380,6 +397,8 @@ export class VelaWorkspace {
         this.keymap = new KeymapManager();
         this.keymap.attach(this.root);
         this.registerDefaultKeys();
+        // Shortcut hints beside the bound tools in the shared toolbar's flyouts.
+        this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap));
         this.root.addEventListener('keydown', this.onRootKeydown);
         this.root.tabIndex = -1; // focusable host so bare keystrokes land here
 
@@ -387,6 +406,9 @@ export class VelaWorkspace {
         this.applyGrid();
         this.buildCells();
         this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.def.cells[0]?.id ?? null));
+        // Shortcuts only fire while focus is INSIDE the workspace (the keymap listens
+        // on the root) — autofocus makes them work before the first click.
+        if (opts.autofocus) this.refocusActive();
 
         // The shared manifest resolves once; every FRESH cell seeds its enabled entries.
         if (opts.indicators !== undefined) {
@@ -620,6 +642,7 @@ export class VelaWorkspace {
         this.topbar.destroy();
         this.bottombar?.destroy();
         this.objectTree.destroy();
+        this.dataWindow.destroy();
         this.symbolPicker.destroy();
         this.indicatorPicker.destroy();
         this.tfQuick.destroy();
@@ -645,17 +668,20 @@ export class VelaWorkspace {
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
         this.objectTree.setSymbol(cell.symbol);
         this.objectTree.onChart(cell.chart);
+        this.dataWindow.onChart(cell.chart); // the readout follows the active cell
         this.bottombar?.setActiveRange(cell.activeRangeId);
         this.indicatorPicker.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
-        // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet to
-        // the cell taking focus, and reflect its (fresh) state on the bar.
+        // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet + stay
+        // to the cell taking focus, and reflect its (fresh) state on the bar.
         const d = cell.chart.drawings;
         if (d.getTool() !== this.globalTool) d.setTool(this.globalTool);
         if (d.getSnapMode() !== this.globalSnap) d.setSnapMode(this.globalSnap);
+        if (d.getStayMode() !== this.globalStay) d.setStayMode(this.globalStay);
         if (this.drawToolbar) {
             this.drawToolbar.setActiveTool(this.globalTool);
             this.drawToolbar.setMagnetMode(this.globalSnap);
+            this.drawToolbar.setStayMode(this.globalStay);
             const mode = d.getMode();
             this.drawToolbar.setMeasureActive(mode === 'measure');
             this.drawToolbar.setEraserActive(mode === 'eraser');
@@ -817,6 +843,11 @@ export class VelaWorkspace {
             if (cell.id !== this.activeId) return;
             this.globalSnap = mode;
             this.drawToolbar?.setMagnetMode(mode);
+        });
+        chart.on('drawing:stay', ({ on }) => {
+            if (cell.id !== this.activeId) return;
+            this.globalStay = on;
+            this.drawToolbar?.setStayMode(on);
         });
         chart.on('drawing:mode', ({ mode }) => {
             if (cell.id !== this.activeId) return;
@@ -1023,8 +1054,9 @@ export class VelaWorkspace {
         this.keymap.register({ id: 'history.redo', keys: ['mod+y', 'mod+shift+z'], label: 'Redo (active chart)', category: 'Edit', run: () => this.active.history.redo() });
         this.keymap.register({ id: 'view.zoom-in', keys: 'mod+arrowup', label: 'Zoom in', category: 'Chart', run: () => this.glider.zoom(ZOOM_IN) });
         this.keymap.register({ id: 'view.zoom-out', keys: 'mod+arrowdown', label: 'Zoom out', category: 'Chart', run: () => this.glider.zoom(ZOOM_OUT) });
-        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.glider.pan(-PAN_FAST) });
-        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.glider.pan(PAN_FAST) });
+        // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
+        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.active.chart.panBy(-PAN_FAST) });
+        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.active.chart.panBy(PAN_FAST) });
         this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
         this.keymap.register({
             id: 'help.shortcuts',

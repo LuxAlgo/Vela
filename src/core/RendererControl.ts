@@ -1,4 +1,4 @@
-import type { CrosshairEvent, IChartRenderer, RendererCapabilities } from './ports/IChartRenderer';
+import type { CrosshairEvent, DataWindowReadout, IChartRenderer, RendererCapabilities } from './ports/IChartRenderer';
 import type { Unsubscribe } from './util/types';
 import type { SymbolPickerFn } from './model/inputs';
 
@@ -85,6 +85,16 @@ export class RendererControl {
      */
     onCrosshairMove(cb: (e: CrosshairEvent) => void): Unsubscribe {
         return this.renderer.onCrosshairMove(cb);
+    }
+
+    /**
+     * The current data-window readout — the hovered bar's date/time and OHLCV plus every
+     * indicator's value there, each already formatted on its pane's scale (the latest bar when
+     * the cursor is off the plot). Pair it with {@link onCrosshairMove} to drive a data-window
+     * panel. Null on a renderer that doesn't provide the readout.
+     */
+    dataWindowReadout(): DataWindowReadout | null {
+        return this.renderer.getDataWindowReadout?.() ?? null;
     }
 
     /**

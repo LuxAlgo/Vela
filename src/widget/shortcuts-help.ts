@@ -65,6 +65,29 @@ export class ShortcutsHelp {
     private refresh(): void {
         const doc = this.list.ownerDocument;
         this.list.replaceChildren();
+        const addCategory = (text: string): void => {
+            const cat = doc.createElement('div');
+            cat.className = 'vela-sh-cat';
+            cat.textContent = text;
+            this.list.appendChild(cat);
+        };
+        const addRow = (label: string, keys: readonly string[]): void => {
+            const row = doc.createElement('div');
+            row.className = 'vela-sh-row';
+            const l = doc.createElement('span');
+            l.className = 'vela-sh-label';
+            l.textContent = label;
+            const ks = doc.createElement('span');
+            ks.className = 'vela-sh-keys';
+            for (const key of keys) {
+                const k = doc.createElement('span');
+                k.className = 'vela-sh-key';
+                k.textContent = key;
+                ks.appendChild(k);
+            }
+            row.append(l, ks);
+            this.list.appendChild(row);
+        };
         const byCategory = new Map<string, ReturnType<KeymapManager['bindings']>>();
         for (const b of this.keymap.bindings()) {
             const bucket = byCategory.get(b.category) ?? [];
@@ -72,28 +95,15 @@ export class ShortcutsHelp {
             byCategory.set(b.category, bucket);
         }
         for (const [category, bindings] of byCategory) {
-            const cat = doc.createElement('div');
-            cat.className = 'vela-sh-cat';
-            cat.textContent = category;
-            this.list.appendChild(cat);
-            for (const b of bindings) {
-                const row = doc.createElement('div');
-                row.className = 'vela-sh-row';
-                const label = doc.createElement('span');
-                label.className = 'vela-sh-label';
-                label.textContent = b.label;
-                const keys = doc.createElement('span');
-                keys.className = 'vela-sh-keys';
-                for (const d of b.display) {
-                    const k = doc.createElement('span');
-                    k.className = 'vela-sh-key';
-                    k.textContent = d;
-                    keys.appendChild(k);
-                }
-                row.append(label, keys);
-                this.list.appendChild(row);
-            }
+            addCategory(category);
+            for (const b of bindings) addRow(b.label, b.display);
         }
+        // Pointer gestures live outside the keymap — list them like bindings so the
+        // panel stays the one complete reference.
+        addCategory('Mouse');
+        addRow('Scroll through history', ['Shift+Scroll']);
+        addRow('Measure from the press point', ['Shift+Click']);
+        addRow('Delete the drawing under the cursor', ['Middle-click']);
         // The two type-to-act routes live outside the keymap (any-printable routing).
         const s = doc.createElement('div');
         s.className = 'vela-sh-static';

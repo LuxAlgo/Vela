@@ -20,6 +20,9 @@ export interface MenuItemDescriptor {
     toggle?: boolean;
     /** Icon id (see the `vela/ui` icon registry) rendered before the label. */
     icon?: string;
+    /** Nested entries — the row becomes a submenu trigger opening its own list to the side.
+     *  A branch is not selectable itself: `onSelect` only ever reports leaf ids. */
+    submenu?: readonly MenuItemDescriptor[];
 }
 
 export interface MenuControllerOptions {
@@ -33,6 +36,10 @@ export interface MenuControllerOptions {
     onOpenChange?: (open: boolean) => void;
     /** Share the trigger's DOM id with other machines composed on the same element. */
     triggerId?: string;
+    /** Pin the machine's own id instead of taking a fresh one. A parent registers its
+     *  submenus under this key, so rebuilding a branch replaces its entry rather than
+     *  piling a new one on top. */
+    id?: string;
 }
 
 export type MenuService = menu.Service;
@@ -48,7 +55,7 @@ export function menuController(opts: MenuControllerOptions): MenuController {
     return {
         machine: menu.machine,
         props: {
-            id: nextUid('vela-menu'),
+            id: opts.id ?? nextUid('vela-menu'),
             ids: opts.triggerId ? { trigger: opts.triggerId } : undefined,
             positioning: { placement: opts.placement ?? 'bottom-start' },
             onSelect: (d: menu.SelectionDetails) => opts.onSelect?.(d.value),

@@ -43,7 +43,12 @@ const PAN_BARS = 10; // Shift+Arrow pans this many bars at once
  * Home/End jump to the data edges; `0` resets; Escape clears the crosshair. Returns
  * null for keys the chart doesn't own.
  */
-export function keyToAction(e: Pick<KeyboardEvent, 'key' | 'shiftKey'> & { altKey?: boolean }): KeyAction | null {
+export function keyToAction(e: Pick<KeyboardEvent, 'key' | 'shiftKey'> & { altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }): KeyAction | null {
+    // Ctrl/Cmd chords belong to the HOST (a widget/workspace keymap: pan/zoom glides,
+    // undo, …). The chart's own navigation is plain-key only — if a chorded arrow also
+    // stepped the crosshair here, its scroll-into-view would fight the host's pan glide
+    // (the same keystroke handled twice reads as a bounce).
+    if (e.ctrlKey || e.metaKey) return null;
     switch (e.key) {
         case 'ArrowLeft':
             return e.shiftKey ? { kind: 'pan', bars: -PAN_BARS } : { kind: 'step', delta: -1 };

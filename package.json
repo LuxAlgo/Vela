@@ -64,7 +64,7 @@
     "LICENSE",
     "README.md"
   ],
-  "author": "Alaa-eddine Kaddouri",
+  "author": "LuxAlgo",
   "sideEffects": false,
   "scripts": {
     "build": "tsup",

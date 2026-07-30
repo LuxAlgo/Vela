@@ -1439,6 +1439,57 @@ describe('handle.context — positive proof the capability is wired end to end',
     });
 });
 
+describe('chart.panBy — the drag-equivalent keyboard pan', () => {
+    class PanRenderer extends FakeRenderer {
+        range: VisibleRange | null = { from: 10_000, to: 20_000 };
+        override getVisibleRange(): VisibleRange | null {
+            return this.range;
+        }
+        panCalls: number[] = [];
+        panBy(fraction: number): void {
+            this.panCalls.push(fraction);
+        }
+    }
+
+    it("prefers the renderer's own drag-clamped pan when it has one", async () => {
+        const renderer = new PanRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const before = renderer.visibleRangeCalls.length;
+        chart.panBy(0.2);
+        chart.panBy(-0.2);
+        expect(renderer.panCalls).toEqual([0.2, -0.2]); // fraction passes through untouched
+        expect(renderer.visibleRangeCalls.length).toBe(before); // never the range fallback
+        chart.destroy();
+    });
+
+    it('falls back to an instant range shift on a renderer without panBy', async () => {
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const before = renderer.visibleRangeCalls.length;
+        chart.panBy(0.5); // FakeRenderer.getVisibleRange() is null → nothing to shift, no throw
+        expect(renderer.visibleRangeCalls.length).toBe(before);
+
+        class RangedRenderer extends FakeRenderer {
+            override getVisibleRange(): VisibleRange | null {
+                return { from: 10_000, to: 20_000 };
+            }
+        }
+        const ranged = new RangedRenderer();
+        const chart2 = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: ranged, engines: [], dataFeed: new MockDataFeed() });
+        await chart2.ready();
+        const n = ranged.visibleRangeCalls.length;
+        chart2.panBy(0.5); // span 10000 × 0.5 → shift +5000
+        expect(ranged.visibleRangeCalls.length).toBe(n + 1);
+        expect(ranged.visibleRangeCalls[n]).toEqual({ from: 15_000, to: 25_000 });
+        chart2.panBy(-0.5);
+        expect(ranged.visibleRangeCalls[n + 1]).toEqual({ from: 5_000, to: 15_000 });
+        chart.destroy();
+        chart2.destroy();
+    });
+});
+
 describe('chart-type SDK settings — renderer edits reach the type engine', () => {
     it('forwards onChartTypeSettingsChange to the ACTIVE type engine onSettings', async () => {
         const received: Array<Record<string, unknown>> = [];

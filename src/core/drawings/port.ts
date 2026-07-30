@@ -33,6 +33,9 @@ export type DrawingIntent =
     // mirrors the value and re-emits it as a chart event; an equal value is a no-op,
     // which is what keeps the command↔intent loop convergent.
     | { kind: 'snap-mode'; mode: SnapMode }
+    /** Stay-in-drawing-mode toggled in-chart — when on, finishing a drawing leaves the
+     *  tool armed instead of reverting to the pointer. */
+    | { kind: 'stay-mode'; on: boolean }
     | { kind: 'mode'; mode: DrawingMode }
     | { kind: 'undo' }
     | { kind: 'redo' }
@@ -62,15 +65,30 @@ export interface IDrawingsRendererPort {
     /** Push the FAVORITE tool set (flyout stars + any favorites-driven UI). Optional —
      *  favorites still work headless without a renderer reflection. */
     setFavorites?(types: readonly DrawingTypeKey[]): void;
+    /** Push per-tool shortcut hints — PRE-FORMATTED display strings (e.g. `'Alt+T'`)
+     *  shown beside the tools in the toolbar flyouts. The host owns the keymap and the
+     *  platform formatting; the renderer only displays. Optional. */
+    setToolShortcuts?(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void;
     /** Set the sticky magnet snap mode (off/weak/strong). Optional — a renderer without
      *  a magnet omits it; the in-chart toolbar reflects the pushed value. */
     setSnapMode?(mode: SnapMode): void;
+    /** Set stay-in-drawing-mode (tools remain armed after each placement). Optional —
+     *  the in-chart toolbar reflects the pushed value. */
+    setStayMode?(on: boolean): void;
     /** Enter/exit a renderer-local mode (measure ruler / eraser; `null` exits). The
      *  renderer keeps owning the mutual exclusion (with armed tools too) and reports
      *  every actual change back through the `mode` intent. Optional. */
     setMode?(mode: DrawingMode): void;
     /** Open a drawing's settings popup (selecting it too) — the programmatic twin of a click on it. */
     openSettings(id: string): void;
+    /**
+     * The pane's SERIES stack in z terms, for renderers whose drawings share one draw-order
+     * space with the series (`drawingDepth`): the extremes ("bring to front" beats `front`,
+     * "send to back" undercuts `back`) and the candles' own key (`price`, absent on a study
+     * pane) — a new drawing starts just under it. Optional — without it drawings order only
+     * among themselves, on a layer of their own.
+     */
+    stackRange?(paneId: string): { front: number; back: number; price?: number };
     /** The one channel up — create/edit/select/delete/settings/tool-finished. */
     onDrawingIntent(cb: (intent: DrawingIntent) => void): Unsubscribe;
 }

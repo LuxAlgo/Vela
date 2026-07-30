@@ -19,6 +19,7 @@ import { Watermark } from './watermark';
 import { Bottombar, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
 import { ObjectTree } from './object-tree';
+import { DataWindow } from './data-window';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
 import { widgetAttachments, type WidgetContext } from './contributions';
@@ -28,6 +29,7 @@ import { parsePersisted, legacyWidgetState, localStorageAdapter, type WidgetStor
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type CellState } from '../state/document';
 import { readUrlState, writeUrlState } from './url-state';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
+import { toolShortcutHints } from './tool-shortcuts';
 import { WidgetHistory } from './history';
 import { Toast } from './toast';
 import { Menu } from '../ui/components/menu';
@@ -51,6 +53,10 @@ export interface VelaWidgetOptions extends VelaOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
+    /** Focus the chart when it mounts so keyboard shortcuts work from the first
+     *  keystroke — no initial click needed. Default false: an embedded chart must
+     *  never steal the page's focus from the host's own controls. */
+    autofocus?: boolean;
     /** Bring the chart back AS YOU LEFT IT: the widget persists its full state — the
      *  unified single-cell document `getState()` returns (market, prefs, renderer
      *  config, user drawings, indicators) — and restores it at construction. `true`
@@ -88,6 +94,7 @@ export class VelaWidget {
     private readonly watermark: Watermark | null;
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
+    private readonly dataWindow: DataWindow;
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly contextMenu: ChartContextMenu;
     private readonly symbolPicker: SymbolPicker;
@@ -111,6 +118,8 @@ export class VelaWidget {
     private bars: number;
     private watermarkOn: boolean;
     private pendingRange: RangePreset | null = null;
+    /** Symbol already reported as unservable (the core re-reports on every index settle). */
+    private unresolvedToasted: string | null = null;
     /** Extra fetch depth the ACTIVE range chip needs — a view concern, kept apart from the
      *  user's own `bars` setting so a preset never overwrites their preference. */
     private rangeBars = 0;
@@ -234,12 +243,7 @@ export class VelaWidget {
             onScreenshotClick: () => this.downloadScreenshot(),
             onSettingsClick: () => this.inner?.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
-            onDataWindowClick: () => {
-                const next = !this.inner?.renderer.get('dataWindow');
-                this.inner?.renderer.set('dataWindow', next);
-                return next;
-            },
-            dataWindowOn: false,
+            onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: this.timeframe,
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: this.priceStyle,
@@ -254,6 +258,16 @@ export class VelaWidget {
         this.chartHost.className = 'vela-widget-chart';
         main.appendChild(this.chartHost);
         this.objectTree = new ObjectTree(main);
+        this.dataWindow = new DataWindow(main);
+        // The docked panels are exclusive — one column at a time, so the chart keeps its width.
+        this.objectTree.onOpenChange = (open) => {
+            this.topbar.setPanelActive('objects', open);
+            if (open) this.dataWindow.toggle(false);
+        };
+        this.dataWindow.onOpenChange = (open) => {
+            this.topbar.setPanelActive('dataWindow', open);
+            if (open) this.objectTree.toggle(false);
+        };
         this.root.appendChild(main);
 
         this.contextMenu = new ChartContextMenu(this.chartHost, {
@@ -323,8 +337,9 @@ export class VelaWidget {
         this.keymap.register({ id: 'history.redo', keys: ['mod+y', 'mod+shift+z'], label: 'Redo', category: 'Edit', run: () => this.history.redo() });
         this.keymap.register({ id: 'view.zoom-in', keys: 'mod+arrowup', label: 'Zoom in', category: 'Chart', run: () => this.glider.zoom(ZOOM_IN) });
         this.keymap.register({ id: 'view.zoom-out', keys: 'mod+arrowdown', label: 'Zoom out', category: 'Chart', run: () => this.glider.zoom(ZOOM_OUT) });
-        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.glider.pan(-PAN_FAST) });
-        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.glider.pan(PAN_FAST) });
+        // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
+        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.inner?.panBy(-PAN_FAST) });
+        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.inner?.panBy(PAN_FAST) });
         this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
         this.keymap.register({
             id: 'help.shortcuts',
@@ -343,6 +358,9 @@ export class VelaWidget {
 
         this.rebuild();
         this.mountAttachments();
+        // Shortcuts only fire while focus is INSIDE the widget (the keymap listens on
+        // the root) — autofocus makes them work before the first click.
+        if (opts.autofocus) this.inner?.renderer.focus();
     }
 
     /** Mount registered attachments not yet mounted on this widget (idempotent per id). */
@@ -413,7 +431,17 @@ export class VelaWidget {
         this.timeframe = tf;
         this.topbar.setTimeframe(tf);
         this.watermark?.update(this.symbol, tf);
-        this.statusline?.setMeta(tf, typeof this.opts.provider === 'string' ? this.opts.provider : '');
+        this.statusline?.setMeta(tf, this.providerLabel());
+    }
+
+    /**
+     * The provider name to show: the one that RESOLVED the symbol, not the one configured.
+     * They differ whenever the `provider` option is just a default (or names something that
+     * isn't registered) — the status line must not claim a venue that served nothing.
+     */
+    private providerLabel(): string {
+        const resolved = this.inner?.data.resolve(this.symbol)?.provider;
+        return resolved ?? (typeof this.opts.provider === 'string' ? this.opts.provider : '');
     }
 
     setTimeframe(tf: string): void {
@@ -432,6 +460,7 @@ export class VelaWidget {
 
     setSymbol(symbol: string): void {
         if (symbol === this.symbol || this.destroyed) return;
+        this.unresolvedToasted = null; // a new symbol gets a fresh verdict
         this.symbol = symbol;
         this.topbar.setSymbol(symbol);
         this.statusline?.setSymbol(symbol);
@@ -669,6 +698,7 @@ export class VelaWidget {
         this.root.removeEventListener('keydown', this.onRootKeydown);
         this.topbar.destroy();
         this.objectTree.destroy();
+        this.dataWindow.destroy();
         this.shortcutsHelp?.destroy();
         this.contextMenu.destroy();
         this.symbolPicker.destroy();
@@ -723,6 +753,7 @@ export class VelaWidget {
         this.symbolPicker.setSource(() => chart.data.symbols());
         this.objectTree.setSymbol(this.symbol);
         this.objectTree.onChart(chart);
+        this.dataWindow.onChart(chart);
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
         chart.on('indicator:added', () => {
@@ -770,12 +801,22 @@ export class VelaWidget {
             this.topbar.setAlertCount(this.alerts.length);
         });
         chart.on('indicator:error', ({ error }) => this.toast?.show(error.message, 'error', 5000));
+        // A symbol nothing serves parks the load forever — say so instead of showing a blank
+        // chart. Once per symbol: the core re-reports on every provider-index settle.
+        chart.on('data:unresolved', ({ symbol, providers }) => {
+            if (this.unresolvedToasted === symbol) return;
+            this.unresolvedToasted = symbol;
+            const list = providers.length > 0 ? providers.join(', ') : 'none';
+            this.toast?.show(`No registered provider serves "${symbol}" (registered: ${list})`, 'error', 6000);
+        });
         // Favorite drawing tools: reapply across rebuilds, mirror + persist user toggles.
         if (this.favs.length > 0) chart.drawings.setFavorites(this.favs as never[]);
         chart.on('drawing:favorites', ({ favorites }) => {
             this.favs = favorites;
             this.markStateDirty();
         });
+        // Shortcut hints beside the bound tools in the toolbar flyouts (e.g. 'Alt+T').
+        if (chart.drawings.supported) chart.drawings.setToolShortcuts(toolShortcutHints(this.keymap));
         // User drawings: every change path (mouse tools, eraser, undo/redo, programmatic
         // add/remove) converges on these three events — persist debounced off them.
         chart.on('drawing:created', () => this.markStateDirty());
@@ -849,6 +890,7 @@ export class VelaWidget {
                 chart.setVisibleRangePreset(this.pendingRange.preset);
                 this.pendingRange = null;
             }
+            this.statusline?.setMeta(this.timeframe, this.providerLabel()); // now that resolution is known
         });
 
         if (this.manifest.length || this.instances.length) {

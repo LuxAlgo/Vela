@@ -33,6 +33,19 @@ export interface PctScale {
 }
 
 /**
+ * One raster layer of user drawings interleaved into a pane's series stack: a prepainted
+ * plot-sized canvas the backend composites (drawImage / textured quad) immediately BEFORE
+ * the series whose z key is `beforeZ` — so its drawings sit under that series and every
+ * series above it, but over everything painted earlier (grid, fills, lower series).
+ */
+export interface DrawingSlice {
+    /** The z key of the series this layer paints in front of the grid but behind. */
+    beforeZ: number;
+    /** Plot-sized, dpr-scaled canvas holding just this layer's drawings. */
+    canvas: HTMLCanvasElement;
+}
+
+/**
  * A retained pane node. Stacked top-to-bottom by `order`; `heightWeight`
  * sets relative height. `bounds` (pixel extent) is recomputed on resize;
  * `scale` (price window) is recomputed per frame by autoscale. Both are
@@ -151,16 +164,21 @@ export class SceneGraph {
     highlights: HighlightArea[] = [];
     /** Draw-order key of the price candles, relative to indicator series z (see `seriesZ`).
      *  Indicators with z below this draw BEHIND the candles; at/above draw in front.
-     *  Default 0 with indicators defaulting to z ≥ 1 ⇒ candles behind all overlays (TV-style). */
+     *  Default 0 with indicators mounting at z < 0 ⇒ the price reads on top of every overlay,
+     *  and user drawings (z ≥ 1 by default) on top of the price. */
     candleZ = 0;
     /** Hide the base price series (candles/bars/line/area) without removing it — overlay
      *  indicators keep drawing and the pane autoscales to them. Toggled from the object tree. */
     candlesHidden = false;
     /** Per-indicator foreground draw-order key (series layer), keyed by indicator id.
-     *  Higher = drawn later (in front). Assigned incrementally on mount so insertion
-     *  order is preserved by default; `setIndicatorZ`/`bringToFront`/`sendToBack` change it. */
+     *  Higher = drawn later (in front). Assigned on mount to the current BOTTOM of the stack,
+     *  so each indicator arrives behind the candles (and behind older indicators);
+     *  `setIndicatorZ`/`bringToFront`/`sendToBack` change it. */
     private readonly seriesZ = new Map<string, number>();
-    private nextZ = 1;
+    /** Per-pane raster layers of user drawings interleaved into the series stack — each is a
+     *  prepainted canvas the backend composites just before the series carrying `beforeZ`.
+     *  Rebuilt by the renderer per data frame; empty when every drawing sits over the stack. */
+    drawingSlices: ReadonlyMap<string, ReadonlyArray<DrawingSlice>> = new Map();
     /** Per-model index offset: the chart bar index of the model's `anchorTime` — its
      *  index-aligned payloads (dense series arrays, `bar_index` drawings) count from that
      *  bar. Only nonzero for models computed over a SUFFIX of the bars (whole-chart models,
@@ -263,10 +281,11 @@ export class SceneGraph {
         return scale.min + (scale.max - scale.min) * t;
     }
 
-    /** Assign a default z (next on mount) so later indicators draw in front, matching
-     *  the pre-z-order insertion behavior. No-op if the indicator already has one. */
+    /** Assign a default z on mount: the current bottom of the stack, so a new indicator
+     *  paints behind the candles and behind every indicator already there — the price stays
+     *  the top of the pile until the user restacks it. No-op if the indicator already has one. */
     assignIndicatorZ(id: string): void {
-        if (!this.seriesZ.has(id)) this.seriesZ.set(id, this.nextZ++);
+        if (!this.seriesZ.has(id)) this.seriesZ.set(id, this.bottomZ() - 1);
     }
 
     forgetIndicatorZ(id: string): void {
@@ -280,6 +299,15 @@ export class SceneGraph {
     /** Snapshot of the current ordering for a UI/read API: `{ id, z }` sorted by z. */
     indicatorZOrder(): Array<{ id: string; z: number }> {
         return [...this.seriesZ.entries()].map(([id, z]) => ({ id, z })).sort((a, b) => a.z - b.z);
+    }
+
+    /** The pane's series z keys (each indicator, plus the candles on the price pane), sorted
+     *  ascending and de-duplicated — the boundaries a user drawing's z is slotted against. */
+    seriesBoundaries(paneId: string): number[] {
+        const keys = new Set<number>();
+        if (paneId === 'price') keys.add(this.candleZ);
+        for (const m of this.indicatorsForPane(paneId)) keys.add(this.zOf(m.id));
+        return [...keys].sort((a, b) => a - b);
     }
 
     /** Raise an indicator above every other layer (other indicators AND the candles). */

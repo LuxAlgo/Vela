@@ -6,6 +6,23 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Stay in drawing mode.** A toolbar toggle under the magnet (pen with a lock) keeps the
+  armed tool ready after each placement, so you can draw several of the same shape without
+  re-picking the tool. Turn it off for the usual one-shot behavior; the brush family still
+  stays armed either way.
+- **Position sizing on the long/short tool.** The long/short position drawing now sizes from
+  your account: open its gear settings to set a risk percentage and account balance, and the
+  chart shows the dollar loss at the stop and the matching position size alongside the usual
+  risk:reward and percentage labels. The position size is itself editable — type the size you
+  want and the risk percentage adjusts to match. Drag from the entry in the profit direction —
+  higher for a long, lower for a short — and the profit zone follows that way; the stop lands on
+  the opposite side. A direction switch in the panel turns the whole trade around in place,
+  mirroring the stop and target across the entry with the risk:reward preserved. The stop and
+  target take exact values in your choice of unit — the absolute price or points from the entry —
+  and switching the unit re-expresses the current value without moving the level. Every label has
+  its own toggle: the direction-and-ratio header, the loss-and-size line, the target and stop
+  labels, the level prices inside them, or all text at once; the profit and loss zones recolor
+  from the quick-settings bar, and the label color and size are adjustable too.
 - **Multi-chart workspaces.** The new `VelaWorkspace` puts several full charts on one screen:
   pick a grid from the layout menu in the top bar — single, two side by side, two stacked,
   four, or eight — and resize the cells by dragging the dividers between them (double-click a
@@ -42,9 +59,63 @@ All notable changes to Vela, newest first.
   you when to save. Server-side snapshots, shareable links, and layout templates are all built
   from these two calls. The widget speaks the exact same format as the workspace (it is simply
   the one-chart case), so a saved widget chart can be dropped into a workspace slot as-is.
+- **Shortcuts from the first keystroke.** A new `autofocus` option on the widget and the
+  workspace focuses the chart as soon as it mounts, so keyboard shortcuts work the moment
+  the chart appears — no initial click needed. It stays off by default, so a chart embedded
+  next to other page content never steals the keyboard focus.
+- **Quicker mouse control of the view and drawings.** Hold `Shift` and scroll to glide through
+  chart history instead of zooming, `Shift`-click an empty spot to start measuring from that
+  exact point, and middle-click a drawing to delete it — no toolbar round-trip needed. The
+  drawing toolbar's menus now show each tool's keyboard shortcut beside it, with the favorite
+  star at the far edge of the row, and the `?` shortcuts panel lists the mouse gestures too.
+- **A reorganized object tree.** The panel now mirrors how the chart is actually built: every
+  item sits under the pane it belongs to, and in the main chart the price series takes its own
+  place in the stack among the overlay indicators, in the order they draw. Drawings are listed
+  under their tool's name with that tool's icon, an indicator drawing against its own scale is
+  marked as such, and a locked drawing keeps its padlock in view instead of hiding it until you
+  hover. Right-click any row for the actions there is no room for on it: show or hide, lock,
+  duplicate, bring to front or send to back, remove, and — for an indicator — move it into
+  another pane or out into a new one of its own. Each pane's header carries its own controls to
+  reorder, collapse, or maximize it. Rows can also be dragged: drop an indicator on another pane
+  to move it there, on the band between two panes to open a fresh one, or anywhere in the main
+  chart's stack to choose what draws in front — the price series included. Drawings drag the same
+  way, restacking within their pane or landing in another one to move there. A label follows the
+  pointer and the panel shows where the drop will land before you release.
+- **Drawings can be grouped and handled as one.** Click a drawing in the object tree to select
+  it, holding Ctrl (or Cmd) to add more — the chart highlights everything you pick — and a bar at
+  the top of the panel offers to bundle the selection into a group or duplicate all of it at once.
+  A group gets a row of its own that folds shut over its members, and its eye, padlock and remove
+  act on every drawing inside it. Rename it to whatever the bundle means to you. A group drags
+  anywhere a single drawing can go — another place in the stack, or another pane — carrying its
+  members and their order with it, and dropping a loose drawing onto a group adds it to the
+  bundle. Right-clicking gives you the rest: adding a drawing to a group or taking it out again,
+  hiding or locking a whole group, ungrouping it, or deleting it with everything in it. Groups
+  last as long as the chart stays open and are not part of what persistence saves.
+- **Drawings can sit anywhere in the chart's stack.** A drawing no longer has to sit on top of
+  the price: it can go under the candles, between two indicators, or behind everything, so it
+  reads as background — a zone or a band you see the data through instead of across. Each pane in
+  the object tree is now one column, top to bottom as front to back — its drawings, its
+  indicators and the price series together — and you drag a drawing (or a whole group, which
+  moves as one block) to any slot in it; **Bring to front** and **Send to back** on a drawing's
+  menu now clear the entire stack, candles and indicators included. A drawing under the data
+  stays fully yours to work with — click it, move it, reshape it as before, and its handles still
+  draw on top so you can see what you have hold of. The whole stacking order is saved with your
+  chart, comes back on reload, and drawing moves can be undone.
+- **A data window beside the chart.** The data-window button in the top bar opens a panel docked
+  to the right, the object tree's sibling: the date and time of the bar under your pointer, its
+  open, high, low, close and volume tinted with the bar's direction, then one section per
+  indicator showing each plot's value in the plot's own color. It follows the crosshair as you
+  move across the chart and falls back to the latest bar when the pointer leaves, so it always
+  shows something useful. The two panels share the dock — opening one closes the other — and in a
+  workspace the readout follows the active chart as you switch cells.
 
 ### Changed
 
+- **The price now reads on top by default.** A new overlay indicator starts *behind* the candles
+  (and behind the indicators already there), and a new drawing starts *just under* them, so the
+  price stays the top of the pile until you restack things yourself — drag rows in the object
+  tree, or use Bring to front / Send to back. _(Breaking: overlays and drawings used to paint
+  over the candles by default; raise them in the object tree to get the old look back.)_
 - **The widget now persists the full chart, not just preferences.** Where persistence used to
   restore the symbol, timeframe, style, and a few settings as defaults, it now brings the whole
   chart back — drawings, indicators, and appearance included. Previously saved preferences are
@@ -53,6 +124,43 @@ All notable changes to Vela, newest first.
   holds across symbol and timeframe switches and across reloads, whichever way you removed it
   (the indicators dialog, the legend, or the object tree). Before, auto-added indicators could
   quietly return on the next switch or reload.
+- **Text is typed straight onto the chart.** Placing a text annotation now drops a blinking caret
+  where you clicked, next to an "Enter Text" placeholder, and the words appear on the chart as you
+  type them — no settings field in between, and a thin gray frame around the words while you are
+  editing them. Text annotations start out large, so they read at a glance without reaching for the
+  size control. Enter starts a new line; clicking away (or Ctrl/Cmd+Enter) keeps the text and
+  Escape puts back what was there; a text annotation you never typed into is
+  dropped instead of left blank on the chart. Double-clicking existing text — or a callout — opens
+  the same on-chart editor. Finished text keeps that frame as its selection cue: firm when the
+  annotation is selected, fainter under the cursor, so you can see where the words can be grabbed.
+  The quick-settings bar opens alongside the caret, as it does for every other tool, and now carries
+  the text color and size on the bar itself, with bold and italic under the text field where the
+  words are — restyle while you type and the chart follows, without the edit being interrupted.
+  Previously a text annotation arrived pre-filled with the word "Text", had to be edited through the
+  settings popup, and its formatting was two clicks deep.
+- **The data window is a docked panel, not a floating box.** It used to hover over the top-right
+  corner of the chart and was switched on with the `dataWindow` option; it is now the side panel
+  described above, opened from the top bar, and it never covers the candles. _(Breaking: the
+  `dataWindow` option is gone. If you drove it from code, or built your own readout beside it,
+  call `chart.renderer.dataWindowReadout()` — it hands back the same values, ready to display.)_
+
+### Fixed
+
+- **Hiding or locking a drawing now sticks.** Both are saved along with the rest of your chart,
+  can be undone, and immediately update everywhere that drawing appears. Before, a hidden or
+  locked drawing came back visible and unlocked after a reload.
+
+### Fixed
+
+- **Keyboard zoom and pan no longer wedge the chart.** Zooming or panning with `Ctrl` + arrow
+  keys toward the edge of the chart (or past the zoom limits) could leave the view stuck: the
+  animation silently kept running forever and overrode every later scroll-wheel or drag
+  gesture, so the chart stopped responding to the mouse. The glide now settles cleanly and
+  the mouse always stays in control. `Ctrl` + `←`/`→` also now pans exactly like dragging the
+  chart — same limits, same feel: holding the key scrolls continuously and, toward the most
+  recent bar, comes to rest on the newest candle plus the usual bit of empty space. And with
+  the chart focused, a held `Ctrl` + arrow no longer also moves the crosshair bar — the two
+  used to fight over the view, which read as a stuttering bounce while panning.
 
 ## [v0.1.0]
 

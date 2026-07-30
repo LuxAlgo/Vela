@@ -1,25 +1,78 @@
-import { Drawing, type AnchorSlot } from '../Drawing';
+import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
-import { LINE_FIELDS } from '../schema';
+import { LINE_FIELDS, TEXT_SIZE_OPTIONS } from '../schema';
 import { pointInBox, handleAt } from '../hittest';
 
+/** How the gear panel's stop/target inputs interpret their value. */
+export type PositionLevelMode = 'price' | 'points';
+
+/** Choices for the direction select (long ↔ short mirrors the levels across the entry). */
+export const DIRECTION_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+    { value: 'long', label: 'Long' },
+    { value: 'short', label: 'Short' },
+];
+
 /**
- * A long/short position tool. Two clicks place the entry (anchor[0]) + stop (anchor[1]); onPlaced
- * derives the target (anchor[2]). Drives a shaded reward zone (entry↔target, green) and risk zone
- * (entry↔stop, red) with a computed risk:reward + target/stop percentages. The direction (LONG vs
- * SHORT) follows the geometry — a stop below the entry is long, above is short — so one tool covers both.
+ * A long/short position tool. Two clicks place the entry (anchor[0]) + target (anchor[1]);
+ * onPlaced derives the stop (anchor[1] after finalize) and keeps the target as anchor[2]. The
+ * second click is the *profit* direction — dragging higher from the entry paints the green
+ * reward zone above (a long); dragging lower paints it below (a short). The shaded reward
+ * (entry↔target) and risk (entry↔stop) zones carry a computed risk:reward, target/stop
+ * percentages, and — from the account balance + risk % settings — a dollar loss and position
+ * size. Zone colors, the label text (visibility, size, color, level prices), and the three
+ * price levels are all editable through settings.
  */
 export class PositionTool extends Drawing {
     readonly type = 'position' as const;
 
-    /** Default reward:risk used to derive the target from the placed (or default) risk. */
+    /** Default reward:risk used to derive the stop from the placed (or default) target. */
     protected static readonly DEFAULT_RR = 2;
     /** Below this vertical drag (media px) a placement is treated as a bare click → default box. */
     private static readonly MIN_DRAG_PX = 6;
     private static readonly DEFAULT_RISK_PX = 64;
     private static readonly DEFAULT_WIDTH_PX = 150;
     private static readonly MIN_WIDTH_PX = 48;
+    private static readonly DEFAULT_RISK_PERCENT = 1;
+    private static readonly DEFAULT_ACCOUNT_BALANCE = 10_000;
+    private static readonly DEFAULT_PROFIT_COLOR = '#0ecb81';
+    private static readonly DEFAULT_LOSS_COLOR = '#f6465d';
+
+    // Declared with `!` so a field default never clobbers readProps (base constructor runs first).
+    /** Percent of account balance risked on the stop (drives dollar loss + position size). */
+    riskPercent!: number;
+    /** Account balance in dollars (drives dollar loss + position size). */
+    accountBalance!: number;
+    /** Master toggle for every painted label. */
+    showText!: boolean;
+    /** Show the `DIR · R:R` header line above the box. */
+    showHeader!: boolean;
+    /** Append the level price to the target/stop labels. */
+    showPrices!: boolean;
+    /** Show the `Loss $ · Size` line above the box. */
+    showLossSize!: boolean;
+    /** Show the `Target +%` label inside the reward zone. */
+    showTargetLabel!: boolean;
+    /** Show the `Stop −%` label inside the risk zone. */
+    showStopLabel!: boolean;
+    /** Fill + line color of the reward zone. */
+    profitColor!: string;
+    /** Fill + line color of the risk zone. */
+    lossColor!: string;
+
+    constructor(init: Partial<SerializedDrawing> & { paneId: string }) {
+        super(init);
+        if (this.riskPercent === undefined) this.riskPercent = PositionTool.DEFAULT_RISK_PERCENT;
+        if (this.accountBalance === undefined) this.accountBalance = PositionTool.DEFAULT_ACCOUNT_BALANCE;
+        if (this.showText === undefined) this.showText = true;
+        if (this.showHeader === undefined) this.showHeader = true;
+        if (this.showPrices === undefined) this.showPrices = false;
+        if (this.showLossSize === undefined) this.showLossSize = true;
+        if (this.showTargetLabel === undefined) this.showTargetLabel = true;
+        if (this.showStopLabel === undefined) this.showStopLabel = true;
+        if (this.profitColor === undefined) this.profitColor = PositionTool.DEFAULT_PROFIT_COLOR;
+        if (this.lossColor === undefined) this.lossColor = PositionTool.DEFAULT_LOSS_COLOR;
+    }
 
     /** `'LONG'` or `'SHORT'`, computed from geometry so it flips live as the drag crosses the
      *  entry (target above entry → long; below → short). */
@@ -28,9 +81,75 @@ export class PositionTool extends Drawing {
         return p && p.target >= p.entry ? 'LONG' : 'SHORT';
     }
 
+    /** Direction as a settings path: reading reflects the geometry; writing the opposite value
+     *  mirrors the stop AND the target across the entry, turning the trade around in place
+     *  while preserving each side's distance (and therefore the R:R). */
+    get direction(): 'long' | 'short' {
+        return this.directionLabel() === 'LONG' ? 'long' : 'short';
+    }
+    set direction(v: 'long' | 'short') {
+        const entry = this.anchors[0];
+        const stop = this.anchors[1];
+        const target = this.anchors[2];
+        if (!entry || !stop || !target) return;
+        if ((v === 'long' || v === 'short') && v !== this.direction) {
+            stop.price = 2 * entry.price - stop.price;
+            target.price = 2 * entry.price - target.price;
+        }
+    }
+
+    /** Position size as a settings path: reading returns the computed size; writing back-solves
+     *  the risk % so that `size × stop distance = balance × risk%` holds for the typed size. */
+    get quantity(): number {
+        return this.positionSize();
+    }
+    set quantity(v: number) {
+        const p = this.prices();
+        if (!p || !Number.isFinite(v) || v < 0) return;
+        const dist = Math.abs(p.entry - p.stop);
+        if (dist < 1e-9 || this.accountBalance <= 0) return;
+        this.riskPercent = ((v * dist) / this.accountBalance) * 100;
+    }
+
+    // ── price levels as settings paths (the gear panel patches these directly) ──
+
+    get entryPrice(): number {
+        return this.anchors[0]?.price ?? 0;
+    }
+    set entryPrice(v: number) {
+        const a = this.anchors[0];
+        if (a && Number.isFinite(v)) {
+            a.price = v;
+            this.constrainHandleDrag(0);
+        }
+    }
+
+    get stopPrice(): number {
+        return this.anchors[1]?.price ?? 0;
+    }
+    set stopPrice(v: number) {
+        const a = this.anchors[1];
+        if (a && Number.isFinite(v)) {
+            a.price = v;
+            this.constrainHandleDrag(1);
+        }
+    }
+
+    get targetPrice(): number {
+        return this.anchors[2]?.price ?? 0;
+    }
+    set targetPrice(v: number) {
+        const a = this.anchors[2];
+        if (a && Number.isFinite(v)) {
+            a.price = v;
+            this.constrainHandleDrag(2);
+        }
+    }
+
     anchorSchema(): { min: number; max: number; slots: AnchorSlot[] } {
-        // Click-move-click: click 1 = entry, click 2 = stop (max 2 clicks finalize). onPlaced then
-        // derives the target as a 3rd anchor. The 3 slots give all three handles their free axes.
+        // Click-move-click: click 1 = entry, click 2 = target (max 2 clicks finalize). onPlaced then
+        // derives the stop and rewrites anchors as [entry, stop, target]. The 3 slots give all three
+        // handles their free axes after placement.
         return {
             min: 2,
             max: 2,
@@ -45,10 +164,11 @@ export class PositionTool extends Drawing {
     // Placed click-move-click (the inherited 'click' mode), consistent with the box/Gann/range tools.
 
     /**
-     * Resolve the two placed anchors (entry + stop) into the final entry/stop/target box, computing
-     * the target/width in PIXEL space so the box has a consistent visual size at any scale. The
-     * direction follows the second click — a stop below the entry yields a long, above yields a short.
-     * A degenerate second click (≈ the entry) falls back to a default-sized box.
+     * Resolve the two placed anchors (entry + target) into the final entry/stop/target box,
+     * computing the stop/width in PIXEL space so the box has a consistent visual size at any
+     * scale. The second click is the profit direction — a target above the entry yields a long
+     * (stop below); below yields a short. A degenerate second click (≈ the entry) falls back to
+     * a default-sized long-facing box.
      */
     override onPlaced(proj: Projector): void {
         const e = this.anchors[0];
@@ -57,19 +177,20 @@ export class PositionTool extends Drawing {
         const ey = proj.yOf(e.price, this.paneId);
         if (ey == null) return;
 
-        const s = this.anchors[1];
-        const sy = s ? proj.yOf(s.price, this.paneId) : null;
-        let stopPx: number;
+        const t = this.anchors[1];
+        const ty = t ? proj.yOf(t.price, this.paneId) : null;
+        let targetPx: number;
         let endPx: number;
-        if (s && sy != null && Math.abs(sy - ey) >= PositionTool.MIN_DRAG_PX) {
-            stopPx = sy; // a real drag: the stop is where the user released
-            endPx = ex + Math.max(Math.abs(proj.xOf(s.time) - ex), PositionTool.MIN_WIDTH_PX);
+        if (t && ty != null && Math.abs(ty - ey) >= PositionTool.MIN_DRAG_PX) {
+            targetPx = ty; // a real drag: the target (profit) is where the user released
+            endPx = ex + Math.max(Math.abs(proj.xOf(t.time) - ex), PositionTool.MIN_WIDTH_PX);
         } else {
-            // a degenerate second click (≈ the entry): a default long-facing box (stop below the entry)
-            stopPx = ey + PositionTool.DEFAULT_RISK_PX;
+            // a degenerate second click (≈ the entry): a default long-facing box (target above)
+            targetPx = ey - PositionTool.DEFAULT_RISK_PX * PositionTool.DEFAULT_RR;
             endPx = ex + PositionTool.DEFAULT_WIDTH_PX;
         }
-        const targetPx = ey - (stopPx - ey) * PositionTool.DEFAULT_RR; // reward at R:R on the far side
+        // stop on the opposite side of the entry at 1/R:R of the reward distance
+        const stopPx = ey - (targetPx - ey) / PositionTool.DEFAULT_RR;
         const endTime = proj.pxToPoint(endPx, ey, this.paneId).time;
         this.anchors = [
             { time: e.time, price: e.price },
@@ -97,14 +218,20 @@ export class PositionTool extends Drawing {
         else target.price = 2 * entry.price - target.price; // dragged stop (or entry) → flip the target
     }
 
-    /** The three levels — entry, stop, target — deriving the target while only two anchors exist
-     *  (the live drag preview, before onPlaced sets the precise box). */
+    /** The three levels — entry, stop, target — deriving the stop while only two anchors exist
+     *  (the live drag preview, before onPlaced sets the precise box). During preview the second
+     *  anchor is the target (profit); after placement anchors are [entry, stop, target]. */
     private resolved(): Array<{ time: number; price: number }> | null {
         const e = this.anchors[0];
-        const s = this.anchors[1];
-        if (!e || !s) return null;
-        const t = this.anchors[2] ?? { time: s.time, price: e.price + PositionTool.DEFAULT_RR * (e.price - s.price) };
-        return [e, s, t];
+        const a1 = this.anchors[1];
+        if (!e || !a1) return null;
+        if (this.anchors[2]) return [e, a1, this.anchors[2]];
+        // live preview: a1 is the target; stop sits opposite at 1/R:R of the reward
+        const stop = {
+            time: a1.time,
+            price: e.price - (a1.price - e.price) / PositionTool.DEFAULT_RR,
+        };
+        return [e, stop, a1];
     }
 
     private prices(): { entry: number; stop: number; target: number } | null {
@@ -126,10 +253,73 @@ export class PositionTool extends Drawing {
         return p && p.entry !== 0 ? (Math.abs(p.target - p.entry) / p.entry) * 100 : 0;
     }
 
-    /** Risk % = |entry − stop| / entry · 100. */
+    /** Risk % of price = |entry − stop| / entry · 100 (distinct from the account riskPercent). */
     riskPct(): number {
         const p = this.prices();
         return p && p.entry !== 0 ? (Math.abs(p.entry - p.stop) / p.entry) * 100 : 0;
+    }
+
+    /** Dollar amount risked at the stop = accountBalance × riskPercent / 100. */
+    dollarLoss(): number {
+        return Math.max(0, this.accountBalance) * (Math.max(0, this.riskPercent) / 100);
+    }
+
+    /** Position size in units = dollarLoss / |entry − stop| (0 when risk is degenerate). */
+    positionSize(): number {
+        const p = this.prices();
+        if (!p) return 0;
+        const risk = Math.abs(p.entry - p.stop);
+        return risk < 1e-9 ? 0 : this.dollarLoss() / risk;
+    }
+
+    // ── painted label lines (each respects its own toggle; the painter checks showText) ──
+
+    /** `DIR · R:R x.xx` — the always-on header when text is shown. */
+    headerLabel(): string {
+        return `${this.directionLabel()}  ·  R:R ${this.rr().toFixed(2)}`;
+    }
+
+    /** `Loss $… · Size …` — the painter hides it when showLossSize is off. */
+    lossSizeLabel(): string {
+        return `Loss $${formatMoney(this.dollarLoss())}  ·  Size ${formatQty(this.positionSize())}`;
+    }
+
+    /** `Target +x.xx%`, with the level price appended when showPrices is on. */
+    targetLabel(): string {
+        const p = this.prices();
+        const at = this.showPrices && p ? `  @ ${formatPrice(p.target)}` : '';
+        return `Target +${this.rewardPct().toFixed(2)}%${at}`;
+    }
+
+    /** `Stop −x.xx%`, with the level price appended when showPrices is on. */
+    stopLabel(): string {
+        const p = this.prices();
+        const at = this.showPrices && p ? `  @ ${formatPrice(p.stop)}` : '';
+        return `Stop −${this.riskPct().toFixed(2)}%${at}`;
+    }
+
+    // ── stop/target input units (the gear panel's Price / Points dropdowns) ──
+
+    /** The stop or target expressed in the given unit: the absolute price, or the distance from
+     *  the entry in price points. */
+    levelDisplayValue(level: 'stop' | 'target', mode: PositionLevelMode): number {
+        const p = this.prices();
+        if (!p) return 0;
+        const price = level === 'stop' ? p.stop : p.target;
+        if (mode === 'price') return roundFloat(price);
+        return roundFloat(Math.abs(price - p.entry));
+    }
+
+    /** The absolute price a typed value in the given unit resolves to. Points measure the
+     *  distance from the entry; the level keeps its current side (target defaults to the profit
+     *  side, stop to the loss side, when it sits exactly on the entry). */
+    levelPriceFromDisplay(level: 'stop' | 'target', mode: PositionLevelMode, value: number): number {
+        const p = this.prices();
+        if (!p || mode === 'price') return value;
+        const current = level === 'stop' ? p.stop : p.target;
+        let side = Math.sign(current - p.entry);
+        if (side === 0) side = (level === 'target' ? 1 : -1) * (this.direction === 'long' ? 1 : -1);
+        return p.entry + side * Math.abs(value);
     }
 
     private box(proj: Projector): { x1: number; x2: number; ey: number; sy: number; ty: number } | null {
@@ -183,6 +373,86 @@ export class PositionTool extends Drawing {
     }
 
     schema(): SettingsSchema {
-        return { fields: LINE_FIELDS.filter((f) => f.path !== 'style.lineColor') };
+        return {
+            fields: [
+                { path: 'riskPercent', label: 'Risk %', kind: 'number', min: 0, max: 100, step: 0.1, group: 'behavior' },
+                { path: 'accountBalance', label: 'Account balance', kind: 'number', min: 0, max: 1e12, step: 1, group: 'behavior' },
+                { path: 'quantity', label: 'Position size', kind: 'number', group: 'behavior' },
+                { path: 'direction', label: 'Direction', kind: 'select', options: DIRECTION_OPTIONS, group: 'behavior' },
+                { path: 'entryPrice', label: 'Entry price', kind: 'number', group: 'behavior' },
+                { path: 'stopPrice', label: 'Stop price', kind: 'number', group: 'behavior' },
+                { path: 'targetPrice', label: 'Target price', kind: 'number', group: 'behavior' },
+                { path: 'showText', label: 'Show text', kind: 'boolean', group: 'behavior' },
+                { path: 'showHeader', label: 'Show direction & ratio', kind: 'boolean', group: 'behavior' },
+                { path: 'showLossSize', label: 'Show loss & size', kind: 'boolean', group: 'behavior' },
+                { path: 'showTargetLabel', label: 'Show target label', kind: 'boolean', group: 'behavior' },
+                { path: 'showStopLabel', label: 'Show stop label', kind: 'boolean', group: 'behavior' },
+                { path: 'showPrices', label: 'Show level prices', kind: 'boolean', group: 'behavior' },
+                { path: 'profitColor', label: 'Profit zone', kind: 'color', group: 'fill' },
+                { path: 'lossColor', label: 'Loss zone', kind: 'color', group: 'fill' },
+                ...LINE_FIELDS.filter((f) => f.path !== 'style.lineColor'),
+                { path: 'text.color', label: 'Text color', kind: 'color', group: 'text' },
+                { path: 'text.size', label: 'Text size', kind: 'select', options: TEXT_SIZE_OPTIONS, group: 'text' },
+            ],
+        };
     }
+
+    protected override writeProps(): Record<string, unknown> {
+        return {
+            riskPercent: this.riskPercent,
+            accountBalance: this.accountBalance,
+            showText: this.showText,
+            showHeader: this.showHeader,
+            showPrices: this.showPrices,
+            showLossSize: this.showLossSize,
+            showTargetLabel: this.showTargetLabel,
+            showStopLabel: this.showStopLabel,
+            profitColor: this.profitColor,
+            lossColor: this.lossColor,
+        };
+    }
+
+    protected override readProps(props: Record<string, unknown>): void {
+        if (typeof props.riskPercent === 'number' && Number.isFinite(props.riskPercent)) {
+            this.riskPercent = props.riskPercent;
+        }
+        if (typeof props.accountBalance === 'number' && Number.isFinite(props.accountBalance)) {
+            this.accountBalance = props.accountBalance;
+        }
+        if (typeof props.showText === 'boolean') this.showText = props.showText;
+        if (typeof props.showHeader === 'boolean') this.showHeader = props.showHeader;
+        if (typeof props.showPrices === 'boolean') this.showPrices = props.showPrices;
+        if (typeof props.showLossSize === 'boolean') this.showLossSize = props.showLossSize;
+        if (typeof props.showTargetLabel === 'boolean') this.showTargetLabel = props.showTargetLabel;
+        if (typeof props.showStopLabel === 'boolean') this.showStopLabel = props.showStopLabel;
+        if (typeof props.profitColor === 'string') this.profitColor = props.profitColor;
+        if (typeof props.lossColor === 'string') this.lossColor = props.lossColor;
+    }
+}
+
+/** Compact money string (drops trailing .00; keeps two decimals otherwise). */
+function formatMoney(n: number): string {
+    if (!Number.isFinite(n)) return '0';
+    const rounded = Math.round(n * 100) / 100;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
+/** Compact quantity string for the position size readout. */
+function formatQty(n: number): string {
+    if (!Number.isFinite(n) || n === 0) return '0';
+    if (n >= 100) return n.toFixed(2);
+    if (n >= 1) return n.toFixed(4).replace(/\.?0+$/, '');
+    return n.toPrecision(4).replace(/\.?0+$/, '');
+}
+
+/** Compact price string for the level readouts (two decimals ≥1, four significant below). */
+function formatPrice(n: number): string {
+    if (!Number.isFinite(n)) return '0';
+    if (Math.abs(n) >= 1) return n.toFixed(2);
+    return n.toPrecision(4).replace(/\.?0+$/, '');
+}
+
+/** Trim binary float noise from a converted value (points arithmetic). */
+function roundFloat(n: number): number {
+    return Math.round(n * 1e8) / 1e8;
 }

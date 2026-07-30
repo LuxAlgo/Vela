@@ -29,17 +29,27 @@ right, so the bar never overlaps candles, the legend, or the axes).
 - **Modes** (bottom of the bar) — renderer-local, mutually exclusive with each other and with any
   armed tool:
   - **Measure** — a transient ruler (click–move–click) that reports the price/%/bar delta. It is
-    not saved as a drawing; it clears on the next press, pan, or zoom.
+    not saved as a drawing; it clears on the next press, pan, or zoom. **Shift+click** an empty
+    spot starts a measurement right there, no toolbar trip needed (press-drag-release works too).
   - **Eraser** — click a drawing to delete it, or press-and-drag across several to wipe them.
   - **Magnet** — a 3-state snap toggle: **off → weak → strong**. *Strong* always snaps a new
     anchor to the nearest candle's time + OHLC; *weak* snaps only when a candle point is within a
     few pixels of the cursor. Holding **Ctrl/Cmd** is a momentary *strong* override.
+  - **Stay in drawing mode** — an on/off toggle (pen with a lock, under the magnet). When on,
+    finishing a drawing leaves the tool armed so you can keep placing the same tool without
+    re-picking it; when off, most tools disarm after one placement (the brush family always stays
+    armed either way). Click the cursor button or press Escape to return to select/idle.
 - **Tooltips.** Hovering any control for ~2 seconds shows a small label beside it.
-- **Favorites.** Every tool row in a flyout carries a **star** (revealed on row hover, gold when
-  set). Starring is a user preference, not document data: the set survives symbol/timeframe
-  rebuilds, is persisted by the widget alongside the other UI state (`persist`), and is readable
-  and writable from code — see below. Hosts and plugins can build their own UI on top of it (a
-  favorites bar, a radial picker…).
+- **Favorites.** Every tool row in a flyout carries a **star** at its right edge (revealed on row
+  hover, gold when set). Starring is a user preference, not document data: the set survives
+  symbol/timeframe rebuilds, is persisted by the widget alongside the other UI state (`persist`),
+  and is readable and writable from code — see below. Hosts and plugins can build their own UI on
+  top of it (a favorites bar, a radial picker…).
+- **Shortcut hints.** When the host binds a keyboard shortcut that arms or places a tool, the
+  flyout row shows the chord beside the star (the widget binds `Alt+T` for the trend line and
+  `Alt+H` / `Alt+V` for lines at the cursor out of the box). Hints are pushed as display strings
+  via `chart.drawings.setToolShortcuts({ trendline: 'Alt+T', … })`, so they always match the
+  host's actual bindings and platform formatting.
 
 Arm a tool, then **click** to place its anchors (most tools, including shapes, are
 click-then-move-then-click; freehand/brush is the exception and captures the drag path; the
@@ -51,7 +61,26 @@ Select a drawing (click it) to show its **handles** and a compact **quick-settin
 beside it. The popup is built from each tool's own schema, so it shows only the controls that tool
 supports — line color/width/style, fill, text, and (for Fibonacci tools) a **gear** panel to
 enable/recolor/label each level. The popup also locks, reorders (bring-to-front /
-send-to-back), and deletes the drawing. Double-click a callout to edit its text inline.
+send-to-back), and deletes the drawing.
+
+**Text is typed on the chart.** Placing a text annotation opens a blinking caret at the click point
+next to an `Enter Text` placeholder, framed by a thin gray box that marks the text as being edited,
+and the glyphs appear exactly where they will be painted as you type, at the annotation's default
+**large** size. **Enter** starts a new line; a click elsewhere (or **Ctrl/Cmd+Enter**) keeps the
+text, and **Escape** restores what was there before — a text annotation that was never typed into is
+discarded rather than left invisible. Double-click existing text, or a callout, to reopen the same
+inline editor.
+
+Finished text keeps that frame as its selection cue: a plain text annotation shows the same thin box
+when it is selected, and a fainter one while the cursor is over it — the words are the drawing, so
+the frame is what tells you where it can be clicked, dragged, or restyled.
+
+The quick-settings popup opens alongside the caret, exactly as it does for every other tool. For
+annotations whose text _is_ the drawing — text, note, callout, comment, signpost — the text color and
+size sit on the popup's bar, so restyling while you type is one click and the words on the chart
+follow immediately; reaching for them does not end the edit. **Bold** and **italic** live under the
+field behind the popup's **Text** button, next to the text they format. On shapes that merely carry a
+label (a trend line, a box), all four controls stay in that panel with the label field.
 
 Drag a handle to reshape; drag the body to move the whole drawing.
 
@@ -71,13 +100,49 @@ When a drawing is selected (or hovered), with focus on the chart:
 Shortcuts stand down while a text field (e.g. a label editor) is focused, so typing is never
 hijacked.
 
+Two mouse shortcuts complement these, and need no selection first: **middle-click** a drawing to
+delete it, and **Shift+click** an empty spot to start the [measure ruler](#the-toolbar) at that
+exact point.
+## Depth: anywhere in the stack
+
+A new drawing starts **just under the price** — the candles read on top of it, the way they read
+on top of the indicators — so it behaves like annotation on the chart's background: a zone, a
+session band, a shaded area you see *through* the candles rather than across them. From there it
+can take **any position in the pane's draw order**: over everything, between two indicators, or
+at the very back.
+
+- **From the object tree.** Each pane is one column, read top to bottom as front to back: its
+  drawings, its indicators and (in the main pane) the price series, all together. Drag a drawing
+  (or a group, which moves as one block) to any slot in that column and the chart repaints in that
+  order.
+- **From the context menu.** Right-click a drawing row for **Bring to front** / **Send to back** —
+  they clear the whole stack, candles and indicators included; a group's row offers the same for
+  all of its members at once.
+- **From code.** The draw-order key is the drawing's `zIndex`, shared with the pane's series:
+
+```js
+chart.drawings.add('box', { anchors }); // a new drawing starts just under the candles
+chart.drawings.bringToFront(d.id); // over the whole stack
+chart.drawings.sendToBack(d.id); // behind the candles and every indicator
+chart.drawings.update(d.id, { zIndex: z }); // an exact slot among the series' keys
+```
+
+A drawing under the data stays fully interactive: it still hit-tests, and its selection handles
+draw on top, so you can always see and grab what you selected.
+
+The position is part of the drawing, so it is saved with `toJSON()`, restored by `fromJSON()`, and
+undoable; the widget also persists the series' own order, so a saved chart comes back stacked as
+you left it. Depth needs a renderer that declares the `drawingDepth` capability (the **native
+renderer** does); where it is missing, drawings all paint over the data, `zIndex` orders only the
+drawings among themselves, and the tree keeps them in one block above the series.
+
 ---
 
 ## Tool catalogue
 
 **66 tools across 9 groups.** The **Type key** is the string you pass to
 `chart.drawings.setTool('…')` or [`chart.drawings.add('…')`](#driving-drawings-from-code). Eraser,
-Magnet, and Measure are toolbar *modes*, not placeable types, so they have no key.
+Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable types, so they have no key.
 
 ### Lines
 
@@ -196,7 +261,7 @@ whether it falls in that pattern's ideal Fibonacci band.
 | Tool | Type key | What it does |
 |---|---|---|
 | Date & Price Range | `datepricerange` | A box reporting the time span + price/% change it covers. |
-| Long/Short Position | `position` | An entry/stop/target box with the risk:reward ratio (long or short by geometry). |
+| Long/Short Position | `position` | An entry/stop/target box: click the entry, then drag in the profit direction (up for a long, down for a short). Shows risk:reward, percentages, dollar loss, and position size from your risk % and account balance (size is editable and back-solves the risk %). The gear panel has a long/short switch (mirrors the levels across the entry), exact level values in price or points, and per-label display toggles; zone colors and label styling sit on the quick bar. |
 
 ---
 
@@ -236,27 +301,30 @@ method list and which methods are gated by renderer support.
 
 ## Tool and mode state from code
 
-The armed tool, the magnet, and the measure/eraser modes are all readable and drivable
-programmatically — the seam an external toolbar (e.g. a multi-chart workspace's shared
-bar) builds on:
+The armed tool, the magnet, stay-in-drawing-mode, and the measure/eraser modes are all
+readable and drivable programmatically — the seam an external toolbar (e.g. a multi-chart
+workspace's shared bar) builds on:
 
 ```js
 chart.drawings.getTool();               // 'trendline' | … | null (select/idle)
 chart.drawings.setSnapMode('strong');   // magnet: 'off' | 'weak' | 'strong'
 chart.drawings.getSnapMode();
+chart.drawings.setStayMode(true);       // keep the tool armed after each placement
+chart.drawings.getStayMode();
 chart.drawings.setMode('measure');      // 'measure' | 'eraser' | null (none)
 chart.drawings.getMode();
 
 // Follow every change, whatever its source (in-chart toolbar, keyboard, code):
 chart.on('drawing:tool', ({ type }) => { /* armed tool changed; null = pointer */ });
 chart.on('drawing:snap', ({ mode }) => { /* magnet mode changed */ });
+chart.on('drawing:stay', ({ on }) => { /* stay-in-drawing-mode changed */ });
 chart.on('drawing:mode', ({ mode }) => { /* measure/eraser entered or left */ });
 ```
 
 The renderer keeps owning the mutual exclusion — arming a tool exits measure/eraser
 (and vice versa), and the outcome always lands on the events, so an external UI only
 ever mirrors. One-shot tools disarm themselves after placing (back to `null` on
-`drawing:tool`); the brush family stays armed.
+`drawing:tool`) unless stay-in-drawing-mode is on; the brush family always stays armed.
 
 ## Favorite tools
 

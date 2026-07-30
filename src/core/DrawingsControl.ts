@@ -44,6 +44,17 @@ export class DrawingsControl {
         return this.ctrl.getSnapMode();
     }
 
+    /** Keep the armed tool after each placement (`true`) or one-shot disarm (`false`). */
+    setStayMode(on: boolean): this {
+        if (this.ok('setStayMode')) this.ctrl.setStayMode(on);
+        return this;
+    }
+
+    /** Whether tools stay armed after placement — follow changes on `drawing:stay`. */
+    getStayMode(): boolean {
+        return this.ctrl.getStayMode();
+    }
+
     /** Enter/exit a renderer-local mode: `'measure'` (transient ruler), `'eraser'`, or
      *  `null` (none). Mutually exclusive with each other and with any armed tool — the
      *  renderer enforces the exclusion and the outcome lands on `drawing:mode`. */
@@ -66,6 +77,14 @@ export class DrawingsControl {
     /** Reconfigure the toolbar groups/tools live. */
     setToolbar(option: DrawingsOption): this {
         if (this.ok('setToolbar')) this.ctrl.setToolbar(option);
+        return this;
+    }
+
+    /** Show per-tool shortcut hints in the toolbar flyouts. Values are PRE-FORMATTED
+     *  display strings (e.g. `'Alt+T'`, `'⌥T'`) — the host owns the keymap and the
+     *  platform formatting, so hints always match the host's actual bindings. */
+    setToolShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): this {
+        if (this.ok('setToolShortcuts')) this.ctrl.setToolShortcuts(map);
         return this;
     }
 

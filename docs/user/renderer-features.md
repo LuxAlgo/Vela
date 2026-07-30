@@ -54,10 +54,10 @@ Available on every renderer:
 | `animZoom` | boolean | `true` | Eased wheel-zoom; takes effect on the next interaction. |
 | `animPan` | boolean | `true` | Inertial pan glide; takes effect on the next interaction. |
 | `intro` | `'settle' \| 'grow' \| false` | `'settle'` | Reveal animation on first paint. Setting it replays the intro (handy for comparing styles from the console). |
-| `zoomAnchor` | `'right' \| 'cursor'` | `'right'` | Wheel-zoom anchor: pin the right edge / latest bar, or the bar under the cursor. Affects the next wheel-zoom. |
+| `zoomAnchor` | `'right' \| 'cursor'` | `'right'` | Wheel-zoom anchor: pin the right edge / latest bar, or the bar under the cursor. Affects the next wheel-zoom. Holding `Shift` (or a horizontal/trackpad swipe) makes the wheel **pan through history** instead of zooming. |
 | `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; double-clicking an axis strip resets it. |
 | `paneResize` | boolean | `true` | Drag the separator between panes to resize them; double-clicking a separator restores the two adjacent panes to an even split. |
-| `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
+| `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. `Ctrl`/`Cmd` chords are left untouched for the host's own shortcuts (the widget's pan/zoom glides, the browser's `Ctrl`+`0`, …). When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
 
 > **Double-click behavior changed.** Double-clicking the **chart data area** no longer fits the
 > content to the view. Instead it maximizes the double-clicked pane so it fills the chart and every
@@ -83,7 +83,6 @@ Available on every renderer:
 
 | Feature | Type | Default | Notes |
 |---|---|---|---|
-| `dataWindow` | boolean | `false` | A floating panel showing the OHLCV of the hovered bar plus every indicator's value at the crosshair. |
 | `attribution` | The in-chart attribution mark (bottom-left logomark linking to the Vela project). **On by default.** Disabling it is allowed only when an equivalent visible attribution is displayed elsewhere on the page — see the repository's `NOTICE` file. |
 | `settings` | boolean | `false` | An in-chart gear button + dialog to edit a curated slice of the rich config (colors, fonts, scale, timezone) with export/import. |
 
@@ -101,13 +100,37 @@ Available on every renderer:
 ## Screenshot export
 
 `chart.renderer.screenshot()` returns a **PNG data URL** of the current chart (or `null`
-on a renderer that doesn't support it, with a warning). It composites only the geometry +
-chrome canvas layers; DOM overlays (tables, legend, data window) and the drawings,
-and volume-profile canvas layers are **not** included.
+on a renderer that doesn't support it, with a warning). It composites the canvas layers in the
+order you see them: the series geometry — with any drawings stacked among the series already
+inside it — then the chrome layer that carries script-drawn shapes, then the drawings that sit
+over everything. The crosshair, the DOM overlays (tables, legend, data window) and the
+volume-profile layer are **not** included.
 
 ```js
 const url = chart.renderer.screenshot();
 if (url) { const a = document.createElement('a'); a.href = url; a.download = 'chart.png'; a.click(); }
+```
+
+## Data-window readout
+
+`chart.renderer.dataWindowReadout()` returns the bar under the crosshair — or the latest bar
+when the cursor is off the plot — as a **ready-to-display** snapshot: the timestamp split into
+`date` and `time`, the `ohlc` block (with `vol` when the bar carries volume, and `up` telling
+you which way to tint it), and one `groups` entry per indicator holding a row per plot with its
+own color. Every number is already formatted on the scale of the pane it belongs to, so a panel
+built on it does no formatting of its own.
+
+Pair it with `onCrosshairMove` to keep your own readout in step; it returns `null` on a renderer
+that doesn't provide one. This is what the [widget's data window](./widget.md#the-chrome) is
+built from.
+
+```js
+chart.renderer.onCrosshairMove(() => {
+    const readout = chart.renderer.dataWindowReadout();
+    if (!readout) return;
+    console.log(readout.date, readout.time, readout.ohlc?.c);
+    for (const group of readout.groups) console.log(group.name, group.rows);
+});
 ```
 
 ## Rich config (templates / persistence)

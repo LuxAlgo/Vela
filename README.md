@@ -44,7 +44,7 @@ await chart.ready();
 ## Indicators
 
 Vela runs indicator scripts through pluggable engines. The Pine engine uses
-[PineTS](https://github.com/alaa-eddine/PineTS) — an **optional peer dependency licensed
+[PineTS](https://github.com/LuxAlgo/PineTS) — an **optional peer dependency licensed
 under AGPL-3.0** (Vela itself is Apache-2.0; installing `pinets` applies its own license
 to your bundle):
 

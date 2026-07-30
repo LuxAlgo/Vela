@@ -22,6 +22,10 @@ export interface AddInit {
     text?: SerializedDrawing['text'];
     /** Per-type extras (e.g. a glyph stamp's `glyph`, a fib tool's `levels`). */
     props?: SerializedDrawing['props'];
+    /** Draw-order key. Defaults to just under the pane's price on a renderer with
+     *  `drawingDepth` — the candles read on top of a fresh drawing; pass an explicit key
+     *  for any other slot in the stack. */
+    zIndex?: number;
 }
 
 /**
@@ -39,6 +43,8 @@ export class DrawingController {
     private activeTool: DrawingTypeKey | null = null;
     /** Mirror of the renderer's sticky magnet mode (the renderer default is 'off'). */
     private snapMode: SnapMode = 'off';
+    /** When on, finishing a drawing leaves the tool armed (instead of one-shot disarm). */
+    private stayInDrawingMode = false;
     /** Mirror of the renderer-local mode (measure/eraser/none). */
     private mode: DrawingMode = null;
     /** FAVORITE tool types (insertion-ordered) — user prefs, not document data. */
@@ -102,6 +108,17 @@ export class DrawingController {
         this.events.emit('drawing:snap', { mode });
     }
 
+    getStayMode(): boolean {
+        return this.stayInDrawingMode;
+    }
+
+    setStayMode(on: boolean): void {
+        if (!this.port || on === this.stayInDrawingMode) return;
+        this.stayInDrawingMode = on;
+        this.port.setStayMode?.(on);
+        this.events.emit('drawing:stay', { on });
+    }
+
     getMode(): DrawingMode {
         return this.mode;
     }
@@ -153,6 +170,11 @@ export class DrawingController {
         this.port?.setToolbar(buildToolbar(option).definition);
     }
 
+    /** Push per-tool shortcut hints (pre-formatted display strings) to the toolbar flyouts. */
+    setToolShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void {
+        this.port?.setToolShortcuts?.(map);
+    }
+
     // ── programmatic CRUD (facade-facing) ── each is one undo step
     add(type: DrawingTypeKey, init: AddInit = {}): Drawing | null {
         if (!this.enabled) return null;
@@ -165,6 +187,7 @@ export class DrawingController {
             style,
             text: init.text,
             props: init.props,
+            zIndex: init.zIndex ?? this.startZ(init.paneId ?? 'price'),
         });
         if (!d) return null;
         this.history.record(this.store.serialize());
@@ -215,26 +238,49 @@ export class DrawingController {
         const before = this.store.serialize();
         this.history.record(before);
         this.store.setLocked(id, v);
+        this.events.emit('drawing:edited', { id });
     }
 
     setVisible(id: string, v: boolean): void {
         const before = this.store.serialize();
         this.history.record(before);
         this.store.setVisible(id, v);
+        this.events.emit('drawing:edited', { id });
     }
 
     bringToFront(id: string): void {
         const before = this.store.serialize();
         this.history.record(before);
-        this.store.bringToFront(id);
+        this.store.bringToFront(id, this.seriesTopZ(this.store.get(id)?.paneId));
         this.events.emit('drawing:edited', { id });
     }
 
     sendToBack(id: string): void {
         const before = this.store.serialize();
         this.history.record(before);
-        this.store.sendToBack(id);
+        this.store.sendToBack(id, this.seriesBottomZ(this.store.get(id)?.paneId));
         this.events.emit('drawing:edited', { id });
+    }
+
+    /** The top of the pane's series stack — what a front drawing has to clear. 0 when the
+     *  renderer keeps drawings on their own layer (no shared z space). */
+    private seriesTopZ(paneId: string | undefined): number {
+        return paneId !== undefined ? (this.port?.stackRange?.(paneId)?.front ?? 0) : 0;
+    }
+
+    /** The bottom of the pane's series stack — what a backmost drawing has to undercut. */
+    private seriesBottomZ(paneId: string | undefined): number {
+        return paneId !== undefined ? (this.port?.stackRange?.(paneId)?.back ?? 1) : 1;
+    }
+
+    /** Where a NEW drawing starts: just under the pane's price so the candles read on top of it
+     *  (falling back to just under the pane's top series where there is no price — a study
+     *  pane). Half a key down never ties a series; drawings tying each other paint in insertion
+     *  order, so consecutive new drawings still stack newest-in-front. Undefined without a
+     *  shared z space — the store then places it over the other drawings, its own layer's top. */
+    private startZ(paneId: string): number | undefined {
+        const range = this.port?.stackRange?.(paneId);
+        return range ? (range.price ?? range.front) - 0.5 : undefined;
     }
 
     /** Programmatically select drawings (host UI → chart): shows the on-chart handles + toolbar.
@@ -358,7 +404,9 @@ export class DrawingController {
         this.history.begin(this.store.serialize());
         const clones: Drawing[] = [];
         for (const doc of docs) {
-            const d = deserializeDrawing({ ...doc, id: this.store.nextId(), zIndex: 0 });
+            // A copy keeps its source's DEPTH: the clone lands at the same z and, tying it,
+            // paints just in front of it — "duplicate then drag" without a jump up the stack.
+            const d = deserializeDrawing({ ...doc, id: this.store.nextId() });
             if (!d) continue;
             this.store.add(d);
             this.history.markDirty();
@@ -398,6 +446,7 @@ export class DrawingController {
                 const style = last ? { ...i.doc.style, ...last } : i.doc.style;
                 const d = deserializeDrawing({ ...i.doc, id: this.store.nextId(), style });
                 if (!d) return;
+                if (!d.zIndex) d.zIndex = this.startZ(d.paneId) ?? 0; // a freshly placed drawing starts under the price
                 this.history.record(before);
                 this.store.add(d);
                 this.captureStyle(d.id);
@@ -449,6 +498,13 @@ export class DrawingController {
                     this.events.emit('drawing:snap', { mode: i.mode });
                 }
                 break;
+            case 'stay-mode':
+                // In-chart stay-mode click (already applied renderer-side) — mirror + announce.
+                if (i.on !== this.stayInDrawingMode) {
+                    this.stayInDrawingMode = i.on;
+                    this.events.emit('drawing:stay', { on: i.on });
+                }
+                break;
             case 'mode':
                 // Measure/eraser toggled in-chart, or exited as a mutual-exclusion side effect.
                 if (i.mode !== this.mode) {
@@ -458,8 +514,8 @@ export class DrawingController {
                 break;
             case 'tool-finished':
                 // Most tools are one-shot (revert to the pointer once placed); brush-family tools
-                // stay armed so you can keep drawing strokes without re-picking them each time.
-                if (i.type !== 'freehand' && i.type !== 'highlighter') this.setTool(null);
+                // always stay armed, and stay-in-drawing-mode keeps every tool armed.
+                if (!this.stayInDrawingMode && i.type !== 'freehand' && i.type !== 'highlighter') this.setTool(null);
                 break;
             case 'undo':
                 this.undo();
