@@ -107,6 +107,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     /** The chart's current price style (tracked from the renderer's change events + initial read). */
     private priceStyle: PriceStyle = 'candles';
     private readonly readyPromise: Promise<void>;
+    private unresolvedUnsub: Unsubscribe | null = null;
     /** Latest chart visible range (left/right bar times), fed to viewport-dependent scripts. */
     private visibleRange: VisibleBarRange | null = null;
     private viewportUnsub: Unsubscribe | null = null;
@@ -178,6 +179,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // User drawings: owns the model + tool/selection state, drives the renderer's
         // drawings port (inert when the renderer lacks the `userDrawings` capability).
         this.drawings = new DrawingController(this.renderer, this.events, config.drawings);
+        // A symbol nothing can serve leaves the load PARKED; publish it so a host can say so
+        // instead of showing a blank chart forever (it still resumes if a provider registers).
+        this.unresolvedUnsub = this.feed.onUnresolved?.((info) => this.events.emit('data:unresolved', info)) ?? null;
         this.readyPromise = this.init();
         // Seed a constructed chart-type DATA engine only now — `startChartTypeEngine`
         // awaits `readyPromise`, so this MUST come after the assignment above. Seeding
@@ -1052,6 +1056,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         for (const engine of this.typeEngines.values()) engine.stop(); // chart-type data engines (SDK)
         this.typeEngines.clear();
         this.activeEngineStyle = null;
+        this.unresolvedUnsub?.();
+        this.unresolvedUnsub = null;
+        this.feed.destroy?.(); // parked waits would otherwise outlive the chart
         this.drawings.destroy();
         this.renderer.destroy();
         this.events.clear();

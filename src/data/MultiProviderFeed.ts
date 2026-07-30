@@ -75,6 +75,16 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.registry.symbolsOf(name);
     }
 
+    /** Told when a symbol stays unservable by everything registered (the load is parked). */
+    onUnresolved(cb: (info: { symbol: string; providers: string[] }) => void): Unsubscribe {
+        return this.registry.onUnresolved(cb);
+    }
+
+    /** Abandon parked waits — a destroyed chart must not keep listeners on the registry. */
+    destroy(): void {
+        this.registry.cancelWaits();
+    }
+
     /** Resolves when every registered provider's eager index has settled. */
     ready(): Promise<void> {
         return this.registry.indexReady();
@@ -109,7 +119,7 @@ export class MultiProviderFeed implements MarketDataFeed {
             this.liveBars = cfg.data.map((b) => ({ ...b }));
             return cfg.data;
         }
-        const resolved = await this.registry.whenResolvable(rawSymbol(cfg), { default: this.primaryProvider });
+        const resolved = await this.registry.whenResolvable(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
         this.primaryProvider ??= resolved.provider;
         // Warm symbol metadata for the engine. Fire-and-forget: one small request that
         // typically lands before the (heavier, paginated) bar load finishes.
@@ -124,7 +134,7 @@ export class MultiProviderFeed implements MarketDataFeed {
      */
     symbolInfo(cfg: MarketConfig): SymbolInfo | undefined {
         if (cfg.data && cfg.data.length > 0) return undefined;
-        const resolved = this.registry.resolve(rawSymbol(cfg), { default: this.primaryProvider });
+        const resolved = this.registry.resolve(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
         return resolved ? this.symInfoCache.get(symKey(resolved)) : undefined;
     }
 
@@ -143,14 +153,14 @@ export class MultiProviderFeed implements MarketDataFeed {
         if (cfg.data && cfg.data.length > 0) return this.cache.loadRange(cfg, range);
         // Secondary series (request.security): resolve its OWN prefix, with the chart
         // provider as the bare default. Unresolvable ⇒ empty (the engine degrades).
-        const resolved = this.registry.resolve(rawSymbol(cfg), { default: this.primaryProvider });
+        const resolved = this.registry.resolve(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
         if (!resolved) return [];
         return this.cache.loadRange(canonical(cfg, resolved), range);
     }
 
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe {
         if (cfg.data && cfg.data.length > 0) return this.synthesizeTicks(cfg, onBar);
-        const resolved = this.registry.resolve(rawSymbol(cfg), { default: this.primaryProvider });
+        const resolved = this.registry.resolve(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
         if (!resolved) return () => {};
         return this.cache.subscribe(canonical(cfg, resolved), onBar);
     }
@@ -182,11 +192,16 @@ export class MultiProviderFeed implements MarketDataFeed {
     }
 }
 
-/** Build the raw symbol string the registry parses: honor a legacy `cfg.provider` as a prefix. */
+/**
+ * The raw symbol string the registry parses. Only an EXPLICIT `provider:` prefix written
+ * into the symbol survives — that one is a hard requirement (the caller named a venue, so
+ * the load parks until it registers). The `provider` OPTION is merely the DEFAULT and
+ * travels separately, as `opts.default`: welding it in as a prefix made an unregistered
+ * default POISON every symbol — the chart could then never resolve anything, not even
+ * after the user switched to a symbol a registered provider serves.
+ */
 function rawSymbol(cfg: MarketConfig): string {
-    const symbol = cfg.symbol ?? '';
-    if (cfg.provider && symbol && !symbol.includes(':')) return `${cfg.provider}:${symbol}`;
-    return symbol;
+    return cfg.symbol ?? '';
 }
 
 /** Rewrite the config to the resolved provider + ticker (so the cache keys on canonical identity). */

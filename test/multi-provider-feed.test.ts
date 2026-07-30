@@ -132,6 +132,83 @@ describe('MultiProviderFeed — parked load lifecycle', () => {
     });
 });
 
+describe('a parked load is REPORTED and RELEASABLE (never a silent, leaking wait)', () => {
+    it('reports the unservable symbol once the provider index settles', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        const seen: Array<{ symbol: string; providers: string[] }> = [];
+        feed.onUnresolved((info) => seen.push(info));
+        void feed.load({ symbol: 'NOPE', timeframe: '60', bars: 10 });
+        await feed.registerProvider('hyperliquid', fakeProvider(['BTC']).provider);
+        await flush();
+        expect(seen.length).toBeGreaterThan(0);
+        expect(seen[0]).toEqual({ symbol: 'NOPE', providers: ['hyperliquid'] });
+    });
+
+    it('destroy() drops the parked wait, so a rebuilt chart leaves nothing behind', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        const seen: string[] = [];
+        feed.onUnresolved((i) => seen.push(i.symbol));
+        void feed.load({ symbol: 'NOPE', timeframe: '60', bars: 10 });
+        await feed.registerProvider('a', fakeProvider(['BTC']).provider);
+        await flush();
+        const before = seen.length;
+        expect(before).toBeGreaterThan(0);
+
+        feed.destroy(); // the chart went away — its wait must go with it
+        await feed.registerProvider('b', fakeProvider(['ETH']).provider);
+        await flush();
+        expect(seen.length).toBe(before); // no listener left to re-report
+    });
+
+    it('a parked load still resumes when a capable provider registers', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        let bars = 0;
+        void feed.load({ symbol: 'BTC', timeframe: '60', bars: 10 }).then((b) => (bars = b.length));
+        await flush();
+        expect(bars).toBe(0);
+        await feed.registerProvider('hyperliquid', fakeProvider(['BTC']).provider);
+        await flush();
+        expect(bars).toBeGreaterThan(0);
+    });
+});
+
+describe('the `provider` option is a PREFERENCE, never a lock', () => {
+    it('an UNREGISTERED default provider does not block a symbol another provider serves', async () => {
+        // The trap: `provider: 'binance'` while only hyperliquid is registered. The option
+        // used to be welded onto the symbol as an explicit prefix, so NOTHING ever resolved —
+        // not even after switching to a symbol the registered provider serves.
+        const feed = new MultiProviderFeed(new BarStore());
+        await feed.registerProvider('hyperliquid', fakeProvider(['BTC']).provider);
+        const bars = await feed.load({ provider: 'binance', symbol: 'BTC', timeframe: '60', bars: 10 });
+        expect(bars.length).toBeGreaterThan(0);
+        expect(feed.resolveSymbol('BTC')).toEqual({ provider: 'hyperliquid', ticker: 'BTC' });
+    });
+
+    it('a REGISTERED default provider still wins over the others', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        const hl = fakeProvider(['BTC']);
+        const bn = fakeProvider(['BTC']);
+        await feed.registerProvider('hyperliquid', hl.provider); // registered FIRST
+        await feed.registerProvider('binance', bn.provider);
+        // Both index BTC; the config's provider decides who actually serves it.
+        await feed.load({ provider: 'binance', symbol: 'BTC', timeframe: '60', bars: 10 });
+        expect(bn.calls.length).toBe(1);
+        expect(hl.calls.length).toBe(0);
+    });
+
+    it('an EXPLICIT prefix in the symbol stays a hard requirement (parks until it registers)', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        await feed.registerProvider('hyperliquid', fakeProvider(['BTC']).provider);
+        let settled = false;
+        void feed.load({ symbol: 'binance:BTC', timeframe: '60', bars: 10 }).then(() => (settled = true));
+        await flush();
+        expect(settled).toBe(false); // the caller NAMED binance — waiting for it is correct
+        await feed.registerProvider('binance', fakeProvider(['BTC']).provider);
+        await flush();
+        expect(settled).toBe(true);
+    });
+});
+
 describe('MultiProviderFeed — resolution + cache identity', () => {
     it('collapses bare, prefixed, and legacy-provider forms to one canonical identity', async () => {
         const store = new BarStore();

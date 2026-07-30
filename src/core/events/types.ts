@@ -18,6 +18,9 @@ export interface VelaEventMap extends Record<string, unknown> {
     'indicator:added': { id: string };
     'indicator:removed': { id: string };
     'indicator:error': { id: string; error: Error };
+    /** No registered provider can serve the chart symbol — the load is PARKED, not failed:
+     *  it resumes by itself if a capable provider registers later. */
+    'data:unresolved': { symbol: string; providers: string[] };
     /** An indicator was moved/merged to another pane (`chart.panes` / legend / object tree). */
     'indicator:moved': { id: string; paneId: string };
     /** An indicator was shown/hidden (legend eye, `handle.setVisible`, or object tree). */

@@ -50,6 +50,10 @@ export class ProviderRegistry {
     private readonly entries = new Map<string, Entry>();
     /** Listeners fired on any registry change; `settled` = an index build just finished. */
     private readonly changeListeners = new Set<(settled: boolean) => void>();
+    /** Cancellers for the currently parked `whenResolvable` waits. */
+    private readonly waits = new Set<() => void>();
+    /** Listeners told when a parked symbol stays unresolvable after an index settles. */
+    private readonly unresolvedCbs = new Set<(info: { symbol: string; providers: string[] }) => void>();
 
     /** Register (or replace) a provider; returns a promise that settles when its index is built. */
     register(rawName: string, provider: DataProvider): Promise<void> {
@@ -168,23 +172,42 @@ export class ProviderRegistry {
             const off = this.onChange((settled) => {
                 const r = this.resolve(raw, { ...opts, lenient: true });
                 if (r) {
-                    off();
+                    stop();
                     resolve(r);
                 } else if (settled) {
-                    // Warn only after an index build finishes still unresolved — not on the
+                    // Report only after an index build finishes still unresolved — not on the
                     // transient re-check fired right after a registration.
-                    this.warnUnresolved(raw);
+                    this.reportUnresolved(raw);
                 }
             });
+            // A parked wait outlives its chart unless it is cancellable: every rebuild over an
+            // unservable symbol would otherwise leave its listener behind for the page's life.
+            const stop = (): void => {
+                off();
+                this.waits.delete(stop);
+            };
+            this.waits.add(stop);
         });
     }
 
-    private warnUnresolved(raw: string): void {
+    /** Abandon every parked wait (chart/feed teardown). Their promises simply never settle. */
+    cancelWaits(): void {
+        for (const stop of [...this.waits]) stop();
+    }
+
+    /** Notified when a parked symbol is still unresolvable after an index settles. */
+    onUnresolved(cb: (info: { symbol: string; providers: string[] }) => void): Unsubscribe {
+        this.unresolvedCbs.add(cb);
+        return () => this.unresolvedCbs.delete(cb);
+    }
+
+    private reportUnresolved(raw: string): void {
         const names = this.names();
         console.warn(
             `[vela] symbol "${raw}" not yet resolvable — registered providers: ` +
                 `[${names.join(', ') || 'none'}]. Register a provider that serves it.`,
         );
+        for (const cb of this.unresolvedCbs) cb({ symbol: raw, providers: names });
     }
 
     private candidateOrder(def?: string | null): string[] {
