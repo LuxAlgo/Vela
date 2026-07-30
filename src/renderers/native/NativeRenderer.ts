@@ -55,7 +55,7 @@ import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
-import { createAttributionMark } from './chrome/AttributionMark';
+import { applyAttributionMarkTheme, createAttributionMark } from './chrome/AttributionMark';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
 import { DARK_THEME } from '../../core/theme';
@@ -690,6 +690,7 @@ export class NativeRenderer implements IChartRenderer {
         // The open settings dialog is NOT rebuilt here — re-seeding mid-edit would
         // steal focus from the control being dragged/typed. It re-themes on next open.
         this.refreshScrollButtonTheme();
+        this.refreshAttributionColor();
         this.scheduler?.invalidate(InvalidateLevel.Full);
     }
 
@@ -757,13 +758,19 @@ export class NativeRenderer implements IChartRenderer {
 
     /** Port surface: hosts (bottom-bar / chrome buttons) open the same dialog as the
      *  in-chart gear — created on demand, independent of the gear feature being enabled. */
-    openSettingsDialog(): void {
+    openSettingsDialog(section?: string): void {
         if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
-        this.toggleSettingsDialog();
+        this.toggleSettingsDialog(section);
     }
 
-    private toggleSettingsDialog(): void {
+    private toggleSettingsDialog(section?: string): void {
         if (!this.settingsDialog) return;
+        // A caller asking for a section wants to SEE it: an open dialog switches tabs
+        // instead of closing, so the same menu item never reads as a toggle.
+        if (section !== undefined && this.settingsDialog.isOpen()) {
+            this.settingsDialog.showSection(section);
+            return;
+        }
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
         this.settingsDialog.toggle(
@@ -776,6 +783,7 @@ export class NativeRenderer implements IChartRenderer {
                 this.settingsDialog?.close();
                 this.openSettingsDialog();
             },
+            section,
         );
     }
 
@@ -1067,7 +1075,7 @@ export class NativeRenderer implements IChartRenderer {
         this.plot.append(...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas, this.cursorCanvas, this.overlayRoot);
         this.wrapper.appendChild(this.plot);
         this.factoryConfig = this.getConfig();
-        this.attributionEl = createAttributionMark(document, this.theme.textColor);
+        this.attributionEl = createAttributionMark(document, this.theme.background);
         if (!this.attributionEnabled) this.attributionEl.style.display = 'none';
         this.positionAttribution();
         this.wrapper.appendChild(this.attributionEl);
@@ -1302,6 +1310,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.refreshScrollButtonTheme();
         this.userDrawings?.setTheme(this.chromeTheme());
+        this.refreshAttributionColor();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -2950,6 +2959,12 @@ export class NativeRenderer implements IChartRenderer {
             left: `${(this.toolbarGutter || 0) + 12}px`,
             bottom: `${TIME_AXIS_H + 10}px`,
         });
+    }
+
+    /** Re-tint the LuxAlgo SVGs when the plot background flips light/dark. */
+    private refreshAttributionColor(): void {
+        if (!this.attributionEl) return;
+        applyAttributionMarkTheme(this.attributionEl, this.theme.background);
     }
 
     private syncSize(): void {

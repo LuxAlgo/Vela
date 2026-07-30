@@ -60,6 +60,8 @@ export interface CellDeps {
     dialogHost: HTMLElement;
     /** The workspace-global display timezone (applied to every cell's renderer). */
     timezone(): string;
+    /** Switch the workspace-global display timezone (a cell's time-axis menu). */
+    setTimezone(zone: string): void;
     /** The live widget-context builder (per-cell context menus project contributed actions). */
     context(): WidgetContext;
     /** Report a pointer-down/focus in this cell (the workspace sets it active). */
@@ -174,8 +176,12 @@ export class ChartCell {
         this.statusline?.setMeta(seed.timeframe ?? '60', seed.provider ?? '');
         this.statusline?.onChart(this.inner);
         this.contextMenu = new ChartContextMenu(this.host, {
-            screenshot: () => this.downloadScreenshot(),
-            resetView: () => this.inner?.renderer.set('autoScale', true),
+            resetView: () => {
+                this.inner?.renderer.set('autoScale', true);
+                this.inner?.setVisibleRangePreset('ALL');
+            },
+            timezone: () => this.deps.timezone(),
+            setTimezone: (zone) => this.deps.setTimezone(zone),
             // Right-clicking activates the cell first (capture-phase pointerdown), so the
             // context the actions receive is this cell's — the active one.
             getContext: () => this.deps.context(),

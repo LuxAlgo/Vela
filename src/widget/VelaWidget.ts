@@ -268,8 +268,12 @@ export class VelaWidget {
         this.root.appendChild(main);
 
         this.contextMenu = new ChartContextMenu(this.chartHost, {
-            screenshot: () => this.downloadScreenshot(),
-            resetView: () => this.inner?.renderer.set('autoScale', true),
+            resetView: () => {
+                this.inner?.renderer.set('autoScale', true);
+                this.inner?.setVisibleRangePreset('ALL');
+            },
+            timezone: () => this.timezone,
+            setTimezone: (zone) => this.setTimezone(zone),
             getContext: () => this.context(),
         });
         this.toast = new Toast(this.chartHost);

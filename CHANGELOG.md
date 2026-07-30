@@ -98,7 +98,18 @@ All notable changes to Vela, newest first.
   style / Indicators read in bright white, the Indicators count badge is gone, the camera sits
   to the right of the object tree, and chart settings move to a gear on the bottom bar next to
   the session switch. The in-chart attribution mark uses the LuxAlgo symbol and expands the
-  LuxAlgo wordmark on hover.
+  LuxAlgo wordmark on hover — white on dark charts, dark on light ones.
+- **Reorganized right-click menus.** Each part of the chart now offers what belongs to it. The
+  chart body gives you reset the view, remove every drawing, remove every indicator, and the
+  settings dialog — the two removals stay in place but grey out when there is nothing to remove.
+  The price axis carries the whole scale: autoscale, invert, and the choice between regular,
+  percent, indexed to 100 and logarithmic, plus submenus for the axis labels, the last-price
+  label, the countdown to bar close and the last-price line. Every pane has its own scale menu,
+  so a study pane's scale no longer follows the price one. The time axis picks the display
+  timezone, and choosing one there updates the timezone shown on the bottom bar as well. Each
+  menu's settings entry opens the chart settings on the tab it is about — the canvas colors and
+  grid from the chart body, the scales and lines from either axis — so you land on the controls
+  you were reaching for instead of the first tab.
 - **The price now reads on top by default.** A new overlay indicator starts *behind* the candles
   (and behind the indicators already there), and a new drawing starts *just under* them, so the
   price stays the top of the pile until you restack things yourself — drag rows in the object

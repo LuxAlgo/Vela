@@ -83,6 +83,10 @@ export class SettingsDialog {
     private config: ChartConfig | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
+    /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
+    private tabs: Array<{ title: string; show: () => void }> = [];
+    /** The tab currently shown, so a theme change (which rebuilds) lands back on it. */
+    private activeSection: string | null = null;
 
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
@@ -102,8 +106,10 @@ export class SettingsDialog {
             const cfg = this.config;
             const oc = this.onChange;
             const oi = this.onImport;
+            const orst = this.onReset;
+            const section = this.activeSection;
             this.close();
-            if (cfg && oc) this.open(cfg, oc, oi ?? undefined);
+            if (cfg && oc) this.open(cfg, oc, oi ?? undefined, orst ?? undefined, section ?? undefined);
         }
     }
 
@@ -111,13 +117,19 @@ export class SettingsDialog {
         return this.root !== null;
     }
 
-    /** Toggle the dialog; `config` is the current resolved config to seed controls. */
-    toggle(config: ChartConfig, onChange: (patch: ConfigPatch) => void, onImport?: (json: unknown) => void, onReset?: () => void): void {
+    /** Toggle the dialog; `config` is the current resolved config to seed controls.
+     *  `section` selects the tab to land on (a tab title; unknown ones fall back to the first). */
+    toggle(config: ChartConfig, onChange: (patch: ConfigPatch) => void, onImport?: (json: unknown) => void, onReset?: () => void, section?: string): void {
         if (this.root) this.close();
-        else this.open(config, onChange, onImport, onReset);
+        else this.open(config, onChange, onImport, onReset, section);
     }
 
-    open(config: ChartConfig, onChange: (patch: ConfigPatch) => void, onImport?: (json: unknown) => void, onReset?: () => void): void {
+    /** Switch an already-open dialog to a tab by title — no-op when closed or unknown. */
+    showSection(section: string): void {
+        this.tabs.find((t) => t.title.toLowerCase() === section.toLowerCase())?.show();
+    }
+
+    open(config: ChartConfig, onChange: (patch: ConfigPatch) => void, onImport?: (json: unknown) => void, onReset?: () => void, section?: string): void {
         this.close();
         this.config = config;
         this.onChange = onChange;
@@ -316,14 +328,14 @@ export class SettingsDialog {
         //    'always' keeps it visible. Values persist under config.chartTypes[<id>] and
         //    are pushed to the `<id>-settings` channel by the renderer's applyConfig.
         for (const def of chartTypes()) {
-            const section = def.settings;
-            if (!section) continue;
-            const marker = this.section(section.title);
+            const typeSettings = def.settings;
+            if (!typeSettings) continue;
+            const marker = this.section(typeSettings.title);
             marker.dataset.sdStyle = def.id;
-            marker.dataset.sdVisibility = section.visibility ?? 'active';
+            marker.dataset.sdVisibility = typeSettings.visibility ?? 'active';
             body.append(marker);
             const values = config.chartTypes[def.id] ?? {};
-            for (const r of section.rows) {
+            for (const r of typeSettings.rows) {
                 const current = values[r.key];
                 if (r.kind === 'toggle') {
                     body.append(this.boolRow(r.label, typeof current === 'boolean' ? current : r.defval, (v) => this.emitType(def.id, r.key, v)));
@@ -384,13 +396,16 @@ export class SettingsDialog {
                 p.tab.style.background = i === idx ? withAlpha(t.textColor, 0.07) : 'transparent';
                 p.tab.style.color = i === idx ? t.textColor : withAlpha(t.textColor, 0.62);
             });
+            this.activeSection = panes[idx]?.title ?? null;
         };
         panes.forEach((p, i) => {
             p.tab.addEventListener('click', () => activate(i));
             rail.appendChild(p.tab);
             paneHost.appendChild(p.el);
         });
-        activate(0);
+        this.tabs = panes.map((p, i) => ({ title: p.title, show: () => activate(i) }));
+        const wanted = section === undefined ? -1 : panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase());
+        activate(wanted >= 0 ? wanted : 0);
         this.syncTypeTabs?.(config.series.style);
 
         shell.append(rail, paneHost);
@@ -406,6 +421,7 @@ export class SettingsDialog {
         closeColorPopover();
         this.root?.remove();
         this.root = null;
+        this.tabs = [];
     }
 
     destroy(): void {

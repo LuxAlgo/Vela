@@ -324,7 +324,7 @@ export class VelaWorkspace {
         // ONE attribution mark for the whole grid (bottom-left, floating above the
         // bottom-left cell's time axis) — the cells disable their per-chart marks, and
         // this single mark is the NOTICE-required equivalent visible attribution.
-        const mark = createAttributionMark(doc, resolveTheme(opts.theme).textColor);
+        const mark = createAttributionMark(doc, resolveTheme(opts.theme).background);
         Object.assign(mark.style, { left: '12px', bottom: `${TIME_AXIS_H + 10}px`, zIndex: '11' });
         this.gridEl.appendChild(mark);
 
@@ -771,6 +771,7 @@ export class VelaWorkspace {
                 nativeBackend: this.cellBackend,
                 dialogHost: this.root,
                 timezone: () => this.timezone,
+                setTimezone: (zone) => this.setTimezone(zone),
                 context: () => this.context(),
                 activate: (id) => this.setActiveCell(id),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
