@@ -53,7 +53,7 @@ const CSS = `
 /* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
    fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
    up looking like different thicknesses depending on subpixel placement. */
-.vela-sep { height: 22px; margin: 0 2px; flex: none; background: rgba(255, 255, 255, 0.22); }
+.vela-sep { height: 22px; margin: 0 2px; flex: none; background: var(--vela-border-strong); }
 .vela-alerts-badge {
     position: absolute;
     top: 2px;
@@ -63,7 +63,7 @@ const CSS = `
     padding: 0 3px;
     border-radius: 7px;
     background: var(--vela-accent);
-    color: #fff;
+    color: var(--vela-fg-on-fill);
     font-size: 9px;
     font-weight: 700;
     display: inline-flex;
@@ -284,6 +284,9 @@ export class Topbar {
             host,
             items: this.tfItems(),
             onSelect: (id) => opts.onTimeframe(id),
+            // Timeframe labels are two-or-three characters ("1m", "4h", "1D") — the
+            // stylesheet's default min-width would leave the list mostly empty.
+            minWidth: '84px',
         });
         this.styleMenu = new Menu({
             trigger: this.styleButton,

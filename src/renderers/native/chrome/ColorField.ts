@@ -3,9 +3,10 @@
 // swatch grid + recents + opacity slider the drawing tools use (`buildColorPicker`).
 // Replaces the OS `input[type=color]` everywhere in the settings dialog.
 import type { VelaTheme } from '../../../core/options';
-import { buildColorPicker } from '../drawings/colorPicker';
+import { applyChromeTokens } from '../../shared/theme-tokens';
+import { buildColorPicker, transparencyChecker } from '../drawings/colorPicker';
 
-const CHECKER = 'repeating-conic-gradient(#9aa0a6 0% 25%, #d3d6da 0% 50%) 0 0 / 8px 8px';
+const CHECKER = transparencyChecker(8);
 const STYLE_ID = 'vela-color-field';
 
 function ensureStyles(): void {
@@ -13,10 +14,10 @@ function ensureStyles(): void {
     const st = document.createElement('style');
     st.id = STYLE_ID;
     st.textContent = `
-.vela-color-field{width:38px;height:24px;padding:2px;border:1px solid #2a2b30;border-radius:5px;background:#151619;cursor:pointer;display:inline-flex;flex:none;}
-.vela-color-field:hover{border-color:#868a96;}
+.vela-color-field{width:38px;height:24px;padding:2px;border:1px solid var(--vela-border);border-radius:5px;background:var(--vela-surface-sunken);cursor:pointer;display:inline-flex;flex:none;}
+.vela-color-field:hover{border-color:var(--vela-fg-muted);}
 .vela-color-field-swatch{display:block;width:100%;height:100%;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.25);}
-.vela-color-field-pop{position:fixed;z-index:6000;background:#151619;border:1px solid #2a2b30;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,0.55);padding:10px;}
+.vela-color-field-pop{position:fixed;z-index:6000;background:var(--vela-surface-overlay);border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:10px;}
 `;
     document.head.appendChild(st);
 }
@@ -71,6 +72,8 @@ export function colorField(theme: VelaTheme, getVal: () => string, onVal: (v: st
         closeOpen();
         const pop = document.createElement('div');
         pop.className = 'vela-color-field-pop';
+        // The popover portals to <body>, outside the chart's token host — re-apply here.
+        applyChromeTokens(pop, theme);
         // Clicks inside the picker must not bubble to a dialog's outside-dismiss.
         pop.addEventListener('pointerdown', (ev) => ev.stopPropagation());
         pop.appendChild(

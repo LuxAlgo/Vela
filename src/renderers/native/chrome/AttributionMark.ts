@@ -3,6 +3,7 @@
 // chart. Per the NOTICE file, products may disable it (`renderer.set('attribution', false)`)
 // ONLY if they display an equivalent visible attribution elsewhere in their UI.
 
+import { isDarkColor } from '../../../core/color';
 import { LUXALGO_SYMBOL_SVG, LUXALGO_WORDMARK_SVG } from './luxalgo-logos';
 
 /** Where the mark links — the canonical project page. */
@@ -71,31 +72,7 @@ function ensureStyles(doc: Document): void {
  * mid-tone: the logomark is brand artwork, so it stays either fully white or fully black.
  */
 export function attributionMarkColor(background: string): string {
-    return isDarkBackground(background) ? '#ffffff' : '#000000';
-}
-
-/** Perceived-dark check on a hex/rgb chart background. */
-function isDarkBackground(color: string): boolean {
-    const c = color.trim();
-    let r = 0;
-    let g = 0;
-    let b = 0;
-    if (c.startsWith('#')) {
-        const h = c.length === 4 ? [...c.slice(1)].map((x) => x + x).join('') : c.slice(1, 7);
-        const n = parseInt(h, 16);
-        if (Number.isNaN(n)) return true;
-        r = (n >> 16) & 255;
-        g = (n >> 8) & 255;
-        b = n & 255;
-    } else {
-        const m = c.match(/rgba?\(([^)]+)\)/);
-        if (!m?.[1]) return true;
-        const parts = m[1].split(',').map((x) => parseFloat(x));
-        r = parts[0] ?? 0;
-        g = parts[1] ?? 0;
-        b = parts[2] ?? 0;
-    }
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
+    return isDarkColor(background) ? '#ffffff' : '#000000';
 }
 
 /**
@@ -103,7 +80,7 @@ function isDarkBackground(color: string): boolean {
  * The shadow flips with the ink: a black mark under a black shadow reads as unswitched mud.
  */
 export function applyAttributionMarkTheme(el: HTMLElement, background: string): void {
-    const dark = isDarkBackground(background);
+    const dark = isDarkColor(background);
     el.style.color = dark ? '#ffffff' : '#000000';
     el.style.setProperty('--vela-attr-shadow', dark ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)');
 }

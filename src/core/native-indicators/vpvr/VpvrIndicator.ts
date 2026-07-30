@@ -2,11 +2,12 @@ import type { InputSchema, InputValue } from '../../model/inputs';
 import type { VpvrLayerData } from '../../model/volume-layers';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../NativeIndicator';
 import { registerNativeIndicator } from '../NativeIndicator';
+import { ACCENT, BEARISH } from '../../palette';
 
 const DEFAULT_ROWS = 24;
 const DEFAULT_WIDTH_PCT = 30;
-const DEFAULT_UP = '#2962FF';
-const DEFAULT_DOWN = '#F7525F';
+const DEFAULT_UP = ACCENT;
+const DEFAULT_DOWN = BEARISH;
 const DEFAULT_VALUE_AREA_PCT = 70;
 
 function num(v: InputValue | undefined, fallback: number): number {

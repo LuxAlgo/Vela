@@ -1,4 +1,5 @@
 import type { LineStyle } from '../model/series';
+import { ACCENT_BRIGHT } from '../palette';
 
 /**
  * The cosmetic payload shared by every drawing (the "settings" a user edits).
@@ -30,7 +31,7 @@ export interface DrawingText {
 }
 
 /** The default drawing accent — the Vela logo blue. */
-export const DEFAULT_DRAWING_COLOR = '#38c0fd';
+export const DEFAULT_DRAWING_COLOR = ACCENT_BRIGHT;
 
 /** A neutral default style — concrete tools override via their `defaultStyle`. */
 export function defaultStyle(): DrawingStyle {

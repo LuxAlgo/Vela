@@ -58,7 +58,11 @@ import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstanc
 import { applyAttributionMarkTheme, createAttributionMark } from './chrome/AttributionMark';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
-import { DARK_THEME } from '../../core/theme';
+import { DARK_THEME, LIGHT_THEME } from '../../core/theme';
+import { isDarkColor } from '../../core/color';
+import { iconAt } from '../../core/icons';
+import { BEARISH, BULLISH } from '../../core/palette';
+import { applyChromeTokens } from '../shared/theme-tokens';
 
 /** A vertically-scalable window: a pane's master scale or a merged indicator's own scale.
  *  Both expose the same four fields, so axis-drag / reset work uniformly on either. */
@@ -166,9 +170,9 @@ export class NativeRenderer implements IChartRenderer {
     // ── animation state (eased zoom + inertial pan) ──
     private animZoom = true;
     private animPan = true;
-    // Brand default candles (the reference first-run palette).
-    private candleUp = '#089981';
-    private candleDown = '#f23645';
+    // Brand default candles.
+    private candleUp = BULLISH;
+    private candleDown = BEARISH;
     // ── intro reveal (plays once when candles first appear) ──
     private introStyle = 'settle'; // 'grow' | 'settle' | '' (off)
     private introPlayed = false;
@@ -681,7 +685,10 @@ export class NativeRenderer implements IChartRenderer {
 
         // Re-derive the candle-colored theme + repaint the DOM chrome that mirrors it.
         this.theme = this.deriveTheme(this.theme);
-        if (this.wrapper) this.applyBackground();
+        if (this.wrapper) {
+            applyChromeTokens(this.wrapper, this.chromeTheme());
+            this.applyBackground();
+        }
         this.inputsUI?.setTheme(this.theme);
         this.paneControls?.setTheme(this.theme);
         // Re-theme the docked drawing toolbar on the STABLE chrome surface, so editing the
@@ -828,10 +835,9 @@ export class NativeRenderer implements IChartRenderer {
         return btn;
     }
 
-    /** Double-chevron icon — 12px box, mirroring playground `.toolbar-toggle` `fa-angles-left`. */
+    /** Double-chevron icon — the "jump back to the latest bar" affordance. */
     private scrollButtonIcon(): string {
-        const n = SCROLL_BTN_ICON_PX;
-        return `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="11 6 17 12 11 18"/><polyline points="5 6 11 12 5 18"/></svg>`;
+        return iconAt('chevrons-right', SCROLL_BTN_ICON_PX);
     }
 
     /** The button's fill — the chart background at 50% so it blends with the plot beneath. */
@@ -1010,7 +1016,9 @@ export class NativeRenderer implements IChartRenderer {
             ...this.theme,
             background: this.surfaceBackground,
             textColor: this.surfaceTextColor,
-            borderColor: CHROME_BORDER_COLOR,
+            // The divider follows the stable surface, not the live plot background, so a
+            // light app theme gets light dividers without plot cosmetics bleeding in.
+            borderColor: isDarkColor(this.surfaceBackground) ? DARK_THEME.borderColor : LIGHT_THEME.borderColor,
         };
     }
 
@@ -1023,6 +1031,8 @@ export class NativeRenderer implements IChartRenderer {
 
         this.wrapper = document.createElement('div');
         Object.assign(this.wrapper.style, { position: 'relative', width: '100%', height: '100%', overflow: 'hidden', cursor: 'crosshair' });
+        // Every DOM overlay below is a descendant, so the chrome tokens land once here.
+        applyChromeTokens(this.wrapper, this.chromeTheme());
 
         // L0.25 volume columns: bottom-anchored per-bar volume, ABOVE the geometry canvas so
         // grid lines and candles cannot paint over them. Transparent + pointer-transparent.
@@ -1299,6 +1309,7 @@ export class NativeRenderer implements IChartRenderer {
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
         this.surfaceSeeded = true;
+        if (this.wrapper) applyChromeTokens(this.wrapper, this.chromeTheme());
         this.applyBackground();
         this.inputsUI.setTheme(theme);
         this.paneControls?.setTheme(this.theme);

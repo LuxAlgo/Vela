@@ -99,6 +99,16 @@ All notable changes to Vela, newest first.
   to the right of the object tree, and chart settings move to a gear on the bottom bar next to
   the session switch. The in-chart attribution mark uses the LuxAlgo symbol and expands the
   LuxAlgo wordmark on hover — white on dark charts, dark on light ones.
+- **One visual language across the whole chart.** Colors, icons and hover states now come from a
+  single set of definitions instead of being restated in each panel, so the interface reads as one
+  piece. The settings dialog, drawing toolbar, drawing style popups, color pickers, pane controls
+  and the legend follow the chart theme — on a light chart they are now light, where before they
+  stayed dark whatever the theme. Indicator titles in the legend all read in the normal chart text
+  color, native ones included, instead of a blue of their own. Every subdivided drawing tool paints
+  its levels with the same convention, so the 0.618 of a retracement, a fan, an arc set and a Gann
+  box match; the same holds for bullish/bearish reds and greens, which were previously two slightly
+  different pairs depending on the tool. Icons across the toolbars and menus are one consistent set
+  at one weight, and they take the color of the control they sit in.
 - **Reorganized right-click menus.** Each part of the chart now offers what belongs to it. The
   chart body gives you reset the view, remove every drawing, remove every indicator, and the
   settings dialog — the two removals stay in place but grey out when there is nothing to remove.

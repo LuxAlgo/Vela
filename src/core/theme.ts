@@ -1,4 +1,5 @@
 import type { VelaTheme, ThemeName } from './options';
+import { BEARISH, BULLISH } from './palette';
 
 // The reference dark palette (the design spec's first-run chart cosmetics: surface,
 // axis text, subtle grid, candle green/red).
@@ -7,8 +8,8 @@ export const DARK_THEME: VelaTheme = {
     textColor: '#b2b5be',
     gridColor: '#20222c',
     borderColor: '#2a2b30',
-    upColor: '#089981',
-    downColor: '#f23645',
+    upColor: BULLISH,
+    downColor: BEARISH,
     fontFamily: 'sans-serif',
 };
 

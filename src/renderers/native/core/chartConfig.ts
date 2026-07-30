@@ -1,5 +1,8 @@
 import type { LineStyle } from '../../../core/model/series';
 import { chartTypes } from '../../../chart-types/registry';
+import { withAlpha } from '../../../core/color';
+import { BEARISH, BULLISH, CROSSHAIR, SEPARATOR, SERIES_LINE, SLATE } from '../../../core/palette';
+import { DARK_THEME } from '../../../core/theme';
 import type { PriceStyle } from '../../../core/options';
 import type { ScaleMode } from './SceneGraph';
 
@@ -30,40 +33,18 @@ export const CHART_CONFIG_VERSION = 1;
  * `BASELINE_LEVEL_DEFAULT` places the baseline as a percentage of the visible pane
  * range (0 = pane low, 100 = pane high).
  */
-export const BASELINE_TOP_LINE = '#089981';
-export const BASELINE_BOTTOM_LINE = '#f23645';
+export const BASELINE_TOP_LINE = BULLISH;
+export const BASELINE_BOTTOM_LINE = BEARISH;
 export const BASELINE_FILL_ALPHA = 0.25;
 export const BASELINE_FILL_ALPHA_FAR = 0.05;
 export const BASELINE_LEVEL_DEFAULT = 50;
 
-/** Chrome divider color — matches the playground top-bar bottom separator (`--tv-border`). */
-export const CHROME_BORDER_COLOR = '#2a2b30';
+/** Chrome divider fallback for chrome built before a theme is applied — the dark theme's
+ *  border. Live chrome reads `--vela-border` instead (see the UI token layer). */
+export const CHROME_BORDER_COLOR = DARK_THEME.borderColor;
 
 
-/** Apply an alpha to a `#RGB`/`#RRGGBB`/`rgb()`/`rgba()` color → an `rgba(...)` string
- *  (returns the input unchanged if it can't be parsed). */
-export function withAlpha(color: string, alpha: number): string {
-    const s = color.trim();
-    let m = /^#([0-9a-f]{3})$/i.exec(s);
-    if (m) {
-        const h = m[1]!;
-        const r = parseInt(h[0]! + h[0]!, 16);
-        const g = parseInt(h[1]! + h[1]!, 16);
-        const b = parseInt(h[2]! + h[2]!, 16);
-        return `rgba(${r},${g},${b},${alpha})`;
-    }
-    m = /^#([0-9a-f]{6})[0-9a-f]{0,2}$/i.exec(s);
-    if (m) {
-        const h = m[1]!;
-        const r = parseInt(h.slice(0, 2), 16);
-        const g = parseInt(h.slice(2, 4), 16);
-        const b = parseInt(h.slice(4, 6), 16);
-        return `rgba(${r},${g},${b},${alpha})`;
-    }
-    const rgb = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(s);
-    if (rgb) return `rgba(${rgb[1]},${rgb[2]},${rgb[3]},${alpha})`;
-    return color;
-}
+export { withAlpha } from '../../../core/color';
 
 // ── live style store (renderer-owned; null color ⇒ inherit theme) ──
 export interface GridLineStyle {
@@ -173,8 +154,8 @@ export function defaultChartStyle(): ChartStyle {
         gridVert: { visible: true, color: null },
         gridHorz: { visible: true, color: null },
         borderColor: CHROME_BORDER_COLOR,
-        separatorColor: '#2e2e2e',
-        crosshair: { color: '#9aa0ad', width: 1, style: 'dashed', opacity: 0.4, labelBackground: '#475569' },
+        separatorColor: SEPARATOR,
+        crosshair: { color: CROSSHAIR, width: 1, style: 'dashed', opacity: 0.4, labelBackground: SLATE },
         candle: {
             bodyVisible: true,
             borderVisible: false,
@@ -185,8 +166,8 @@ export function defaultChartStyle(): ChartStyle {
             wickDownColor: null,
         },
         bars: { upColor: null, downColor: null },
-        line: { color: '#3b82f6', width: 2 },
-        area: { lineColor: '#3b82f6', width: 2, topColor: 'rgba(59, 130, 246, 0.28)', bottomColor: 'rgba(59, 130, 246, 0.02)' },
+        line: { color: SERIES_LINE, width: 2 },
+        area: { lineColor: SERIES_LINE, width: 2, topColor: withAlpha(SERIES_LINE, 0.28), bottomColor: withAlpha(SERIES_LINE, 0.02) },
         baseline: {
             topLineColor: null,
             bottomLineColor: null,

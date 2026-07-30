@@ -11,6 +11,7 @@ import type { VelaEventMap } from './core/events/types';
 import { EngineOrchestrator, type ResolvedConfig } from './core/engine/EngineOrchestrator';
 import type { SceneInspection } from './core/engine/inspect';
 import { resolveTheme } from './core/theme';
+import { BEARISH, BULLISH } from './core/palette';
 import { RendererControl } from './core/RendererControl';
 import { PanesControl } from './core/PanesControl';
 import { DataControl } from './core/DataControl';
@@ -80,8 +81,8 @@ export class Vela {
             animZoom,
             animPan,
             glow: options.glow ?? 0,
-            upColor: options.upColor ?? '#089981',
-            downColor: options.downColor ?? '#f23645',
+            upColor: options.upColor ?? BULLISH,
+            downColor: options.downColor ?? BEARISH,
             priceStyle: options.priceStyle ?? 'candles',
         };
         const RendererClass = options.renderer ?? NativeRenderer;

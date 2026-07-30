@@ -63,14 +63,13 @@ const CSS = `
 }
 .vela-ip-row:hover { background: var(--vela-hover); }
 .vela-ip-name { flex: 1; font-weight: 600; color: var(--vela-fg-bright); font-size: 13px; }
-.vela-ip-row[data-native] .vela-ip-name { color: #2962ff; }
 .vela-ip-badge {
     flex: none;
     padding: 1px 7px;
-    border-radius: 4px;
+    border-radius: var(--vela-radius-sm);
     background: var(--vela-surface-elev);
     border: 1px solid var(--vela-border);
-    color: #2962ff;
+    color: var(--vela-accent);
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -81,8 +80,8 @@ const CSS = `
     cursor: pointer;
     color: var(--vela-fg-muted);
     padding: 2px 4px;
-    border-radius: 4px;
-    font-size: 12px;
+    border-radius: var(--vela-radius-sm);
+    font-size: var(--vela-font-size-md);
 }
 .vela-ip-trash:hover { color: var(--vela-down); background: var(--vela-hover); }
 .vela-ip-empty { padding: var(--vela-space-3); color: var(--vela-fg-muted); text-align: center; }
@@ -125,6 +124,8 @@ export class IndicatorPicker {
             host: opts.host,
             draggable: true,
             closeOnInteractOutside: true,
+            // The picker adds/removes indicators live — keep the chart undimmed behind it.
+            dimBackdrop: false,
             content: (body) => body.append(searchRow, this.list),
             onOpenChange: (open) => {
                 this.isOpen = open;
@@ -200,8 +201,8 @@ export class IndicatorPicker {
                 }
                 const trash = doc.createElement('button');
                 trash.className = 'vela-ip-trash';
-                trash.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2.5 4.5h11M6.5 2.5h3M5.5 4.5l.5 9a1 1 0 0 0 1 .9h2a1 1 0 0 0 1-.9l.5-9M6.8 7v4.5M9.2 7v4.5"/></svg>';
-            trash.title = 'Remove from chart';
+                trash.appendChild(iconEl('trash', doc));
+                trash.title = 'Remove from chart';
                 row.appendChild(trash);
             }
             return row;

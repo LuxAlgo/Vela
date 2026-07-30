@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Vela } from '../src/index';
+import { ACCENT, BEARISH, BULLISH } from '../src/core/palette';
 import type {
     IChartRenderer,
     RendererCapabilities,
@@ -1196,7 +1197,7 @@ describe('EngineOrchestrator — built-in volume native indicators', () => {
         expect(model).toBeDefined(); // legend row mounted (no series — the layer draws outside the model)
         expect(model!.series).toHaveLength(0);
         expect(model!.paneId).toBe('price');
-        expect(renderer.volumePushes).toEqual([{ upColor: '#089981', downColor: '#F23645', heightFrac: 0.2 }]);
+        expect(renderer.volumePushes).toEqual([{ upColor: BULLISH, downColor: BEARISH, heightFrac: 0.2 }]);
         const summary = chart.inspect().indicators.find((s) => s.nativeType === 'volume');
         expect(summary?.native).toBe(true);
         expect(summary?.inputs).toBe(3); // colors + height% drive the settings dialog
@@ -1221,7 +1222,7 @@ describe('EngineOrchestrator — built-in volume native indicators', () => {
         handle.setInputs({ upColor: '#112233', heightPct: 35 });
         await flush();
         const last = renderer.volumePushes[renderer.volumePushes.length - 1] as { upColor: string; downColor: string; heightFrac: number };
-        expect(last).toEqual({ upColor: '#112233', downColor: '#F23645', heightFrac: 0.35 });
+        expect(last).toEqual({ upColor: '#112233', downColor: BEARISH, heightFrac: 0.35 });
     });
 
     it('the VPVR is not auto-added; adding it mounts a legend row and pushes its config', async () => {
@@ -1235,7 +1236,7 @@ describe('EngineOrchestrator — built-in volume native indicators', () => {
         expect(model!.series).toHaveLength(0);
         expect(model!.paneId).toBe('price');
         expect(renderer.vpvrPushes).toEqual([
-            { rows: 24, widthFrac: 0.3, upColor: '#2962FF', downColor: '#F7525F', showPoc: true, valueAreaFrac: 0.7 },
+            { rows: 24, widthFrac: 0.3, upColor: ACCENT, downColor: BEARISH, showPoc: true, valueAreaFrac: 0.7 },
         ]);
         expect(chart.inspect().indicators.some((s) => s.nativeType === 'vpvr')).toBe(true);
     });

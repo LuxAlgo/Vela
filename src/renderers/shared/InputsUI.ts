@@ -1,5 +1,8 @@
 import type { InputSchema, InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { VelaTheme, MoveTarget } from '../../core/options';
+import { isDarkColor, toHex6 } from '../../core/color';
+import { iconAt } from '../../core/icons';
+import { applyChromeTokens } from './theme-tokens';
 import { makeDialogDraggable } from './dialogDragging';
 
 /** A pane as the legend move UI sees it (id + label + vertical bounds, top-to-bottom order). */
@@ -41,19 +44,14 @@ interface LegendRow {
 }
 
 const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'volume'];
-/** Title color for native (core-computed) indicators — bright Vela blue, distinct from Pine indicators. */
-const NATIVE_TITLE_COLOR = '#0d98c6';
-/** Live-status pulse color (a green dot while an indicator is live-updating). */
-const LIVE_STATUS_COLOR = '#22c55e';
 /** Keyframes for the legend-row status affordances (spinner + live pulse), injected once into the document. */
 const STATUS_KEYFRAMES =
     '@keyframes vela-ind-spin{to{transform:rotate(360deg)}}@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}';
 
-// Lucide-style eye / eye-off glyphs (stroke = currentColor) for the legend visibility toggle.
-const EYE_SVG =
-    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
-const EYE_OFF_SVG =
-    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 11s3.5 7 10 7a9 9 0 0 0 3.39-.66"/><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M2 2 22 22"/></svg>';
+/** Legend glyph size — the row's own font belongs to the indicator title beside them. */
+const LEGEND_ICON_PX = 13;
+const EYE_SVG = iconAt('eye', LEGEND_ICON_PX);
+const EYE_OFF_SVG = iconAt('eye-off', LEGEND_ICON_PX);
 
 /**
  * Chart-style inputs UI built on top of lightweight-charts (which has no
@@ -172,7 +170,8 @@ export class InputsUI {
         const currentPane = row?.paneId ?? 'price';
         const panes = api.panes();
         const menu = document.createElement('div');
-        menu.style.cssText = `position:fixed;z-index:60;min-width:150px;padding:4px;border-radius:6px;background:${this.theme.background};color:${this.theme.textColor};border:1px solid ${this.theme.borderColor};box-shadow:0 6px 20px rgba(0,0,0,0.35);font-size:12px;`;
+        menu.style.cssText = `position:fixed;z-index:var(--vela-z-tooltip);min-width:150px;padding:4px;border-radius:var(--vela-radius-md);background:${this.theme.background};color:${this.theme.textColor};border:1px solid var(--vela-border);box-shadow:var(--vela-shadow);font-size:var(--vela-font-size-md);`;
+        applyChromeTokens(menu, this.theme);
         const items: Array<{ label: string; target: MoveTarget }> = [];
         for (const p of panes) {
             if (p.id === currentPane) continue;
@@ -192,9 +191,8 @@ export class InputsUI {
             const b = document.createElement('button');
             b.type = 'button';
             b.textContent = it.label;
-            b.style.cssText = `display:block;width:100%;text-align:left;padding:6px 10px;border:none;border-radius:4px;background:transparent;color:inherit;cursor:pointer;white-space:nowrap;`;
-            b.addEventListener('mouseenter', () => (b.style.background = 'rgba(255,255,255,0.1)'));
-            b.addEventListener('mouseleave', () => (b.style.background = 'transparent'));
+            b.className = 'vela-ind-menuitem';
+            b.style.cssText = 'display:block;width:100%;text-align:left;padding:6px 10px;border:none;border-radius:var(--vela-radius-sm);color:inherit;cursor:pointer;white-space:nowrap;';
             b.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.closeMoveMenu();
@@ -337,8 +335,9 @@ export class InputsUI {
         titleWrap.style.cssText = 'white-space:nowrap;';
         const titleEl = document.createElement('span');
         titleEl.textContent = title;
-        // Native (core-computed) indicators get a bright Vela-blue title to set them apart from Pine ones.
-        titleEl.style.cssText = `font-weight:600;${opts.native ? `color:${NATIVE_TITLE_COLOR};` : ''}`;
+        // Every indicator title reads in the chrome text color: where a study is computed
+        // (core vs script) is an implementation detail, not something to color-code.
+        titleEl.style.cssText = 'font-weight:600;';
         titleWrap.appendChild(titleEl);
         if (opts.beta) {
             const beta = document.createElement('sup');
@@ -387,9 +386,7 @@ export class InputsUI {
             const mv = document.createElement('button');
             mv.type = 'button';
             mv.title = 'Move to pane';
-            // Lucide "move" cross-arrows glyph.
-            mv.innerHTML =
-                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>';
+            mv.innerHTML = iconAt('move', LEGEND_ICON_PX);
             mv.style.cssText = `cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;color:${this.theme.textColor};opacity:0.65;line-height:0;padding:0 1px;`;
             mv.addEventListener('mouseenter', () => (mv.style.opacity = '1'));
             mv.addEventListener('mouseleave', () => (mv.style.opacity = '0.65'));
@@ -401,9 +398,8 @@ export class InputsUI {
         close.type = 'button';
         close.title = 'Remove indicator';
         close.textContent = '✕';
-        close.style.cssText = `cursor:pointer;background:transparent;border:none;color:${this.theme.textColor};opacity:0.55;font-size:11px;line-height:1;padding:0 1px;`;
-        close.addEventListener('mouseenter', () => { close.style.opacity = '1'; close.style.color = '#f87171'; });
-        close.addEventListener('mouseleave', () => { close.style.opacity = '0.55'; close.style.color = this.theme.textColor; });
+        close.className = 'vela-ind-close';
+        close.style.cssText = `cursor:pointer;background:transparent;border:none;color:${this.theme.textColor};font-size:var(--vela-font-size-sm);line-height:1;padding:0 1px;`;
         close.addEventListener('click', () => this.onRemove?.(id));
         controlsEl.appendChild(close);
         el.appendChild(controlsEl);
@@ -438,17 +434,16 @@ export class InputsUI {
             return;
         }
         this.ensureStatusKeyframes();
-        const accent = withAlpha(this.theme.textColor, 0.9);
         if (status === 'loading') {
             el.style.cssText =
                 `display:inline-block;box-sizing:border-box;flex:none;width:11px;height:11px;border-radius:50%;` +
-                `border:2px solid ${withAlpha(this.theme.textColor, 0.25)};border-top-color:${accent};` +
+                `border:2px solid var(--vela-border-strong);border-top-color:var(--vela-fg-bright);` +
                 `animation:vela-ind-spin .7s linear infinite;`;
         } else {
             // live — a pulsing filled dot
             el.style.cssText =
                 `display:inline-block;box-sizing:border-box;flex:none;width:8px;height:8px;border-radius:50%;` +
-                `background:${LIVE_STATUS_COLOR};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
+                `background:${this.theme.upColor};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
         }
     }
 
@@ -586,10 +581,8 @@ export class InputsUI {
         // Shrink-to-fit width (capped), mirroring the reference dialog's `w-fit sm:max-w-2xl`:
         // the card is only as wide as the widest input row needs — no fixed width stretching the
         // full-width text area — while the cap + min keep it a sensible size.
-        card.style.cssText = `display:flex;flex-direction:column;width:fit-content;min-width:min(360px,90%);max-width:min(640px,94%);max-height:82%;background:${t.background};border:1px solid ${border};border-radius:8px;box-shadow:0 16px 48px rgba(0,0,0,0.5);color:${fg};color-scheme:${scheme};font:13px ${font};overflow:hidden;`;
-        card.style.setProperty('--vela-focus', withAlpha(fg, 0.5));
-        card.style.setProperty('--vela-focus-soft', withAlpha(fg, 0.14));
-        card.style.setProperty('--vela-scroll', withAlpha(t.textColor, 0.28));
+        card.style.cssText = `display:flex;flex-direction:column;width:fit-content;min-width:min(360px,90%);max-width:min(640px,94%);max-height:82%;background:${t.background};border:1px solid ${border};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${fg};color-scheme:${scheme};font:13px ${font};overflow:hidden;`;
+        applyChromeTokens(card, t);
         // Keystrokes (typing in a field) must not reach the chart; let Esc bubble to the
         // document handler so it closes even when focus sits in an input.
         card.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
@@ -630,7 +623,7 @@ export class InputsUI {
             if (group.name) {
                 const gh = document.createElement('div');
                 gh.textContent = group.name;
-                gh.style.cssText = `font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:${withAlpha(fg, 0.6)};`;
+                gh.style.cssText = 'font-size:var(--vela-font-size-sm);font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);';
                 section.appendChild(gh);
             }
             const grid = document.createElement('div');
@@ -864,14 +857,11 @@ export class InputsUI {
 
     /** A hoverable ⓘ affordance carrying an input's `tooltip` (native title). */
     private infoButton(tooltip: string): HTMLElement {
-        const fg = this.strongText();
         const b = document.createElement('span');
         b.textContent = 'i';
         b.title = tooltip;
-        const idle = `flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:${withAlpha(fg, 0.1)};color:${withAlpha(fg, 0.6)};font:600 11px inherit;line-height:1;cursor:help;user-select:none;transition:background .12s ease,color .12s ease;`;
-        b.style.cssText = idle;
-        b.addEventListener('mouseenter', () => { b.style.background = withAlpha(fg, 0.18); b.style.color = fg; });
-        b.addEventListener('mouseleave', () => { b.style.background = withAlpha(fg, 0.1); b.style.color = withAlpha(fg, 0.6); });
+        b.className = 'vela-ind-hint';
+        b.style.cssText = 'flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-weight:600;font-size:11px;font-family:inherit;line-height:1;cursor:help;user-select:none;';
         return b;
     }
 
@@ -1001,25 +991,22 @@ export class InputsUI {
 
     /** Shared field chrome for text / number / select controls (fills its wrapper's width). */
     private ctrlStyle(): string {
-        return `width:100%;box-sizing:border-box;height:32px;background:transparent;border:1px solid ${this.neutralBorder()};color:${this.strongText()};border-radius:6px;padding:0 8px;font:13px inherit;outline:none;`;
+        return `width:100%;box-sizing:border-box;height:32px;background:transparent;border:1px solid ${this.neutralBorder()};color:${this.strongText()};border-radius:6px;padding:0 8px;font-size:13px;font-family:inherit;outline:none;`;
     }
 
-    /** Whether the active theme is dark (drives the dialog's white text / neutral borders). */
+    /** Whether the active theme is dark (drives the dialog's `color-scheme`). */
     private isDarkTheme(): boolean {
-        const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(this.theme.background.trim());
-        if (!m) return true;
-        const [r, g, b] = [parseInt(m[1]!, 16), parseInt(m[2]!, 16), parseInt(m[3]!, 16)];
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
+        return isDarkColor(this.theme.background);
     }
 
-    /** Neutral field/separator border — dark matches the chart chrome / top-bar bottom separator. */
+    /** Neutral field/separator border — the shared chrome border token. */
     private neutralBorder(): string {
-        return this.isDarkTheme() ? '#2a2b30' : '#e2e2e2';
+        return 'var(--vela-border)';
     }
 
-    /** Strong foreground for field text, labels and the primary button — white on dark themes. */
+    /** Strong foreground for field text, labels and the primary button. */
     private strongText(): string {
-        return this.isDarkTheme() ? '#ffffff' : this.theme.textColor;
+        return 'var(--vela-fg-bright)';
     }
 
     /**
@@ -1039,23 +1026,12 @@ export class InputsUI {
     }
 
     private dialogButton(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-        const t = this.theme;
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = label;
-        // Primary = filled (near-foreground fill, inverted text); Cancel = ghost (no
-        // border, muted text, subtle hover fill) — matching the reference dialog footer.
-        const fg = this.strongText();
-        b.style.cssText = primary
-            ? `cursor:pointer;padding:7px 16px;border-radius:6px;border:1px solid ${fg};background:${fg};color:${t.background};font:600 13px inherit;transition:opacity .12s ease;`
-            : `cursor:pointer;padding:7px 14px;border-radius:6px;border:1px solid transparent;background:transparent;color:${withAlpha(fg, 0.8)};font:600 13px inherit;transition:background .12s ease,color .12s ease;`;
-        if (primary) {
-            b.addEventListener('mouseenter', () => (b.style.opacity = '0.85'));
-            b.addEventListener('mouseleave', () => (b.style.opacity = '1'));
-        } else {
-            b.addEventListener('mouseenter', () => { b.style.background = withAlpha(fg, 0.1); b.style.color = fg; });
-            b.addEventListener('mouseleave', () => { b.style.background = 'transparent'; b.style.color = withAlpha(fg, 0.8); });
-        }
+        // Primary = filled inverse chip; Cancel = ghost (no border, muted text, subtle hover
+        // fill). Both hover states are in the scoped stylesheet.
+        b.className = primary ? 'vela-ind-btn vela-ind-btn-primary' : 'vela-ind-btn';
         b.addEventListener('click', onClick);
         return b;
     }
@@ -1110,10 +1086,8 @@ function groupInputs(inputs: InputSchema[]): InputGroup[] {
     });
 }
 
-const CHECK_SVG =
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
-const SELECT_CHEVRON_SVG =
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const CHECK_SVG = iconAt('check', 12);
+const SELECT_CHEVRON_SVG = iconAt('chevron-down', 16);
 
 const DIALOG_STYLE_ID = 'vela-ind-dialog-styles';
 
@@ -1132,22 +1106,18 @@ function ensureDialogStyles(): void {
 .vela-ind-dialog input[type=text]:focus,.vela-ind-dialog input[type=number]:focus,.vela-ind-dialog select:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
 .vela-ind-dialog ::-webkit-scrollbar{width:9px;}
 .vela-ind-dialog ::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
-.vela-ind-dialog ::-webkit-scrollbar-track{background:transparent;}`;
+.vela-ind-dialog ::-webkit-scrollbar-track{background:transparent;}
+.vela-ind-hint{background:var(--vela-hover);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-ind-hint:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
+.vela-ind-close{opacity:0.55;transition:opacity var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-ind-close:hover{opacity:1;color:var(--vela-danger) !important;}
+.vela-ind-menuitem{background:transparent;transition:background var(--vela-dur-fast) ease;}
+.vela-ind-menuitem:hover{background:var(--vela-hover-strong);}
+.vela-ind-btn{cursor:pointer;padding:7px 14px;border-radius:var(--vela-radius-md);border:1px solid transparent;background:transparent;color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
+.vela-ind-btn:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-ind-btn-primary{padding:7px 16px;border-color:var(--vela-selected-bg);background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
+.vela-ind-btn-primary:hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);opacity:0.85;}`;
     document.head.appendChild(s);
-}
-
-function toHex6(color: string): string {
-    const m = /^#([0-9a-fA-F]{6})/.exec(color.trim());
-    return m ? `#${m[1]}` : '#888888';
-}
-
-function withAlpha(color: string, alpha: number): string {
-    const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(color.trim());
-    if (!m) return color;
-    const r = parseInt(m[1] ?? '0', 16);
-    const g = parseInt(m[2] ?? '0', 16);
-    const b = parseInt(m[3] ?? '0', 16);
-    return `rgba(${r},${g},${b},${alpha})`;
 }
 
 /** `input.timeframe` choices — label shown, Pine resolution string committed (`''` = chart's). */

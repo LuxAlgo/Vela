@@ -12,6 +12,10 @@ export interface DialogOptions extends DialogControllerOptions {
     host?: HTMLElement;
     /** Drag the dialog by its header (the reference dialogs move; search stays fixed). */
     draggable?: boolean;
+    /** Darken the page behind the dialog (default true). Panels that edit live content
+     *  (e.g. the indicators picker) pass false so the chart stays fully readable; the
+     *  backdrop still catches interact-outside dismissal. */
+    dimBackdrop?: boolean;
 }
 
 export class Dialog {
@@ -30,6 +34,7 @@ export class Dialog {
 
         this.backdrop = doc.createElement('div');
         this.backdrop.className = 'vela-dialog-backdrop vela-ui-layer';
+        if (opts.dimBackdrop === false) this.backdrop.classList.add('vela-dialog-backdrop--clear');
         this.positioner = doc.createElement('div');
         this.positioner.className = 'vela-dialog-positioner vela-ui-layer';
         this.panel = doc.createElement('div');

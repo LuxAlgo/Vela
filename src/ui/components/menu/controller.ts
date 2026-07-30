@@ -12,10 +12,11 @@ export interface MenuItemDescriptor {
     separatorBefore?: boolean;
     /** Right-aligned hint (e.g. a shortcut display from KeymapManager). */
     hint?: string;
-    /** Checkmark state for toggle items (undefined = plain item). */
+    /** Selected state (undefined = plain item). A plain checked item renders as a
+     *  highlighted row (brighter surface + bright ink). */
     checked?: boolean;
     /** Render as a SWITCH row (a right-aligned toggle pill reflecting `checked`)
-     *  instead of the accent checkmark, and keep the menu OPEN on selection —
+     *  instead of the selected-row highlight, and keep the menu OPEN on selection —
      *  the shape for boolean settings living inside a dropdown. */
     toggle?: boolean;
     /** Icon id (see the `vela/ui` icon registry) rendered before the label. */

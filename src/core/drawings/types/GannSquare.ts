@@ -1,33 +1,26 @@
 import type { Projector } from '../geometry';
 import { pointInBox } from '../hittest';
 import { FibRatios, type FibEntryLine, type FibLevel } from './FibRatios';
+import { fibLevels, LEVEL_BLUE, LEVEL_GREEN, LEVEL_ORANGE, LEVEL_RED, LEVEL_TEAL, LEVEL_UNITY } from '../levelPalette';
 
 /** The H/V grid subdivisions (editable, like GannBox), applied to both the price + time axes. */
-const GRID_LEVELS: readonly FibLevel[] = [
-    { ratio: 0, color: '#787b86', enabled: true, label: '0' },
-    { ratio: 0.25, color: '#f23645', enabled: true, label: '0.25' },
-    { ratio: 0.382, color: '#ff9800', enabled: true, label: '0.382' },
-    { ratio: 0.5, color: '#4caf50', enabled: true, label: '0.5' },
-    { ratio: 0.618, color: '#089981', enabled: true, label: '0.618' },
-    { ratio: 0.75, color: '#5b9cf6', enabled: true, label: '0.75' },
-    { ratio: 1, color: '#787b86', enabled: true, label: '1' },
-];
+const GRID_LEVELS = fibLevels([0, 0.25, 0.382, 0.5, 0.618, 0.75, 1].map((ratio) => ({ ratio, label: String(ratio) })));
 
 /** The Gann angle fan, all from the origin corner p1. `x` = time units, `y` = price units. */
 const FAN: ReadonlyArray<{ label: string; x: number; y: number; color: string }> = [
-    { label: '3x1', x: 3, y: 1, color: '#f23645' },
-    { label: '2x1', x: 2, y: 1, color: '#ff9800' },
-    { label: '1x1', x: 1, y: 1, color: '#b2b5be' },
-    { label: '1x2', x: 1, y: 2, color: '#089981' },
-    { label: '1x3', x: 1, y: 3, color: '#5b9cf6' },
+    { label: '3x1', x: 3, y: 1, color: LEVEL_RED },
+    { label: '2x1', x: 2, y: 1, color: LEVEL_ORANGE },
+    { label: '1x1', x: 1, y: 1, color: LEVEL_UNITY },
+    { label: '1x2', x: 1, y: 2, color: LEVEL_TEAL },
+    { label: '1x3', x: 1, y: 3, color: LEVEL_BLUE },
 ];
 
 /** Concentric quarter-ellipse arc radii (as a fraction of the box), centered on p1. */
 export const GANN_SQUARE_ARCS: ReadonlyArray<{ k: number; color: string }> = [
-    { k: 0.25, color: '#f23645' },
-    { k: 0.5, color: '#ff9800' },
-    { k: 0.75, color: '#4caf50' },
-    { k: 1, color: '#089981' },
+    { k: 0.25, color: LEVEL_RED },
+    { k: 0.5, color: LEVEL_ORANGE },
+    { k: 0.75, color: LEVEL_GREEN },
+    { k: 1, color: LEVEL_TEAL },
 ];
 
 interface GannBox {

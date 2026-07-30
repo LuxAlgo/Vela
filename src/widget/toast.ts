@@ -19,8 +19,8 @@ const CSS = `
     background: var(--vela-surface-elev);
     border: 1px solid var(--vela-border);
     color: var(--vela-fg);
-    font-size: 12px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    font-size: var(--vela-font-size-md);
+    box-shadow: var(--vela-shadow);
     pointer-events: none;
     white-space: nowrap;
     overflow: hidden;

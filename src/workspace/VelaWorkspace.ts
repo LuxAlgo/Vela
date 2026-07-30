@@ -14,7 +14,7 @@ import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
-import { ensureUIHost, injectStyles, registerIcon } from '../ui';
+import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
 import { KeymapManager } from '../ui/keymap';
 import { Menu } from '../ui/components/menu';
 import type { Vela } from '../Vela';
@@ -140,10 +140,7 @@ const CSS = `
 `;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
-registerIcon(
-    'layout',
-    '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/></svg>',
-);
+registerIcon('layout', svg16('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/>'));
 
 export class VelaWorkspace {
     readonly root: HTMLElement;

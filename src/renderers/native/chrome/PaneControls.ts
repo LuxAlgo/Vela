@@ -1,3 +1,4 @@
+import { icon } from '../../../core/icons';
 import type { VelaTheme } from '../../../core/options';
 
 /** A pane as seen by the hover controls (a thin projection of the renderer's PaneNode). */
@@ -23,14 +24,37 @@ export interface PaneControlsDeps {
 }
 
 const ICONS = {
-    up: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>',
-    down: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
-    // eye-slash style "hide / collapse" and a restore chevron pair, mirroring the reference screenshots
-    collapse: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="m14 10 7-7"/><path d="m3 21 7-7"/></svg>',
-    expand: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/></svg>',
-    maximize: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 0-2 2h-3"/></svg>',
-    restore: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3m8 0v-3a2 2 0 0 1 2-2h3"/></svg>',
+    up: icon('chevron-up'),
+    down: icon('chevron-down'),
+    collapse: icon('pane-collapse'),
+    expand: icon('pane-expand'),
+    maximize: icon('maximize'),
+    restore: icon('restore'),
 };
+
+const STYLE_ID = 'vela-pane-controls';
+
+/** The cluster's glyph size. Icons inherit it from the slot, so it is set once in CSS. */
+const ICON_PX = 12;
+
+/** The cluster's scrim pill. It floats over CHART CONTENT (candles of any color), not over a
+ *  panel, so it stays a neutral darkening rather than a themed surface. */
+const CLUSTER_PILL = 'rgba(0,0,0,0.28)';
+
+/** Hover/active states as CSS, so they can never lag behind a pointer or drift from the
+ *  tokens (the buttons only carry their per-instance color/opacity inline). */
+function ensureStyles(): void {
+    if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+    const st = document.createElement('style');
+    st.id = STYLE_ID;
+    st.textContent = `
+.vela-pc-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:var(--vela-radius-sm);background:transparent;line-height:0;font-size:${ICON_PX}px;}
+.vela-pc-btn svg{display:block;}
+.vela-pc-btn:not(:disabled):hover{opacity:1 !important;background:var(--vela-active);}
+.vela-pc-on,.vela-pc-on:not(:disabled):hover{background:var(--vela-selected-bg);}
+`;
+    document.head.appendChild(st);
+}
 
 /**
  * Per-pane hover button cluster, pinned to the top-right of each pane's data area (just
@@ -45,6 +69,7 @@ export class PaneControls {
     private hoverPaneId: string | null = null;
 
     constructor(private readonly plot: HTMLElement, private theme: VelaTheme, private readonly deps: PaneControlsDeps) {
+        ensureStyles();
         this.root = document.createElement('div');
         Object.assign(this.root.style, { position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '6' });
         this.plot.appendChild(this.root);
@@ -88,8 +113,8 @@ export class PaneControls {
                     display: 'flex',
                     gap: '2px',
                     padding: '2px',
-                    borderRadius: '6px',
-                    background: 'rgba(0,0,0,0.28)',
+                    borderRadius: 'var(--vela-radius-md)',
+                    background: CLUSTER_PILL,
                     pointerEvents: 'auto',
                 });
                 this.root.appendChild(cluster);
@@ -140,33 +165,17 @@ export class PaneControls {
         b.disabled = disabled;
         b.dataset.role = opts.role;
         const selected = opts.selected === true;
+        // Selected (e.g. the expand toggle of a collapsed pane) is an inverse chip, fully
+        // opaque — it must read on its own, without the cluster's dark pill behind it.
+        b.className = selected ? 'vela-pc-btn vela-pc-on' : 'vela-pc-btn';
         Object.assign(b.style, {
             cursor: disabled ? 'default' : 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             width: '20px',
             height: '20px',
-            padding: '0',
-            border: 'none',
-            borderRadius: '4px',
-            // Selected (e.g. the expand toggle of a collapsed pane): solid white chip with a
-            // black glyph, fully opaque — visible even without the cluster's dark pill behind it.
-            background: selected ? '#ffffff' : 'transparent',
-            color: selected ? '#000000' : this.theme.textColor,
+            color: selected ? 'var(--vela-selected-fg)' : this.theme.textColor,
             opacity: selected ? '1' : disabled ? '0.3' : '0.75',
-            lineHeight: '0',
         });
-        if (!disabled) {
-            if (selected) {
-                b.addEventListener('mouseenter', () => { b.style.opacity = '1'; b.style.background = '#ffffff'; });
-                b.addEventListener('mouseleave', () => { b.style.opacity = '1'; b.style.background = '#ffffff'; });
-            } else {
-                b.addEventListener('mouseenter', () => { b.style.opacity = '1'; b.style.background = 'rgba(255,255,255,0.12)'; });
-                b.addEventListener('mouseleave', () => { b.style.opacity = '0.75'; b.style.background = 'transparent'; });
-            }
-            b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-        }
+        if (!disabled) b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
         return b;
     }
 
@@ -193,7 +202,7 @@ export class PaneControls {
             // chip reads on its own. Its siblings stay laid out (visibility:hidden, not display:none)
             // so the expand chip keeps the exact slot it occupies once the full cluster reveals on hover.
             const soloExpand = p.collapsed && !hovered;
-            cluster.style.background = soloExpand ? 'transparent' : 'rgba(0,0,0,0.28)';
+            cluster.style.background = soloExpand ? 'transparent' : CLUSTER_PILL;
             for (const child of cluster.children) {
                 const btn = child as HTMLElement;
                 btn.style.display = 'inline-flex';

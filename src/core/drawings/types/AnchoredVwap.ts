@@ -3,6 +3,7 @@ import type { LineStyle } from '../../model/series';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { distToSegment, pointInPolygon, handleAt } from '../hittest';
+import { INFO } from '../../palette';
 
 /** One OHLCV bar the VWAP accumulates over (typical price × volume). */
 interface VwapBar {
@@ -42,18 +43,18 @@ export interface VwapStyle {
 }
 
 /** Fully-transparent variant of the band hue — bumping its opacity in the picker keeps the color. */
-const TRANSPARENT_BAND = '#5b9cf600';
+const TRANSPARENT_BAND = `${INFO}00`;
 
 function defaultVwapStyle(): VwapStyle {
     return {
-        midColor: '#5b9cf6', // VWAP midline (opaque)
+        midColor: INFO, // VWAP midline (opaque)
         midStyle: 'solid',
         multiplier: 1,
         upperColor: TRANSPARENT_BAND, // band edges hidden by default
         upperStyle: 'solid',
         lowerColor: TRANSPARENT_BAND,
         lowerStyle: 'solid',
-        bandFill: '#5b9cf633', // #5b9cf6 at ~20% opacity (80% transparent)
+        bandFill: `${INFO}33`, // band hue at ~20% opacity
     };
 }
 

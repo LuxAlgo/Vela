@@ -13,8 +13,9 @@ import {
     FixedRangeVolumeProfile,
     effectiveFillColor,
 } from '../../../core/drawings';
+import { icon, svg24, svg24Solid } from '../../../core/icons';
+import { applyChromeTokens } from '../../shared/theme-tokens';
 import { buildColorPicker } from './colorPicker';
-import { CHROME_BORDER_COLOR } from '../core/chartConfig';
 
 /** A `{ path: value }` patch emitted as the user edits a control. */
 export type SettingsPatch = Record<string, unknown>;
@@ -58,7 +59,13 @@ function ensureStyles(): void {
 .vela-dpop textarea::-webkit-scrollbar-thumb,.vela-dpop .vela-fiblevels::-webkit-scrollbar-thumb,.vela-dpop .vela-frvp::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
 .vela-dpop textarea::-webkit-scrollbar-track,.vela-dpop .vela-fiblevels::-webkit-scrollbar-track,.vela-dpop .vela-frvp::-webkit-scrollbar-track{background:transparent;}
 .vela-dpop .vela-fiblevels input[type=text],.vela-dpop .vela-fiblevels input[type=number],.vela-dpop .vela-frvp input[type=text],.vela-dpop .vela-frvp input[type=number],.vela-dpop .vela-frvp select{transition:border-color .12s ease,box-shadow .12s ease;}
-.vela-dpop .vela-fiblevels input[type=text]:focus,.vela-dpop .vela-fiblevels input[type=number]:focus,.vela-dpop .vela-frvp input[type=text]:focus,.vela-dpop .vela-frvp input[type=number]:focus,.vela-dpop .vela-frvp select:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}`;
+.vela-dpop .vela-fiblevels input[type=text]:focus,.vela-dpop .vela-fiblevels input[type=number]:focus,.vela-dpop .vela-frvp input[type=text]:focus,.vela-dpop .vela-frvp input[type=number]:focus,.vela-dpop .vela-frvp select:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
+.vela-dpop-btn{background:transparent;transition:background var(--vela-dur-fast) ease;}
+.vela-dpop-btn:hover{background:var(--vela-hover-strong);}
+.vela-dpop-btn[data-active='1']{background:var(--vela-active);}
+.vela-dpop-item{background:transparent;transition:background var(--vela-dur-fast) ease;}
+.vela-dpop-item:hover{background:var(--vela-hover-strong);}
+.vela-dpop-item[data-active='1']{background:var(--vela-active);}`;
     document.head.appendChild(s);
 }
 
@@ -106,10 +113,8 @@ export class DrawingSettingsPopup {
 
         const el = document.createElement('div');
         el.className = 'vela-dpop';
-        el.style.cssText = `position:absolute;z-index:22;background:${t.background};border:1px solid ${CHROME_BORDER_COLOR};border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.45);color:${t.textColor};font:12px ${t.fontFamily};display:flex;flex-direction:column;pointer-events:auto;overflow:hidden;`;
-        el.style.setProperty('--vela-focus', withAlpha(t.textColor, 0.5));
-        el.style.setProperty('--vela-focus-soft', withAlpha(t.textColor, 0.12));
-        el.style.setProperty('--vela-scroll', withAlpha(t.textColor, 0.3));
+        el.style.cssText = `position:absolute;z-index:22;background:${t.background};border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);color:${t.textColor};font:var(--vela-font-size-md) ${t.fontFamily};display:flex;flex-direction:column;pointer-events:auto;overflow:hidden;`;
+        applyChromeTokens(el, t);
         // Engaging any control in the bar dismisses an open color popover / dropdown menu (they live
         // outside `el` and stop their own pointerdowns, so this only fires for the OTHER controls —
         // and a dropdown trigger stops its own pointerdown so it can toggle its menu on click).
@@ -204,7 +209,7 @@ export class DrawingSettingsPopup {
         const toggles = drawing as unknown as { showPrice?: boolean; showDate?: boolean };
         if (paths.has('showPrice')) bar.appendChild(this.toggle('Show price', PRICE_DELTA_ICON, toggles.showPrice !== false, (v) => actions.patch({ showPrice: v })));
         if (paths.has('showDate')) bar.appendChild(this.toggle('Show date', DATE_DELTA_ICON, toggles.showDate !== false, (v) => actions.patch({ showDate: v })));
-        if (paths.has('text.color') && !paths.has('text.value')) bar.appendChild(this.colorButton('Text color', TYPE_ICON, drawing.text?.color || '#d1d4dc', (v) => actions.patch({ 'text.color': v })));
+        if (paths.has('text.color') && !paths.has('text.value')) bar.appendChild(this.colorButton('Text color', TYPE_ICON, drawing.text?.color || this.theme.textColor, (v) => actions.patch({ 'text.color': v })));
         if (paths.has('text.size') && !paths.has('text.value')) bar.appendChild(this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), drawing.text?.size ?? 'normal', (s) => labelSizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }));
         if (paths.has('text.value')) bar.appendChild(this.iconBtn('Text', TYPE_ICON, () => this.toggleTextPanel(drawing, actions)));
         const editableLevels = drawing.editableLevels();
@@ -222,7 +227,7 @@ export class DrawingSettingsPopup {
         if (editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.toggleLevelsPanel(drawing, actions)));
         bar.appendChild(this.toggle('Lock', LOCK_ICON, drawing.locked, (v) => actions.setLocked(v)));
         const del = this.iconBtn('Delete', TRASH_ICON, () => actions.remove());
-        del.style.color = '#f6465d';
+        del.style.color = 'var(--vela-danger)';
         bar.appendChild(del);
         bar.appendChild(this.kebabButton(actions));
 
@@ -281,12 +286,12 @@ export class DrawingSettingsPopup {
         const text = drawing.text;
         // Textarea on top; format controls sit in a footer row so they never cover typed text.
         const panel = document.createElement('div');
-        panel.style.cssText = `padding:6px;border-top:1px solid ${CHROME_BORDER_COLOR};display:flex;flex-direction:column;gap:4px;`;
+        panel.style.cssText = `padding:6px;border-top:1px solid var(--vela-border);display:flex;flex-direction:column;gap:4px;`;
         const input = document.createElement('textarea');
         input.placeholder = 'Label…';
         input.value = text?.value ?? '';
         input.rows = 1;
-        input.style.cssText = `display:block;width:100%;box-sizing:border-box;min-width:220px;min-height:46px;background:transparent;color:inherit;border:1px solid ${CHROME_BORDER_COLOR};border-radius:6px;padding:6px 9px;font:13px/18px ${t.fontFamily};resize:none;overflow-y:hidden;`;
+        input.style.cssText = `display:block;width:100%;box-sizing:border-box;min-width:220px;min-height:46px;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:6px;padding:6px 9px;font:13px/18px ${t.fontFamily};resize:none;overflow-y:hidden;`;
         input.addEventListener('input', () => {
             actions.patch({ 'text.value': input.value });
             autoGrow(input);
@@ -333,7 +338,7 @@ export class DrawingSettingsPopup {
         const s = drawing.frvp;
         const panel = document.createElement('div');
         panel.className = 'vela-frvp';
-        panel.style.cssText = `padding:8px 10px;border-top:1px solid ${CHROME_BORDER_COLOR};max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-width:280px;`;
+        panel.style.cssText = `padding:8px 10px;border-top:1px solid var(--vela-border);max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-width:280px;`;
 
         const numberRow = (label: string, path: keyof FrvpStyle, min: number, max: number, step: number): void => {
             const row = document.createElement('div');
@@ -347,7 +352,7 @@ export class DrawingSettingsPopup {
             input.max = String(max);
             input.step = String(step);
             input.value = String(s[path] as number);
-            input.style.cssText = `width:72px;flex:none;background:transparent;color:inherit;border:1px solid ${CHROME_BORDER_COLOR};border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
+            input.style.cssText = `width:72px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
             const commit = (): void => {
                 const n = parseFloat(input.value);
                 if (!Number.isFinite(n)) {
@@ -382,7 +387,7 @@ export class DrawingSettingsPopup {
             lbl.textContent = 'Anchor';
             lbl.style.cssText = 'flex:1;opacity:0.9;';
             const sel = document.createElement('select');
-            sel.style.cssText = `width:96px;flex:none;background:transparent;color:inherit;border:1px solid ${CHROME_BORDER_COLOR};border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};outline:none;cursor:pointer;`;
+            sel.style.cssText = `width:96px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};outline:none;cursor:pointer;`;
             for (const opt of [
                 { value: 'right', label: 'Right' },
                 { value: 'left', label: 'Left' },
@@ -408,7 +413,7 @@ export class DrawingSettingsPopup {
             const col = document.createElement('button');
             col.type = 'button';
             let cur = s[path] as string;
-            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid ${CHROME_BORDER_COLOR};border-radius:4px;cursor:pointer;background:${cur};padding:0;`;
+            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:4px;cursor:pointer;background:${cur};padding:0;`;
             col.addEventListener('pointerdown', (e) => e.stopPropagation());
             col.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -447,7 +452,7 @@ export class DrawingSettingsPopup {
             const col = document.createElement('button');
             col.type = 'button';
             let cur = s[colorPath] as string;
-            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid ${CHROME_BORDER_COLOR};border-radius:4px;cursor:pointer;background:${cur};padding:0;`;
+            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:4px;cursor:pointer;background:${cur};padding:0;`;
             col.addEventListener('pointerdown', (e) => e.stopPropagation());
             col.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -497,12 +502,12 @@ export class DrawingSettingsPopup {
         const isMach = drawing instanceof MachFigure;
         const panel = document.createElement('div');
         panel.className = 'vela-fiblevels';
-        panel.style.cssText = `padding:6px;border-top:1px solid ${CHROME_BORDER_COLOR};max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;min-width:${isMach ? 200 : 248}px;`;
+        panel.style.cssText = `padding:6px;border-top:1px solid var(--vela-border);max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;min-width:${isMach ? 200 : 248}px;`;
         // Mach: show/hide all on-chart ratio labels from inside this panel (not the toolbar).
         if (isMach) {
             const mach = drawing as MachFigure;
             const showRow = document.createElement('label');
-            showRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 2px 8px;margin-bottom:2px;border-bottom:1px solid ' + CHROME_BORDER_COLOR + ';cursor:pointer;user-select:none;';
+            showRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 2px 8px;margin-bottom:2px;border-bottom:1px solid var(--vela-border);cursor:pointer;user-select:none;';
             const showChk = document.createElement('input');
             showChk.type = 'checkbox';
             showChk.checked = mach.showRatios !== false;
@@ -524,7 +529,7 @@ export class DrawingSettingsPopup {
             chk.addEventListener('change', () => actions.patch({ [`levels.${i}.enabled`]: chk.checked }));
             const col = document.createElement('button');
             col.type = 'button';
-            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid ${CHROME_BORDER_COLOR};border-radius:4px;cursor:pointer;background:${lv.color};padding:0;`;
+            col.style.cssText = `width:22px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:4px;cursor:pointer;background:${lv.color};padding:0;`;
             let curC = lv.color;
             col.addEventListener('pointerdown', (e) => e.stopPropagation());
             col.addEventListener('click', (e) => {
@@ -547,8 +552,8 @@ export class DrawingSettingsPopup {
             ratio.title = 'Ratio';
             // Mach ratios need a wider field (fib values like 11.09 / typed edits); Fib rows keep a compact field beside the label.
             ratio.style.cssText = isMach
-                ? `width:88px;flex:1;background:transparent;color:inherit;border:1px solid ${CHROME_BORDER_COLOR};border-radius:5px;padding:5px 8px;font:13px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`
-                : `width:52px;flex:none;background:transparent;color:inherit;border:1px solid ${CHROME_BORDER_COLOR};border-radius:5px;padding:3px 4px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
+                ? `width:88px;flex:1;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:5px 8px;font:13px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`
+                : `width:52px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:3px 4px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
             const commitRatio = (): void => {
                 const n = parseFloat(ratio.value);
                 if (!Number.isFinite(n) || n <= 0) {
@@ -574,7 +579,7 @@ export class DrawingSettingsPopup {
                 label.type = 'text';
                 label.placeholder = 'label…';
                 label.value = lv.label ?? '';
-                label.style.cssText = `flex:1;min-width:60px;background:transparent;color:inherit;border:1px solid ${CHROME_BORDER_COLOR};border-radius:5px;padding:3px 7px;font:12px ${t.fontFamily};outline:none;`;
+                label.style.cssText = `flex:1;min-width:60px;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:3px 7px;font:12px ${t.fontFamily};outline:none;`;
                 label.addEventListener('input', () => actions.patch({ [`levels.${i}.label`]: label.value }));
                 label.addEventListener('keydown', (e) => e.stopPropagation()); // typing must not reach the chart
                 row.appendChild(label);
@@ -624,10 +629,8 @@ export class DrawingSettingsPopup {
         const b = document.createElement('button');
         b.type = 'button';
         b.dataset.tip = tip; // the custom tip strip reads this (no native `title` — that tooltip is noisy)
-        const t = this.theme;
-        b.style.cssText = `width:${BTN}px;height:${BTN}px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:transparent;color:inherit;border:none;border-radius:5px;padding:0;`;
-        b.addEventListener('mouseenter', () => (b.style.background = withAlpha(t.textColor, 0.1)));
-        b.addEventListener('mouseleave', () => (b.style.background = b.dataset.active === '1' ? withAlpha(t.textColor, 0.16) : 'transparent'));
+        b.className = 'vela-dpop-btn';
+        b.style.cssText = `width:${BTN}px;height:${BTN}px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;border:none;border-radius:5px;padding:0;`;
         return b;
     }
 
@@ -643,7 +646,7 @@ export class DrawingSettingsPopup {
     private dragHandle(): HTMLButtonElement {
         const b = document.createElement('button');
         b.type = 'button';
-        b.style.cssText = `width:${BTN}px;height:${BTN}px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;padding:0;cursor:grab;color:${withAlpha(this.theme.textColor, 0.32)};`;
+        b.style.cssText = `width:${BTN}px;height:${BTN}px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;padding:0;cursor:grab;color:var(--vela-fg-faint);`;
         b.innerHTML = sized(GRIP_ICON);
         b.addEventListener('pointerdown', (e) => {
             const el = this.el;
@@ -707,12 +710,14 @@ export class DrawingSettingsPopup {
         const t = this.theme;
         const menu = document.createElement('div');
         menu.className = 'vela-dpop';
-        menu.style.cssText = `position:absolute;z-index:26;background:${t.background};border:1px solid ${CHROME_BORDER_COLOR};border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.5);padding:4px;pointer-events:auto;display:flex;flex-direction:column;gap:1px;color:${t.textColor};font:12px ${t.fontFamily};`;
+        menu.style.cssText = `position:absolute;z-index:26;background:${t.background};border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:4px;pointer-events:auto;display:flex;flex-direction:column;gap:1px;color:${t.textColor};font:var(--vela-font-size-md) ${t.fontFamily};`;
+        applyChromeTokens(menu, t);
         menu.addEventListener('pointerdown', (e) => e.stopPropagation()); // keep clicks from dismissing the popup
         for (const row of rows) {
             const item = document.createElement('button');
             item.type = 'button';
-            item.style.cssText = `display:flex;align-items:center;gap:9px;min-width:150px;padding:6px 9px;border:none;border-radius:5px;background:transparent;color:inherit;cursor:pointer;text-align:left;font:inherit;`;
+            item.className = 'vela-dpop-item';
+            item.style.cssText = 'display:flex;align-items:center;gap:9px;min-width:150px;padding:6px 9px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;';
             const ic = document.createElement('span');
             ic.style.cssText = 'display:flex;flex:none;width:20px;justify-content:center;';
             ic.innerHTML = sized(row.icon, 18);
@@ -720,8 +725,6 @@ export class DrawingSettingsPopup {
             tx.textContent = row.label;
             tx.style.cssText = 'flex:1;';
             item.append(ic, tx);
-            item.addEventListener('mouseenter', () => (item.style.background = withAlpha(t.textColor, 0.1)));
-            item.addEventListener('mouseleave', () => (item.style.background = 'transparent'));
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.closeMenu();
@@ -758,7 +761,7 @@ export class DrawingSettingsPopup {
         const t = this.theme;
         if (!this.tipEl) {
             const tp = document.createElement('div');
-            tp.style.cssText = `position:absolute;z-index:27;pointer-events:none;white-space:nowrap;background:${t.textColor};color:${t.background};padding:3px 7px;border-radius:5px;font:11px ${t.fontFamily};box-shadow:0 3px 10px rgba(0,0,0,0.35);`;
+            tp.style.cssText = `position:absolute;z-index:27;pointer-events:none;white-space:nowrap;background:${t.textColor};color:${t.background};padding:3px 7px;border-radius:5px;font:var(--vela-font-size-sm) ${t.fontFamily};box-shadow:var(--vela-shadow);`;
             this.host.appendChild(tp);
             this.tipEl = tp;
         }
@@ -786,9 +789,9 @@ export class DrawingSettingsPopup {
     private toggle(tip: string, icon: string, active: boolean, onChange: (v: boolean) => void): HTMLButtonElement {
         const b = this.base(tip);
         b.innerHTML = sized(icon);
+        // `data-active` alone drives the fill — the stylesheet owns idle/hover/active.
         const set = (on: boolean): void => {
             b.dataset.active = on ? '1' : '0';
-            b.style.background = on ? withAlpha(this.theme.textColor, 0.16) : 'transparent';
         };
         set(active);
         let on = active;
@@ -868,13 +871,16 @@ export class DrawingSettingsPopup {
         const t = this.theme;
         const menu = document.createElement('div');
         menu.className = 'vela-dpop';
-        menu.style.cssText = `position:absolute;z-index:26;background:${t.background};border:1px solid ${CHROME_BORDER_COLOR};border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.5);padding:4px;pointer-events:auto;display:flex;flex-direction:column;gap:1px;color:${t.textColor};font:12px ${t.fontFamily};`;
+        menu.style.cssText = `position:absolute;z-index:26;background:${t.background};border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:4px;pointer-events:auto;display:flex;flex-direction:column;gap:1px;color:${t.textColor};font:var(--vela-font-size-md) ${t.fontFamily};`;
+        applyChromeTokens(menu, t);
         menu.addEventListener('pointerdown', (e) => e.stopPropagation()); // keep clicks from dismissing the popup
         for (const v of values) {
             const active = v === current;
             const item = document.createElement('button');
             item.type = 'button';
-            item.style.cssText = `display:flex;align-items:center;gap:8px;${label ? 'min-width:118px;' : ''}padding:5px 8px;border:none;border-radius:5px;background:${active ? withAlpha(t.textColor, 0.16) : 'transparent'};color:inherit;cursor:pointer;text-align:left;font:inherit;`;
+            item.className = 'vela-dpop-item';
+            item.dataset.active = active ? '1' : '0';
+            item.style.cssText = `display:flex;align-items:center;gap:8px;${label ? 'min-width:118px;' : ''}padding:5px 8px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;`;
             const ic = document.createElement('span');
             ic.style.cssText = 'display:flex;flex:none;width:22px;justify-content:center;';
             ic.innerHTML = sized(render(v), 18);
@@ -885,8 +891,6 @@ export class DrawingSettingsPopup {
                 tx.style.cssText = 'flex:1;font-variant-numeric:tabular-nums;';
                 item.appendChild(tx);
             }
-            item.addEventListener('mouseenter', () => (item.style.background = withAlpha(t.textColor, active ? 0.16 : 0.1)));
-            item.addEventListener('mouseleave', () => (item.style.background = active ? withAlpha(t.textColor, 0.16) : 'transparent'));
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.closeMenu();
@@ -927,10 +931,8 @@ export class DrawingSettingsPopup {
         const b = document.createElement('button');
         b.type = 'button';
         b.dataset.tip = tip;
-        b.style.cssText = `position:relative;width:${BTN}px;height:${BTN}px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;border-radius:5px;border:none;background:transparent;color:inherit;padding:0;`;
-        const t = this.theme;
-        b.addEventListener('mouseenter', () => (b.style.background = withAlpha(t.textColor, 0.1)));
-        b.addEventListener('mouseleave', () => (b.style.background = 'transparent'));
+        b.className = 'vela-dpop-btn';
+        b.style.cssText = `position:relative;width:${BTN}px;height:${BTN}px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;border-radius:5px;border:none;color:inherit;padding:0;`;
         const ic = document.createElement('span');
         ic.style.cssText = 'display:flex;';
         ic.innerHTML = sized(icon, iconSize);
@@ -967,7 +969,8 @@ export class DrawingSettingsPopup {
         this.closeMenu();
         const t = this.theme;
         const pop = document.createElement('div');
-        pop.style.cssText = `position:absolute;z-index:25;background:${t.background};border:1px solid ${CHROME_BORDER_COLOR};border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.5);padding:10px;pointer-events:auto;`;
+        pop.style.cssText = `position:absolute;z-index:25;background:${t.background};border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:10px;pointer-events:auto;`;
+        applyChromeTokens(pop, t);
         pop.addEventListener('pointerdown', (e) => e.stopPropagation()); // keep clicks from dismissing the popup
         pop.appendChild(buildColorPicker(color, t, onChange));
         this.host.appendChild(pop);
@@ -998,49 +1001,41 @@ export class DrawingSettingsPopup {
 
     private divider(): HTMLElement {
         const d = document.createElement('div');
-        d.style.cssText = `width:1px;height:18px;margin:0 3px;background:${CHROME_BORDER_COLOR};`;
+        d.style.cssText = 'width:1px;height:18px;margin:0 3px;background:var(--vela-border);';
         return d;
     }
 }
 
-// ── inline SVG icons (Lucide-inspired: 24px grid, 1.9 stroke, round caps/joins) ──
-const SW = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
-/** Paintbrush — line/stroke color. */
-const BRUSH_ICON = `<svg viewBox="0 0 24 24" ${SW}><path d="M9.5 12 17 4.5a2.12 2.12 0 0 1 3 3L12.5 15"/><path d="M7 14a3 3 0 0 0-3 3c0 1.3-1.2 1.5-1.5 2 .8.9 2 1.5 3.5 1.5a3.5 3.5 0 0 0 3.5-3.5 3 3 0 0 0-2.5-3Z"/></svg>`;
-/** Paint bucket — fill color. */
-const BUCKET_ICON = `<svg viewBox="0 0 24 24" ${SW}><path d="m18.5 11.5-7-7L4 12a1.8 1.8 0 0 0 0 2.5l5 5a1.8 1.8 0 0 0 2.5 0Z"/><path d="m5 5 4 4"/><path d="M3.5 13.5h13"/><path d="M21 17.5c0 1.1-.9 2-2 2s-2-.9-2-2c0-1 1.2-1.7 2-3 .8 1.3 2 2 2 3Z"/></svg>`;
-/** Type / T — text color. */
-const TYPE_ICON = `<svg viewBox="0 0 24 24" ${SW}><path d="M5 6V4.5h14V6"/><path d="M12 4.5v15"/><path d="M9.5 19.5h5"/></svg>`;
-const PRICE_DELTA_ICON = `<svg viewBox="0 0 24 24" ${SW}><path d="M12 4v16"/><path d="M8 8l4-4 4 4"/><path d="M8 16l4 4 4-4"/></svg>`;
-const DATE_DELTA_ICON = `<svg viewBox="0 0 24 24" ${SW}><path d="M4 12h16"/><path d="M8 8l-4 4 4 4"/><path d="M16 8l4 4-4 4"/></svg>`;
-const LOCK_ICON = `<svg viewBox="0 0 24 24" ${SW}><rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>`;
-const FRONT_ICON = `<svg viewBox="0 0 24 24" ${SW}><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/><path d="M4.5 10.5V6a1.5 1.5 0 0 1 1.5-1.5h4.5"/><path d="M19.5 13.5V18a1.5 1.5 0 0 1-1.5 1.5h-4.5"/></svg>`;
-const BACK_ICON = `<svg viewBox="0 0 24 24" ${SW}><rect x="8.5" y="8.5" width="7" height="7" rx="1.5" fill="currentColor" stroke="none" opacity="0.35"/><path d="M4.5 10.5V6a1.5 1.5 0 0 1 1.5-1.5h4.5"/><path d="M19.5 13.5V18a1.5 1.5 0 0 1-1.5 1.5h-4.5"/><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg>`;
-const TRASH_ICON = `<svg viewBox="0 0 24 24" ${SW}><path d="M4 6.5h16"/><path d="M18 6.5V19a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6.5"/><path d="M9 6.5V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5"/><path d="M10 11v6M14 11v6"/></svg>`;
-const BOLD_ICON = `<svg viewBox="0 0 24 24" ${SW} stroke-width="2.4"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7Z"/><path d="M7 12h7a3.5 3.5 0 0 1 0 7H7Z"/></svg>`;
-const ITALIC_ICON = `<svg viewBox="0 0 24 24" ${SW} stroke-width="2.2"><path d="M15 5h-5M14 19H9M14.5 5 10 19"/></svg>`;
-/** Grip dots — the drag handle for moving the toolbar. */
-const GRIP_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`;
-/** Vertical ellipsis — the kebab overflow trigger (z-order + reset). */
-const KEBAB_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>`;
-/** Drawing tile + restore arc — reset the drawing's settings to defaults. */
-const RESET_ICON = `<svg viewBox="0 0 24 24" ${SW}><rect x="9" y="9" width="6" height="6" rx="1.2"/><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
-/** Gear / cog — opens a tool's custom panel (e.g. fib levels). */
-const GEAR_ICON = `<svg viewBox="0 0 24 24" ${SW}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
-/** Small down chevron — the affordance marking a control as a dropdown. */
-const CHEVRON_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`;
-/** R² glyph — toggles the regression channel's goodness-of-fit readout. */
-const R2_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><text x="2.5" y="17.5" font-size="14" font-family="serif">R²</text></svg>`;
-/** Two band edges around a midline — the VWAP band σ-multiplier control glyph. */
-const BANDS_ICON = `<svg viewBox="0 0 24 24" ${SW}><path d="M3 6h18"/><path d="M3 18h18"/><path d="M3 12h18" stroke-dasharray="3 3"/></svg>`;
-const DEDEKIND_ICON = `<svg viewBox="0 0 24 24" ${SW}><path d="M2 20h20"/><path d="M4 20a8 8 0 0 1 16 0"/><path d="M8 20a4 4 0 0 1 8 0"/><path d="M12 4v16"/></svg>`;
-const SONIC_ICON = `<svg viewBox="0 0 24 24" ${SW}><circle cx="15" cy="12" r="4"/><circle cx="12" cy="12" r="2.5"/><path d="M8 5v14"/></svg>`;
-const SUPERSONIC_ICON = `<svg viewBox="0 0 24 24" ${SW}><circle cx="16" cy="12" r="3.5"/><path d="M6 12 15 6M6 12 15 18"/></svg>`;
+// The toolbar's glyphs all come from the shared registry; only the PARAMETERIZED ones below
+// (a line at a given width, a stamp at a given size) are generated here, since they encode a
+// live style value rather than a fixed concept.
+const BRUSH_ICON = icon('brush');
+const BUCKET_ICON = icon('bucket');
+const TYPE_ICON = icon('type');
+const PRICE_DELTA_ICON = icon('price-delta');
+const DATE_DELTA_ICON = icon('date-delta');
+const LOCK_ICON = icon('lock');
+const FRONT_ICON = icon('bring-front');
+const BACK_ICON = icon('send-back');
+const TRASH_ICON = icon('trash');
+const BOLD_ICON = icon('bold');
+const ITALIC_ICON = icon('italic');
+const GRIP_ICON = icon('grip');
+const KEBAB_ICON = icon('kebab');
+const RESET_ICON = icon('reset');
+const GEAR_ICON = icon('gear');
+const CHEVRON_ICON = icon('chevron-down');
+const R2_ICON = icon('r-squared');
+const BANDS_ICON = icon('bands');
+const DEDEKIND_ICON = icon('dedekind');
+const SONIC_ICON = icon('sonic');
+const SUPERSONIC_ICON = icon('supersonic');
 
-/** A line glyph at a given width + style (for the width/style dropdown glyphs). */
+/** A line glyph at a given width + style (for the width/style dropdown glyphs). The stroke IS
+ *  the value being previewed, so it overrides the tier's weight. */
 function lineIcon(width: number | string, style: string | number): string {
     const dash = style === 'dashed' ? '5,3' : style === 'dotted' ? '1.5,3' : '';
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><line x1="3.5" y1="12" x2="20.5" y2="12" stroke-width="${Number(width) || 2}" stroke-dasharray="${dash}"/></svg>`;
+    return svg24(`<line x1="3.5" y1="12" x2="20.5" y2="12" stroke-width="${Number(width) || 2}" stroke-dasharray="${dash}"/>`);
 }
 
 const MAX_TEXT_LINES = 4;
@@ -1052,21 +1047,24 @@ function autoGrow(ta: HTMLTextAreaElement): void {
     ta.style.overflowY = ta.scrollHeight > max ? 'auto' : 'hidden';
 }
 
+/** A centered text glyph on the tier-B grid — the base of every generated preview below. */
+function textGlyph(text: string, fontSize: number, y = 17, extra = ''): string {
+    return svg24Solid(`<text x="12" y="${y}" font-size="${fontSize}" text-anchor="middle"${extra ? ' ' + extra : ''}>${text}</text>`);
+}
+
 /** The current glyph rendered into the icon-stamp dropdown trigger. */
 function glyphIcon(glyph: string | number): string {
-    return `<svg viewBox="0 0 24 24" fill="currentColor"><text x="12" y="17" font-size="15" text-anchor="middle">${glyph}</text></svg>`;
+    return textGlyph(String(glyph), 15);
 }
 
 /** A dot that grows with the chosen stamp size — the icon-size dropdown glyph. */
 function stampSizeIcon(size: string | number): string {
-    const fs = (SIZE_PX[String(size)] ?? 13) + 4;
-    return `<svg viewBox="0 0 24 24" fill="currentColor"><text x="12" y="17" font-size="${fs}" text-anchor="middle">●</text></svg>`;
+    return textGlyph('●', (SIZE_PX[String(size)] ?? 13) + 4);
 }
 
 /** A letter glyph (S/M/L/H) for the text-size dropdown glyph. */
 function sizeIcon(size: string | number): string {
-    const ch = String(size).charAt(0).toUpperCase();
-    return `<svg viewBox="0 0 24 24" fill="currentColor"><text x="12" y="17" font-size="15" text-anchor="middle">${ch}</text></svg>`;
+    return textGlyph(String(size).charAt(0).toUpperCase(), 15);
 }
 
 /** The font px each named size renders the icon glyph at — so the button visibly grows. */
@@ -1074,14 +1072,12 @@ const SIZE_PX: Record<string, number> = { small: 10, normal: 13, large: 16, huge
 
 /** A "12" glyph that grows with the chosen size — the fib level-numbers size dropdown glyph. */
 function numbersSizeIcon(size: string | number): string {
-    const fs = (SIZE_PX[String(size)] ?? 13) - 1;
-    return `<svg viewBox="0 0 24 24" fill="currentColor"><text x="12" y="16.5" font-size="${fs}" text-anchor="middle" font-weight="600">12</text></svg>`;
+    return textGlyph('12', (SIZE_PX[String(size)] ?? 13) - 1, 16.5, 'font-weight="600"');
 }
 
 /** A "T" glyph that grows with the chosen size — the fib level-labels size dropdown glyph. */
 function labelSizeIcon(size: string | number): string {
-    const fs = (SIZE_PX[String(size)] ?? 13) + 2;
-    return `<svg viewBox="0 0 24 24" fill="currentColor"><text x="12" y="17" font-size="${fs}" text-anchor="middle">T</text></svg>`;
+    return textGlyph('T', (SIZE_PX[String(size)] ?? 13) + 2);
 }
 
 function capitalize(s: string): string {
@@ -1101,14 +1097,5 @@ function styleLabel(v: string | number): string {
 /** Make an inline SVG fill the icon slot (default {@link ICON}px). */
 function sized(svg: string, size: number = ICON): string {
     return svg.replace('<svg ', `<svg width="${size}" height="${size}" `);
-}
-
-function withAlpha(color: string, alpha: number): string {
-    const m = /^#([0-9a-f]{6})$/i.exec(color);
-    if (m) {
-        const n = parseInt(m[1]!, 16);
-        return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
-    }
-    return `rgba(148,163,184,${alpha})`;
 }
 
