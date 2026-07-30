@@ -273,6 +273,7 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `setTool(type \| null)` | yes | Arm a tool for the next clicks; `null` returns to select/idle. |
 | `getTool()` | no | The armed tool (`null` = select/idle). Follow changes on `drawing:tool`. |
 | `setSnapMode(mode)` · `getSnapMode()` | yes / no | The magnet: `'off' \| 'weak' \| 'strong'`. Changes land on `drawing:snap`. |
+| `setStayMode(on)` · `getStayMode()` | yes / no | Stay in drawing mode: keep the tool armed after each placement. Changes land on `drawing:stay`. |
 | `setMode(mode)` · `getMode()` | yes / no | Renderer-local mode: `'measure' \| 'eraser' \| null`. Mutually exclusive with armed tools (the renderer enforces it); changes land on `drawing:mode`. |
 | `showToolbar(visible?)` | yes | Show/hide the on-chart toolbar. |
 | `setToolbar(option)` | yes | Reconfigure the toolbar groups/tools live. |
@@ -292,7 +293,7 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 
 Drawing lifecycle is also surfaced as chart events (`drawing:created` / `drawing:edited` /
 `drawing:removed` / `drawing:selected` / `drawing:settings`), and the tool/mode state as
-`drawing:tool` / `drawing:snap` / `drawing:mode` — the seam an external toolbar mirrors. See
+`drawing:tool` / `drawing:snap` / `drawing:stay` / `drawing:mode` — the seam an external toolbar mirrors. See
 [Drawing tools](./drawing-tools.md) for the tool catalogue, toolbar UX, and keyboard shortcuts.
 
 ---

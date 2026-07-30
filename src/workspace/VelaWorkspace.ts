@@ -176,11 +176,12 @@ export class VelaWorkspace {
     private readonly toast: Toast;
     private readonly glider = new Glider(() => (this.activeId ? (this.cellsById.get(this.activeId)?.chart ?? null) : null));
     private readonly drawToolbar: DrawingToolbar | null;
-    /** The GLOBAL armed tool/magnet (workspace policy) — re-applied to whichever cell
+    /** The GLOBAL armed tool/magnet/stay (workspace policy) — re-applied to whichever cell
      *  takes the focus; only the ACTIVE cell ever holds a non-null tool. Measure/eraser
      *  stay transient and per-cell: they exit when the focus leaves. */
     private globalTool: DrawingTypeKey | null = null;
     private globalSnap: SnapMode = 'off';
+    private globalStay = false;
     /** Favorite drawing tools — a WORKSPACE preference (one star set, every cell). */
     private favs: string[] = [];
     /** Live sync configuration (mutable copy of the option). */
@@ -357,6 +358,10 @@ export class VelaWorkspace {
                   },
                   // No refocus on a star: the flyout stays open for more browsing.
                   (type, on) => this.active.chart.drawings.setFavorite(type, on),
+                  (on) => {
+                      this.active.chart.drawings.setStayMode(on);
+                      this.refocusActive();
+                  },
                   { dock: 'static' },
               )
             : null;
@@ -667,14 +672,16 @@ export class VelaWorkspace {
         this.bottombar?.setActiveRange(cell.activeRangeId);
         this.indicatorPicker.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
-        // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet to
-        // the cell taking focus, and reflect its (fresh) state on the bar.
+        // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet + stay
+        // to the cell taking focus, and reflect its (fresh) state on the bar.
         const d = cell.chart.drawings;
         if (d.getTool() !== this.globalTool) d.setTool(this.globalTool);
         if (d.getSnapMode() !== this.globalSnap) d.setSnapMode(this.globalSnap);
+        if (d.getStayMode() !== this.globalStay) d.setStayMode(this.globalStay);
         if (this.drawToolbar) {
             this.drawToolbar.setActiveTool(this.globalTool);
             this.drawToolbar.setMagnetMode(this.globalSnap);
+            this.drawToolbar.setStayMode(this.globalStay);
             const mode = d.getMode();
             this.drawToolbar.setMeasureActive(mode === 'measure');
             this.drawToolbar.setEraserActive(mode === 'eraser');
@@ -836,6 +843,11 @@ export class VelaWorkspace {
             if (cell.id !== this.activeId) return;
             this.globalSnap = mode;
             this.drawToolbar?.setMagnetMode(mode);
+        });
+        chart.on('drawing:stay', ({ on }) => {
+            if (cell.id !== this.activeId) return;
+            this.globalStay = on;
+            this.drawToolbar?.setStayMode(on);
         });
         chart.on('drawing:mode', ({ mode }) => {
             if (cell.id !== this.activeId) return;
