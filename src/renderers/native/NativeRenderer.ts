@@ -755,8 +755,8 @@ export class NativeRenderer implements IChartRenderer {
         return btn;
     }
 
-    /** Port surface: hosts (topbar buttons) open the same dialog as the in-chart gear —
-     *  created on demand, independent of the gear feature being enabled. */
+    /** Port surface: hosts (bottom-bar / chrome buttons) open the same dialog as the
+     *  in-chart gear — created on demand, independent of the gear feature being enabled. */
     openSettingsDialog(): void {
         if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
         this.toggleSettingsDialog();

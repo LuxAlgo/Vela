@@ -3,6 +3,8 @@
 // owns the rebuild, so the bar only reports the chosen preset upward.
 import type { VisibleRangePreset } from '../core/visible-range';
 import { Menu } from '../ui/components/menu';
+import { Tooltip } from '../ui/components/tooltip';
+import { iconEl } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import { TIMEZONES, tzMenuLabel, tzButtonLabel } from './timezones';
 
@@ -92,12 +94,27 @@ const CSS = `
     opacity: 0.55;
 }
 .vela-bb-session-btn.is-active { color: var(--vela-fg); background: var(--vela-surface-elev); opacity: 0.8; }
+.vela-bb-settings {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    margin-left: 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--vela-fg-muted);
+    font-size: 14px;
+}
+.vela-bb-settings:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
 `;
 
 export interface BottombarOptions {
     timezone: string;
     onRange: (preset: RangePreset) => void;
     onTimezone: (zone: string) => void;
+    onSettingsClick?: () => void;
 }
 
 export class Bottombar {
@@ -105,6 +122,7 @@ export class Bottombar {
     private readonly clockEl: HTMLElement;
     private readonly tzButton: HTMLElement;
     private readonly tzMenu: Menu;
+    private readonly settingsTip: Tooltip | null = null;
     private readonly rangeButtons = new Map<string, HTMLButtonElement>();
     private timezone: string;
     private timer: ReturnType<typeof setInterval> | null = null;
@@ -146,7 +164,13 @@ export class Bottombar {
             b.disabled = true;
             session.appendChild(b);
         }
-        this.el.append(spacer, this.clockEl, this.tzButton, session);
+        const settingsBtn = doc.createElement('button');
+        settingsBtn.className = 'vela-bb-settings';
+        settingsBtn.appendChild(iconEl('gear', doc));
+        settingsBtn.setAttribute('aria-label', 'Chart settings');
+        if (opts.onSettingsClick) settingsBtn.addEventListener('click', opts.onSettingsClick);
+        this.settingsTip = new Tooltip(settingsBtn, { content: 'Chart settings', triggerId: 'vela-bb-settings', host });
+        this.el.append(spacer, this.clockEl, this.tzButton, session, settingsBtn);
         host.appendChild(this.el);
 
         this.tzMenu = new Menu({
@@ -183,6 +207,7 @@ export class Bottombar {
     destroy(): void {
         if (this.timer !== null) clearInterval(this.timer);
         this.tzMenu.destroy();
+        this.settingsTip?.destroy();
         this.el.remove();
     }
 

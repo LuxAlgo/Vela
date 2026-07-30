@@ -273,7 +273,6 @@ export class VelaWorkspace {
             onIndicatorsClick: () => this.indicatorPicker.open(),
             onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.active.downloadScreenshot(),
-            onSettingsClick: () => this.active.chart.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: '60',
@@ -372,6 +371,7 @@ export class VelaWorkspace {
                           this.bottombar?.setActiveRange(preset.id);
                       },
                       onTimezone: (zone) => this.setTimezone(zone),
+                      onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
                 : null;
 

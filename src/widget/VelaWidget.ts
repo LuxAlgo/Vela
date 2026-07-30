@@ -239,7 +239,6 @@ export class VelaWidget {
             onIndicatorsClick: () => this.indicatorPicker.open(),
             onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.downloadScreenshot(),
-            onSettingsClick: () => this.inner?.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: this.timeframe,
@@ -284,6 +283,7 @@ export class VelaWidget {
                       timezone: this.timezone,
                       onRange: (preset) => this.applyRange(preset),
                       onTimezone: (zone) => this.setTimezone(zone),
+                      onSettingsClick: () => this.inner?.renderer.openSettings(),
                   })
                 : null;
 

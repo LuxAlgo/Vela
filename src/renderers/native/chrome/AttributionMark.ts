@@ -3,37 +3,68 @@
 // chart. Per the NOTICE file, products may disable it (`renderer.set('attribution', false)`)
 // ONLY if they display an equivalent visible attribution elsewhere in their UI.
 
+import { LUXALGO_SYMBOL_URL, LUXALGO_WORDMARK_URL } from './luxalgo-logos';
+
 /** Where the mark links — the canonical project page. */
 export const ATTRIBUTION_URL = 'https://luxalgo.com/vela';
 
 const STYLE_ID = 'vela-attribution-styles';
-
-function ensureStyles(doc: Document): void {
-    if (doc.getElementById(STYLE_ID)) return;
-    const s = doc.createElement('style');
-    s.id = STYLE_ID;
-    s.textContent = `
-.vela-attribution { text-decoration: none; }
-.vela-attribution .vela-attr-text {
+const CSS = `
+.vela-attribution {
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    /* Gutter, wordmark size and offset below are the brand lockup's own ratios,
+       measured off the official horizontal logo: gutter 0.157, wordmark height
+       0.966, and wordmark 0.109 LOWER than the symbol — box-centering the two
+       reads wrong because the symbol's ink hangs low and the wordmark descends. */
+    gap: 4px;
+}
+.vela-attribution .vela-attr-symbol {
+    height: 28px;
+    width: auto;
+    flex: none;
+    display: block;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45));
+}
+.vela-attribution .vela-attr-wordmark {
     max-width: 0;
     overflow: hidden;
-    white-space: nowrap;
-    font: 700 15px -apple-system, Segoe UI, sans-serif;
-    letter-spacing: 0.4px;
     opacity: 0;
-    transform: translateX(-6px);
+    display: flex;
+    align-items: center;
+    /* Offset here, not on the image: the clip box must not crop the descender. */
+    position: relative;
+    top: 3px;
+    transform: translateX(-8px);
     transition: max-width 0.3s ease, opacity 0.25s ease, transform 0.3s ease;
+    flex: none;
 }
-.vela-attribution:hover .vela-attr-text {
-    max-width: 120px;
+.vela-attribution .vela-attr-wordmark img {
+    height: 27px;
+    width: auto;
+    display: block;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45));
+}
+.vela-attribution:hover .vela-attr-wordmark {
+    max-width: 240px;
     opacity: 1;
-    transform: translateX(4px);
+    transform: translateX(0);
 }`;
-    doc.head.appendChild(s);
+
+function ensureStyles(doc: Document): void {
+    let s = doc.getElementById(STYLE_ID) as HTMLStyleElement | null;
+    if (!s) {
+        s = doc.createElement('style');
+        s.id = STYLE_ID;
+        doc.head.appendChild(s);
+    }
+    s.textContent = CSS;
 }
 
-/** Build the mark element (an anchor; the caller owns absolute positioning). */
-export function createAttributionMark(doc: Document, color: string): HTMLAnchorElement {
+/** Build the mark element (an anchor; the caller owns absolute positioning).
+ *  `color` is retained for call-site compatibility; the brand PNGs are white. */
+export function createAttributionMark(doc: Document, _color: string): HTMLAnchorElement {
     ensureStyles(doc);
     const a = doc.createElement('a');
     a.className = 'vela-attribution';
@@ -45,17 +76,22 @@ export function createAttributionMark(doc: Document, color: string): HTMLAnchorE
     Object.assign(a.style, {
         position: 'absolute',
         zIndex: '6',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '4px',
-        color,
         pointerEvents: 'auto',
         cursor: 'pointer',
     });
-    a.innerHTML =
-        '<svg viewBox="0 0 45 40" width="26" height="23" style="flex:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45))" aria-hidden="true">' +
-        '<g fill="currentColor"><path d="m40.25 38 4.58-7.998L28.802 2l-16.03 28 9.16-.001 6.87-12z"/>' +
-        '<path d="M34.525 32.002 9.33 31.997 27.655 0h-9.158L.18 31.993 4.759 40h34.347z"/></g></svg>' +
-        '<span class="vela-attr-text">Vela</span>';
+    const symbol = doc.createElement('img');
+    symbol.className = 'vela-attr-symbol';
+    symbol.src = LUXALGO_SYMBOL_URL;
+    symbol.alt = '';
+    symbol.setAttribute('aria-hidden', 'true');
+    symbol.draggable = false;
+    const wordmark = doc.createElement('span');
+    wordmark.className = 'vela-attr-wordmark';
+    const wordmarkImg = doc.createElement('img');
+    wordmarkImg.src = LUXALGO_WORDMARK_URL;
+    wordmarkImg.alt = 'LuxAlgo';
+    wordmarkImg.draggable = false;
+    wordmark.appendChild(wordmarkImg);
+    a.append(symbol, wordmark);
     return a;
 }

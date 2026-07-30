@@ -16,7 +16,7 @@ const CSS = `
 .vela-widget-topbar {
     display: flex;
     align-items: center;
-    gap: var(--vela-space-2);
+    gap: var(--vela-space-1);
     padding: var(--vela-space-1) var(--vela-space-2);
     border-bottom: 1px solid var(--vela-border-soft);
     color: var(--vela-fg);
@@ -45,19 +45,15 @@ const CSS = `
     padding: 0 10px;
     gap: 7px;
 }
-.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover { background: var(--vela-hover); color: var(--vela-fg); }
-.vela-widget-symbol:hover { color: var(--vela-fg-bright); }
-.vela-widget-topbar .vela-icon { color: inherit; font-size: 14px; }
-.vela-sep { width: 1px; height: 22px; margin: 0 4px; flex: none; background: rgba(255, 255, 255, 0.22); }
-.vela-ind-count {
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
-    border-radius: 8px;
-    padding: 0 6px;
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--vela-fg);
+.vela-widget-tf, .vela-widget-style, .vela-widget-indicators {
+    color: var(--vela-fg-bright);
 }
+.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-topbar .vela-icon { color: inherit; font-size: 14px; }
+/* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
+   fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
+   up looking like different thicknesses depending on subpixel placement. */
+.vela-sep { height: 22px; margin: 0 2px; flex: none; background: rgba(255, 255, 255, 0.22); }
 .vela-alerts-badge {
     position: absolute;
     top: 2px;
@@ -152,7 +148,6 @@ export interface TopbarOptions {
     onDataWindowClick?: () => void;
     onScreenshotClick?: () => void;
     onAlertsClick?: (anchor: HTMLElement) => void;
-    onSettingsClick?: () => void;
     /** Live widget context for contributed actions (topbar target). */
     getContext?: () => WidgetContext;
 }
@@ -171,11 +166,20 @@ export class Topbar {
     private readonly actionsHost: HTMLElement;
     private alertsBtn!: HTMLButtonElement;
     private panelBtns!: { objects: HTMLButtonElement; dataWindow: HTMLButtonElement };
-    private indicatorsCount!: HTMLElement;
     private alertsBadge!: HTMLElement;
     private readonly opts: TopbarOptions;
     private timeframe: string;
     private priceStyle: string;
+    private readonly onHairlineSync = (): void => {
+        if (this.hairlineRaf) return;
+        const win = this.el.ownerDocument.defaultView;
+        this.hairlineRaf = win?.requestAnimationFrame(() => {
+            this.hairlineRaf = 0;
+            this.syncHairlines();
+        }) ?? 0;
+    };
+    private hairlineRo: ResizeObserver | null = null;
+    private hairlineRaf = 0;
 
     constructor(host: HTMLElement, opts: TopbarOptions) {
         this.opts = opts;
@@ -199,14 +203,10 @@ export class Topbar {
         const indicatorsBtn = doc.createElement('button');
         indicatorsBtn.className = 'vela-widget-indicators';
         indicatorsBtn.append(iconEl('indicators', doc), doc.createTextNode('Indicators'));
-        this.indicatorsCount = doc.createElement('span');
-        this.indicatorsCount.className = 'vela-ind-count';
-        this.indicatorsCount.style.display = 'none';
-        indicatorsBtn.appendChild(this.indicatorsCount);
         if (opts.onIndicatorsClick) indicatorsBtn.addEventListener('click', opts.onIndicatorsClick);
 
         // Right-hand cluster: contributed actions, then icon-only tools (data window /
-        // screenshot / objects / settings) — labels live in their tooltips.
+        // objects / screenshot) — labels live in their tooltips.
         this.actionsHost = doc.createElement('span');
         this.actionsHost.className = 'vela-widget-actions';
         const tool = (cls: string, icon: string, tip: string, onClick?: () => void): HTMLButtonElement => {
@@ -222,10 +222,9 @@ export class Topbar {
             return b;
         };
         const dataWindowBtn = tool('vela-widget-datawindow', 'datawindow', 'Data window', opts.onDataWindowClick);
-        const screenshotBtn = tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick);
         const objectsBtn = tool('vela-widget-objects', 'objects', 'Object tree', opts.onObjectsClick);
+        const screenshotBtn = tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick);
         this.panelBtns = { objects: objectsBtn, dataWindow: dataWindowBtn };
-        const settingsBtn = tool('vela-widget-settings', 'gear', 'Chart settings', opts.onSettingsClick);
         this.alertsBtn = tool('vela-widget-alerts', 'bell', 'Alerts');
         this.alertsBtn.style.position = 'relative';
         if (opts.onAlertsClick) this.alertsBtn.addEventListener('click', () => opts.onAlertsClick!(this.alertsBtn));
@@ -249,8 +248,13 @@ export class Topbar {
         };
         const leading: Array<HTMLElement> = [this.symbolEl, sep(), this.tfButton, sep(), this.styleButton, sep()];
         if (this.layoutButton) leading.push(this.layoutButton, sep());
-        this.el.append(...leading, indicatorsBtn, this.actionsHost, this.alertsBtn, dataWindowBtn, screenshotBtn, objectsBtn, settingsBtn);
+        this.el.append(...leading, indicatorsBtn, this.actionsHost, this.alertsBtn, dataWindowBtn, objectsBtn, screenshotBtn);
         host.appendChild(this.el);
+        // Snap after layout; RO catches later reflows (symbol / timeframe length).
+        this.onHairlineSync();
+        this.hairlineRo = new ResizeObserver(this.onHairlineSync);
+        this.hairlineRo.observe(this.el);
+        doc.defaultView?.addEventListener('resize', this.onHairlineSync);
         this.renderActions();
 
         this.tooltips.push(new Tooltip(this.tfButton, { content: 'Timeframe', triggerId: 'vela-topbar-tf', host }));
@@ -358,9 +362,8 @@ export class Topbar {
         }
     }
 
-    setIndicatorCount(n: number): void {
-        this.indicatorsCount.textContent = String(n);
-        this.indicatorsCount.style.display = n > 0 ? '' : 'none';
+    setIndicatorCount(_n: number): void {
+        // Count badge intentionally hidden — kept as a no-op so hosts can keep calling it.
     }
 
     setAlertCount(n: number): void {
@@ -375,11 +378,29 @@ export class Topbar {
     }
 
     destroy(): void {
+        this.hairlineRo?.disconnect();
+        const win = this.el.ownerDocument.defaultView;
+        win?.removeEventListener('resize', this.onHairlineSync);
+        if (this.hairlineRaf) win?.cancelAnimationFrame(this.hairlineRaf);
         this.tfMenu.destroy();
         this.styleMenu.destroy();
         this.layoutMenu?.destroy();
         for (const t of this.tooltips) t.destroy();
         this.el.remove();
+    }
+
+    /** Paint each `.vela-sep` as exactly one device pixel, snapped to the pixel grid. */
+    private syncHairlines(): void {
+        const win = this.el.ownerDocument.defaultView;
+        if (!win) return;
+        const dpr = win.devicePixelRatio || 1;
+        for (const el of this.el.querySelectorAll<HTMLElement>('.vela-sep')) {
+            el.style.width = `${1 / dpr}px`;
+            el.style.transform = '';
+            const left = el.getBoundingClientRect().left;
+            const dx = Math.round(left * dpr) / dpr - left;
+            if (dx) el.style.transform = `translateX(${dx}px)`;
+        }
     }
 
     private tfItems(): MenuItemDescriptor[] {

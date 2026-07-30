@@ -94,6 +94,11 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Chrome polish on the widget and workspace.** The top bar sits tighter, timeframe / chart
+  style / Indicators read in bright white, the Indicators count badge is gone, the camera sits
+  to the right of the object tree, and chart settings move to a gear on the bottom bar next to
+  the session switch. The in-chart attribution mark uses the LuxAlgo symbol and expands the
+  LuxAlgo wordmark on hover.
 - **The price now reads on top by default.** A new overlay indicator starts *behind* the candles
   (and behind the indicators already there), and a new drawing starts *just under* them, so the
   price stays the top of the pile until you restack things yourself — drag rows in the object
