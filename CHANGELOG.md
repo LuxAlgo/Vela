@@ -35,7 +35,10 @@ All notable changes to Vela, newest first.
 - **Switching markets clears the chart first.** Changing the symbol or timeframe now blanks the
   old candles immediately and shows the loading dots until the new market's first bars arrive —
   the previous market no longer lingers under the new symbol's name while its data loads.
-  Changing only the history depth keeps the chart painted, as before.
+  A plugin chart type's data engine is silenced and its layer data blanked in the same breath:
+  its per-bar payloads are keyed by bucket time, so on a same-timeframe switch the old market's
+  cells would land exactly on the new market's first candles. Changing only the history depth
+  keeps the chart painted, as before.
 - **The topbar's panel buttons are built from the dock.** They used to be two fixed buttons wired
   to two fixed callbacks. _(Breaking, for hosts that construct `Topbar` themselves: the
   `onObjectsClick` and `onDataWindowClick` options are gone, and `setPanelActive` now takes any

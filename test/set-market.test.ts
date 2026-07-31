@@ -386,6 +386,41 @@ describe('setMarket — in-place market switch', () => {
         expect(hosts[1]!.symbol).toBe('BBB');
     });
 
+    it('an identity switch silences the active type engine and blanks its channels for the gap', async () => {
+        let suspends = 0;
+        registerChartType({
+            id: 'probe-style',
+            dataEngine: () => ({
+                start: (host) => { host.pushData({ cells: 'old-market' }); },
+                suspend: () => { suspends += 1; },
+                resume: () => {},
+                stop: () => {},
+            }),
+        });
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        renderer.priceStyleFeature = 'probe-style';
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        await flush();
+        expect(renderer.nativePushes).toContainEqual(['probe-style', { cells: 'old-market' }]);
+        renderer.nativePushes.length = 0;
+
+        const done = chart.setMarket({ symbol: 'SLOW' });
+        // Synchronously at the switch — the old engine's per-bar payloads must not survive
+        // into the gap where they would map onto the new market's first candles.
+        expect(suspends).toBe(1);
+        expect(renderer.nativePushes).toContainEqual(['probe-style', undefined]);
+        expect(renderer.nativePushes).toContainEqual(['probe-style-pending', []]);
+
+        feed.release();
+        await done;
+        await flush();
+        // The post-load rebuild starts a fresh engine, which pushes the NEW market's data.
+        expect(renderer.nativePushes.filter(([t, d]) => t === 'probe-style' && d !== undefined).length).toBeGreaterThan(0);
+    });
+
     it('a chart CONSTRUCTED in a plugin style starts its data engine only after the first load', async () => {
         // The restore path: a persisted plugin style comes back through the chart
         // OPTIONS. The engine seed must await the REAL readyPromise — seeding before

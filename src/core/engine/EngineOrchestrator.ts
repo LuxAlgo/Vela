@@ -500,6 +500,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (identityChanged) {
                 this.beginLoad(false);
                 this.setBarSeries([], { clearing: true });
+                // The active style's DATA ENGINE still rides the old market — its rebuild only
+                // follows the load. Silence it for the gap (its live pushes are stale the moment
+                // the identity changed) and blank its channels: per-bar payloads are keyed by
+                // bucket open-time, so on a same-timeframe switch the old market's cells would
+                // land exactly on the new market's first candles.
+                if (this.activeEngineStyle) {
+                    this.typeEngines.get(this.activeEngineStyle)?.suspend();
+                    this.renderer.setNativeData?.(this.activeEngineStyle, undefined);
+                    this.renderer.setNativeData?.(`${this.activeEngineStyle}-pending`, []);
+                }
             }
 
             // Reload through the shared pipeline. The race lets a superseded caller resolve
