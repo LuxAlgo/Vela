@@ -1,6 +1,8 @@
 import type { VelaTheme } from '../../../core/options';
 import type { DrawingTypeKey, SnapMode } from '../../../core/drawings';
 import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/drawings';
+import { icon } from '../../../core/icons';
+import { applyChromeTokens } from '../../shared/theme-tokens';
 import { CHROME_BORDER_COLOR } from '../core/chartConfig';
 
 /** Cosmetic/placement options — defaults reproduce the in-renderer docked bar exactly. */
@@ -81,11 +83,13 @@ export class DrawingToolbar {
         host.appendChild(this.root);
     }
 
-    /** Flush vertical bar pinned to the left gutter (full height, right border, no card chrome). The
-     *  hover/active tint colors are published as CSS variables so the scoped stylesheet can drive
-     *  every hover/active state without any per-frame JS. */
+    /** Flush vertical bar pinned to the left gutter (full height, right border, no card chrome).
+     *  The shared tokens are written on the root so the scoped stylesheet drives every
+     *  hover/active state without per-frame JS — and so a workspace can dock the bar outside a
+     *  chart container and still resolve them. */
     private styleRoot(): void {
         const t = this.theme;
+        applyChromeTokens(this.root, t);
         // Docked (default): pinned over the renderer's left gutter — width must match
         // NativeRenderer's LEFT_GUTTER_W. Static: a normal column child (a workspace's
         // shared bar) — the host's own layout places it.
@@ -95,9 +99,8 @@ export class DrawingToolbar {
         this.root.style.cssText =
             placement +
             `display:${this.visible ? 'flex' : 'none'};flex-direction:column;gap:4px;` +
-            `padding:6px 0;box-sizing:border-box;background:${t.background};border-right:1px solid ${this.borderColor};color:${t.textColor};` + // no h-padding → buttons span the bar width
-            `pointer-events:auto;overflow-y:auto;overflow-x:hidden;` +
-            `--vela-dtb-hover:${withAlpha(t.textColor, HOVER_A)};--vela-dtb-active:${withAlpha(t.textColor, ACTIVE_A)};--vela-dtb-item-hover:${withAlpha(t.textColor, ITEM_HOVER_A)};--vela-dtb-hover-fg:${t.textColor};`;
+            `padding:6px 0;box-sizing:border-box;background:${t.background};border-right:1px solid ${this.borderColor};color:var(--vela-fg-muted);` + // no h-padding → buttons span the bar width
+            `pointer-events:auto;overflow-y:auto;overflow-x:hidden;`;
     }
 
     setDefinition(def: ToolbarDefinition): void {
@@ -360,10 +363,12 @@ export class DrawingToolbar {
         // square LEFT corners (butts flush against the bar), rounded RIGHT corners; no left border so the seam is invisible
         fly.style.cssText =
             `position:absolute;z-index:23;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:0 8px 8px 0;` +
-            // same soft tint as the selected button (opaque) so the bar → menu reads as one region
-            `background:${blend(t.background, t.textColor, ACTIVE_A)};border:1px solid ${this.borderColor};border-left:none;box-shadow:4px 6px 18px rgba(0,0,0,0.4);pointer-events:auto;` +
-            `overflow-y:auto;overscroll-behavior:contain;` +
-            `--vela-dtb-item-hover:${withAlpha(t.textColor, ITEM_HOVER_A)};`;
+            // Same elevated surface as every other menu (chart settings, context menus, …).
+            `background:var(--vela-surface-elev);border:1px solid ${this.borderColor};border-left:none;box-shadow:var(--vela-shadow);pointer-events:auto;` +
+            `overflow-y:auto;overscroll-behavior:contain;`;
+        // The flyout is hosted OUTSIDE the bar root (it must escape its overflow), so it
+        // carries its own copy of the tokens.
+        applyChromeTokens(fly, t);
         this.host.appendChild(fly);
         const r = cell.getBoundingClientRect();
         const rootR = this.root.getBoundingClientRect();
@@ -443,8 +448,8 @@ export class DrawingToolbar {
         const header = document.createElement('div');
         header.textContent = text.toUpperCase();
         header.style.cssText =
-            `padding:6px 12px 2px 8px;font:11px ${t.fontFamily};font-weight:600;letter-spacing:0.04em;` +
-            `color:${withAlpha(t.textColor, 0.45)};user-select:none;`;
+            `padding:6px 12px 2px 8px;font:var(--vela-font-size-sm) ${t.fontFamily};font-weight:600;letter-spacing:0.04em;` +
+            `color:var(--vela-fg-muted);user-select:none;`;
         return header;
     }
 
@@ -472,7 +477,7 @@ export class DrawingToolbar {
         item.type = 'button';
         item.className = 'vela-dtb-item';
         item.setAttribute('aria-label', opts.label);
-        item.style.cssText = `display:flex;align-items:center;gap:8px;padding:5px 10px 5px 8px;cursor:pointer;color:${t.textColor};border-radius:4px;font:13px ${t.fontFamily};white-space:nowrap;min-width:148px;`;
+        item.style.cssText = `display:flex;align-items:center;gap:8px;padding:5px 10px 5px 8px;cursor:pointer;color:${t.textColor};border-radius:var(--vela-radius-sm);font:13px ${t.fontFamily};white-space:nowrap;min-width:148px;`;
         if (opts.icon) {
             const icon = document.createElement('span');
             icon.style.cssText = 'width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none;';
@@ -491,7 +496,7 @@ export class DrawingToolbar {
             const hint = document.createElement('span');
             hint.className = 'vela-dtb-hint';
             hint.textContent = opts.shortcut;
-            hint.style.cssText = `flex:none;font:12px ${t.fontFamily};color:${withAlpha(t.textColor, 0.5)};`;
+            hint.style.cssText = `flex:none;font:var(--vela-font-size-md) ${t.fontFamily};color:var(--vela-fg-muted);`;
             item.appendChild(hint);
         }
         if (opts.favorite) {
@@ -600,7 +605,8 @@ export class DrawingToolbar {
         tip.textContent = text;
         tip.style.cssText =
             `position:absolute;z-index:25;background:${t.background};border:1px solid ${this.borderColor};color:${t.textColor};` +
-            `border-radius:6px;padding:4px 9px;font:12px ${t.fontFamily};white-space:nowrap;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,0.35);`;
+            `border-radius:var(--vela-radius-md);padding:4px 9px;font:var(--vela-font-size-md) ${t.fontFamily};white-space:nowrap;pointer-events:none;box-shadow:var(--vela-shadow);`;
+        applyChromeTokens(tip, t);
         this.host.appendChild(tip);
         const r = anchor.getBoundingClientRect();
         const hostR = this.host.getBoundingClientRect();
@@ -633,58 +639,54 @@ function ensureStyles(): void {
         document.head.appendChild(s);
     }
     s.textContent = `
-.vela-dtb-hit{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background .12s ease,color .12s ease;}
+.vela-dtb-hit{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:var(--vela-radius-md);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dtb-hit--arrow{width:11px;height:22px;}
-.vela-dtb-btn{position:relative;width:100%;height:30px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;background:transparent;border:none;padding:0;}
-.vela-dtb-btn:hover .vela-dtb-hit{background:var(--vela-dtb-hover);}
-.vela-dtb-btn[data-active='1'] .vela-dtb-hit{background:var(--vela-dtb-active);}
+.vela-dtb-btn{position:relative;width:100%;height:30px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;background:transparent;border:none;padding:0;transition:color var(--vela-dur-fast) ease;}
+.vela-dtb-btn:hover{color:var(--vela-fg-bright);}
+.vela-dtb-btn:hover .vela-dtb-hit{background:var(--vela-hover);}
+.vela-dtb-btn[data-active='1']{color:var(--vela-fg-bright);}
+.vela-dtb-btn[data-active='1'] .vela-dtb-hit{background:var(--vela-active);}
 .vela-dtb-cell{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:30px;}
-.vela-dtb-icon{flex:none;width:26px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;}
-.vela-dtb-cell[data-active='1'] .vela-dtb-icon .vela-dtb-hit{background:var(--vela-dtb-active);}
-.vela-dtb-arrow{position:absolute;right:1px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;opacity:0;pointer-events:none;transition:opacity .12s ease,color .12s ease;}
+.vela-dtb-icon{flex:none;width:26px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;transition:color var(--vela-dur-fast) ease;}
+.vela-dtb-icon:hover{color:var(--vela-fg-bright);}
+.vela-dtb-cell[data-active='1'] .vela-dtb-icon{color:var(--vela-fg-bright);}
+.vela-dtb-cell[data-active='1'] .vela-dtb-icon .vela-dtb-hit{background:var(--vela-active);}
+.vela-dtb-arrow{position:absolute;right:1px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;opacity:0;pointer-events:none;transition:opacity var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dtb-cell:hover .vela-dtb-arrow,.vela-dtb-icon:hover~.vela-dtb-arrow,.vela-dtb-cell.vela-open .vela-dtb-arrow{opacity:1;pointer-events:auto;}
-.vela-dtb-arrow:hover{color:var(--vela-dtb-hover-fg,inherit);}
-.vela-dtb-icon:hover .vela-dtb-hit,.vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-dtb-hover);}
-.vela-dtb-cell.vela-open .vela-dtb-arrow .vela-dtb-hit{background:var(--vela-dtb-active);}
-.vela-dtb-cell.vela-open .vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-dtb-hover);}
-.vela-dtb-item{background:transparent;border:none;transition:background .1s ease;}
-.vela-dtb-item:hover{background:var(--vela-dtb-item-hover);}
-.vela-dtb-star{width:26px;height:22px;margin:-3px -5px -3px 0;padding:3px 5px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;opacity:0;color:inherit;border-radius:4px;transition:opacity .1s ease,color .1s ease,background .1s ease;}
+.vela-dtb-arrow:hover{color:var(--vela-fg-bright);}
+.vela-dtb-icon:hover .vela-dtb-hit,.vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-hover);}
+.vela-dtb-cell.vela-open .vela-dtb-arrow .vela-dtb-hit{background:var(--vela-active);}
+.vela-dtb-cell.vela-open .vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-hover);}
+.vela-dtb-item{background:transparent;border:none;transition:background var(--vela-dur-fast) ease;}
+.vela-dtb-item:hover{background:var(--vela-hover-strong);}
+.vela-dtb-star{width:26px;height:22px;margin:-3px -5px -3px 0;padding:3px 5px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;opacity:0;color:inherit;border-radius:var(--vela-radius-sm);transition:opacity .1s ease,color .1s ease,background .1s ease;}
 .vela-dtb-star svg{width:16px;height:16px;}
 .vela-dtb-item:hover .vela-dtb-star{opacity:.55;}
-.vela-dtb-star:hover{opacity:1 !important;background:var(--vela-dtb-item-hover);}
-.vela-dtb-star.vela-fav{opacity:.95;color:#e0b400;}
+.vela-dtb-star:hover{opacity:1 !important;background:var(--vela-hover-strong);}
+.vela-dtb-star.vela-fav{opacity:.95;color:var(--vela-highlight);}
 /* Thin thumb-only scrollbar. Avoid scrollbar-width in Chromium — it disables ::-webkit-scrollbar. */
 @supports not selector(::-webkit-scrollbar){
-.vela-dtb-flyout{scrollbar-width:thin;scrollbar-color:rgba(148,163,184,0.35) transparent;}
+.vela-dtb-flyout{scrollbar-width:thin;scrollbar-color:var(--vela-scroll) transparent;}
 }
 .vela-dtb-flyout::-webkit-scrollbar{width:4px;}
 .vela-dtb-flyout::-webkit-scrollbar-button{display:none;width:0;height:0;}
 .vela-dtb-flyout::-webkit-scrollbar-track,.vela-dtb-flyout::-webkit-scrollbar-track-piece,.vela-dtb-flyout::-webkit-scrollbar-corner{background:transparent;}
-.vela-dtb-flyout::-webkit-scrollbar-thumb{background:rgba(148,163,184,0.4);border-radius:4px;}
-.vela-dtb-flyout::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,0.6);}`;
+.vela-dtb-flyout::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:var(--vela-radius-sm);}
+.vela-dtb-flyout::-webkit-scrollbar-thumb:hover{background:var(--vela-fg-muted);}`;
 }
 
-const CURSOR_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l6 16 2-6 6-2z"/></svg>';
-const RULER_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 0 1.4l12.6 12.6a1 1 0 0 0 1.4 0l4.6-4.6a1 1 0 0 0 0-1.4Z"/><path d="m7.5 10.5 2 2"/><path d="m10.5 7.5 2 2"/><path d="m13.5 4.5 2 2"/><path d="m4.5 13.5 2 2"/></svg>';
-const MAGNET_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15"/><path d="m5 8 4 4"/><path d="m12 15 4 4"/></svg>';
+const CURSOR_ICON = icon('cursor');
+const RULER_ICON = icon('ruler');
+const MAGNET_ICON = icon('magnet');
 /** Pen with a padlock — stay-in-drawing-mode (tools remain armed after each placement). */
-const STAY_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.8 4.2a2.1 2.1 0 0 1 3 3L8.5 15.5l-3.5 1 1-3.5Z"/><rect x="13" y="14.5" width="8" height="6" rx="1.2"/><path d="M15 14.5v-1.6a2 2 0 0 1 4 0v1.6"/></svg>';
-const ERASER_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4L13 5a2 2 0 0 1 2.8 0l4.2 4.2a2 2 0 0 1 0 2.8L12 20"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>';
+const STAY_ICON = icon('pen-lock');
+const ERASER_ICON = icon('eraser');
 /** A right-pointing chevron for the group/magnet flyout arrow (beside the icon). */
-const ARROW_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
+const ARROW_ICON = icon('chevron-right');
 /** A check mark for the selected entry in a flyout (e.g. the current magnet strength). */
-const CHECK_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-const STAR_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.8z"/></svg>';
-const STAR_FILLED_ICON =
-    '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.8z"/></svg>';
+const CHECK_ICON = icon('check');
+const STAR_ICON = icon('star');
+const STAR_FILLED_ICON = icon('star-filled');
 
 /** Force an inline SVG icon to fill its 18px slot. */
 function sizedIcon(svg: string): string {
@@ -706,36 +708,4 @@ function hitHtml(svg: string, iconSize = 18): string {
 /** The chevron's inner content: same hover/active tint as the icon hit, in a narrow pill beside it. */
 function arrowHitHtml(svg: string): string {
     return `<span class="vela-dtb-hit vela-dtb-hit--arrow">${iconSpan(svg, 11)}</span>`;
-}
-
-// Toolbar highlight alphas (a foreground tint over the dark bar/menu). The selected button + the
-// flyout share ACTIVE_A (kept light) so they read as one continuous region; the flyout item hover
-// (ITEM_HOVER_A) is stronger so it stands clearly apart when navigating the menu.
-const HOVER_A = 0.06; // hover hint on an idle button
-const ACTIVE_A = 0.1; // selected button + flyout base (the soft continuation tint)
-const ITEM_HOVER_A = 0.16; // flyout item hover (the navigation highlight)
-
-function rgbOf(color: string): [number, number, number] | null {
-    const hex = /^#([0-9a-f]{6})$/i.exec(color);
-    if (hex) {
-        const n = parseInt(hex[1]!, 16);
-        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    }
-    const rgb = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/.exec(color);
-    return rgb ? [parseFloat(rgb[1]!), parseFloat(rgb[2]!), parseFloat(rgb[3]!)] : null;
-}
-
-/** A foreground color at a given alpha (for hover/active backgrounds across themes). */
-function withAlpha(color: string, alpha: number): string {
-    const c = rgbOf(color) ?? [148, 163, 184];
-    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
-}
-
-/** An OPAQUE mix of `fg` into `base` at `alpha` — so the flyout's solid bg matches a button's
- *  translucent active tint (both resolve to the same color → visual continuity bar → menu). */
-function blend(base: string, fg: string, alpha: number): string {
-    const b = rgbOf(base) ?? [13, 17, 23];
-    const f = rgbOf(fg) ?? [148, 163, 184];
-    const mix = (i: number): number => Math.round(b[i]! + (f[i]! - b[i]!) * alpha);
-    return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
 }

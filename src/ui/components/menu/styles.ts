@@ -2,7 +2,10 @@ export const MENU_STYLE_ID = 'vela-ui-menu';
 
 export const MENU_CSS = `
 .vela-menu {
-    background: var(--vela-surface);
+    /* The list is a <ul>: without this, block rows (the separator) paint a ::marker dot. */
+    list-style: none;
+    margin: 0;
+    background: var(--vela-surface-elev);
     color: var(--vela-fg);
     border: 1px solid var(--vela-border-strong);
     border-radius: 6px;
@@ -32,20 +35,13 @@ export const MENU_CSS = `
 }
 .vela-menu-item[data-highlighted] { background: var(--vela-hover); }
 .vela-menu-item[data-disabled] { opacity: 0.4; cursor: default; }
-.vela-menu-item .vela-icon { width: 18px; justify-content: center; color: var(--vela-fg-muted); }
+.vela-menu-item .vela-icon { width: 16px; height: 16px; font-size: 16px; justify-content: center; color: var(--vela-fg-muted); }
 .vela-menu-item .vela-menu-label { flex: 1 1 auto; }
 .vela-menu-item .vela-menu-hint { color: var(--vela-fg-faint); font-size: var(--vela-font-size-sm); }
-/* Active entry: accent text + right-aligned accent check (the reference menu language). */
-.vela-menu-item .vela-menu-check {
-    order: 99;
-    margin-left: auto;
-    width: 14px;
-    text-align: center;
-    flex: none;
-    color: var(--vela-accent);
-}
-.vela-menu-item[data-checked] { color: var(--vela-accent); }
-.vela-menu-item[data-checked] .vela-icon { color: var(--vela-accent); }
+/* Active entry: a brighter row surface + bright ink — no accent recolor, no glyph.
+   Declared after [data-highlighted] so the selected surface wins while hovered. */
+.vela-menu-item[data-checked] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
+.vela-menu-item[data-checked] .vela-icon { color: var(--vela-fg-bright); }
 /* Switch rows (boolean settings in a dropdown): a right-aligned toggle pill — the
    same control language as the settings dialog's toggles. */
 .vela-menu-switch {

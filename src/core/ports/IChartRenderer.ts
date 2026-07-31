@@ -315,8 +315,12 @@ export interface IChartRenderer {
      * exclusive with the renderer's. A no-op when nothing is open.
      */
     closeDialogs?(): void;
-    /** Open (or toggle) the renderer's own settings dialog, when it has one. */
-    openSettingsDialog?(): void;
+    /**
+     * Open (or toggle) the renderer's own settings dialog, when it has one. `section` names
+     * the tab to land on (matched against the dialog's section titles, unknown ones ignored);
+     * with a section an already-open dialog switches tab rather than closing.
+     */
+    openSettingsDialog?(section?: string): void;
     /** A chart type's SDK settings changed (dialog edit / applyConfig) — the core forwards
      *  them to the type's data engine. */
     onChartTypeSettingsChange?(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe;

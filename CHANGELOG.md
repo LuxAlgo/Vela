@@ -6,6 +6,9 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Undo and redo in the top bar.** Next to Indicators, a hairline and two icon buttons step
+  through the same undo/redo history as the keyboard shortcuts — drawings and indicator changes
+  alike. Each button dims when there is nothing to undo or redo.
 - **Stay in drawing mode.** A toolbar toggle under the magnet (pen with a lock) keeps the
   armed tool ready after each placement, so you can draw several of the same shape without
   re-picking the tool. Turn it off for the usual one-shot behavior; the brush family still
@@ -111,6 +114,41 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Chrome polish on the widget and workspace.** The top bar sits tighter, timeframe / chart
+  style / Indicators read in bright white, the Indicators count badge is gone, the camera sits
+  to the right of the object tree, and chart settings move to a gear on the bottom bar next to
+  the session switch. The in-chart attribution mark uses the LuxAlgo symbol and expands the
+  LuxAlgo wordmark on hover — white on dark charts, dark on light ones.
+- **One visual language across the whole chart.** Colors, icons and hover states now come from a
+  single set of definitions instead of being restated in each panel, so the interface reads as one
+  piece. The settings dialog, drawing toolbar, drawing style popups, color pickers, pane controls
+  and the legend follow the chart theme — on a light chart they are now light, where before they
+  stayed dark whatever the theme. Indicator titles in the legend all read in the normal chart text
+  color, native ones included, instead of a blue of their own. Every subdivided drawing tool paints
+  its levels with the same convention, so the 0.618 of a retracement, a fan, an arc set and a Gann
+  box match; the same holds for bullish/bearish reds and greens, which were previously two slightly
+  different pairs depending on the tool. Icons across the toolbars and menus are one consistent set
+  at one weight, and they take the color of the control they sit in; several were redrawn to read
+  more clearly at their small size — among them the gear, the trash bin, the baseline and
+  Heikin Ashi chart styles, the Fibonacci wedge, the Fibonacci speed-resistance arcs, the
+  trend-based Fibonacci extension, and the long/short position tools.
+  Indicators share one icon everywhere they appear — the top bar, the pickers and the
+  object tree — and every icon button responds to the pointer the same way: resting in a muted
+  tone and brightening to white on hover, with the same soft backing. Color swatches everywhere are
+  square, inputs and dropdowns in the chart settings share the dialog's own surface, the pointer
+  cursor only appears over things that actually respond to a click, and the indicator legend sits
+  on a solid chart-colored backing so its labels stay readable over the candles.
+- **Reorganized right-click menus.** Each part of the chart now offers what belongs to it. The
+  chart body gives you reset the view, remove every drawing, remove every indicator, and the
+  settings dialog — the two removals stay in place but grey out when there is nothing to remove.
+  The price axis carries the whole scale: autoscale, invert, and the choice between regular,
+  percent, indexed to 100 and logarithmic, plus submenus for the axis labels, the last-price
+  label, the countdown to bar close and the last-price line. Every pane has its own scale menu,
+  so a study pane's scale no longer follows the price one. The time axis picks the display
+  timezone, and choosing one there updates the timezone shown on the bottom bar as well. Each
+  menu's settings entry opens the chart settings on the tab it is about — the canvas colors and
+  grid from the chart body, the scales and lines from either axis — so you land on the controls
+  you were reaching for instead of the first tab.
 - **The price now reads on top by default.** A new overlay indicator starts *behind* the candles
   (and behind the indicators already there), and a new drawing starts *just under* them, so the
   price stays the top of the pile until you restack things yourself — drag rows in the object
@@ -149,9 +187,10 @@ All notable changes to Vela, newest first.
 - **Hiding or locking a drawing now sticks.** Both are saved along with the rest of your chart,
   can be undone, and immediately update everywhere that drawing appears. Before, a hidden or
   locked drawing came back visible and unlocked after a reload.
-
-### Fixed
-
+- **One dialog at a time.** Opening the symbol search now closes an open chart settings or
+  indicator settings dialog instead of stacking on top of it. The quick timeframe entry dialog
+  centers its input properly, and the faint dots that appeared under the separator lines of
+  right-click menus are gone.
 - **Keyboard zoom and pan no longer wedge the chart.** Zooming or panning with `Ctrl` + arrow
   keys toward the edge of the chart (or past the zoom limits) could leave the view stuck: the
   animation silently kept running forever and overrode every later scroll-wheel or drag

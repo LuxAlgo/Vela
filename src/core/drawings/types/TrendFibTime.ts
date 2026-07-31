@@ -1,20 +1,21 @@
 import { type AnchorSlot } from '../Drawing';
 import type { Projector } from '../geometry';
 import { FibRatios, type FibEntryLine, type FibLevel } from './FibRatios';
+import { fibLevels } from '../levelPalette';
 
-const TIME_LEVELS: readonly FibLevel[] = [
-    { ratio: 0, color: '#787b86', enabled: true },
-    { ratio: 0.382, color: '#ff9800', enabled: true },
-    { ratio: 0.5, color: '#4caf50', enabled: false }, // hidden by default
-    { ratio: 0.618, color: '#089981', enabled: true },
-    { ratio: 1, color: '#787b86', enabled: true },
-    { ratio: 1.382, color: '#ff9800', enabled: true },
-    { ratio: 1.618, color: '#089981', enabled: true },
-    { ratio: 2, color: '#787b86', enabled: true },
-    { ratio: 2.382, color: '#ff9800', enabled: true },
-    { ratio: 2.618, color: '#089981', enabled: true },
-    { ratio: 3, color: '#787b86', enabled: true },
-];
+const TIME_LEVELS = fibLevels([
+    0,
+    0.382,
+    { ratio: 0.5, enabled: false }, // hidden by default
+    0.618,
+    1,
+    1.382,
+    1.618,
+    2,
+    2.382,
+    2.618,
+    3,
+]);
 
 /**
  * Trend-based Fibonacci time: vertical lines at Fibonacci multiples of the base interval

@@ -3,6 +3,7 @@ import type { LineStyle } from '../../model/series';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { distToSegment, pointInPolygon, handleAt } from '../hittest';
+import { BEARISH, BULLISH, NEUTRAL } from '../../palette';
 
 /** Standard-deviation multiplier for the channel half-width (a ±2σ band around the fit line). */
 const DEVIATIONS = 2;
@@ -48,14 +49,14 @@ export interface RegressionStyle {
 
 function defaultRegressionStyle(): RegressionStyle {
     return {
-        midColor: '#787b86', // neutral gray midline
+        midColor: NEUTRAL, // neutral gray midline
         midStyle: 'solid',
-        upperColor: '#089981',
+        upperColor: BULLISH,
         upperStyle: 'solid',
-        lowerColor: '#f23645',
+        lowerColor: BEARISH,
         lowerStyle: 'solid',
-        upperFill: '#08998126', // translucent green (mid → upper)
-        lowerFill: '#f2364526', // translucent red (mid → lower)
+        upperFill: `${BULLISH}26`, // translucent, mid → upper
+        lowerFill: `${BEARISH}26`, // translucent, mid → lower
         showR2: true,
     };
 }

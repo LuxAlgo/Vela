@@ -2,6 +2,7 @@
 // machine. The body is caller-owned: pass a Node or populate via `body` after creation.
 import { runMachine, spreadProps, type HandleOf } from '../../zag';
 import { injectStyles } from '../../styles';
+import { iconEl } from '../../icons';
 import { dialogController, type DialogControllerOptions } from './controller';
 import { DIALOG_CSS, DIALOG_STYLE_ID } from './styles';
 import * as zagDialog from '@zag-js/dialog';
@@ -12,6 +13,10 @@ export interface DialogOptions extends DialogControllerOptions {
     host?: HTMLElement;
     /** Drag the dialog by its header (the reference dialogs move; search stays fixed). */
     draggable?: boolean;
+    /** Darken the page behind the dialog (default false — the chart stays readable while
+     *  dialogs edit live content). Pass true for a dimming scrim; the backdrop still
+     *  catches interact-outside dismissal either way. */
+    dimBackdrop?: boolean;
 }
 
 export class Dialog {
@@ -30,6 +35,7 @@ export class Dialog {
 
         this.backdrop = doc.createElement('div');
         this.backdrop.className = 'vela-dialog-backdrop vela-ui-layer';
+        if (opts.dimBackdrop !== true) this.backdrop.classList.add('vela-dialog-backdrop--clear');
         this.positioner = doc.createElement('div');
         this.positioner.className = 'vela-dialog-positioner vela-ui-layer';
         this.panel = doc.createElement('div');
@@ -60,7 +66,7 @@ export class Dialog {
         title.textContent = opts.title ?? '';
         const close = doc.createElement('button');
         close.className = 'vela-dialog-close';
-        close.textContent = '✕';
+        close.appendChild(iconEl('close', doc));
         header.append(title, close);
 
         this.body = doc.createElement('div');

@@ -10,6 +10,7 @@ import {
     type Projector,
     type FrvpBar,
 } from '../src/core/drawings';
+import { ACCENT, BEARISH, BULLISH, NEUTRAL } from '../src/core/palette';
 
 const HR = 3600_000;
 
@@ -123,17 +124,18 @@ describe('drawings/FixedRangeVolumeProfile', () => {
         expect(d.frvp.valueAreaPct).toBe(70);
         expect(d.frvp.widthPct).toBe(35);
         expect(d.frvp.anchor).toBe('left');
-        expect(d.frvp.upColor).toBe('#089981BF');
-        expect(d.frvp.downColor).toBe('#f23645BF');
-        expect(d.frvp.vaUpColor).toBe('#08998166');
-        expect(d.frvp.vaDownColor).toBe('#f2364566');
-        expect(d.frvp.vahColor).toBe('#787B86');
-        expect(d.frvp.valColor).toBe('#787B86');
-        expect(d.frvp.pocColor).toBe('#2962FF');
+        // Defaults come from the shared semantic palette, never from local literals.
+        expect(d.frvp.upColor).toBe(`${BULLISH}BF`);
+        expect(d.frvp.downColor).toBe(`${BEARISH}BF`);
+        expect(d.frvp.vaUpColor).toBe(`${BULLISH}66`);
+        expect(d.frvp.vaDownColor).toBe(`${BEARISH}66`);
+        expect(d.frvp.vahColor).toBe(NEUTRAL);
+        expect(d.frvp.valColor).toBe(NEUTRAL);
+        expect(d.frvp.pocColor).toBe(ACCENT);
         expect(d.frvp.developingPocStyle).toBe('dotted');
         expect(d.frvp.developingVaStyle).toBe('dotted');
-        expect(d.frvp.developingPocColor).toBe('#2962FF');
-        expect(d.frvp.developingVaColor).toBe('#2962FF');
+        expect(d.frvp.developingPocColor).toBe(ACCENT);
+        expect(d.frvp.developingVaColor).toBe(ACCENT);
     });
 
     it('appears under the Volume section next to Anchored VWAP', () => {

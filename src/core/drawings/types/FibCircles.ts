@@ -1,17 +1,9 @@
 import type { Projector } from '../geometry';
 import type { FibLevel } from './FibRatios';
 import { RadialFib, type RadialGeom } from './RadialFib';
+import { fibLevels } from '../levelPalette';
 
-const CIRCLE_LEVELS: readonly FibLevel[] = [
-    { ratio: 0.236, color: '#f23645', enabled: true },
-    { ratio: 0.382, color: '#ff9800', enabled: true },
-    { ratio: 0.5, color: '#4caf50', enabled: true },
-    { ratio: 0.618, color: '#089981', enabled: true },
-    { ratio: 0.786, color: '#5b9cf6', enabled: true },
-    { ratio: 1, color: '#787b86', enabled: true },
-    { ratio: 1.618, color: '#f23645', enabled: true },
-    { ratio: 2.618, color: '#ff9800', enabled: true },
-];
+const CIRCLE_LEVELS = fibLevels([0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618]);
 
 /** Concentric full circles at Fibonacci-ratio pixel radii from a data-anchored center (center + edge). */
 export class FibCircles extends RadialFib {

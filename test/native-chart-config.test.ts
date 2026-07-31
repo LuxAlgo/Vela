@@ -204,7 +204,7 @@ describe('per-price-style colors — each style is independent (item 15)', () =>
         // untouched styles default to the chart up/down so rendering is unchanged…
         expect(cfg.bars).toEqual({ upColor: '#089981', downColor: '#f23645' });
         expect(cfg.line).toEqual({ color: '#3b82f6', width: 2 });
-        expect(cfg.area).toEqual({ lineColor: '#3b82f6', width: 2, topColor: 'rgba(59, 130, 246, 0.28)', bottomColor: 'rgba(59, 130, 246, 0.02)' });
+        expect(cfg.area).toEqual({ lineColor: '#3b82f6', width: 2, topColor: 'rgba(59,130,246,0.28)', bottomColor: 'rgba(59,130,246,0.02)' });
         // baseline owns its palette (independent of the candle colors); each area is a
         // two-stop wash of the line color — stronger near the line, fainter at the baseline.
         expect(cfg.baseline).toEqual({

@@ -3,6 +3,7 @@ import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_SIZE_OPTIONS } from '../schema';
 import { pointInBox, handleAt } from '../hittest';
+import { VALID, INVALID } from '../../palette';
 
 /** How the gear panel's stop/target inputs interpret their value. */
 export type PositionLevelMode = 'price' | 'points';
@@ -35,8 +36,8 @@ export class PositionTool extends Drawing {
     private static readonly MIN_WIDTH_PX = 48;
     private static readonly DEFAULT_RISK_PERCENT = 1;
     private static readonly DEFAULT_ACCOUNT_BALANCE = 10_000;
-    private static readonly DEFAULT_PROFIT_COLOR = '#0ecb81';
-    private static readonly DEFAULT_LOSS_COLOR = '#f6465d';
+    private static readonly DEFAULT_PROFIT_COLOR = VALID;
+    private static readonly DEFAULT_LOSS_COLOR = INVALID;
 
     // Declared with `!` so a field default never clobbers readProps (base constructor runs first).
     /** Percent of account balance risked on the stop (drives dollar loss + position size). */

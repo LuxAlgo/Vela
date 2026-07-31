@@ -73,7 +73,7 @@ const CSS = `
     font-weight: 600;
 }
 .vela-sp-tab:hover { color: var(--vela-fg); }
-.vela-sp-tab[data-active] { background: #ffffff; color: #16181d; }
+.vela-sp-tab[data-active] { background: var(--vela-selected-bg); color: var(--vela-selected-fg); }
 .vela-sp-list { margin-top: var(--vela-space-2); max-height: 46vh; overflow: auto; }
 .vela-sp-list::-webkit-scrollbar { width: 8px; }
 .vela-sp-list::-webkit-scrollbar-thumb {
@@ -90,7 +90,7 @@ const CSS = `
     border-radius: 8px;
     cursor: pointer;
 }
-.vela-sp-row:hover, .vela-sp-row[data-highlighted] { background: var(--vela-surface-elev); }
+.vela-sp-row:hover, .vela-sp-row[data-highlighted] { background: var(--vela-hover); }
 .vela-sp-avatar {
     width: 28px;
     height: 28px;
@@ -99,8 +99,8 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
-    font-size: 12px;
+    color: var(--vela-fg-on-fill);
+    font-size: var(--vela-font-size-md);
     font-weight: 700;
 }
 .vela-sp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -118,8 +118,9 @@ const CSS = `
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
-.vela-sp-badge[data-p='binance'] { color: #f0b90b; }
-.vela-sp-badge[data-p='hyperliquid'] { color: #50d2c1; }
+/* Provider brand marks — fixed by the venue, deliberately outside the theme palette. */
+.vela-sp-badge[data-p='binance'] { color: #f0b90b; } /* palette-exempt: venue brand mark */
+.vela-sp-badge[data-p='hyperliquid'] { color: #50d2c1; } /* palette-exempt: venue brand mark */
 .vela-sp-empty { padding: var(--vela-space-3); color: var(--vela-fg-muted); text-align: center; }
 `;
 

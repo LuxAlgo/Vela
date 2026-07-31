@@ -94,7 +94,8 @@ work from the very first keystroke, before any click.
 
 - **Topbar** — symbol button (opens the search), timeframe dropdown, chart-style dropdown
   (built-ins ∪ [plugin chart types](../contributing/plugin-sdk.md), with their icons and
-  labels), Indicators picker, data-window and object-tree panel toggles, then any
+  labels), Indicators picker, undo/redo (same history as Ctrl+Z / Ctrl+Y), data-window and
+  object-tree panel toggles, then any
   [contributed actions](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)
   in the right-hand cluster.
 - **Status line** — symbol + OHLC and change of the hovered bar (resting on the latest
@@ -119,8 +120,12 @@ work from the very first keystroke, before any click.
   the timeframe, **fetches the depth its window needs**, and frames it: `1D`→1m, `7D`→5m,
   `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing the timeframe by hand
   leaves range mode (the chip clears and the fetch depth returns to your `bars` setting).
-- **Context menus** — right-click the chart body, the price axis, or the time axis for
-  zone-specific actions (copy price, reset view, screenshot, scale toggles).
+- **Context menus** — right-click the chart body for reset view, removing all drawings or all
+  indicators, and the settings dialog; the price axis for that pane's own scale (autoscale,
+  invert, regular/percent/indexed/logarithmic, and the label and level toggles); the time axis
+  for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
+  is independent of the main one. Each menu's settings entry opens the settings dialog on the
+  tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
 
 ## Widget state — the same surface as the workspace
 

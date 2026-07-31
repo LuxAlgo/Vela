@@ -3,6 +3,7 @@
 // and because the shell is a flex SIBLING of the chart (not an overlay) opening it shrinks the
 // chart. The object tree and the data window are the two panels built on it.
 import { injectStyles } from '../ui/styles';
+import { iconEl } from '../ui/icons';
 
 const STYLE_ID = 'vela-widget-sidepanel';
 const CSS = `
@@ -38,9 +39,10 @@ const CSS = `
     justify-content: center;
     border-radius: 4px;
     color: var(--vela-fg-muted);
-    font-size: 13px;
+    font-size: 16px;
 }
-.vela-panel-close:hover { background: var(--vela-hover); color: var(--vela-fg); }
+.vela-panel-close .vela-icon { width: 16px; height: 16px; }
+.vela-panel-close:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-panel-body { flex: 1; overflow: auto; padding: 8px; }
 .vela-panel-body::-webkit-scrollbar { width: 8px; }
 .vela-panel-body::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
@@ -69,7 +71,7 @@ export class SidePanel {
         heading.textContent = title;
         const close = doc.createElement('button');
         close.className = 'vela-panel-close';
-        close.textContent = '✕';
+        close.appendChild(iconEl('close', doc));
         close.title = 'Close';
         close.addEventListener('click', () => this.toggle(false));
         header.append(heading, close);

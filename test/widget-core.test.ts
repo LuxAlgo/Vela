@@ -348,4 +348,17 @@ describe('WidgetHistory late-resolves the current chart', () => {
         h.redo();
         expect(b.drawings.redo).toHaveBeenCalledTimes(1);
     });
+
+    it('onChange reports canUndo / canRedo for the topbar tools', async () => {
+        const { WidgetHistory } = await import('../src/widget/history');
+        const h = new WidgetHistory();
+        const seen: Array<{ undo: boolean; redo: boolean }> = [];
+        h.onChange(() => seen.push({ undo: h.canUndo, redo: h.canRedo }));
+        h.push({ undo: () => {}, redo: () => {} });
+        expect(seen[seen.length - 1]).toEqual({ undo: true, redo: false });
+        h.undo();
+        expect(seen[seen.length - 1]).toEqual({ undo: false, redo: true });
+        h.redo();
+        expect(seen[seen.length - 1]).toEqual({ undo: true, redo: false });
+    });
 });

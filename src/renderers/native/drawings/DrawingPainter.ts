@@ -2,15 +2,20 @@ import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
 import { SegmentDrawing, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
 import { dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
-import { withAlpha } from '../core/chartConfig';
+import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
+import { withAlpha } from '../../../core/color';
 import { valueDecimals } from '../chrome/ticks';
 
 const HANDLE_RADIUS = 4.5; // px radius of the round drag handles
 /** Handle chrome is fixed (not the drawing's line color) so tools with atypical accents —
  *  e.g. regression gray / FRVP green — still match every other drawing's anchors. */
 const HANDLE_BORDER = DEFAULT_DRAWING_COLOR;
-const HANDLE_FILL = 'rgba(120, 123, 134, 0.55)';
+const HANDLE_FILL = withAlpha(NEUTRAL, 0.55);
 const GHOST_ALPHA = 0.7;
+/** Info badges (regression R², measure deltas) float over CHART CONTENT of any color, so
+ *  they keep a fixed dark plate instead of a themed surface. */
+const BADGE_FILL = SLATE_DEEP;
+const BADGE_STROKE = SLATE;
 /** The frame a text label wears when it's the target: firm once clicked, a hint under the cursor.
  *  (Its box is the shared TEXT_FRAME inset/rise, so it coincides with the inline editor's border.) */
 const TEXT_FRAME_ALPHA = { selected: 0.3, hovered: 0.12 };
@@ -109,7 +114,7 @@ export class DrawingPainter {
         const b = d.anchors[1];
         if (!a) return;
         // Neutral gray guides (same as the regression channel midline) — not the tool's accent color.
-        const color = d instanceof RegressionChannel ? d.reg?.midColor || '#787b86' : '#787b86';
+        const color = d instanceof RegressionChannel ? d.reg?.midColor || NEUTRAL : NEUTRAL;
         const guide = (time: number): void => {
             const x = proj.xOf(time);
             ctx.save();
@@ -628,7 +633,7 @@ export class DrawingPainter {
         const y = Math.min(pts[0]![1], pts[1]![1]);
         const w = Math.abs(pts[1]![0] - pts[0]![0]);
         const h = Math.abs(pts[1]![1] - pts[0]![1]);
-        const color = d.isUp() ? '#0ecb81' : '#f6465d';
+        const color = d.isUp() ? BULLISH : BEARISH;
         ctx.save();
         ctx.globalAlpha = 0.12 * ctx.globalAlpha;
         ctx.fillStyle = color;
@@ -736,11 +741,11 @@ export class DrawingPainter {
             ctx.save();
             ctx.globalAlpha = 0.9 * ctx.globalAlpha;
             roundRect(ctx, bx, by - 8, boxW, 16, 3);
-            ctx.fillStyle = '#1e293b';
-            ctx.fill();
-            ctx.restore();
-            ctx.fillStyle = theme.textColor;
-            ctx.textAlign = 'left';
+        ctx.fillStyle = BADGE_FILL;
+        ctx.fill();
+        ctx.restore();
+        ctx.fillStyle = theme.textColor;
+        ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
             ctx.fillText(txt, bx + pad, by);
             ctx.textBaseline = 'alphabetic';
@@ -1213,13 +1218,13 @@ export class DrawingPainter {
         ctx.save();
         ctx.globalAlpha = 0.9 * ctx.globalAlpha;
         roundRect(ctx, bx, by, bw, bh, 3);
-        ctx.fillStyle = '#1e293b';
+        ctx.fillStyle = BADGE_FILL;
         ctx.fill();
-        ctx.strokeStyle = '#475569';
+        ctx.strokeStyle = BADGE_STROKE;
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.restore();
-        ctx.fillStyle = priceChange >= 0 ? '#26a69a' : '#ef5350';
+        ctx.fillStyle = priceChange >= 0 ? BULLISH : BEARISH;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(txt, bx + 6, by + bh / 2);

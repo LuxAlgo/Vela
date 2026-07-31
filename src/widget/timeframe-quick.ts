@@ -8,6 +8,8 @@ import { parseTimeframe } from './timeframe';
 const STYLE_ID = 'vela-widget-tfquick';
 const CSS = `
 .vela-tq-input {
+    display: block;
+    margin: 0 auto;
     width: 220px;
     box-sizing: border-box;
     height: 40px;

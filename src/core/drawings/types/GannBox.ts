@@ -1,17 +1,10 @@
 import type { Projector } from '../geometry';
 import { pointInBox } from '../hittest';
 import { FibRatios, type FibEntryLine, type FibLevel } from './FibRatios';
+import { fibLevels, LEVEL_ANCHOR } from '../levelPalette';
 
 /** The Gann-box subdivisions, applied to BOTH the price (horizontal) and time (vertical) axes. */
-const GANN_BOX_LEVELS: readonly FibLevel[] = [
-    { ratio: 0, color: '#787b86', enabled: true, label: '0' },
-    { ratio: 0.25, color: '#f23645', enabled: true, label: '0.25' },
-    { ratio: 0.382, color: '#ff9800', enabled: true, label: '0.382' },
-    { ratio: 0.5, color: '#4caf50', enabled: true, label: '0.5' },
-    { ratio: 0.618, color: '#089981', enabled: true, label: '0.618' },
-    { ratio: 0.75, color: '#5b9cf6', enabled: true, label: '0.75' },
-    { ratio: 1, color: '#787b86', enabled: true, label: '1' },
-];
+const GANN_BOX_LEVELS = fibLevels([0, 0.25, 0.382, 0.5, 0.618, 0.75, 1].map((ratio) => ({ ratio, label: String(ratio) })));
 
 /**
  * A Gann box — a price/time grid between two corners, with horizontal + vertical lines at the
@@ -57,7 +50,7 @@ export class GannBox extends FibRatios {
             out.push({ color: lv.color, x1: vx, y1: top, x2: vx, y2: bot, numberText: '', numberX: vx, numberY: top, numberAlign: 'center', labelX: vx, labelY: top });
         }
         // the two diagonals (in the 1.0 level's color)
-        const diag = this.levels.find((l) => l.ratio === 1)?.color ?? '#787b86';
+        const diag = this.levels.find((l) => l.ratio === 1)?.color ?? LEVEL_ANCHOR;
         out.push({ color: diag, x1: left, y1: top, x2: right, y2: bot, numberText: '', numberX: 0, numberY: 0, numberAlign: 'left', labelX: 0, labelY: 0 });
         out.push({ color: diag, x1: left, y1: bot, x2: right, y2: top, numberText: '', numberX: 0, numberY: 0, numberAlign: 'left', labelX: 0, labelY: 0 });
         return out;

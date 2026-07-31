@@ -143,9 +143,13 @@ export class RendererControl {
         return this;
     }
 
-    /** Open (or toggle) the renderer's in-chart settings dialog — silent no-op without one. */
-    openSettings(): this {
-        this.renderer.openSettingsDialog?.();
+    /**
+     * Open (or toggle) the renderer's in-chart settings dialog — silent no-op without one.
+     * Pass a section title (e.g. `'Canvas'`) to land on that tab; an unknown one opens the
+     * dialog on its first tab, and with a section an open dialog switches tab instead of closing.
+     */
+    openSettings(section?: string): this {
+        this.renderer.openSettingsDialog?.(section);
         return this;
     }
 

@@ -32,7 +32,7 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--vela-fg-on-fill);
     font-size: 10px;
     font-weight: 700;
 }

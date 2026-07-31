@@ -1,10 +1,11 @@
 import type { Drawing } from './Drawing';
 import { PatternDrawing } from './types/PatternDrawing';
 import { CalloutBase } from './types/CalloutBase';
+import { INVALID, VALID } from '../palette';
 
 /** Semantic validity-tint colors, shared by the painter (body wash, name badge, leg ratios). */
-export const VALID_FILL = '#0ecb81';
-export const INVALID_FILL = '#f6465d';
+export const VALID_FILL = VALID;
+export const INVALID_FILL = INVALID;
 
 /** The minimal theme slice the color resolution needs. */
 export interface EffectiveColorTheme {

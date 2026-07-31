@@ -59,8 +59,8 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |
 | `animations` | boolean or `{ zoom?, pan? }` | **on** | `true`/`false` toggles all; an object configures each. Defaults: eased zoom on, inertial pan on (short snappy glide). `{ pan: false }` = instant pan. |
 | `glow` | number | `0` | Neon glow/bloom for line series (~0.6 = strong). **WebGL2 only** — ignored on canvas2d. |
-| `upColor` | string | `#0d98c6` (cyan) | Bullish candle color (native renderer). |
-| `downColor` | string | `#ffffff` (white) | Bearish candle color (native renderer). |
+| `upColor` | string | `#089981` (green) | Bullish candle color (native renderer). |
+| `downColor` | string | `#f23645` (red) | Bearish candle color (native renderer). |
 | `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn (native renderer). |
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 
@@ -92,7 +92,6 @@ See [Drawing tools](./drawing-tools.md) for the full catalogue and the `chart.dr
 
 ### Non-obvious defaults, called out
 
-- **Candle colors are cyan up / white down** (`#0d98c6` / `#ffffff`), not the usual green/red. Override with `upColor`/`downColor`.
 - **Animations are on** by default (eased zoom, snappy inertial pan).
 - **The current-price line is on** by default.
 - **The price scale is linear** by default (`logScale: false`).

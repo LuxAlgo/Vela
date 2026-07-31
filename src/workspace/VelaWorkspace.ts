@@ -14,7 +14,7 @@ import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
-import { ensureUIHost, injectStyles, registerIcon } from '../ui';
+import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
 import { KeymapManager } from '../ui/keymap';
 import { Menu } from '../ui/components/menu';
 import type { Vela } from '../Vela';
@@ -140,10 +140,7 @@ const CSS = `
 `;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
-registerIcon(
-    'layout',
-    '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/></svg>',
-);
+registerIcon('layout', svg16('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/>'));
 
 export class VelaWorkspace {
     readonly root: HTMLElement;
@@ -182,6 +179,8 @@ export class VelaWorkspace {
     private globalTool: DrawingTypeKey | null = null;
     private globalSnap: SnapMode = 'off';
     private globalStay = false;
+    /** Live subscription to the ACTIVE cell's unified history (rebound on every projection). */
+    private historyUnsub: (() => void) | null = null;
     /** Favorite drawing tools — a WORKSPACE preference (one star set, every cell). */
     private favs: string[] = [];
     /** Live sync configuration (mutable copy of the option). */
@@ -250,7 +249,13 @@ export class VelaWorkspace {
         this.symbolPicker = new SymbolPicker({
             host: this.root,
             onSelect: (ticker) => this.active.setSymbol(ticker),
-            onOpenChange: (open) => this.trackDialog(open),
+            onOpenChange: (open) => {
+                // In-chart dialogs (indicator inputs, chart settings) live inside a cell's
+                // chart container, so opening the search from the topbar never hits their
+                // outside-dismiss — close them on every cell explicitly.
+                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
         });
         this.symbolPicker.setSource(() => this.feed.symbols());
         this.indicatorPicker = new IndicatorPicker({
@@ -272,9 +277,10 @@ export class VelaWorkspace {
             symbol: '',
             onSymbolClick: () => this.symbolPicker.open(),
             onIndicatorsClick: () => this.indicatorPicker.open(),
+            onUndoClick: () => this.active.history.undo(),
+            onRedoClick: () => this.active.history.redo(),
             onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.active.downloadScreenshot(),
-            onSettingsClick: () => this.active.chart.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: '60',
@@ -326,7 +332,7 @@ export class VelaWorkspace {
         // ONE attribution mark for the whole grid (bottom-left, floating above the
         // bottom-left cell's time axis) — the cells disable their per-chart marks, and
         // this single mark is the NOTICE-required equivalent visible attribution.
-        const mark = createAttributionMark(doc, resolveTheme(opts.theme).textColor);
+        const mark = createAttributionMark(doc, resolveTheme(opts.theme).background);
         Object.assign(mark.style, { left: '12px', bottom: `${TIME_AXIS_H + 10}px`, zIndex: '11' });
         this.gridEl.appendChild(mark);
 
@@ -377,6 +383,7 @@ export class VelaWorkspace {
                           this.bottombar?.setActiveRange(preset.id);
                       },
                       onTimezone: (zone) => this.setTimezone(zone),
+                      onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
                 : null;
 
@@ -666,6 +673,10 @@ export class VelaWorkspace {
         this.topbar.setPriceStyle(cell.priceStyle);
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
+        const pushHistory = (): void => this.topbar.setHistoryState(cell.history.canUndo, cell.history.canRedo);
+        this.historyUnsub?.();
+        this.historyUnsub = cell.history.onChange(pushHistory);
+        pushHistory();
         this.objectTree.setSymbol(cell.symbol);
         this.objectTree.onChart(cell.chart);
         this.dataWindow.onChart(cell.chart); // the readout follows the active cell
@@ -778,6 +789,7 @@ export class VelaWorkspace {
                 nativeBackend: this.cellBackend,
                 dialogHost: this.root,
                 timezone: () => this.timezone,
+                setTimezone: (zone) => this.setTimezone(zone),
                 context: () => this.context(),
                 activate: (id) => this.setActiveCell(id),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),

@@ -4,6 +4,7 @@ import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_FIELDS } from '../schema';
 import { distToSegment, handleAt } from '../hittest';
 import type { FibLevel } from './FibRatios';
+import { cycleLevels, LEVEL_CYCLE } from '../levelPalette';
 
 /** Wave-count presets for the linear Mach construction. */
 export const MACH_WAVE_COUNT_OPTIONS = [3, 4, 5, 6, 8, 10, 12] as const;
@@ -14,29 +15,9 @@ export const MACH_NUMBER_OPTIONS = [1.5, 2, 2.5, 3, 4, 5] as const;
 const DEFAULT_WAVES = 6;
 const DEFAULT_MACH = 2;
 
-const LINEAR_COLORS = [
-    '#38c0fd',
-    '#5b9cf6',
-    '#089981',
-    '#4caf50',
-    '#ff9800',
-    '#f23645',
-    '#e91e63',
-    '#9c27b0',
-    '#787b86',
-    '#26a69a',
-    '#ab47bc',
-    '#ef5350',
-] as const;
-
 /** Default linear circle steps 1…12 (ratio = radius / R). */
 export function linearMachLevels(enabledCount = DEFAULT_WAVES): FibLevel[] {
-    return LINEAR_COLORS.map((color, i) => ({
-        ratio: i + 1,
-        color,
-        enabled: i < enabledCount,
-        label: String(i + 1),
-    }));
+    return [...cycleLevels(LEVEL_CYCLE.length, enabledCount)];
 }
 
 function sanitizeLevel(v: unknown): FibLevel | null {

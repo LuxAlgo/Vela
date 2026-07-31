@@ -9,8 +9,9 @@ import { classifyStyle } from './styleMap';
 import { normColor } from './colors';
 import { IdentityMap } from './identityMap';
 import { toLines, toBoxes, toLabels, toPolylines, toLinefills, toTables } from './drawings';
+import { ACCENT } from '../../core/palette';
 
-const DEFAULT_COLOR = '#2962ff';
+const DEFAULT_COLOR = ACCENT;
 
 export interface ToSceneResult {
     model: IndicatorModel;

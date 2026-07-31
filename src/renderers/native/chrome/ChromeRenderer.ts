@@ -11,6 +11,7 @@ import { DrawingSceneRenderer, type DrawingSet } from '../../shared/DrawingScene
 import { paneAxisTicks, formatAxisValue, timeTicks } from './ticks';
 import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
 import { parseColor } from '../backend/gl/color';
+import { DARK_THEME } from '../../../core/theme';
 import { tzOffsetMs } from './tz';
 
 /**
@@ -29,7 +30,7 @@ export class ChromeRenderer {
     private canvas: HTMLCanvasElement | null = null;
     private ctx: CanvasRenderingContext2D | null = null;
     // The color for axis tick labels — the stable chrome surface text, set each frame in render().
-    private axisTextColor = '#cbd5e1';
+    private axisTextColor = DARK_THEME.textColor;
     // Shared Pine-drawing renderer (line/box/label/polyline/linefill); widthCache persists.
     private readonly drawScene = new DrawingSceneRenderer({ timeToLogical: () => 0, barAt: () => null, theme: {} as VelaTheme });
 
@@ -373,7 +374,7 @@ function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {
 
 /**
  * White or black text for a colored price tag, biased toward white so saturated brand
- * colors (e.g. the default green `#089981` / red `#f23645`, L≈0.22–0.24) read as white,
+ * colors (the default candle green / red sit at L≈0.22–0.24) read as white,
  * while genuinely light colors (a white or pale candle color) still get dark text. Uses
  * relative luminance with a flip point of 0.4 — higher than `readableText`'s WCAG crossover
  * (~0.18) which perceptually over-picks black on mid-tone fills. Translucent `bg` is

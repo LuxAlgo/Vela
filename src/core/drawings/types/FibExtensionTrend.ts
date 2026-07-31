@@ -1,17 +1,10 @@
 import type { Projector } from '../geometry';
 import type { AnchorSlot } from '../Drawing';
 import { FibRatios, type FibEntryLine, type FibLevel } from './FibRatios';
+import { fibLevels, LEVEL_PURPLE } from '../levelPalette';
 
 /** Trend-based ratios: the move plus projections for price targets. */
-const LEVELS: readonly FibLevel[] = [
-    { ratio: 0, color: '#787b86', enabled: true },
-    { ratio: 0.382, color: '#ff9800', enabled: true },
-    { ratio: 0.5, color: '#4caf50', enabled: true },
-    { ratio: 0.618, color: '#089981', enabled: true },
-    { ratio: 1, color: '#787b86', enabled: true },
-    { ratio: 1.618, color: '#f23645', enabled: true },
-    { ratio: 2.618, color: '#9c27b0', enabled: true },
-];
+const LEVELS = fibLevels([0, 0.382, 0.5, 0.618, 1, 1.618, { ratio: 2.618, color: LEVEL_PURPLE }]);
 
 /**
  * Trend-based Fibonacci extension: three anchors A→B→C. Levels project the A–B price

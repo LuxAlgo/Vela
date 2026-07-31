@@ -204,7 +204,13 @@ export class VelaWidget {
         this.symbolPicker = new SymbolPicker({
             host: this.root,
             onSelect: (ticker, provider) => this.setSymbol(ticker, provider),
-            onOpenChange: (open) => this.trackDialog(open),
+            onOpenChange: (open) => {
+                // The renderer's in-chart dialogs (indicator inputs, chart settings) live
+                // inside the chart container, so opening the search from the topbar never
+                // hits their outside-dismiss — close them explicitly.
+                if (open) this.inner?.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
         });
         this.indicatorPicker = new IndicatorPicker({
             host: this.root,
@@ -239,9 +245,10 @@ export class VelaWidget {
             symbol: this.symbol,
             onSymbolClick: () => this.symbolPicker.open(),
             onIndicatorsClick: () => this.indicatorPicker.open(),
+            onUndoClick: () => this.history.undo(),
+            onRedoClick: () => this.history.redo(),
             onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.downloadScreenshot(),
-            onSettingsClick: () => this.inner?.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: this.timeframe,
@@ -251,6 +258,7 @@ export class VelaWidget {
             onPriceStyle: (style) => this.setPriceStyle(style),
             getContext: () => this.context(),
         });
+        this.history.onChange(() => this.topbar.setHistoryState(this.history.canUndo, this.history.canRedo));
 
         const main = doc.createElement('div');
         main.className = 'vela-widget-main';
@@ -271,8 +279,12 @@ export class VelaWidget {
         this.root.appendChild(main);
 
         this.contextMenu = new ChartContextMenu(this.chartHost, {
-            screenshot: () => this.downloadScreenshot(),
-            resetView: () => this.inner?.renderer.set('autoScale', true),
+            resetView: () => {
+                this.inner?.renderer.set('autoScale', true);
+                this.inner?.setVisibleRangePreset('ALL');
+            },
+            timezone: () => this.timezone,
+            setTimezone: (zone) => this.setTimezone(zone),
             getContext: () => this.context(),
         });
         this.toast = new Toast(this.chartHost);
@@ -286,6 +298,7 @@ export class VelaWidget {
                       timezone: this.timezone,
                       onRange: (preset) => this.applyRange(preset),
                       onTimezone: (zone) => this.setTimezone(zone),
+                      onSettingsClick: () => this.inner?.renderer.openSettings(),
                   })
                 : null;
 

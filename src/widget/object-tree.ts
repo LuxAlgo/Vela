@@ -79,7 +79,7 @@ const CSS = `
     cursor: default;
 }
 .vela-ot-row:hover { background: var(--vela-hover); }
-.vela-ot-row > .vela-icon { color: var(--vela-fg-muted); width: 18px; justify-content: center; flex: none; }
+.vela-ot-row > .vela-icon { color: var(--vela-fg-muted); width: 14px; height: 14px; font-size: 14px; justify-content: center; flex: none; }
 /* Drawing glyphs come from the type registry at toolbar scale — bring them down to row size. */
 .vela-ot-row > .vela-icon svg { width: 14px; height: 14px; }
 .vela-ot-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -91,14 +91,14 @@ const CSS = `
 .vela-ot-row[data-picked] .vela-ot-name { color: var(--vela-fg-bright); }
 .vela-ot-row[data-selected] { box-shadow: inset 2px 0 0 var(--vela-accent); }
 .vela-ot-avatar {
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     flex: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--vela-fg-on-fill);
     font-size: 10px;
     font-weight: 700;
 }
@@ -136,7 +136,7 @@ const CSS = `
 /* An engaged action stays out: hidden and locked are states, and a state the user can only
    see by hovering is a state they will not find. */
 .vela-ot-row .vela-ot-btn[data-engaged] { visibility: visible; color: var(--vela-fg); }
-.vela-ot-btn:hover:not(:disabled) { background: var(--vela-active); color: var(--vela-fg); }
+.vela-ot-btn:hover:not(:disabled) { background: var(--vela-active); color: var(--vela-fg-bright); }
 .vela-ot-btn:disabled { opacity: 0.35; cursor: default; }
 .vela-ot-empty { padding: 20px 10px; text-align: center; color: var(--vela-fg-muted); font-size: 12px; }
 
@@ -174,6 +174,7 @@ const CSS = `
 }
 .vela-ot-selcount { flex: 1; min-width: 0; color: var(--vela-fg-muted); font-size: 11px; }
 .vela-ot-selbar .vela-ot-btn { visibility: visible; width: 24px; height: 22px; }
+.vela-ot-selbar .vela-ot-btn[data-icon='group'] .vela-icon { width: 16px; height: 16px; font-size: 16px; }
 
 /* ── drag-and-drop ── */
 .vela-ot-row[data-drag] { cursor: grab; }
@@ -624,7 +625,7 @@ export class ObjectTree extends SidePanel {
         }
         const handle = pass.handle(row.id);
         const el = this.row(
-            iconEl('wave', doc),
+            iconEl('indicators', doc),
             row.label,
             row.visible,
             [
@@ -834,6 +835,7 @@ export class ObjectTree extends SidePanel {
         const doc = this.el.ownerDocument;
         const b = doc.createElement('button');
         b.className = 'vela-ot-btn';
+        b.dataset.icon = a.icon;
         if (a.engaged) b.dataset.engaged = '1';
         if (a.disabled) b.disabled = true;
         b.title = a.title;

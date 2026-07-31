@@ -83,7 +83,11 @@ export class Popover {
 - **Dialog-like machines expect conditional rendering** — their props carry no `hidden`;
   toggle visibility from `api.open` in your render (tooltip/menu props DO carry it).
 - **Style through the tokens** (`--vela-*` custom properties) and inject the sheet with
-  `injectStyles` (id-guarded, Shadow-DOM-friendly). Never hard-code colors.
+  `injectStyles` (id-guarded, Shadow-DOM-friendly). Never hard-code colors: the tokens are
+  derived from the theme in `src/core/tokens.ts`, and the fixed brand/meaning colors live in
+  `src/core/palette.ts`. A test scans `src/` and fails on a stray hex literal.
+- **Take icons from the registry** (`src/core/icons.ts`) rather than inlining SVG: 16×16 at
+  stroke 1.2 for UI chrome, 24×24 at stroke 1.8 for drawing tools, always `currentColor`.
 - Floating layers mount into the nearest `.vela-ui` host (token inheritance); use the
   `vela-ui-layer` class on portal-ed positioners.
 - Keyboard-facing components integrate with `KeymapManager` scopes: report open/close via
