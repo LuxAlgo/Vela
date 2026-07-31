@@ -2,6 +2,18 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **A scripting engine can now be built as a separate package.** `vela/plugin` gained the
+  engine-authoring surface: the `ScriptingEngine` port types (completed with
+  `EngineContextSnapshot`, `ContextSelect` and `BarsChangeReason`, now also on the root
+  entry), the model vocabulary engine output is built from, the `stableSeriesId` identity
+  contract — series ids, renderer reconciliation and persisted per-series settings stay
+  identical whichever package an engine ships in — and the semantic palette. All additive;
+  nothing moves or changes shape.
+
 ## [v0.3.0]
 
 ### Added

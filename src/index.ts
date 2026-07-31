@@ -94,6 +94,9 @@ export type {
     EngineAlert,
     EngineWarning,
     VisibleBarRange,
+    BarsChangeReason,
+    EngineContextSnapshot,
+    ContextSelect,
 } from './core/ports/ScriptingEngine';
 export type { MarketDataFeed, SymbolInfo, BarRange } from './core/ports/MarketDataFeed';
 export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';

@@ -8,6 +8,9 @@
 //    extended-ticker modifier (`"SYM;id"` for scripts).
 //  - NATIVE INDICATORS (`registerNativeIndicator`): core-computed indicators with renderer
 //    layers driven through the same native-data channels (volume and VPVR are built on it).
+//  - SCRIPTING ENGINES (`chart.registerEngine`): a language runtime executing indicator
+//    scripts against Vela-owned bars through the `ScriptingEngine` port — see the section
+//    at the bottom for the port plus the model/identity/palette vocabulary it builds with.
 //
 // UI contributions (style-picker entries, settings sections, shortcuts) arrive with the
 // widget SDK — contributions are DATA descriptors, never DOM.
@@ -68,5 +71,36 @@ export type { DrawingTypeKey } from './core/drawings/Drawing';
 export { registerIcon, iconMarkup } from './ui/icons';
 export type { KeyBindingDescriptor, ResolvedBinding } from './ui/keymap';
 export type { PriceStyle } from './core/options';
-export type { OHLCV } from './core/model/ohlcv';
 export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';
+
+// SCRIPTING ENGINES (`chart.registerEngine` / the widget's `engines` option): a language
+// runtime implementing the `ScriptingEngine` port — prepare/execute sessions over bars
+// Vela owns and passes in. Engines are per-chart instances rather than a global registry,
+// but the port, the model vocabulary engine output is built from, and the series-identity
+// contract all live here so an engine package builds against `vela/plugin` alone.
+export type {
+    ScriptingEngine,
+    EngineCapabilities,
+    PreparedScript,
+    ExecutionRequest,
+    ExecutionHandlers,
+    ExecutionSession,
+    ExecutionMarket,
+    FetchSeries,
+    EngineAlert,
+    EngineWarning,
+    VisibleBarRange,
+    BarsChangeReason,
+    EngineContextSnapshot,
+    ContextSelect,
+} from './core/ports/ScriptingEngine';
+export type { MarketDataFeed, SymbolInfo, BarRange } from './core/ports/MarketDataFeed';
+// The full model vocabulary (`OHLCV`, `IndicatorModel`, series/scene/drawing specs) — what
+// engine `onModel` payloads and native-indicator outputs are made of.
+export type * from './core/model';
+// Series ids must come from `stableSeriesId` so renderer reconciliation and persisted
+// per-series settings survive re-runs identically whichever engine produced the series.
+export { stableSeriesId } from './core/model';
+// The semantic palette (fixed brand/meaning colors, never theme-dependent) so plugin
+// output — default plot colors, layer inks — matches core affordances exactly.
+export * from './core/palette';
