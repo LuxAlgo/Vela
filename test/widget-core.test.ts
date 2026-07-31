@@ -2,7 +2,7 @@
 // indicator-manifest resolution (src/widget/indicators.ts). DOM-free — node env.
 import { describe, it, expect, vi } from 'vitest';
 import { parseTimeframe, timeframeMs, timeframeLabel } from '../src/widget/timeframe';
-import { resolveIndicators } from '../src/widget/indicators';
+import { indicatorLedger, resolveIndicators } from '../src/widget/indicators';
 import { fmtPrice, fmtChange, decimalsFor } from '../src/widget/format';
 import { tzMenuLabel, tzButtonLabel } from '../src/widget/timezones';
 import { priceStyleLabel } from '../src/widget/topbar';
@@ -198,6 +198,30 @@ describe('filterSymbols', () => {
             expect(filterSymbols(mixed, 'binance').map((s) => s.ticker)).toEqual(['BTCUSDT', 'ETHUSDT', 'BTCUSD']);
             expect(filterSymbols(mixed, 'off').map((s) => s.ticker)).toEqual(['OFFLINE']);
         });
+    });
+});
+
+describe('indicatorLedger', () => {
+    const base = { present: [], instanceNames: [], pendingManifest: null, manifestSettled: true, volumePending: false };
+
+    it('reports the LIVE sets once settled — empty means "the user removed everything"', () => {
+        expect(indicatorLedger({ ...base, present: ['volume', 'vpvr'], instanceNames: ['RSI'] })).toEqual({ manifest: ['RSI'], natives: ['volume', 'vpvr'] });
+        // The resurrection bug this helper pins down: pending leftovers must NOT shadow
+        // a deliberately emptied live set.
+        expect(indicatorLedger({ ...base, pendingManifest: ['Old'] })).toEqual({ manifest: [], natives: [] });
+    });
+
+    it('falls back to the restored manifest names only while the manifest is UNSETTLED', () => {
+        expect(indicatorLedger({ ...base, manifestSettled: false, pendingManifest: ['A', 'B'] })).toEqual({ manifest: ['A', 'B'], natives: [] });
+        // Unsettled with nothing pending: the live (empty) instances are all there is.
+        expect(indicatorLedger({ ...base, manifestSettled: false })).toEqual({ manifest: [], natives: [] });
+    });
+
+    it('reports the volume INTENT until the auto-add had its chance, never duplicating', () => {
+        expect(indicatorLedger({ ...base, volumePending: true })).toEqual({ manifest: [], natives: ['volume'] });
+        expect(indicatorLedger({ ...base, volumePending: true, present: ['volume'] })).toEqual({ manifest: [], natives: ['volume'] });
+        // After the first load the registry is the whole truth: no intent padding.
+        expect(indicatorLedger({ ...base, volumePending: false, present: ['vpvr'] })).toEqual({ manifest: [], natives: ['vpvr'] });
     });
 });
 

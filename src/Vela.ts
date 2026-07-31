@@ -158,6 +158,16 @@ export class Vela {
         return this.orchestrator.availableNativeIndicators();
     }
 
+    /**
+     * The native-indicator types PRESENT on the chart right now — the synchronous slice of
+     * {@link availableNativeIndicators} (only support probing is async; presence never is).
+     * Persistence snapshots read this: an unload-time flush must see an add/remove that
+     * happened microseconds ago, which an async catalog mirror cannot guarantee.
+     */
+    presentNativeIndicators(): string[] {
+        return this.orchestrator.presentNativeIndicators();
+    }
+
     /** Live handles of every indicator currently on the chart (script + native) — drive
      *  host panels (object trees, indicator lists) with per-id visibility/removal. */
     indicators(): IndicatorHandle[] {

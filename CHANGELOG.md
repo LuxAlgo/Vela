@@ -47,6 +47,17 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Removed and added indicators are remembered reliably.** Two persistence flaws could
+  misremember the indicator set across a reload. A chart restored from a saved state kept its
+  boot-time indicator list as a fallback, and on charts built without an `indicators` manifest
+  (or before it resolved) that fallback shadowed a deliberately emptied set — removing the last
+  indicator, Volume included, brought it back on the next load, every time. And the saved
+  document read indicator presence from a copy that refreshed asynchronously, so an add or
+  remove followed quickly by a reload could be missed entirely. Snapshots now read presence
+  from the chart synchronously (`chart.presentNativeIndicators()`, a new public read) and the
+  restored-state fallback ends the moment the live set becomes the truth — an empty chart you
+  emptied stays empty, and a change made a heartbeat before leaving the page survives it.
+
 - **Symbol search understands exchanges again.** Typing an exchange's name surfaces its symbols
   (after any ticker matches), and an exchange prefix scopes the search to that venue — `binance:btc`
   and `binance btc` both list Binance's BTC… pairs, a unique shorthand like `coin btc` works too,

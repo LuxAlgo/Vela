@@ -955,9 +955,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * add is a no-op). Powers a host "add native indicator" menu that can gate + de-duplicate. Async
      * because a descriptor's `isSupported` may probe the provider for a required capability.
      */
+    /** The native types present on the chart — SYNC (registry state; no support probe). */
+    presentNativeIndicators(): string[] {
+        return this.registry
+            .all()
+            .map((r) => r.native?.type)
+            .filter((t): t is string => !!t);
+    }
+
     async availableNativeIndicators(): Promise<NativeIndicatorInfo[]> {
         const symbol = this.qualifiedSymbol();
-        const present = new Set(this.registry.all().map((r) => r.native?.type).filter((t): t is string => !!t));
+        const present = new Set(this.presentNativeIndicators());
         return Promise.all(
             nativeIndicatorDescriptors().map(async (d) => ({
                 type: d.type,

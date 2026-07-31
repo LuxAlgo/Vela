@@ -510,6 +510,7 @@ export class NativeRenderer implements IChartRenderer {
         if (this.loadingEl) return;
         const doc = this.wrapper.ownerDocument;
         const el = doc.createElement('div');
+        el.className = 'vela-loading'; // stable hook for probes and host styling
         Object.assign(el.style, {
             position: 'absolute',
             inset: '0',

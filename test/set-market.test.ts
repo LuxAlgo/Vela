@@ -595,6 +595,24 @@ describe('setMarket — in-place market switch', () => {
     });
 });
 
+describe('presentNativeIndicators — the sync presence read', () => {
+    it('reflects an add and a remove in the same tick (no async catalog round-trip)', async () => {
+        const { descriptor } = probeNative();
+        registerNativeIndicator(descriptor);
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        expect(chart.presentNativeIndicators()).toEqual([]);
+
+        const handle = chart.addNativeIndicator('probe');
+        // Synchronous: an unload-time persist flush must see this immediately.
+        expect(chart.presentNativeIndicators()).toEqual(['probe']);
+        handle.remove();
+        expect(chart.presentNativeIndicators()).toEqual([]);
+    });
+});
+
 describe('load states — the cleared chart + the loading affordance', () => {
     it('first load: the affordance is up from the start and ends with the first batch', async () => {
         const feed = new SwitchFeed();

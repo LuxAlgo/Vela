@@ -197,6 +197,9 @@ export class VelaWorkspace {
      *  (their setVisibleRange re-emits viewport:changed) must not re-propagate. */
     private syncBusy = false;
     private manifest: ResolvedIndicator[] = [];
+    /** The shared manifest can no longer change instance sets — resolved, or no
+     *  `indicators` option so nothing ever will. Gates the cells' ledger fallback. */
+    private manifestSettled = false;
     private timezone: string;
     private openDialogs = 0;
     private alerts: Array<{ cellId: string; symbol: string; title: string; message: string; time: number }> = [];
@@ -424,9 +427,12 @@ export class VelaWorkspace {
             void resolveIndicators(opts.indicators).then((list) => {
                 if (this.destroyed) return;
                 this.manifest = list;
+                this.manifestSettled = true; // from here each cell's live instance set is the truth, empty included
                 for (const cell of this.cellsById.values()) cell.setManifest(list, true);
                 this.projectActiveCell();
             });
+        } else {
+            this.manifestSettled = true; // nothing will ever resolve — settled empty from the start
         }
         this.mountAttachments();
     }
@@ -802,6 +808,7 @@ export class VelaWorkspace {
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStateDirty: () => this.markStateDirty(),
+                manifestSettled: () => this.manifestSettled,
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(slot.id, cell);
