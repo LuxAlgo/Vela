@@ -6,6 +6,23 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Stay in drawing mode.** A toolbar toggle under the magnet (pen with a lock) keeps the
+  armed tool ready after each placement, so you can draw several of the same shape without
+  re-picking the tool. Turn it off for the usual one-shot behavior; the brush family still
+  stays armed either way.
+- **Position sizing on the long/short tool.** The long/short position drawing now sizes from
+  your account: open its gear settings to set a risk percentage and account balance, and the
+  chart shows the dollar loss at the stop and the matching position size alongside the usual
+  risk:reward and percentage labels. The position size is itself editable — type the size you
+  want and the risk percentage adjusts to match. Drag from the entry in the profit direction —
+  higher for a long, lower for a short — and the profit zone follows that way; the stop lands on
+  the opposite side. A direction switch in the panel turns the whole trade around in place,
+  mirroring the stop and target across the entry with the risk:reward preserved. The stop and
+  target take exact values in your choice of unit — the absolute price or points from the entry —
+  and switching the unit re-expresses the current value without moving the level. Every label has
+  its own toggle: the direction-and-ratio header, the loss-and-size line, the target and stop
+  labels, the level prices inside them, or all text at once; the profit and loss zones recolor
+  from the quick-settings bar, and the label color and size are adjustable too.
 - **Multi-chart workspaces.** The new `VelaWorkspace` puts several full charts on one screen:
   pick a grid from the layout menu in the top bar — single, two side by side, two stacked,
   four, or eight — and resize the cells by dragging the dividers between them (double-click a
@@ -142,6 +159,20 @@ All notable changes to Vela, newest first.
   holds across symbol and timeframe switches and across reloads, whichever way you removed it
   (the indicators dialog, the legend, or the object tree). Before, auto-added indicators could
   quietly return on the next switch or reload.
+- **Text is typed straight onto the chart.** Placing a text annotation now drops a blinking caret
+  where you clicked, next to an "Enter Text" placeholder, and the words appear on the chart as you
+  type them — no settings field in between, and a thin gray frame around the words while you are
+  editing them. Text annotations start out large, so they read at a glance without reaching for the
+  size control. Enter starts a new line; clicking away (or Ctrl/Cmd+Enter) keeps the text and
+  Escape puts back what was there; a text annotation you never typed into is
+  dropped instead of left blank on the chart. Double-clicking existing text — or a callout — opens
+  the same on-chart editor. Finished text keeps that frame as its selection cue: firm when the
+  annotation is selected, fainter under the cursor, so you can see where the words can be grabbed.
+  The quick-settings bar opens alongside the caret, as it does for every other tool, and now carries
+  the text color and size on the bar itself, with bold and italic under the text field where the
+  words are — restyle while you type and the chart follows, without the edit being interrupted.
+  Previously a text annotation arrived pre-filled with the word "Text", had to be edited through the
+  settings popup, and its formatting was two clicks deep.
 - **The data window is a docked panel, not a floating box.** It used to hover over the top-right
   corner of the chart and was switched on with the `dataWindow` option; it is now the side panel
   described above, opened from the top bar, and it never covers the candles. _(Breaking: the

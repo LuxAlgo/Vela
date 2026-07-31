@@ -24,6 +24,12 @@ export interface SettingsField {
 
 export interface SettingsSchema {
     fields: SettingsField[];
+    /**
+     * The text **is** the drawing (a text label, a note, a callout) rather than an optional label on
+     * a shape. The settings popup then puts the text controls — color, size, bold, italic — on the
+     * bar itself instead of tucking them under the text field.
+     */
+    textIsContent?: boolean;
 }
 
 /** The line-style choices most tools expose (drives a `lineStyle` control). */

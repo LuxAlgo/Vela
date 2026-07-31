@@ -23,6 +23,7 @@ export interface DrawingToolbarOptions {
  * it — its own hover target, revealed on cell hover — opens a flyout listing the group's tools. A
  * cursor button returns to select/idle; measure/eraser modes sit at the bottom, and the magnet is a
  * cell whose chevron opens an Off/Weak/Strong menu (its icon toggles the last-used strength on/off).
+ * Below the magnet, a stay-in-drawing-mode toggle keeps tools armed after each placement.
  * Hover and active tints are CSS-driven (`:hover` + `[data-active]`) so they never lag. Tooltips
  * appear after a 2s hover. Pure vanilla DOM on the host (a `pointer-events:auto` island).
  */
@@ -51,6 +52,8 @@ export class DrawingToolbar {
     private measureActive = false;
     private eraserBtn: HTMLButtonElement | null = null;
     private eraserActive = false;
+    private stayBtn: HTMLButtonElement | null = null;
+    private stayActive = false;
     private visible = false;
     private readonly tipText = new WeakMap<HTMLElement, string>(); // per-anchor tooltip text (magnet's changes with mode)
     private tooltipEl: HTMLDivElement | null = null;
@@ -68,6 +71,7 @@ export class DrawingToolbar {
         private readonly onMeasure: () => void = () => {},
         private readonly onEraser: () => void = () => {},
         private readonly onToggleFavorite: (type: DrawingTypeKey, on: boolean) => void = () => {},
+        private readonly onStayMode: (on: boolean) => void = () => {},
         options: DrawingToolbarOptions = {},
     ) {
         this.borderColor = options.borderColor ?? CHROME_BORDER_COLOR;
@@ -181,9 +185,12 @@ export class DrawingToolbar {
         this.eraserBtn = this.makeButton(ERASER_ICON, 'Eraser (click/drag to delete)', () => this.onEraser());
         this.root.appendChild(this.eraserBtn);
         this.root.appendChild(this.makeMagnetCell());
+        this.stayBtn = this.makeButton(STAY_ICON, 'Stay in drawing mode', () => this.toggleStay());
+        this.root.appendChild(this.stayBtn);
         this.paintMeasure();
         this.paintEraser();
         this.paintMagnet();
+        this.paintStay();
         this.highlight();
     }
 
@@ -324,6 +331,26 @@ export class DrawingToolbar {
         const on = this.magnetMode !== 'off';
         cell.dataset.active = on ? '1' : '';
         icon.style.opacity = on ? '1' : '0.5';
+    }
+
+    /** Toggle stay-in-drawing-mode on/off and notify the renderer. */
+    private toggleStay(): void {
+        this.stayActive = !this.stayActive;
+        this.onStayMode(this.stayActive);
+        this.paintStay();
+    }
+
+    /** Reflect stay-in-drawing-mode externally without notifying back. */
+    setStayMode(on: boolean): void {
+        this.stayActive = on;
+        this.paintStay();
+    }
+
+    private paintStay(): void {
+        const b = this.stayBtn;
+        if (!b) return;
+        b.dataset.active = this.stayActive ? '1' : '';
+        b.style.opacity = this.stayActive ? '1' : '0.5';
     }
 
     // ── flyout ──
@@ -538,6 +565,7 @@ export class DrawingToolbar {
         this.paintMeasure();
         this.paintEraser();
         this.paintMagnet();
+        this.paintStay();
     }
 
     private makeButton(icon: string, title: string, onClick: () => void): HTMLButtonElement {
@@ -650,6 +678,8 @@ function ensureStyles(): void {
 const CURSOR_ICON = icon('cursor');
 const RULER_ICON = icon('ruler');
 const MAGNET_ICON = icon('magnet');
+/** Pen with a padlock — stay-in-drawing-mode (tools remain armed after each placement). */
+const STAY_ICON = icon('pen-lock');
 const ERASER_ICON = icon('eraser');
 /** A right-pointing chevron for the group/magnet flyout arrow (beside the icon). */
 const ARROW_ICON = icon('chevron-right');

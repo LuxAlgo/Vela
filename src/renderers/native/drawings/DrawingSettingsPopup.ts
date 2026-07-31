@@ -1,5 +1,5 @@
 import type { VelaTheme } from '../../../core/options';
-import type { Drawing, RegressionStyle, VwapStyle, FrvpStyle } from '../../../core/drawings';
+import type { Drawing, RegressionStyle, VwapStyle, FrvpStyle, PositionLevelMode } from '../../../core/drawings';
 import {
     DEFAULT_DRAWING_COLOR,
     TEXT_SIZE_OPTIONS,
@@ -11,6 +11,8 @@ import {
     MACH_NUMBER_OPTIONS,
     MachFigure,
     FixedRangeVolumeProfile,
+    PositionTool,
+    DIRECTION_OPTIONS,
     effectiveFillColor,
 } from '../../../core/drawings';
 import { icon, svg24, svg24Solid } from '../../../core/icons';
@@ -22,6 +24,8 @@ export type SettingsPatch = Record<string, unknown>;
 
 /** The actions a settings popup can invoke (wired by the controller to intents). */
 export interface SettingsActions {
+    /** The current live instance (sync rebuilds instances, so panels re-read through this). */
+    resolve(): Drawing | null;
     patch(p: SettingsPatch): void;
     setLocked(v: boolean): void;
     reorder(to: 'front' | 'back'): void;
@@ -102,6 +106,13 @@ export class DrawingSettingsPopup {
         return this.el != null;
     }
 
+    /** Whether `node` belongs to this popup — the bar or either of its floating children (color
+     *  picker / dropdown menu), which live outside `el`. */
+    contains(node: Node | null): boolean {
+        if (!node) return false;
+        return this.el?.contains(node) === true || this.colorPop?.contains(node) === true || this.menuEl?.contains(node) === true;
+    }
+
     /** Open the quick toolbar for `drawing`, floating clear of its `anchor` box.
      *  `onClose` fires on an outside-click dismissal (not a programmatic close). */
     open(drawing: Drawing, anchor: PopupAnchor | null, actions: SettingsActions, onClose?: () => void): void {
@@ -109,7 +120,11 @@ export class DrawingSettingsPopup {
         ensureStyles();
         this.onClose = onClose ?? null;
         const t = this.theme;
-        const paths = new Set(drawing.schema().fields.map((f) => f.path));
+        const schema = drawing.schema();
+        const paths = new Set(schema.fields.map((f) => f.path));
+        // Text-first annotations (and computed labels) wear their text controls on the bar; on a
+        // shape that merely CAN carry a label they stay beside the label field.
+        const textOnBar = schema.textIsContent === true || !paths.has('text.value');
 
         const el = document.createElement('div');
         el.className = 'vela-dpop';
@@ -145,6 +160,14 @@ export class DrawingSettingsPopup {
         if (paths.has('style.fillColor')) bar.appendChild(this.colorButton('Fill', BUCKET_ICON, effectiveFillColor(drawing, this.theme) ?? drawing.style.fillColor ?? DEFAULT_DRAWING_COLOR, (v) => actions.patch({ 'style.fillColor': v })));
         // Fixed-range VP: all settings live in the gear panel (nothing inline on the quick bar).
         const isFrvp = paths.has('frvp.rows') && drawing instanceof FixedRangeVolumeProfile;
+        // Position tool: zone colors sit on the bar; risk/reward numbers + display toggles live
+        // in the gear panel (they drive the loss/size labels).
+        const isPosition = paths.has('riskPercent') && drawing instanceof PositionTool;
+        if (isPosition) {
+            const pos = drawing as PositionTool;
+            bar.appendChild(this.colorButton('Profit zone', BUCKET_ICON, pos.profitColor, (v) => actions.patch({ profitColor: v })));
+            bar.appendChild(this.colorButton('Loss zone', BUCKET_ICON, pos.lossColor, (v) => actions.patch({ lossColor: v })));
+        }
         // Regression channel: per-line color + style, the two area fills, and the R² toggle.
         const reg = (drawing as unknown as { reg?: RegressionStyle }).reg;
         if (paths.has('reg.midColor') && reg) {
@@ -209,9 +232,12 @@ export class DrawingSettingsPopup {
         const toggles = drawing as unknown as { showPrice?: boolean; showDate?: boolean };
         if (paths.has('showPrice')) bar.appendChild(this.toggle('Show price', PRICE_DELTA_ICON, toggles.showPrice !== false, (v) => actions.patch({ showPrice: v })));
         if (paths.has('showDate')) bar.appendChild(this.toggle('Show date', DATE_DELTA_ICON, toggles.showDate !== false, (v) => actions.patch({ showDate: v })));
-        if (paths.has('text.color') && !paths.has('text.value')) bar.appendChild(this.colorButton('Text color', TYPE_ICON, drawing.text?.color || this.theme.textColor, (v) => actions.patch({ 'text.color': v })));
-        if (paths.has('text.size') && !paths.has('text.value')) bar.appendChild(this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), drawing.text?.size ?? 'normal', (s) => labelSizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }));
-        if (paths.has('text.value')) bar.appendChild(this.iconBtn('Text', TYPE_ICON, () => this.toggleTextPanel(drawing, actions)));
+        if (paths.has('text.color') && textOnBar) bar.appendChild(this.colorButton('Text color', TYPE_ICON, drawing.text?.color || t.textColor, (v) => actions.patch({ 'text.color': v })));
+        if (paths.has('text.size') && textOnBar) bar.appendChild(this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), drawing.text?.size ?? 'normal', (s) => labelSizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }));
+        // Bold/italic live under the text field; a computed label has no field, so they go on the bar.
+        if (paths.has('text.bold') && !paths.has('text.value')) bar.appendChild(this.toggle('Bold', BOLD_ICON, !!drawing.text?.bold, (v) => actions.patch({ 'text.bold': v })));
+        if (paths.has('text.italic') && !paths.has('text.value')) bar.appendChild(this.toggle('Italic', ITALIC_ICON, !!drawing.text?.italic, (v) => actions.patch({ 'text.italic': v })));
+        if (paths.has('text.value')) bar.appendChild(this.iconBtn('Text', TYPE_ICON, () => this.toggleTextPanel(drawing, actions, !textOnBar)));
         const editableLevels = drawing.editableLevels();
         if (editableLevels && !(drawing instanceof MachFigure)) {
             const fib = drawing as unknown as { numbersSize?: string; labelsSize?: string };
@@ -224,6 +250,7 @@ export class DrawingSettingsPopup {
         // and a kebab overflow (z-order + reset) sits just right of delete.
         bar.appendChild(this.divider());
         if (isFrvp) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.toggleFrvpPanel(drawing as FixedRangeVolumeProfile, actions)));
+        if (isPosition) bar.appendChild(this.iconBtn('Position size', GEAR_ICON, () => this.togglePositionPanel(drawing as PositionTool, actions)));
         if (editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.toggleLevelsPanel(drawing, actions)));
         bar.appendChild(this.toggle('Lock', LOCK_ICON, drawing.locked, (v) => actions.setLocked(v)));
         const del = this.iconBtn('Delete', TRASH_ICON, () => actions.remove());
@@ -274,8 +301,9 @@ export class DrawingSettingsPopup {
         }
     };
 
-    /** The expandable text editor (toggled by the Text button). */
-    private toggleTextPanel(drawing: Drawing, actions: SettingsActions): void {
+    /** The expandable text editor (toggled by the Text button): the field itself, with bold/italic
+     *  under it, plus color and size when those aren't already on the bar. */
+    private toggleTextPanel(drawing: Drawing, actions: SettingsActions, withColorAndSize: boolean): void {
         if (this.textPanel) {
             this.textPanel.remove();
             this.textPanel = null;
@@ -309,10 +337,14 @@ export class DrawingSettingsPopup {
 
         const tools = document.createElement('div');
         tools.style.cssText = `display:flex;align-items:center;justify-content:flex-start;gap:0;transform:scale(0.8);transform-origin:left center;`;
-        // text color defaults to the ACTUAL rendered color (theme text color when unset)
+        if (withColorAndSize) {
+            // text color defaults to the ACTUAL rendered color (theme text color when unset)
+            tools.append(
+                this.colorButton('Text color', TYPE_ICON, text?.color || this.theme.textColor, (v) => actions.patch({ 'text.color': v }), 14),
+                this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), text?.size ?? 'normal', (s) => sizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }),
+            );
+        }
         tools.append(
-            this.colorButton('Text color', TYPE_ICON, text?.color || this.theme.textColor, (v) => actions.patch({ 'text.color': v }), 14),
-            this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), text?.size ?? 'normal', (s) => sizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }),
             this.toggle('Bold', BOLD_ICON, !!text?.bold, (v) => actions.patch({ 'text.bold': v })),
             this.toggle('Italic', ITALIC_ICON, !!text?.italic, (v) => actions.patch({ 'text.italic': v })),
         );
@@ -323,6 +355,220 @@ export class DrawingSettingsPopup {
         autoGrow(input); // size to initial content (multi-line aware)
         this.reposition();
         input.focus();
+    }
+
+    /** Gear panel for the position tool: account fields (risk %, balance, position size — size
+     *  back-solves the risk %), the trade levels (direction switch, entry price, stop/target with
+     *  Price / Points units), per-label display toggles, and a live loss/size summary. Every commit
+     *  re-reads the live drawing — editing one field can move another (a flipped level, a
+     *  back-solved risk %), so all fields refresh together. */
+    private togglePositionPanel(drawing: PositionTool, actions: SettingsActions): void {
+        if (this.levelsPanel) {
+            this.levelsPanel.remove();
+            this.levelsPanel = null;
+            this.reposition();
+            return;
+        }
+        const t = this.theme;
+        const panel = document.createElement('div');
+        panel.style.cssText = `padding:8px 10px;border-top:1px solid var(--vela-border);display:flex;flex-direction:column;gap:6px;min-width:280px;`;
+
+        const live = (): PositionTool => {
+            const d = actions.resolve();
+            return d instanceof PositionTool ? d : drawing;
+        };
+        const refreshers: Array<() => void> = [];
+        const refreshAll = (): void => refreshers.forEach((f) => f());
+
+        /** Trim binary float noise so back-solved values (risk % from a typed size) stay readable. */
+        const fmt = (n: number): string => String(Math.round(n * 1e8) / 1e8);
+
+        const numberInput = (): HTMLInputElement => {
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.style.cssText = `width:96px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
+            return input;
+        };
+        const rowShell = (label: string): HTMLDivElement => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:10px;';
+            const lbl = document.createElement('span');
+            lbl.textContent = label;
+            lbl.style.cssText = 'flex:1;opacity:0.9;';
+            row.appendChild(lbl);
+            panel.appendChild(row);
+            return row;
+        };
+        const onEnterCommit = (input: HTMLInputElement, commit: () => void): void => {
+            input.addEventListener('change', commit);
+            input.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commit();
+                    input.blur();
+                }
+            });
+        };
+
+        type NumField = 'riskPercent' | 'accountBalance' | 'quantity' | 'entryPrice';
+        const numberRow = (label: string, path: NumField, clamp?: { min: number; max: number; step: number }): void => {
+            const row = rowShell(label);
+            const input = numberInput();
+            if (clamp) {
+                input.min = String(clamp.min);
+                input.max = String(clamp.max);
+                input.step = String(clamp.step);
+            } else {
+                input.step = 'any';
+            }
+            input.value = fmt(live()[path]);
+            const commit = (): void => {
+                const n = parseFloat(input.value);
+                if (!Number.isFinite(n)) {
+                    input.value = fmt(live()[path]);
+                    return;
+                }
+                const v = clamp ? Math.min(clamp.max, Math.max(clamp.min, n)) : n;
+                actions.patch({ [path]: v });
+                refreshAll();
+            };
+            onEnterCommit(input, commit);
+            refreshers.push(() => {
+                if (document.activeElement !== input) input.value = fmt(live()[path]);
+            });
+            row.appendChild(input);
+        };
+
+        const unitSelect = (): HTMLSelectElement => {
+            const sel = document.createElement('select');
+            sel.style.cssText = `width:76px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:4px 4px;font:12px ${t.fontFamily};outline:none;cursor:pointer;`;
+            sel.addEventListener('keydown', (e) => e.stopPropagation());
+            return sel;
+        };
+
+        /** Stop/target row: the value input plus a Price / Points unit dropdown. Switching the
+         *  unit re-expresses the CURRENT level in the new unit (the level itself doesn't move);
+         *  typing commits in the selected unit. */
+        const levelRow = (label: string, path: 'stopPrice' | 'targetPrice', level: 'stop' | 'target'): void => {
+            let mode: PositionLevelMode = 'price';
+            const row = rowShell(label);
+            const input = numberInput();
+            input.step = 'any';
+            input.style.width = '84px';
+            const display = (): string => fmt(live().levelDisplayValue(level, mode));
+            input.value = display();
+            const commit = (): void => {
+                const n = parseFloat(input.value);
+                if (!Number.isFinite(n)) {
+                    input.value = display();
+                    return;
+                }
+                actions.patch({ [path]: live().levelPriceFromDisplay(level, mode, n) });
+                refreshAll();
+            };
+            onEnterCommit(input, commit);
+            const sel = unitSelect();
+            for (const opt of [
+                { value: 'price', label: 'Price' },
+                { value: 'points', label: 'Points' },
+            ]) {
+                const o = document.createElement('option');
+                o.value = opt.value;
+                o.textContent = opt.label;
+                sel.appendChild(o);
+            }
+            sel.addEventListener('change', () => {
+                mode = sel.value as PositionLevelMode;
+                input.value = display();
+            });
+            refreshers.push(() => {
+                if (document.activeElement !== input) input.value = display();
+            });
+            row.append(input, sel);
+        };
+
+        const directionRow = (): void => {
+            const row = rowShell('Direction');
+            const sel = unitSelect();
+            sel.style.width = '96px';
+            for (const opt of DIRECTION_OPTIONS) {
+                const o = document.createElement('option');
+                o.value = opt.value;
+                o.textContent = opt.label;
+                sel.appendChild(o);
+            }
+            sel.value = live().direction;
+            sel.addEventListener('change', () => {
+                actions.patch({ direction: sel.value });
+                refreshAll();
+            });
+            refreshers.push(() => {
+                sel.value = live().direction;
+            });
+            row.appendChild(sel);
+        };
+
+        type BoolField = 'showText' | 'showHeader' | 'showPrices' | 'showLossSize' | 'showTargetLabel' | 'showStopLabel';
+        const toggleRow = (label: string, path: BoolField): void => {
+            const row = document.createElement('label');
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;';
+            const chk = document.createElement('input');
+            chk.type = 'checkbox';
+            chk.checked = live()[path];
+            chk.style.cssText = `accent-color:${t.textColor};width:15px;height:15px;flex:none;cursor:pointer;`;
+            chk.addEventListener('change', () => {
+                actions.patch({ [path]: chk.checked });
+                refreshAll();
+            });
+            const lbl = document.createElement('span');
+            lbl.textContent = label;
+            lbl.style.cssText = 'flex:1;opacity:0.9;';
+            refreshers.push(() => {
+                chk.checked = live()[path];
+            });
+            row.append(chk, lbl);
+            panel.appendChild(row);
+        };
+
+        const section = (label: string): void => {
+            const el = document.createElement('div');
+            el.style.cssText = `opacity:0.5;font-size:10px;letter-spacing:0.6px;text-transform:uppercase;padding-top:4px;`;
+            el.textContent = label;
+            panel.appendChild(el);
+        };
+
+        section('Account');
+        numberRow('Risk %', 'riskPercent', { min: 0, max: 100, step: 0.1 });
+        numberRow('Account balance', 'accountBalance', { min: 0, max: 1e12, step: 1 });
+        numberRow('Position size', 'quantity');
+
+        section('Levels');
+        directionRow();
+        numberRow('Entry price', 'entryPrice');
+        levelRow('Stop', 'stopPrice', 'stop');
+        levelRow('Target', 'targetPrice', 'target');
+
+        section('Display');
+        toggleRow('Show text', 'showText');
+        toggleRow('Show direction & ratio', 'showHeader');
+        toggleRow('Show loss & size', 'showLossSize');
+        toggleRow('Show target label', 'showTargetLabel');
+        toggleRow('Show stop label', 'showStopLabel');
+        toggleRow('Show level prices', 'showPrices');
+
+        const summary = document.createElement('div');
+        summary.style.cssText = `opacity:0.7;font-size:11px;line-height:1.4;border-top:1px solid var(--vela-border);padding-top:6px;font-variant-numeric:tabular-nums;`;
+        refreshers.push(() => {
+            const d = live();
+            summary.textContent = `${d.headerLabel()}  —  ${d.lossSizeLabel()}`;
+        });
+        panel.appendChild(summary);
+        refreshAll();
+
+        this.el?.appendChild(panel);
+        this.levelsPanel = panel;
+        this.reposition();
     }
 
     /** Gear panel for Fixed Range Volume Profile: rows / VA / width / anchor, volume colors,

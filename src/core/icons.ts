@@ -81,6 +81,8 @@ registerIcon(
 
 // ── widget chrome icons ──
 registerIcon('indicators', S('<path d="M1.5 12.5 5 7l2.5 3.5L11 4l3.5 5"/><circle cx="11" cy="4" r="1.4" fill="currentColor" stroke="none"/>'));
+registerIcon('undo', S('<path d="M2.8 7.2A5.2 5.2 0 1 0 8 3"/><path d="M2.8 3v4.2h4.2"/>'));
+registerIcon('redo', S('<path d="M13.2 7.2A5.2 5.2 0 1 1 8 3"/><path d="M13.2 3v4.2H9"/>'));
 registerIcon(
     'objects',
     S('<path d="M8 1.8 14 5 8 8.2 2 5z"/><path d="M2 8l6 3.2L14 8" opacity="0.7"/><path d="M2 11l6 3.2 6-3.2" opacity="0.4"/>'),
@@ -145,6 +147,10 @@ registerIcon(
 registerIcon(
     'eraser',
     svg24('<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4L13 5a2 2 0 0 1 2.8 0l4.2 4.2a2 2 0 0 1 0 2.8L12 20"/><path d="M22 21H7"/><path d="m5 11 9 9"/>'),
+);
+registerIcon(
+    'pen-lock',
+    svg24('<path d="M13.8 4.2a2.1 2.1 0 0 1 3 3L8.5 15.5l-3.5 1 1-3.5Z"/><rect x="13" y="14.5" width="8" height="6" rx="1.2"/><path d="M15 14.5v-1.6a2 2 0 0 1 4 0v1.6"/>'),
 );
 registerIcon('brush', svg24('<path d="M9.5 12 17 4.5a2.12 2.12 0 0 1 3 3L12.5 15"/><path d="M7 14a3 3 0 0 0-3 3c0 1.3-1.2 1.5-1.5 2 .8.9 2 1.5 3.5 1.5a3.5 3.5 0 0 0 3.5-3.5 3 3 0 0 0-2.5-3Z"/>'));
 registerIcon(

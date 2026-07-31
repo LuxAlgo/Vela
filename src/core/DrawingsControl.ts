@@ -44,6 +44,17 @@ export class DrawingsControl {
         return this.ctrl.getSnapMode();
     }
 
+    /** Keep the armed tool after each placement (`true`) or one-shot disarm (`false`). */
+    setStayMode(on: boolean): this {
+        if (this.ok('setStayMode')) this.ctrl.setStayMode(on);
+        return this;
+    }
+
+    /** Whether tools stay armed after placement — follow changes on `drawing:stay`. */
+    getStayMode(): boolean {
+        return this.ctrl.getStayMode();
+    }
+
     /** Enter/exit a renderer-local mode: `'measure'` (transient ruler), `'eraser'`, or
      *  `null` (none). Mutually exclusive with each other and with any armed tool — the
      *  renderer enforces the exclusion and the outcome lands on `drawing:mode`. */

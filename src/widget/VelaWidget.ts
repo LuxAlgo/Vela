@@ -118,6 +118,8 @@ export class VelaWidget {
     private bars: number;
     private watermarkOn: boolean;
     private pendingRange: RangePreset | null = null;
+    /** Symbol already reported as unservable (the core re-reports on every index settle). */
+    private unresolvedToasted: string | null = null;
     /** Extra fetch depth the ACTIVE range chip needs — a view concern, kept apart from the
      *  user's own `bars` setting so a preset never overwrites their preference. */
     private rangeBars = 0;
@@ -201,7 +203,7 @@ export class VelaWidget {
 
         this.symbolPicker = new SymbolPicker({
             host: this.root,
-            onSelect: (ticker) => this.setSymbol(ticker),
+            onSelect: (ticker, provider) => this.setSymbol(ticker, provider),
             onOpenChange: (open) => {
                 // The renderer's in-chart dialogs (indicator inputs, chart settings) live
                 // inside the chart container, so opening the search from the topbar never
@@ -243,6 +245,8 @@ export class VelaWidget {
             symbol: this.symbol,
             onSymbolClick: () => this.symbolPicker.open(),
             onIndicatorsClick: () => this.indicatorPicker.open(),
+            onUndoClick: () => this.history.undo(),
+            onRedoClick: () => this.history.redo(),
             onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.downloadScreenshot(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
@@ -254,6 +258,7 @@ export class VelaWidget {
             onPriceStyle: (style) => this.setPriceStyle(style),
             getContext: () => this.context(),
         });
+        this.history.onChange(() => this.topbar.setHistoryState(this.history.canUndo, this.history.canRedo));
 
         const main = doc.createElement('div');
         main.className = 'vela-widget-main';
@@ -439,7 +444,17 @@ export class VelaWidget {
         this.timeframe = tf;
         this.topbar.setTimeframe(tf);
         this.watermark?.update(this.symbol, tf);
-        this.statusline?.setMeta(tf, typeof this.opts.provider === 'string' ? this.opts.provider : '');
+        this.statusline?.setMeta(tf, this.providerLabel());
+    }
+
+    /**
+     * The provider name to show: the one that RESOLVED the symbol, not the one configured.
+     * They differ whenever the `provider` option is just a default (or names something that
+     * isn't registered) — the status line must not claim a venue that served nothing.
+     */
+    private providerLabel(): string {
+        const resolved = this.inner?.data.resolve(this.symbol)?.provider;
+        return resolved ?? (typeof this.opts.provider === 'string' ? this.opts.provider : '');
     }
 
     setTimeframe(tf: string): void {
@@ -456,8 +471,18 @@ export class VelaWidget {
         void this.inner?.setMarket({ timeframe: tf, bars: this.bars });
     }
 
-    setSymbol(symbol: string): void {
-        if (symbol === this.symbol || this.destroyed) return;
+    /**
+     * Switch the chart symbol in place. `provider` names the venue the symbol was CHOSEN
+     * from (the symbol picker passes it) — it disambiguates a ticker several providers
+     * list, and without it the registry picks the first one that has it, which is not
+     * necessarily the one the user pointed at.
+     */
+    setSymbol(symbol: string, provider?: string): void {
+        if (this.destroyed) return;
+        // A no-op only when BOTH identity halves already hold: re-picking the same ticker on a
+        // DIFFERENT venue is a real switch.
+        if (symbol === this.symbol && (provider == null || provider === this.inner?.market.provider)) return;
+        this.unresolvedToasted = null; // a new symbol gets a fresh verdict
         this.symbol = symbol;
         this.topbar.setSymbol(symbol);
         this.statusline?.setSymbol(symbol);
@@ -465,7 +490,10 @@ export class VelaWidget {
         this.watermark?.update(symbol, this.timeframe);
         this.markStateDirty();
         // In-place switch (no rebuild) — the chart instance, indicators, and drawings survive.
-        void this.inner?.setMarket({ symbol });
+        void this.inner?.setMarket(provider ? { symbol, provider } : { symbol });
+        // The venue shown must follow the symbol, not the construction option: an in-place
+        // switch never rebuilds, so nothing else would refresh it.
+        this.statusline?.setMeta(this.timeframe, provider ?? this.providerLabel());
     }
 
     // ── state surface (same triplet as the workspace: getState / applyState / state:changed) ──
@@ -798,6 +826,14 @@ export class VelaWidget {
             this.topbar.setAlertCount(this.alerts.length);
         });
         chart.on('indicator:error', ({ error }) => this.toast?.show(error.message, 'error', 5000));
+        // A symbol nothing serves parks the load forever — say so instead of showing a blank
+        // chart. Once per symbol: the core re-reports on every provider-index settle.
+        chart.on('data:unresolved', ({ symbol, providers }) => {
+            if (this.unresolvedToasted === symbol) return;
+            this.unresolvedToasted = symbol;
+            const list = providers.length > 0 ? providers.join(', ') : 'none';
+            this.toast?.show(`No registered provider serves "${symbol}" (registered: ${list})`, 'error', 6000);
+        });
         // Favorite drawing tools: reapply across rebuilds, mirror + persist user toggles.
         if (this.favs.length > 0) chart.drawings.setFavorites(this.favs as never[]);
         chart.on('drawing:favorites', ({ favorites }) => {
@@ -879,6 +915,7 @@ export class VelaWidget {
                 chart.setVisibleRangePreset(this.pendingRange.preset);
                 this.pendingRange = null;
             }
+            this.statusline?.setMeta(this.timeframe, this.providerLabel()); // now that resolution is known
         });
 
         if (this.manifest.length || this.instances.length) {

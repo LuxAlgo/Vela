@@ -44,4 +44,12 @@ export interface MarketDataFeed {
      * Absent ≡ no ranged support; the cache falls back to a full `load`.
      */
     loadRange?(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]>;
+    /**
+     * Report that a symbol cannot be served by anything registered — the load is PARKED
+     * (it resumes if a capable provider registers later). Hosts surface this instead of
+     * leaving a silently blank chart. Absent ≡ the feed never parks.
+     */
+    onUnresolved?(cb: (info: { symbol: string; providers: string[] }) => void): Unsubscribe;
+    /** Release feed-owned resources (parked waits, timers). Absent ≡ nothing to release. */
+    destroy?(): void;
 }

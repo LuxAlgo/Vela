@@ -1,7 +1,7 @@
 import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
 import { SegmentDrawing, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
-import { dashPattern, extendEndpoints, namedFontSize } from '../../shared/drawing-geometry';
+import { dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
 import { withAlpha } from '../../../core/color';
 import { valueDecimals } from '../chrome/ticks';
@@ -16,6 +16,9 @@ const GHOST_ALPHA = 0.7;
  *  they keep a fixed dark plate instead of a themed surface. */
 const BADGE_FILL = SLATE_DEEP;
 const BADGE_STROKE = SLATE;
+/** The frame a text label wears when it's the target: firm once clicked, a hint under the cursor.
+ *  (Its box is the shared TEXT_FRAME inset/rise, so it coincides with the inline editor's border.) */
+const TEXT_FRAME_ALPHA = { selected: 0.3, hovered: 0.12 };
 
 /**
  * Paints user drawings onto the L1.5 canvas. The caller has already applied the DPR
@@ -24,8 +27,32 @@ const BADGE_STROKE = SLATE;
  * {@link Projector}. Strokes/fonts reuse the shared Pine-drawing helpers so user
  * drawings match engine-drawn ones exactly.
  */
+/** The frame's transient interaction state, as the painter needs it: handles show for the
+ *  selected, dragged, and hovered drawings; a targeted text label wears its frame; a label owned
+ *  by an open inline editor is left unpainted so the two don't draw on top of each other. */
+export interface PaintTargets {
+    selected?: ReadonlySet<string>;
+    hovered?: string | null;
+    dragged?: string | null;
+    mutedLabel?: string | null;
+}
+
+/** The ids whose handles show for `targets`: selected ∪ dragged ∪ hovered, minus the muted
+ *  label — while an inline editor owns the label the user is typing, not dragging, so the
+ *  anchor grip on the editor's corner would read as a resize handle on a floating window. */
+export function handleIdsFor(targets: PaintTargets): ReadonlySet<string> {
+    const ids = new Set(targets.selected);
+    if (targets.dragged) ids.add(targets.dragged);
+    if (targets.hovered) ids.add(targets.hovered);
+    if (targets.mutedLabel) ids.delete(targets.mutedLabel);
+    return ids;
+}
+
 export class DrawingPainter {
-    /** Paint every visible drawing, then selection handles for each highlighted id.
+    /** The current `paintAll` call's interaction state, visible to the per-type painters. */
+    private targets: PaintTargets = {};
+
+    /** Paint every visible drawing, then selection handles for the targeted ones.
      *  Each drawing is clipped to its own pane's rect (and skipped entirely while that pane
      *  is hidden — collapsed, or zeroed by another pane's maximize) so panes stay separated. */
     paintAll(
@@ -33,13 +60,15 @@ export class DrawingPainter {
         drawings: readonly Drawing[],
         proj: Projector,
         theme: VelaTheme,
-        highlightIds: ReadonlySet<string>,
+        targets: PaintTargets = {},
     ): void {
+        this.targets = targets;
         for (const d of drawings) {
             if (!d.visible) continue;
             this.paintClipped(ctx, d, proj, () => this.paintOne(ctx, d, proj, theme));
         }
-        this.paintHighlights(ctx, drawings, proj, highlightIds);
+        this.targets = {};
+        this.paintHighlights(ctx, drawings, proj, handleIdsFor(targets));
     }
 
     /** Selection handles alone, for drawings whose body was painted elsewhere: the ones sent
@@ -390,7 +419,7 @@ export class DrawingPainter {
     /** Draw a drawing's optional text label at a type-appropriate anchor (multi-line aware). */
     private paintLabel(ctx: CanvasRenderingContext2D, d: Drawing, proj: Projector, theme: VelaTheme): void {
         const text = d.text;
-        if (!text || !text.value) return;
+        if (!text || !text.value || d.id === this.targets.mutedLabel) return;
         const layout = labelLayout(d, proj);
         if (!layout) return;
         const fs = namedFontSize(text.size);
@@ -398,9 +427,29 @@ export class DrawingPainter {
         ctx.textBaseline = 'top';
         ctx.textAlign = layout.align;
         ctx.fillStyle = text.color ?? theme.textColor;
-        const lh = fs * 1.4;
-        text.value.split('\n').forEach((line, i) => ctx.fillText(line, layout.x, layout.top + i * lh));
+        const lh = labelLineHeight(fs);
+        const lines = text.value.split('\n');
+        lines.forEach((line, i) => ctx.fillText(line, layout.x, layout.top + i * lh));
         ctx.textAlign = 'left';
+        if (d.type === 'text') this.paintTextFrame(ctx, d.id, layout.x, layout.top, lines, fs, theme);
+    }
+
+    /** Frame a plain text label while it is the target, so the text reads as a clickable object even
+     *  though it has no shape of its own: a firm frame once selected, a fainter one under the cursor.
+     *  Placed to coincide with the inline editor's frame — clicking into the text doesn't shift it. */
+    private paintTextFrame(ctx: CanvasRenderingContext2D, id: string, x: number, top: number, lines: readonly string[], fs: number, theme: VelaTheme): void {
+        const t = this.targets;
+        const alpha = t.selected?.has(id) ? TEXT_FRAME_ALPHA.selected : t.hovered === id ? TEXT_FRAME_ALPHA.hovered : 0;
+        if (alpha === 0) return;
+        const lh = labelLineHeight(fs);
+        const w = Math.max(8, ...lines.map((l) => ctx.measureText(l).width));
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = withAlpha(theme.textColor, alpha);
+        roundRect(ctx, x - TEXT_FRAME_INSET, top - (lh - fs) / 2 - TEXT_FRAME_RISE, w + TEXT_FRAME_INSET * 2, lines.length * lh + TEXT_FRAME_RISE * 2, 4);
+        ctx.stroke();
+        ctx.restore();
     }
 
     /** Paint any Fibonacci tool from its resolved entry lines: optional fill bands, then each
@@ -608,15 +657,14 @@ export class DrawingPainter {
         ctx.textBaseline = 'alphabetic';
     }
 
-    /** Paint a position tool: a green reward zone (entry↔target) + red risk zone (entry↔stop),
-     *  the three level lines, and a `DIR · R:R` + target/stop % label. */
+    /** Paint a position tool: a reward zone (entry↔target) + risk zone (entry↔stop) in the
+     *  tool's own zone colors, the three level lines, and the direction / R:R / % / loss+size
+     *  labels (styled by `text`, hidden wholesale by showText). */
     private paintPosition(ctx: CanvasRenderingContext2D, d: PositionTool, proj: Projector, theme: VelaTheme): void {
         const L = d.layout(proj);
         if (!L) return;
         const { x1, x2, ey, sy, ty } = L;
         const w = x2 - x1;
-        const GREEN = BULLISH;
-        const RED = BEARISH;
         const zone = (yA: number, yB: number, color: string): void => {
             ctx.save();
             ctx.globalAlpha = 0.13 * ctx.globalAlpha;
@@ -624,25 +672,31 @@ export class DrawingPainter {
             ctx.fillRect(x1, Math.min(yA, yB), w, Math.abs(yB - yA));
             ctx.restore();
         };
-        zone(ey, ty, GREEN); // reward
-        zone(ey, sy, RED); // risk
+        zone(ey, ty, d.profitColor); // reward
+        zone(ey, sy, d.lossColor); // risk
         const line = (y: number, color: string): void =>
             this.stroke(ctx, { ...d.style, lineColor: color }, () => {
                 ctx.moveTo(x1, y);
                 ctx.lineTo(x2, y);
             });
-        line(ty, GREEN);
-        line(sy, RED);
+        line(ty, d.profitColor);
+        line(sy, d.lossColor);
         line(ey, d.style.lineColor); // entry — accent
-        const cx = x1 + w / 2;
-        ctx.fillStyle = theme.textColor;
+        if (!d.showText) return;
+        const fs = namedFontSize(d.text?.size ?? 'normal');
+        ctx.fillStyle = d.text?.color ?? theme.textColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = `12px ${theme.fontFamily}`;
-        ctx.fillText(`${d.directionLabel()}  ·  R:R ${d.rr().toFixed(2)}`, cx, Math.min(ey, sy, ty) - 9);
-        ctx.font = `11px ${theme.fontFamily}`;
-        ctx.fillText(`Target +${d.rewardPct().toFixed(2)}%`, cx, (ey + ty) / 2);
-        ctx.fillText(`Stop −${d.riskPct().toFixed(2)}%`, cx, (ey + sy) / 2);
+        ctx.font = `${fs}px ${theme.fontFamily}`;
+        const cx = x1 + w / 2;
+        // Header + loss/size stack above the box (whichever is shown alone takes the bottom
+        // slot); target/stop % stay centered in their zones.
+        const topY = Math.min(ey, sy, ty) - 9;
+        if (d.showHeader) ctx.fillText(d.headerLabel(), cx, d.showLossSize ? topY - Math.round(fs * 1.15) : topY);
+        ctx.font = `${Math.max(10, fs - 1)}px ${theme.fontFamily}`;
+        if (d.showLossSize) ctx.fillText(d.lossSizeLabel(), cx, topY);
+        if (d.showTargetLabel) ctx.fillText(d.targetLabel(), cx, (ey + ty) / 2);
+        if (d.showStopLabel) ctx.fillText(d.stopLabel(), cx, (ey + sy) / 2);
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
     }
@@ -820,7 +874,7 @@ export class DrawingPainter {
         const tw = Math.max(8, ...lines.map((l) => ctx.measureText(l).width));
         const padX = 9;
         const padY = 6;
-        const lh = Math.round(fs * 1.4);
+        const lh = labelLineHeight(fs);
         const w = tw + padX * 2;
         const h = lines.length * lh + padY * 2;
         const x = cx - w / 2;
@@ -890,7 +944,7 @@ export class DrawingPainter {
         ctx.font = `${text?.bold ? 'bold ' : ''}${text?.italic ? 'italic ' : ''}${fs}px ${theme.fontFamily}`;
         const lines = (text?.value || fallback).split('\n');
         const tw = Math.max(8, ...lines.map((l) => ctx.measureText(l).width));
-        return { lines, tw, fs, lh: Math.round(fs * 1.4) };
+        return { lines, tw, fs, lh: labelLineHeight(fs) };
     }
 
     /** A Note: free text on a rounded plate anchored at the point (top-left). */
@@ -919,7 +973,7 @@ export class DrawingPainter {
         const padX = 9;
         const padY = 6;
         const w = ctx.measureText(priceStr).width + padX * 2;
-        const h = Math.round(fs * 1.4) + padY * 2;
+        const h = labelLineHeight(fs) + padY * 2;
         const x = cx - w / 2;
         const y = cy - h / 2;
         this.stroke(ctx, d.style, () => {
@@ -982,7 +1036,7 @@ export class DrawingPainter {
         const padY = 4;
         const ptr = 6; // left pointer width
         const w = tw + padX * 2;
-        const h = Math.round(fs * 1.4) + padY * 2;
+        const h = labelLineHeight(fs) + padY * 2;
         const y = ay - h / 2;
         const fill = effectiveFillColor(d, theme) ?? theme.background;
         ctx.save();
@@ -1392,7 +1446,7 @@ function labelLayout(d: Drawing, proj: Projector): { x: number; top: number; ali
     if (!text) return null;
     const pts = d.handlePoints(proj);
     const lines = text.value.split('\n').length;
-    const lh = namedFontSize(text.size) * 1.4;
+    const lh = labelLineHeight(namedFontSize(text.size));
     switch (d.type) {
         case 'text':
             return pts[0] ? { x: pts[0][0] + 2, top: pts[0][1] + 2, align: 'left' } : null;

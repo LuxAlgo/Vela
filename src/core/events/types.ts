@@ -18,6 +18,9 @@ export interface VelaEventMap extends Record<string, unknown> {
     'indicator:added': { id: string };
     'indicator:removed': { id: string };
     'indicator:error': { id: string; error: Error };
+    /** No registered provider can serve the chart symbol — the load is PARKED, not failed:
+     *  it resumes by itself if a capable provider registers later. */
+    'data:unresolved': { symbol: string; providers: string[] };
     /** An indicator was moved/merged to another pane (`chart.panes` / legend / object tree). */
     'indicator:moved': { id: string; paneId: string };
     /** An indicator was shown/hidden (legend eye, `handle.setVisible`, or object tree). */
@@ -39,6 +42,9 @@ export interface VelaEventMap extends Record<string, unknown> {
     'drawing:tool': { type: DrawingTypeKey | null };
     /** The magnet snap mode changed (in-chart toolbar or `drawings.setSnapMode`). */
     'drawing:snap': { mode: SnapMode };
+    /** Stay-in-drawing-mode changed (in-chart toolbar or `drawings.setStayMode`) — when
+     *  on, finishing a drawing leaves the tool armed. */
+    'drawing:stay': { on: boolean };
     /** The renderer-local mode changed: measure ruler, eraser, or none — including the
      *  mutual-exclusion exits (arming a tool leaves measure/eraser). */
     'drawing:mode': { mode: DrawingMode };
