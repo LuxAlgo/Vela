@@ -208,11 +208,12 @@ Ground rules for the package itself:
 
 There is **no default engine**. A bare chart shows candles only; running an indicator with no engine throws an explicit, actionable error telling you to register one.
 
-Register engines by **language id**, three ways:
+Register engines by **language id**, four ways:
 
 - **Bulk at construction** — pass engines in the dependency object; each is registered under its own `language`.
 - **A `registerEngine(language, engine)` call** — register (or replace) one after construction.
 - **The widget's `engines` option** — lazy factories, one instance made per chart (re)build: `engines: { pine: () => new PineWorkerEngine() }`. Note these register through `registerEngine` *after* construction, so they do **not** seed `defaultLanguage` (below): with the widget, a non-`'pine'` language needs the `defaultLanguage` option or a per-indicator `language`.
+- **The app-level default: `registerDefaultEngine(language, factory)`** (`vela/plugin`) — every widget and workspace cell built afterwards registers `factory()` on its chart automatically, one instance per chart. A per-instance `engines` option wins for the same language; the bare `Vela` chart never reads this registry. This is the path an enabler-style integration takes (call once, before constructing anything); the `defaultLanguage` caveat above applies to it the same way.
 
 Re-registering a language is **last-wins**, and applies to *future* indicators only — already-running sessions keep their engine.
 

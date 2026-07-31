@@ -6,6 +6,13 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **An app can make an engine its default with one call.** `registerDefaultEngine(language,
+  factory)` on `vela/plugin`: every widget and workspace cell built afterwards registers
+  `factory()` on its chart automatically (one instance per chart — engines hold per-chart
+  state). A per-instance `engines` option still wins for its language, and the bare `Vela`
+  chart never reads the registry — with nothing registered, nothing changes anywhere, and
+  Vela still bundles no engine.
+
 - **A scripting engine can now be built as a separate package.** `vela/plugin` gained the
   engine-authoring surface: the `ScriptingEngine` port types (completed with
   `EngineContextSnapshot`, `ContextSelect` and `BarsChangeReason`, now also on the root

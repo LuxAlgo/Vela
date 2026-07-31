@@ -213,11 +213,19 @@ registerSidePanel({
 - A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
   than taking the shell down.
 
-## Scripting engines — `chart.registerEngine`
+## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 
-Not a registry — engines are **per-chart instances** (`chart.registerEngine('pine',
-new PineEngine())`, or the widget's `engines: { pine: () => … }` factories) — but the
-whole authoring surface ships here so an engine can be built as its own package:
+Engines are **per-chart instances** (`chart.registerEngine('pine', new PineEngine())`,
+or the widget's `engines: { pine: () => … }` factories). Two things ship here:
+
+**`registerDefaultEngine(language, factory)`** — the app-level default: every widget
+and workspace cell built afterwards registers `factory()` on its chart automatically
+(one instance per chart). A per-instance `engines` option wins for the same language
+(`resolveEngines(overrides)` is the merge the shells apply), and the bare `Vela` chart
+is untouched — with nothing registered, nothing changes. This is how an engine package
+becomes a host's default with one call.
+
+And the whole **authoring surface**, so an engine can be built as its own package:
 
 - the **`ScriptingEngine` port types** (`PreparedScript`, `ExecutionRequest` /
   `ExecutionHandlers` / `ExecutionSession`, `EngineContextSnapshot`, `BarsChangeReason`, …);

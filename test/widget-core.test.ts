@@ -11,7 +11,8 @@ import { filterSymbols } from '../src/widget/symbol-picker';
 import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
-import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments } from '../src/widget/contributions';
+import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, type EngineFactory } from '../src/widget/contributions';
+import type { ScriptingEngine } from '../src/core/ports/ScriptingEngine';
 import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
 import { sanitizeState } from '../src/state/document';
 
@@ -435,5 +436,51 @@ describe('WidgetHistory late-resolves the current chart', () => {
         expect(seen[seen.length - 1]).toEqual({ undo: false, redo: true });
         h.redo();
         expect(seen[seen.length - 1]).toEqual({ undo: true, redo: false });
+    });
+});
+
+describe('default scripting engines (registerDefaultEngine)', () => {
+    const engine = (language: string): EngineFactory => {
+        const instance = { language, capabilities: { streaming: false, visibleRange: false, inputs: false } } as unknown as ScriptingEngine;
+        return () => instance;
+    };
+
+    it('starts empty and register/unregister round-trips', () => {
+        expect(resolveEngines()).toEqual({});
+        registerDefaultEngine('pine', engine('pine'));
+        expect(Object.keys(resolveEngines())).toEqual(['pine']);
+        unregisterDefaultEngine('pine');
+        expect(resolveEngines()).toEqual({});
+    });
+
+    it('merges UNDER per-instance overrides: instance wins per language, others pass through', () => {
+        const registryPine = engine('pine');
+        const registryLua = engine('lua');
+        registerDefaultEngine('pine', registryPine);
+        registerDefaultEngine('lua', registryLua);
+        const instancePine = engine('pine');
+        const merged = resolveEngines({ pine: instancePine });
+        expect(merged['pine']).toBe(instancePine); // the override, not the registry entry
+        expect(merged['lua']).toBe(registryLua); // registry entries the instance didn't name pass through
+        unregisterDefaultEngine('pine');
+        unregisterDefaultEngine('lua');
+    });
+
+    it('the register handle disposes only its OWN registration (replace is last-wins)', () => {
+        const first = engine('pine');
+        const second = engine('pine');
+        const disposeFirst = registerDefaultEngine('pine', first);
+        registerDefaultEngine('pine', second); // replaces
+        disposeFirst(); // stale handle — must NOT remove the replacement
+        expect(resolveEngines()['pine']).toBe(second);
+        unregisterDefaultEngine('pine');
+    });
+
+    it('resolveEngines returns a fresh object — mutating it never touches the registry', () => {
+        registerDefaultEngine('pine', engine('pine'));
+        const out = resolveEngines();
+        delete out['pine'];
+        expect(Object.keys(resolveEngines())).toEqual(['pine']);
+        unregisterDefaultEngine('pine');
     });
 });

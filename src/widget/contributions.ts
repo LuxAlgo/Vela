@@ -3,6 +3,7 @@
 // chrome — topbar buttons, context-menu items — so any future view layer (React) can
 // project the same descriptors. Register at import time, before widgets are constructed.
 import type { Vela } from '../Vela';
+import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 
 /** The runtime surface an action's `when`/`run` receives. */
 export interface WidgetContext {
@@ -159,4 +160,37 @@ export function widgetActions(target: WidgetActionTarget, ctx?: WidgetContext): 
     const list = [...registry.values()].filter((d) => d.target === target);
     list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     return ctx ? list.filter((d) => !d.when || d.when(ctx)) : list;
+}
+
+// ── Default scripting engines ──────────────────────────────────────────────────────
+
+/** Makes ONE engine instance for ONE chart — engines hold per-chart sessions (and
+ *  possibly a worker), so the shell calls the factory per chart build, never shares. */
+export type EngineFactory = () => ScriptingEngine;
+
+const defaultEngines = new Map<string, EngineFactory>();
+
+/**
+ * Register (or replace) a DEFAULT scripting engine for a language: every widget and
+ * workspace cell built afterwards registers `make()` on its chart automatically — the
+ * app-level wiring for hosts that pair Vela with an engine package, same shape as the
+ * other contribution registries. A per-instance `engines` option still wins for the
+ * same language, and the bare `Vela` chart is untouched: with nothing registered here,
+ * nothing changes anywhere (there is still no bundled default engine).
+ */
+export function registerDefaultEngine(language: string, make: EngineFactory): () => void {
+    defaultEngines.set(language, make);
+    return () => {
+        if (defaultEngines.get(language) === make) defaultEngines.delete(language);
+    };
+}
+
+export function unregisterDefaultEngine(language: string): void {
+    defaultEngines.delete(language);
+}
+
+/** The registered defaults merged UNDER `overrides` — per-instance factories win per
+ *  language. The shell layers (widget, workspace cell) register exactly this result. */
+export function resolveEngines(overrides?: Record<string, EngineFactory>): Record<string, EngineFactory> {
+    return { ...Object.fromEntries(defaultEngines), ...overrides };
 }

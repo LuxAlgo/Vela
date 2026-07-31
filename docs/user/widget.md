@@ -33,7 +33,7 @@ On top of every [chart option](./options.md), the widget adds:
 | Option | Type | Default | What it does |
 | --- | --- | --- | --- |
 | `providers` | `Record<string, () => DataProvider>` | — | Provider **factories**, keyed by name. Called on every chart (re)build — a symbol or timeframe change destroys and recreates the inner chart, re-registering fresh provider instances. |
-| `engines` | `Record<string, () => ScriptingEngine>` | — | Scripting-engine factories, keyed by language (same rebuild semantics). |
+| `engines` | `Record<string, () => ScriptingEngine>` | — | Scripting-engine factories, keyed by language (same rebuild semantics). Merged OVER any app-level defaults registered with `registerDefaultEngine` (`vela/plugin`) — the instance option wins per language. |
 | `indicators` | manifest \| URL string | — | The indicator manifest — inline JSON or a URL returning it (see below). |
 | `timeframes` | `string[]` | `['1','5','15','60','240','D','W']` | The topbar timeframe presets. |
 | `priceStyle` | string | `'candles'` | Initial chart style; changed live from the topbar dropdown. |

@@ -23,7 +23,7 @@ import { DataWindow } from './data-window';
 import { PanelDock } from './panel-dock';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
-import { widgetAttachments, type WidgetContext } from './contributions';
+import { widgetAttachments, resolveEngines, type WidgetContext } from './contributions';
 import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
 import { parsePersisted, legacyWidgetState, localStorageAdapter, type WidgetStorage } from './persist';
@@ -797,7 +797,7 @@ export class VelaWidget {
             ...(this.pendingRange ? { visibleRange: this.pendingRange.preset } : {}),
         });
         for (const [name, make] of Object.entries(providers ?? {})) chart.data.registerProvider(name, make());
-        for (const [language, make] of Object.entries(engines ?? {})) chart.registerEngine(language, make());
+        for (const [language, make] of Object.entries(resolveEngines(engines))) chart.registerEngine(language, make());
         this.inner = chart;
 
         this.symbolPicker.setSource(() => chart.data.symbols());

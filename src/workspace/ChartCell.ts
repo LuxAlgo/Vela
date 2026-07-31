@@ -17,7 +17,7 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
-import type { WidgetContext } from '../widget/contributions';
+import { resolveEngines, type WidgetContext } from '../widget/contributions';
 import type { CellState } from '../state/document';
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks). */
@@ -154,7 +154,7 @@ export class ChartCell {
             },
             { dataFeed: deps.feed },
         );
-        for (const [language, make] of Object.entries(deps.engines)) this.inner.registerEngine(language, make());
+        for (const [language, make] of Object.entries(resolveEngines(deps.engines))) this.inner.registerEngine(language, make());
         // ONE attribution mark per WORKSPACE, not per cell: each cell disables its own
         // in-chart mark; the workspace mounts the single grid-level mark that satisfies
         // the NOTICE's equivalent-visible-attribution requirement.
