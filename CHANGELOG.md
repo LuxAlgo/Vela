@@ -12,7 +12,11 @@ All notable changes to Vela, newest first.
   entry), the model vocabulary engine output is built from, the `stableSeriesId` identity
   contract — series ids, renderer reconciliation and persisted per-series settings stay
   identical whichever package an engine ships in — and the semantic palette. All additive;
-  nothing moves or changes shape.
+  nothing moves or changes shape. The engine guide (`docs/contributing/adding-an-engine.md`)
+  now documents the whole contract to match: the identity rule, the `historyState` /
+  `notifyBars(reason)` backfill run policy, the `symbolInfo` / `chartStyle` request
+  subtleties, the widget's `engines` factories and their `defaultLanguage` caveat, and
+  how to package an engine standalone.
 
 ## [v0.3.0]
 

@@ -2,9 +2,10 @@
 
 Everything importable from **`vela/plugin`**. Three extension seams: **chart types**
 (data + transform side), **renderer layers** (paint side), and **native indicators**
-(core-computed indicators with their own layers). All registries are id-keyed
-(re-registering an id replaces it) and read live — charts constructed after
-registration pick the entries up.
+(core-computed indicators with their own layers) — plus the authoring surface for
+**scripting engines**, which register per chart rather than into a registry. All
+registries are id-keyed (re-registering an id replaces it) and read live — charts
+constructed after registration pick the entries up.
 
 ## Chart types — `registerChartType`
 
@@ -211,6 +212,25 @@ registerSidePanel({
   contributed panel stays open across the rebuild).
 - A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
   than taking the shell down.
+
+## Scripting engines — `chart.registerEngine`
+
+Not a registry — engines are **per-chart instances** (`chart.registerEngine('pine',
+new PineEngine())`, or the widget's `engines: { pine: () => … }` factories) — but the
+whole authoring surface ships here so an engine can be built as its own package:
+
+- the **`ScriptingEngine` port types** (`PreparedScript`, `ExecutionRequest` /
+  `ExecutionHandlers` / `ExecutionSession`, `EngineContextSnapshot`, `BarsChangeReason`, …);
+- the **model vocabulary** engine output is built from (`OHLCV`, `IndicatorModel`, the
+  series/scene/drawing specs, `InputSchema`);
+- **`stableSeriesId`** — mint every series/drawing id with it: the core's live-tick
+  value patches are keyed by those ids, so they must reproduce across re-runs;
+- the **semantic palette** (`ACCENT`, `BULLISH`, …) so engine defaults mean what the
+  rest of the chart means.
+
+The full contract — prepare/execute, the session levers, the data inversion, the
+backfill run policy, packaging and registration — is
+[Adding an Engine](./adding-an-engine.md).
 
 ## Widget integration
 

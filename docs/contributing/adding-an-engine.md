@@ -1,6 +1,8 @@
 # Adding a Scripting Engine
 
-Scripting engines are one of Vela's three swappable **layers** (alongside [data providers](./adding-a-data-provider.md) and [renderers](./adding-a-renderer.md)). This page explains what an engine is, the small surface you implement, and the rules the core uses to drive it. It is conceptual — for the exact field shapes, read the `ScriptingEngine` port in the source.
+Scripting engines are one of Vela's three swappable **layers** (alongside [data providers](./adding-a-data-provider.md) and [renderers](./adding-a-renderer.md)). This page explains what an engine is, the small surface you implement, and the rules the core uses to drive it. It is conceptual — for the exact field shapes, read the `ScriptingEngine` port (exported from the root entry and from `vela/plugin`).
+
+Everything an engine builds against ships on the **`vela/plugin`** subpath — the port types, the model vocabulary, the id helper, the semantic palette — so an engine does not have to live in this repo at all. See [*Building an engine as its own package*](#building-an-engine-as-its-own-package) below.
 
 > The engine port is stable in shape but still evolving.
 
@@ -10,7 +12,7 @@ An engine turns **source in some language** into a **neutral drawable model** �
 
 The core never learns the language, the runtime, or how the source was evaluated. It hands the engine source text plus market context and gets back a stream of neutral models. That opacity is the whole point: it is what lets one chart run Pine today and another language tomorrow without touching the core.
 
-The core owns everything downstream of the model — pane routing (overlay vs study), stable element ids, and mounting on the renderer. The engine emits an **unrouted** model and stays out of presentation entirely.
+The core owns everything downstream of the model — pane routing (overlay vs study) and mounting on the renderer. The engine emits an **unrouted** model and stays out of presentation entirely. One thing the engine *does* own is the ids **inside** that model: every series and drawing carries an id the engine minted, and those ids are a contract — see [*Stable ids*](#stable-ids-the-identity-contract) below.
 
 ## The surface you implement
 
@@ -43,7 +45,12 @@ Because `prepare` is cheap and data-free, the core can call it eagerly to build 
 
 Where `prepare` is async, `execute(request, handlers)` is the opposite: it returns an **execution session synchronously**, even though the actual run is asynchronous. The session is a handle the core holds immediately; results arrive later through the handlers. This split is the single biggest source of confusion for new authors, so keep it crisp: the call returns a control surface right away, and the work happens behind it.
 
-The request carries everything the run needs: the prepared script, market context (symbol, timeframe, optional symbol info), the bar snapshot, resolved input values, an optional visible range, the `fetchSeries` gateway, and a `mode`.
+The request carries everything the run needs: the prepared script, market context (symbol, timeframe, optional symbol info), the bar snapshot, resolved input values, an optional visible range, the `fetchSeries` gateway, a `mode`, and where the chart's history load stands (`historyState` — see [*History backfill*](#history-backfill-partial-bars-engine-owned-run-policy)).
+
+Two request fields deserve care:
+
+- **`market.symbolInfo` arrives asynchronously.** The feed fetches it in the background, so the first run may see it absent — or a synthesized fallback — and a later run the real values. Tolerate both; never treat its absence as an error.
+- **`market.chartStyle` is metadata, not a request to transform.** On a bar-transforming price style (e.g. Heikin Ashi) the bars you receive are *already* the transformed view. What the engine does with the flag: encode it into the chart's ticker identity (the extended ticker, `"SYM;heikinashi"`), so a security-style secondary fetch can distinguish "the chart's derived series" from raw data — the standard ticker opts back into raw. Engines with no such feature may ignore it.
 
 ## The data inversion (the heart of it)
 
@@ -57,6 +64,36 @@ If no gateway is supplied, secondary fetches degrade to empty rather than failin
 
 Why it matters: causality. Scripts are stateful and run over **all** bars, never just the visible window. Centralizing data ownership in the core keeps one consistent, correctly-ordered, deduped bar history feeding every engine and renderer. The viewport changes *what* a viewport-aware script computes — it never scopes *which* bars execute.
 
+## Stable ids: the identity contract
+
+Every series and drawing in the model carries an **id the engine minted**, and the core
+treats those ids as identity across time: a re-run or live tick does not remount the
+indicator — the core builds a **value patch keyed by series id** and the renderer updates
+the mounted series in place. That only works if the same logical series gets the **same
+id on every run**.
+
+So ids must be *reproducible*, never random and never dependent on run order alone. Mint
+them with the helper the core itself relies on:
+
+```ts
+import { stableSeriesId } from '@luxalgo/vela/plugin';
+
+const id = stableSeriesId({ instanceId, kind: 'line', title: 'EMA 20', ordinal: 0 });
+```
+
+`instanceId` is the id the core handed to `prepare` — it namespaces everything to the
+indicator instance. `ordinal` disambiguates same-titled outputs of the same kind (first
+untitled plot, second untitled plot…): derive it from a per-run counter that resets at
+the start of every run, so run N and run N+1 assign the same ordinals in the same order.
+
+An engine that invents its own id scheme still *appears* to work — first mounts are
+fine — and then bleeds: value patches miss their target and every tick degrades into
+remount churn, and anything a host keys by series id stops lining up between runs.
+Use the helper.
+
+The **indicator id** (`model.id`) is different: set it to the `instanceId` you were
+given. Instance identity belongs to the core; intra-model identity belongs to you.
+
 ## The session: the control surface the core drives
 
 The execution session is how the core drives a running script. It exposes four levers:
@@ -64,7 +101,7 @@ The execution session is how the core drives a running script. It exposes four l
 - **`stop()`** — tear down; stops any streaming or incremental re-execution.
 - **`update(inputs)`** — re-run (or re-stream) with merged input overrides. An input can restructure output, so this can be a structural change.
 - **`setVisibleRange(range)`** — push a new viewport window. Re-runs viewport-dependent scripts; a no-op for everything else.
-- **`notifyBars()`** — signal that the core's bars changed (forming candle or a new bar) so the engine re-executes.
+- **`notifyBars(reason?)`** — signal that the core's bars changed. **No reason** = a live tick (forming candle or a new bar). **`'backfill'`** = older history chunks were just prepended and the load is still in progress. **`'complete'`** = the history load finished (fires exactly once per load). What to *do* about each reason is the engine's decision, not the core's — see [*History backfill*](#history-backfill-partial-bars-engine-owned-run-policy).
 - **`getContext(select?)`** *(optional)* — resolve a read-only `EngineContextSnapshot` of the run (phase, bar index, plots, serializable variables, the script's return value, warnings). Implement it if your language has host-inspectable state; return **copies only** (never live references), keep it async (the bundled worker engine answers over `postMessage`), and honor `select` so callers can limit extraction. Skipping it is fine — `handle.context()` then resolves `null`.
 
 Results flow back the other way, through the **handlers** event sink:
@@ -83,6 +120,31 @@ The request's `mode` is `'static'` or `'live'`, and it is a **capability-gated r
 - **Live** — keeps a persistent streaming context that emits per tick. The core only requests live mode when the chart is live, the script is not viewport-dependent, **and** the engine declares `streaming: true`. Otherwise it falls back to the static re-run path.
 
 So a non-streaming engine still updates on live data — it just does it by re-running statically on each `notifyBars`, rather than maintaining an incremental context.
+
+## History backfill: partial bars, engine-owned run policy
+
+The chart paints fast by loading history progressively: a small newest window first,
+then older chunks streaming in behind the interactive chart. For an engine this means
+**the bar snapshot handed to `execute` can be a partial history** — the newest bars
+only, with the rest still arriving.
+
+The request says so: **`historyState: 'backfill'`** means the load is still in
+progress; `'complete'` (or the field absent — older hosts, direct callers) means the
+history is all there. While a backfill is running, every bars notification carries the
+`'backfill'` reason — including live ticks that land mid-load — and when the load
+finishes, the session receives **exactly one `notifyBars('complete')`**. That single
+`'complete'` is guaranteed even when the load ends early (venue genesis reached, or the
+load aborted): "complete" means *the core is done changing history*, not *the depth you
+asked for exists*.
+
+What to run and when is **the engine's policy**. The bundled Pine engines hold: a
+session that starts during a backfill defers its first run, `'backfill'` pokes are
+ignored, and the first execution happens on `'complete'` — because scripts are stateful
+over **all** bars, so a run over a partial prefix computes values that are simply wrong,
+at full-history cost, once per chunk. A language designed for incremental prefixes may
+choose the opposite and re-run on every reason to paint progressively. Both are valid;
+what is not valid is ignoring `historyState` and treating the initial snapshot as
+complete history.
 
 ## One runtime, two engines: the transport-agnostic pattern
 
@@ -112,14 +174,45 @@ sequenceDiagram
 
 From the engine runtime's point of view, calling `fetchSeries` looks identical in both forms — only the transport differs.
 
+## Building an engine as its own package
+
+An engine does not have to live in this repo — the whole authoring surface is public,
+and the PineTS engines themselves ship as a separate package built exactly this way
+(`@luxalgo/vela-pinets`, the reference implementation; its own repo also because of
+licensing — its runtime dependency is AGPL while Vela is Apache-2.0).
+
+Everything you need comes from **`vela/plugin`**:
+
+- the **`ScriptingEngine` port types** — the port itself, `PreparedScript`,
+  `ExecutionRequest` / `ExecutionHandlers` / `ExecutionSession`, `EngineContextSnapshot`,
+  `BarsChangeReason`, and friends;
+- the **model vocabulary** — `OHLCV`, `IndicatorModel`, the series / scene / drawing
+  specs your `onModel` payloads are made of, plus `InputSchema` for `prepare`;
+- **`stableSeriesId`** — the identity contract above (a *value* import, and the reason
+  to depend on `vela/plugin` rather than retyping shapes);
+- the **semantic palette** — Vela's fixed meaning-colors (`ACCENT`, `BULLISH`, …), so
+  your default plot colors match what the rest of the chart means by them.
+
+Ground rules for the package itself:
+
+- **Your language runtime is your dependency, not Vela's.** Declare it as your own
+  (peer) dependency; Vela's core never imports it and never learns it exists.
+- **Import Vela values from subpaths** (`vela/plugin`); type-only imports are erased at
+  build time and may name any entry. Keep `@luxalgo/vela` itself a peer/external in
+  your build — never bundle a second Vela, which would duplicate the SDK registries.
+- **Transport is your concern, not the port's.** If you offer a worker form, the
+  inlining/spawning machinery is your build's business; the port sees the same
+  `ScriptingEngine` either way.
+
 ## Registering and selecting engines
 
 There is **no default engine**. A bare chart shows candles only; running an indicator with no engine throws an explicit, actionable error telling you to register one.
 
-Register engines by **language id**, two ways:
+Register engines by **language id**, three ways:
 
 - **Bulk at construction** — pass engines in the dependency object; each is registered under its own `language`.
 - **A `registerEngine(language, engine)` call** — register (or replace) one after construction.
+- **The widget's `engines` option** — lazy factories, one instance made per chart (re)build: `engines: { pine: () => new PineWorkerEngine() }`. Note these register through `registerEngine` *after* construction, so they do **not** seed `defaultLanguage` (below): with the widget, a non-`'pine'` language needs the `defaultLanguage` option or a per-indicator `language`.
 
 Re-registering a language is **last-wins**, and applies to *future* indicators only — already-running sessions keep their engine.
 
@@ -149,8 +242,10 @@ Whichever path you choose, if the resolved language has no registered engine, yo
 - **In-process and worker can advertise different capabilities.** They share a runtime but not their capability flags — route on what each form actually declares. (Both bundled Pine forms declare `streaming: true` today; the worker holds its persistent stream inside the worker and receives live bars as small deltas.)
 - **The worker is spawned from a Blob URL by default.** The worker is inlined at build time and instantiated from a Blob URL. Under a strict Content-Security-Policy, `worker-src blob:` (or equivalent) must be allowed, or the worker engine will fail to start. If you cannot allow `blob:`, the worker engine accepts a `workerUrl` option pointing at a hosted worker script you serve yourself — use that to satisfy a `worker-src 'self'` (or specific-origin) policy instead. The in-process engine has no such caveat.
 - **`onModel` is a stream, not a callback-once.** Build your session so every emission is complete and `stop()` releases everything.
+- **`historyState` is the initial state; reasons are transitions.** A session created *after* the history load finished never receives a `'complete'` notification — its request already said `historyState: 'complete'` (or omitted the field, which means the same). Don't build a policy that waits for a `'complete'` that already happened; read the request field first.
 
 ## See also
 
 - [Adding a Renderer](./adding-a-renderer.md) — the layer that paints the neutral model.
 - [Adding a Data Provider](./adding-a-data-provider.md) — the feed that owns bars and backs `fetchSeries`.
+- [Plugin SDK](./plugin-sdk.md) — the rest of the `vela/plugin` surface (chart types, renderer layers, widget contributions).
