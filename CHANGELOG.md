@@ -23,6 +23,14 @@ All notable changes to Vela, newest first.
   panel id — the dock supplies the buttons through `setPanelButtons`. Nothing changes for users
   of `VelaWidget` or `VelaWorkspace`.)_
 
+### Fixed
+
+- **Symbol search understands exchanges again.** Typing an exchange's name surfaces its symbols
+  (after any ticker matches), and an exchange prefix scopes the search to that venue — `binance:btc`
+  and `binance btc` both list Binance's BTC… pairs, a unique shorthand like `coin btc` works too,
+  and the exchange name alone (or with `:`) browses the whole venue A to Z. This search shipped in
+  the picker's original design but was lost in a port.
+
 ## [v0.2.0]
 
 ### Added

@@ -17,27 +17,63 @@ export function avatarColor(ticker: string): string {
     return `hsl(${h}, 42%, 38%)`;
 }
 
-/** Rank: ticker prefix > ticker substring > description substring. Pure — unit-tested. */
+/**
+ * Split a query into an optional venue SCOPE and a search TERM. A leading token — before a `:`
+ * or a space — naming a venue present in the list (exactly, or as a unique prefix) scopes the
+ * search to it: `binance:BTC`, `binance BTC` and `bina BTC` all read as Binance's BTC…; a token
+ * that is no venue (`BTC USD`) leaves the whole query as the term.
+ */
+function parseQuery(raw: string, venues: readonly string[]): { scope: string | null; term: string } {
+    const m = raw.match(/^\s*([^\s:]+)\s*[:\s]\s*(.*)$/);
+    if (m) {
+        const t = m[1]!.toLowerCase();
+        const scope = venues.includes(t) ? t : onlyOne(venues.filter((v) => v.startsWith(t)));
+        if (scope) return { scope, term: m[2]!.trim() };
+    }
+    return { scope: null, term: raw.trim() };
+}
+
+function onlyOne<T>(matches: readonly T[]): T | null {
+    return matches.length === 1 ? matches[0]! : null;
+}
+
+/**
+ * Rank: ticker prefix > ticker substring > description substring > venue-name substring (typing
+ * `binance` surfaces that venue's symbols after any literal matches). An optional venue prefix
+ * (see {@link parseQuery}) scopes the pool first — venue alone browses it whole, alphabetically.
+ * Pure — unit-tested.
+ */
 export function filterSymbols(list: readonly SymbolDescriptor[], query: string, limit = 100): SymbolDescriptor[] {
-    const q = query.trim().toUpperCase();
+    // The venues are the list's own — the picker's pool is already tab-filtered, and a scope
+    // token must never resolve to a venue that has nothing to show.
+    const venues = [...new Set(list.map((s) => s.provider?.toLowerCase()).filter((p): p is string => !!p))];
+    const { scope, term } = parseQuery(query, venues);
+    const pool = scope ? list.filter((s) => s.provider?.toLowerCase() === scope) : list;
+    const q = term.toUpperCase();
     if (!q) {
-        // Empty query: pin the majors that exist in the index, then fill with the head.
-        const byTicker = new Map(list.map((s) => [s.ticker.toUpperCase(), s]));
+        // Venue alone: browse the whole venue, alphabetically. Empty query: pin the majors
+        // that exist in the index, then fill with the head.
+        if (scope) return [...pool].sort((a, b) => a.ticker.localeCompare(b.ticker)).slice(0, limit);
+        const byTicker = new Map(pool.map((s) => [s.ticker.toUpperCase(), s]));
         const top = TOP_TICKERS.map((t) => byTicker.get(t)).filter((s): s is SymbolDescriptor => s !== undefined);
-        const rest = list.filter((s) => !TOP_TICKERS.includes(s.ticker.toUpperCase()));
+        const rest = pool.filter((s) => !TOP_TICKERS.includes(s.ticker.toUpperCase()));
         return [...top, ...rest].slice(0, limit);
     }
+    const qLower = term.toLowerCase();
     const prefix: SymbolDescriptor[] = [];
     const substr: SymbolDescriptor[] = [];
     const desc: SymbolDescriptor[] = [];
-    for (const s of list) {
+    const venue: SymbolDescriptor[] = [];
+    for (const s of pool) {
         const t = s.ticker.toUpperCase();
         if (t.startsWith(q)) prefix.push(s);
         else if (t.includes(q)) substr.push(s);
         else if ((s.description ?? '').toUpperCase().includes(q)) desc.push(s);
+        // Inside a scope the venue is fixed — the tier would swallow the whole pool.
+        else if (!scope && s.provider?.toLowerCase().includes(qLower)) venue.push(s);
         if (prefix.length >= limit) break;
     }
-    return [...prefix, ...substr, ...desc].slice(0, limit);
+    return [...prefix, ...substr, ...desc, ...venue].slice(0, limit);
 }
 
 const STYLE_ID = 'vela-widget-symbolpicker';
