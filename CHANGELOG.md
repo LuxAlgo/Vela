@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.3.0]
 
 ### Added
 
@@ -220,8 +220,8 @@ All notable changes to Vela, newest first.
   menu's settings entry opens the chart settings on the tab it is about — the canvas colors and
   grid from the chart body, the scales and lines from either axis — so you land on the controls
   you were reaching for instead of the first tab.
-- **The price now reads on top by default.** A new overlay indicator starts *behind* the candles
-  (and behind the indicators already there), and a new drawing starts *just under* them, so the
+- **The price now reads on top by default.** A new overlay indicator starts _behind_ the candles
+  (and behind the indicators already there), and a new drawing starts _just under_ them, so the
   price stays the top of the pile until you restack things yourself — drag rows in the object
   tree, or use Bring to front / Send to back. _(Breaking: overlays and drawings used to paint
   over the candles by default; raise them in the object tree to get the old look back.)_
