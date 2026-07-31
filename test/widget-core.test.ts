@@ -2,7 +2,7 @@
 // indicator-manifest resolution (src/widget/indicators.ts). DOM-free — node env.
 import { describe, it, expect, vi } from 'vitest';
 import { parseTimeframe, timeframeMs, timeframeLabel } from '../src/widget/timeframe';
-import { resolveIndicators } from '../src/widget/indicators';
+import { indicatorLedger, resolveIndicators } from '../src/widget/indicators';
 import { fmtPrice, fmtChange, decimalsFor } from '../src/widget/format';
 import { tzMenuLabel, tzButtonLabel } from '../src/widget/timezones';
 import { priceStyleLabel } from '../src/widget/topbar';
@@ -147,6 +147,81 @@ describe('filterSymbols', () => {
     it('empty query returns the head of the list; limit caps results', () => {
         expect(filterSymbols(list, '', 2).map((s) => s.ticker)).toEqual(['BTCUSDT', 'ETHUSDT']);
         expect(filterSymbols(list, 'USDT', 2)).toHaveLength(2);
+    });
+
+    describe('venue-aware search', () => {
+        const venues = [
+            { ticker: 'BTCUSDT', description: 'Bitcoin / TetherUS', provider: 'binance' },
+            { ticker: 'ETHUSDT', description: 'Ethereum / TetherUS', provider: 'binance' },
+            { ticker: 'BTCUSD', description: 'Bitcoin / USD', provider: 'binance.us' },
+            { ticker: 'BTC-USD', description: 'Bitcoin', provider: 'coinbase' },
+            { ticker: 'ADA-USD', description: 'Cardano', provider: 'coinbase' },
+            { ticker: 'BTC', description: 'BTC / USD Perpetual', provider: 'hyperliquid' },
+        ];
+        const tickers = (q: string): string[] => filterSymbols(venues, q).map((s) => `${s.provider}:${s.ticker}`);
+
+        it('a venue name alone surfaces that venue (after literal matches), case-insensitively', () => {
+            expect(tickers('coinbase')).toEqual(['coinbase:BTC-USD', 'coinbase:ADA-USD']);
+            expect(tickers('COINBASE')).toEqual(['coinbase:BTC-USD', 'coinbase:ADA-USD']);
+            // "binance" is a substring of both binance and binance.us provider names.
+            expect(tickers('binance')).toEqual(['binance:BTCUSDT', 'binance:ETHUSDT', 'binance.us:BTCUSD']);
+        });
+
+        it('venue plus a separator browses the venue whole, alphabetically', () => {
+            expect(tickers('coinbase:')).toEqual(['coinbase:ADA-USD', 'coinbase:BTC-USD']);
+        });
+
+        it('"venue:term" and "venue term" scope the ranked search to the venue', () => {
+            expect(tickers('binance:btc')).toEqual(['binance:BTCUSDT']);
+            expect(tickers('binance btc')).toEqual(['binance:BTCUSDT']);
+            expect(tickers('coinbase BTC')).toEqual(['coinbase:BTC-USD']);
+            // Inside a scope the venue tier is off — a term matching only the venue name adds nothing.
+            expect(tickers('coinbase base')).toEqual([]);
+        });
+
+        it('a unique venue prefix scopes; an ambiguous one leaves the query as a term', () => {
+            expect(tickers('coin BTC')).toEqual(['coinbase:BTC-USD']);
+            expect(tickers('hyper btc')).toEqual(['hyperliquid:BTC']);
+            // "binan" prefixes binance AND binance.us — no scope, and no literal match either.
+            expect(tickers('binan btc')).toEqual([]);
+            // Exact name wins over its own extensions: "binance" scopes to binance, not binance.us.
+            expect(tickers('binance:usd')).toEqual(['binance:BTCUSDT', 'binance:ETHUSDT']);
+        });
+
+        it('a leading token that is no venue stays part of the term', () => {
+            expect(tickers('BTC USD')).toEqual([]); // no normalization across the space — not a scope
+            expect(filterSymbols(venues, 'btc').map((s) => s.ticker)).toEqual(['BTCUSDT', 'BTCUSD', 'BTC-USD', 'BTC']);
+        });
+
+        it('symbols without a provider never resolve or match a venue token', () => {
+            const mixed = [{ ticker: 'OFFLINE', description: 'Sample data' }, ...venues];
+            expect(filterSymbols(mixed, 'binance').map((s) => s.ticker)).toEqual(['BTCUSDT', 'ETHUSDT', 'BTCUSD']);
+            expect(filterSymbols(mixed, 'off').map((s) => s.ticker)).toEqual(['OFFLINE']);
+        });
+    });
+});
+
+describe('indicatorLedger', () => {
+    const base = { present: [], instanceNames: [], pendingManifest: null, manifestSettled: true, volumePending: false };
+
+    it('reports the LIVE sets once settled — empty means "the user removed everything"', () => {
+        expect(indicatorLedger({ ...base, present: ['volume', 'vpvr'], instanceNames: ['RSI'] })).toEqual({ manifest: ['RSI'], natives: ['volume', 'vpvr'] });
+        // The resurrection bug this helper pins down: pending leftovers must NOT shadow
+        // a deliberately emptied live set.
+        expect(indicatorLedger({ ...base, pendingManifest: ['Old'] })).toEqual({ manifest: [], natives: [] });
+    });
+
+    it('falls back to the restored manifest names only while the manifest is UNSETTLED', () => {
+        expect(indicatorLedger({ ...base, manifestSettled: false, pendingManifest: ['A', 'B'] })).toEqual({ manifest: ['A', 'B'], natives: [] });
+        // Unsettled with nothing pending: the live (empty) instances are all there is.
+        expect(indicatorLedger({ ...base, manifestSettled: false })).toEqual({ manifest: [], natives: [] });
+    });
+
+    it('reports the volume INTENT until the auto-add had its chance, never duplicating', () => {
+        expect(indicatorLedger({ ...base, volumePending: true })).toEqual({ manifest: [], natives: ['volume'] });
+        expect(indicatorLedger({ ...base, volumePending: true, present: ['volume'] })).toEqual({ manifest: [], natives: ['volume'] });
+        // After the first load the registry is the whole truth: no intent padding.
+        expect(indicatorLedger({ ...base, volumePending: false, present: ['vpvr'] })).toEqual({ manifest: [], natives: ['vpvr'] });
     });
 });
 

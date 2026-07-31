@@ -2,6 +2,77 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.3.0]
+
+### Added
+
+- **Side panels are an extension point.** The column the object tree and the data window live in
+  is now a dock any plugin can join: `registerSidePanel({ id, title, icon, mount })` adds a panel
+  with the same header, the same close button, and its own toggle button in the topbar beside the
+  other two. The plugin fills the panel's body and never touches the rest of the interface; the
+  dock keeps exactly one panel open at a time, so the chart never loses more width than one
+  column. A panel can declare itself **resizable** — a handle on its inner edge, dragged within
+  the bounds it sets, double-click back to its declared width — and which panel is open plus the
+  widths you dragged now come back with the rest of your saved chart.
+
+- **The chart says when it is loading.** Three small dots pulse quietly at the center of the
+  plot while a market's first bars are on their way — when the chart first opens, and again
+  after every symbol or timeframe change. They disappear the moment the first candles paint
+  (on deep histories, the quick recent-window preview), and they never show over data. While
+  they are up the chart is genuinely blank: everything drawn from the bars goes with the
+  series, and script-drawn dashboards (tables), which are pinned to pane corners rather than
+  to bars, hide for the load and return with the data. A chart whose symbol no venue can
+  serve drops the dots rather than promising bars that aren't coming.
+- **Candles appear after one small request.** The first paint no longer waits for the whole
+  requested history: the newest 200 bars load first — one quick request, candles on screen —
+  and the rest streams in behind the interactive chart in steps that double up to the 10k
+  chunk size, with the viewport held in place as older bars extend the left edge. Doubling
+  keeps the request count logarithmic, so a slow venue costs a handful of round-trips instead
+  of one per fixed step. Every load works this way — the first open, and every symbol or
+  timeframe switch — so the loading dots give way to candles as fast as the venue can answer
+  one small request. `history:progress` now reports each step as it lands, and `ready()` (and
+  `setMarket`) resolve at that first paint — `historyComplete()` still awaits the full depth.
+- **Loads announce themselves to plugins.** Two new chart events bracket every bar load:
+  `load:start` fires before the first fetch — before the chart is blanked — carrying the new
+  market and a first-load flag, and exactly one `load:end` follows once the first candles
+  paint (or with `bars: 0` when a load fails, comes back empty, or parks). Extensions, plugins
+  and custom indicators use the pair to hide their own visuals during the gap and rebuild them
+  when the data is back; a depth-only reload fires neither.
+
+### Changed
+
+- **Switching markets clears the chart first.** Changing the symbol or timeframe now blanks the
+  old candles immediately and shows the loading dots until the new market's first bars arrive —
+  the previous market no longer lingers under the new symbol's name while its data loads.
+  A plugin chart type's data engine is silenced and its layer data blanked in the same breath:
+  its per-bar payloads are keyed by bucket time, so on a same-timeframe switch the old market's
+  cells would land exactly on the new market's first candles. Changing only the history depth
+  keeps the chart painted, as before.
+- **The topbar's panel buttons are built from the dock.** They used to be two fixed buttons wired
+  to two fixed callbacks. _(Breaking, for hosts that construct `Topbar` themselves: the
+  `onObjectsClick` and `onDataWindowClick` options are gone, and `setPanelActive` now takes any
+  panel id — the dock supplies the buttons through `setPanelButtons`. Nothing changes for users
+  of `VelaWidget` or `VelaWorkspace`.)_
+
+### Fixed
+
+- **Removed and added indicators are remembered reliably.** Two persistence flaws could
+  misremember the indicator set across a reload. A chart restored from a saved state kept its
+  boot-time indicator list as a fallback, and on charts built without an `indicators` manifest
+  (or before it resolved) that fallback shadowed a deliberately emptied set — removing the last
+  indicator, Volume included, brought it back on the next load, every time. And the saved
+  document read indicator presence from a copy that refreshed asynchronously, so an add or
+  remove followed quickly by a reload could be missed entirely. Snapshots now read presence
+  from the chart synchronously (`chart.presentNativeIndicators()`, a new public read) and the
+  restored-state fallback ends the moment the live set becomes the truth — an empty chart you
+  emptied stays empty, and a change made a heartbeat before leaving the page survives it.
+
+- **Symbol search understands exchanges again.** Typing an exchange's name surfaces its symbols
+  (after any ticker matches), and an exchange prefix scopes the search to that venue — `binance:btc`
+  and `binance btc` both list Binance's BTC… pairs, a unique shorthand like `coin btc` works too,
+  and the exchange name alone (or with `:`) browses the whole venue A to Z. This search shipped in
+  the picker's original design but was lost in a port.
+
 ## [v0.2.0]
 
 ### Added
@@ -149,8 +220,8 @@ All notable changes to Vela, newest first.
   menu's settings entry opens the chart settings on the tab it is about — the canvas colors and
   grid from the chart body, the scales and lines from either axis — so you land on the controls
   you were reaching for instead of the first tab.
-- **The price now reads on top by default.** A new overlay indicator starts *behind* the candles
-  (and behind the indicators already there), and a new drawing starts *just under* them, so the
+- **The price now reads on top by default.** A new overlay indicator starts _behind_ the candles
+  (and behind the indicators already there), and a new drawing starts _just under_ them, so the
   price stays the top of the pile until you restack things yourself — drag rows in the object
   tree, or use Bring to front / Send to back. _(Breaking: overlays and drawings used to paint
   over the candles by default; raise them in the object tree to get the old look back.)_

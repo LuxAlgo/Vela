@@ -22,6 +22,7 @@ import { Topbar } from '../widget/topbar';
 import { Bottombar } from '../widget/bottombar';
 import { ObjectTree } from '../widget/object-tree';
 import { DataWindow } from '../widget/data-window';
+import { PanelDock } from '../widget/panel-dock';
 import { SymbolPicker } from '../widget/symbol-picker';
 import { IndicatorPicker } from '../widget/indicator-picker';
 import { TimeframeQuick } from '../widget/timeframe-quick';
@@ -166,6 +167,8 @@ export class VelaWorkspace {
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
     private readonly dataWindow: DataWindow;
+    /** The side-panel column, shared by the whole grid. */
+    private readonly dock: PanelDock;
     private readonly symbolPicker: SymbolPicker;
     private readonly indicatorPicker: IndicatorPicker;
     private readonly tfQuick: TimeframeQuick;
@@ -194,6 +197,9 @@ export class VelaWorkspace {
      *  (their setVisibleRange re-emits viewport:changed) must not re-propagate. */
     private syncBusy = false;
     private manifest: ResolvedIndicator[] = [];
+    /** The shared manifest can no longer change instance sets — resolved, or no
+     *  `indicators` option so nothing ever will. Gates the cells' ledger fallback. */
+    private manifestSettled = false;
     private timezone: string;
     private openDialogs = 0;
     private alerts: Array<{ cellId: string; symbol: string; title: string; message: string; time: number }> = [];
@@ -279,10 +285,8 @@ export class VelaWorkspace {
             onIndicatorsClick: () => this.indicatorPicker.open(),
             onUndoClick: () => this.active.history.undo(),
             onRedoClick: () => this.active.history.redo(),
-            onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.active.downloadScreenshot(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
-            onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: '60',
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: 'candles',
@@ -315,17 +319,18 @@ export class VelaWorkspace {
         this.gridEl = doc.createElement('div');
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
+        // One dock for the WHOLE grid (the panels follow the active cell), owning the built-ins,
+        // the contributed panels, the single-open rule and the topbar's toggle group.
+        this.dock = new PanelDock(main, {
+            chrome: this.topbar,
+            context: () => this.context(),
+            changed: () => this.markStateDirty(),
+        });
         this.objectTree = new ObjectTree(main);
         this.dataWindow = new DataWindow(main);
-        // The docked panels are exclusive — one column at a time, so the grid keeps its width.
-        this.objectTree.onOpenChange = (open) => {
-            this.topbar.setPanelActive('objects', open);
-            if (open) this.dataWindow.toggle(false);
-        };
-        this.dataWindow.onOpenChange = (open) => {
-            this.topbar.setPanelActive('dataWindow', open);
-            if (open) this.objectTree.toggle(false);
-        };
+        this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
+        this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
+        this.dock.refresh();
         this.root.appendChild(main);
         this.toast = new Toast(this.gridEl);
 
@@ -422,9 +427,12 @@ export class VelaWorkspace {
             void resolveIndicators(opts.indicators).then((list) => {
                 if (this.destroyed) return;
                 this.manifest = list;
+                this.manifestSettled = true; // from here each cell's live instance set is the truth, empty included
                 for (const cell of this.cellsById.values()) cell.setManifest(list, true);
                 this.projectActiveCell();
             });
+        } else {
+            this.manifestSettled = true; // nothing will ever resolve — settled empty from the start
         }
         this.mountAttachments();
     }
@@ -496,10 +504,11 @@ export class VelaWorkspace {
         });
     }
 
-    /** Re-project contributed topbar actions + mount late-registered attachments. */
+    /** Re-project contributed topbar actions + side panels, and mount late-registered attachments. */
     refreshActions(): void {
         this.mountAttachments();
         this.topbar.renderActions();
+        this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
     }
 
     /** The sync-link control surface: `set(kind, true | {cellId: group} | false)`,
@@ -530,6 +539,8 @@ export class VelaWorkspace {
         if (this.activeId) state.activeCellId = this.activeId;
         if (this.favs.length > 0) state.favorites = [...this.favs];
         if (this.trackSizes.size > 0) state.trackSizes = Object.fromEntries([...this.trackSizes].map(([k, v]) => [k, { ...v }]));
+        const panels = this.dock.getState();
+        if (panels) state.panels = panels;
         return state;
     }
 
@@ -548,6 +559,8 @@ export class VelaWorkspace {
             this.bottombar?.setTimezone(st.timezone);
         }
         if (st.favorites) this.favs = [...st.favorites]; // newborn cells inherit below (buildCells)
+        // Absent in documents written before the dock existed — those leave the column closed.
+        this.dock.applyState(st.panels);
         for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
         this.trackSizes.clear();
         if (st.trackSizes) for (const [id, ts] of Object.entries(st.trackSizes)) this.trackSizes.set(id, ts);
@@ -648,6 +661,7 @@ export class VelaWorkspace {
         this.drawToolbar?.destroy();
         this.topbar.destroy();
         this.bottombar?.destroy();
+        this.dock.destroy(); // contributed panels; the two built-ins are ours to drop
         this.objectTree.destroy();
         this.dataWindow.destroy();
         this.symbolPicker.destroy();
@@ -678,8 +692,7 @@ export class VelaWorkspace {
         this.historyUnsub = cell.history.onChange(pushHistory);
         pushHistory();
         this.objectTree.setSymbol(cell.symbol);
-        this.objectTree.onChart(cell.chart);
-        this.dataWindow.onChart(cell.chart); // the readout follows the active cell
+        this.dock.onChart(cell.chart); // every docked panel follows the active cell
         this.bottombar?.setActiveRange(cell.activeRangeId);
         this.indicatorPicker.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
@@ -795,6 +808,7 @@ export class VelaWorkspace {
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStateDirty: () => this.markStateDirty(),
+                manifestSettled: () => this.manifestSettled,
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(slot.id, cell);

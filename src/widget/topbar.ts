@@ -5,7 +5,7 @@ import { Tooltip } from '../ui/components/tooltip';
 import { iconEl, iconMarkup, registerIcon } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import { chartType } from '../chart-types/registry';
-import { widgetActions, type WidgetContext } from './contributions';
+import { widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { timeframeLabel } from './timeframe';
 
@@ -71,6 +71,9 @@ const CSS = `
     justify-content: center;
 }
 .vela-widget-actions { margin-left: auto; display: inline-flex; gap: var(--vela-space-1); }
+/* The side-panel toggles, one per docked panel — a group so the dock can rebuild them
+   without disturbing the tools around it. */
+.vela-widget-panels { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
 .vela-widget-tool {
     all: unset;
     display: inline-flex;
@@ -147,10 +150,6 @@ export interface TopbarOptions {
      *  {@link Topbar.setHistoryState}. */
     onUndoClick?: () => void;
     onRedoClick?: () => void;
-    /** The two side-panel toggles. Their pressed state is pushed back with `setPanelActive`,
-     *  since the panels also close each other. */
-    onObjectsClick?: () => void;
-    onDataWindowClick?: () => void;
     onScreenshotClick?: () => void;
     onAlertsClick?: (anchor: HTMLElement) => void;
     /** Live widget context for contributed actions (topbar target). */
@@ -169,10 +168,14 @@ export class Topbar {
     private readonly styleMenu: Menu;
     private readonly tooltips: Tooltip[] = [];
     private readonly actionsHost: HTMLElement;
+    /** The side-panel toggle group — filled by the dock through {@link setPanelButtons}. */
+    private readonly panelsHost: HTMLElement;
     private undoBtn!: HTMLButtonElement;
     private redoBtn!: HTMLButtonElement;
     private alertsBtn!: HTMLButtonElement;
-    private panelBtns!: { objects: HTMLButtonElement; dataWindow: HTMLButtonElement };
+    private panelBtns = new Map<string, HTMLButtonElement>();
+    private panelTooltips: Tooltip[] = [];
+    private readonly host: HTMLElement;
     private alertsBadge!: HTMLElement;
     private readonly opts: TopbarOptions;
     private timeframe: string;
@@ -190,6 +193,7 @@ export class Topbar {
 
     constructor(host: HTMLElement, opts: TopbarOptions) {
         this.opts = opts;
+        this.host = host;
         this.timeframe = opts.timeframe;
         this.priceStyle = opts.priceStyle;
         const doc = host.ownerDocument;
@@ -212,30 +216,19 @@ export class Topbar {
         indicatorsBtn.append(iconEl('indicators', doc), doc.createTextNode('Indicators'));
         if (opts.onIndicatorsClick) indicatorsBtn.addEventListener('click', opts.onIndicatorsClick);
 
-        // Right-hand cluster: contributed actions, then icon-only tools (data window /
-        // objects / screenshot) — labels live in their tooltips.
+        // Right-hand cluster: contributed actions, then icon-only tools — the side-panel
+        // toggles (filled by the dock) and screenshot. Labels live in their tooltips.
         this.actionsHost = doc.createElement('span');
         this.actionsHost.className = 'vela-widget-actions';
-        const tool = (cls: string, icon: string, tip: string, onClick?: () => void): HTMLButtonElement => {
-            const b = doc.createElement('button');
-            b.className = `vela-widget-tool ${cls}`;
-            b.appendChild(iconEl(icon, doc));
-            b.setAttribute('aria-label', tip);
-            // Kit tooltip only — a native `title` on top of it double-tooltips.
-            // Explicit host: at tool() time the topbar is NOT in the DOM yet, so the
-            // closest('.vela-ui') fallback would portal to <body> — outside the theme vars.
-            this.tooltips.push(new Tooltip(b, { content: tip, triggerId: `vela-tool-${cls}`, host }));
-            if (onClick) b.addEventListener('click', onClick);
-            return b;
-        };
+        this.panelsHost = doc.createElement('span');
+        this.panelsHost.className = 'vela-widget-panels';
+        const tool = (cls: string, icon: string, tip: string, onClick?: () => void): HTMLButtonElement =>
+            this.toolButton(cls, icon, tip, onClick, this.tooltips);
         // Undo/redo sit beside Indicators (same icon-tool chrome as the right cluster).
         this.undoBtn = tool('vela-widget-undo', 'undo', 'Undo', opts.onUndoClick);
         this.redoBtn = tool('vela-widget-redo', 'redo', 'Redo', opts.onRedoClick);
         this.setHistoryState(false, false);
-        const dataWindowBtn = tool('vela-widget-datawindow', 'datawindow', 'Data window', opts.onDataWindowClick);
-        const objectsBtn = tool('vela-widget-objects', 'objects', 'Object tree', opts.onObjectsClick);
         const screenshotBtn = tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick);
-        this.panelBtns = { objects: objectsBtn, dataWindow: dataWindowBtn };
         this.alertsBtn = tool('vela-widget-alerts', 'bell', 'Alerts');
         this.alertsBtn.style.position = 'relative';
         if (opts.onAlertsClick) this.alertsBtn.addEventListener('click', () => opts.onAlertsClick!(this.alertsBtn));
@@ -259,7 +252,7 @@ export class Topbar {
         };
         const leading: Array<HTMLElement> = [this.symbolEl, sep(), this.tfButton, sep(), this.styleButton, sep()];
         if (this.layoutButton) leading.push(this.layoutButton, sep());
-        this.el.append(...leading, indicatorsBtn, sep(), this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, dataWindowBtn, objectsBtn, screenshotBtn);
+        this.el.append(...leading, indicatorsBtn, sep(), this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, this.panelsHost, screenshotBtn);
         host.appendChild(this.el);
         // Snap after layout; RO catches later reflows (symbol / timeframe length).
         this.onHairlineSync();
@@ -391,10 +384,28 @@ export class Topbar {
         this.alertsBadge.style.display = n > 0 ? '' : 'none';
     }
 
+    /**
+     * Replace the side-panel toggle group — one icon button per docked panel, in the dock's own
+     * order. The dock calls this whenever its panel set changes (built-ins at construction,
+     * contributed panels on every `refreshActions()`), then pushes each pressed state.
+     */
+    setPanelButtons(buttons: readonly SidePanelButton[], onClick: (id: string) => void): void {
+        for (const t of this.panelTooltips) t.destroy();
+        this.panelTooltips = [];
+        this.panelBtns.clear();
+        this.panelsHost.replaceChildren();
+        for (const b of buttons) {
+            const el = this.toolButton(`vela-widget-panel-${b.id}`, b.icon, b.title, () => onClick(b.id), this.panelTooltips);
+            this.panelBtns.set(b.id, el);
+            this.panelsHost.appendChild(el);
+        }
+    }
+
     /** Reflect a docked side panel's open state on its button — the panels toggle each other,
-     *  so the shell pushes the state rather than the button assuming it. */
-    setPanelActive(panel: 'objects' | 'dataWindow', open: boolean): void {
-        this.panelBtns[panel].dataset.active = open ? '1' : '';
+     *  so the dock pushes the state rather than the button assuming it. */
+    setPanelActive(id: string, open: boolean): void {
+        const btn = this.panelBtns.get(id);
+        if (btn) btn.dataset.active = open ? '1' : '';
     }
 
     destroy(): void {
@@ -405,8 +416,23 @@ export class Topbar {
         this.tfMenu.destroy();
         this.styleMenu.destroy();
         this.layoutMenu?.destroy();
-        for (const t of this.tooltips) t.destroy();
+        for (const t of [...this.tooltips, ...this.panelTooltips]) t.destroy();
         this.el.remove();
+    }
+
+    /** One icon-only tool button with its kit tooltip, parked in `sink` for disposal. */
+    private toolButton(cls: string, icon: string, tip: string, onClick: (() => void) | undefined, sink: Tooltip[]): HTMLButtonElement {
+        const doc = this.el.ownerDocument;
+        const b = doc.createElement('button');
+        b.className = `vela-widget-tool ${cls}`;
+        b.appendChild(iconEl(icon, doc));
+        b.setAttribute('aria-label', tip);
+        // Kit tooltip only — a native `title` on top of it double-tooltips. Explicit host: at
+        // construction the topbar is NOT in the DOM yet, so the closest('.vela-ui') fallback
+        // would portal to <body> — outside the theme vars.
+        sink.push(new Tooltip(b, { content: tip, triggerId: `vela-tool-${cls}`, host: this.host }));
+        if (onClick) b.addEventListener('click', onClick);
+        return b;
     }
 
     /** Paint each `.vela-sep` as exactly one device pixel, snapped to the pixel grid. */

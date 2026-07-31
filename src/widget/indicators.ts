@@ -79,3 +79,43 @@ export async function resolveIndicators(
     }
     return out;
 }
+
+/** Everything {@link indicatorLedger} needs to decide what a state snapshot reports. */
+export interface LedgerInputs {
+    /** Native types present on the chart RIGHT NOW (`chart.presentNativeIndicators()` — sync). */
+    present: readonly string[];
+    /** Names of the live manifest instances (the shell's own synchronous array). */
+    instanceNames: readonly string[];
+    /** A restored ledger's manifest half, until it materializes (null once consumed). */
+    pendingManifest: readonly string[] | null;
+    /**
+     * The manifest can no longer change the instance set — it resolved, or the shell was
+     * built without an `indicators` option so nothing will ever resolve. Until then the
+     * pending names are reported as-is: an early save must not wipe a restored ledger
+     * the shell simply hasn't materialized yet.
+     */
+    manifestSettled: boolean;
+    /**
+     * The volume auto-add is still owed (before the first `load:end`) AND the intent —
+     * restored ledger, else the `volume` option — says volume. The registry cannot show
+     * it yet; without this, an early save would write `natives: []` and the reload would
+     * read it as a deliberate opt-out, silencing volume forever.
+     */
+    volumePending: boolean;
+}
+
+/**
+ * The indicator ledger a state snapshot persists — PURE. The one rule: a LIVE (possibly
+ * empty) set is the truth once its source settled; fallbacks cover ONLY the boot window
+ * before a restored ledger materializes. "Empty because the user removed everything" must
+ * never be repainted as "empty because nothing loaded yet" — that resurrection was the
+ * bug this helper exists to pin down.
+ */
+export function indicatorLedger(i: LedgerInputs): { manifest: string[]; natives: string[] } {
+    const natives = [...i.present];
+    if (i.volumePending && !natives.includes('volume')) natives.push('volume');
+    return {
+        manifest: i.manifestSettled ? [...i.instanceNames] : [...(i.pendingManifest ?? i.instanceNames)],
+        natives,
+    };
+}

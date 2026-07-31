@@ -158,6 +158,16 @@ export class Vela {
         return this.orchestrator.availableNativeIndicators();
     }
 
+    /**
+     * The native-indicator types PRESENT on the chart right now — the synchronous slice of
+     * {@link availableNativeIndicators} (only support probing is async; presence never is).
+     * Persistence snapshots read this: an unload-time flush must see an add/remove that
+     * happened microseconds ago, which an async catalog mirror cannot guarantee.
+     */
+    presentNativeIndicators(): string[] {
+        return this.orchestrator.presentNativeIndicators();
+    }
+
     /** Live handles of every indicator currently on the chart (script + native) — drive
      *  host panels (object trees, indicator lists) with per-id visibility/removal. */
     indicators(): IndicatorHandle[] {
@@ -219,9 +229,10 @@ export class Vela {
 
     /** Resolves once the chart is painted and interactive. For a symbol-backed chart this
      *  awaits a provider being registered that resolves the symbol (the parked load). On a
-     *  deep-history chart (beyond one ~10k-bar chunk) older bars keep backfilling BEHIND
-     *  this — await {@link historyComplete} for the full depth. Distinct from
-     *  `chart.data.ready()`, which awaits only the provider symbol indexes. */
+     *  ranged feed the first paint is a small recent head (~200 bars) and the rest of the
+     *  history keeps backfilling BEHIND this — await {@link historyComplete} for the full
+     *  depth. Distinct from `chart.data.ready()`, which awaits only the provider symbol
+     *  indexes. */
     ready(): Promise<void> {
         return this.orchestrator.ready();
     }

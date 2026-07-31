@@ -20,6 +20,7 @@ import { Bottombar, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
 import { ObjectTree } from './object-tree';
 import { DataWindow } from './data-window';
+import { PanelDock } from './panel-dock';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
 import { widgetAttachments, type WidgetContext } from './contributions';
@@ -33,7 +34,7 @@ import { toolShortcutHints } from './tool-shortcuts';
 import { WidgetHistory } from './history';
 import { Toast } from './toast';
 import { Menu } from '../ui/components/menu';
-import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from './indicators';
+import { indicatorLedger, resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from './indicators';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 
 export interface VelaWidgetOptions extends VelaOptions {
@@ -95,6 +96,8 @@ export class VelaWidget {
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
     private readonly dataWindow: DataWindow;
+    /** The side-panel column: the two panels above, plus every contributed one. */
+    private readonly dock: PanelDock;
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly contextMenu: ChartContextMenu;
     private readonly symbolPicker: SymbolPicker;
@@ -140,6 +143,13 @@ export class VelaWidget {
     private pendingIndicators: { manifest: string[]; natives: string[] } | null = null;
     /** Volume presence decided by a RESTORED ledger (null = follow the option). */
     private ledgerVolume: boolean | null = null;
+    /** The manifest can no longer change the instance set: it resolved, or no `indicators`
+     *  option exists so nothing will ever resolve. Gates the ledger's pending fallback —
+     *  once settled, a live empty set means "the user removed everything" and persists so. */
+    private manifestSettled = false;
+    /** The volume auto-add rides the first candles (`load:end`); until then the registry
+     *  can't show it and the persisted ledger reports the INTENT instead. */
+    private volumeMayBePending = true;
     /** True when the boot state came from the LEGACY three-key layout — the first
      *  unified save then drops the old `:config`/`:drawings` sub-keys. */
     private legacyKeys = false;
@@ -194,6 +204,9 @@ export class VelaWidget {
         // A restored ledger decides the auto-added volume too (a chart persisted
         // without it must come back without it); no ledger → the option default.
         this.ledgerVolume = bootCell?.indicators ? bootCell.indicators.natives.includes('volume') : null;
+        // No `indicators` option ⇒ no resolution will ever consume a pending manifest —
+        // the instance set is settled (empty) from the start.
+        this.manifestSettled = opts.indicators === undefined;
 
         const doc = hostEl.ownerDocument;
         injectStyles(WIDGET_STYLE_ID, WIDGET_CSS, doc);
@@ -247,10 +260,8 @@ export class VelaWidget {
             onIndicatorsClick: () => this.indicatorPicker.open(),
             onUndoClick: () => this.history.undo(),
             onRedoClick: () => this.history.redo(),
-            onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.downloadScreenshot(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
-            onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: this.timeframe,
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: this.priceStyle,
@@ -265,17 +276,18 @@ export class VelaWidget {
         this.chartHost = doc.createElement('div');
         this.chartHost.className = 'vela-widget-chart';
         main.appendChild(this.chartHost);
+        // One dock owns the panel column: the two built-ins below, every contributed panel, the
+        // single-open rule and the topbar's toggle group.
+        this.dock = new PanelDock(main, {
+            chrome: this.topbar,
+            context: () => this.context(),
+            changed: () => this.markStateDirty(),
+        });
         this.objectTree = new ObjectTree(main);
         this.dataWindow = new DataWindow(main);
-        // The docked panels are exclusive — one column at a time, so the chart keeps its width.
-        this.objectTree.onOpenChange = (open) => {
-            this.topbar.setPanelActive('objects', open);
-            if (open) this.dataWindow.toggle(false);
-        };
-        this.dataWindow.onOpenChange = (open) => {
-            this.topbar.setPanelActive('dataWindow', open);
-            if (open) this.objectTree.toggle(false);
-        };
+        this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
+        this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
+        this.dock.refresh();
         this.root.appendChild(main);
 
         this.contextMenu = new ChartContextMenu(this.chartHost, {
@@ -424,10 +436,11 @@ export class VelaWidget {
         this.alertsMenu.openAt(r.left, r.bottom + 4);
     }
 
-    /** Re-project contributed topbar actions (after late registrations). */
+    /** Re-project contributed topbar actions and side panels (after late registrations). */
     refreshActions(): void {
         this.mountAttachments();
         this.topbar.renderActions();
+        this.dock.refresh(); // rebuilt panels bind to the live chart on their own
     }
 
     /** The inner headless chart of the CURRENT build — becomes a new instance after a
@@ -526,15 +539,21 @@ export class VelaWidget {
             if (this.savedConfig != null) cell.rendererConfig = this.savedConfig;
             if (this.savedDrawings != null) cell.drawings = this.savedDrawings;
         }
-        const present = this.nativeCatalog.filter((n) => n.present).map((n) => n.type);
-        cell.indicators = {
-            // A restored ledger still waiting for the manifest must not be wiped by an
-            // early save — report the pending names until instances materialize.
-            manifest: this.instances.length > 0 ? this.instances.map((it) => it.entry.name) : (this.pendingIndicators?.manifest ?? []),
-            natives: present.length > 0 ? present : (this.pendingIndicators?.natives ?? []),
-        };
+        // The natives come from the chart's SYNC registry read — an async catalog mirror
+        // here lost unload-time saves (an add/remove microseconds old wasn't in the copy
+        // yet), and the old empty-set fallback resurrected removed indicators forever on
+        // shells with no `indicators` option. See {@link indicatorLedger}.
+        cell.indicators = indicatorLedger({
+            present: this.inner ? this.inner.presentNativeIndicators() : (this.pendingIndicators?.natives ?? []),
+            instanceNames: this.instances.map((it) => it.entry.name),
+            pendingManifest: this.pendingIndicators?.manifest ?? null,
+            manifestSettled: this.manifestSettled,
+            volumePending: this.volumeMayBePending && (this.ledgerVolume ?? this.opts.volume !== false),
+        });
         const state: WorkspaceState = { version: 1, layout: '1', activeCellId: 'c1', timezone: this.timezone, charts: [{ id: 'c1', ...cell }] };
         if (this.favs.length > 0) state.favorites = [...this.favs];
+        const panels = this.dock.getState();
+        if (panels) state.panels = panels;
         return state;
     }
 
@@ -557,6 +576,8 @@ export class VelaWidget {
             this.favs = [...st.favorites];
             this.inner?.drawings.setFavorites(this.favs as never[]);
         }
+        // Absent in documents written before the dock existed — those leave the column closed.
+        this.dock.applyState(st.panels);
         if (cell) {
             const style = fromUrl.priceStyle ?? cell.priceStyle;
             if (style && style !== this.priceStyle) this.setPriceStyle(style);
@@ -614,8 +635,11 @@ export class VelaWidget {
                 if (entry) this.instances.push({ entry, handle: this.addToChart(chart, entry) });
             }
             this.pendingIndicators = null;
-        } else {
+        } else if (!this.manifestSettled) {
             this.pendingIndicators = led; // manifest still resolving — consumed on resolution
+        } else {
+            // No manifest will ever resolve — parking the names would hold them forever.
+            this.pendingIndicators = null;
         }
         this.refreshNativeCatalog();
         this.syncIndicatorCount();
@@ -722,6 +746,7 @@ export class VelaWidget {
         window.removeEventListener('beforeunload', this.onUnload);
         this.root.removeEventListener('keydown', this.onRootKeydown);
         this.topbar.destroy();
+        this.dock.destroy(); // contributed panels; the two built-ins are ours to drop
         this.objectTree.destroy();
         this.dataWindow.destroy();
         this.shortcutsHelp?.destroy();
@@ -777,8 +802,7 @@ export class VelaWidget {
 
         this.symbolPicker.setSource(() => chart.data.symbols());
         this.objectTree.setSymbol(this.symbol);
-        this.objectTree.onChart(chart);
-        this.dataWindow.onChart(chart);
+        this.dock.onChart(chart); // every docked panel rebinds, contributed ones included
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
         chart.on('indicator:added', () => {
@@ -800,7 +824,16 @@ export class VelaWidget {
         });
         // A restored ledger: natives re-add immediately (no manifest needed); manifest
         // entries wait for the resolution below (the exact set wins over `enabled`).
-        if (this.pendingIndicators) for (const type of this.pendingIndicators.natives) chart.addNativeIndicator(type);
+        if (this.pendingIndicators) {
+            for (const type of this.pendingIndicators.natives) chart.addNativeIndicator(type);
+            // With the natives applied and no manifest ever coming, nothing is pending.
+            if (this.manifestSettled) this.pendingIndicators = null;
+        }
+        // The volume auto-add rides the first candles — from `load:end` on, the registry
+        // is the whole truth and the persisted ledger stops reporting the intent.
+        chart.on('load:end', () => {
+            this.volumeMayBePending = false;
+        });
         // Market switches happen IN PLACE (`setMarket`) — the chart instance survives, so
         // reflect them from the event: per-symbol native support may differ, the statusline's
         // resting OHLC belongs to the old market, and an out-of-band switch (host code calling
@@ -935,6 +968,7 @@ export class VelaWidget {
                           .map((entry) => ({ entry, handle: null }))
                     : list.filter((e) => e.enabled).map((entry) => ({ entry, handle: null }));
                 if (pending) this.pendingIndicators = null;
+                this.manifestSettled = true; // from here the live instance set is the truth, empty included
                 return list;
             });
             void this.indicatorsPromise.then(() => {
