@@ -49,7 +49,7 @@ const CSS = `
     color: var(--vela-fg-bright);
 }
 .vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-widget-topbar .vela-icon { color: inherit; font-size: 14px; }
+.vela-widget-topbar .vela-icon { color: inherit; font-size: 16px; width: 16px; height: 16px; }
 /* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
    fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
    up looking like different thicknesses depending on subpixel placement. */
@@ -83,7 +83,7 @@ const CSS = `
     color: var(--vela-fg-muted);
     font-size: 14px;
 }
-.vela-widget-tool:hover { background: var(--vela-hover); color: var(--vela-fg); }
+.vela-widget-tool:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-widget-action {
     all: unset;

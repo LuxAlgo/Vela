@@ -95,7 +95,7 @@ export class DrawingToolbar {
         this.root.style.cssText =
             placement +
             `display:${this.visible ? 'flex' : 'none'};flex-direction:column;gap:4px;` +
-            `padding:6px 0;box-sizing:border-box;background:${t.background};border-right:1px solid ${this.borderColor};color:${t.textColor};` + // no h-padding → buttons span the bar width
+            `padding:6px 0;box-sizing:border-box;background:${t.background};border-right:1px solid ${this.borderColor};color:var(--vela-fg-muted);` + // no h-padding → buttons span the bar width
             `pointer-events:auto;overflow-y:auto;overflow-x:hidden;`;
     }
 
@@ -613,11 +613,15 @@ function ensureStyles(): void {
     s.textContent = `
 .vela-dtb-hit{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:var(--vela-radius-md);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dtb-hit--arrow{width:11px;height:22px;}
-.vela-dtb-btn{position:relative;width:100%;height:30px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;background:transparent;border:none;padding:0;}
+.vela-dtb-btn{position:relative;width:100%;height:30px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;background:transparent;border:none;padding:0;transition:color var(--vela-dur-fast) ease;}
+.vela-dtb-btn:hover{color:var(--vela-fg-bright);}
 .vela-dtb-btn:hover .vela-dtb-hit{background:var(--vela-hover);}
+.vela-dtb-btn[data-active='1']{color:var(--vela-fg-bright);}
 .vela-dtb-btn[data-active='1'] .vela-dtb-hit{background:var(--vela-active);}
 .vela-dtb-cell{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:30px;}
-.vela-dtb-icon{flex:none;width:26px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;}
+.vela-dtb-icon{flex:none;width:26px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;transition:color var(--vela-dur-fast) ease;}
+.vela-dtb-icon:hover{color:var(--vela-fg-bright);}
+.vela-dtb-cell[data-active='1'] .vela-dtb-icon{color:var(--vela-fg-bright);}
 .vela-dtb-cell[data-active='1'] .vela-dtb-icon .vela-dtb-hit{background:var(--vela-active);}
 .vela-dtb-arrow{position:absolute;right:1px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;opacity:0;pointer-events:none;transition:opacity var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dtb-cell:hover .vela-dtb-arrow,.vela-dtb-icon:hover~.vela-dtb-arrow,.vela-dtb-cell.vela-open .vela-dtb-arrow{opacity:1;pointer-events:auto;}

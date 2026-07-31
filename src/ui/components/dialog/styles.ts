@@ -59,7 +59,7 @@ export const DIALOG_CSS = `
     line-height: 1;
     font-size: 15px;
 }
-.vela-dialog-close:hover { background: var(--vela-hover); color: var(--vela-fg); }
+.vela-dialog-close:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-dialog-body { padding: var(--vela-space-4); overflow: auto; }
 .vela-dialog-body::-webkit-scrollbar { width: 8px; }
 .vela-dialog-body::-webkit-scrollbar-thumb {

@@ -52,6 +52,8 @@ const STATUS_KEYFRAMES =
 const LEGEND_ICON_PX = 13;
 const EYE_SVG = iconAt('eye', LEGEND_ICON_PX);
 const EYE_OFF_SVG = iconAt('eye-off', LEGEND_ICON_PX);
+const GEAR_SVG = iconAt('gear', LEGEND_ICON_PX);
+const CLOSE_SVG = iconAt('close', 11);
 
 /**
  * Chart-style inputs UI built on top of lightweight-charts (which has no
@@ -297,6 +299,9 @@ export class InputsUI {
             }
             return;
         }
+        // The row's control buttons draw their states from the shared scoped sheet, which must
+        // therefore exist as soon as a legend row does — not only once a dialog has opened.
+        ensureDialogStyles();
         const el = document.createElement('div');
         // Solid chart-background fill so the label stays readable over candles; hovering
         // reveals the outline and controls, and leaving hides them again unless selected.
@@ -356,9 +361,8 @@ export class InputsUI {
             eye.type = 'button';
             eye.title = 'Hide';
             eye.innerHTML = EYE_SVG;
-            eye.style.cssText = `cursor:pointer;display:none;align-items:center;background:transparent;border:none;color:${this.theme.textColor};opacity:0.6;line-height:0;padding:0 1px;`;
-            eye.addEventListener('mouseenter', () => (eye.style.opacity = '1'));
-            eye.addEventListener('mouseleave', () => (eye.style.opacity = '0.6'));
+            eye.className = 'vela-ind-ctl';
+            eye.style.cssText = 'cursor:pointer;display:none;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
             eye.addEventListener('click', () => {
                 const row = this.rows.get(id);
                 this.onToggleVisible?.(id, Boolean(row?.hidden)); // currently hidden ⇒ request show, else hide
@@ -373,10 +377,9 @@ export class InputsUI {
             const gear = document.createElement('button');
             gear.type = 'button';
             gear.title = 'Settings';
-            gear.textContent = '⚙';
-            gear.style.cssText = `cursor:pointer;background:transparent;border:none;color:${this.theme.textColor};opacity:0.65;font-size:13px;line-height:1;padding:0 2px;`;
-            gear.addEventListener('mouseenter', () => (gear.style.opacity = '1'));
-            gear.addEventListener('mouseleave', () => (gear.style.opacity = '0.65'));
+            gear.innerHTML = GEAR_SVG;
+            gear.className = 'vela-ind-ctl';
+            gear.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
             gear.addEventListener('click', () => this.openDialog(id));
             controlsEl.appendChild(gear);
         }
@@ -387,9 +390,8 @@ export class InputsUI {
             mv.type = 'button';
             mv.title = 'Move to pane';
             mv.innerHTML = iconAt('move', LEGEND_ICON_PX);
-            mv.style.cssText = `cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;color:${this.theme.textColor};opacity:0.65;line-height:0;padding:0 1px;`;
-            mv.addEventListener('mouseenter', () => (mv.style.opacity = '1'));
-            mv.addEventListener('mouseleave', () => (mv.style.opacity = '0.65'));
+            mv.className = 'vela-ind-ctl';
+            mv.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
             mv.addEventListener('click', (e) => { e.stopPropagation(); this.openMoveMenu(id, mv); });
             controlsEl.appendChild(mv);
         }
@@ -397,9 +399,9 @@ export class InputsUI {
         const close = document.createElement('button');
         close.type = 'button';
         close.title = 'Remove indicator';
-        close.textContent = '✕';
+        close.innerHTML = CLOSE_SVG;
         close.className = 'vela-ind-close';
-        close.style.cssText = `cursor:pointer;background:transparent;border:none;color:${this.theme.textColor};font-size:var(--vela-font-size-sm);line-height:1;padding:0 1px;`;
+        close.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;padding:0 1px;';
         close.addEventListener('click', () => this.onRemove?.(id));
         controlsEl.appendChild(close);
         el.appendChild(controlsEl);
@@ -596,10 +598,9 @@ export class InputsUI {
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.title = 'Close';
-        closeBtn.textContent = '×';
-        closeBtn.style.cssText = `cursor:pointer;background:transparent;border:none;color:${fg};opacity:0.7;font-size:20px;line-height:1;padding:0 2px;flex:0 0 auto;`;
-        closeBtn.addEventListener('mouseenter', () => (closeBtn.style.opacity = '1'));
-        closeBtn.addEventListener('mouseleave', () => (closeBtn.style.opacity = '0.7'));
+        closeBtn.innerHTML = iconAt('close', 15);
+        closeBtn.className = 'vela-ind-ctl';
+        closeBtn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:2px;flex:0 0 auto;';
         closeBtn.addEventListener('click', () => this.closeDialog());
         header.append(hTitle, closeBtn);
         card.appendChild(header);
@@ -1109,8 +1110,10 @@ function ensureDialogStyles(): void {
 .vela-ind-dialog ::-webkit-scrollbar-track{background:transparent;}
 .vela-ind-hint{background:var(--vela-hover);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-ind-hint:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
-.vela-ind-close{opacity:0.55;transition:opacity var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-ind-close:hover{opacity:1;color:var(--vela-danger) !important;}
+.vela-ind-ctl{color:var(--vela-fg-muted);transition:color var(--vela-dur-fast) ease;}
+.vela-ind-ctl:hover{color:var(--vela-fg-bright);}
+.vela-ind-close{transition:color var(--vela-dur-fast) ease;}
+.vela-ind-close:hover{color:var(--vela-danger) !important;}
 .vela-ind-menuitem{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-ind-menuitem:hover{background:var(--vela-hover-strong);}
 .vela-ind-btn{cursor:pointer;padding:7px 14px;border-radius:var(--vela-radius-md);border:1px solid transparent;background:transparent;color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}

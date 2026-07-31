@@ -35,7 +35,7 @@ export const MENU_CSS = `
 }
 .vela-menu-item[data-highlighted] { background: var(--vela-hover); }
 .vela-menu-item[data-disabled] { opacity: 0.4; cursor: default; }
-.vela-menu-item .vela-icon { width: 18px; justify-content: center; color: var(--vela-fg-muted); }
+.vela-menu-item .vela-icon { width: 16px; height: 16px; font-size: 16px; justify-content: center; color: var(--vela-fg-muted); }
 .vela-menu-item .vela-menu-label { flex: 1 1 auto; }
 .vela-menu-item .vela-menu-hint { color: var(--vela-fg-faint); font-size: var(--vela-font-size-sm); }
 /* Active entry: a brighter row surface + bright ink — no accent recolor, no glyph.

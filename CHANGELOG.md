@@ -108,7 +108,13 @@ All notable changes to Vela, newest first.
   its levels with the same convention, so the 0.618 of a retracement, a fan, an arc set and a Gann
   box match; the same holds for bullish/bearish reds and greens, which were previously two slightly
   different pairs depending on the tool. Icons across the toolbars and menus are one consistent set
-  at one weight, and they take the color of the control they sit in. Color swatches everywhere are
+  at one weight, and they take the color of the control they sit in; several were redrawn to read
+  more clearly at their small size — among them the gear, the trash bin, the baseline and
+  Heikin Ashi chart styles, the Fibonacci wedge, the Fibonacci speed-resistance arcs, the
+  trend-based Fibonacci extension, and the long/short position tools.
+  Indicators share one icon everywhere they appear — the top bar, the pickers and the
+  object tree — and every icon button responds to the pointer the same way: resting in a muted
+  tone and brightening to white on hover, with the same soft backing. Color swatches everywhere are
   square, inputs and dropdowns in the chart settings share the dialog's own surface, the pointer
   cursor only appears over things that actually respond to a click, and the indicator legend sits
   on a solid chart-colored backing so its labels stay readable over the candles.

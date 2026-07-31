@@ -177,10 +177,10 @@ export class SettingsDialog {
         hTitle.style.cssText = 'font-size:17px;font-weight:600;letter-spacing:0.2px;';
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
-        closeBtn.textContent = '✕';
+        closeBtn.innerHTML = iconAt('close', 15);
         closeBtn.title = 'Close';
         closeBtn.className = 'vela-sd-close';
-        closeBtn.style.cssText = 'cursor:pointer;background:transparent;border:none;color:var(--vela-fg-muted);font-size:15px;line-height:1;width:30px;height:30px;border-radius:var(--vela-radius-sm);';
+        closeBtn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;border-radius:var(--vela-radius-sm);';
         closeBtn.addEventListener('click', () => this.close());
         header.append(hTitle, closeBtn);
         header.style.cursor = 'move';

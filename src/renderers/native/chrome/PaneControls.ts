@@ -48,10 +48,10 @@ function ensureStyles(): void {
     const st = document.createElement('style');
     st.id = STYLE_ID;
     st.textContent = `
-.vela-pc-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:var(--vela-radius-sm);background:transparent;line-height:0;font-size:${ICON_PX}px;}
+.vela-pc-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:var(--vela-radius-sm);background:transparent;line-height:0;font-size:${ICON_PX}px;color:var(--vela-fg-muted);}
 .vela-pc-btn svg{display:block;}
-.vela-pc-btn:not(:disabled):hover{opacity:1 !important;background:var(--vela-active);}
-.vela-pc-on,.vela-pc-on:not(:disabled):hover{background:var(--vela-selected-bg);}
+.vela-pc-btn:not(:disabled):hover{opacity:1 !important;background:var(--vela-active);color:var(--vela-fg-bright);}
+.vela-pc-on,.vela-pc-on:not(:disabled):hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
 `;
     document.head.appendChild(st);
 }
@@ -167,13 +167,14 @@ export class PaneControls {
         const selected = opts.selected === true;
         // Selected (e.g. the expand toggle of a collapsed pane) is an inverse chip, fully
         // opaque — it must read on its own, without the cluster's dark pill behind it.
+        // Ink lives in the stylesheet (muted at rest, bright on hover, inverse when selected);
+        // only the disabled fade stays inline.
         b.className = selected ? 'vela-pc-btn vela-pc-on' : 'vela-pc-btn';
         Object.assign(b.style, {
             cursor: disabled ? 'default' : 'pointer',
             width: '20px',
             height: '20px',
-            color: selected ? 'var(--vela-selected-fg)' : this.theme.textColor,
-            opacity: selected ? '1' : disabled ? '0.3' : '0.75',
+            opacity: disabled ? '0.3' : '1',
         });
         if (!disabled) b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
         return b;

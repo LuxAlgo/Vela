@@ -735,7 +735,7 @@ export class NativeRenderer implements IChartRenderer {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.title = 'Chart settings';
-        btn.textContent = '⚙';
+        btn.innerHTML = iconAt('gear', 14);
         Object.assign(btn.style, {
             position: 'absolute',
             bottom: `${TIME_AXIS_H + 10}px`,

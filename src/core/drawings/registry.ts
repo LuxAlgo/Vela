@@ -611,7 +611,7 @@ registerDrawingType({
 });
 
 const FIB_TREND_ICON =
-    svg24('<path d="M3 17 9 8l4 5 8-9"/><path d="M13 5h8v6" opacity="0.6"/>');
+    svg24('<path d="M3 20 10 9l4 5"/><path d="M14 14h7M14 9h7M14 4h7"/>');
 
 registerDrawingType({
     type: 'fibextensiontrend',
@@ -682,9 +682,9 @@ registerDrawingType({
 const FIB_CIRCLES_ICON =
     svg24('<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="10"/>');
 const FIB_ARCS_ICON =
-    svg24('<path d="M3 21a6 6 0 0 1 6-6"/><path d="M3 21a11 11 0 0 1 11-11"/><path d="M3 21a16 16 0 0 1 16-16"/>');
+    svg24('<path d="M8 20a4 4 0 0 1 8 0"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/><circle cx="12" cy="20" r="1.4" fill="currentColor" stroke="none"/>');
 const FIB_WEDGE_ICON =
-    svg24('<path d="M4 20 20 8M4 20 20 18"/><path d="M9 18a6 6 0 0 1 4.5-4.6"/><path d="M6 19.5a10 10 0 0 1 8-7.8"/>');
+    svg24('<path d="M4 20 20 16M4 20 14 4"/><path d="M11.8 18.1A8 8 0 0 0 8.2 13.2"/><path d="M16.6 16.9A13 13 0 0 0 10.9 9"/>');
 const FIB_SPIRAL_ICON =
     svg24('<path d="M13 12a2 2 0 1 1-2-2 4 4 0 0 1 4 4 6 6 0 0 1-9 5.2 9 9 0 0 1 .5-15"/>');
 
@@ -908,10 +908,11 @@ registerDrawingType({
 });
 
 // ── positions ──
-// The only tool icon that keeps its own colors: the two rects ARE the long/short halves,
-// so they carry the directional pair rather than the toolbar's ink.
-const POSITION_ICON =
-    svg24(`<rect x="4" y="4" width="16" height="7" rx="1" stroke="${BULLISH}"/><rect x="4" y="13" width="16" height="7" rx="1" stroke="${BEARISH}"/>`);
+// Shaded target zone above the entry edge, hollow stop zone below it.
+const POSITION_ICON = svg24(
+    '<rect x="4.5" y="4.5" width="15" height="7.5" rx="1" fill="currentColor" fill-opacity="0.25"/>' +
+        '<rect x="4.5" y="12" width="15" height="7.5" rx="1"/>',
+);
 
 registerDrawingType({
     type: 'position',

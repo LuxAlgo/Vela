@@ -60,9 +60,9 @@ function ensureStyles(): void {
 .vela-dpop textarea::-webkit-scrollbar-track,.vela-dpop .vela-fiblevels::-webkit-scrollbar-track,.vela-dpop .vela-frvp::-webkit-scrollbar-track{background:transparent;}
 .vela-dpop .vela-fiblevels input[type=text],.vela-dpop .vela-fiblevels input[type=number],.vela-dpop .vela-frvp input[type=text],.vela-dpop .vela-frvp input[type=number],.vela-dpop .vela-frvp select{transition:border-color .12s ease,box-shadow .12s ease;}
 .vela-dpop .vela-fiblevels input[type=text]:focus,.vela-dpop .vela-fiblevels input[type=number]:focus,.vela-dpop .vela-frvp input[type=text]:focus,.vela-dpop .vela-frvp input[type=number]:focus,.vela-dpop .vela-frvp select:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
-.vela-dpop-btn{background:transparent;transition:background var(--vela-dur-fast) ease;}
-.vela-dpop-btn:hover{background:var(--vela-hover-strong);}
-.vela-dpop-btn[data-active='1']{background:var(--vela-active);}
+.vela-dpop-btn{background:transparent;color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-dpop-btn:hover{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
+.vela-dpop-btn[data-active='1']{background:var(--vela-active);color:var(--vela-fg-bright);}
 .vela-dpop-item{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-dpop-item:hover{background:var(--vela-hover-strong);}
 .vela-dpop-item[data-active='1']{background:var(--vela-active);}`;

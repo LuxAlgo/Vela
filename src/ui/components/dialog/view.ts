@@ -2,6 +2,7 @@
 // machine. The body is caller-owned: pass a Node or populate via `body` after creation.
 import { runMachine, spreadProps, type HandleOf } from '../../zag';
 import { injectStyles } from '../../styles';
+import { iconEl } from '../../icons';
 import { dialogController, type DialogControllerOptions } from './controller';
 import { DIALOG_CSS, DIALOG_STYLE_ID } from './styles';
 import * as zagDialog from '@zag-js/dialog';
@@ -65,7 +66,7 @@ export class Dialog {
         title.textContent = opts.title ?? '';
         const close = doc.createElement('button');
         close.className = 'vela-dialog-close';
-        close.textContent = '✕';
+        close.appendChild(iconEl('close', doc));
         header.append(title, close);
 
         this.body = doc.createElement('div');
