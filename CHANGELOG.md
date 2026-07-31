@@ -6,6 +6,9 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Undo and redo in the top bar.** Next to Indicators, a hairline and two icon buttons step
+  through the same undo/redo history as the keyboard shortcuts — drawings and indicator changes
+  alike. Each button dims when there is nothing to undo or redo.
 - **Stay in drawing mode.** A toolbar toggle under the magnet (pen with a lock) keeps the
   armed tool ready after each placement, so you can draw several of the same shape without
   re-picking the tool. Turn it off for the usual one-shot behavior; the brush family still

@@ -83,7 +83,8 @@ const CSS = `
     color: var(--vela-fg-muted);
     font-size: 14px;
 }
-.vela-widget-tool:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tool:hover:not(:disabled) { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tool:disabled { opacity: 0.35; cursor: default; }
 .vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-widget-action {
     all: unset;
@@ -142,6 +143,10 @@ export interface TopbarOptions {
         onToggle?: (id: string) => void;
     };
     onIndicatorsClick?: () => void;
+    /** Unified undo/redo (same stack as Ctrl+Z / Ctrl+Y). Enabled state is pushed with
+     *  {@link Topbar.setHistoryState}. */
+    onUndoClick?: () => void;
+    onRedoClick?: () => void;
     /** The two side-panel toggles. Their pressed state is pushed back with `setPanelActive`,
      *  since the panels also close each other. */
     onObjectsClick?: () => void;
@@ -164,6 +169,8 @@ export class Topbar {
     private readonly styleMenu: Menu;
     private readonly tooltips: Tooltip[] = [];
     private readonly actionsHost: HTMLElement;
+    private undoBtn!: HTMLButtonElement;
+    private redoBtn!: HTMLButtonElement;
     private alertsBtn!: HTMLButtonElement;
     private panelBtns!: { objects: HTMLButtonElement; dataWindow: HTMLButtonElement };
     private alertsBadge!: HTMLElement;
@@ -221,6 +228,10 @@ export class Topbar {
             if (onClick) b.addEventListener('click', onClick);
             return b;
         };
+        // Undo/redo sit beside Indicators (same icon-tool chrome as the right cluster).
+        this.undoBtn = tool('vela-widget-undo', 'undo', 'Undo', opts.onUndoClick);
+        this.redoBtn = tool('vela-widget-redo', 'redo', 'Redo', opts.onRedoClick);
+        this.setHistoryState(false, false);
         const dataWindowBtn = tool('vela-widget-datawindow', 'datawindow', 'Data window', opts.onDataWindowClick);
         const objectsBtn = tool('vela-widget-objects', 'objects', 'Object tree', opts.onObjectsClick);
         const screenshotBtn = tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick);
@@ -248,7 +259,7 @@ export class Topbar {
         };
         const leading: Array<HTMLElement> = [this.symbolEl, sep(), this.tfButton, sep(), this.styleButton, sep()];
         if (this.layoutButton) leading.push(this.layoutButton, sep());
-        this.el.append(...leading, indicatorsBtn, this.actionsHost, this.alertsBtn, dataWindowBtn, objectsBtn, screenshotBtn);
+        this.el.append(...leading, indicatorsBtn, sep(), this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, dataWindowBtn, objectsBtn, screenshotBtn);
         host.appendChild(this.el);
         // Snap after layout; RO catches later reflows (symbol / timeframe length).
         this.onHairlineSync();
@@ -367,6 +378,12 @@ export class Topbar {
 
     setIndicatorCount(_n: number): void {
         // Count badge intentionally hidden — kept as a no-op so hosts can keep calling it.
+    }
+
+    /** Enable/disable the undo and redo tools from the host's unified history. */
+    setHistoryState(canUndo: boolean, canRedo: boolean): void {
+        this.undoBtn.disabled = !canUndo;
+        this.redoBtn.disabled = !canRedo;
     }
 
     setAlertCount(n: number): void {

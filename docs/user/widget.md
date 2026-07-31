@@ -94,7 +94,8 @@ work from the very first keystroke, before any click.
 
 - **Topbar** — symbol button (opens the search), timeframe dropdown, chart-style dropdown
   (built-ins ∪ [plugin chart types](../contributing/plugin-sdk.md), with their icons and
-  labels), Indicators picker, data-window and object-tree panel toggles, then any
+  labels), Indicators picker, undo/redo (same history as Ctrl+Z / Ctrl+Y), data-window and
+  object-tree panel toggles, then any
   [contributed actions](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)
   in the right-hand cluster.
 - **Status line** — symbol + OHLC and change of the hovered bar (resting on the latest

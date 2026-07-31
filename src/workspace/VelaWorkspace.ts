@@ -179,6 +179,8 @@ export class VelaWorkspace {
     private globalTool: DrawingTypeKey | null = null;
     private globalSnap: SnapMode = 'off';
     private globalStay = false;
+    /** Live subscription to the ACTIVE cell's unified history (rebound on every projection). */
+    private historyUnsub: (() => void) | null = null;
     /** Favorite drawing tools — a WORKSPACE preference (one star set, every cell). */
     private favs: string[] = [];
     /** Live sync configuration (mutable copy of the option). */
@@ -275,6 +277,8 @@ export class VelaWorkspace {
             symbol: '',
             onSymbolClick: () => this.symbolPicker.open(),
             onIndicatorsClick: () => this.indicatorPicker.open(),
+            onUndoClick: () => this.active.history.undo(),
+            onRedoClick: () => this.active.history.redo(),
             onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.active.downloadScreenshot(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
@@ -669,6 +673,10 @@ export class VelaWorkspace {
         this.topbar.setPriceStyle(cell.priceStyle);
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
+        const pushHistory = (): void => this.topbar.setHistoryState(cell.history.canUndo, cell.history.canRedo);
+        this.historyUnsub?.();
+        this.historyUnsub = cell.history.onChange(pushHistory);
+        pushHistory();
         this.objectTree.setSymbol(cell.symbol);
         this.objectTree.onChart(cell.chart);
         this.dataWindow.onChart(cell.chart); // the readout follows the active cell

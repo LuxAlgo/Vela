@@ -81,8 +81,8 @@ registerIcon(
 
 // ── widget chrome icons ──
 registerIcon('indicators', S('<path d="M1.5 12.5 5 7l2.5 3.5L11 4l3.5 5"/><circle cx="11" cy="4" r="1.4" fill="currentColor" stroke="none"/>'));
-registerIcon('undo', S('<path d="M2.8 7.2A5.2 5.2 0 1 0 8 3"/><path d="M2.8 3v4.2h4.2"/>'));
-registerIcon('redo', S('<path d="M13.2 7.2A5.2 5.2 0 1 1 8 3"/><path d="M13.2 3v4.2H9"/>'));
+registerIcon('undo', S('<path d="M6.2 9.5 2.7 6l3.5-3.5"/><path d="M2.7 6h6.8a3.65 3.65 0 0 1 0 7.3H7.5"/>'));
+registerIcon('redo', S('<path d="M9.8 9.5 13.3 6 9.8 2.5"/><path d="M13.3 6H6.5a3.65 3.65 0 0 0 0 7.3h2"/>'));
 registerIcon(
     'objects',
     S('<path d="M8 1.8 14 5 8 8.2 2 5z"/><path d="M2 8l6 3.2L14 8" opacity="0.7"/><path d="M2 11l6 3.2 6-3.2" opacity="0.4"/>'),
