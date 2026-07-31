@@ -165,6 +165,53 @@ Attachments mount at widget construction (and on `widget.refreshActions()` for l
 registrations), once per id per widget. The same portability rules as actions apply: everything
 comes from `ctx`, never from module state.
 
+## Side panels — `registerSidePanel`
+
+A **side panel** is a docked column on the chart's right edge — the object tree and the data
+window are the two built-in ones, and a contributed panel joins them as an equal: same header
+and close button, same single-open dock, its own toggle button in the topbar's panel group.
+
+The shell owns that chrome and hands `mount` the panel's **body** to fill; the contribution
+never reaches into the widget's DOM:
+
+```ts
+import { registerSidePanel, registerIcon } from 'vela/plugin';
+
+registerIcon('flow', '<svg …>…</svg>');
+
+registerSidePanel({
+    id: 'mytool.flow',           // stable: dock id, button id, and the key its width persists under
+    title: 'Order flow',         // header title + button tooltip
+    icon: 'flow',
+    order: 30,                   // among the panel buttons (built-ins are 10 and 20; default 100)
+    width: 320,                  // declared width in px (default 280)
+    resizable: true,             // drag the inner edge; double-click returns to `width`
+    minWidth: 240,
+    maxWidth: 560,
+    mount: (ctx, body) => {
+        const list = document.createElement('div');
+        body.appendChild(list);                       // `body` is the panel's scrolling area
+        return {
+            onChart: (chart) => { /* (re)bind: mount, widget rebuild, active cell change */ },
+            onOpen: () => { /* became visible — render now if you render lazily */ },
+            destroy: () => { /* widget destroyed, or this id re-registered */ },
+        };
+    },
+});
+```
+
+- **Width is a per-panel choice.** Omit `resizable` for a fixed column; with it, the drag is
+  clamped to `[minWidth, maxWidth]` (defaults 200/640) and the width the user settles on is
+  saved with the shell's state document, under the panel id.
+- **The dock is exclusive.** Opening a panel closes the one showing — the chart keeps its
+  width, and only one column is ever docked. `onOpen` is where a lazy panel renders.
+- **`onChart` is the rebind hook**, not a one-shot: the widget hands over a new chart instance
+  after a symbol/timeframe rebuild, and a workspace re-points the panel at the active cell.
+- Register at import time; after a late registration call `widget.refreshActions()` (an open
+  contributed panel stays open across the rebuild).
+- A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
+  than taking the shell down.
+
 ## Widget integration
 
 - A registered chart type appears in the **style dropdown** automatically

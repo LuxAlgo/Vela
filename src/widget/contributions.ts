@@ -53,8 +53,57 @@ export interface WidgetAttachment {
     mount(ctx: WidgetContext): () => void;
 }
 
+/**
+ * A contributed side panel's runtime handle — what `mount` hands back. Every member is
+ * optional: a panel that only paints its body once needs none of them.
+ */
+export interface SidePanelHandle {
+    /** (Re)bind to a chart instance: on mount, after every widget rebuild, and — in a
+     *  workspace — whenever the active cell changes. */
+    onChart?(chart: Vela): void;
+    /** The panel just became visible. Panels that render lazily do it here. */
+    onOpen?(): void;
+    /** Released when the panel is dropped (widget destroy, or a re-registration). */
+    destroy?(): void;
+}
+
+/**
+ * A contributed SIDE PANEL — a docked column in the shell's panel dock, alongside the object
+ * tree and the data window, with a toggle button in the topbar's panel group.
+ *
+ * The shell owns the chrome (header, close button, dock exclusivity, the button and its pressed
+ * state) and hands `mount` the panel's BODY element to fill; the contribution never reaches into
+ * the shell's DOM. Register at import time, before widgets are constructed (`refreshActions()`
+ * picks up later registrations on an already-built widget).
+ */
+export interface SidePanelDescriptor {
+    /** Stable id — re-registering an id replaces it. Also the key its width persists under. */
+    id: string;
+    /** Header title, and the tooltip of its topbar button. */
+    title: string;
+    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
+    icon: string;
+    /** Sort key among the panel buttons (ascending; default 100 — after the built-ins). */
+    order?: number;
+    /** Declared width in px (default 280). */
+    width?: number;
+    /** Let the user drag the panel's inner edge (default false — a fixed column). */
+    resizable?: boolean;
+    minWidth?: number;
+    maxWidth?: number;
+    mount(ctx: WidgetContext, body: HTMLElement): SidePanelHandle | void;
+}
+
+/** One panel toggle, as the shell's chrome consumes it (data, never DOM). */
+export interface SidePanelButton {
+    id: string;
+    title: string;
+    icon: string;
+}
+
 const registry = new Map<string, WidgetActionDescriptor>();
 const attachments = new Map<string, WidgetAttachment>();
+const panels = new Map<string, SidePanelDescriptor>();
 
 /** Register (or replace) a widget attachment. Returns an unregister disposer. */
 export function registerWidgetAttachment(att: WidgetAttachment): () => void {
@@ -71,6 +120,26 @@ export function unregisterWidgetAttachment(id: string): void {
 /** Every registered attachment (registration order). */
 export function widgetAttachments(): WidgetAttachment[] {
     return [...attachments.values()];
+}
+
+/** Sort key of a panel that declares none — after the shell's own panels. */
+export const DEFAULT_PANEL_ORDER = 100;
+
+/** Register (or replace) a side panel. Returns an unregister disposer. */
+export function registerSidePanel(desc: SidePanelDescriptor): () => void {
+    panels.set(desc.id, desc);
+    return () => {
+        if (panels.get(desc.id) === desc) panels.delete(desc.id);
+    };
+}
+
+export function unregisterSidePanel(id: string): void {
+    panels.delete(id);
+}
+
+/** Every registered side panel, `order`-sorted (registration order breaks ties). */
+export function sidePanels(): SidePanelDescriptor[] {
+    return [...panels.values()].sort((a, b) => (a.order ?? DEFAULT_PANEL_ORDER) - (b.order ?? DEFAULT_PANEL_ORDER));
 }
 
 /** Register (or replace) a widget action. Widgets read the registry live. */

@@ -20,6 +20,7 @@ import { Bottombar, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
 import { ObjectTree } from './object-tree';
 import { DataWindow } from './data-window';
+import { PanelDock } from './panel-dock';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
 import { widgetAttachments, type WidgetContext } from './contributions';
@@ -95,6 +96,8 @@ export class VelaWidget {
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
     private readonly dataWindow: DataWindow;
+    /** The side-panel column: the two panels above, plus every contributed one. */
+    private readonly dock: PanelDock;
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly contextMenu: ChartContextMenu;
     private readonly symbolPicker: SymbolPicker;
@@ -247,10 +250,8 @@ export class VelaWidget {
             onIndicatorsClick: () => this.indicatorPicker.open(),
             onUndoClick: () => this.history.undo(),
             onRedoClick: () => this.history.redo(),
-            onObjectsClick: () => this.objectTree.toggle(),
             onScreenshotClick: () => this.downloadScreenshot(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
-            onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: this.timeframe,
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: this.priceStyle,
@@ -265,17 +266,18 @@ export class VelaWidget {
         this.chartHost = doc.createElement('div');
         this.chartHost.className = 'vela-widget-chart';
         main.appendChild(this.chartHost);
+        // One dock owns the panel column: the two built-ins below, every contributed panel, the
+        // single-open rule and the topbar's toggle group.
+        this.dock = new PanelDock(main, {
+            chrome: this.topbar,
+            context: () => this.context(),
+            changed: () => this.markStateDirty(),
+        });
         this.objectTree = new ObjectTree(main);
         this.dataWindow = new DataWindow(main);
-        // The docked panels are exclusive — one column at a time, so the chart keeps its width.
-        this.objectTree.onOpenChange = (open) => {
-            this.topbar.setPanelActive('objects', open);
-            if (open) this.dataWindow.toggle(false);
-        };
-        this.dataWindow.onOpenChange = (open) => {
-            this.topbar.setPanelActive('dataWindow', open);
-            if (open) this.objectTree.toggle(false);
-        };
+        this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
+        this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
+        this.dock.refresh();
         this.root.appendChild(main);
 
         this.contextMenu = new ChartContextMenu(this.chartHost, {
@@ -424,10 +426,11 @@ export class VelaWidget {
         this.alertsMenu.openAt(r.left, r.bottom + 4);
     }
 
-    /** Re-project contributed topbar actions (after late registrations). */
+    /** Re-project contributed topbar actions and side panels (after late registrations). */
     refreshActions(): void {
         this.mountAttachments();
         this.topbar.renderActions();
+        this.dock.refresh(); // rebuilt panels bind to the live chart on their own
     }
 
     /** The inner headless chart of the CURRENT build — becomes a new instance after a
@@ -535,6 +538,8 @@ export class VelaWidget {
         };
         const state: WorkspaceState = { version: 1, layout: '1', activeCellId: 'c1', timezone: this.timezone, charts: [{ id: 'c1', ...cell }] };
         if (this.favs.length > 0) state.favorites = [...this.favs];
+        const panels = this.dock.getState();
+        if (panels) state.panels = panels;
         return state;
     }
 
@@ -557,6 +562,8 @@ export class VelaWidget {
             this.favs = [...st.favorites];
             this.inner?.drawings.setFavorites(this.favs as never[]);
         }
+        // Absent in documents written before the dock existed — those leave the column closed.
+        this.dock.applyState(st.panels);
         if (cell) {
             const style = fromUrl.priceStyle ?? cell.priceStyle;
             if (style && style !== this.priceStyle) this.setPriceStyle(style);
@@ -722,6 +729,7 @@ export class VelaWidget {
         window.removeEventListener('beforeunload', this.onUnload);
         this.root.removeEventListener('keydown', this.onRootKeydown);
         this.topbar.destroy();
+        this.dock.destroy(); // contributed panels; the two built-ins are ours to drop
         this.objectTree.destroy();
         this.dataWindow.destroy();
         this.shortcutsHelp?.destroy();
@@ -777,8 +785,7 @@ export class VelaWidget {
 
         this.symbolPicker.setSource(() => chart.data.symbols());
         this.objectTree.setSymbol(this.symbol);
-        this.objectTree.onChart(chart);
-        this.dataWindow.onChart(chart);
+        this.dock.onChart(chart); // every docked panel rebinds, contributed ones included
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
         chart.on('indicator:added', () => {

@@ -2,6 +2,27 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Side panels are an extension point.** The column the object tree and the data window live in
+  is now a dock any plugin can join: `registerSidePanel({ id, title, icon, mount })` adds a panel
+  with the same header, the same close button, and its own toggle button in the topbar beside the
+  other two. The plugin fills the panel's body and never touches the rest of the interface; the
+  dock keeps exactly one panel open at a time, so the chart never loses more width than one
+  column. A panel can declare itself **resizable** — a handle on its inner edge, dragged within
+  the bounds it sets, double-click back to its declared width — and which panel is open plus the
+  widths you dragged now come back with the rest of your saved chart.
+
+### Changed
+
+- **The topbar's panel buttons are built from the dock.** They used to be two fixed buttons wired
+  to two fixed callbacks. _(Breaking, for hosts that construct `Topbar` themselves: the
+  `onObjectsClick` and `onDataWindowClick` options are gone, and `setPanelActive` now takes any
+  panel id — the dock supplies the buttons through `setPanelButtons`. Nothing changes for users
+  of `VelaWidget` or `VelaWorkspace`.)_
+
 ## [v0.2.0]
 
 ### Added

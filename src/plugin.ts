@@ -50,11 +50,19 @@ export {
     registerWidgetAttachment,
     unregisterWidgetAttachment,
     widgetAttachments,
+    registerSidePanel,
+    unregisterSidePanel,
+    sidePanels,
     type WidgetActionDescriptor,
     type WidgetActionTarget,
     type WidgetAttachment,
     type WidgetContext,
+    type SidePanelDescriptor,
+    type SidePanelHandle,
+    type SidePanelButton,
 } from './widget/contributions';
+// A plugin panel gets the shell's own column; these bounds are what `resizable` clamps to.
+export { clampPanelWidth, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_MIN_WIDTH, DEFAULT_PANEL_MAX_WIDTH, type SidePanelOptions } from './widget/side-panel';
 export { drawingTypes, getDrawingType, type DrawingTypeMeta } from './core/drawings/registry';
 export type { DrawingTypeKey } from './core/drawings/Drawing';
 export { registerIcon, iconMarkup } from './ui/icons';

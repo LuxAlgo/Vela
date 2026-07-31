@@ -116,6 +116,11 @@ work from the very first keystroke, before any click.
   its OHLCV tinted with the bar's direction, then one section per indicator showing each plot's
   value in its own color. It follows the crosshair and falls back to the latest bar when the
   pointer leaves the chart. The two panels share the dock, so opening one closes the other.
+- **The dock** — the column both panels live in, and the one plugins extend
+  ([`registerSidePanel`](../contributing/plugin-sdk.md#side-panels--registersidepanel)): every
+  panel gets a toggle in the topbar's panel group, one panel shows at a time, and a panel that
+  declares itself resizable has a drag handle on its inner edge (double-click returns it to its
+  declared width). Which panel is open and the widths you dragged are part of the saved state.
 - **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
   the timeframe, **fetches the depth its window needs**, and frames it: `1D`→1m, `7D`→5m,
   `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing the timeframe by hand
@@ -136,6 +141,7 @@ the SAME document format — a widget is the single-chart case (`layout: '1'`, o
 ```ts
 const state = widget.getState();
 // → { version: 1, layout: '1', activeCellId: 'c1', timezone, favorites?,
+//     panels?: { open?, widths? },
 //     charts: [{ id: 'c1', symbol, provider?, timeframe, priceStyle, bars?, watermark?,
 //                rendererConfig, drawings, indicators }] }
 
