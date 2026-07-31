@@ -72,7 +72,9 @@ class SwitchFeed implements MarketDataFeed {
         if (this.failLoads.has(sym)) throw new Error(`no venue serves ${sym}`);
         if (this.gatedLoads.has(sym)) await new Promise<void>((r) => this.waiters.push(r));
         const have = this.depth[sym] ?? 50;
-        return makeBars(Math.min(cfg.bars ?? 500, have), PRICE[sym] ?? 1);
+        // The TAIL of the symbol's fixed universe — so a progressive head + its ranged
+        // extensions see one consistent market (loadRange shares the same makeBars grid).
+        return makeBars(have, PRICE[sym] ?? 1).slice(-Math.min(cfg.bars ?? 500, have));
     }
 
     onUnresolved(cb: (info: { symbol: string; providers: string[] }) => void): () => void {
@@ -519,7 +521,8 @@ describe('setMarket — in-place market switch', () => {
         const events: unknown[] = [];
         chart.on('market:changed', (e) => events.push(e));
 
-        await chart.setMarket({ bars: 800 });
+        await chart.setMarket({ bars: 800 }); // resolves at the progressive head…
+        await chart.historyComplete(); // …the depth streams in behind it
 
         expect(renderer.bars.length).toBe(800);
         expect(events).toEqual([]);

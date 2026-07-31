@@ -23,6 +23,15 @@ All notable changes to Vela, newest first.
   series, and script-drawn dashboards (tables), which are pinned to pane corners rather than
   to bars, hide for the load and return with the data. A chart whose symbol no venue can
   serve drops the dots rather than promising bars that aren't coming.
+- **Candles appear after one small request.** The first paint no longer waits for the whole
+  requested history: the newest 200 bars load first — one quick request, candles on screen —
+  and the rest streams in behind the interactive chart in steps that double up to the 10k
+  chunk size, with the viewport held in place as older bars extend the left edge. Doubling
+  keeps the request count logarithmic, so a slow venue costs a handful of round-trips instead
+  of one per fixed step. Every load works this way — the first open, and every symbol or
+  timeframe switch — so the loading dots give way to candles as fast as the venue can answer
+  one small request. `history:progress` now reports each step as it lands, and `ready()` (and
+  `setMarket`) resolve at that first paint — `historyComplete()` still awaits the full depth.
 - **Loads announce themselves to plugins.** Two new chart events bracket every bar load:
   `load:start` fires before the first fetch — before the chart is blanked — carrying the new
   market and a first-load flag, and exactly one `load:end` follows once the first candles
