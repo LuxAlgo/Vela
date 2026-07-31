@@ -15,6 +15,22 @@ export interface VelaEventMap extends Record<string, unknown> {
      * documents between symbols).
      */
     'market:changed': { symbol: string; timeframe: string; prev: { symbol: string; timeframe: string } };
+    /**
+     * A bar load began with nothing painted: the FIRST load (fires during construction —
+     * subscribers attached later see only its `load:end`), or an identity switch
+     * (symbol/provider/timeframe), which blanks the old series in the same breath. Fires
+     * before the first fetch — plugins, extensions and custom indicators hide or reset
+     * their own visuals here. Exactly one `load:end` follows. A depth-only reload
+     * (`bars`) keeps the chart painted and fires neither.
+     */
+    'load:start': { symbol: string; timeframe: string; firstLoad: boolean };
+    /**
+     * The load ended: its first bars painted (`bars` > 0 — on deep histories the quick
+     * preview, before the full depth), or it ended with none (`bars` = 0 — a failed
+     * fetch, an empty market, or a parked symbol nothing serves). Counterpart of
+     * `load:start`; plugins restore or rebuild their visuals here.
+     */
+    'load:end': { symbol: string; timeframe: string; bars: number };
     'indicator:added': { id: string };
     'indicator:removed': { id: string };
     'indicator:error': { id: string; error: Error };

@@ -56,19 +56,35 @@ class SwitchFeed implements MarketDataFeed {
     unsubs: Record<string, number> = {};
     /** Symbols whose LOAD is held until release() — the parked/slow-load knob. */
     readonly gatedLoads = new Set<string>();
+    /** Symbols whose LOAD rejects — the provider-failure knob. */
+    readonly failLoads = new Set<string>();
     /** Hold every loadRange until release() — races a backfill against a switch. */
     gateRanges = false;
     /** Bars available per symbol (default 50). */
     depth: Record<string, number> = {};
     private waiters: Array<() => void> = [];
+    private unresolvedCb: ((info: { symbol: string; providers: string[] }) => void) | null = null;
 
     async load(cfg: MarketConfig): Promise<OHLCV[]> {
         this.loads.push({ ...cfg });
         if (cfg.data?.length) return cfg.data;
         const sym = cfg.symbol ?? 'TEST';
+        if (this.failLoads.has(sym)) throw new Error(`no venue serves ${sym}`);
         if (this.gatedLoads.has(sym)) await new Promise<void>((r) => this.waiters.push(r));
         const have = this.depth[sym] ?? 50;
         return makeBars(Math.min(cfg.bars ?? 500, have), PRICE[sym] ?? 1);
+    }
+
+    onUnresolved(cb: (info: { symbol: string; providers: string[] }) => void): () => void {
+        this.unresolvedCb = cb;
+        return () => {
+            this.unresolvedCb = null;
+        };
+    }
+
+    /** Report a parked load (what MultiProviderFeed does for a symbol nothing serves). */
+    park(symbol: string): void {
+        this.unresolvedCb?.({ symbol, providers: [] });
     }
 
     async loadRange(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]> {
@@ -112,6 +128,10 @@ class FakeRenderer implements IChartRenderer {
     visibleRangeCalls: VisibleRange[] = [];
     nativePushes: Array<[string, unknown]> = [];
     mountedModels: IndicatorModel[] = [];
+    /** Whether the loading affordance is up right now. */
+    loading = false;
+    /** Interleaved series/loading timeline — the ORDER is what the load-state tests pin. */
+    timeline: string[] = [];
     applyFeature(): void {}
     readFeature(key: string): unknown { return key === 'priceStyle' ? this.priceStyleFeature : undefined; }
     mount(_c: HTMLElement, _t: VelaTheme): void {}
@@ -121,6 +141,11 @@ class FakeRenderer implements IChartRenderer {
     setBars(bars: OHLCV[], opts?: { preserveView?: boolean }): void {
         this.bars = bars;
         this.setBarsCalls.push({ n: bars.length, close: bars[0]?.close, preserveView: !!opts?.preserveView });
+        this.timeline.push(`bars:${bars.length}`);
+    }
+    setLoading(loading: boolean): void {
+        if (loading !== this.loading) this.timeline.push(`loading:${loading}`);
+        this.loading = loading;
     }
     updateBar(bar: OHLCV): void { this.bars.push(bar); }
     setNativeData(type: string, data: unknown): void { this.nativePushes.push([type, data]); }
@@ -532,5 +557,120 @@ describe('setMarket — in-place market switch', () => {
         const p = chart.setMarket({ symbol: 'SLOW' });
         chart.destroy();
         await p; // resolves (silently) instead of hanging on the parked load
+    });
+});
+
+describe('load states — the cleared chart + the loading affordance', () => {
+    it('first load: the affordance is up from the start and ends with the first batch', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        expect(renderer.timeline).toEqual(['loading:true', 'bars:50', 'loading:false']);
+        expect(chart).toBeTruthy();
+    });
+
+    it('an identity switch blanks the chart immediately and raises the affordance until the new bars land', async () => {
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        renderer.timeline = [];
+
+        const done = chart.setMarket({ symbol: 'SLOW' });
+        // Synchronously on the call: old candles gone, affordance up — nothing waits on the fetch.
+        expect(renderer.bars).toEqual([]);
+        expect(renderer.loading).toBe(true);
+
+        feed.release();
+        await done;
+        expect(renderer.bars[0]?.close).toBe(PRICE.SLOW);
+        expect(renderer.loading).toBe(false);
+        // The affordance rises BEFORE the blank (load:start reaches plugins first), and falls
+        // with the new market's first batch.
+        expect(renderer.timeline).toEqual(['loading:true', 'bars:0', 'bars:50', 'loading:false']);
+    });
+
+    it('the load:start/load:end pair brackets a switch for plugins — start before the blank, end with the first batch', async () => {
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        const seen: Array<{ ev: string; symbol: string; barsPainted: number; payloadBars?: number; firstLoad?: boolean }> = [];
+        chart.on('load:start', (e) => seen.push({ ev: 'start', symbol: e.symbol, barsPainted: renderer.bars.length, firstLoad: e.firstLoad }));
+        chart.on('load:end', (e) => seen.push({ ev: 'end', symbol: e.symbol, barsPainted: renderer.bars.length, payloadBars: e.bars }));
+
+        const done = chart.setMarket({ symbol: 'SLOW', timeframe: '240' });
+        // start already out, carrying the NEW identity, with the OLD series still painted —
+        // a plugin hides its own visuals before anything is blanked.
+        expect(seen).toEqual([{ ev: 'start', symbol: 'SLOW', barsPainted: 50, firstLoad: false }]);
+
+        feed.release();
+        await done;
+        expect(seen[1]).toEqual({ ev: 'end', symbol: 'SLOW', barsPainted: 50, payloadBars: 50 });
+        expect(seen).toHaveLength(2); // exactly one end per start
+    });
+
+    it('load:end fires alone (bars: 0) for a failed load and for a parked symbol', async () => {
+        const feed = new SwitchFeed();
+        feed.failLoads.add('DOWN');
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        const ends: number[] = [];
+        chart.on('load:end', (e) => ends.push(e.bars));
+
+        await expect(chart.setMarket({ symbol: 'DOWN' })).rejects.toThrow();
+        expect(ends).toEqual([0]); // the pair still closes — plugins never wait forever
+
+        const pending = chart.setMarket({ symbol: 'SLOW' });
+        feed.park('SLOW');
+        expect(ends).toEqual([0, 0]); // parked: closed immediately, not when (if) bars arrive
+        feed.release();
+        await pending;
+    });
+
+    it('a depth-only reload keeps the bars painted and never raises the affordance', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        renderer.timeline = [];
+
+        await chart.setMarket({ bars: 80 });
+        expect(renderer.timeline).toEqual(['bars:50']); // the feed has 50 — one silent reload
+    });
+
+    it('a failed load still ends the affordance (empty chart, no eternal dots)', async () => {
+        const feed = new SwitchFeed();
+        feed.failLoads.add('DOWN');
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+
+        await expect(chart.setMarket({ symbol: 'DOWN' })).rejects.toThrow();
+        expect(renderer.bars).toEqual([]); // blanked at the switch; nothing came back
+        expect(renderer.loading).toBe(false);
+    });
+
+    it('a parked load (no venue serves the symbol) drops the affordance instead of promising bars', async () => {
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        make({ symbol: 'SLOW', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await flush();
+        expect(renderer.loading).toBe(true); // first load in flight
+
+        feed.park('SLOW'); // what MultiProviderFeed reports when nothing can serve the symbol
+        expect(renderer.loading).toBe(false);
+        expect(renderer.bars).toEqual([]);
+
+        feed.release(); // a provider shows up later — the parked load resumes and paints
+        await flush();
+        expect(renderer.bars[0]?.close).toBe(PRICE.SLOW);
+        expect(renderer.loading).toBe(false);
     });
 });

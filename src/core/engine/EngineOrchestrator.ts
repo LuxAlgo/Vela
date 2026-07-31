@@ -137,6 +137,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     /** A setMarket switch is in flight: bar/viewport pokes to the OLD sessions are held
      *  (they must not re-run over the incoming market's bars — re-execution follows the load). */
     private switchingMarket = false;
+    /** A load is in flight with nothing painted — the state behind the renderer's loading
+     *  affordance and the `load:start`/`load:end` event pair (transition-guarded). */
+    private loadingUp = false;
 
     constructor(
         container: HTMLElement,
@@ -181,7 +184,13 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.drawings = new DrawingController(this.renderer, this.events, config.drawings);
         // A symbol nothing can serve leaves the load PARKED; publish it so a host can say so
         // instead of showing a blank chart forever (it still resumes if a provider registers).
-        this.unresolvedUnsub = this.feed.onUnresolved?.((info) => this.events.emit('data:unresolved', info)) ?? null;
+        // A parked load also ends the loading state — nothing is coming, and an endless
+        // animation over the empty chart would promise otherwise.
+        this.unresolvedUnsub =
+            this.feed.onUnresolved?.((info) => {
+                this.endLoad();
+                this.events.emit('data:unresolved', info);
+            }) ?? null;
         this.readyPromise = this.init();
         // Seed a constructed chart-type DATA engine only now — `startChartTypeEngine`
         // awaits `readyPromise`, so this MUST come after the assignment above. Seeding
@@ -275,6 +284,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     private async init(): Promise<void> {
         const gen = this.bumpGeneration();
+        this.beginLoad(true); // first load — nothing painted until the first batch
         await this.loadMarket(gen, { firstLoad: true });
         if (this.generation !== gen) return; // superseded mid-load (a setMarket, or destroy)
         this.startLive();
@@ -287,6 +297,30 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const gen = ++this.generation;
         for (const w of this.supersedeWaiters.splice(0)) w();
         return gen;
+    }
+
+    /**
+     * Enter the loading state: raise the renderer's affordance and tell the plugins
+     * (`load:start`) — BEFORE the series is blanked or fetched, so extensions and custom
+     * indicators can hide or reset their own visuals first. Transition-guarded: a switch
+     * superseding a still-loading switch re-enters silently.
+     */
+    private beginLoad(firstLoad: boolean): void {
+        if (this.loadingUp) return;
+        this.loadingUp = true;
+        this.renderer.setLoading?.(true);
+        const m = this.config.market;
+        this.events.emit('load:start', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', firstLoad });
+    }
+
+    /** Leave the loading state (first bars painted, or a load that ended with none) —
+     *  drops the affordance and fires the matching `load:end`. */
+    private endLoad(): void {
+        if (!this.loadingUp) return;
+        this.loadingUp = false;
+        this.renderer.setLoading?.(false);
+        const m = this.config.market;
+        this.events.emit('load:end', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', bars: this.bars.length });
     }
 
     /**
@@ -304,6 +338,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * — a market SWITCH must not re-add what the user has since removed.
      */
     private async loadMarket(gen: number, opts: { firstLoad: boolean }): Promise<void> {
+        try {
+            await this.loadMarketInner(gen, opts);
+        } finally {
+            // The owning load always ends the loading state — this is the belt for the paths
+            // that never hand the renderer a non-empty series (a failed fetch, an empty
+            // market). A superseded load leaves the state to its successor.
+            if (this.generation === gen) this.endLoad();
+        }
+    }
+
+    private async loadMarketInner(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         const market = this.config.market;
         const requested = market.bars ?? 500;
         const initialRange = market.visibleRange;
@@ -446,6 +491,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (next.data !== undefined) m.data = next.data;
             else if (next.symbol !== undefined || next.provider !== undefined) delete m.data; // offline → provider switch
             m.visibleRange = next.visibleRange; // consumed by THIS load only (overwritten every switch)
+
+            // An identity switch blanks the chart NOW: the old market's candles must not sit
+            // under the new market's name while its bars load — the loading affordance owns
+            // the gap. `load:start` goes out first (with the NEW identity, hence after the
+            // config mutation) so plugins hide their own visuals before the blank. A
+            // depth-only reload keeps the bars (same market, more history).
+            if (identityChanged) {
+                this.beginLoad(false);
+                this.setBarSeries([], { clearing: true });
+            }
 
             // Reload through the shared pipeline. The race lets a superseded caller resolve
             // promptly (e.g. a parked load on an unresolvable symbol) instead of hanging.
@@ -729,10 +784,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * (identity when no transform), and hand the view to the renderer. Everything downstream
      * (engines via `getBars`, natives, visible-range presets) reads `this.bars` — the view.
      */
-    private setBarSeries(raw: OHLCV[], opts?: { preserveView?: boolean }): void {
+    private setBarSeries(raw: OHLCV[], opts?: { preserveView?: boolean; clearing?: boolean }): void {
         this.rawBars = raw;
         this.bars = this.barTransform ? this.barTransform.full(raw) : raw;
-        this.renderer.setBars(this.bars, opts);
+        this.renderer.setBars(this.bars, { preserveView: opts?.preserveView });
+        // The first PAINTED batch ends the loading state — on a deep history that is the quick
+        // preview, well before the load pipeline completes. Only a non-empty series counts: the
+        // switch-time CLEARING call says so explicitly, and an empty COMPLETED load is closed
+        // by loadMarket's finally instead (a style re-derivation over empty bars mid-load must
+        // not end a load still in flight).
+        if (!opts?.clearing && this.bars.length > 0) this.endLoad();
     }
 
     /**

@@ -182,6 +182,17 @@ export interface IChartRenderer {
      */
     setIndicatorStatus?(handle: IndicatorRenderHandle, status: IndicatorStatus): void;
 
+    /**
+     * A market load is in flight with NO bars painted yet — the first load, or a
+     * symbol/timeframe switch (the host clears the old series first). Renderers may show a
+     * subtle loading affordance, and must hide any content that does NOT ride the bar series
+     * (corner-anchored tables); bar-mapped content vanishes with the cleared series on its
+     * own. The host turns the flag off with the first series it hands over (or when a load
+     * fails or parks) — the core also mirrors this state to plugins as `load:start`/`load:end`.
+     * Optional.
+     */
+    setLoading?(loading: boolean): void;
+
     ensurePane(pane: Pane): void;
     removePane(id: string): void;
 

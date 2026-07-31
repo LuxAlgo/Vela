@@ -15,8 +15,27 @@ All notable changes to Vela, newest first.
   the bounds it sets, double-click back to its declared width — and which panel is open plus the
   widths you dragged now come back with the rest of your saved chart.
 
+- **The chart says when it is loading.** Three small dots pulse quietly at the center of the
+  plot while a market's first bars are on their way — when the chart first opens, and again
+  after every symbol or timeframe change. They disappear the moment the first candles paint
+  (on deep histories, the quick recent-window preview), and they never show over data. While
+  they are up the chart is genuinely blank: everything drawn from the bars goes with the
+  series, and script-drawn dashboards (tables), which are pinned to pane corners rather than
+  to bars, hide for the load and return with the data. A chart whose symbol no venue can
+  serve drops the dots rather than promising bars that aren't coming.
+- **Loads announce themselves to plugins.** Two new chart events bracket every bar load:
+  `load:start` fires before the first fetch — before the chart is blanked — carrying the new
+  market and a first-load flag, and exactly one `load:end` follows once the first candles
+  paint (or with `bars: 0` when a load fails, comes back empty, or parks). Extensions, plugins
+  and custom indicators use the pair to hide their own visuals during the gap and rebuild them
+  when the data is back; a depth-only reload fires neither.
+
 ### Changed
 
+- **Switching markets clears the chart first.** Changing the symbol or timeframe now blanks the
+  old candles immediately and shows the loading dots until the new market's first bars arrive —
+  the previous market no longer lingers under the new symbol's name while its data loads.
+  Changing only the history depth keeps the chart painted, as before.
 - **The topbar's panel buttons are built from the dock.** They used to be two fixed buttons wired
   to two fixed callbacks. _(Breaking, for hosts that construct `Topbar` themselves: the
   `onObjectsClick` and `onDataWindowClick` options are gone, and `setPanelActive` now takes any

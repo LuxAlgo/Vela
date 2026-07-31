@@ -177,6 +177,10 @@ export class NativeRenderer implements IChartRenderer {
     private introStyle = 'settle'; // 'grow' | 'settle' | '' (off)
     private introPlayed = false;
     private introRaf: number | null = null;
+    /** The load affordance (three pulsing dots) — up while the host reports a bar load in
+     *  flight with nothing painted (first load, market switch). Rebuilt per show, so it
+     *  picks up the current theme without a setTheme hook. */
+    private loadingEl: HTMLElement | null = null;
     private modelAlpha = 1; // indicator-model opacity: 0 during the candle reveal, fades to 1 after
     private targetBarSpacing = 0; // eased zoom target
     private zoomAnchorLogical = 0; // logical kept pinned under the cursor while zooming
@@ -486,6 +490,44 @@ export class NativeRenderer implements IChartRenderer {
     /** Reflect an indicator's live status (loading / live / idle) in its legend row. */
     setIndicatorStatus(handle: IndicatorRenderHandle, status: IndicatorStatus): void {
         this.inputsUI.setStatus(handle.id, status);
+    }
+
+    /**
+     * The host reports a bar load in flight with nothing painted (first load, market switch —
+     * see the port): three small dots pulse at the center of the plot. Web-Animations-driven,
+     * so no stylesheet crosses the renderer boundary; pointer-transparent, and removed (not
+     * hidden) on clear so a re-show picks up the current theme.
+     */
+    setLoading(loading: boolean): void {
+        // Tables are the one series-independent content: corner-anchored DOM, so an emptied
+        // chart doesn't take them along — hide them for the load, restore with the bars.
+        for (const overlay of this.tableOverlays.values()) overlay.setVisible(!loading);
+        if (!loading || !this.wrapper) {
+            this.loadingEl?.remove();
+            this.loadingEl = null;
+            return;
+        }
+        if (this.loadingEl) return;
+        const doc = this.wrapper.ownerDocument;
+        const el = doc.createElement('div');
+        Object.assign(el.style, {
+            position: 'absolute',
+            inset: '0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '7px',
+            pointerEvents: 'none',
+        });
+        for (let i = 0; i < 3; i += 1) {
+            const dot = doc.createElement('span');
+            Object.assign(dot.style, { width: '7px', height: '7px', borderRadius: '50%', background: this.chromeTheme().textColor, opacity: '0.15' });
+            // Staggered phases via negative delays — every dot animates from the first frame.
+            dot.animate([{ opacity: 0.12 }, { opacity: 0.55 }], { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: -i * 260 });
+            el.appendChild(dot);
+        }
+        this.wrapper.appendChild(el); // appended last ⇒ above the canvases, still under dialogs
+        this.loadingEl = el;
     }
 
     /**
@@ -1348,6 +1390,8 @@ export class NativeRenderer implements IChartRenderer {
 
     destroy(): void {
         if (this.introRaf != null) cancelAnimationFrame(this.introRaf);
+        this.loadingEl?.remove();
+        this.loadingEl = null;
         if (this.countdownTimer != null) { clearInterval(this.countdownTimer); this.countdownTimer = null; }
         this.scheduler?.destroy();
         this.animator?.stop();
@@ -2873,6 +2917,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         if (!overlay) {
             overlay = new TableOverlay(this.plot, this.theme, (id) => this.paneBoundsFor(id));
+            overlay.setVisible(this.loadingEl === null); // born mid-load ⇒ born hidden
             this.tableOverlays.set(model.id, overlay);
         }
         overlay.update(tables);
