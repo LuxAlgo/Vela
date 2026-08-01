@@ -2,13 +2,13 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.4.5]
 
 ### Added
 
 - **Strategy trades paint on the chart: `IndicatorModel.trades`.** An engine (or a native
   indicator) can now emit the ORDER EXECUTIONS of a strategy — `TradeExecution { time,
-  price, side, kind, label?, qty?, tradeId? }` — and the native renderer paints each one
+price, side, kind, label?, qty?, tradeId? }` — and the native renderer paints each one
   as a marker unit on the price pane: a fixed-size direction arrow hugging the fill bar
   (buys point up from below the low, sells down from above the high; exit fills carry a
   cap between arrow and bar), the order id and the signed quantity stacked OUTWARD from
@@ -19,7 +19,7 @@ All notable changes to Vela, newest first.
   hiding the indicator hides its markers, removing it removes them, and `chart.inspect()`
   counts them (`trades` per indicator + in the totals).
 - **The `tradeMarkers` renderer feature.** `chart.renderer.set('tradeMarkers', { visible?,
-  labels?, qty?, colors? })` — hide the units, the order-id line, or the quantity line, and
+labels?, qty?, colors? })` — hide the units, the order-id line, or the quantity line, and
   override the palette (`colors: { long, short, exit }`, defaults `#2962ff` / `#f23645` /
   `#d500f9`; the text stays the theme's neutral text color). Partial merge, malformed
   fields dropped; persisted in the rich config (`trades` section) so templates carry it.
