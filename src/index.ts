@@ -7,9 +7,6 @@ export { NativeRenderer } from './renderers/native/NativeRenderer';
 // shared bar (dock:'static') and routes it to the active chart's `chart.drawings`.
 export { DrawingToolbar, type DrawingToolbarOptions } from './renderers/native/drawings/DrawingToolbar';
 export type { ChartConfig, ChartStyle } from './renderers/native/core/chartConfig';
-export { PineEngine } from './engines/pinets/PineEngine';
-export { PineWorkerEngine } from './engines/pinets-worker/PineWorkerEngine';
-export type { PineWorkerOptions } from './engines/pinets-worker/PineWorkerEngine';
 export { MultiProviderFeed } from './data/MultiProviderFeed';
 export { CachingDataFeed } from './data/CachingDataFeed';
 export { BarStore, sharedBarStore } from './data/BarStore';
@@ -94,6 +91,9 @@ export type {
     EngineAlert,
     EngineWarning,
     VisibleBarRange,
+    BarsChangeReason,
+    EngineContextSnapshot,
+    ContextSelect,
 } from './core/ports/ScriptingEngine';
 export type { MarketDataFeed, SymbolInfo, BarRange } from './core/ports/MarketDataFeed';
 export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';

@@ -6,7 +6,6 @@ const SANCTIONED = [
     'src/core/theme.ts', // the swappable chart themes
     'src/core/tokens.ts', // the --vela-* token derivation
     'src/core/drawings/levelPalette.ts', // the fib/gann level convention
-    'src/engines/pinets/inputsMeta.ts', // the script language's own named color constants
 ];
 
 /** Escape hatch for a color that is deliberately fixed and belongs nowhere else — the line

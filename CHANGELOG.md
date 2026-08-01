@@ -2,6 +2,143 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.4.0]
+
+### Removed
+
+- **BREAKING — the Pine Script engine has left this package.** `PineEngine`,
+  `PineWorkerEngine` and `PineWorkerOptions` are gone from the root export, and with them
+  the `pinets` peer/dev dependency and the build-time worker-inlining plumbing. Pine now
+  lives in the **`@luxalgo/vela-pinets`** addon, which implements the same public
+  `ScriptingEngine` port with identical semantics:
+
+  ```diff
+  - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
+  + import { Vela } from '@luxalgo/vela';
+  + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
+  ```
+
+  Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
+  option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
+  Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
+
+  The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
+  Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
+  ACL now bans the import outright, so the obligation is taken on only by an application
+  that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
+  (~515 KB minified), and the engine layer becomes the one layer with no bundled default
+  at all. See [Scripting engines](docs/user/scripting-engines.md).
+
+### Added
+
+- **Legend rows accept contributed actions: `registerLegendAction`.** An icon button on
+  every indicator's legend row (revealed with the built-in controls, before the ✕),
+  gated per indicator (`when(ind)`) and run with the shell's context — the seam a host
+  editor uses to put "open this script" on each row. Ships with its two supporting
+  pieces: **`handle.source`** (the script an indicator was added with — `undefined` for
+  natives, the natural `when` gate) and an optional renderer seam
+  (`setLegendActions?` on the port, wired by both shells through
+  `chart.renderer.setLegendActions`; a custom renderer without it simply never shows
+  the buttons). Late registrations appear after `refreshActions()`.
+- **Contributed side panels can dock controls in their header.** `mount` now receives a
+  third argument — `{ slot, setTitle }`: the slot is the space between the title and the
+  close button (icon buttons, a document name), and `setTitle` rewrites the title text
+  (empty hides it, the slot owning the row; the topbar toggle keeps the DECLARED title as
+  its tooltip). Backward compatible — a two-argument `mount` ignores it.
+- **`ctx.togglePanel(id, open?)`** on the plugin `WidgetContext` (both shells): open or
+  close a docked side panel programmatically — the seam a plugin uses to open ITS OWN
+  contributed panel (a code editor revealing itself on a host action, a panel opened from
+  a topbar button). Same semantics as the topbar toggles: the dock stays exclusive, a bare
+  call flips, unknown ids are ignored.
+- **The symbol string is the whole market identity.** A bare ticker resolves against the
+  registered providers in DECLARATION order (first whose index lists it); an `EXCHANGE:`
+  prefix — case-insensitive, regional variants included (`BINANCE.US:BTCUSDT`) — pins the
+  venue. One grammar everywhere the string travels: the options, `setMarket`, the symbol
+  picker (it now composes the prefix from the row you picked — the workspace picker used
+  to drop the venue entirely), `urlState` links (they finally carry the venue), and the
+  persisted documents (older saves that stored `provider` beside a bare symbol weld back
+  together transparently on restore).
+- **Workspace cells are NAMED, not numbered.** A `cells` key is a free-form durable
+  identity (`btc`, `main`, …) — persistence, `sync` groups and `ws.cell(name)` speak it —
+  and DECLARATION ORDER fills the layout's slots. Any entry is optional (an undeclared
+  slot boots on the top-level defaults with an auto name); entries beyond the layout wait
+  dormant and appear when a larger layout reveals them; purely-numeric names are rejected
+  with a warning (JS object keys would silently reorder them).
+- **The `indicators` manifest can be an async loader.** `indicators: async () => manifest`
+  — for filesystem reads, authenticated APIs, bundler dynamic imports — alongside the
+  existing inline and URL forms; a rejecting loader behaves like a failing manifest URL.
+
+- **One options vocabulary for both shells.** `VelaWidgetOptions` and
+  `VelaWorkspaceOptions` now share the same base: every chart option (`VelaOptions`) plus
+  the shell surface (`VelaShellOptions` — providers, engines, indicators, timeframes,
+  timezone, chrome toggles, persistence), the widget adding only `urlState`, the
+  workspace adding the grid (`layout`, `cells`, `sync`, `drawingToolbar`,
+  `maxWebglCells`) and dropping only `height`. A chart option means the same thing
+  everywhere: on the widget it configures the chart, on the workspace it is every
+  cell's DEFAULT and `cells` overrides it per cell with the same words — which hands
+  the workspace options it never had (`upColor`/`downColor`, `glow`, `animations`,
+  `logScale`, `currentPriceLine`, `drawings` — toolbar excepted, the shared bar keeps
+  that job — `defaultLanguage`, `renderer`, plus `data` and `visibleRange` top-level
+  and per cell). An explicit `nativeBackend` now wins over the `maxWebglCells` budget
+  policy. The storage contract is one type for both shells, `VelaStorage`
+  (`WidgetStorage` / `WorkspaceStorage` stay as deprecated aliases).
+
+- **An app can make an engine its default with one call.** `registerDefaultEngine(language,
+factory)` on `vela/plugin`: every widget and workspace cell built afterwards registers
+  `factory()` on its chart automatically (one instance per chart — engines hold per-chart
+  state). A per-instance `engines` option still wins for its language, and the bare `Vela`
+  chart never reads the registry — with nothing registered, nothing changes anywhere, and
+  Vela still bundles no engine.
+
+- **A scripting engine can now be built as a separate package.** `vela/plugin` gained the
+  engine-authoring surface: the `ScriptingEngine` port types (completed with
+  `EngineContextSnapshot`, `ContextSelect` and `BarsChangeReason`, now also on the root
+  entry), the model vocabulary engine output is built from, the `stableSeriesId` identity
+  contract — series ids, renderer reconciliation and persisted per-series settings stay
+  identical whichever package an engine ships in — and the semantic palette. All additive;
+  nothing moves or changes shape. The engine guide (`docs/contributing/adding-an-engine.md`)
+  now documents the whole contract to match: the identity rule, the `historyState` /
+  `notifyBars(reason)` backfill run policy, the `symbolInfo` / `chartStyle` request
+  subtleties, the widget's `engines` factories and their `defaultLanguage` caveat, and
+  how to package an engine standalone.
+
+### Changed
+
+- **BREAKING: the `provider` option is gone** — from the chart, the widget, the workspace
+  and `setMarket`. Put the venue in the symbol: `provider: 'coinbase', symbol: 'BTC-USD'`
+  becomes `symbol: 'coinbase:BTC-USD'`. `chart.market.provider` now reports the symbol's
+  own prefix (undefined when bare); the venue that actually served it is
+  `chart.data.resolve(symbol)`.
+- **BREAKING (workspace): `cells` keys no longer address layout slots.** `cells: { c3: … }`
+  used to target the THIRD slot; keys are names now and declaration order assigns slots —
+  configs that declared entries in slot order (as every example did) render identically.
+- **BREAKING (workspace): `defaults` is gone.** Its keys move to the top level, same
+  words: `defaults: { symbol: 'BTCUSDT', timeframe: '60' }` becomes
+  `symbol: 'BTCUSDT', timeframe: '60'`.
+- **BREAKING (workspace): `persist` now defaults to localStorage**, like the widget —
+  `persist: true` survives reloads out of the box. Session-only persistence is the
+  opt-in now: pass `storage: memoryStorageAdapter()`.
+
+### Fixed
+
+- **The legend's tooltips are themed, not native.** The row controls (eye, gear,
+  move-to-pane, ✕, contributed actions), the settings dialog's ✕ and its ⓘ input hints
+  used the browser's `title` bubble — foreign next to the kit tooltips everywhere else.
+  They now share one chrome tooltip (`renderers/shared/chrome-tooltip.ts`): same tokens,
+  radius and shadow as the kit, self-themed so it works on a BARE chart (no `.vela-ui`
+  host), with `aria-label`s kept for accessibility. The drawing toolbar's hand-rolled
+  dwell tooltip was folded into the same helper (keeping its deliberate 2 s delay and
+  beside-the-tool placement).
+- **Typing inside an embedded editor no longer triggers chart shortcuts.** Both shells
+  route any bare printable key to the symbol search (letters) or the timeframe entry
+  (digits), and the guard that exempts text entry recognised only form controls and
+  `contenteditable`. An element that merely declares `role="textbox"` — which is how
+  editors built on the **EditContext API** (Monaco among them) expose their input — fell
+  through it, so every letter typed into a docked code editor opened the symbol search
+  instead. The guard now accepts that third spelling, and the widget, the workspace and
+  the keymap share ONE definition of it (`isEditableTarget`) rather than the three
+  near-copies they had drifted into.
+
 ## [v0.3.0]
 
 ### Added

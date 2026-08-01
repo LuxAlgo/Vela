@@ -101,7 +101,6 @@ export class Vela {
         const feed = deps.dataFeed ?? new MultiProviderFeed();
         const config: ResolvedConfig = {
             market: {
-                provider: options.provider,
                 symbol: options.symbol,
                 timeframe: options.timeframe,
                 bars: options.bars,
@@ -123,9 +122,11 @@ export class Vela {
 
     /**
      * Register a scripting engine so `addIndicator({ language })` can run that
-     * language. No engine is registered by default — import and register the one
-     * you need (e.g. `chart.registerEngine('pine', new PineEngine())`); without it
-     * the chart only displays candles. Re-registering a language replaces it.
+     * language. Vela ships NO engine — install the one you need (Pine Script:
+     * `@luxalgo/vela-pinets`) and register it, e.g.
+     * `chart.registerEngine('pine', new PineEngine())`; without one the chart
+     * displays candles, drawings and native indicators only. Re-registering a
+     * language replaces it.
      */
     registerEngine(language: string, engine: ScriptingEngine): this {
         this.orchestrator.registerEngine(language, engine);

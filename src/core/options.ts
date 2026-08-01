@@ -10,9 +10,9 @@ export type ProviderName = string;
 
 /** How the chart obtains its candles. */
 export interface MarketConfig {
-    /** Default provider for a bare `symbol`. Equivalent to prefixing it `provider:symbol`.
-     *  Omit when the symbol carries its own `EXCHANGE:` prefix or to resolve by index. */
-    provider?: ProviderName;
+    /** The market's symbol. A bare ticker (`'BTCUSDT'`) resolves against the registered
+     *  providers in DECLARATION order (first one whose index lists it); an
+     *  `EXCHANGE:` prefix (`'coinbase:BTC-USD'`, case-insensitive) pins the venue. */
     symbol?: string;
     timeframe?: string;
     bars?: number;
@@ -36,8 +36,8 @@ export interface MarketConfig {
  * new market (a range chip switching timeframe + depth + window in one call).
  */
 export interface MarketSwitch {
+    /** Bare ticker (provider resolved by declaration order) or `EXCHANGE:`-prefixed. */
     symbol?: string;
-    provider?: ProviderName;
     timeframe?: string;
     bars?: number;
     data?: OHLCV[];
@@ -53,6 +53,8 @@ export interface MarketSwitch {
  */
 export interface MarketSnapshot {
     symbol?: string;
+    /** The venue the symbol PINS (its `EXCHANGE:` prefix, lower-cased) — undefined for a
+     *  bare symbol. The venue that actually served it: `chart.data.resolve(symbol)`. */
     provider?: ProviderName;
     timeframe?: string;
     bars?: number;
@@ -109,10 +111,10 @@ export interface VelaOptions extends MarketConfig {
     /** How the base price series is drawn (native renderer): candlestick / OHLC bars /
      *  line / area / baseline. Default `'candles'`. */
     priceStyle?: PriceStyle;
-    /** Interactive user drawings (native renderer). `true` shows the default toolbar;
-     *  an object picks tools (`{ tools: [...] }`) or defines groups (`{ groups: [...] }`)
-     *  and toggles the toolbar (`{ toolbar: false }`). Default off (toolbar hidden; the
-     *  `chart.drawings` API still works headlessly). */
+    /** Interactive user drawings (native renderer). Default: toolbar VISIBLE with the
+     *  default tool set. `false` hides the toolbar (the `chart.drawings` API still works
+     *  headlessly); an object picks tools (`{ tools: [...] }`) or defines groups
+     *  (`{ groups: [...] }`) and toggles the toolbar (`{ toolbar: false }`). */
     drawings?: DrawingsOption;
     /** The built-in volume indicator: per-bar volume columns anchored to the bottom of the
      *  price pane, on their own scale (they never affect the price autoscale). Added

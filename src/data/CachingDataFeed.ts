@@ -3,7 +3,16 @@ import type { MarketConfig } from '../core/options';
 import type { OHLCV } from '../core/model/ohlcv';
 import type { Unsubscribe } from '../core/util/types';
 import { BarStore, seriesKey, sharedBarStore } from './BarStore';
+import { parseSymbol } from './ProviderRegistry';
 import { timeframeToMs } from './timeframe';
+
+/** Series cache key — the symbol's own grammar carries the venue: a `provider:` prefix
+ *  keys per venue (the multi-provider feed hands canonical prefixed symbols down); a
+ *  bare symbol keys venue-less, whatever serves it (single-feed setups). */
+function cacheKey(symbol: string, timeframe: string): string {
+    const { provider, ticker } = parseSymbol(symbol);
+    return seriesKey(provider ?? '', ticker, timeframe);
+}
 
 /** Page size for big ranged fetches (mirrors the orchestrator's history chunks). */
 const PAGE_BARS = 10_000;
@@ -36,7 +45,7 @@ export class CachingDataFeed implements MarketDataFeed {
         if (cfg.data && cfg.data.length > 0) return this.inner.load(cfg);
 
         const symbol = cfg.symbol ?? 'TEST';
-        const key = seriesKey(cfg.provider ?? 'binance', symbol, cfg.timeframe ?? '60');
+        const key = cacheKey(symbol, cfg.timeframe ?? '60');
         this.store.retainSymbol(symbol); // current-symbol-only purge
         const cached = this.store.get(key);
         const n = cfg.bars ?? 500;
@@ -72,7 +81,7 @@ export class CachingDataFeed implements MarketDataFeed {
      */
     async loadRange(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]> {
         if (!this.inner.loadRange) return this.inner.load(cfg);
-        const key = seriesKey(cfg.provider ?? 'binance', cfg.symbol ?? 'TEST', cfg.timeframe ?? '60');
+        const key = cacheKey(cfg.symbol ?? 'TEST', cfg.timeframe ?? '60');
         let cached = this.store.get(key);
         let newest = cached?.[cached.length - 1];
 

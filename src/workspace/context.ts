@@ -22,6 +22,7 @@ export interface ContextHost {
     cells(): ChartCell[];
     setActiveCell(id: string): void;
     openSymbolSearch(query?: string): void;
+    togglePanel(id: string, open?: boolean): void;
     root: HTMLElement;
     toast(message: string, kind?: 'info' | 'success' | 'error'): void;
 }
@@ -45,6 +46,7 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         setTimeframe: (tf) => host.active()?.setTimeframe(tf),
         setPriceStyle: (style) => host.active()?.setPriceStyle(style),
         openSymbolSearch: (query) => host.openSymbolSearch(query),
+        togglePanel: (id, open) => host.togglePanel(id, open),
         host: host.root,
         toast: (message, kind) => host.toast(message, kind),
         cells: host.cells().map((c) => ({ id: c.id, chart: c.chart, symbol: c.symbol, timeframe: c.timeframe })),

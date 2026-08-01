@@ -11,7 +11,8 @@ import { filterSymbols } from '../src/widget/symbol-picker';
 import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
-import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments } from '../src/widget/contributions';
+import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, registerLegendAction, unregisterLegendAction, legendActions, legendActionsProviderFor, type EngineFactory, type LegendIndicatorInfo } from '../src/widget/contributions';
+import type { ScriptingEngine } from '../src/core/ports/ScriptingEngine';
 import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
 import { sanitizeState } from '../src/state/document';
 
@@ -300,6 +301,60 @@ describe('widget action contributions', () => {
     });
 });
 
+describe('legend action contributions', () => {
+    it('registers, order-sorts, replaces by id, and unregisters', () => {
+        const d1 = registerLegendAction({ id: 'la', icon: 'i', tooltip: 'A', order: 2, run: () => {} });
+        registerLegendAction({ id: 'lb', icon: 'i', tooltip: 'B', order: 1, run: () => {} });
+        expect(legendActions().map((a) => a.id)).toEqual(['lb', 'la']);
+
+        registerLegendAction({ id: 'la', icon: 'i', tooltip: 'A2', run: () => {} });
+        expect(legendActions().find((a) => a.id === 'la')?.tooltip).toBe('A2');
+        d1(); // stale disposer must NOT remove the replacement
+        expect(legendActions().some((a) => a.id === 'la')).toBe(true);
+
+        unregisterLegendAction('la');
+        unregisterLegendAction('lb');
+        expect(legendActions()).toHaveLength(0);
+    });
+
+    it('the shell provider resolves the row, gates on when(), and binds a FRESH context per click', () => {
+        const seen: LegendIndicatorInfo[] = [];
+        const ctxs: unknown[] = [];
+        registerLegendAction({
+            id: 'src-only',
+            icon: 'code',
+            tooltip: 'Open source',
+            when: (ind) => ind.source !== undefined,
+            run: (ctx, ind) => {
+                ctxs.push(ctx);
+                seen.push(ind);
+            },
+        });
+
+        const chart = {
+            indicators: () => [
+                { id: 'ind-1', title: 'EMA', source: '//@version=6\nplot(close)' },
+                { id: 'native-1', title: 'Volume' }, // a native: no source
+            ],
+        } as never;
+        let builds = 0;
+        const provider = legendActionsProviderFor(chart, () => ({ built: ++builds }) as never);
+
+        expect(provider('missing')).toEqual([]); // an unknown row contributes nothing
+        expect(provider('native-1')).toHaveLength(0); // when() gate: natives excluded
+        const views = provider('ind-1');
+        expect(views).toHaveLength(1);
+        expect(views[0]).toMatchObject({ id: 'src-only', icon: 'code', tooltip: 'Open source' });
+
+        views[0]!.run();
+        views[0]!.run();
+        expect(seen[0]).toEqual({ id: 'ind-1', title: 'EMA', source: '//@version=6\nplot(close)' });
+        expect(ctxs).toEqual([{ built: 1 }, { built: 2 }]); // never a cached context
+
+        unregisterLegendAction('src-only');
+    });
+});
+
 describe('glide math (reference port)', () => {
     const base = { from: 0, to: 100 * 60_000 };
     it('zoomTarget anchors the right edge and clamps the span', () => {
@@ -435,5 +490,78 @@ describe('WidgetHistory late-resolves the current chart', () => {
         expect(seen[seen.length - 1]).toEqual({ undo: false, redo: true });
         h.redo();
         expect(seen[seen.length - 1]).toEqual({ undo: true, redo: false });
+    });
+});
+
+describe('default scripting engines (registerDefaultEngine)', () => {
+    const engine = (language: string): EngineFactory => {
+        const instance = { language, capabilities: { streaming: false, visibleRange: false, inputs: false } } as unknown as ScriptingEngine;
+        return () => instance;
+    };
+
+    it('starts empty and register/unregister round-trips', () => {
+        expect(resolveEngines()).toEqual({});
+        registerDefaultEngine('pine', engine('pine'));
+        expect(Object.keys(resolveEngines())).toEqual(['pine']);
+        unregisterDefaultEngine('pine');
+        expect(resolveEngines()).toEqual({});
+    });
+
+    it('merges UNDER per-instance overrides: instance wins per language, others pass through', () => {
+        const registryPine = engine('pine');
+        const registryLua = engine('lua');
+        registerDefaultEngine('pine', registryPine);
+        registerDefaultEngine('lua', registryLua);
+        const instancePine = engine('pine');
+        const merged = resolveEngines({ pine: instancePine });
+        expect(merged['pine']).toBe(instancePine); // the override, not the registry entry
+        expect(merged['lua']).toBe(registryLua); // registry entries the instance didn't name pass through
+        unregisterDefaultEngine('pine');
+        unregisterDefaultEngine('lua');
+    });
+
+    it('the register handle disposes only its OWN registration (replace is last-wins)', () => {
+        const first = engine('pine');
+        const second = engine('pine');
+        const disposeFirst = registerDefaultEngine('pine', first);
+        registerDefaultEngine('pine', second); // replaces
+        disposeFirst(); // stale handle — must NOT remove the replacement
+        expect(resolveEngines()['pine']).toBe(second);
+        unregisterDefaultEngine('pine');
+    });
+
+    it('resolveEngines returns a fresh object — mutating it never touches the registry', () => {
+        registerDefaultEngine('pine', engine('pine'));
+        const out = resolveEngines();
+        delete out['pine'];
+        expect(Object.keys(resolveEngines())).toEqual(['pine']);
+        unregisterDefaultEngine('pine');
+    });
+});
+
+describe('resolveIndicators — async loader form', () => {
+    it('calls the loader once and pipes its manifest through the normal resolution', async () => {
+        let calls = 0;
+        const loader = async () => {
+            calls += 1;
+            return [{ name: 'A', script: 'plot(1)' }, { name: 'B', script: 'plot(2)', enabled: false }];
+        };
+        const list = await resolveIndicators(loader);
+        expect(calls).toBe(1);
+        expect(list).toEqual([
+            { name: 'A', script: 'plot(1)', language: undefined, enabled: true },
+            { name: 'B', script: 'plot(2)', language: undefined, enabled: false },
+        ]);
+    });
+
+    it('a loader manifest may still point entries at URLs (fetched relative to nothing)', async () => {
+        const fetchImpl = (async (url: RequestInfo | URL) =>
+            ({ ok: true, status: 200, text: () => Promise.resolve(`src of ${String(url)}`), json: () => Promise.resolve({}) }) as unknown as Response) as typeof fetch;
+        const list = await resolveIndicators(async () => [{ name: 'remote', url: 'https://scripts.example/ema.pine' }], fetchImpl);
+        expect(list[0]!.script).toBe('src of https://scripts.example/ema.pine');
+    });
+
+    it('a rejecting loader behaves like a failing manifest URL (throws)', async () => {
+        await expect(resolveIndicators(async () => Promise.reject(new Error('fs unavailable')))).rejects.toThrow('fs unavailable');
     });
 });

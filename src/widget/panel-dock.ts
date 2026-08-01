@@ -97,7 +97,7 @@ export class PanelDock {
             // A contribution that throws on mount must not take the shell down with it: the
             // panel stays docked but empty, and the reason is on the console.
             try {
-                entry.handle = desc.mount(this.deps.context(), panel.content) ?? undefined;
+                entry.handle = desc.mount(this.deps.context(), panel.content, { slot: panel.headerSlot, setTitle: (t) => panel.setTitle(t) }) ?? undefined;
                 if (this.chart) entry.handle?.onChart?.(this.chart);
             } catch (err) {
                 console.warn(`[vela] side panel "${desc.id}" failed to mount`, err);

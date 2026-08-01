@@ -58,7 +58,7 @@ class FakeFeed implements MarketDataFeed {
     }
 }
 
-const CFG: MarketConfig = { provider: 'binance', symbol: 'BTCUSDT', timeframe: '60', bars: 500 };
+const CFG: MarketConfig = { symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500 };
 const KEY = seriesKey('binance', 'BTCUSDT', '60');
 const times = (bars: OHLCV[]): number[] => bars.map((b) => b.time);
 
@@ -131,7 +131,7 @@ describe('CachingDataFeed', () => {
         await cf.load(CFG);
         expect(store.get(KEY)).toBeDefined();
 
-        await cf.load({ ...CFG, symbol: 'ETHUSDT' });
+        await cf.load({ ...CFG, symbol: 'binance:ETHUSDT' });
         expect(store.get(KEY)).toBeUndefined(); // BTCUSDT evicted
         expect(store.get(seriesKey('binance', 'ETHUSDT', '60'))).toBeDefined();
 
@@ -165,7 +165,7 @@ describe('CachingDataFeed', () => {
 
     it('loadRange caches a secondary series and re-fetches only the tail', async () => {
         const { feed, store, cf } = setup(600);
-        const cfg: MarketConfig = { provider: 'binance', symbol: 'ETHUSDT', timeframe: '240' };
+        const cfg: MarketConfig = { symbol: 'binance:ETHUSDT', timeframe: '240' };
         const earliest = feed.expected(600)[0]!.time;
 
         await cf.loadRange(cfg, { from: earliest });
@@ -179,7 +179,7 @@ describe('CachingDataFeed', () => {
 
     it('loadRange caches even when the fetch start precedes the first bar (HTF warmup buffer)', async () => {
         const { feed, cf } = setup(600);
-        const cfg: MarketConfig = { provider: 'binance', symbol: 'ETHUSDT', timeframe: '240' };
+        const cfg: MarketConfig = { symbol: 'binance:ETHUSDT', timeframe: '240' };
         // `from` earlier than any available bar — the cached first bar will be AFTER it,
         // so the old "oldest.time <= from" check could never prove coverage.
         const buffered = feed.expected(600)[0]!.time - 5_000_000;
@@ -230,7 +230,7 @@ describe('CachingDataFeed', () => {
     it('a from-request older than coverage fetches ONLY the missing head, not the full range', async () => {
         const { feed, cf } = setup(600);
         // Timeframe matches the fixture's hourly cadence: computed explicit limits size off it.
-        const cfg: MarketConfig = { provider: 'binance', symbol: 'ETHUSDT', timeframe: '60' };
+        const cfg: MarketConfig = { symbol: 'binance:ETHUSDT', timeframe: '60' };
         const all = feed.expected(600);
         const mid = all[300]!.time;
         const earlier = all[100]!.time;
@@ -250,7 +250,7 @@ describe('CachingDataFeed', () => {
 
     it('a covered {from, to} window is clipped at `to` (no tail bars beyond it)', async () => {
         const { feed, cf } = setup(600);
-        const cfg: MarketConfig = { provider: 'binance', symbol: 'ETHUSDT', timeframe: '60' };
+        const cfg: MarketConfig = { symbol: 'binance:ETHUSDT', timeframe: '60' };
         const all = feed.expected(600);
         const from = all[0]!.time;
         const to = all[599]!.time; // the current tip — NOT a historical request
@@ -305,7 +305,7 @@ describe('CachingDataFeed', () => {
             },
         };
         const cf = new CachingDataFeed(windowed, new BarStore());
-        const cfg: MarketConfig = { provider: 'binance', symbol: 'BTCUSDT', timeframe: '60' };
+        const cfg: MarketConfig = { symbol: 'binance:BTCUSDT', timeframe: '60' };
 
         const r = await cf.loadRange(cfg, { from: all[0]!.time, to: all[all.length - 1]!.time });
         // BOTH clusters arrive — the walk stepped through the empty middle window(s)
@@ -330,8 +330,8 @@ describe('CachingDataFeed', () => {
 
     it('secondary series survive a same-symbol re-run, dropped on chart-symbol change', async () => {
         const { feed, store, cf } = setup(600);
-        const main: MarketConfig = { provider: 'binance', symbol: 'BTCUSDT', timeframe: '60', bars: 500 };
-        const secondary: MarketConfig = { provider: 'binance', symbol: 'ETHUSDT', timeframe: '240' };
+        const main: MarketConfig = { symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500 };
+        const secondary: MarketConfig = { symbol: 'binance:ETHUSDT', timeframe: '240' };
         const secKey = seriesKey('binance', 'ETHUSDT', '240');
         const earliest = feed.expected(600)[0]!.time;
 

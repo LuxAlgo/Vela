@@ -2,9 +2,10 @@
 
 Everything importable from **`vela/plugin`**. Three extension seams: **chart types**
 (data + transform side), **renderer layers** (paint side), and **native indicators**
-(core-computed indicators with their own layers). All registries are id-keyed
-(re-registering an id replaces it) and read live — charts constructed after
-registration pick the entries up.
+(core-computed indicators with their own layers) — plus the authoring surface for
+**scripting engines**, which register per chart rather than into a registry. All
+registries are id-keyed (re-registering an id replaces it) and read live — charts
+constructed after registration pick the entries up.
 
 ## Chart types — `registerChartType`
 
@@ -117,6 +118,7 @@ registerWidgetAction({
     run: (ctx) => {
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
         // ctx.setSymbol / setTimeframe / setPriceStyle / openSymbolSearch(query?)
+        // ctx.togglePanel(id, open?) — open/close a docked side panel (dock stays exclusive)
         // ctx.host  — mount host for kit components (Dialog/Menu/Tooltip)
         // ctx.toast(message, kind?) — the widget's feedback pill
     },
@@ -165,6 +167,34 @@ Attachments mount at widget construction (and on `widget.refreshActions()` for l
 registrations), once per id per widget. The same portability rules as actions apply: everything
 comes from `ctx`, never from module state.
 
+## Legend actions — `registerLegendAction`
+
+An icon button on every indicator's **legend row**, revealed with the built-in controls
+(hover/selection) between them and the ✕. The classic use: open the row's script in a
+host editor.
+
+```ts
+import { registerLegendAction, registerIcon } from 'vela/plugin';
+
+registerLegendAction({
+    id: 'mytool.open-source',
+    icon: 'code',                                  // vela/ui icon registry
+    tooltip: 'Open the source',
+    when: (ind) => ind.source !== undefined,       // per-indicator gate
+    run: (ctx, ind) => myEditor.open(ind.source!), // ctx = the shell's WidgetContext
+});
+```
+
+- `ind` is a {@link LegendIndicatorInfo}: `{ id, title, source? }` — `source` is the
+  script the indicator was added with (also exposed as `handle.source`), and is
+  `undefined` for native indicators, which is the usual `when` gate.
+- The descriptor resolves **per row, per click**: `when` re-evaluates as rows appear, and
+  `run` receives a fresh context each time.
+- Register at import time; after a late registration call `refreshActions()` (both shells
+  re-project the rows already on screen).
+- The seam degrades gracefully: a custom renderer without `setLegendActions` simply never
+  shows contributed legend actions (same rule as the sync ghost crosshair).
+
 ## Side panels — `registerSidePanel`
 
 A **side panel** is a docked column on the chart's right edge — the object tree and the data
@@ -188,9 +218,11 @@ registerSidePanel({
     resizable: true,             // drag the inner edge; double-click returns to `width`
     minWidth: 240,
     maxWidth: 560,
-    mount: (ctx, body) => {
+    mount: (ctx, body, header) => {
         const list = document.createElement('div');
         body.appendChild(list);                       // `body` is the panel's scrolling area
+        header.setTitle('BTC flow');                  // optional: replace the header title…
+        header.slot.appendChild(myIconButton);        // …and dock compact controls beside it
         return {
             onChart: (chart) => { /* (re)bind: mount, widget rebuild, active cell change */ },
             onOpen: () => { /* became visible — render now if you render lazily */ },
@@ -199,6 +231,12 @@ registerSidePanel({
     },
 });
 ```
+
+- **The header is shareable, not replaceable.** `header.slot` is the space between the
+  title and the close button — lay out inline controls there (icon buttons, a document
+  name); `header.setTitle` rewrites the title text (an empty string hides it, letting the
+  slot own the row). The close button and the row itself stay the shell's, and the topbar
+  toggle keeps the DECLARED `title` as its tooltip.
 
 - **Width is a per-panel choice.** Omit `resizable` for a fixed column; with it, the drag is
   clamped to `[minWidth, maxWidth]` (defaults 200/640) and the width the user settles on is
@@ -211,6 +249,35 @@ registerSidePanel({
   contributed panel stays open across the rebuild).
 - A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
   than taking the shell down.
+
+## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
+
+Vela bundles no engine — you install one (`@luxalgo/vela-pinets` for Pine Script) or write
+one against the port. Engines are **per-chart instances**
+(`chart.registerEngine('pine', new PineEngine())`, or the widget's
+`engines: { pine: () => … }` factories). Two things ship here:
+
+**`registerDefaultEngine(language, factory)`** — the app-level default: every widget
+and workspace cell built afterwards registers `factory()` on its chart automatically
+(one instance per chart). A per-instance `engines` option wins for the same language
+(`resolveEngines(overrides)` is the merge the shells apply), and the bare `Vela` chart
+is untouched — with nothing registered, nothing changes. This is how an engine package
+becomes a host's default with one call.
+
+And the whole **authoring surface**, so an engine can be built as its own package:
+
+- the **`ScriptingEngine` port types** (`PreparedScript`, `ExecutionRequest` /
+  `ExecutionHandlers` / `ExecutionSession`, `EngineContextSnapshot`, `BarsChangeReason`, …);
+- the **model vocabulary** engine output is built from (`OHLCV`, `IndicatorModel`, the
+  series/scene/drawing specs, `InputSchema`);
+- **`stableSeriesId`** — mint every series/drawing id with it: the core's live-tick
+  value patches are keyed by those ids, so they must reproduce across re-runs;
+- the **semantic palette** (`ACCENT`, `BULLISH`, …) so engine defaults mean what the
+  rest of the chart means.
+
+The full contract — prepare/execute, the session levers, the data inversion, the
+backfill run policy, packaging and registration — is
+[Adding an Engine](./adding-an-engine.md).
 
 ## Widget integration
 

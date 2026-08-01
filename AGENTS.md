@@ -142,8 +142,11 @@ mechanically; the rest are reviewed by hand.
 - The **core is headless and environment-agnostic**: no `window`/`history`/`location`
   assumptions outside the renderer and widget layers. Browser glue (URL state,
   persistence, keyboard) belongs to the widget.
-- **`pinets` is quarantined** in `src/engines/pinets/` (the lint ACL enforces it) and
-  stays an **optional peer dependency** in the library builds.
+- **No scripting engine lives here.** Vela defines the `ScriptingEngine` port and ships
+  nothing that implements it; `pinets` is banned by the lint ACL (Pine Script lives in the
+  AGPL-3.0 `@luxalgo/vela-pinets` addon — importing it would pull that license onto this
+  Apache-2.0 package). The playground carries its own `demo-engine.ts` for exercising the
+  indicator path.
 - The **UI kit (`src/ui`) never imports engine internals; the core never imports the
   kit.** The widget composes both from above.
 - One chart = one market + one time axis. Panes inside a chart share the X axis — that

@@ -1,4 +1,4 @@
-import type { CrosshairEvent, DataWindowReadout, IChartRenderer, RendererCapabilities } from './ports/IChartRenderer';
+import type { CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, RendererCapabilities } from './ports/IChartRenderer';
 import type { Unsubscribe } from './util/types';
 import type { SymbolPickerFn } from './model/inputs';
 
@@ -44,6 +44,16 @@ export class RendererControl {
             else console.warn(`[vela] renderer "${this.renderer.name}" has no feature "${key}" — set ignored.`);
         }
         return this;
+    }
+
+    /**
+     * Wire the legend rows' HOST-CONTRIBUTED actions (the shells route the plugin
+     * registry through this; see `registerLegendAction`). Silent on a renderer without
+     * the seam — contributed legend actions simply never show there, same graceful
+     * degradation as the sync ghost crosshair.
+     */
+    setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
+        this.renderer.setLegendActions?.(provider);
     }
 
     /**

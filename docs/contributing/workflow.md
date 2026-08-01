@@ -40,11 +40,12 @@ These rules are enforced by lint as an import ACL with named exception buckets. 
 changes hot-reload on save). The index page links the two surfaces:
 
 - **`/widget.html`** (`playground/widget.ts`) — mounts the **Vela widget** straight from `src/`.
-  It registers the Binance provider (public API, no key, no server) and the Pine engine with a
-  starter indicator manifest. Use `window.widget` from the browser console to poke at the live
-  instance.
+  It registers the Binance provider (public API, no key, no server) and the page's own
+  `demo-engine.ts` — a tiny `ScriptingEngine` implementation, since Vela bundles none — with a
+  starter indicator manifest and a "Code" topbar entry that runs a script on demand. Use
+  `window.widget` from the browser console to poke at the live instance.
 - **`/workspace.html`** (`playground/workspace.ts`) — mounts the multi-chart **VelaWorkspace**
-  (placeholder until the workspace phase lands).
+  on the same provider and demo engine.
 
 ## Where to make a change, by layer
 

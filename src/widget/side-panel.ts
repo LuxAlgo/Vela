@@ -34,13 +34,18 @@ const CSS = `
 .vela-panel-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
     padding: 10px 8px 10px 14px;
     border-bottom: 1px solid var(--vela-border);
     font-size: 14px;
     font-weight: 600;
     color: var(--vela-fg-bright);
 }
+.vela-panel-title { flex: none; }
+.vela-panel-title:empty { display: none; }
+/* The contributed slot claims the space between title and close; its children lay out
+   inline and the close button stays pinned right. */
+.vela-panel-header-slot { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; }
 .vela-panel-close {
     all: unset;
     cursor: pointer;
@@ -119,6 +124,8 @@ export class SidePanel {
      *  a programmatic {@link setWidth}, so restoring a persisted width raises no change. */
     onWidthChange: ((px: number) => void) | null = null;
     protected readonly body: HTMLElement;
+    private readonly heading: HTMLElement;
+    private readonly slot: HTMLElement;
     private readonly declaredWidth: number;
     private readonly minWidth: number;
     private readonly maxWidth: number;
@@ -140,14 +147,20 @@ export class SidePanel {
         this.el.style.setProperty('--vela-panel-w', `${this.widthPx}px`);
         const header = doc.createElement('div');
         header.className = 'vela-panel-header';
-        const heading = doc.createElement('span');
-        heading.textContent = title;
+        this.heading = doc.createElement('span');
+        this.heading.className = 'vela-panel-title';
+        this.heading.textContent = title;
+        // The header SLOT — the space between the title and the close button, handed to a
+        // contributed panel's `mount` so it can dock its own compact controls there
+        // (script name, action icons) instead of spending a toolbar row on them.
+        this.slot = doc.createElement('div');
+        this.slot.className = 'vela-panel-header-slot';
         const close = doc.createElement('button');
         close.className = 'vela-panel-close';
         close.appendChild(iconEl('close', doc));
         close.title = 'Close';
         close.addEventListener('click', () => this.toggle(false));
-        header.append(heading, close);
+        header.append(this.heading, this.slot, close);
         this.body = doc.createElement('div');
         this.body.className = 'vela-panel-body';
         this.el.append(header, this.body);
@@ -170,6 +183,18 @@ export class SidePanel {
      *  `mount` receives exactly this element. Subclasses use the protected `body`. */
     get content(): HTMLElement {
         return this.body;
+    }
+
+    /** The header slot between the title and the close button — a contributed panel's
+     *  `mount` receives it (via {@link SidePanelHeader}) to dock compact controls. */
+    get headerSlot(): HTMLElement {
+        return this.slot;
+    }
+
+    /** Replace the header title. The topbar toggle keeps the DECLARED title as its
+     *  tooltip — this only changes what the open column says about itself. */
+    setTitle(title: string): void {
+        this.heading.textContent = title;
     }
 
     /** Current width in px. */

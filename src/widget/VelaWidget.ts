@@ -12,7 +12,7 @@ import { resolveTheme } from '../core/theme';
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import { ensureUIHost, injectStyles } from '../ui';
-import { KeymapManager } from '../ui/keymap';
+import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
 import { Statusline } from './statusline';
 import { Watermark } from './watermark';
@@ -23,11 +23,13 @@ import { DataWindow } from './data-window';
 import { PanelDock } from './panel-dock';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
-import { widgetAttachments, type WidgetContext } from './contributions';
+import { widgetAttachments, resolveEngines, legendActionsProviderFor, type WidgetContext } from './contributions';
 import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
-import { parsePersisted, legacyWidgetState, localStorageAdapter, type WidgetStorage } from './persist';
-import { encodeState, decodeState, sanitizeState, type WorkspaceState, type CellState } from '../state/document';
+import { parsePersisted, legacyWidgetState, localStorageAdapter, type VelaStorage } from './persist';
+import type { VelaShellOptions } from './shell-options';
+import { encodeState, decodeState, sanitizeState, prefixedSymbol, type WorkspaceState, type CellState } from '../state/document';
+import { parseSymbol } from '../data/ProviderRegistry';
 import { readUrlState, writeUrlState } from './url-state';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
 import { toolShortcutHints } from './tool-shortcuts';
@@ -37,36 +39,7 @@ import { Menu } from '../ui/components/menu';
 import { indicatorLedger, resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from './indicators';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 
-export interface VelaWidgetOptions extends VelaOptions {
-    /** Provider factories, keyed by provider name — called on every chart (re)build. */
-    providers?: Record<string, () => DataProvider>;
-    /** Scripting-engine factories, keyed by language — called on every chart (re)build. */
-    engines?: Record<string, () => ScriptingEngine>;
-    /** Indicator manifest (inline JSON) or a URL returning it — see widget/indicators.ts. */
-    indicators?: string | IndicatorManifest;
-    /** Topbar timeframe presets (chart timeframe values). */
-    timeframes?: string[];
-    /** Initial price style (default 'candles'); changed live via the topbar dropdown. */
-    priceStyle?: string;
-    /** Initial display timezone (IANA; default 'Etc/UTC'). */
-    timezone?: string;
-    /** Chrome toggles (all default true). */
-    statusline?: boolean;
-    watermark?: boolean;
-    bottombar?: boolean;
-    /** Focus the chart when it mounts so keyboard shortcuts work from the first
-     *  keystroke — no initial click needed. Default false: an embedded chart must
-     *  never steal the page's focus from the host's own controls. */
-    autofocus?: boolean;
-    /** Bring the chart back AS YOU LEFT IT: the widget persists its full state — the
-     *  unified single-cell document `getState()` returns (market, prefs, renderer
-     *  config, user drawings, indicators) — and restores it at construction. `true`
-     *  uses the key 'vela-widget'; a string is the storage key. Legacy three-key
-     *  payloads (pre-unified) migrate transparently on the first save. */
-    persist?: boolean | string;
-    /** Storage backend for `persist` — defaults to localStorage. Inject any
-     *  `WidgetStorage` (sync or async) for custom backends (REST, IndexedDB, …). */
-    storage?: WidgetStorage;
+export interface VelaWidgetOptions extends VelaOptions, VelaShellOptions {
     /** Mirror symbol/timeframe/style/timezone in the URL query (shareable links). A URL
      *  param wins over persisted state at load. Default false. */
     urlState?: boolean;
@@ -111,7 +84,7 @@ export class VelaWidget {
     /** Native-indicator catalog of the CURRENT chart (refreshed per rebuild/change). */
     private nativeCatalog: Array<{ type: string; title: string; supported: boolean; present: boolean; beta?: boolean }> = [];
     private readonly storageKey: string | null;
-    private readonly storage: WidgetStorage;
+    private readonly storage: VelaStorage;
     private openDialogs = 0;
     private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
     private symbol: string;
@@ -191,7 +164,7 @@ export class VelaWidget {
         }
         const bootCell = boot ? (boot.charts.find((c) => c.id === 'c1') ?? boot.charts[0]) : undefined;
         const fromUrl = opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
-        this.symbol = fromUrl.symbol ?? bootCell?.symbol ?? opts.symbol ?? '';
+        this.symbol = fromUrl.symbol ?? prefixedSymbol(bootCell) ?? opts.symbol ?? '';
         this.timeframe = fromUrl.timeframe ?? bootCell?.timeframe ?? opts.timeframe ?? '60';
         this.priceStyle = fromUrl.priceStyle ?? bootCell?.priceStyle ?? opts.priceStyle ?? 'candles';
         this.timezone = fromUrl.timezone ?? boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
@@ -216,7 +189,7 @@ export class VelaWidget {
 
         this.symbolPicker = new SymbolPicker({
             host: this.root,
-            onSelect: (ticker, provider) => this.setSymbol(ticker, provider),
+            onSelect: (symbol) => this.setSymbol(symbol),
             onOpenChange: (open) => {
                 // The renderer's in-chart dialogs (indicator inputs, chart settings) live
                 // inside the chart container, so opening the search from the topbar never
@@ -303,7 +276,7 @@ export class VelaWidget {
         this.watermark = opts.watermark !== false ? new Watermark(this.chartHost, this.symbol, this.timeframe) : null;
         this.watermark?.setVisible(this.watermarkOn);
         this.statusline = opts.statusline !== false ? new Statusline(this.chartHost, this.symbol) : null;
-        this.statusline?.setMeta(this.timeframe, typeof opts.provider === 'string' ? opts.provider : '');
+        this.statusline?.setMeta(this.timeframe, parseSymbol(this.symbol).provider ?? '');
         this.bottombar =
             opts.bottombar !== false
                 ? new Bottombar(this.root, {
@@ -417,6 +390,7 @@ export class VelaWidget {
             setTimeframe: (tf) => this.setTimeframe(tf),
             setPriceStyle: (style) => this.setPriceStyle(style),
             openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
+            togglePanel: (id, open) => this.dock.toggle(id, open),
             host: this.root,
             toast: (message, kind) => this.toast?.show(message, kind),
         };
@@ -441,6 +415,8 @@ export class VelaWidget {
         this.mountAttachments();
         this.topbar.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the live chart on their own
+        // Re-project legend rows so a late registerLegendAction appears on them too.
+        if (this.inner) this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => this.context()));
     }
 
     /** The inner headless chart of the CURRENT build — becomes a new instance after a
@@ -467,7 +443,7 @@ export class VelaWidget {
      */
     private providerLabel(): string {
         const resolved = this.inner?.data.resolve(this.symbol)?.provider;
-        return resolved ?? (typeof this.opts.provider === 'string' ? this.opts.provider : '');
+        return resolved ?? parseSymbol(this.symbol).provider ?? '';
     }
 
     setTimeframe(tf: string): void {
@@ -485,16 +461,15 @@ export class VelaWidget {
     }
 
     /**
-     * Switch the chart symbol in place. `provider` names the venue the symbol was CHOSEN
-     * from (the symbol picker passes it) — it disambiguates a ticker several providers
-     * list, and without it the registry picks the first one that has it, which is not
-     * necessarily the one the user pointed at.
+     * Switch the chart symbol in place. An `EXCHANGE:` prefix pins the venue (the
+     * symbol picker composes one from the row the user pointed at) — a bare ticker
+     * resolves against the registered providers in declaration order.
      */
-    setSymbol(symbol: string, provider?: string): void {
+    setSymbol(symbol: string): void {
         if (this.destroyed) return;
-        // A no-op only when BOTH identity halves already hold: re-picking the same ticker on a
-        // DIFFERENT venue is a real switch.
-        if (symbol === this.symbol && (provider == null || provider === this.inner?.market.provider)) return;
+        // The symbol string IS the whole identity now (venue prefix included), so a
+        // same-string re-pick is a true no-op — a venue change always changes the string.
+        if (symbol === this.symbol) return;
         this.unresolvedToasted = null; // a new symbol gets a fresh verdict
         this.symbol = symbol;
         this.topbar.setSymbol(symbol);
@@ -503,10 +478,10 @@ export class VelaWidget {
         this.watermark?.update(symbol, this.timeframe);
         this.markStateDirty();
         // In-place switch (no rebuild) — the chart instance, indicators, and drawings survive.
-        void this.inner?.setMarket(provider ? { symbol, provider } : { symbol });
+        void this.inner?.setMarket({ symbol });
         // The venue shown must follow the symbol, not the construction option: an in-place
         // switch never rebuilds, so nothing else would refresh it.
-        this.statusline?.setMeta(this.timeframe, provider ?? this.providerLabel());
+        this.statusline?.setMeta(this.timeframe, this.providerLabel());
     }
 
     // ── state surface (same triplet as the workspace: getState / applyState / state:changed) ──
@@ -526,7 +501,8 @@ export class VelaWidget {
         const live = this.inner?.market;
         const symbol = live?.symbol ?? this.symbol;
         if (symbol) cell.symbol = symbol;
-        const provider = live?.provider ?? (typeof this.opts.provider === 'string' ? this.opts.provider : undefined);
+        // The venue field mirrors the symbol's own prefix (older readers expect it).
+        const provider = parseSymbol(symbol ?? '').provider ?? undefined;
         if (provider) cell.provider = provider;
         cell.timeframe = live?.timeframe ?? this.timeframe;
         cell.priceStyle = this.priceStyle;
@@ -592,7 +568,7 @@ export class VelaWidget {
             }
             if (cell.indicators) this.applyIndicatorLedger(cell.indicators);
             // Market last, as ONE in-place switch — `market:changed` re-syncs the chrome.
-            const symbol = fromUrl.symbol ?? cell.symbol;
+            const symbol = fromUrl.symbol ?? prefixedSymbol(cell);
             const timeframe = fromUrl.timeframe ?? cell.timeframe;
             const bars = Number(fromUrl.bars ?? cell.bars ?? 0);
             const next: { symbol?: string; timeframe?: string; bars?: number } = {};
@@ -797,11 +773,13 @@ export class VelaWidget {
             ...(this.pendingRange ? { visibleRange: this.pendingRange.preset } : {}),
         });
         for (const [name, make] of Object.entries(providers ?? {})) chart.data.registerProvider(name, make());
-        for (const [language, make] of Object.entries(engines ?? {})) chart.registerEngine(language, make());
+        for (const [language, make] of Object.entries(resolveEngines(engines))) chart.registerEngine(language, make());
         this.inner = chart;
 
         this.symbolPicker.setSource(() => chart.data.symbols());
         this.objectTree.setSymbol(this.symbol);
+        // Contributed legend-row actions (registerLegendAction) — resolved per row, per click.
+        chart.renderer.setLegendActions(legendActionsProviderFor(chart, () => this.context()));
         this.dock.onChart(chart); // every docked panel rebinds, contributed ones included
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
@@ -1089,9 +1067,7 @@ export class VelaWidget {
     private routeTyping(ev: KeyboardEvent): void {
         if (this.destroyed || this.openDialogs > 0) return;
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-        const t = ev.target as Partial<HTMLElement> | null;
-        const tag = (t?.tagName ?? '').toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable === true) return;
+        if (isEditableTarget(ev)) return; // never hijack a keystroke someone is TYPING
         const key = ev.key;
         if (/^[a-zA-Z]$/.test(key)) {
             ev.preventDefault();

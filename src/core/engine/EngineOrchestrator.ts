@@ -24,6 +24,7 @@ import { DrawingController } from '../drawings/DrawingController';
 import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
 import { timeframeToMs } from '../../data/timeframe';
+import { parseSymbol } from '../../data/ProviderRegistry';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
 import { chartType, type SeriesDataEngine } from '../../chart-types/registry';
 
@@ -80,7 +81,7 @@ const HEAL_COOLDOWN_MS = 5_000;
  * Renderer- and engine-agnostic orchestration: owns market data (via the injected
  * `MarketDataFeed`), runs/streams indicators through registered `ScriptingEngine`s
  * (selected by language), routes panes, and drives the injected `IChartRenderer`.
- * Imports neither a concrete renderer nor `pinets`.
+ * Imports neither a concrete renderer nor a concrete scripting engine.
  */
 export class EngineOrchestrator implements IndicatorController, PaneController {
     readonly events = new TypedEventBus<VelaEventMap>();
@@ -232,8 +233,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const engine = this.engines.get(lang);
         if (!engine) {
             throw new Error(
-                `[vela] no scripting engine registered for language "${lang}". Import and register ` +
-                    `one before addIndicator, e.g. chart.registerEngine('pine', new PineEngine()).`,
+                `[vela] no scripting engine registered for language "${lang}". Vela ships none — ` +
+                    `install one (Pine Script: @luxalgo/vela-pinets) and register it before addIndicator, ` +
+                    `e.g. chart.registerEngine('pine', new PineEngine()).`,
             );
         }
         return engine;
@@ -454,7 +456,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      *  an in-flight `setMarket` immediately (the config mutates before the load). */
     marketSnapshot(): MarketSnapshot {
         const m = this.config.market;
-        return { symbol: m.symbol, provider: m.provider, timeframe: m.timeframe, bars: m.bars, offline: m.data !== undefined };
+        return { symbol: m.symbol, provider: parseSymbol(m.symbol ?? '').provider ?? undefined, timeframe: m.timeframe, bars: m.bars, offline: m.data !== undefined };
     }
 
     /**
@@ -476,7 +478,6 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const m = this.config.market;
         const identityChanged =
             (next.symbol !== undefined && next.symbol !== m.symbol) ||
-            (next.provider !== undefined && next.provider !== m.provider) ||
             (next.timeframe !== undefined && next.timeframe !== m.timeframe) ||
             next.data !== undefined;
         const depthChanged = next.bars !== undefined && next.bars !== m.bars;
@@ -502,11 +503,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
             // Mutate the market in place (the config object is what every reader holds).
             if (next.symbol !== undefined) m.symbol = next.symbol;
-            if (next.provider !== undefined) m.provider = next.provider;
             if (next.timeframe !== undefined) m.timeframe = next.timeframe;
             if (next.bars !== undefined) m.bars = next.bars;
             if (next.data !== undefined) m.data = next.data;
-            else if (next.symbol !== undefined || next.provider !== undefined) delete m.data; // offline → provider switch
+            else if (next.symbol !== undefined) delete m.data; // offline → provider switch
             m.visibleRange = next.visibleRange; // consumed by THIS load only (overwritten every switch)
 
             // An identity switch blanks the chart NOW: the old market's candles must not sit
@@ -938,7 +938,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     addIndicator(source: string, options: AddIndicatorOptions = {}): IndicatorHandle {
         const id = this.registry.nextId();
         const title = options.title ?? 'Indicator';
-        const handle = new IndicatorHandleImpl(id, title, this);
+        const handle = new IndicatorHandleImpl(id, title, this, source);
         this.handles.set(id, handle);
         this.registry.add({ id, title, source, options, inputValues: { ...(options.inputs ?? {}) } });
         void this.startIndicator(id, source, options, handle);

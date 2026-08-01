@@ -8,6 +8,7 @@ import type {
     InputChangeEvent,
     VisibleRange,
     IndicatorStatus,
+    LegendActionView,
     PaneAction,
     DataWindowRow,
     DataWindowOHLC,
@@ -162,6 +163,8 @@ export class NativeRenderer implements IChartRenderer {
     private input!: InputController;
     private inputsUI!: InputsUI;
     private symbolPicker: SymbolPickerFn | null = null;
+    /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
+    private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
     private keyboard: KeyboardController | null = null;
     private keyboardEnabled = true;
@@ -1223,6 +1226,7 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
+        this.inputsUI.setLegendActions(this.legendActionsProvider);
         this.inputsUI.setOnChange((c) => {
             for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value });
         });
@@ -1712,6 +1716,11 @@ export class NativeRenderer implements IChartRenderer {
     setSymbolPicker(picker: SymbolPickerFn | null): void {
         this.symbolPicker = picker;
         this.inputsUI?.setSymbolPicker(picker);
+    }
+
+    setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
+        this.legendActionsProvider = provider;
+        this.inputsUI?.setLegendActions(provider);
     }
 
     /**

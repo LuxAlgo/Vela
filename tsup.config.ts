@@ -1,37 +1,4 @@
 import { defineConfig } from 'tsup';
-import * as esbuild from 'esbuild';
-import { resolve } from 'node:path';
-
-/**
- * Inlines a worker entry as a string. `import code from 'inline-worker:./worker.ts'`
- * bundles that entry into a self-contained IIFE at build time and yields its source
- * as a default-exported string; `PineWorkerEngine` spawns it from a Blob URL at
- * runtime — no separate file, no URL to configure. The nested build sets no
- * `external`, so the worker carries its own pinets (it's a separate execution context).
- */
-const inlineWorker = (): esbuild.Plugin => ({
-    name: 'inline-worker',
-    setup(build) {
-        const PREFIX = 'inline-worker:';
-        build.onResolve({ filter: /^inline-worker:/ }, (args) => ({
-            path: resolve(args.resolveDir, args.path.slice(PREFIX.length)),
-            namespace: 'inline-worker',
-        }));
-        build.onLoad({ filter: /.*/, namespace: 'inline-worker' }, async (args) => {
-            const out = await esbuild.build({
-                entryPoints: [args.path],
-                bundle: true,
-                write: false,
-                format: 'iife',
-                platform: 'browser',
-                minify: true,
-                sourcemap: false,
-                target: 'es2020',
-            });
-            return { contents: `export default ${JSON.stringify(out.outputFiles?.[0]?.text ?? '')};`, loader: 'js', watchFiles: [args.path] };
-        });
-    },
-});
 
 export default defineConfig([
     // Library build — ESM + CJS + types, backends external (consumer provides them).
@@ -57,12 +24,12 @@ export default defineConfig([
         sourcemap: false,
         clean: true,
         treeshake: true,
-        external: ['pinets'],
-        esbuildPlugins: [inlineWorker()],
     },
-    // Browser globals — self-contained IIFEs (bundle pinets + the inlined worker)
-    // exposing `window.Vela`, in the reference dev/prod pair: `vela.global.js` is the
-    // readable development build, `vela.global.min.js` the minified one for CDN use.
+    // Browser globals — self-contained IIFEs exposing `window.Vela`, in the reference
+    // dev/prod pair: `vela.global.js` is the readable development build,
+    // `vela.global.min.js` the minified one for CDN use. An addon (e.g.
+    // `vela-pinets.global.js`) loads AFTER one of them and resolves `@luxalgo/vela`
+    // to that same `window.Vela` — never a second copy of the library.
     {
         name: 'browser-dev',
         entry: { vela: 'src/browser.ts' },
@@ -73,7 +40,6 @@ export default defineConfig([
         clean: false,
         treeshake: true,
         minify: false,
-        esbuildPlugins: [inlineWorker()],
     },
     {
         name: 'browser-min',
@@ -86,6 +52,5 @@ export default defineConfig([
         clean: false,
         treeshake: true,
         minify: true,
-        esbuildPlugins: [inlineWorker()],
     },
 ]);

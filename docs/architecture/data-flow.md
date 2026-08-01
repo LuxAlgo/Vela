@@ -26,7 +26,7 @@ flowchart TD
 
 Step by step:
 
-1. **Load history.** The core asks the feed to load history for the symbol and timeframe. For deep history it shows a quick recent-window preview, then the first ~10k-bar chunk (`ready()` resolves here — the chart is interactive), then **backfills older bars backward in bounded chunks** while preserving the viewport — emitting `history:progress` per chunk and `history:complete` at the end. Each session poke during the backfill carries the reason `'backfill'`, and the finish carries `'complete'`; run policy stays with the engine — the bundled Pine engines hold their first run until `'complete'`, so an indicator computes exactly once, over the full depth.
+1. **Load history.** The core asks the feed to load history for the symbol and timeframe. For deep history it shows a quick recent-window preview, then the first ~10k-bar chunk (`ready()` resolves here — the chart is interactive), then **backfills older bars backward in bounded chunks** while preserving the viewport — emitting `history:progress` per chunk and `history:complete` at the end. Each session poke during the backfill carries the reason `'backfill'`, and the finish carries `'complete'`; run policy stays with the engine — an engine that holds its first run until `'complete'` computes exactly once, over the full depth, while a progressive one may draw on every chunk.
 2. **Store canonical bars.** The core stores the returned bars as the canonical array. This is the source of truth.
 3. **Paint candles.** The renderer paints the candles immediately — a bare chart is already useful with no engine involved.
 4. **Add an indicator.** `addIndicator` names a script and its language. The core selects a registered engine **by language**. (No engine for that language → an actionable error; there is no default.)
@@ -76,7 +76,7 @@ The core takes the live streaming path only when *all* of these hold:
 - the script is not viewport-dependent, **and**
 - the engine declares the streaming capability.
 
-If any condition fails, the core uses the static re-run path: it pokes the engine to execute again over the current bar snapshot. (This is also why the off-thread Pine form, which declares no streaming capability, always takes the static re-run path — see [modules.md](modules.md).) Both paths end in the same place — a neutral model the core routes and the renderer applies. This routing condition is one of the core invariants; it is restated in [boundaries.md](boundaries.md).
+If any condition fails, the core uses the static re-run path: it pokes the engine to execute again over the current bar snapshot. (An engine that declares no streaming capability therefore always takes that path — see [modules.md](modules.md).) Both paths end in the same place — a neutral model the core routes and the renderer applies. This routing condition is one of the core invariants; it is restated in [boundaries.md](boundaries.md).
 
 ## Switching markets in place
 
@@ -84,7 +84,7 @@ If any condition fails, the core uses the static re-run path: it pokes the engin
 
 1. **Quiesce** — the live subscription stops, pending gap-heals and viewport pokes are dropped, and history tracking re-arms (the superseded load's `historyComplete()` promise resolves rather than hanging).
 2. **Reload** — the shared load pipeline runs for the new market (preview → chunk → background backfill for deep histories, a single fetch otherwise). Every step is generation-guarded: a newer switch (or destroy) abandons a stale load before it can touch the chart.
-3. **Restart consumers** — Pine sessions are re-executed over the new bars (their next `ExecutionRequest` carries the new market), native indicators restart with a fresh context, the active chart-type data engine is rebuilt, and the live subscription re-targets.
+3. **Restart consumers** — engine sessions are re-executed over the new bars (their next `ExecutionRequest` carries the new market), native indicators restart with a fresh context, the active chart-type data engine is rebuilt, and the live subscription re-targets.
 4. **Announce** — `market:changed` fires with the previous identity, so hosts can re-key per-symbol state (drawing documents, watchlists).
 
 What deliberately survives: panes and indicator records (legend rows, inputs, pane placement), user drawings, the renderer's cosmetic config, and every event subscription. Old sessions are never poked with the new market's bars — bar/viewport notifications are held during the switch, and the re-execution that follows is what computes over the new data.

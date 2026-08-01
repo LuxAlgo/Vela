@@ -111,8 +111,8 @@ class CountingFeed implements MarketDataFeed {
     }
 }
 
-const CFG_BTC: MarketConfig = { provider: 'binance', symbol: 'BTCUSDT', timeframe: '60', bars: 500 };
-const CFG_ETH: MarketConfig = { provider: 'binance', symbol: 'ETHUSDT', timeframe: '60', bars: 500 };
+const CFG_BTC: MarketConfig = { symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500 };
+const CFG_ETH: MarketConfig = { symbol: 'binance:ETHUSDT', timeframe: '60', bars: 500 };
 
 describe('CachingDataFeed with a retained set (two cells, two symbols)', () => {
     it('without retention, alternating loads re-download in full every time (the thrash)', async () => {

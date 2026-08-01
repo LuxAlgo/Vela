@@ -32,8 +32,8 @@ store's change re-syncs the renderer; the renderer never mutates the model itsel
 
 A thin **second seam**, the `Projector` (data↔pixel closures the renderer supplies), keeps anchors
 in **data space** (epoch-ms time + price). The renderer resolves pixels on demand each frame and
-stores none, so drawings survive pan/zoom/reload/timeframe change for the same reason Pine drawings
-do (`xloc=bar_time`).
+stores none, so drawings survive pan/zoom/reload/timeframe change for the same reason time-anchored
+script drawings do.
 
 Rendering is **capability-gated** (`capabilities.userDrawings` + `userDrawingsPort`; native = yes,
 a minimal adapter may not), but the model is not: even with no port, the controller still serializes,

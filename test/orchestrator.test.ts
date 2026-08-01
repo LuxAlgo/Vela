@@ -336,6 +336,10 @@ describe('EngineOrchestrator', () => {
         const ema = chart.addIndicator('//@version=5\nindicator("EMA", overlay=true)\nplot(close)');
         chart.addIndicator('//@version=5\nindicator("RSI")\nplot(close)');
 
+        // The handle exposes the source it was added with — what a host editor opens
+        // from a legend action. Natives have none (see the native-indicator suites).
+        expect(ema.source).toBe('//@version=5\nindicator("EMA", overlay=true)\nplot(close)');
+
         await chart.ready();
         await flush();
 

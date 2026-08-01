@@ -108,7 +108,7 @@ function selectSubTf(targetMin: number): number | null {
 
 /**
  * Binance market-data provider, built from scratch on the public REST + WebSocket
- * APIs — no `pinets`. Serves spot and USDT-margined perpetual futures (`SYMBOL.P`),
+ * APIs — no third-party market-data SDK. Serves spot and USDT-margined perpetual futures (`SYMBOL.P`),
  * paginates past the 1000-kline cap, falls back `api.binance.com → api.binance.us`,
  * and aggregates timeframes Binance doesn't serve natively (e.g. `45`, `180`). No API
  * key; live ticks stream from a native kline WebSocket (`subscribe`), with a poll

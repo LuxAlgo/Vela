@@ -7,7 +7,11 @@
 // then round-trips through the workspace pool, so shrinking 4 → 2 → 4 restores
 // `c3`/`c4` exactly, indicators and drawings included).
 import { Vela } from '../Vela';
-import type { VelaTheme, NativeBackend } from '../core/options';
+import type { VelaTheme, NativeBackend, VelaOptions } from '../core/options';
+import type { OHLCV } from '../core/model/ohlcv';
+import type { VisibleRangePreset } from '../core/visible-range';
+import type { VisibleRange } from '../core/ports/IChartRenderer';
+import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
@@ -17,21 +21,71 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
-import type { WidgetContext } from '../widget/contributions';
-import type { CellState } from '../state/document';
+import { legendActionsProviderFor, resolveEngines, type WidgetContext } from '../widget/contributions';
+import { prefixedSymbol, type CellState } from '../state/document';
+import { parseSymbol } from '../data/ProviderRegistry';
 
-/** The seed/mutable market state of one cell (all optional — an empty cell parks). */
+/** The seed/mutable market state of one cell (all optional — an empty cell parks).
+ *  The SAME vocabulary as the widget's chart options: the workspace's top-level chart
+ *  options provide every cell's default ({@link seedDefaults}), `cells` overrides per
+ *  cell. `data`/`visibleRange` are boot-only (they seed the first load, never persist). */
 export interface CellSeed {
+    /** Bare ticker (provider resolved by declaration order) or `EXCHANGE:`-prefixed. */
     symbol?: string;
-    provider?: string;
     timeframe?: string;
     priceStyle?: string;
     bars?: number;
+    /** Offline bars for this cell — replaces the provider (boot-only). */
+    data?: OHLCV[];
+    /** Initial visible window (boot-only). */
+    visibleRange?: VisibleRangePreset | VisibleRange;
 }
 
 /** A destroyed cell's state, kept by the workspace pool so its slot restores later —
  *  the per-cell entry of the SHARED state document (`src/state/document.ts`). */
 export type PooledCellState = CellState;
+
+/** What a cell BOOTS from: a pooled state (restored slot) or an options seed — plus
+ *  the boot-only extras a pooled state never carries (offline bars, initial window). */
+export type CellBoot = PooledCellState & Pick<CellSeed, 'data' | 'visibleRange'>;
+
+/** The per-cell SEED the workspace's top-level chart options provide — same words as
+ *  the widget; `cells[id]` spreads over this. */
+export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'bars' | 'priceStyle' | 'data' | 'visibleRange'>): CellSeed {
+    return {
+        symbol: opts.symbol,
+        timeframe: opts.timeframe,
+        bars: opts.bars,
+        priceStyle: opts.priceStyle,
+        data: opts.data,
+        visibleRange: opts.visibleRange,
+    };
+}
+
+/** Chart options the workspace forwards VERBATIM to every cell's chart — the widget
+ *  vocabulary minus what the grid manages itself: `height` (the grid sizes cells),
+ *  `nativeBackend` (the WebGL budget policy, explicit value resolved upstream), the
+ *  market/view seeds (those flow through {@link CellSeed}), and `drawings`' toolbar
+ *  sub-key (see {@link cellDrawings}). */
+export type CellChartDefaults = Pick<
+    VelaOptions,
+    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings'
+>;
+
+/** The {@link CellChartDefaults} pick of a workspace's options (pure, for the build). */
+export function cellChartDefaults(opts: CellChartDefaults): CellChartDefaults {
+    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings } = opts;
+    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings };
+}
+
+/** The cell form of the shell's `drawings` option: everything passes through EXCEPT the
+ *  toolbar — ONE shared bar serves the grid (per-cell bars would cost a 44px gutter
+ *  each). An explicit `false` stays an opt-out (the headless `chart.drawings` API only). */
+export function cellDrawings(opt: DrawingsOption | undefined): DrawingsOption {
+    if (opt === false) return false;
+    if (opt === true || opt == null) return { toolbar: false };
+    return { ...opt, toolbar: false };
+}
 
 /** One entry of the shared indicator picker's native catalog, per cell. */
 export interface CellNativeInfo {
@@ -48,6 +102,8 @@ export interface CellDeps {
     feed: MarketDataFeed;
     /** Scripting-engine factories — instantiated PER CELL (a worker engine per cell). */
     engines: Record<string, () => ScriptingEngine>;
+    /** The workspace's top-level chart options every cell's chart starts from. */
+    chartDefaults: CellChartDefaults;
     theme: VelaTheme;
     live: boolean;
     volume: boolean;
@@ -100,7 +156,9 @@ export class ChartCell {
     private readonly watermark: Watermark | null;
     private readonly contextMenu: ChartContextMenu;
     private readonly offMarket: () => void;
-    private state: CellSeed;
+    /** The cell's durable market state — the seed vocabulary plus the venue mirror the
+     *  persisted document carries (`provider` = the symbol's parsed prefix). */
+    private state: CellSeed & Pick<CellState, 'provider'>;
     private manifest: readonly ResolvedIndicator[] = [];
     /** A restored ledger's manifest entry NAMES, waiting for the manifest to resolve
      *  (a pool/persisted cell can be built before the shared manifest has loaded). */
@@ -118,10 +176,13 @@ export class ChartCell {
     constructor(
         readonly id: string,
         gridHost: HTMLElement,
-        seed: PooledCellState,
+        seed: CellBoot,
         private readonly deps: CellDeps,
     ) {
-        this.state = { symbol: seed.symbol, provider: seed.provider, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars };
+        // The canonical symbol form: pre-prefix pooled/persisted states carried the venue
+        // in `provider` beside a bare symbol — weld them back together once, at boot.
+        const symbol = prefixedSymbol(seed);
+        this.state = { symbol, provider: parseSymbol(symbol ?? '').provider ?? undefined, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars };
         const doc = gridHost.ownerDocument;
         this.host = doc.createElement('div');
         this.host.className = 'vela-cell';
@@ -136,11 +197,13 @@ export class ChartCell {
         this.inner = new Vela(
             this.host,
             {
-                provider: seed.provider,
-                symbol: seed.symbol,
+                ...deps.chartDefaults,
+                symbol,
                 timeframe: seed.timeframe,
                 bars: seed.bars,
                 priceStyle: seed.priceStyle,
+                data: seed.data,
+                visibleRange: seed.visibleRange,
                 theme: deps.theme,
                 live: deps.live,
                 // A RESTORED ledger is authoritative for the auto-added volume too: a
@@ -148,13 +211,13 @@ export class ChartCell {
                 // keep the workspace default).
                 volume: seed.indicators ? seed.indicators.natives.includes('volume') : deps.volume,
                 nativeBackend: deps.nativeBackend,
-                // One SHARED toolbar serves the whole workspace (it lands with the shared
-                // chrome); per-cell bars would cost a 44px gutter in every cell.
-                drawings: { toolbar: false },
+                // The user's drawings option minus its toolbar: one SHARED bar serves
+                // the whole workspace (per-cell bars would cost a 44px gutter each).
+                drawings: cellDrawings(deps.chartDefaults.drawings),
             },
             { dataFeed: deps.feed },
         );
-        for (const [language, make] of Object.entries(deps.engines)) this.inner.registerEngine(language, make());
+        for (const [language, make] of Object.entries(resolveEngines(deps.engines))) this.inner.registerEngine(language, make());
         // ONE attribution mark per WORKSPACE, not per cell: each cell disables its own
         // in-chart mark; the workspace mounts the single grid-level mark that satisfies
         // the NOTICE's equivalent-visible-attribution requirement.
@@ -162,6 +225,9 @@ export class ChartCell {
         // Modal dialogs (chart settings, indicator settings) escape the cell's
         // overflow clip and center over the whole grid.
         this.inner.renderer.set('dialogHost', deps.dialogHost);
+        // Contributed legend-row actions — the row resolves on THIS cell's chart; the
+        // context follows the workspace rule (built fresh per click, active-cell bound).
+        this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
         // Pool restore: cosmetics + drawings round-trip (both validate untrusted input).
         if (seed.rendererConfig != null) this.inner.renderer.applyConfig(seed.rendererConfig);
         if (seed.drawings != null) this.inner.drawings.fromJSON(seed.drawings);
@@ -183,10 +249,10 @@ export class ChartCell {
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
         this.watermarkOn = seed.watermark ?? deps.watermark;
-        this.watermark = deps.watermark ? new Watermark(this.host, seed.symbol ?? '', seed.timeframe ?? '60') : null;
+        this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60') : null;
         if (!this.watermarkOn) this.watermark?.setVisible(false);
-        this.statusline = deps.statusline ? new Statusline(this.host, seed.symbol ?? '') : null;
-        this.statusline?.setMeta(seed.timeframe ?? '60', seed.provider ?? '');
+        this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '') : null;
+        this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => {
@@ -273,10 +339,11 @@ export class ChartCell {
         // state + overlays, then notifies the workspace (chrome projection, retention).
         this.offMarket = this.inner.on('market:changed', ({ symbol, timeframe }) => {
             this.state.symbol = symbol;
+            this.state.provider = parseSymbol(symbol).provider ?? undefined;
             this.state.timeframe = timeframe;
             this.watermark?.update(symbol, timeframe);
             this.statusline?.setSymbol(symbol);
-            this.statusline?.setMeta(timeframe, this.state.provider ?? '');
+            this.statusline?.setMeta(timeframe, this.inner?.data.resolve(symbol)?.provider ?? this.state.provider ?? '');
             if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
             this.refreshNativeCatalog(); // per-symbol support flags may differ
             this.deps.onMarketChanged(this.id);

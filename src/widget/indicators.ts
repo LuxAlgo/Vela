@@ -35,17 +35,25 @@ function entriesOf(manifest: IndicatorManifest): IndicatorManifestEntry[] {
     return Array.isArray(manifest) ? manifest : manifest.indicators;
 }
 
-/** Load the indicator list: a manifest object, or a URL string returning the manifest JSON.
- *  Entries with `url` sources are fetched here too (relative to the manifest URL). Entries
- *  that fail to resolve are dropped with a console warning — one broken script must not
- *  take the chart down. */
+/** An async manifest source — called once at resolution time. The escape hatch for
+ *  manifests that a URL can't express: a filesystem read, an authenticated API, a
+ *  bundler dynamic import. A rejection behaves like a failing manifest URL. */
+export type IndicatorLoader = () => Promise<IndicatorManifest>;
+
+/** Load the indicator list: a manifest object, a URL string returning the manifest JSON,
+ *  or an async loader function returning the manifest. Entries with `url` sources are
+ *  fetched here too (relative to the manifest URL when there is one). Entries that fail
+ *  to resolve are dropped with a console warning — one broken script must not take the
+ *  chart down. */
 export async function resolveIndicators(
-    config: string | IndicatorManifest,
+    config: string | IndicatorManifest | IndicatorLoader,
     fetchImpl: typeof fetch = fetch,
 ): Promise<ResolvedIndicator[]> {
     let manifest: IndicatorManifest;
     let baseUrl: string | undefined;
-    if (typeof config === 'string') {
+    if (typeof config === 'function') {
+        manifest = await config();
+    } else if (typeof config === 'string') {
         baseUrl = config;
         const res = await fetchImpl(config);
         if (!res.ok) throw new Error(`indicator manifest ${config}: HTTP ${res.status}`);

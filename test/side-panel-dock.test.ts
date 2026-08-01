@@ -282,6 +282,31 @@ describe('PanelDock', () => {
         expect(d.openId).toBeNull();
     });
 
+    it('hands mount the header surface: a slot next to the title, and setTitle', () => {
+        const { root } = stubDoc();
+        const d = new PanelDock(root as never, { chrome: { setPanelButtons: () => {}, setPanelActive: () => {} }, context: () => ctx });
+        let slotChildren = -1;
+        const off = registerSidePanel({
+            id: 'h',
+            title: 'Declared',
+            icon: 'ih',
+            mount: (_ctx, _body, header) => {
+                header.slot.appendChild((header.slot.ownerDocument as Document).createElement('button'));
+                header.setTitle('My script');
+                slotChildren = (header.slot as unknown as StubEl).children.length;
+            },
+        });
+        d.refresh();
+        const panel = find(root, 'vela-panel-h')!;
+        expect(find(panel, 'vela-panel-title')!.textContent).toBe('My script'); // setTitle replaced the declared title
+        expect(slotChildren).toBe(1); // the control landed in the slot
+        // The slot sits between the title and the close button in the header row.
+        const header = find(panel, 'vela-panel-header')!;
+        expect(header.children.map((c) => c.className)).toEqual(['vela-panel-title', 'vela-panel-header-slot', 'vela-panel-close']);
+        off();
+        d.refresh();
+    });
+
     it('a contribution that throws on mount is contained', () => {
         const { dock: d, buttons } = dock();
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
