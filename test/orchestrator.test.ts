@@ -87,7 +87,8 @@ class FakeRenderer implements IChartRenderer {
     removedPanes: string[] = [];
     removePane(id: string): void { this.removedPanes.push(id); }
     mountIndicator(model: IndicatorModel): IndicatorRenderHandle { this.mountedModels.push(model); return { id: model.id }; }
-    updateIndicator(h: IndicatorRenderHandle, _p: ScenePatch): void { this.updatedIds.push(h.id); }
+    updatedPatches: ScenePatch[] = [];
+    updateIndicator(h: IndicatorRenderHandle, p: ScenePatch): void { this.updatedIds.push(h.id); this.updatedPatches.push(p); }
     removeIndicator(h: IndicatorRenderHandle): void { this.removed.push(h.id); }
     setIndicatorInputs(_h: IndicatorRenderHandle, _v: Record<string, InputValue>): void {}
     indicatorVisible = new Map<string, boolean>();
@@ -202,6 +203,8 @@ class MockEngine implements ScriptingEngine {
     readonly capabilities: EngineCapabilities = { streaming: true, visibleRange: true, inputs: true };
     /** Test knob: defer static runs under historyState 'backfill' until the 'complete' poke (policy A). */
     policyA = false;
+    /** Test knob: emit a strategy-style trade-execution pair with every model. */
+    emitTrades = false;
     runCount: Record<string, number> = {};
     lastVisibleRange: Record<string, VisibleBarRange | undefined> = {};
     streamStarts: Record<string, number> = {};
@@ -274,7 +277,16 @@ class MockEngine implements ScriptingEngine {
     private buildModel(prepared: PreparedScript, bars: OHLCV[], inputs?: Record<string, InputValue>): IndicatorModel {
         const token = prepared.token as { instanceId: string; overlay: boolean };
         const length = Number(inputs?.Length ?? 14);
+        const trades = this.emitTrades && bars.length >= 2
+            ? {
+                  trades: [
+                      { time: bars[0]!.time, price: bars[0]!.close, side: 'buy' as const, kind: 'entry' as const, label: 'Long', qty: 2, tradeId: 't1' },
+                      { time: bars[bars.length - 1]!.time, price: bars[bars.length - 1]!.close, side: 'sell' as const, kind: 'exit' as const, label: 'Exit', qty: 2, tradeId: 't1' },
+                  ],
+              }
+            : {};
         return {
+            ...trades,
             id: token.instanceId,
             title: 'Mock',
             overlay: token.overlay,
@@ -937,6 +949,38 @@ describe('EngineOrchestrator', () => {
 
         expect(engine.runCount[ind.id] ?? 0).toBeGreaterThan(0);
         expect(renderer.mountedModels.some((m) => m.id === ind.id)).toBe(true);
+    });
+
+    it('strategy trade executions ride the model into mounts, value patches and inspect()', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new MockEngine();
+        engine.emitTrades = true;
+        const chart = new Vela({} as unknown as HTMLElement, { live: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+
+        // 'visible' in the source flags the script viewport-dependent, so a viewport poke re-runs it.
+        const ind = chart.addIndicator('//@version=6\nindicator("S", overlay=true)\nx = chart.left_visible_bar_time\nplot(close)');
+        await chart.ready();
+        await flush();
+
+        // The retained model carries the executions (the first pre-bars emission may not
+        // have had them yet — they ride every later emission, mount or value patch).
+        const carried = renderer.mountedModels
+            .filter((m) => m.id === ind.id)
+            .flatMap((m) => m.trades ?? [])
+            .concat(renderer.updatedPatches.flatMap((p) => (p.kind === 'value' && p.indicatorId === ind.id ? (p.trades ?? []) : [])));
+        expect(carried.some((t) => t.side === 'buy' && t.kind === 'entry' && t.label === 'Long' && t.qty === 2 && t.tradeId === 't1')).toBe(true);
+
+        // inspect() counts them — the oracle's deterministic signal.
+        expect(chart.inspect().indicators.find((s) => s.id === ind.id)?.trades).toBe(2);
+        expect(chart.inspect().totals.trades).toBe(2);
+
+        // A non-structural re-run value-patches; the executions travel as a full snapshot.
+        renderer.updatedPatches.length = 0;
+        renderer.fireViewport({ from: 1_700_000_036_000, to: 1_700_000_144_000 });
+        await new Promise((r) => setTimeout(r, 220)); // > viewport debounce
+        await flush();
+        const patch = renderer.updatedPatches.find((p) => p.kind === 'value' && p.indicatorId === ind.id);
+        expect(patch?.kind === 'value' ? patch.trades : undefined).toHaveLength(2);
     });
 
     it('with no engine registered: candles still render, addIndicator raises an actionable error', async () => {

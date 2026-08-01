@@ -50,7 +50,8 @@ import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
 import { formatPriceLabel } from './chrome/ticks';
 import { zonedDate } from './chrome/tz';
-import { computePaneScale } from './core/autoscale';
+import { computePaneScale, expandScaleByPixels } from './core/autoscale';
+import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
@@ -288,7 +289,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost', 'tradeMarkers'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -401,6 +402,10 @@ export class NativeRenderer implements IChartRenderer {
             case 'priceBaseline':
                 this.scene.baselineValue = value == null ? null : Number(value);
                 break;
+            case 'tradeMarkers':
+                // Partial state merge ({ visible?, labels?, qty?, colors? }) — malformed fields drop.
+                this.scene.tradeMarkers = mergeTradeMarkersState(this.scene.tradeMarkers, value);
+                break;
             case 'keyboard':
                 this.setKeyboardEnabled(Boolean(value));
                 return; // owns its own DOM (focus/listeners/live region)
@@ -459,6 +464,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'timezone': return this.scene.timezone;
             case 'priceStyle': return this.scene.priceStyle;
             case 'priceBaseline': return this.scene.baselineValue;
+            case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'keyboard': return this.keyboardEnabled;
             case 'settings': return this.settingsEnabled;
             case 'attribution': return this.attributionEnabled;
@@ -586,6 +592,14 @@ export class NativeRenderer implements IChartRenderer {
                 countdown: this.scene.showCountdown,
             },
             panes: { separatorColor: s.separatorColor ?? t.borderColor },
+            trades: {
+                visible: this.scene.tradeMarkers.visible,
+                labels: this.scene.tradeMarkers.labels,
+                qty: this.scene.tradeMarkers.qty,
+                longColor: this.scene.tradeMarkers.colors.long,
+                shortColor: this.scene.tradeMarkers.colors.short,
+                exitColor: this.scene.tradeMarkers.colors.exit,
+            },
             timeScale: { timezone: this.scene.timezone },
             candles: {
                 upColor: this.candleUp,
@@ -687,6 +701,13 @@ export class NativeRenderer implements IChartRenderer {
         this.syncCountdownTimer();
         // panes
         s.separatorColor = next.panes.separatorColor;
+        // trade markers
+        this.scene.tradeMarkers = {
+            visible: next.trades.visible,
+            labels: next.trades.labels,
+            qty: next.trades.qty,
+            colors: { long: next.trades.longColor, short: next.trades.shortColor, exit: next.trades.exitColor },
+        };
         // time scale
         this.scene.timezone = next.timeScale.timezone;
         // candles
@@ -2734,6 +2755,17 @@ export class NativeRenderer implements IChartRenderer {
                     pane.axisFormat = 'volume';
                 }
             }
+            // Strategy trade markers reserve their PIXEL headroom on the price pane, so a
+            // marker stack under the lows (or above the highs) never clips at the pane edge.
+            // Anchor-bar extremes are folded first — they matter when the candles are hidden.
+            if (pane === pricePane && this.scene.tradeMarkers.visible && pane.bounds.height > 0) {
+                const th = this.tradesScaleHints(vr);
+                if (th) {
+                    const st = pane.scaleTarget;
+                    const folded = { ...st, min: Math.min(st.min, th.min), max: Math.max(st.max, th.max) };
+                    pane.scaleTarget = expandScaleByPixels(folded, pane.bounds.height, th.abovePx, th.belowPx);
+                }
+            }
             // Idle → snap. While zooming/flinging the animator eases pane.scale toward
             // the target (gliding autoscale) — EXCEPT an uninitialized pane (added
             // mid-gesture) snaps once so it doesn't flash-ease from the {0,1} placeholder.
@@ -2759,6 +2791,33 @@ export class NativeRenderer implements IChartRenderer {
                 }
             }
         }
+    }
+
+    /** Union of the visible trade-marker autoscale hints across every mounted indicator
+     *  (trade markers always target the price pane, whatever pane their model landed on). */
+    private tradesScaleHints(vr: { from: number; to: number }): TradeMarkerHints | null {
+        let out: TradeMarkerHints | null = null;
+        const deps = {
+            timeToLogical: (ms: number) => this.coords.timeToLogical(ms),
+            barAt: (logical: number) => {
+                const b = this.bars[Math.round(logical)];
+                return b ? { high: b.high, low: b.low } : null;
+            },
+        };
+        for (const m of this.scene.indicators.values()) {
+            if (!m.trades?.length) continue;
+            const h = tradesPriceHints(m.trades, this.scene.tradeMarkers, deps, vr.from, vr.to, this.scene.style.fontSize);
+            if (!h) continue;
+            out = out
+                ? {
+                      min: Math.min(out.min, h.min),
+                      max: Math.max(out.max, h.max),
+                      abovePx: Math.max(out.abovePx, h.abovePx),
+                      belowPx: Math.max(out.belowPx, h.belowPx),
+                  }
+                : h;
+        }
+        return out;
     }
 
     private fitContent(): void {
@@ -3092,6 +3151,7 @@ function applyPatch(model: IndicatorModel, patch: ScenePatch): void {
         if (patch.polylines) model.polylines = patch.polylines;
         if (patch.linefills) model.linefills = patch.linefills;
         if (patch.tables) model.tables = patch.tables;
+        if (patch.trades) model.trades = patch.trades;
         return;
     }
     for (const id of patch.removed) {

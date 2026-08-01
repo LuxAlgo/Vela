@@ -55,6 +55,13 @@ export const SLATE = '#475569';
 /** Pane separator line on the dark chrome. */
 export const SEPARATOR = '#2e2e2e';
 
+/** Strategy trade markers — entry arrows per position side, and the exits' shared violet.
+ *  The entry pair deliberately reuses the accent blue / bearish red (the reference palette
+ *  of order-fill marks); the violet keeps exits apart from both directions. */
+export const TRADE_LONG = ACCENT;
+export const TRADE_SHORT = BEARISH;
+export const TRADE_EXIT = '#d500f9';
+
 /** Categorical hues for auto-assigned colors (symbol badges, multi-series defaults).
  *  Ordered for adjacent-hue contrast, not by hue family. */
 export const CATEGORICAL: readonly string[] = [ACCENT, BULLISH, BEARISH, WARNING, '#7e57c2', '#26a69a', INFO, '#e573b5'];

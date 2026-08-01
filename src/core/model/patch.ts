@@ -2,6 +2,7 @@ import type { Millis } from './time';
 import type { OHLCV } from './ohlcv';
 import type { SeriesPoint, SeriesSpec, MarkerPoint } from './series';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from './drawings';
+import type { TradeExecution } from './trades';
 
 export interface DirtyRange {
     from: Millis;
@@ -40,6 +41,8 @@ export interface ValuePatch {
     polylines?: DrawingPolyline[];
     linefills?: DrawingLinefill[];
     tables?: DrawingTable[];
+    /** Trade executions follow the same full-snapshot-per-tick pattern as the drawings. */
+    trades?: TradeExecution[];
 }
 
 /**

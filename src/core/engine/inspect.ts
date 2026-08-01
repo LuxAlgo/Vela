@@ -26,6 +26,7 @@ export interface IndicatorSummary {
     linefills: number;
     tables: number;
     barColors: number;
+    trades: number;
     inputs: number;
 }
 
@@ -46,6 +47,7 @@ export interface SceneInspection {
         linefills: number;
         tables: number;
         barColors: number;
+        trades: number;
     };
 }
 
@@ -71,6 +73,7 @@ export function summarizeModel(model: IndicatorModel): IndicatorSummary {
         linefills: model.linefills?.length ?? 0,
         tables: model.tables?.length ?? 0,
         barColors: model.barColors?.length ?? 0,
+        trades: model.trades?.length ?? 0,
         inputs: model.inputs.length,
     };
 }
@@ -94,6 +97,7 @@ export function inspectModels(models: IndicatorModel[]): SceneInspection {
             linefills: sum((s) => s.linefills),
             tables: sum((s) => s.tables),
             barColors: sum((s) => s.barColors),
+            trades: sum((s) => s.trades),
         },
     };
 }

@@ -1694,5 +1694,6 @@ function modelToValuePatch(model: IndicatorModel): ValuePatch {
         polylines: model.polylines ?? [],
         linefills: model.linefills ?? [],
         tables: model.tables ?? [],
+        trades: model.trades ?? [],
     };
 }

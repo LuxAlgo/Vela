@@ -34,6 +34,10 @@ export interface RendererCapabilities {
     drawingDepth?: boolean;
     /** Pine `table.new` dashboards via a DOM overlay. */
     tables: boolean;
+    /** Strategy trade markers (`IndicatorModel.trades`): order-fill arrows + labels + price
+     *  ticks on the price pane, plus the `tradeMarkers` display feature. Absent/false ⇒ the
+     *  channel is carried through mounts/patches but never painted. */
+    trades?: boolean;
     /** Whether the renderer provides the in-chart inputs/settings UI. */
     inputsUI: boolean;
 }
