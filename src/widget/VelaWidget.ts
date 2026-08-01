@@ -28,7 +28,8 @@ import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
 import { parsePersisted, legacyWidgetState, localStorageAdapter, type VelaStorage } from './persist';
 import type { VelaShellOptions } from './shell-options';
-import { encodeState, decodeState, sanitizeState, type WorkspaceState, type CellState } from '../state/document';
+import { encodeState, decodeState, sanitizeState, prefixedSymbol, type WorkspaceState, type CellState } from '../state/document';
+import { parseSymbol } from '../data/ProviderRegistry';
 import { readUrlState, writeUrlState } from './url-state';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
 import { toolShortcutHints } from './tool-shortcuts';
@@ -163,7 +164,7 @@ export class VelaWidget {
         }
         const bootCell = boot ? (boot.charts.find((c) => c.id === 'c1') ?? boot.charts[0]) : undefined;
         const fromUrl = opts.urlState ? readUrlState(typeof location !== 'undefined' ? location.search : '') : {};
-        this.symbol = fromUrl.symbol ?? bootCell?.symbol ?? opts.symbol ?? '';
+        this.symbol = fromUrl.symbol ?? prefixedSymbol(bootCell) ?? opts.symbol ?? '';
         this.timeframe = fromUrl.timeframe ?? bootCell?.timeframe ?? opts.timeframe ?? '60';
         this.priceStyle = fromUrl.priceStyle ?? bootCell?.priceStyle ?? opts.priceStyle ?? 'candles';
         this.timezone = fromUrl.timezone ?? boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
@@ -188,7 +189,7 @@ export class VelaWidget {
 
         this.symbolPicker = new SymbolPicker({
             host: this.root,
-            onSelect: (ticker, provider) => this.setSymbol(ticker, provider),
+            onSelect: (symbol) => this.setSymbol(symbol),
             onOpenChange: (open) => {
                 // The renderer's in-chart dialogs (indicator inputs, chart settings) live
                 // inside the chart container, so opening the search from the topbar never
@@ -275,7 +276,7 @@ export class VelaWidget {
         this.watermark = opts.watermark !== false ? new Watermark(this.chartHost, this.symbol, this.timeframe) : null;
         this.watermark?.setVisible(this.watermarkOn);
         this.statusline = opts.statusline !== false ? new Statusline(this.chartHost, this.symbol) : null;
-        this.statusline?.setMeta(this.timeframe, typeof opts.provider === 'string' ? opts.provider : '');
+        this.statusline?.setMeta(this.timeframe, parseSymbol(this.symbol).provider ?? '');
         this.bottombar =
             opts.bottombar !== false
                 ? new Bottombar(this.root, {
@@ -439,7 +440,7 @@ export class VelaWidget {
      */
     private providerLabel(): string {
         const resolved = this.inner?.data.resolve(this.symbol)?.provider;
-        return resolved ?? (typeof this.opts.provider === 'string' ? this.opts.provider : '');
+        return resolved ?? parseSymbol(this.symbol).provider ?? '';
     }
 
     setTimeframe(tf: string): void {
@@ -457,16 +458,15 @@ export class VelaWidget {
     }
 
     /**
-     * Switch the chart symbol in place. `provider` names the venue the symbol was CHOSEN
-     * from (the symbol picker passes it) — it disambiguates a ticker several providers
-     * list, and without it the registry picks the first one that has it, which is not
-     * necessarily the one the user pointed at.
+     * Switch the chart symbol in place. An `EXCHANGE:` prefix pins the venue (the
+     * symbol picker composes one from the row the user pointed at) — a bare ticker
+     * resolves against the registered providers in declaration order.
      */
-    setSymbol(symbol: string, provider?: string): void {
+    setSymbol(symbol: string): void {
         if (this.destroyed) return;
-        // A no-op only when BOTH identity halves already hold: re-picking the same ticker on a
-        // DIFFERENT venue is a real switch.
-        if (symbol === this.symbol && (provider == null || provider === this.inner?.market.provider)) return;
+        // The symbol string IS the whole identity now (venue prefix included), so a
+        // same-string re-pick is a true no-op — a venue change always changes the string.
+        if (symbol === this.symbol) return;
         this.unresolvedToasted = null; // a new symbol gets a fresh verdict
         this.symbol = symbol;
         this.topbar.setSymbol(symbol);
@@ -475,10 +475,10 @@ export class VelaWidget {
         this.watermark?.update(symbol, this.timeframe);
         this.markStateDirty();
         // In-place switch (no rebuild) — the chart instance, indicators, and drawings survive.
-        void this.inner?.setMarket(provider ? { symbol, provider } : { symbol });
+        void this.inner?.setMarket({ symbol });
         // The venue shown must follow the symbol, not the construction option: an in-place
         // switch never rebuilds, so nothing else would refresh it.
-        this.statusline?.setMeta(this.timeframe, provider ?? this.providerLabel());
+        this.statusline?.setMeta(this.timeframe, this.providerLabel());
     }
 
     // ── state surface (same triplet as the workspace: getState / applyState / state:changed) ──
@@ -498,7 +498,8 @@ export class VelaWidget {
         const live = this.inner?.market;
         const symbol = live?.symbol ?? this.symbol;
         if (symbol) cell.symbol = symbol;
-        const provider = live?.provider ?? (typeof this.opts.provider === 'string' ? this.opts.provider : undefined);
+        // The venue field mirrors the symbol's own prefix (older readers expect it).
+        const provider = parseSymbol(symbol ?? '').provider ?? undefined;
         if (provider) cell.provider = provider;
         cell.timeframe = live?.timeframe ?? this.timeframe;
         cell.priceStyle = this.priceStyle;
@@ -564,7 +565,7 @@ export class VelaWidget {
             }
             if (cell.indicators) this.applyIndicatorLedger(cell.indicators);
             // Market last, as ONE in-place switch — `market:changed` re-syncs the chrome.
-            const symbol = fromUrl.symbol ?? cell.symbol;
+            const symbol = fromUrl.symbol ?? prefixedSymbol(cell);
             const timeframe = fromUrl.timeframe ?? cell.timeframe;
             const bars = Number(fromUrl.bars ?? cell.bars ?? 0);
             const next: { symbol?: string; timeframe?: string; bars?: number } = {};

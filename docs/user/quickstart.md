@@ -30,7 +30,7 @@ const chart = new Vela('#chart', {
 
 Each bar is `{ time, open, high, low, close, volume? }`, where `time` is the bar's open time in **epoch milliseconds**.
 
-With offline `data`, `timeframe` is still used — for bar spacing and axis labels — while `provider`/`symbol`/`bars` are ignored (those drive the fetch path you are opting out of).
+With offline `data`, `timeframe` is still used — for bar spacing and axis labels — while `symbol`/`bars` are ignored (those drive the fetch path you are opting out of).
 
 That is the whole first step. Candles paint immediately — **no engine required**. A chart with no scripting engine is a perfectly valid candlestick chart.
 

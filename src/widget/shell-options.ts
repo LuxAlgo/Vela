@@ -6,7 +6,7 @@
 // (one chart vs N cells) is noted per field, never a semantic fork.
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
-import type { IndicatorManifest } from './indicators';
+import type { IndicatorManifest, IndicatorLoader } from './indicators';
 import type { VelaStorage } from './persist';
 
 /** What a shell (widget or workspace) accepts BEYOND the chart options themselves. */
@@ -21,10 +21,11 @@ export interface VelaShellOptions {
      *  engine for everything. Merged OVER the app-level `registerDefaultEngine`
      *  registry — an instance factory wins for its language. */
     engines?: Record<string, () => ScriptingEngine>;
-    /** Indicator manifest (inline) or a URL returning it — resolved ONCE; entries with
-     *  `enabled: true` auto-add to every FRESH chart (restored cells re-add their own
-     *  recorded set instead). */
-    indicators?: string | IndicatorManifest;
+    /** Indicator manifest: inline, a URL returning it, or an ASYNC LOADER function
+     *  (`() => Promise<manifest>` — filesystem reads, authenticated APIs, dynamic
+     *  imports). Resolved ONCE; entries with `enabled: true` auto-add to every FRESH
+     *  chart (restored cells re-add their own recorded set instead). */
+    indicators?: string | IndicatorManifest | IndicatorLoader;
     /** Topbar timeframe presets (chart timeframe values). */
     timeframes?: string[];
     /** Display timezone (IANA; default 'Etc/UTC') — one zone for the whole shell. */

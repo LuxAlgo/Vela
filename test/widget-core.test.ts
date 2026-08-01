@@ -484,3 +484,30 @@ describe('default scripting engines (registerDefaultEngine)', () => {
         unregisterDefaultEngine('pine');
     });
 });
+
+describe('resolveIndicators — async loader form', () => {
+    it('calls the loader once and pipes its manifest through the normal resolution', async () => {
+        let calls = 0;
+        const loader = async () => {
+            calls += 1;
+            return [{ name: 'A', script: 'plot(1)' }, { name: 'B', script: 'plot(2)', enabled: false }];
+        };
+        const list = await resolveIndicators(loader);
+        expect(calls).toBe(1);
+        expect(list).toEqual([
+            { name: 'A', script: 'plot(1)', language: undefined, enabled: true },
+            { name: 'B', script: 'plot(2)', language: undefined, enabled: false },
+        ]);
+    });
+
+    it('a loader manifest may still point entries at URLs (fetched relative to nothing)', async () => {
+        const fetchImpl = (async (url: RequestInfo | URL) =>
+            ({ ok: true, status: 200, text: () => Promise.resolve(`src of ${String(url)}`), json: () => Promise.resolve({}) }) as unknown as Response) as typeof fetch;
+        const list = await resolveIndicators(async () => [{ name: 'remote', url: 'https://scripts.example/ema.pine' }], fetchImpl);
+        expect(list[0]!.script).toBe('src of https://scripts.example/ema.pine');
+    });
+
+    it('a rejecting loader behaves like a failing manifest URL (throws)', async () => {
+        await expect(resolveIndicators(async () => Promise.reject(new Error('fs unavailable')))).rejects.toThrow('fs unavailable');
+    });
+});

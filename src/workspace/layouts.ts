@@ -26,7 +26,11 @@ export interface LayoutDefinition {
      * two stacked ones). Omitted ⇒ cells auto-flow row-major in `cells` order.
      */
     areas?: string[];
-    /** The cell slots, in order. Canonical ids `c1`…`cN`; `area` binds a slot to a named area. */
+    /** The layout's SLOTS, in order — pure geometry: `id` keys the slot's grid styles
+     *  and `area` binds it to a named area. A slot id is NOT a cell identity: the cell
+     *  living in slot i is decided by the workspace (its `cells` declaration order),
+     *  so two layouts sharing slot geometry need no id coordination. Built-ins use
+     *  `c1`…`cN`. */
     cells: Array<{ id: string; area?: string }>;
 }
 

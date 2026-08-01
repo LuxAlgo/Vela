@@ -64,8 +64,14 @@ export interface VelaWorkspaceOptions extends Omit<VelaOptions, 'height'>, VelaS
     /** Initial layout — a registered id (`'1'`, `'2h'`, `'2v'`, `'4'`, `'8'`, or a
      *  plugin-registered one) or an inline definition. Default `'4'`. */
     layout?: string | LayoutDefinition;
-    /** Per-cell overrides of the top-level chart options, keyed by canonical cell id
-     *  (`c1`…) — same vocabulary, reduced to the per-cell seeds ({@link CellSeed}). */
+    /** Per-cell overrides of the top-level chart defaults, keyed by a FREE-FORM cell
+     *  name — the name is the cell's durable IDENTITY (persistence, `sync` groups,
+     *  `ws.cell(name)`), never its position: DECLARATION ORDER fills the layout's
+     *  slots (first declared → first slot). Fewer entries than slots ⇒ the remaining
+     *  slots boot on the defaults (auto identity); more ⇒ the extras wait in the pool
+     *  and appear when a larger layout reveals them. Purely-numeric names are rejected
+     *  (JS object keys would reorder them). Same vocabulary as the widget, reduced to
+     *  the per-cell seeds ({@link CellSeed}). */
     cells?: Record<string, CellSeed>;
     /** The ONE shared drawing toolbar, docked left of the grid and acting on the active
      *  cell (per-cell in-chart bars stay hidden either way; a `drawings` object still
@@ -124,6 +130,30 @@ const CSS = `
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
 registerIcon('layout', svg16('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/>'));
 
+/**
+ * The cell identities the `cells` option declares, in DECLARATION order — a cell's
+ * NAME never encodes its position: the first declared entry fills the first layout
+ * slot, and so on. Purely-numeric names are rejected with a warning (JS object
+ * enumeration reorders integer-like keys ahead of everything, silently breaking the
+ * declared order).
+ */
+export function declaredOrder(cells: Record<string, unknown> | undefined): string[] {
+    const names = Object.keys(cells ?? {});
+    for (const n of names) {
+        if (/^\d+$/.test(n)) {
+            console.warn(`[vela] workspace cell "${n}" ignored — a purely-numeric name cannot keep its declaration order (JS object key semantics); use e.g. "cell${n}"`);
+        }
+    }
+    return names.filter((n) => !/^\d+$/.test(n));
+}
+
+/** The first `c<N>` name not already taken — identities for slots beyond the declared list. */
+export function nextAutoCellId(taken: ReadonlySet<string>): string {
+    for (let i = 1; ; i += 1) {
+        if (!taken.has(`c${i}`)) return `c${i}`;
+    }
+}
+
 export class VelaWorkspace {
     readonly root: HTMLElement;
     /** The shortcut system — one manager for the whole workspace, routed to the active cell. */
@@ -139,6 +169,10 @@ export class VelaWorkspace {
     private readonly resizeObserver: ResizeObserver | null = null;
     private readonly opts: VelaWorkspaceOptions;
     private def: LayoutDefinition;
+    /** Cell identities by SLOT POSITION — `order[i]` lives in the layout's i-th slot.
+     *  Names come from the `cells` declaration order (then the persisted document);
+     *  slots beyond the list get auto identities. Grows, never reorders. */
+    private order: string[] = [];
     private activeId: string | null = null;
     private cellBackend: NativeBackend = 'auto';
     private destroyed = false;
@@ -217,6 +251,9 @@ export class VelaWorkspace {
         this.def = this.resolveLayout(boot?.layout && layoutDefinition(boot.layout) ? boot.layout : (opts.layout ?? '4'));
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
         if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
+        // Identity ↔ slot mapping: the persisted document's chart order wins (it IS the
+        // saved arrangement); a fresh boot takes the `cells` declaration order.
+        this.order = boot?.charts ? boot.charts.map((c) => c.id) : declaredOrder(opts.cells);
         const bootActive = boot?.activeCellId ?? null;
 
         const doc = hostEl.ownerDocument;
@@ -398,7 +435,7 @@ export class VelaWorkspace {
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
-        this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.def.cells[0]?.id ?? null));
+        this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.order[0] ?? null));
         // Shortcuts only fire while focus is INSIDE the workspace (the keymap listens
         // on the root) — autofocus makes them work before the first click.
         if (opts.autofocus) this.refocusActive();
@@ -515,7 +552,16 @@ export class VelaWorkspace {
         const byId = new Map<string, PooledCellState>();
         for (const [id, cs] of this.pool) byId.set(id, cs); // dormant slots
         for (const [id, cell] of this.cellsById) byId.set(id, cell.dehydrate()); // live slots win
-        const charts = [...byId].map(([id, cs]) => ({ id, ...cs }));
+        // The charts array is ORDERED — position i of the document is slot i on restore.
+        const charts: WorkspaceState['charts'] = [];
+        for (const id of this.order) {
+            const cs = byId.get(id);
+            if (cs) {
+                charts.push({ id, ...cs });
+                byId.delete(id);
+            }
+        }
+        for (const [id, cs] of byId) charts.push({ id, ...cs }); // pooled strays keep restoring
         const state: WorkspaceState = { version: 1, layout: this.def.id, timezone: this.timezone, sync: { ...this.syncOpts }, charts };
         if (this.activeId) state.activeCellId = this.activeId;
         if (this.favs.length > 0) state.favorites = [...this.favs];
@@ -553,13 +599,14 @@ export class VelaWorkspace {
         }
         this.pool.clear();
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
+        this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
         const def = layoutDefinition(st.layout);
         if (def) this.def = def;
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
         this.topbar.setLayout(this.def.id);
-        const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.def.cells[0]?.id ?? null);
+        const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.order[0] ?? null);
         if (nextActive === this.activeId) this.projectActiveCell();
         else this.setActiveCell(nextActive);
         this.refreshRetention();
@@ -581,17 +628,18 @@ export class VelaWorkspace {
     }
 
     /**
-     * Switch the grid. Cells are diffed BY SLOT ID: surviving slots keep their live
-     * charts untouched; removed slots dehydrate into the pool; (re)appearing slots
-     * hydrate from the pool (or their seed). Crossing the WebGL budget rebuilds every
-     * cell through the pool so the backend stays uniform.
+     * Switch the grid. Cells are diffed BY IDENTITY (`order` head of the next size):
+     * surviving cells keep their live charts untouched; cells past the new size
+     * dehydrate into the pool; (re)appearing positions hydrate their identity from
+     * the pool (or its seed). Crossing the WebGL budget rebuilds every cell through
+     * the pool so the backend stays uniform.
      */
     setLayout(layout: string | LayoutDefinition): void {
         if (this.destroyed) return;
         const next = this.resolveLayout(layout);
         const nextBackend = this.backendFor(next);
         const rebuildAll = nextBackend !== this.cellBackend;
-        const keep = new Set(next.cells.map((c) => c.id));
+        const keep = new Set(this.order.slice(0, next.cells.length));
         for (const [id, cell] of [...this.cellsById]) {
             if (!keep.has(id) || rebuildAll) {
                 this.poolSet(id, cell.dehydrate());
@@ -605,7 +653,7 @@ export class VelaWorkspace {
         this.applyGrid();
         this.buildCells();
         this.topbar.setLayout(next.id);
-        const nextActive = activeAfterLayout(this.activeId, next.cells.map((c) => c.id));
+        const nextActive = activeAfterLayout(this.activeId, this.order.slice(0, next.cells.length));
         if (nextActive === this.activeId) this.projectActiveCell(); // same slot, maybe a rebuilt cell
         else this.setActiveCell(nextActive);
         this.refreshRetention();
@@ -753,29 +801,38 @@ export class VelaWorkspace {
         this.markStateDirty();
     }
 
-    /** Apply the grid template (+ per-cell areas) and reposition the splitter strips. */
+    /** Apply the grid template (+ per-cell areas) and reposition the splitter strips.
+     *  Geometry is keyed by SLOT (`perCell[slot.id]`); the cell living there is
+     *  `order[i]` — the identity/position decoupling in one line. */
     private applyGrid(): void {
         const { container, perCell } = gridStyles(this.def, this.trackSizes.get(this.def.id));
         this.gridEl.style.gridTemplateColumns = container.gridTemplateColumns ?? '';
         this.gridEl.style.gridTemplateRows = container.gridTemplateRows ?? '';
         this.gridEl.style.gridTemplateAreas = container.gridTemplateAreas ?? '';
-        for (const [id, styles] of Object.entries(perCell)) {
-            const host = this.cellsById.get(id)?.host;
-            if (host) host.style.gridArea = styles.gridArea ?? '';
+        for (const [i, slot] of this.def.cells.entries()) {
+            const host = this.cellsById.get(this.order[i] ?? '')?.host;
+            if (host) host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
         }
         this.splitters.layout();
     }
 
-    /** Create the cells the current layout wants but don't exist yet (pool-first). */
+    /** Create the cells the current layout wants but don't exist yet (pool-first).
+     *  A slot's CELL IDENTITY is `order[i]` (declaration order — never the slot's own
+     *  positional id); slots past the declared list mint an auto identity once. */
     private buildCells(): void {
         const theme = resolveTheme(this.opts.theme);
         const { perCell } = gridStyles(this.def, this.trackSizes.get(this.def.id));
-        for (const slot of this.def.cells) {
-            if (this.cellsById.has(slot.id)) continue;
-            const pooled = this.pool.get(slot.id);
-            const seed: CellBoot = pooled ?? { ...seedDefaults(this.opts), ...(this.opts.cells?.[slot.id] ?? {}) };
-            this.pool.delete(slot.id); // the slot is live again — its pooled state is consumed
-            const cell = new ChartCell(slot.id, this.gridEl, seed, {
+        for (const [i, slot] of this.def.cells.entries()) {
+            let id = this.order[i];
+            if (!id) {
+                id = nextAutoCellId(new Set([...this.order, ...this.pool.keys(), ...this.cellsById.keys()]));
+                this.order[i] = id;
+            }
+            if (this.cellsById.has(id)) continue;
+            const pooled = this.pool.get(id);
+            const seed: CellBoot = pooled ?? { ...seedDefaults(this.opts), ...(this.opts.cells?.[id] ?? {}) };
+            this.pool.delete(id); // the slot is live again — its pooled state is consumed
+            const cell = new ChartCell(id, this.gridEl, seed, {
                 feed: this.feed,
                 engines: this.opts.engines ?? {},
                 chartDefaults: cellChartDefaults(this.opts),
@@ -796,7 +853,7 @@ export class VelaWorkspace {
                 manifestSettled: () => this.manifestSettled,
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
-            this.cellsById.set(slot.id, cell);
+            this.cellsById.set(id, cell);
             this.wireCell(cell);
             // The shared star set is a workspace pref — every newborn cell inherits it
             // silently (equal-set idempotence keeps the favorites event from echoing).
@@ -804,11 +861,11 @@ export class VelaWorkspace {
             // The indicator ledger: a restored cell re-adds ITS recorded set (held until
             // the manifest resolves); a fresh cell seeds the manifest's enabled entries.
             cell.setManifest(this.manifest, pooled?.indicators == null);
-            this.events.emit('cell:created', { id: slot.id });
+            this.events.emit('cell:created', { id });
         }
         // DOM order = slot order (auto-flow layouts place row-major by child order).
-        for (const slot of this.def.cells) {
-            const host = this.cellsById.get(slot.id)?.host;
+        for (const [i] of this.def.cells.entries()) {
+            const host = this.cellsById.get(this.order[i] ?? '')?.host;
             if (host) this.gridEl.appendChild(host);
         }
     }

@@ -101,7 +101,6 @@ export class Vela {
         const feed = deps.dataFeed ?? new MultiProviderFeed();
         const config: ResolvedConfig = {
             market: {
-                provider: options.provider,
                 symbol: options.symbol,
                 timeframe: options.timeframe,
                 bars: options.bars,

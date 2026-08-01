@@ -15,11 +15,13 @@ import { BinanceProvider } from 'vela/providers/binance';
 const ws = new VelaWorkspace('#app', {
     layout: '4', // '1' | '2h' | '2v' | '4' | '8' | a registerLayout() id
     // Chart options at the TOP LEVEL are every cell's DEFAULT — the same words the
-    // widget (and the bare chart) use. `cells` overrides them per cell:
+    // widget (and the bare chart) use. `cells` overrides them per cell; a cell's NAME
+    // is its durable identity, DECLARATION ORDER fills the layout's slots:
     symbol: 'BTCUSDT',
     timeframe: '60',
     cells: {
-        c2: { symbol: 'ETHUSDT', timeframe: '15' }, // c1 has no entry → pure defaults
+        btc: { symbol: 'BTCUSDT', timeframe: '60' }, // 1st declared → 1st slot
+        eth: { symbol: 'ETHUSDT', timeframe: '15' }, // slots 3–4: no entry → pure defaults
     },
     providers: { binance: () => new BinanceProvider() }, // registered ONCE, shared by every cell
     engines: { pine: () => new PineWorkerEngine() }, // instantiated per cell (a worker each)
@@ -97,7 +99,8 @@ The state SURFACE is the product; persistence is an adapter on top of it.
 ```ts
 const state = ws.getState();
 // → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?, charts: […] }
-// One `charts` entry per SLOT (live AND dormant): { id: 'c1', symbol, provider?, timeframe,
+// One ORDERED `charts` entry per cell, live AND dormant — array position i restores
+// into slot i, `id` is the cell's durable name: { id: 'btc', symbol, provider?, timeframe,
 //   priceStyle, bars?, watermark?, rendererConfig (renderer.getConfig() document),
 //   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] } }
 
@@ -171,12 +174,21 @@ state referencing a custom layout id restores only if that layout is registered
 ## Options (summary)
 
 **Chart options** (every key of [the chart's options](./options.md) except `height`) sit
-at the top level and are each cell's **default** — `symbol`, `provider`, `timeframe`,
-`bars`, `priceStyle`, `data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`,
-`downColor`, `glow`, `animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar
-excepted), `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
+at the top level and are each cell's **default** — `symbol` (bare = first declared
+provider; an `EXCHANGE:` prefix pins a venue), `timeframe`, `bars`, `priceStyle`,
+`data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`, `downColor`, `glow`,
+`animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar excepted),
+`defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
 `maxWebglCells` policy). `cells` overrides the market/view seeds per cell:
-`{ symbol, provider, timeframe, bars, priceStyle, data, visibleRange }`.
+`{ symbol, timeframe, bars, priceStyle, data, visibleRange }`.
+
+**Cell names are identities, not positions.** A `cells` key is free-form (`btc`, `main`,
+…): it names the cell durably — persistence, `sync` groups and `ws.cell(name)` all speak
+it — while DECLARATION ORDER decides which layout slot each one fills (first declared →
+first slot). Any entry is optional (an undeclared slot boots on the defaults, with an
+auto name); extra entries beyond the layout wait dormant and appear when a larger layout
+reveals them. Purely-numeric names are rejected with a warning (JS object keys would
+silently reorder them).
 
 **Shell options** (shared with the widget, same semantics):
 
@@ -196,7 +208,7 @@ excepted), `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins o
 | Option | Default | What it does |
 | --- | --- | --- |
 | `layout` | `'4'` | Initial grid — preset id, `registerLayout()` id, or inline definition. |
-| `cells` | — | Per-cell overrides of the top-level chart defaults. |
+| `cells` | — | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above). |
 | `sync` | off | Initial sync links (see above). |
 | `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |
 | `maxWebglCells` | `8` | Above this many cells, every cell renders canvas2d (WebGL-context budget). |

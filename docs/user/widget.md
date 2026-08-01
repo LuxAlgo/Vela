@@ -13,8 +13,7 @@ import { BinanceProvider } from 'vela/providers/binance';
 
 const widget = new VelaWidget('#chart', {
     // Everything VelaOptions accepts (symbol, timeframe, theme, live, …) plus:
-    provider: 'binance',
-    symbol: 'BTCUSDT',
+    symbol: 'BTCUSDT', // bare = first declared provider; 'coinbase:BTC-USD' pins a venue
     timeframe: '60',
     live: true,
     theme: 'dark',

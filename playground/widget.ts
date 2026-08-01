@@ -25,8 +25,7 @@ window.Worker = class extends RealWorker {
 const storage = playgroundStorage();
 
 const widget = new VelaWidget('#chart', {
-    provider: 'binance',
-    symbol: 'BTCUSDT',
+    symbol: 'BTCUSDT', // bare = first declared provider (binance); 'coinbase:BTC-USD' pins a venue
     timeframe: '60',
     live: true,
     theme: 'dark',
@@ -44,6 +43,37 @@ indicator("EMA 20", overlay=true)
 plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
         },
     ],
+
+    // ── The rest of the CHART options, at their defaults — uncomment to play ─────────
+    // bars: 1000,                     // history depth to load (paints progressively: newest window first)
+    // data: myBars,                   // offline OHLCV[] — replaces the provider entirely (no fetches, no live)
+    // visibleRange: '3M',             // initial window: '1D'|'1W'|'1M'|'3M'|'6M'|'1Y'|'5Y'|'YTD'|'ALL' or {from,to} in ms (default: frame the tail)
+    // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'area'|'baseline'|'heikinashi' or a registered chart-type id
+    // volume: true,                   // the built-in volume columns (native indicator); false opts out
+    // logScale: false,                // logarithmic price scale
+    // currentPriceLine: true,         // dashed line + axis chip at the latest price
+    // upColor: '#089981',             // bullish candles (default: the palette's bullish green)
+    // downColor: '#f23645',           // bearish candles (default: the palette's bearish red)
+    // glow: 0,                        // neon glow on line series, 0..~0.6 — WebGL2 backend only
+    // animations: { zoom: true, pan: true }, // eased zoom + inertial pan; false disables both
+    // nativeBackend: 'auto',          // 'auto' = WebGL2 when available, else canvas2d; or force either
+    // renderer: NativeRenderer,       // a custom IChartRenderer class (default: the native renderer)
+    // drawings: true,                 // user drawings — default: toolbar VISIBLE; false hides it (the
+    //                                 //  chart.drawings API stays); {tools/groups, toolbar} customizes
+    // defaultLanguage: 'pine',        // language for addIndicator calls that name none
+    // height: 600,                    // px or CSS size (default: fill the container)
+
+    // ── The rest of the SHELL options, at their defaults ──────────────────────────────
+    // indicators: async () => (await fetch('/my/manifest.json')).json(), // the manifest can also
+    //                                 //  be an ASYNC LOADER (filesystem, authenticated API, …)
+    // timeframes: ['1', '5', '15', '60', '240', 'D', 'W'], // topbar timeframe presets
+    // timezone: 'Etc/UTC',            // display timezone (IANA), switchable from the bottom bar
+    // statusline: true,               // chrome: the status line
+    // watermark: true,                // chrome: the symbol watermark behind the candles
+    // bottombar: true,                // chrome: the range-presets + timezone bar
+    // urlState: false,                // mirror symbol/tf/style/tz in the URL (shareable links) — kept
+    //                                 //  OFF here: a URL param would win over the persisted state
+    //                                 //  this page exercises, and mask it
 });
 
 void widget.chart.ready().then(() => console.log('[vela-dev] chart ready'));

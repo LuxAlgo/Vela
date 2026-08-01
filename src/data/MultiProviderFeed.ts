@@ -4,7 +4,7 @@ import type { MarketConfig } from '../core/options';
 import type { OHLCV } from '../core/model/ohlcv';
 
 import type { Unsubscribe } from '../core/util/types';
-import { ProviderRegistry, type Resolved } from './ProviderRegistry';
+import { ProviderRegistry, parseSymbol, type Resolved } from './ProviderRegistry';
 import { CachingDataFeed } from './CachingDataFeed';
 import { BarStore, sharedBarStore } from './BarStore';
 
@@ -119,7 +119,7 @@ export class MultiProviderFeed implements MarketDataFeed {
             this.liveBars = cfg.data.map((b) => ({ ...b }));
             return cfg.data;
         }
-        const resolved = await this.registry.whenResolvable(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
+        const resolved = await this.registry.whenResolvable(rawSymbol(cfg), { default: this.primaryProvider });
         // The chart's provider FOLLOWS its market: after a switch to another venue, bare
         // secondary symbols and the metadata/capability probes must default to the venue now on
         // screen — latching the first one made every later probe answer for the wrong venue.
@@ -137,7 +137,7 @@ export class MultiProviderFeed implements MarketDataFeed {
      */
     symbolInfo(cfg: MarketConfig): SymbolInfo | undefined {
         if (cfg.data && cfg.data.length > 0) return undefined;
-        const resolved = this.registry.resolve(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
+        const resolved = this.registry.resolve(rawSymbol(cfg), { default: this.primaryProvider });
         return resolved ? this.symInfoCache.get(symKey(resolved)) : undefined;
     }
 
@@ -156,14 +156,14 @@ export class MultiProviderFeed implements MarketDataFeed {
         if (cfg.data && cfg.data.length > 0) return this.cache.loadRange(cfg, range);
         // Secondary series (request.security): resolve its OWN prefix, with the chart
         // provider as the bare default. Unresolvable ⇒ empty (the engine degrades).
-        const resolved = this.registry.resolve(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
+        const resolved = this.registry.resolve(rawSymbol(cfg), { default: this.primaryProvider });
         if (!resolved) return [];
         return this.cache.loadRange(canonical(cfg, resolved), range);
     }
 
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe {
         if (cfg.data && cfg.data.length > 0) return this.synthesizeTicks(cfg, onBar);
-        const resolved = this.registry.resolve(rawSymbol(cfg), { default: cfg.provider ?? this.primaryProvider });
+        const resolved = this.registry.resolve(rawSymbol(cfg), { default: this.primaryProvider });
         if (!resolved) return () => {};
         return this.cache.subscribe(canonical(cfg, resolved), onBar);
     }
@@ -207,9 +207,10 @@ function rawSymbol(cfg: MarketConfig): string {
     return cfg.symbol ?? '';
 }
 
-/** Rewrite the config to the resolved provider + ticker (so the cache keys on canonical identity). */
+/** Rewrite the config to the canonical PREFIXED symbol (`provider:TICKER`) — the one
+ *  symbol grammar carries the resolved identity through the cache and the inner feed. */
 function canonical(cfg: MarketConfig, resolved: Resolved): MarketConfig {
-    return { ...cfg, provider: resolved.provider, symbol: resolved.ticker };
+    return { ...cfg, symbol: `${resolved.provider}:${resolved.ticker}` };
 }
 
 /** Cache key for resolved symbol metadata. */
@@ -241,21 +242,23 @@ class RegistryFetchFeed implements MarketDataFeed {
     constructor(private readonly registry: ProviderRegistry) {}
 
     load(cfg: MarketConfig): Promise<OHLCV[]> {
-        const provider = this.registry.get(cfg.provider ?? '');
+        const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
+        const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, cfg.symbol ?? '', cfg.timeframe ?? '60', { limit: cfg.bars ?? 500 });
+        return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500 });
     }
 
     loadRange(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]> {
-        const provider = this.registry.get(cfg.provider ?? '');
+        const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
+        const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, cfg.symbol ?? '', cfg.timeframe ?? '60', range);
+        return safeBars(provider, ticker, cfg.timeframe ?? '60', range);
     }
 
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe {
-        const provider = this.registry.get(cfg.provider ?? '');
+        const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
+        const provider = this.registry.get(name ?? '');
         if (!provider) return () => {};
-        const ticker = cfg.symbol ?? '';
         const tf = cfg.timeframe ?? '60';
         if (provider.subscribe) return provider.subscribe(ticker, tf, onBar);
 

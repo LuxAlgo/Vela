@@ -1,7 +1,7 @@
 // The workspace's pure modules: the layout registry/grid math and the splitter track
 // math (src/workspace/layouts.ts, splitters.ts). DOM-free — node env; the VelaWorkspace
 // shell itself is verified in the browser (playground probes).
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
     registerBuiltinLayouts,
     registerLayout,
@@ -14,6 +14,8 @@ import {
 } from '../src/workspace/layouts';
 import { evenTracks, resizeTracks, trackOffsets } from '../src/workspace/splitters';
 import { seedDefaults, cellChartDefaults, cellDrawings } from '../src/workspace/ChartCell';
+import { declaredOrder, nextAutoCellId } from '../src/workspace/VelaWorkspace';
+import { parseSymbol } from '../src/data/ProviderRegistry';
 
 registerBuiltinLayouts();
 
@@ -162,12 +164,12 @@ describe('sync model (pure)', () => {
 describe('unified options — the cell seed/defaults merge (pure)', () => {
     it('seedDefaults picks exactly the widget market/view vocabulary', () => {
         const seed = seedDefaults({
-            symbol: 'BTCUSDT', provider: 'binance', timeframe: '60', bars: 500,
+            symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500,
             priceStyle: 'footprint', data: [{ time: 1, open: 1, high: 1, low: 1, close: 1, volume: 1 }],
             visibleRange: '1M',
         });
         expect(seed).toEqual({
-            symbol: 'BTCUSDT', provider: 'binance', timeframe: '60', bars: 500,
+            symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500,
             priceStyle: 'footprint', data: [{ time: 1, open: 1, high: 1, low: 1, close: 1, volume: 1 }],
             visibleRange: '1M',
         });
@@ -204,5 +206,38 @@ describe('unified options — the cell seed/defaults merge (pure)', () => {
         expect(cellDrawings(true)).toEqual({ toolbar: false });
         expect(cellDrawings(false)).toBe(false); // explicit opt-out respected
         expect(cellDrawings({ tools: ['line'], toolbar: true } as never)).toEqual({ tools: ['line'], toolbar: false });
+    });
+});
+
+describe('cell identity ↔ slot position (declaredOrder / nextAutoCellId)', () => {
+    it('declaration order IS the slot order — names never encode position', () => {
+        expect(declaredOrder({ btc: {}, eth: {}, sol: {} })).toEqual(['btc', 'eth', 'sol']);
+        expect(declaredOrder(undefined)).toEqual([]);
+    });
+
+    it('purely-numeric names are rejected with a warning (JS would reorder them)', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        expect(declaredOrder({ btc: {}, '2': {}, eth: {} })).toEqual(['btc', 'eth']);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('"2"'));
+        warn.mockRestore();
+    });
+
+    it('auto identities pick the first free canonical name', () => {
+        expect(nextAutoCellId(new Set())).toBe('c1');
+        expect(nextAutoCellId(new Set(['c1', 'c2']))).toBe('c3');
+        expect(nextAutoCellId(new Set(['btc', 'c1', 'c3']))).toBe('c2'); // holes fill first
+    });
+});
+
+describe('parseSymbol — the one symbol grammar', () => {
+    it('splits an EXCHANGE: prefix case-insensitively and keeps regional variants', () => {
+        expect(parseSymbol('Binance:BTCUSDT')).toEqual({ provider: 'binance', ticker: 'BTCUSDT', ext: undefined });
+        expect(parseSymbol('BINANCE.US:BTCUSDT')).toEqual({ provider: 'binance.us', ticker: 'BTCUSDT', ext: undefined });
+        expect(parseSymbol('coinbase:BTC-USD')).toEqual({ provider: 'coinbase', ticker: 'BTC-USD', ext: undefined });
+    });
+
+    it('a bare symbol has no provider; a dotted tail is a best-effort ext token', () => {
+        expect(parseSymbol('BTCUSDT')).toEqual({ provider: null, ticker: 'BTCUSDT', ext: undefined });
+        expect(parseSymbol('nyse:BRK.B')).toEqual({ provider: 'nyse', ticker: 'BRK.B', ext: 'B' });
     });
 });

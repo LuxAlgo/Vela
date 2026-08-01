@@ -50,6 +50,9 @@ export interface PanelsState {
  *  and the indicator ledger. The widget's whole chart state is ONE of these. */
 export interface CellState {
     symbol?: string;
+    /** The symbol's venue. Mirrors the symbol's own `EXCHANGE:` prefix on new saves;
+     *  pre-prefix documents stored it beside a BARE symbol — {@link prefixedSymbol}
+     *  welds the two back into the one canonical form at restore time. */
     provider?: string;
     timeframe?: string;
     priceStyle?: string;
@@ -94,6 +97,15 @@ export interface WorkspaceState {
 }
 
 /** Serialize a state document (the inverse of {@link decodeState}). */
+/** A cell's symbol in the canonical PREFIXED form: pre-prefix documents stored the
+ *  venue in `provider` beside a BARE symbol — weld the two back together on restore.
+ *  A symbol that already carries a prefix wins (new saves mirror it into `provider`). */
+export function prefixedSymbol(cell: Pick<CellState, 'symbol' | 'provider'> | null | undefined): string | undefined {
+    if (!cell?.symbol) return undefined;
+    if (cell.symbol.includes(':') || !cell.provider) return cell.symbol;
+    return `${cell.provider}:${cell.symbol}`;
+}
+
 export function encodeState(state: WorkspaceState): string {
     return JSON.stringify(state);
 }

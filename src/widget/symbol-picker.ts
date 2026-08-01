@@ -162,7 +162,9 @@ const CSS = `
 
 export interface SymbolPickerOptions {
     /** `provider` is the venue of the chosen row — absent only for a source that has none. */
-    onSelect: (ticker: string, provider?: string) => void;
+    /** Called with the CHOSEN symbol — `EXCHANGE:`-prefixed when the row named a venue,
+     *  so the selection pins the venue the user actually pointed at. */
+    onSelect: (symbol: string) => void;
     onOpenChange?: (open: boolean) => void;
     host?: HTMLElement;
 }
@@ -262,9 +264,11 @@ export class SymbolPicker {
         this.dialog.destroy();
     }
 
-    private select(ticker: string, provider: string | undefined, onSelect: (t: string, p?: string) => void): void {
+    private select(ticker: string, provider: string | undefined, onSelect: (symbol: string) => void): void {
         this.close();
-        onSelect(ticker, provider);
+        // The prefix IS the disambiguation: several venues may list this ticker, and the
+        // user picked a specific row — a bare ticker would re-resolve by declaration order.
+        onSelect(provider ? `${provider.toLowerCase()}:${ticker}` : ticker);
     }
 
     private moveHighlight(delta: number): void {

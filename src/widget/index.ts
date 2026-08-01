@@ -45,6 +45,7 @@ export { decimalsFor, fmtPrice, fmtChange } from './format';
 export {
     resolveIndicators,
     type IndicatorManifest,
+    type IndicatorLoader,
     type IndicatorManifestEntry,
     type ResolvedIndicator,
 } from './indicators';

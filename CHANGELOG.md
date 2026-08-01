@@ -6,6 +6,24 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **The symbol string is the whole market identity.** A bare ticker resolves against the
+  registered providers in DECLARATION order (first whose index lists it); an `EXCHANGE:`
+  prefix — case-insensitive, regional variants included (`BINANCE.US:BTCUSDT`) — pins the
+  venue. One grammar everywhere the string travels: the options, `setMarket`, the symbol
+  picker (it now composes the prefix from the row you picked — the workspace picker used
+  to drop the venue entirely), `urlState` links (they finally carry the venue), and the
+  persisted documents (older saves that stored `provider` beside a bare symbol weld back
+  together transparently on restore).
+- **Workspace cells are NAMED, not numbered.** A `cells` key is a free-form durable
+  identity (`btc`, `main`, …) — persistence, `sync` groups and `ws.cell(name)` speak it —
+  and DECLARATION ORDER fills the layout's slots. Any entry is optional (an undeclared
+  slot boots on the top-level defaults with an auto name); entries beyond the layout wait
+  dormant and appear when a larger layout reveals them; purely-numeric names are rejected
+  with a warning (JS object keys would silently reorder them).
+- **The `indicators` manifest can be an async loader.** `indicators: async () => manifest`
+  — for filesystem reads, authenticated APIs, bundler dynamic imports — alongside the
+  existing inline and URL forms; a rejecting loader behaves like a failing manifest URL.
+
 - **One options vocabulary for both shells.** `VelaWidgetOptions` and
   `VelaWorkspaceOptions` now share the same base: every chart option (`VelaOptions`) plus
   the shell surface (`VelaShellOptions` — providers, engines, indicators, timeframes,
@@ -42,6 +60,14 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **BREAKING: the `provider` option is gone** — from the chart, the widget, the workspace
+  and `setMarket`. Put the venue in the symbol: `provider: 'coinbase', symbol: 'BTC-USD'`
+  becomes `symbol: 'coinbase:BTC-USD'`. `chart.market.provider` now reports the symbol's
+  own prefix (undefined when bare); the venue that actually served it is
+  `chart.data.resolve(symbol)`.
+- **BREAKING (workspace): `cells` keys no longer address layout slots.** `cells: { c3: … }`
+  used to target the THIRD slot; keys are names now and declaration order assigns slots —
+  configs that declared entries in slot order (as every example did) render identically.
 - **BREAKING (workspace): `defaults` is gone.** Its keys move to the top level, same
   words: `defaults: { symbol: 'BTCUSDT', timeframe: '60' }` becomes
   `symbol: 'BTCUSDT', timeframe: '60'`.

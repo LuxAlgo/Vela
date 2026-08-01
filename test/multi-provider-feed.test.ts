@@ -211,46 +211,53 @@ describe('a parked load is REPORTED and RELEASABLE (never a silent, leaking wait
     });
 });
 
-describe('the `provider` option is a PREFERENCE, never a lock', () => {
-    it('an UNREGISTERED default provider does not block a symbol another provider serves', async () => {
-        // The trap: `provider: 'binance'` while only hyperliquid is registered. The option
-        // used to be welded onto the symbol as an explicit prefix, so NOTHING ever resolved —
-        // not even after switching to a symbol the registered provider serves.
+describe('venue resolution: declaration order for bare symbols, an EXCHANGE: prefix to pin one', () => {
+    it('a bare symbol resolves via whatever registered venue lists it', async () => {
         const feed = new MultiProviderFeed(new BarStore());
         await feed.registerProvider('hyperliquid', fakeProvider(['BTC']).provider);
-        const bars = await feed.load({ provider: 'binance', symbol: 'BTC', timeframe: '60', bars: 10 });
+        const bars = await feed.load({ symbol: 'BTC', timeframe: '60', bars: 10 });
         expect(bars.length).toBeGreaterThan(0);
         expect(feed.resolveSymbol('BTC')).toEqual({ provider: 'hyperliquid', ticker: 'BTC' });
     });
 
-    it('a REGISTERED default provider still wins over the others', async () => {
+    it('an ambiguous bare symbol goes to the FIRST DECLARED venue that lists it', async () => {
         const feed = new MultiProviderFeed(new BarStore());
         const hl = fakeProvider(['BTC']);
         const bn = fakeProvider(['BTC']);
-        await feed.registerProvider('hyperliquid', hl.provider); // registered FIRST
+        await feed.registerProvider('hyperliquid', hl.provider); // declared FIRST
         await feed.registerProvider('binance', bn.provider);
-        // Both index BTC; the config's provider decides who actually serves it.
-        await feed.load({ provider: 'binance', symbol: 'BTC', timeframe: '60', bars: 10 });
-        expect(bn.calls.length).toBe(1);
-        expect(hl.calls.length).toBe(0);
+        // Both index BTC; declaration order decides who serves it.
+        await feed.load({ symbol: 'BTC', timeframe: '60', bars: 10 });
+        expect(hl.calls.length).toBe(1);
+        expect(bn.calls.length).toBe(0);
     });
 
-    it('a REGISTERED default provider that does not LIST the symbol steps aside', async () => {
-        // The symbol-picker flow: the chart was built on binance, the user picks a symbol from
-        // another venue's rows, and the widget switches the ticker while `provider` still names
-        // binance. Binance is registered and healthy — it simply does not list this ticker, so
-        // it must not capture the request (that produced a blank chart labelled with the wrong
-        // venue).
+    it('an EXCHANGE: prefix pins the venue, beating declaration order', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        const hl = fakeProvider(['BTC']);
+        const bn = fakeProvider(['BTC']);
+        await feed.registerProvider('hyperliquid', hl.provider); // declared FIRST
+        await feed.registerProvider('binance', bn.provider);
+        await feed.load({ symbol: 'binance:BTC', timeframe: '60', bars: 10 });
+        expect(bn.calls.length).toBe(1); // the pinned venue served…
+        expect(hl.calls.length).toBe(0); // …and declaration order never entered it
+    });
+
+    it('a first-declared venue that does not LIST the symbol steps aside', async () => {
+        // The cross-venue pick: the chart lives on binance, the user picks a ticker only
+        // another venue lists. Binance is declared first and healthy — it simply does not
+        // list this ticker, so it must not capture the request (that produced a blank
+        // chart labelled with the wrong venue).
         const feed = new MultiProviderFeed(new BarStore());
         const bn = fakeProvider(['BTCUSDT']);
         const hl = fakeProvider(['BTC']);
         await feed.registerProvider('binance', bn.provider);
         await feed.registerProvider('hyperliquid', hl.provider);
 
-        const bars = await feed.load({ provider: 'binance', symbol: 'BTC', timeframe: '60', bars: 10 });
+        const bars = await feed.load({ symbol: 'BTC', timeframe: '60', bars: 10 });
         expect(bars.length).toBeGreaterThan(0);
         expect(hl.calls.length).toBe(1); // the venue that LISTS it served it…
-        expect(bn.calls.length).toBe(0); // …and the configured default was never asked
+        expect(bn.calls.length).toBe(0); // …first-declared but unlisting was never asked
         expect(feed.resolveSymbol('BTC')).toEqual({ provider: 'hyperliquid', ticker: 'BTC' });
     });
 
@@ -264,8 +271,8 @@ describe('the `provider` option is a PREFERENCE, never a lock', () => {
         await feed.registerProvider('binance', bn.provider);
         await feed.registerProvider('coinbase', cb.provider);
 
-        await feed.load({ provider: 'binance', symbol: 'BTCUSDT', timeframe: '60', bars: 10 });
-        const after = await feed.load({ provider: 'binance', symbol: 'BTC-USD', timeframe: '60', bars: 10 });
+        await feed.load({ symbol: 'BTCUSDT', timeframe: '60', bars: 10 });
+        const after = await feed.load({ symbol: 'BTC-USD', timeframe: '60', bars: 10 });
         expect(after.length).toBeGreaterThan(0);
         expect(cb.calls.map((c) => c.ticker)).toEqual(['BTC-USD']);
         expect(bn.calls.map((c) => c.ticker)).toEqual(['BTCUSDT']); // binance served only its own
@@ -281,8 +288,8 @@ describe('the `provider` option is a PREFERENCE, never a lock', () => {
         await feed.registerProvider('binance', bn.provider);
         await feed.registerProvider('coinbase', cb.provider);
 
-        await feed.load({ provider: 'binance', symbol: 'BTCUSDT', timeframe: '60', bars: 10 });
-        await feed.load({ provider: 'coinbase', symbol: 'BTCUSDT', timeframe: '60', bars: 10 }); // venue switch
+        await feed.load({ symbol: 'BTCUSDT', timeframe: '60', bars: 10 });
+        await feed.load({ symbol: 'coinbase:BTCUSDT', timeframe: '60', bars: 10 }); // venue switch (prefix pins it)
 
         await feed.loadRange({ symbol: 'ETHUSDT', timeframe: '60' }, { limit: 5 }); // bare secondary
         expect(cb.calls.map((c) => c.ticker)).toContain('ETHUSDT'); // the venue on screen serves it
@@ -337,13 +344,13 @@ describe('MultiProviderFeed — resolution + cache identity', () => {
         expect(feed.resolveSymbol('NASDAQ:AAPL')).toBeNull();
     });
 
-    it('legacy cfg.provider acts as an explicit prefix for a bare symbol', async () => {
+    it('an EXCHANGE:-prefixed symbol resolves immediately (no index wait)', async () => {
         const feed = new MultiProviderFeed(new BarStore());
         const binance = fakeProvider(['BTCUSDT']);
         feed.registerProvider('binance', binance.provider);
         await feed.ready();
 
-        const bars = await feed.load({ provider: 'binance', symbol: 'BTCUSDT', timeframe: '60', bars: 9 });
+        const bars = await feed.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 9 });
         expect(bars.length).toBe(9);
     });
 });
@@ -525,7 +532,7 @@ describe('poll-fallback live ticks (a provider without subscribe)', () => {
             const feed = new MultiProviderFeed(new BarStore());
             await feed.registerProvider('p', provider);
             let ticks = 0;
-            const stop = feed.subscribe({ provider: 'p', symbol: 'AAA', timeframe: '60' }, () => { ticks += 1; });
+            const stop = feed.subscribe({ symbol: 'AAA', timeframe: '60' }, () => { ticks += 1; });
             await vi.advanceTimersByTimeAsync(3100); // first poll fires → getBars parks on the gate
             expect(release).not.toBeNull();
             stop(); // the market switches away while the fetch is in flight

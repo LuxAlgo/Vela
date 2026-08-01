@@ -15,8 +15,7 @@ How the chart obtains its candles.
 
 | Option | Type | Meaning |
 |---|---|---|
-| `symbol` | string | Symbol to load, e.g. `'BTCUSDT'` or `'BINANCE:BTCUSDT'`. |
-| `provider` | string | Default provider for a **bare** `symbol` (same as prefixing it `provider:symbol`). Omit when the symbol carries its own `EXCHANGE:` prefix. |
+| `symbol` | string | Symbol to load — the string is the WHOLE market identity. A **bare** ticker (`'BTCUSDT'`) resolves against the registered providers in **declaration order** (first one whose index lists it); an `EXCHANGE:` prefix (`'coinbase:BTC-USD'`, case-insensitive) **pins** the venue. |
 | `timeframe` | string | Bar interval, e.g. `'1h'`. |
 | `bars` | number | How many bars of history to load. Depths beyond one ~10k-bar chunk paint the recent window first, then backfill older bars in the background — watch `history:progress` / await `chart.historyComplete()` for the full depth. |
 | `visibleRange` | `VisibleRangePreset \| {from,to}` | — | The window to frame on the **first paint** (`'1D'`, `'YTD'`, an explicit range…). The chart then loads its depth in one pass and paints that window straight away, instead of flashing a recent-bars preview and re-framing a moment later. |
@@ -26,7 +25,7 @@ How the chart obtains its candles.
 >
 > **The fetch path needs a registered provider.** No provider is bundled — register one with [`chart.data.registerProvider(...)`](./data-providers.md); registering it fires the chart's parked initial load. Each bar is `{ time, open, high, low, close, volume? }` with `time` in epoch milliseconds.
 >
-> With offline `data`, `timeframe` is still honored — it sets bar spacing and axis labels — while `symbol`, `provider`, and `bars` are ignored.
+> With offline `data`, `timeframe` is still honored — it sets bar spacing and axis labels — while `symbol` and `bars` are ignored.
 
 A fetching chart pairs these market options with a registered provider — the display flags ride along in the same object, and registering the provider fires the parked initial load.
 
@@ -35,8 +34,7 @@ import { Vela } from 'vela';
 import { BinanceProvider } from 'vela/providers/binance';
 
 const chart = new Vela('#chart', {
-  provider: 'binance',      // default provider for the bare symbol below
-  symbol: 'BTCUSDT',
+  symbol: 'BTCUSDT',        // bare = first registered provider that lists it; 'binance:BTCUSDT' pins
   timeframe: '1h',
   bars: 500,                // how many bars of history to load
   live: true,               // history + a forming candle on each tick

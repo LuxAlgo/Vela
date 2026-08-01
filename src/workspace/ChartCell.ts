@@ -22,15 +22,16 @@ import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
 import { resolveEngines, type WidgetContext } from '../widget/contributions';
-import type { CellState } from '../state/document';
+import { prefixedSymbol, type CellState } from '../state/document';
+import { parseSymbol } from '../data/ProviderRegistry';
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
  *  The SAME vocabulary as the widget's chart options: the workspace's top-level chart
  *  options provide every cell's default ({@link seedDefaults}), `cells` overrides per
  *  cell. `data`/`visibleRange` are boot-only (they seed the first load, never persist). */
 export interface CellSeed {
+    /** Bare ticker (provider resolved by declaration order) or `EXCHANGE:`-prefixed. */
     symbol?: string;
-    provider?: string;
     timeframe?: string;
     priceStyle?: string;
     bars?: number;
@@ -50,10 +51,9 @@ export type CellBoot = PooledCellState & Pick<CellSeed, 'data' | 'visibleRange'>
 
 /** The per-cell SEED the workspace's top-level chart options provide — same words as
  *  the widget; `cells[id]` spreads over this. */
-export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'provider' | 'timeframe' | 'bars' | 'priceStyle' | 'data' | 'visibleRange'>): CellSeed {
+export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'bars' | 'priceStyle' | 'data' | 'visibleRange'>): CellSeed {
     return {
         symbol: opts.symbol,
-        provider: opts.provider,
         timeframe: opts.timeframe,
         bars: opts.bars,
         priceStyle: opts.priceStyle,
@@ -156,7 +156,9 @@ export class ChartCell {
     private readonly watermark: Watermark | null;
     private readonly contextMenu: ChartContextMenu;
     private readonly offMarket: () => void;
-    private state: CellSeed;
+    /** The cell's durable market state — the seed vocabulary plus the venue mirror the
+     *  persisted document carries (`provider` = the symbol's parsed prefix). */
+    private state: CellSeed & Pick<CellState, 'provider'>;
     private manifest: readonly ResolvedIndicator[] = [];
     /** A restored ledger's manifest entry NAMES, waiting for the manifest to resolve
      *  (a pool/persisted cell can be built before the shared manifest has loaded). */
@@ -177,7 +179,10 @@ export class ChartCell {
         seed: CellBoot,
         private readonly deps: CellDeps,
     ) {
-        this.state = { symbol: seed.symbol, provider: seed.provider, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars };
+        // The canonical symbol form: pre-prefix pooled/persisted states carried the venue
+        // in `provider` beside a bare symbol — weld them back together once, at boot.
+        const symbol = prefixedSymbol(seed);
+        this.state = { symbol, provider: parseSymbol(symbol ?? '').provider ?? undefined, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars };
         const doc = gridHost.ownerDocument;
         this.host = doc.createElement('div');
         this.host.className = 'vela-cell';
@@ -193,8 +198,7 @@ export class ChartCell {
             this.host,
             {
                 ...deps.chartDefaults,
-                provider: seed.provider,
-                symbol: seed.symbol,
+                symbol,
                 timeframe: seed.timeframe,
                 bars: seed.bars,
                 priceStyle: seed.priceStyle,
@@ -242,10 +246,10 @@ export class ChartCell {
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
         this.watermarkOn = seed.watermark ?? deps.watermark;
-        this.watermark = deps.watermark ? new Watermark(this.host, seed.symbol ?? '', seed.timeframe ?? '60') : null;
+        this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60') : null;
         if (!this.watermarkOn) this.watermark?.setVisible(false);
-        this.statusline = deps.statusline ? new Statusline(this.host, seed.symbol ?? '') : null;
-        this.statusline?.setMeta(seed.timeframe ?? '60', seed.provider ?? '');
+        this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '') : null;
+        this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => {
@@ -332,10 +336,11 @@ export class ChartCell {
         // state + overlays, then notifies the workspace (chrome projection, retention).
         this.offMarket = this.inner.on('market:changed', ({ symbol, timeframe }) => {
             this.state.symbol = symbol;
+            this.state.provider = parseSymbol(symbol).provider ?? undefined;
             this.state.timeframe = timeframe;
             this.watermark?.update(symbol, timeframe);
             this.statusline?.setSymbol(symbol);
-            this.statusline?.setMeta(timeframe, this.state.provider ?? '');
+            this.statusline?.setMeta(timeframe, this.inner?.data.resolve(symbol)?.provider ?? this.state.provider ?? '');
             if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
             this.refreshNativeCatalog(); // per-symbol support flags may differ
             this.deps.onMarketChanged(this.id);
