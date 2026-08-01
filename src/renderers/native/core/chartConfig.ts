@@ -58,7 +58,7 @@ export interface CrosshairStyle {
     color: string | null;
     width: number;
     style: LineStyle;
-    /** Line opacity (0–1); TV-style crosshairs are translucent. */
+    /** Line opacity (0–1); reference charting crosshairs are translucent. */
     opacity: number;
     /** Axis-chip background; `null` ⇒ inherit `theme.textColor`. */
     labelBackground: string | null;
@@ -215,6 +215,17 @@ export interface ChartConfig {
     /** Stacked-pane chrome — the draggable line between an indicator's pane and the one above it. */
     panes: {
         separatorColor: string;
+    };
+    /** Strategy trade markers (the `tradeMarkers` feature): the order-fill units on the price pane. */
+    trades: {
+        visible: boolean;
+        /** The order-id/comment text line. */
+        labels: boolean;
+        /** The signed-quantity text line. */
+        qty: boolean;
+        longColor: string;
+        shortColor: string;
+        exitColor: string;
     };
     timeScale: {
         timezone: string;
@@ -375,6 +386,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const cross = asObject(p.crosshair);
     const ps = asObject(p.priceScale);
     const panes = asObject(p.panes);
+    const trades = asObject(p.trades);
     const ts = asObject(p.timeScale);
     const candles = asObject(p.candles);
     const bars = asObject(p.bars);
@@ -423,6 +435,14 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
         },
         panes: {
             separatorColor: isColor(panes.separatorColor) ? panes.separatorColor : base.panes.separatorColor,
+        },
+        trades: {
+            visible: isBool(trades.visible) ? trades.visible : base.trades.visible,
+            labels: isBool(trades.labels) ? trades.labels : base.trades.labels,
+            qty: isBool(trades.qty) ? trades.qty : base.trades.qty,
+            longColor: isColor(trades.longColor) ? trades.longColor : base.trades.longColor,
+            shortColor: isColor(trades.shortColor) ? trades.shortColor : base.trades.shortColor,
+            exitColor: isColor(trades.exitColor) ? trades.exitColor : base.trades.exitColor,
         },
         timeScale: {
             timezone: typeof ts.timezone === 'string' && ts.timezone ? ts.timezone : base.timeScale.timezone,

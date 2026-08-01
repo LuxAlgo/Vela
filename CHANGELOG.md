@@ -2,6 +2,30 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Strategy trades paint on the chart: `IndicatorModel.trades`.** An engine (or a native
+  indicator) can now emit the ORDER EXECUTIONS of a strategy — `TradeExecution { time,
+  price, side, kind, label?, qty?, tradeId? }` — and the native renderer paints each one
+  as a marker unit on the price pane: a fixed-size direction arrow hugging the fill bar
+  (buys point up from below the low, sells down from above the high; exit fills carry a
+  cap between arrow and bar), the order id and the signed quantity stacked OUTWARD from
+  the bar (the quantity is always the outermost line), and a small tick at the exact fill
+  price on the bar's trade-side edge. Fills on the same bar stack outward in execution
+  order. The price pane's autoscale reserves the stacks' pixel headroom, so markers under
+  the lows never clip at the pane edge. Executions ride the normal model/patch path:
+  hiding the indicator hides its markers, removing it removes them, and `chart.inspect()`
+  counts them (`trades` per indicator + in the totals).
+- **The `tradeMarkers` renderer feature.** `chart.renderer.set('tradeMarkers', { visible?,
+  labels?, qty?, colors? })` — hide the units, the order-id line, or the quantity line, and
+  override the palette (`colors: { long, short, exit }`, defaults `#2962ff` / `#f23645` /
+  `#d500f9`; the text stays the theme's neutral text color). Partial merge, malformed
+  fields dropped; persisted in the rich config (`trades` section) so templates carry it.
+- **A `trades` renderer capability** (optional, like `drawingDepth`). The native renderer
+  declares it; a custom renderer without it simply never paints the channel.
+
 ## [v0.4.0]
 
 ### Removed

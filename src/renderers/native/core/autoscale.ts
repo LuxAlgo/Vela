@@ -89,3 +89,24 @@ export function computePaneScale(
     const span = max - min;
     return { min: min - span * MARGIN_BOTTOM, max: max + span * MARGIN_TOP };
 }
+
+/**
+ * Expand a computed scale so `abovePx` / `belowPx` EXTRA pixels exist beyond its
+ * max / min — pixel headroom for fixed-size chrome anchored to the data (trade-marker
+ * stacks). Exact: after expansion the original [min, max] occupies `heightPx − above −
+ * below` pixels. No-op when the margins don't fit (degenerate pane) or aren't needed.
+ */
+export function expandScaleByPixels(scale: PriceScale, heightPx: number, abovePx: number, belowPx: number): PriceScale {
+    if (abovePx <= 0 && belowPx <= 0) return scale;
+    const content = heightPx - abovePx - belowPx;
+    if (!(content >= 8)) return scale;
+    if (scale.log && scale.min > 0 && scale.max > scale.min) {
+        const lmin = Math.log(scale.min);
+        const lmax = Math.log(scale.max);
+        const perPx = (lmax - lmin) / content;
+        return { ...scale, min: Math.exp(lmin - belowPx * perPx), max: Math.exp(lmax + abovePx * perPx) };
+    }
+    if (scale.max <= scale.min) return scale;
+    const perPx = (scale.max - scale.min) / content;
+    return { ...scale, min: scale.min - belowPx * perPx, max: scale.max + abovePx * perPx };
+}

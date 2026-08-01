@@ -37,6 +37,7 @@ export type {
     TableMerge,
     DrawingTable,
 } from './drawings';
+export type { TradeExecution } from './trades';
 export type { IndicatorMeta, PaneHint, IndicatorModel } from './indicator';
 export type { DirtyRange, SeriesValueDelta, ValuePatch, SchemaPatch, ScenePatch } from './patch';
 export { stableSeriesId } from './identity';

@@ -67,6 +67,17 @@ describe('mergeConfig — validating reducer (item 15)', () => {
         expect(mergeConfig(base, { series: { spacing: 'x' } }).series.spacing).toBe(base.series.spacing);
     });
 
+    it('trades: applies valid fields, drops malformed ones', () => {
+        const base = baseConfig();
+        expect(base.trades).toEqual({ visible: true, labels: true, qty: true, longColor: '#2962ff', shortColor: '#f23645', exitColor: '#d500f9' });
+        const out = mergeConfig(base, { trades: { qty: false, exitColor: '#111111', visible: 'yes', longColor: 7 } });
+        expect(out.trades.qty).toBe(false);
+        expect(out.trades.exitColor).toBe('#111111');
+        expect(out.trades.visible).toBe(base.trades.visible); // malformed → base
+        expect(out.trades.longColor).toBe(base.trades.longColor);
+        expect(out.trades.labels).toBe(base.trades.labels); // unnamed → base
+    });
+
     it('merges the pane separator color and drops a malformed one', () => {
         const base = baseConfig();
         expect(mergeConfig(base, { panes: { separatorColor: '#abcdef' } }).panes.separatorColor).toBe('#abcdef');

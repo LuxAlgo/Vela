@@ -103,6 +103,7 @@ The descriptor covers these fields. Some are tri-state (for example `native` / `
 | User drawings (interactive) | `userDrawings` flag + a second port | optional — **User-drawings** tier |
 | User-drawing depth (a drawing can paint anywhere in the series stack) | `drawingDepth` flag | optional — inside the **User-drawings** tier |
 | Tables | no | optional — **Tables** tier |
+| Trade markers (`trades` flag) | no | optional — inside the **Drawings** tier family: paints `IndicatorModel.trades` (order-fill arrows + labels + fill-price ticks on the price pane) and honors the `tradeMarkers` feature; absent/false ⇒ the channel is carried but never painted |
 | Inputs UI (you provide the in-chart settings dialog) | no | optional — **Inputs UI** tier |
 | Contributed legend actions (`setLegendActions?`) | no | optional — inside the **Inputs UI** tier: the shells wire `registerLegendAction` through it; without it those buttons simply never show |
 

@@ -2,6 +2,7 @@ import type { Millis } from './time';
 import type { SeriesSpec } from './series';
 import type { Fill, Background, PriceLine } from './scene';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from './drawings';
+import type { TradeExecution } from './trades';
 import type { InputSchema, InputValue } from './inputs';
 
 /** Declaration metadata from the Pine `indicator()` / `strategy()` call. */
@@ -68,6 +69,8 @@ export interface IndicatorModel {
     tables?: DrawingTable[];
     /** Pine `barcolor(...)` per-bar candle recolor (time→color; absent/empty ≡ none). */
     barColors?: Array<{ time: Millis; color: string }>;
+    /** Strategy order executions, painted as trade markers on the PRICE pane (optional; absent ≡ none). */
+    trades?: TradeExecution[];
     /** Input schema parsed from the Pine source (drives the renderer's settings dialog). */
     inputs: InputSchema[];
     /** Current input values (defaults merged with any user/add-time overrides). */

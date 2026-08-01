@@ -46,6 +46,7 @@ Available on every renderer:
 | `candleZOrder` | number | `0` | Draw-order key of the price candles relative to overlay indicators. Indicators default to z ≥ 1, so candles sit behind all overlays by default. |
 | `seriesOrder` | `{ id, to: 'front' \| 'back' }` or `{ id, z }` | — | Reorder one indicator's series layer — move it to front/back, or set an explicit z key. |
 | `highlights` | `HighlightArea[]` | `[]` | Shaded vertical time bands (session highlighting, e.g. weekends or pre/regular/post), drawn behind grid + data. Malformed entries are dropped; bands are sorted by start time. |
+| `tradeMarkers` | `{ visible?, labels?, qty?, colors? }` | everything on | Strategy trade markers (the order-fill arrows a strategy indicator emits via `IndicatorModel.trades`). Partial merge: `visible` hides the units, `labels` the order-id line, `qty` the signed-quantity line; `colors` overrides `{ long, short, exit }` (defaults `#2962ff` / `#f23645` / `#d500f9`). Malformed fields are dropped. |
 
 ### Interaction
 

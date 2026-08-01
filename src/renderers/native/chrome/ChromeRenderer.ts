@@ -8,6 +8,8 @@ import { percentScaleFor } from '../core/SceneGraph';
 // Re-exported so existing importers (crosshair) can keep sourcing it from here.
 export { percentScaleFor } from '../core/SceneGraph';
 import { DrawingSceneRenderer, type DrawingSet } from '../../shared/DrawingSceneRenderer';
+import { renderTradeMarkers } from '../../shared/trade-markers';
+import type { TradeExecution } from '../../../core/model/trades';
 import { paneAxisTicks, formatAxisValue, timeTicks } from './ticks';
 import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
 import { parseColor } from '../backend/gl/color';
@@ -98,7 +100,7 @@ export class ChromeRenderer {
         const pricePane = panes.find((p) => p.kind === 'price') ?? null;
 
         // ── Pine drawings — above series. Own drawings on each model's pane;
-        //    force_overlay drawings on the price pane (TV semantics). A merged (own-scale)
+        //    force_overlay drawings on the price pane (Pine semantics). A merged (own-scale)
         //    indicator's drawings follow its own scale column. ──
         for (const pane of panes) {
             if (pane.collapsed) continue; // collapsed strip: legend only, no drawings/plots
@@ -110,6 +112,15 @@ export class ChromeRenderer {
         }
         if (pricePane) {
             for (const m of scene.indicators.values()) this.renderDrawings(ctx, coords, this.overlayDrawings(m), pricePane, dataW, scene.offsetOf(m.id));
+        }
+
+        // ── Strategy trade markers — always the PRICE pane, whatever pane the strategy's
+        //    plots landed on (a fill price only means something on the price scale), above
+        //    the drawings. Hiding the indicator removes its model, and the markers with it. ──
+        if (pricePane && !pricePane.collapsed && scene.tradeMarkers.visible) {
+            for (const m of scene.indicators.values()) {
+                if (m.trades?.length) this.renderTrades(ctx, coords, scene, theme, m.trades, pricePane, dataW);
+            }
         }
 
         // ── axes + current-price line + countdown ──
@@ -151,6 +162,42 @@ export class ChromeRenderer {
         if (this.drawScene.isEmpty()) return null;
         const r = this.drawScene.priceRange(vr.from, vr.to);
         return r ? { min: r.min, max: r.max } : null;
+    }
+
+    private renderTrades(
+        ctx: CanvasRenderingContext2D,
+        coords: CoordinateSystem,
+        scene: SceneGraph,
+        theme: VelaTheme,
+        trades: readonly TradeExecution[],
+        pane: PaneNode,
+        dataW: number,
+    ): void {
+        ctx.save();
+        ctx.translate(0, pane.bounds.top); // pane-relative space, clipped like the drawings
+        ctx.beginPath();
+        ctx.rect(0, 0, dataW, pane.bounds.height);
+        ctx.clip();
+        renderTradeMarkers(
+            ctx,
+            trades,
+            scene.tradeMarkers,
+            {
+                timeToLogical: (ms) => coords.timeToLogical(ms),
+                barAt: (logical) => {
+                    const b = scene.bars[Math.round(logical)];
+                    return b ? { high: b.high, low: b.low } : null;
+                },
+            },
+            (logical) => coords.logicalToX(logical),
+            (price) => coords.priceToY(price, pane.scale, pane.bounds) - pane.bounds.top,
+            { fontSize: scene.style.fontSize, fontFamily: theme.fontFamily, color: theme.textColor },
+            dataW,
+            // Half the candle BODY width (bodies take ~0.8 of the pitch), so the
+            // fill-price ticks hug the bar's edges at every zoom.
+            Math.max(1.5, coords.bodySpacing() * 0.4),
+        );
+        ctx.restore();
     }
 
     private renderDrawings(ctx: CanvasRenderingContext2D, coords: CoordinateSystem, set: DrawingSet, pane: PaneNode, dataW: number, indexOffset = 0): void {

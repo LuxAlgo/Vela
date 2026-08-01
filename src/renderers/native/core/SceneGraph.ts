@@ -6,6 +6,7 @@ import type { IndicatorModel } from '../../../core/model/indicator';
 import type { PriceStyle } from '../../../core/options';
 import type { PriceScale, PaneBounds } from './CoordinateSystem';
 import { type ChartStyle, defaultChartStyle } from './chartConfig';
+import { defaultTradeMarkersState, type TradeMarkersState } from '../../shared/trade-markers';
 
 /** A user-defined shaded time band spanning the full plot height (all panes) — the
  *  generic primitive behind session highlighting (weekends, pre/regular/post). Unlike
@@ -160,6 +161,9 @@ export class SceneGraph {
     style: ChartStyle = defaultChartStyle();
     /** Draw the price/time axis tick labels. */
     showAxisLabels = true;
+    /** Strategy trade-marker display (the `tradeMarkers` feature): master toggle, the
+     *  two text lines, and the palette. Trade markers always paint on the price pane. */
+    tradeMarkers: TradeMarkersState = defaultTradeMarkersState();
     /** Renderer-owned shaded time bands (session highlighting), behind grid + data. */
     highlights: HighlightArea[] = [];
     /** Draw-order key of the price candles, relative to indicator series z (see `seriesZ`).
