@@ -167,6 +167,34 @@ Attachments mount at widget construction (and on `widget.refreshActions()` for l
 registrations), once per id per widget. The same portability rules as actions apply: everything
 comes from `ctx`, never from module state.
 
+## Legend actions — `registerLegendAction`
+
+An icon button on every indicator's **legend row**, revealed with the built-in controls
+(hover/selection) between them and the ✕. The classic use: open the row's script in a
+host editor.
+
+```ts
+import { registerLegendAction, registerIcon } from 'vela/plugin';
+
+registerLegendAction({
+    id: 'mytool.open-source',
+    icon: 'code',                                  // vela/ui icon registry
+    tooltip: 'Open the source',
+    when: (ind) => ind.source !== undefined,       // per-indicator gate
+    run: (ctx, ind) => myEditor.open(ind.source!), // ctx = the shell's WidgetContext
+});
+```
+
+- `ind` is a {@link LegendIndicatorInfo}: `{ id, title, source? }` — `source` is the
+  script the indicator was added with (also exposed as `handle.source`), and is
+  `undefined` for native indicators, which is the usual `when` gate.
+- The descriptor resolves **per row, per click**: `when` re-evaluates as rows appear, and
+  `run` receives a fresh context each time.
+- Register at import time; after a late registration call `refreshActions()` (both shells
+  re-project the rows already on screen).
+- The seam degrades gracefully: a custom renderer without `setLegendActions` simply never
+  shows contributed legend actions (same rule as the sync ghost crosshair).
+
 ## Side panels — `registerSidePanel`
 
 A **side panel** is a docked column on the chart's right edge — the object tree and the data

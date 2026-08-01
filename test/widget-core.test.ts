@@ -11,7 +11,7 @@ import { filterSymbols } from '../src/widget/symbol-picker';
 import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
-import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, type EngineFactory } from '../src/widget/contributions';
+import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, registerLegendAction, unregisterLegendAction, legendActions, legendActionsProviderFor, type EngineFactory, type LegendIndicatorInfo } from '../src/widget/contributions';
 import type { ScriptingEngine } from '../src/core/ports/ScriptingEngine';
 import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
 import { sanitizeState } from '../src/state/document';
@@ -298,6 +298,60 @@ describe('widget action contributions', () => {
         unregisterWidgetAction('b');
         unregisterWidgetAction('c');
         expect(widgetActions('topbar')).toHaveLength(0);
+    });
+});
+
+describe('legend action contributions', () => {
+    it('registers, order-sorts, replaces by id, and unregisters', () => {
+        const d1 = registerLegendAction({ id: 'la', icon: 'i', tooltip: 'A', order: 2, run: () => {} });
+        registerLegendAction({ id: 'lb', icon: 'i', tooltip: 'B', order: 1, run: () => {} });
+        expect(legendActions().map((a) => a.id)).toEqual(['lb', 'la']);
+
+        registerLegendAction({ id: 'la', icon: 'i', tooltip: 'A2', run: () => {} });
+        expect(legendActions().find((a) => a.id === 'la')?.tooltip).toBe('A2');
+        d1(); // stale disposer must NOT remove the replacement
+        expect(legendActions().some((a) => a.id === 'la')).toBe(true);
+
+        unregisterLegendAction('la');
+        unregisterLegendAction('lb');
+        expect(legendActions()).toHaveLength(0);
+    });
+
+    it('the shell provider resolves the row, gates on when(), and binds a FRESH context per click', () => {
+        const seen: LegendIndicatorInfo[] = [];
+        const ctxs: unknown[] = [];
+        registerLegendAction({
+            id: 'src-only',
+            icon: 'code',
+            tooltip: 'Open source',
+            when: (ind) => ind.source !== undefined,
+            run: (ctx, ind) => {
+                ctxs.push(ctx);
+                seen.push(ind);
+            },
+        });
+
+        const chart = {
+            indicators: () => [
+                { id: 'ind-1', title: 'EMA', source: '//@version=6\nplot(close)' },
+                { id: 'native-1', title: 'Volume' }, // a native: no source
+            ],
+        } as never;
+        let builds = 0;
+        const provider = legendActionsProviderFor(chart, () => ({ built: ++builds }) as never);
+
+        expect(provider('missing')).toEqual([]); // an unknown row contributes nothing
+        expect(provider('native-1')).toHaveLength(0); // when() gate: natives excluded
+        const views = provider('ind-1');
+        expect(views).toHaveLength(1);
+        expect(views[0]).toMatchObject({ id: 'src-only', icon: 'code', tooltip: 'Open source' });
+
+        views[0]!.run();
+        views[0]!.run();
+        expect(seen[0]).toEqual({ id: 'ind-1', title: 'EMA', source: '//@version=6\nplot(close)' });
+        expect(ctxs).toEqual([{ built: 1 }, { built: 2 }]); // never a cached context
+
+        unregisterLegendAction('src-only');
     });
 });
 

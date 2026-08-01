@@ -938,7 +938,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     addIndicator(source: string, options: AddIndicatorOptions = {}): IndicatorHandle {
         const id = this.registry.nextId();
         const title = options.title ?? 'Indicator';
-        const handle = new IndicatorHandleImpl(id, title, this);
+        const handle = new IndicatorHandleImpl(id, title, this, source);
         this.handles.set(id, handle);
         this.registry.add({ id, title, source, options, inputValues: { ...(options.inputs ?? {}) } });
         void this.startIndicator(id, source, options, handle);

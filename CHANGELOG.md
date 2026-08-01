@@ -31,6 +31,15 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Legend rows accept contributed actions: `registerLegendAction`.** An icon button on
+  every indicator's legend row (revealed with the built-in controls, before the ✕),
+  gated per indicator (`when(ind)`) and run with the shell's context — the seam a host
+  editor uses to put "open this script" on each row. Ships with its two supporting
+  pieces: **`handle.source`** (the script an indicator was added with — `undefined` for
+  natives, the natural `when` gate) and an optional renderer seam
+  (`setLegendActions?` on the port, wired by both shells through
+  `chart.renderer.setLegendActions`; a custom renderer without it simply never shows
+  the buttons). Late registrations appear after `refreshActions()`.
 - **Contributed side panels can dock controls in their header.** `mount` now receives a
   third argument — `{ slot, setTitle }`: the slot is the space between the title and the
   close button (icon buttons, a document name), and `setTitle` rewrites the title text
@@ -112,6 +121,14 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **The legend's tooltips are themed, not native.** The row controls (eye, gear,
+  move-to-pane, ✕, contributed actions), the settings dialog's ✕ and its ⓘ input hints
+  used the browser's `title` bubble — foreign next to the kit tooltips everywhere else.
+  They now share one chrome tooltip (`renderers/shared/chrome-tooltip.ts`): same tokens,
+  radius and shadow as the kit, self-themed so it works on a BARE chart (no `.vela-ui`
+  host), with `aria-label`s kept for accessibility. The drawing toolbar's hand-rolled
+  dwell tooltip was folded into the same helper (keeping its deliberate 2 s delay and
+  beside-the-tool placement).
 - **Typing inside an embedded editor no longer triggers chart shortcuts.** Both shells
   route any bare printable key to the symbol search (letters) or the timeframe entry
   (digits), and the guard that exempts text entry recognised only form controls and

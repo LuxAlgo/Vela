@@ -3,6 +3,7 @@ import type { DrawingTypeKey, SnapMode } from '../../../core/drawings';
 import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/drawings';
 import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
+import { attachChromeTooltip } from '../../shared/chrome-tooltip';
 import { CHROME_BORDER_COLOR } from '../core/chartConfig';
 
 /** Cosmetic/placement options — defaults reproduce the in-renderer docked bar exactly. */
@@ -56,8 +57,8 @@ export class DrawingToolbar {
     private stayActive = false;
     private visible = false;
     private readonly tipText = new WeakMap<HTMLElement, string>(); // per-anchor tooltip text (magnet's changes with mode)
-    private tooltipEl: HTMLDivElement | null = null;
-    private tooltipTimer: number | null = null;
+    /** Chrome-tooltip disposers — flushed whenever the cells are recreated (rebuild/destroy). */
+    private tipDisposers: Array<() => void> = [];
 
     private readonly borderColor: string;
     private readonly width: number;
@@ -149,7 +150,6 @@ export class DrawingToolbar {
             }
         }
         this.closeFlyout();
-        this.clearTooltip();
         this.highlight();
     }
 
@@ -161,12 +161,13 @@ export class DrawingToolbar {
 
     destroy(): void {
         this.closeFlyout();
-        this.clearTooltip();
+        for (const dispose of this.tipDisposers.splice(0)) dispose();
         this.root.remove();
     }
 
     // ── internals ──
     private rebuild(): void {
+        for (const dispose of this.tipDisposers.splice(0)) dispose(); // the cells are recreated below
         this.root.replaceChildren();
         this.groupCells.clear();
         this.groupIcons.clear();
@@ -226,8 +227,9 @@ export class DrawingToolbar {
             });
             cell.appendChild(arrow);
         }
-        cell.addEventListener('mouseenter', () => this.armTooltip(cell, this.tipText.get(cell) ?? label));
-        cell.addEventListener('mouseleave', () => this.clearTooltip());
+        this.tipDisposers.push(
+            attachChromeTooltip(cell, { host: this.host, theme: () => this.theme, text: () => this.tipText.get(cell) ?? label, placement: 'right', delayMs: 2000 }),
+        );
         return { cell, icon, arrow };
     }
 
@@ -575,44 +577,11 @@ export class DrawingToolbar {
         btn.setAttribute('aria-label', title); // not `title` — we render our own 2s-dwell tooltip
         this.tipText.set(btn, title);
         if (icon) btn.innerHTML = hitHtml(icon);
-        btn.addEventListener('mouseenter', () => this.armTooltip(btn, this.tipText.get(btn) ?? title));
-        btn.addEventListener('mouseleave', () => this.clearTooltip());
+        this.tipDisposers.push(
+            attachChromeTooltip(btn, { host: this.host, theme: () => this.theme, text: () => this.tipText.get(btn) ?? title, placement: 'right', delayMs: 2000 }),
+        );
         btn.addEventListener('click', onClick);
         return btn;
-    }
-
-    // ── 2-second dwell tooltip (a rounded chip beside the tool, our own — not the native title) ──
-    private armTooltip(anchor: HTMLElement, text: string): void {
-        this.clearTooltip();
-        if (!text) return;
-        this.tooltipTimer = window.setTimeout(() => this.showTooltip(anchor, text), 2000);
-    }
-
-    private clearTooltip(): void {
-        if (this.tooltipTimer != null) {
-            clearTimeout(this.tooltipTimer);
-            this.tooltipTimer = null;
-        }
-        if (this.tooltipEl) {
-            this.tooltipEl.remove();
-            this.tooltipEl = null;
-        }
-    }
-
-    private showTooltip(anchor: HTMLElement, text: string): void {
-        const t = this.theme;
-        const tip = document.createElement('div');
-        tip.textContent = text;
-        tip.style.cssText =
-            `position:absolute;z-index:25;background:${t.background};border:1px solid ${this.borderColor};color:${t.textColor};` +
-            `border-radius:var(--vela-radius-md);padding:4px 9px;font:var(--vela-font-size-md) ${t.fontFamily};white-space:nowrap;pointer-events:none;box-shadow:var(--vela-shadow);`;
-        applyChromeTokens(tip, t);
-        this.host.appendChild(tip);
-        const r = anchor.getBoundingClientRect();
-        const hostR = this.host.getBoundingClientRect();
-        tip.style.left = `${r.right - hostR.left + 8}px`;
-        tip.style.top = `${r.top - hostR.top + (r.height - tip.offsetHeight) / 2}px`;
-        this.tooltipEl = tip;
     }
 
     private divider(): HTMLElement {

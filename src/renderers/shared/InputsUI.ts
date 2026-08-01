@@ -1,8 +1,10 @@
 import type { InputSchema, InputValue, SymbolPickerFn } from '../../core/model/inputs';
+import type { LegendActionView } from '../../core/ports/IChartRenderer';
 import type { VelaTheme, MoveTarget } from '../../core/options';
 import { isDarkColor, toHex6 } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
+import { attachChromeTooltip } from './chrome-tooltip';
 import { makeDialogDraggable } from './dialogDragging';
 
 /** A pane as the legend move UI sees it (id + label + vertical bounds, top-to-bottom order). */
@@ -40,6 +42,8 @@ interface LegendRow {
     eyeEl: HTMLButtonElement | null;
     /** Wraps the eye/gear/✕ controls; only shown while the row is selected (outline visible). */
     controlsEl: HTMLElement;
+    /** Host-contributed action buttons (inside `controlsEl`, before ✕) — rebuilt on demand. */
+    extrasEl: HTMLElement;
     native: boolean;
 }
 
@@ -84,6 +88,14 @@ export class InputsUI {
     private symbolPicker: SymbolPickerFn | null = null;
     /** Pane move/merge hook — when set, rows get a "Move to" menu + become drag-to-pane sources. */
     private moveApi: LegendMoveApi | null = null;
+    /** Host-contributed legend actions, resolved PER ROW at render time (see setLegendActions). */
+    private legendActions: ((indicatorId: string) => LegendActionView[]) | null = null;
+    /** Chrome-tooltip disposers, per row id — a tip open at removal must not outlive its row. */
+    private readonly rowTips = new Map<string, Array<() => void>>();
+    /** Same, for the contributed extras only (rebuilt independently by setLegendActions). */
+    private readonly extrasTips = new Map<string, Array<() => void>>();
+    /** Same, for the open settings dialog (torn down with it). */
+    private dialogTips: Array<() => void> = [];
     /** Open "Move to" menu (kept so it can be torn down). */
     private moveMenu: HTMLElement | null = null;
     /** Collapsed panes → the master indicator id to keep visible (others hidden in the strip). */
@@ -124,6 +136,18 @@ export class InputsUI {
         if (typeof document !== 'undefined') document.addEventListener('click', this.onDocClick);
     }
 
+    /** Attach a themed chrome tooltip to a control, recording its disposer under `id`. */
+    private tip(store: Map<string, Array<() => void>>, id: string, anchor: HTMLElement, text: string | (() => string), wrap = false): void {
+        const list = store.get(id) ?? [];
+        list.push(attachChromeTooltip(anchor, { host: this.container, theme: () => this.theme, text: typeof text === 'function' ? text : () => text, wrap }));
+        store.set(id, list);
+    }
+
+    private disposeTips(store: Map<string, Array<() => void>>, id: string): void {
+        for (const dispose of store.get(id) ?? []) dispose();
+        store.delete(id);
+    }
+
     setOnChange(cb: (c: InputsUIChange) => void): void {
         this.onChange = cb;
     }
@@ -154,6 +178,37 @@ export class InputsUI {
     /** Enable legend-driven move/merge (a "Move to" menu + drag-to-pane). Null disables it. */
     setMoveApi(api: LegendMoveApi | null): void {
         this.moveApi = api;
+    }
+
+    /**
+     * Wire the host-contributed row actions. Re-calling replaces the provider and
+     * re-projects the rows already on screen (a late `registerLegendAction` appears after
+     * the shell's `refreshActions()`, same as every other contribution).
+     */
+    setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
+        this.legendActions = provider;
+        for (const row of this.rows.values()) this.renderExtras(row.id, row.extrasEl);
+    }
+
+    /** (Re)build one row's contributed buttons. Same look, reveal and tooltips as the built-ins. */
+    private renderExtras(id: string, extrasEl: HTMLElement): void {
+        this.disposeTips(this.extrasTips, id);
+        extrasEl.replaceChildren();
+        for (const action of this.legendActions?.(id) ?? []) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.setAttribute('aria-label', action.tooltip);
+            this.tip(this.extrasTips, id, btn, action.tooltip);
+            btn.innerHTML = iconAt(action.icon, LEGEND_ICON_PX);
+            btn.className = 'vela-ind-ctl';
+            btn.dataset.legendAction = action.id;
+            btn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation(); // selecting the row is not the intent
+                action.run();
+            });
+            extrasEl.appendChild(btn);
+        }
     }
 
     /** Reposition the per-pane legend containers after a layout change. */
@@ -359,7 +414,8 @@ export class InputsUI {
         if (this.onToggleVisible) {
             const eye = document.createElement('button');
             eye.type = 'button';
-            eye.title = 'Hide';
+            eye.setAttribute('aria-label', 'Hide');
+            this.tip(this.rowTips, id, eye, () => (this.rows.get(id)?.hidden ? 'Show' : 'Hide'));
             eye.innerHTML = EYE_SVG;
             eye.className = 'vela-ind-ctl';
             eye.style.cssText = 'cursor:pointer;display:none;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
@@ -376,7 +432,8 @@ export class InputsUI {
         if (inputs.length > 0) {
             const gear = document.createElement('button');
             gear.type = 'button';
-            gear.title = 'Settings';
+            gear.setAttribute('aria-label', 'Settings');
+            this.tip(this.rowTips, id, gear, 'Settings');
             gear.innerHTML = GEAR_SVG;
             gear.className = 'vela-ind-ctl';
             gear.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
@@ -388,17 +445,24 @@ export class InputsUI {
         if (this.moveApi) {
             const mv = document.createElement('button');
             mv.type = 'button';
-            mv.title = 'Move to pane';
+            mv.setAttribute('aria-label', 'Move to pane');
+            this.tip(this.rowTips, id, mv, 'Move to pane');
             mv.innerHTML = iconAt('move', LEGEND_ICON_PX);
             mv.className = 'vela-ind-ctl';
             mv.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
             mv.addEventListener('click', (e) => { e.stopPropagation(); this.openMoveMenu(id, mv); });
             controlsEl.appendChild(mv);
         }
+        // Host-contributed actions (registerLegendAction) — between the built-ins and ✕.
+        const extrasEl = document.createElement('span');
+        extrasEl.style.cssText = 'display:contents;';
+        this.renderExtras(id, extrasEl);
+        controlsEl.appendChild(extrasEl);
         // Remove (✕) — a built-in control to drop the indicator from the chart.
         const close = document.createElement('button');
         close.type = 'button';
-        close.title = 'Remove indicator';
+        close.setAttribute('aria-label', 'Remove indicator');
+        this.tip(this.rowTips, id, close, 'Remove indicator');
         close.innerHTML = CLOSE_SVG;
         close.className = 'vela-ind-close';
         close.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;padding:0 1px;';
@@ -407,7 +471,7 @@ export class InputsUI {
         el.appendChild(controlsEl);
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        this.rows.set(id, { id, title, inputs, values: { ...values }, el, titleEl, statusEl, paneId, hidden: false, eyeEl, controlsEl, native: !!opts.native });
+        this.rows.set(id, { id, title, inputs, values: { ...values }, el, titleEl, statusEl, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
     }
 
     /** Place a row in its pane's legend — native rows PREPEND (pinned to the top), Pine rows append. */
@@ -466,7 +530,7 @@ export class InputsUI {
         row.el.style.opacity = visible ? '1' : '0.5';
         if (row.eyeEl) {
             row.eyeEl.innerHTML = visible ? EYE_SVG : EYE_OFF_SVG;
-            row.eyeEl.title = visible ? 'Hide' : 'Show';
+            row.eyeEl.setAttribute('aria-label', visible ? 'Hide' : 'Show'); // the tooltip reads live state itself
             // A hidden indicator keeps its eye visible even when idle; a shown one follows the
             // other controls (visible only while hovered/selected — i.e. its container is open).
             row.eyeEl.style.display = !visible || row.controlsEl.style.display !== 'none' ? 'inline-flex' : 'none';
@@ -508,6 +572,8 @@ export class InputsUI {
         const row = this.rows.get(id);
         row?.el.remove();
         this.rows.delete(id);
+        this.disposeTips(this.rowTips, id);
+        this.disposeTips(this.extrasTips, id);
         if (this.selectedId === id) this.selectedId = null;
         if (this.openId === id) this.closeDialog();
         // Drop an emptied non-price pane legend container (the pane itself is gone too).
@@ -520,6 +586,8 @@ export class InputsUI {
     destroy(): void {
         this.closeDialog();
         this.closeMoveMenu();
+        for (const id of [...this.rowTips.keys()]) this.disposeTips(this.rowTips, id);
+        for (const id of [...this.extrasTips.keys()]) this.disposeTips(this.extrasTips, id);
         for (const lg of this.legends.values()) lg.remove();
         this.legends.clear();
         this.rows.clear();
@@ -597,7 +665,8 @@ export class InputsUI {
         hTitle.style.cssText = 'font-weight:600;font-size:16px;line-height:1.3;';
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
-        closeBtn.title = 'Close';
+        closeBtn.setAttribute('aria-label', 'Close');
+        this.dialogTips.push(attachChromeTooltip(closeBtn, { host: this.container, theme: () => this.theme, text: () => 'Close' }));
         closeBtn.innerHTML = iconAt('close', 15);
         closeBtn.className = 'vela-ind-ctl';
         closeBtn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:2px;flex:0 0 auto;';
@@ -653,6 +722,7 @@ export class InputsUI {
 
     private closeDialog(): void {
         document.removeEventListener('keydown', this.onDialogKey);
+        for (const dispose of this.dialogTips.splice(0)) dispose(); // a tip open right now dies with its dialog
         this.backdrop?.remove();
         this.backdrop = null;
         this.dialog = null;
@@ -856,11 +926,11 @@ export class InputsUI {
         return b;
     }
 
-    /** A hoverable ⓘ affordance carrying an input's `tooltip` (native title). */
+    /** A hoverable ⓘ affordance carrying an input's `tooltip` (themed chrome tip; wraps). */
     private infoButton(tooltip: string): HTMLElement {
         const b = document.createElement('span');
         b.textContent = 'i';
-        b.title = tooltip;
+        this.dialogTips.push(attachChromeTooltip(b, { host: this.container, theme: () => this.theme, text: () => tooltip, wrap: true, delayMs: 250 }));
         b.className = 'vela-ind-hint';
         b.style.cssText = 'flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-weight:600;font-size:11px;font-family:inherit;line-height:1;cursor:help;user-select:none;';
         return b;

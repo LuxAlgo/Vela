@@ -104,6 +104,7 @@ The descriptor covers these fields. Some are tri-state (for example `native` / `
 | User-drawing depth (a drawing can paint anywhere in the series stack) | `drawingDepth` flag | optional — inside the **User-drawings** tier |
 | Tables | no | optional — **Tables** tier |
 | Inputs UI (you provide the in-chart settings dialog) | no | optional — **Inputs UI** tier |
+| Contributed legend actions (`setLegendActions?`) | no | optional — inside the **Inputs UI** tier: the shells wire `registerLegendAction` through it; without it those buttons simply never show |
 
 The optional-tier rows line up one-to-one with the optional tiers in the [conformance ladder](#a-conformance-ladder): a flag stays off until its tier lands.
 

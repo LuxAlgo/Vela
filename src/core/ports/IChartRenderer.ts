@@ -46,6 +46,20 @@ export interface IndicatorRenderHandle {
 /** An indicator's live status, shown in its legend row. */
 export type IndicatorStatus = 'idle' | 'loading' | 'live';
 
+/**
+ * One host-contributed legend-row action, as the renderer consumes it: pure data plus a
+ * thunk. The shell resolves the plugin descriptor (its `when` gate, the context, the
+ * indicator info) BEFORE it reaches the renderer, so the renderer stays ignorant of the
+ * plugin layer — it just paints an icon button and calls `run` on click.
+ */
+export interface LegendActionView {
+    id: string;
+    /** Icon id in the core icon registry (`registerIcon`). */
+    icon: string;
+    tooltip: string;
+    run(): void;
+}
+
 /** OHLCV of the price bar under the crosshair (the "data window" source). */
 export interface CrosshairOHLC {
     time: Millis;
@@ -236,6 +250,15 @@ export interface IChartRenderer {
      * text field. Pass `null` to detach.
      */
     setSymbolPicker?(picker: SymbolPickerFn | null): void;
+
+    /**
+     * Supply the HOST-CONTRIBUTED actions of each legend row (the shells wire the plugin
+     * registry through this — see `registerLegendAction`). The provider is called per row,
+     * lazily, so `when()` gates and late registrations resolve at render time; calling this
+     * again replaces the provider AND re-projects the rows already on screen. Optional — a
+     * renderer without it simply never shows contributed legend actions.
+     */
+    setLegendActions?(provider: ((indicatorId: string) => LegendActionView[]) | null): void;
 
     /**
      * Hide (`false`) or show (`true`) a mounted indicator's visuals while keeping its legend row

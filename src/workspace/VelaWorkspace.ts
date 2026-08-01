@@ -31,7 +31,7 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { widgetAttachments } from '../widget/contributions';
+import { legendActionsProviderFor, widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { createAttributionMark } from '../renderers/native/chrome/AttributionMark';
@@ -528,6 +528,8 @@ export class VelaWorkspace {
         this.mountAttachments();
         this.topbar.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
+        // Re-project every cell's legend rows so a late registerLegendAction appears there too.
+        for (const cell of this.cells()) cell.chart.renderer.setLegendActions(legendActionsProviderFor(cell.chart, () => this.context()));
     }
 
     /** The sync-link control surface: `set(kind, true | {cellId: group} | false)`,

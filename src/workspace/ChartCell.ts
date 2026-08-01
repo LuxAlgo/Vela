@@ -21,7 +21,7 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
-import { resolveEngines, type WidgetContext } from '../widget/contributions';
+import { legendActionsProviderFor, resolveEngines, type WidgetContext } from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 
@@ -225,6 +225,9 @@ export class ChartCell {
         // Modal dialogs (chart settings, indicator settings) escape the cell's
         // overflow clip and center over the whole grid.
         this.inner.renderer.set('dialogHost', deps.dialogHost);
+        // Contributed legend-row actions — the row resolves on THIS cell's chart; the
+        // context follows the workspace rule (built fresh per click, active-cell bound).
+        this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
         // Pool restore: cosmetics + drawings round-trip (both validate untrusted input).
         if (seed.rendererConfig != null) this.inner.renderer.applyConfig(seed.rendererConfig);
         if (seed.drawings != null) this.inner.drawings.fromJSON(seed.drawings);

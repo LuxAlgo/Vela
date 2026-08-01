@@ -3,6 +3,7 @@
 // chrome — topbar buttons, context-menu items — so any future view layer (React) can
 // project the same descriptors. Register at import time, before widgets are constructed.
 import type { Vela } from '../Vela';
+import type { LegendActionView } from '../core/ports/IChartRenderer';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 
 /** The runtime surface an action's `when`/`run` receives. */
@@ -178,6 +179,72 @@ export function widgetActions(target: WidgetActionTarget, ctx?: WidgetContext): 
     const list = [...registry.values()].filter((d) => d.target === target);
     list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     return ctx ? list.filter((d) => !d.when || d.when(ctx)) : list;
+}
+
+// ── Legend actions ─────────────────────────────────────────────────────────────────
+
+/** What a legend action sees about the indicator whose row it sits on. */
+export interface LegendIndicatorInfo {
+    id: string;
+    title: string;
+    /** The script source the indicator was added with; undefined for a NATIVE
+     *  (core-computed) indicator. The usual `when` gate for source-centric actions. */
+    source?: string;
+}
+
+/**
+ * A contributed LEGEND-ROW action: an icon button on every indicator's legend row,
+ * revealed with the built-in controls (hover/selection), between them and the ✕.
+ * `when` gates per indicator (e.g. `(ind) => ind.source !== undefined` for actions
+ * that need the script). `run` receives the shell's {@link WidgetContext} and the row's
+ * {@link LegendIndicatorInfo}.
+ */
+export interface LegendActionDescriptor {
+    /** Stable id — re-registering an id replaces it. */
+    id: string;
+    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
+    icon: string;
+    tooltip: string;
+    /** Sort key within the contributed group (ascending; default 0). */
+    order?: number;
+    /** Per-indicator gate — omitted ⇒ shown on every row. */
+    when?: (indicator: LegendIndicatorInfo) => boolean;
+    run(ctx: WidgetContext, indicator: LegendIndicatorInfo): void;
+}
+
+const legendRegistry = new Map<string, LegendActionDescriptor>();
+
+/** Register (or replace) a legend action. Returns an unregister disposer. */
+export function registerLegendAction(desc: LegendActionDescriptor): () => void {
+    legendRegistry.set(desc.id, desc);
+    return () => {
+        if (legendRegistry.get(desc.id) === desc) legendRegistry.delete(desc.id);
+    };
+}
+
+export function unregisterLegendAction(id: string): void {
+    legendRegistry.delete(id);
+}
+
+/** Every registered legend action, `order`-sorted (registration order breaks ties). */
+export function legendActions(): LegendActionDescriptor[] {
+    return [...legendRegistry.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+/**
+ * The provider a shell hands to `chart.renderer.setLegendActions` — resolves the row's
+ * indicator on THAT chart, gates each descriptor, and binds `run` to a fresh context per
+ * click (never a cached one; the widget context rule). Both shells wire exactly this.
+ */
+export function legendActionsProviderFor(chart: Vela, context: () => WidgetContext): (indicatorId: string) => LegendActionView[] {
+    return (indicatorId) => {
+        const handle = chart.indicators().find((h) => h.id === indicatorId);
+        if (!handle) return [];
+        const info: LegendIndicatorInfo = { id: handle.id, title: handle.title, ...(handle.source !== undefined ? { source: handle.source } : {}) };
+        return legendActions()
+            .filter((d) => !d.when || d.when(info))
+            .map((d) => ({ id: d.id, icon: d.icon, tooltip: d.tooltip, run: () => d.run(context(), info) }));
+    };
 }
 
 // ── Default scripting engines ──────────────────────────────────────────────────────

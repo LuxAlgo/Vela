@@ -23,7 +23,7 @@ import { DataWindow } from './data-window';
 import { PanelDock } from './panel-dock';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
-import { widgetAttachments, resolveEngines, type WidgetContext } from './contributions';
+import { widgetAttachments, resolveEngines, legendActionsProviderFor, type WidgetContext } from './contributions';
 import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
 import { parsePersisted, legacyWidgetState, localStorageAdapter, type VelaStorage } from './persist';
@@ -415,6 +415,8 @@ export class VelaWidget {
         this.mountAttachments();
         this.topbar.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the live chart on their own
+        // Re-project legend rows so a late registerLegendAction appears on them too.
+        if (this.inner) this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => this.context()));
     }
 
     /** The inner headless chart of the CURRENT build — becomes a new instance after a
@@ -776,6 +778,8 @@ export class VelaWidget {
 
         this.symbolPicker.setSource(() => chart.data.symbols());
         this.objectTree.setSymbol(this.symbol);
+        // Contributed legend-row actions (registerLegendAction) — resolved per row, per click.
+        chart.renderer.setLegendActions(legendActionsProviderFor(chart, () => this.context()));
         this.dock.onChart(chart); // every docked panel rebinds, contributed ones included
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
