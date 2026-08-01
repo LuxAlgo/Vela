@@ -81,7 +81,7 @@ const HEAL_COOLDOWN_MS = 5_000;
  * Renderer- and engine-agnostic orchestration: owns market data (via the injected
  * `MarketDataFeed`), runs/streams indicators through registered `ScriptingEngine`s
  * (selected by language), routes panes, and drives the injected `IChartRenderer`.
- * Imports neither a concrete renderer nor `pinets`.
+ * Imports neither a concrete renderer nor a concrete scripting engine.
  */
 export class EngineOrchestrator implements IndicatorController, PaneController {
     readonly events = new TypedEventBus<VelaEventMap>();
@@ -233,8 +233,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const engine = this.engines.get(lang);
         if (!engine) {
             throw new Error(
-                `[vela] no scripting engine registered for language "${lang}". Import and register ` +
-                    `one before addIndicator, e.g. chart.registerEngine('pine', new PineEngine()).`,
+                `[vela] no scripting engine registered for language "${lang}". Vela ships none — ` +
+                    `install one (Pine Script: @luxalgo/vela-pinets) and register it before addIndicator, ` +
+                    `e.g. chart.registerEngine('pine', new PineEngine()).`,
             );
         }
         return engine;

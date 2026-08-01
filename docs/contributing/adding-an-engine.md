@@ -2,15 +2,15 @@
 
 Scripting engines are one of Vela's three swappable **layers** (alongside [data providers](./adding-a-data-provider.md) and [renderers](./adding-a-renderer.md)). This page explains what an engine is, the small surface you implement, and the rules the core uses to drive it. It is conceptual — for the exact field shapes, read the `ScriptingEngine` port (exported from the root entry and from `vela/plugin`).
 
-Everything an engine builds against ships on the **`vela/plugin`** subpath — the port types, the model vocabulary, the id helper, the semantic palette — so an engine does not have to live in this repo at all. See [*Building an engine as its own package*](#building-an-engine-as-its-own-package) below.
+Everything an engine builds against ships on the **`vela/plugin`** subpath — the port types, the model vocabulary, the id helper, the semantic palette — which is why **no engine lives in this repo**: Vela bundles none, and every one is a separate package or host module. See [*Building an engine as its own package*](#building-an-engine-as-its-own-package) below; to *consume* an existing engine rather than write one, see [Scripting engines](../user/scripting-engines.md).
 
 > The engine port is stable in shape but still evolving.
 
 ## What an engine is
 
-An engine turns **source in some language** into a **neutral drawable model** — the same indicator model every renderer knows how to paint. The Pine engine is the bundled default (in two forms, in-process and Web Worker), but nothing about the core is Pine-specific.
+An engine turns **source in some language** into a **neutral drawable model** — the same indicator model every renderer knows how to paint. **Vela bundles none**: every engine is a separate package or host module implementing this port. `@luxalgo/vela-pinets` (Pine Script, in-process and Web-Worker forms) is the reference implementation; `playground/demo-engine.ts` in this repo is a ~300-line one you can read in a sitting.
 
-The core never learns the language, the runtime, or how the source was evaluated. It hands the engine source text plus market context and gets back a stream of neutral models. That opacity is the whole point: it is what lets one chart run Pine today and another language tomorrow without touching the core.
+The core never learns the language, the runtime, or how the source was evaluated. It hands the engine source text plus market context and gets back a stream of neutral models. That opacity is the whole point: it is what lets one chart run one language today and another tomorrow without touching the core.
 
 The core owns everything downstream of the model — pane routing (overlay vs study) and mounting on the renderer. The engine emits an **unrouted** model and stays out of presentation entirely. One thing the engine *does* own is the ids **inside** that model: every series and drawing carries an id the engine minted, and those ids are a contract — see [*Stable ids*](#stable-ids-the-identity-contract) below.
 
@@ -137,7 +137,7 @@ finishes, the session receives **exactly one `notifyBars('complete')`**. That si
 load aborted): "complete" means *the core is done changing history*, not *the depth you
 asked for exists*.
 
-What to run and when is **the engine's policy**. The bundled Pine engines hold: a
+What to run and when is **the engine's policy**. The Pine engines hold: a
 session that starts during a backfill defers its first run, `'backfill'` pokes are
 ignored, and the first execution happens on `'complete'` — because scripts are stateful
 over **all** bars, so a run over a partial prefix computes values that are simply wrong,
@@ -148,7 +148,7 @@ complete history.
 
 ## One runtime, two engines: the transport-agnostic pattern
 
-The in-process and Web Worker Pine engines are not two implementations. They share a **transport-agnostic runtime**: a neutral run function plus a context-to-model mapper. The run function evaluates source over bars; the mapper turns the resulting context into a neutral model. Neither knows whether it lives on the main thread or in a worker.
+The Pine addon's in-process and Web Worker engines are not two implementations. They share a **transport-agnostic runtime**: a neutral run function plus a context-to-model mapper. The run function evaluates source over bars; the mapper turns the resulting context into a neutral model. Neither knows whether it lives on the main thread or in a worker.
 
 That shared core is what lets **one implementation power both** an in-process engine and a worker engine.
 
@@ -176,10 +176,10 @@ From the engine runtime's point of view, calling `fetchSeries` looks identical i
 
 ## Building an engine as its own package
 
-An engine does not have to live in this repo — the whole authoring surface is public,
-and the PineTS engines themselves ship as a separate package built exactly this way
-(`@luxalgo/vela-pinets`, the reference implementation; its own repo also because of
-licensing — its runtime dependency is AGPL while Vela is Apache-2.0).
+An engine **does not live in this repo** — the whole authoring surface is public, and the
+Pine engines ship as a separate package built exactly this way (`@luxalgo/vela-pinets`,
+the reference implementation; its own repo also because of licensing — its runtime
+dependency is AGPL while Vela is Apache-2.0).
 
 Everything you need comes from **`vela/plugin`**:
 
@@ -240,8 +240,8 @@ Whichever path you choose, if the resolved language has no registered engine, yo
 
 - **`reactsToViewport` is a static guess.** `prepare` detects viewport built-ins by scanning source. The first real run can prove the guess wrong; an engine may refine the flag in place afterward. Don't treat the prepare-time value as final.
 - **`prepare` is async, `execute` is sync.** Await the `prepare` Promise before you build settings UI; expect `execute` to hand back a session immediately and deliver results through handlers.
-- **In-process and worker can advertise different capabilities.** They share a runtime but not their capability flags — route on what each form actually declares. (Both bundled Pine forms declare `streaming: true` today; the worker holds its persistent stream inside the worker and receives live bars as small deltas.)
-- **The worker is spawned from a Blob URL by default.** The worker is inlined at build time and instantiated from a Blob URL. Under a strict Content-Security-Policy, `worker-src blob:` (or equivalent) must be allowed, or the worker engine will fail to start. If you cannot allow `blob:`, the worker engine accepts a `workerUrl` option pointing at a hosted worker script you serve yourself — use that to satisfy a `worker-src 'self'` (or specific-origin) policy instead. The in-process engine has no such caveat.
+- **In-process and worker can advertise different capabilities.** They may share a runtime but not their capability flags — route on what each form actually declares. (Both Pine forms declare `streaming: true` today; the worker holds its persistent stream inside the worker and receives live bars as small deltas.)
+- **A worker engine is typically spawned from a Blob URL.** The Pine addon inlines its worker at build time and instantiates it from a Blob URL. Under a strict Content-Security-Policy, `worker-src blob:` (or equivalent) must be allowed, or the worker engine will fail to start. If you cannot allow `blob:`, the worker engine accepts a `workerUrl` option pointing at a hosted worker script you serve yourself — use that to satisfy a `worker-src 'self'` (or specific-origin) policy instead. The in-process engine has no such caveat.
 - **`onModel` is a stream, not a callback-once.** Build your session so every emission is complete and `stop()` releases everything.
 - **`historyState` is the initial state; reasons are transitions.** A session created *after* the history load finished never receives a `'complete'` notification — its request already said `historyState: 'complete'` (or omitted the field, which means the same). Don't build a policy that waits for a `'complete'` that already happened; read the request field first.
 

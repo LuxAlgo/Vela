@@ -4,14 +4,14 @@ Vela ships an interactive **drawing-tools** layer: a docked toolbar and ~66 on-c
 tools — trend lines, channels, Fibonacci, harmonic patterns, annotations, and more — that a user
 draws, edits, and keeps on the chart. Drawings are anchored in **data space** (time + price), so
 they stay locked to the bars across pan, zoom, timeframe changes, and reload — the same durability
-the Pine engine's own drawings get.
+a scripting engine's own drawing output gets.
 
 The toolbar is **on by default** on the native renderer. Everything it does is also reachable from
 code through the [`chart.drawings`](#driving-drawings-from-code) surface, and the whole model
 persists to JSON.
 
-> **Drawing tools vs Pine drawings.** This page is about the *interactive* tools a person places on
-> the chart. They are distinct from the lines/boxes/labels a Pine **indicator** emits as output —
+> **Drawing tools vs script drawings.** This page is about the *interactive* tools a person places on
+> the chart. They are distinct from the lines/boxes/labels an **indicator** emits as output —
 > those are part of the neutral model and are covered under indicators.
 
 ---

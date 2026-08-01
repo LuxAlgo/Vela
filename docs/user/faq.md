@@ -2,14 +2,14 @@
 
 ## I see candles but my indicator doesn't show — what's wrong?
 
-You almost certainly haven't registered a scripting engine. **No engine is registered by default** — a bare chart is candles only. Import an engine and register it before (or any time before) you add an indicator:
+You almost certainly haven't registered a scripting engine. **Vela ships none** — a bare chart is candles, drawings and native indicators only. Install an engine and register it before (or any time before) you add an indicator:
 
 ```js
-import { PineEngine } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
 chart.registerEngine('pine', new PineEngine());
 ```
 
-Calling `addIndicator` for a language with no registered engine throws an actionable error rather than silently doing nothing. See [quickstart.md](./quickstart.md).
+Calling `addIndicator` for a language with no registered engine throws an actionable error rather than silently doing nothing. See [Scripting engines](./scripting-engines.md) and [quickstart.md](./quickstart.md).
 
 ## Can I use Vela fully offline, with no API key?
 
@@ -39,19 +39,19 @@ See [Adding a data provider](../contributing/adding-a-data-provider.md) for the 
 
 **Renderer:** the **native** renderer is the default (WebGL2 with a canvas2d fallback) and the only bundled backend; a custom `IChartRenderer` class can replace it wholesale.
 
-**Engine:** the Pine engine comes in two forms:
+**Engine:** none is bundled — you install one. For Pine Script, the `@luxalgo/vela-pinets` addon exports two forms with identical semantics:
 
-- **In-process** (`PineEngine`) — runs on the main thread; supports live streaming.
-- **Web-Worker** (`PineWorkerEngine`) — runs off the main thread, which **keeps the UI responsive** during heavy computation, and streams live too: it holds a persistent session inside the worker, so each tick sends one bar across and the script updates incrementally.
+- **In-process** (`PineEngine`) — runs on the main thread; simplest setup.
+- **Web-Worker** (`PineWorkerEngine`) — the same Pine, off the main thread, which **keeps the UI responsive** during heavy computation. It streams live exactly like the in-process form: a persistent session lives inside the worker, so each tick sends one bar across and the script updates incrementally.
 
 Register whichever form you want under the `pine` language id — the call site is identical:
 
 ```js
-import { PineWorkerEngine } from 'vela';
+import { PineWorkerEngine } from '@luxalgo/vela-pinets';
 chart.registerEngine('pine', new PineWorkerEngine());
 ```
 
-If you need a live forming-candle stream from the engine, use the in-process form; if you want to keep the main thread free for a static chart, use the worker form.
+Default to the worker form; reach for the in-process one when you want the simplest possible setup or a debugger stepping through engine code on the main thread. For any other language, write an engine against the [port](../contributing/adding-an-engine.md).
 
 ## My drawings don't appear, or I can't edit them — why?
 

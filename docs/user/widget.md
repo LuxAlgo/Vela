@@ -8,7 +8,7 @@ picker.
 
 ```ts
 import { VelaWidget } from 'vela/widget';
-import { PineEngine } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine — see ./scripting-engines.md
 import { BinanceProvider } from 'vela/providers/binance';
 
 const widget = new VelaWidget('#chart', {

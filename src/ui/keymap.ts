@@ -96,11 +96,22 @@ function eventMatches(ev: KeyboardEvent, c: Chord): boolean {
     );
 }
 
-function isEditableTarget(ev: KeyboardEvent): boolean {
+/**
+ * Whether a keystroke is being TYPED somewhere, in which case the chart's single-letter
+ * shortcuts must not fire. Three signals, because "a thing that accepts text" has three
+ * spellings on the platform: a form control, a contenteditable, and — since the
+ * EditContext API — a plain element that merely declares `role="textbox"`. Modern code
+ * editors (Monaco among them) use exactly that third form: no `<textarea>`, no
+ * `contenteditable`, so recognising only the first two silently turns every letter the
+ * user types into a chart shortcut.
+ */
+export function isEditableTarget(ev: KeyboardEvent): boolean {
     const t = ev.target as Partial<HTMLElement> | null;
     if (!t || typeof t !== 'object') return false;
     const tag = (t.tagName ?? '').toLowerCase();
-    return tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable === true;
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+    if (t.isContentEditable === true) return true;
+    return (typeof t.getAttribute === 'function' ? t.getAttribute('role') : null) === 'textbox';
 }
 
 function displayChord(spec: string, mac: boolean): string {

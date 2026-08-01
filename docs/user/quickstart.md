@@ -38,10 +38,14 @@ That is the whole first step. Candles paint immediately — **no engine required
 
 ## Step 2 — Register a scripting engine
 
-Indicators run on a **scripting engine**, and **none is registered by default**. Import the one you need and register it under its language id. Vela ships a Pine engine.
+Indicators run on a **scripting engine**, and **Vela ships none**. Install the one you need and register it under its language id. Pine Script lives in the `@luxalgo/vela-pinets` addon:
+
+```bash
+npm install @luxalgo/vela-pinets pinets
+```
 
 ```js
-import { PineEngine } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets';
 
 chart.registerEngine('pine', new PineEngine());
 ```
@@ -53,13 +57,13 @@ const chart = new Vela('#chart', { data: myBars, timeframe: '1h' })
   .registerEngine('pine', new PineEngine());
 ```
 
-This is deliberate: the bare chart stays lightweight, and you only pull in an engine when you actually script. Calling `addIndicator` with no engine for that language throws an actionable error.
+This is deliberate: the bare chart stays lightweight, you only pull in an engine when you actually script — and Vela's own license stays clean of whatever a runtime brings with it. Calling `addIndicator` with no engine for that language throws an actionable error.
 
-> There is also a Web-Worker form of the Pine engine that keeps the main thread responsive. See [api-reference.md](./api-reference.md) and [faq.md](./faq.md) for the trade-off.
+> The addon also exports `PineWorkerEngine`, the same Pine semantics off the main thread. See [Scripting engines](./scripting-engines.md) for both, the licensing note, and how to write an engine of your own.
 
 ## Step 3 — Add an indicator from source
 
-Pass the script source. The engine is selected by language (defaults to the chart's `defaultLanguage`, which is `pine`).
+Pass the script source. The engine is selected by language — `addIndicator({ language })`, or the chart's `defaultLanguage` when the call names none (seeded from the first engine passed at construction, `'pine'` otherwise).
 
 ```js
 const ema = chart.addIndicator(`//@version=5
@@ -87,7 +91,8 @@ await chart.ready();
 ## Full example
 
 ```js
-import { Vela, PineEngine } from 'vela';
+import { Vela } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets';
 
 const chart = new Vela('#chart', { data: myBars, timeframe: '1h', theme: 'dark' });
 chart.registerEngine('pine', new PineEngine());

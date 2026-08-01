@@ -4,8 +4,43 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING — the Pine Script engine has left this package.** `PineEngine`,
+  `PineWorkerEngine` and `PineWorkerOptions` are gone from the root export, and with them
+  the `pinets` peer/dev dependency and the build-time worker-inlining plumbing. Pine now
+  lives in the **`@luxalgo/vela-pinets`** addon, which implements the same public
+  `ScriptingEngine` port with identical semantics:
+
+  ```diff
+  - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
+  + import { Vela } from '@luxalgo/vela';
+  + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
+  ```
+
+  Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
+  option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
+  Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
+
+  The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
+  Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
+  ACL now bans the import outright, so the obligation is taken on only by an application
+  that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
+  (~515 KB minified), and the engine layer becomes the one layer with no bundled default
+  at all. See [Scripting engines](docs/user/scripting-engines.md).
+
 ### Added
 
+- **Contributed side panels can dock controls in their header.** `mount` now receives a
+  third argument — `{ slot, setTitle }`: the slot is the space between the title and the
+  close button (icon buttons, a document name), and `setTitle` rewrites the title text
+  (empty hides it, the slot owning the row; the topbar toggle keeps the DECLARED title as
+  its tooltip). Backward compatible — a two-argument `mount` ignores it.
+- **`ctx.togglePanel(id, open?)`** on the plugin `WidgetContext` (both shells): open or
+  close a docked side panel programmatically — the seam a plugin uses to open ITS OWN
+  contributed panel (a code editor revealing itself on a host action, a panel opened from
+  a topbar button). Same semantics as the topbar toggles: the dock stays exclusive, a bare
+  call flips, unknown ids are ignored.
 - **The symbol string is the whole market identity.** A bare ticker resolves against the
   registered providers in DECLARATION order (first whose index lists it); an `EXCHANGE:`
   prefix — case-insensitive, regional variants included (`BINANCE.US:BTCUSDT`) — pins the
@@ -74,6 +109,18 @@ All notable changes to Vela, newest first.
 - **BREAKING (workspace): `persist` now defaults to localStorage**, like the widget —
   `persist: true` survives reloads out of the box. Session-only persistence is the
   opt-in now: pass `storage: memoryStorageAdapter()`.
+
+### Fixed
+
+- **Typing inside an embedded editor no longer triggers chart shortcuts.** Both shells
+  route any bare printable key to the symbol search (letters) or the timeframe entry
+  (digits), and the guard that exempts text entry recognised only form controls and
+  `contenteditable`. An element that merely declares `role="textbox"` — which is how
+  editors built on the **EditContext API** (Monaco among them) expose their input — fell
+  through it, so every letter typed into a docked code editor opened the symbol search
+  instead. The guard now accepts that third spelling, and the widget, the workspace and
+  the keymap share ONE definition of it (`isEditableTarget`) rather than the three
+  near-copies they had drifted into.
 
 ## [v0.3.0]
 

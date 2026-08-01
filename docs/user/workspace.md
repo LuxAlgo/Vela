@@ -9,7 +9,7 @@ drawings, and your subscriptions survive every symbol/timeframe change.
 
 ```ts
 import { VelaWorkspace } from 'vela/workspace';
-import { PineWorkerEngine } from 'vela';
+import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine — see ./scripting-engines.md
 import { BinanceProvider } from 'vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {

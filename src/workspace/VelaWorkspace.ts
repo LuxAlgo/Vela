@@ -16,7 +16,7 @@ import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
 import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
-import { KeymapManager } from '../ui/keymap';
+import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Menu } from '../ui/components/menu';
 import type { Vela } from '../Vela';
 import { Topbar } from '../widget/topbar';
@@ -517,6 +517,7 @@ export class VelaWorkspace {
             cells: () => this.cells(),
             setActiveCell: (id) => this.setActiveCell(id),
             openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
+            togglePanel: (id, open) => this.dock.toggle(id, open),
             root: this.root,
             toast: (message, kind) => this.toast.show(message, kind),
         });
@@ -1142,9 +1143,7 @@ export class VelaWorkspace {
     private routeTyping(ev: KeyboardEvent): void {
         if (this.destroyed || this.openDialogs > 0) return;
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-        const t = ev.target as Partial<HTMLElement> | null;
-        const tag = (t?.tagName ?? '').toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable === true) return;
+        if (isEditableTarget(ev)) return; // never hijack a keystroke someone is TYPING
         const key = ev.key;
         if (/^[a-zA-Z]$/.test(key)) {
             ev.preventDefault();

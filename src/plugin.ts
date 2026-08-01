@@ -66,6 +66,7 @@ export {
     type WidgetContext,
     type SidePanelDescriptor,
     type SidePanelHandle,
+    type SidePanelHeader,
     type SidePanelButton,
 } from './widget/contributions';
 // A plugin panel gets the shell's own column; these bounds are what `resizable` clamps to.

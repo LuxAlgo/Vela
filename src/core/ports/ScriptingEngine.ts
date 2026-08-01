@@ -169,9 +169,10 @@ export interface ExecutionSession {
 }
 
 /**
- * The scripting-engine abstraction. The orchestrator talks only to this, so the
- * concrete engine (PineTS today, others later) is swappable and `core` never
- * imports `pinets`. Engines are registered by `language` and selected per
+ * The scripting-engine abstraction. The orchestrator talks only to this, so every
+ * concrete engine is swappable and Vela itself SHIPS none — engines are separate
+ * packages (Pine Script: `@luxalgo/vela-pinets`) or host code written against this
+ * port (see docs/contributing/adding-an-engine.md). Engines are registered by `language` and selected per
  * `addIndicator({ language })`; market data is owned by Vela's
  * `MarketDataFeed` and passed into `execute`.
  */

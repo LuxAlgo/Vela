@@ -1,7 +1,8 @@
 /**
- * Renderer-neutral indicator input schema. Mirrors PineTS `IPineInput` but
- * owns its own shape so PineTS changes stay quarantined in `src/engines/pinets/`. Drives
- * the renderer's settings dialog (the gear settings UI).
+ * Renderer-neutral indicator input schema — Vela's own shape, owned here so no
+ * scripting language's own input model leaks into core (each engine maps its
+ * declarations onto this at its boundary). Drives the renderer's settings dialog
+ * (the gear settings UI).
  */
 export type InputType =
     | 'int'
@@ -28,7 +29,7 @@ export type InputValue = number | string | boolean;
 export type SymbolPickerFn = (current: string, onPick: (symbol: string) => void) => void;
 
 export interface InputSchema {
-    /** Stable key used by `setInput()` — PineTS `varId`, falling back to `title`. */
+    /** Stable key used by `setInput()` — the engine's own variable id, falling back to `title`. */
     key: string;
     /** Display label shown in the settings dialog. */
     title: string;

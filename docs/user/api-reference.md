@@ -6,7 +6,7 @@ This is a hand-written, conceptual reference for the Vela public surface — wha
 
 Vela is a small **core** plus three independently swappable **layers** — data providers, scripting engines, and renderers — each reached through a single narrow **port**.
 
-The **neutral model** — bars, series, pane overlays, drawings, inputs, update patches — is the only thing that crosses a port. No backend-specific type ever leaks across. That opacity is what makes each layer swappable. The bundled defaults are plain **swappable defaults**: the native renderer, the Pine scripting engine (in-process and Web-Worker forms), and the provider-backed, cache-wrapped data feed.
+The **neutral model** — bars, series, pane overlays, drawings, inputs, update patches — is the only thing that crosses a port. No backend-specific type ever leaks across. That opacity is what makes each layer swappable. What ships is the native renderer and the provider-backed, cache-wrapped data feed — both plain **swappable defaults**. No scripting engine ships at all: you install one (Pine Script: `@luxalgo/vela-pinets`) or write one against the port — see [Scripting engines](./scripting-engines.md).
 
 > Vela installs **from source**; the `'vela'` imports in these snippets refer to the local workspace package (see [installation.md](./installation.md)).
 
@@ -28,7 +28,7 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 
 | Method | What it does |
 |---|---|
-| `registerEngine(language, engine)` | Register a scripting engine under a language id so `addIndicator` can run that language. No engine is registered by default. Re-registering a language replaces it (affects future indicators only). Returns the chart for chaining. |
+| `registerEngine(language, engine)` | Register a scripting engine under a language id so `addIndicator` can run that language. **Vela ships none** — install an addon or write one ([Scripting engines](./scripting-engines.md)). Re-registering a language replaces it (affects future indicators only). Returns the chart for chaining. |
 | `addIndicator(source, options?)` | Run an indicator script over the chart's market data and render it. Returns an **`IndicatorHandle` synchronously**; values fill in asynchronously. See [options.md](./options.md) for per-indicator options. |
 | `addNativeIndicator(type, options?)` | Add a core-computed (non-scripting) **native indicator** by registered `type`. Returns an `IndicatorHandle` (same lifecycle: legend row, eye/remove, events). **Single-instance per type** — a second call returns the existing handle. The built-in types are `'volume'` (auto-added) and `'vpvr'` (the visible-range volume profile); plugin chart types can register more. `options.inputs` seeds inputs. Native renderer only; an unregistered type returns a fail-soft handle that never mounts. |
 | `runIndicator(source, options?)` | Execute a script and **inject it only if the run succeeds** — the seam for host editors/consoles. Resolves `{ ok: true, handle }` after the first successful evaluation, or `{ ok: false, error, context }` on a compile/runtime failure — `context` is the post-mortem execution-context snapshot when the engine had produced one, and the failed indicator is removed again (no dead legend row). Never rejects. |
@@ -59,10 +59,11 @@ const chart = new Vela('#chart', { data: myBars, timeframe: '1h' })
 
 `addIndicator` returns right away so you can wire up UI before any computation finishes. The script is prepared (its inputs are parsed) and then executed over the bar history; the plotted output appears when execution resolves. Listen on the handle's `ready` event (or `chart.ready()` for the whole chart) rather than assuming data is present on return. On a deep-history chart the indicator waits for the background backfill and then computes once over the full depth — its `ready` fires when that single run lands.
 
-A minimal end-to-end setup — construct over data, register the Pine engine, add an indicator, then await the first render:
+A minimal end-to-end setup — construct over data, register a scripting engine (here the Pine addon), add an indicator, then await the first render:
 
 ```js
-import { Vela, PineEngine } from 'vela';
+import { Vela } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets';
 
 const chart = new Vela('#chart', { data: myBars, timeframe: '1h', theme: 'dark' });
 chart.registerEngine('pine', new PineEngine());
@@ -308,7 +309,7 @@ The optional third constructor argument is where you replace a layer's default w
 | Key | Replaces | Guide |
 |---|---|---|
 | `renderer` | The drawing/output layer. Injects an already-constructed renderer *instance*, bypassing the `renderer` option's display-options wiring (a different axis from built-in vs custom — `options.renderer` already accepts any custom class too). | [Adding a renderer](../contributing/adding-a-renderer.md) |
-| `engines` | Scripting engines to register at construction (bulk form of `registerEngine`). | Adding an engine *(in progress)* |
+| `engines` | Scripting engines to register at construction (bulk form of `registerEngine`). | [Scripting engines](./scripting-engines.md) · [Adding an engine](../contributing/adding-an-engine.md) |
 | `dataFeed` | The market-data source. Replaces the default provider registry entirely with your own `MarketDataFeed` (used bare — no registry, no auto-cache). | [Adding a data provider](../contributing/adding-a-data-provider.md) |
 
 Each layer is one narrow port — implement it, declare its honest capabilities, and inject it here. The composition root is the only place that imports concrete backends.

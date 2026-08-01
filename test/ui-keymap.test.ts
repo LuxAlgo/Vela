@@ -94,6 +94,28 @@ describe('KeymapManager', () => {
         expect(km.handleKeydown(ev({ key: 'b', target: input }))).toBe(true);
     });
 
+    it('treats every spelling of "accepts text" as editable', () => {
+        const km = new KeymapManager({ platform: 'other' });
+        const run = vi.fn();
+        km.register({ id: 'a', keys: 'a', label: 'A', run });
+
+        const attr = (role: string | null) => ({ tagName: 'DIV', getAttribute: (n: string) => (n === 'role' ? role : null) });
+        for (const target of [
+            { tagName: 'TEXTAREA' },
+            { tagName: 'SELECT' },
+            { tagName: 'DIV', isContentEditable: true },
+            // The EditContext form: neither a form control nor contenteditable. Monaco 0.5x
+            // renders exactly this, so without it every letter typed in a docked code editor
+            // would fire a chart shortcut instead.
+            attr('textbox'),
+        ]) {
+            expect(km.handleKeydown(ev({ key: 'a', target }))).toBe(false);
+        }
+        // …but an ordinary element still gets the shortcut.
+        expect(km.handleKeydown(ev({ key: 'a', target: attr(null) }))).toBe(true);
+        expect(km.handleKeydown(ev({ key: 'a', target: attr('button') }))).toBe(true);
+    });
+
     it('rebind overrides descriptor keys and bindings() reflects it with display strings', () => {
         const km = new KeymapManager({ platform: 'other' });
         const run = vi.fn();

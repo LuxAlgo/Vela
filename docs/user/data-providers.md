@@ -5,7 +5,8 @@
 No provider is bundled. A symbol-backed chart fetches nothing until you register a provider — registering the one that resolves the chart symbol is what **fires the initial load**.
 
 ```js
-import { Vela, PineEngine } from 'vela';
+import { Vela } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets'; // the Pine Script addon — Vela ships no engine
 import { BinanceProvider } from 'vela/providers/binance';
 
 const chart = new Vela('#chart', { symbol: 'BTCUSDT', timeframe: '1h' })

@@ -6,10 +6,11 @@ Two runnable examples ship with Vela, plus an interactive playground. **Both exa
 
 ## Orientation snippet
 
-The shape of every example is the same: create a chart over offline data, register the Pine engine, add an indicator.
+The shape of every example is the same: create a chart over offline data, register a scripting engine, add an indicator. Vela ships no engine — these examples use the Pine addon (`npm i @luxalgo/vela-pinets pinets`; see [Scripting engines](./scripting-engines.md)).
 
 ```js
-import { Vela, PineEngine } from 'vela';
+import { Vela } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets';
 
 const chart = new Vela('#chart', { data: myBars, timeframe: '1h', live: false, theme: 'dark' });
 chart.registerEngine('pine', new PineEngine());
@@ -28,7 +29,8 @@ Everything in one place — a provider-backed, live chart with a custom theme, t
 **Construct** with the full option set:
 
 ```js
-import { Vela, PineEngine } from 'vela';
+import { Vela } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets';
 import { BinanceProvider } from 'vela/providers/binance';
 
 // A full custom theme — all seven fields are required.

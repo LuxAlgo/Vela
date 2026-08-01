@@ -1,22 +1,22 @@
 // The bare playground page: mount the Vela WIDGET (topbar + chart) with the Binance provider
-// (public API, no key, no server needed), the main-thread Pine engine, and an inline
-// indicator manifest — the OS integration surface exercised end to end.
+// (public API, no key, no server needed), the page's own demo scripting engine, and an
+// inline indicator manifest — the OS integration surface exercised end to end.
+//
+// Vela SHIPS NO SCRIPTING ENGINE. `demo-engine.ts` (next to this file) is a ~300-line
+// engine written against the public `ScriptingEngine` port purely so this page can
+// exercise the indicator path with zero dependencies — it is the runnable companion to
+// docs/contributing/adding-an-engine.md, not a product. For Pine Script, install the
+// addon and swap one line:
+//
+//     npm i @luxalgo/vela-pinets pinets
+//     import { PineWorkerEngine } from '@luxalgo/vela-pinets';
+//     engines: { pine: () => new PineWorkerEngine() }
+//
+// …which is exactly what the addon's own playground does (repos/Vela-pinets, port 5192).
 import { VelaWidget } from '../src/widget';
-import { PineWorkerEngine } from '../src';
 import { BinanceProvider } from '../src/data/providers/binance';
+import { DemoEngine, DEMO_SCRIPTS } from './demo-engine';
 import { playgroundStorage } from './persistence';
-
-// Worker-path test instrumentation: count real Web Worker spawns so a browser probe
-// can PROVE Pine runs off the main thread (window.__workerSpawns >= 1). Temporary,
-// while the worker engine's fate in the npm package is being decided.
-const RealWorker = window.Worker;
-(window as unknown as { __workerSpawns: number }).__workerSpawns = 0;
-window.Worker = class extends RealWorker {
-    constructor(...args: ConstructorParameters<typeof Worker>) {
-        super(...args);
-        (window as unknown as { __workerSpawns: number }).__workerSpawns++;
-    }
-} as typeof Worker;
 
 // The playground's CUSTOM persistence (shared with the workspace page): with `persist`
 // on, the widget saves and restores EVERYTHING through this adapter — prefs, renderer
@@ -33,15 +33,12 @@ const widget = new VelaWidget('#chart', {
     persist: true, // key 'vela-widget' → 'vela-play:vela-widget' in devtools
     storage,
     providers: { binance: () => new BinanceProvider() },
-    engines: { pine: () => new PineWorkerEngine() },
+    engines: { demo: () => new DemoEngine() }, // swap for `pine: () => new PineWorkerEngine()` (see the header)
+    defaultLanguage: 'demo', // scripts added without a `language` run on the engine above
     indicators: [
-        {
-            name: 'EMA 20',
-            enabled: false, // library-only: pick it from the indicators dialog, never auto-added
-            script: `//@version=5
-indicator("EMA 20", overlay=true)
-plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
-        },
+        { name: 'EMA 20', enabled: false, script: DEMO_SCRIPTS.ema, language: 'demo' }, // library-only:
+        { name: 'Bollinger Bands', enabled: false, script: DEMO_SCRIPTS.bands, language: 'demo' }, //  pick them
+        { name: 'RSI 14', enabled: false, script: DEMO_SCRIPTS.rsi, language: 'demo' }, //  from the dialog
     ],
 
     // ── The rest of the CHART options, at their defaults — uncomment to play ─────────
@@ -60,7 +57,6 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
     // renderer: NativeRenderer,       // a custom IChartRenderer class (default: the native renderer)
     // drawings: true,                 // user drawings — default: toolbar VISIBLE; false hides it (the
     //                                 //  chart.drawings API stays); {tools/groups, toolbar} customizes
-    // defaultLanguage: 'pine',        // language for addIndicator calls that name none
     // height: 600,                    // px or CSS size (default: fill the container)
 
     // ── The rest of the SHELL options, at their defaults ──────────────────────────────
@@ -135,9 +131,7 @@ registerWidgetAction({
     run: (ctx) => {
         if (!codeDialog) {
             codeArea = document.createElement('textarea');
-            codeArea.value = `//@version=5
-indicator("My RSI", overlay=false)
-plot(ta.rsi(close, 14), color=color.purple)`;
+            codeArea.value = DEMO_SCRIPTS.bands;
             codeArea.spellcheck = false;
             codeArea.style.cssText =
                 'width:520px;max-width:80vw;height:220px;resize:vertical;background:var(--vela-surface-overlay);color:var(--vela-fg);border:1px solid var(--vela-border-soft);border-radius:var(--vela-radius-md);padding:10px;font:12px/1.5 ui-monospace,Consolas,monospace;outline:none;';

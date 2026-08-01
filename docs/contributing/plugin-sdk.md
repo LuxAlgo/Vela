@@ -118,6 +118,7 @@ registerWidgetAction({
     run: (ctx) => {
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
         // ctx.setSymbol / setTimeframe / setPriceStyle / openSymbolSearch(query?)
+        // ctx.togglePanel(id, open?) — open/close a docked side panel (dock stays exclusive)
         // ctx.host  — mount host for kit components (Dialog/Menu/Tooltip)
         // ctx.toast(message, kind?) — the widget's feedback pill
     },
@@ -189,9 +190,11 @@ registerSidePanel({
     resizable: true,             // drag the inner edge; double-click returns to `width`
     minWidth: 240,
     maxWidth: 560,
-    mount: (ctx, body) => {
+    mount: (ctx, body, header) => {
         const list = document.createElement('div');
         body.appendChild(list);                       // `body` is the panel's scrolling area
+        header.setTitle('BTC flow');                  // optional: replace the header title…
+        header.slot.appendChild(myIconButton);        // …and dock compact controls beside it
         return {
             onChart: (chart) => { /* (re)bind: mount, widget rebuild, active cell change */ },
             onOpen: () => { /* became visible — render now if you render lazily */ },
@@ -200,6 +203,12 @@ registerSidePanel({
     },
 });
 ```
+
+- **The header is shareable, not replaceable.** `header.slot` is the space between the
+  title and the close button — lay out inline controls there (icon buttons, a document
+  name); `header.setTitle` rewrites the title text (an empty string hides it, letting the
+  slot own the row). The close button and the row itself stay the shell's, and the topbar
+  toggle keeps the DECLARED `title` as its tooltip.
 
 - **Width is a per-panel choice.** Omit `resizable` for a fixed column; with it, the drag is
   clamped to `[minWidth, maxWidth]` (defaults 200/640) and the width the user settles on is
@@ -215,8 +224,10 @@ registerSidePanel({
 
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 
-Engines are **per-chart instances** (`chart.registerEngine('pine', new PineEngine())`,
-or the widget's `engines: { pine: () => … }` factories). Two things ship here:
+Vela bundles no engine — you install one (`@luxalgo/vela-pinets` for Pine Script) or write
+one against the port. Engines are **per-chart instances**
+(`chart.registerEngine('pine', new PineEngine())`, or the widget's
+`engines: { pine: () => … }` factories). Two things ship here:
 
 **`registerDefaultEngine(language, factory)`** — the app-level default: every widget
 and workspace cell built afterwards registers `factory()` on its chart automatically

@@ -56,7 +56,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `live` | boolean | `false` | `true` adds a forming candle + live ticks on top of history. |
 | `theme` | `'dark' \| 'light'` or a theme object | `dark` | Pass an object to fully customize colors/fonts. |
 | `renderer` | renderer **class** | native | A renderer class to instantiate; omit for the built-in native renderer (default). The multi-renderer port (`IChartRenderer`) stays open — pass any class implementing it. |
-| `defaultLanguage` | string | `'pine'`* | Scripting language used when `addIndicator` doesn't name one. |
+| `defaultLanguage` | string | first registered engine* | Scripting language used when `addIndicator` doesn't name one. Falls back to the first engine registered at construction, then to `'pine'`. |
 | `currentPriceLine` | boolean | `true` | Dashed line + axis label at the latest price. |
 | `logScale` | boolean | `false` | Logarithmic price scale. |
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |

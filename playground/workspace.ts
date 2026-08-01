@@ -1,10 +1,14 @@
 // The workspace playground page: a 4-cell VelaWorkspace on live Binance data with the
-// worker Pine engine and the full shared chrome — topbar (symbol / timeframe / style /
-// LAYOUT dropdowns, indicator picker, alerts, screenshot, object tree, settings),
+// page's demo scripting engine and the full shared chrome — topbar (symbol / timeframe /
+// style / LAYOUT dropdowns, indicator picker, alerts, screenshot, object tree, settings),
 // bottombar (range chips, clock, timezone), one keymap. Served straight from src/ (HMR).
+//
+// Vela ships no scripting engine — `demo-engine.ts` is the page's own, written against
+// the public port (see widget.ts's header). For Pine Script:
+// `npm i @luxalgo/vela-pinets pinets` and `engines: { pine: () => new PineWorkerEngine() }`.
 import { VelaWorkspace } from '../src/workspace';
-import { PineWorkerEngine } from '../src';
 import { BinanceProvider } from '../src/data/providers/binance';
+import { DemoEngine, DEMO_SCRIPTS } from './demo-engine';
 import { playgroundStorage } from './persistence';
 
 const ws = new VelaWorkspace('#workspace', {
@@ -22,15 +26,12 @@ const ws = new VelaWorkspace('#workspace', {
         bnb: { symbol: 'BNBUSDT', timeframe: 'D' },
     },
     providers: { binance: () => new BinanceProvider() },
-    engines: { pine: () => new PineWorkerEngine() },
+    engines: { demo: () => new DemoEngine() }, // ONE instance per cell (a worker engine would get a thread each)
+    defaultLanguage: 'demo', // scripts added without a `language` run on the engine above
     indicators: [
-        {
-            name: 'EMA 20',
-            enabled: false, // library-only: pick it from the indicators dialog, never auto-added
-            script: `//@version=5
-indicator("EMA 20", overlay=true)
-plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
-        },
+        { name: 'EMA 20', enabled: false, script: DEMO_SCRIPTS.ema, language: 'demo' }, // library-only:
+        { name: 'Bollinger Bands', enabled: false, script: DEMO_SCRIPTS.bands, language: 'demo' }, //  pick them
+        { name: 'RSI 14', enabled: false, script: DEMO_SCRIPTS.rsi, language: 'demo' }, //  from the dialog
     ],
     live: true,
     theme: 'dark',
@@ -57,7 +58,6 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`,
     // renderer: NativeRenderer,       // a custom IChartRenderer class for every cell
     // drawings: true,                 // per-cell tools config — its `toolbar` key is ignored: the grid's
     //                                 //  ONE shared bar replaces per-cell bars (see drawingToolbar)
-    // defaultLanguage: 'pine',        // language for addIndicator calls that name none
     // (no `height` here: the grid sizes its cells)
 
     // ── The rest of the SHELL options, at their defaults ──────────────────────────────

@@ -12,7 +12,7 @@ import { resolveTheme } from '../core/theme';
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import { ensureUIHost, injectStyles } from '../ui';
-import { KeymapManager } from '../ui/keymap';
+import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
 import { Statusline } from './statusline';
 import { Watermark } from './watermark';
@@ -390,6 +390,7 @@ export class VelaWidget {
             setTimeframe: (tf) => this.setTimeframe(tf),
             setPriceStyle: (style) => this.setPriceStyle(style),
             openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
+            togglePanel: (id, open) => this.dock.toggle(id, open),
             host: this.root,
             toast: (message, kind) => this.toast?.show(message, kind),
         };
@@ -1062,9 +1063,7 @@ export class VelaWidget {
     private routeTyping(ev: KeyboardEvent): void {
         if (this.destroyed || this.openDialogs > 0) return;
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-        const t = ev.target as Partial<HTMLElement> | null;
-        const tag = (t?.tagName ?? '').toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable === true) return;
+        if (isEditableTarget(ev)) return; // never hijack a keystroke someone is TYPING
         const key = ev.key;
         if (/^[a-zA-Z]$/.test(key)) {
             ev.preventDefault();

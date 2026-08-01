@@ -16,6 +16,10 @@ export interface WidgetContext {
     setTimeframe(tf: string): void;
     setPriceStyle(style: string): void;
     openSymbolSearch(query?: string): void;
+    /** Open/close a docked side panel by id (built-in or contributed) — a bare call flips
+     *  it. The dock stays exclusive: opening one closes whichever was showing. Unknown ids
+     *  are ignored. The seam a plugin uses to open ITS OWN panel programmatically. */
+    togglePanel(id: string, open?: boolean): void;
     /** The widget's root element — pass it as `host` when mounting kit components
      *  (Dialog/Menu/Tooltip) from an action; without an explicit host they portal to
      *  the body, OUTSIDE the theme variables. A multi-chart shell hands its own root. */
@@ -69,11 +73,25 @@ export interface SidePanelHandle {
 }
 
 /**
+ * The header surface a contributed panel may use: a SLOT between the title and the close
+ * button for compact controls (a document name, action icons), and the title text itself.
+ * Everything else in the header (the close button, the row) stays the shell's.
+ */
+export interface SidePanelHeader {
+    /** Lay out inline controls here; the close button stays pinned right of it. */
+    slot: HTMLElement;
+    /** Replace the header title (an empty string hides it). The topbar toggle keeps the
+     *  DECLARED `title` as its tooltip. */
+    setTitle(title: string): void;
+}
+
+/**
  * A contributed SIDE PANEL — a docked column in the shell's panel dock, alongside the object
  * tree and the data window, with a toggle button in the topbar's panel group.
  *
  * The shell owns the chrome (header, close button, dock exclusivity, the button and its pressed
- * state) and hands `mount` the panel's BODY element to fill; the contribution never reaches into
+ * state) and hands `mount` the panel's BODY element to fill — plus a {@link SidePanelHeader}
+ * for panels that dock controls in their header; the contribution never reaches into
  * the shell's DOM. Register at import time, before widgets are constructed (`refreshActions()`
  * picks up later registrations on an already-built widget).
  */
@@ -92,7 +110,7 @@ export interface SidePanelDescriptor {
     resizable?: boolean;
     minWidth?: number;
     maxWidth?: number;
-    mount(ctx: WidgetContext, body: HTMLElement): SidePanelHandle | void;
+    mount(ctx: WidgetContext, body: HTMLElement, header: SidePanelHeader): SidePanelHandle | void;
 }
 
 /** One panel toggle, as the shell's chrome consumes it (data, never DOM). */
