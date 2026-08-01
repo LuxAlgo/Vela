@@ -7,7 +7,11 @@
 // then round-trips through the workspace pool, so shrinking 4 → 2 → 4 restores
 // `c3`/`c4` exactly, indicators and drawings included).
 import { Vela } from '../Vela';
-import type { VelaTheme, NativeBackend } from '../core/options';
+import type { VelaTheme, NativeBackend, VelaOptions } from '../core/options';
+import type { OHLCV } from '../core/model/ohlcv';
+import type { VisibleRangePreset } from '../core/visible-range';
+import type { VisibleRange } from '../core/ports/IChartRenderer';
+import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
@@ -20,18 +24,68 @@ import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
 import { resolveEngines, type WidgetContext } from '../widget/contributions';
 import type { CellState } from '../state/document';
 
-/** The seed/mutable market state of one cell (all optional — an empty cell parks). */
+/** The seed/mutable market state of one cell (all optional — an empty cell parks).
+ *  The SAME vocabulary as the widget's chart options: the workspace's top-level chart
+ *  options provide every cell's default ({@link seedDefaults}), `cells` overrides per
+ *  cell. `data`/`visibleRange` are boot-only (they seed the first load, never persist). */
 export interface CellSeed {
     symbol?: string;
     provider?: string;
     timeframe?: string;
     priceStyle?: string;
     bars?: number;
+    /** Offline bars for this cell — replaces the provider (boot-only). */
+    data?: OHLCV[];
+    /** Initial visible window (boot-only). */
+    visibleRange?: VisibleRangePreset | VisibleRange;
 }
 
 /** A destroyed cell's state, kept by the workspace pool so its slot restores later —
  *  the per-cell entry of the SHARED state document (`src/state/document.ts`). */
 export type PooledCellState = CellState;
+
+/** What a cell BOOTS from: a pooled state (restored slot) or an options seed — plus
+ *  the boot-only extras a pooled state never carries (offline bars, initial window). */
+export type CellBoot = PooledCellState & Pick<CellSeed, 'data' | 'visibleRange'>;
+
+/** The per-cell SEED the workspace's top-level chart options provide — same words as
+ *  the widget; `cells[id]` spreads over this. */
+export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'provider' | 'timeframe' | 'bars' | 'priceStyle' | 'data' | 'visibleRange'>): CellSeed {
+    return {
+        symbol: opts.symbol,
+        provider: opts.provider,
+        timeframe: opts.timeframe,
+        bars: opts.bars,
+        priceStyle: opts.priceStyle,
+        data: opts.data,
+        visibleRange: opts.visibleRange,
+    };
+}
+
+/** Chart options the workspace forwards VERBATIM to every cell's chart — the widget
+ *  vocabulary minus what the grid manages itself: `height` (the grid sizes cells),
+ *  `nativeBackend` (the WebGL budget policy, explicit value resolved upstream), the
+ *  market/view seeds (those flow through {@link CellSeed}), and `drawings`' toolbar
+ *  sub-key (see {@link cellDrawings}). */
+export type CellChartDefaults = Pick<
+    VelaOptions,
+    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings'
+>;
+
+/** The {@link CellChartDefaults} pick of a workspace's options (pure, for the build). */
+export function cellChartDefaults(opts: CellChartDefaults): CellChartDefaults {
+    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings } = opts;
+    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings };
+}
+
+/** The cell form of the shell's `drawings` option: everything passes through EXCEPT the
+ *  toolbar — ONE shared bar serves the grid (per-cell bars would cost a 44px gutter
+ *  each). An explicit `false` stays an opt-out (the headless `chart.drawings` API only). */
+export function cellDrawings(opt: DrawingsOption | undefined): DrawingsOption {
+    if (opt === false) return false;
+    if (opt === true || opt == null) return { toolbar: false };
+    return { ...opt, toolbar: false };
+}
 
 /** One entry of the shared indicator picker's native catalog, per cell. */
 export interface CellNativeInfo {
@@ -48,6 +102,8 @@ export interface CellDeps {
     feed: MarketDataFeed;
     /** Scripting-engine factories — instantiated PER CELL (a worker engine per cell). */
     engines: Record<string, () => ScriptingEngine>;
+    /** The workspace's top-level chart options every cell's chart starts from. */
+    chartDefaults: CellChartDefaults;
     theme: VelaTheme;
     live: boolean;
     volume: boolean;
@@ -118,7 +174,7 @@ export class ChartCell {
     constructor(
         readonly id: string,
         gridHost: HTMLElement,
-        seed: PooledCellState,
+        seed: CellBoot,
         private readonly deps: CellDeps,
     ) {
         this.state = { symbol: seed.symbol, provider: seed.provider, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars };
@@ -136,11 +192,14 @@ export class ChartCell {
         this.inner = new Vela(
             this.host,
             {
+                ...deps.chartDefaults,
                 provider: seed.provider,
                 symbol: seed.symbol,
                 timeframe: seed.timeframe,
                 bars: seed.bars,
                 priceStyle: seed.priceStyle,
+                data: seed.data,
+                visibleRange: seed.visibleRange,
                 theme: deps.theme,
                 live: deps.live,
                 // A RESTORED ledger is authoritative for the auto-added volume too: a
@@ -148,9 +207,9 @@ export class ChartCell {
                 // keep the workspace default).
                 volume: seed.indicators ? seed.indicators.natives.includes('volume') : deps.volume,
                 nativeBackend: deps.nativeBackend,
-                // One SHARED toolbar serves the whole workspace (it lands with the shared
-                // chrome); per-cell bars would cost a 44px gutter in every cell.
-                drawings: { toolbar: false },
+                // The user's drawings option minus its toolbar: one SHARED bar serves
+                // the whole workspace (per-cell bars would cost a 44px gutter each).
+                drawings: cellDrawings(deps.chartDefaults.drawings),
             },
             { dataFeed: deps.feed },
         );

@@ -9,13 +9,15 @@ import { playgroundStorage } from './persistence';
 
 const ws = new VelaWorkspace('#workspace', {
     layout: '4',
+    // The unified vocabulary: top-level chart options are every cell's DEFAULT
+    // (c1 has no override, so it shows exactly these), `cells` overrides per cell.
+    symbol: 'BTCUSDT',
+    timeframe: '60',
     cells: {
-        c1: { symbol: 'BTCUSDT', timeframe: '60' },
         c2: { symbol: 'ETHUSDT', timeframe: '15' },
         c3: { symbol: 'SOLUSDT', timeframe: '240' },
         c4: { symbol: 'BNBUSDT', timeframe: 'D' },
     },
-    defaults: { symbol: 'BTCUSDT', timeframe: '60' },
     providers: { binance: () => new BinanceProvider() },
     engines: { pine: () => new PineWorkerEngine() },
     indicators: [

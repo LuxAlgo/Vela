@@ -1,6 +1,6 @@
-// Widget state persistence — pluggable storage. localStorage by default; hosts inject
-// any `WidgetStorage` (sync like localStorage, or async like a REST/IndexedDB backend).
-// Reads may return promises: the widget applies sync values at construction and
+// Shell state persistence — pluggable storage. localStorage by default; hosts inject
+// any `VelaStorage` (sync like localStorage, or async like a REST/IndexedDB backend).
+// Reads may return promises: the shell applies sync values at construction and
 // late-applies async ones when they resolve.
 //
 // The persisted FORMAT is the unified state document (`src/state/document.ts`) — the
@@ -8,12 +8,16 @@
 // LEGACY pre-unified prefs shape, kept for one-time migration of old keys.
 import type { WorkspaceState, CellState } from '../state/document';
 
-/** The storage contract. Methods may be synchronous or return promises. */
-export interface WidgetStorage {
+/** The storage contract BOTH shells persist through (the widget and the workspace —
+ *  one name, one shape). Methods may be synchronous or return promises. */
+export interface VelaStorage {
     get(key: string): string | null | Promise<string | null>;
     set(key: string, value: string): void | Promise<void>;
     remove?(key: string): void | Promise<void>;
 }
+
+/** @deprecated Use {@link VelaStorage} — same contract, shell-neutral name. */
+export type WidgetStorage = VelaStorage;
 
 /**
  * The default adapter — window.localStorage, silent on quota/privacy failures.

@@ -9,7 +9,8 @@
 // undo-history are per-cell; everything else is shared.
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
-import type { ThemeName, VelaTheme, NativeBackend } from '../core/options';
+import type { VelaTheme, NativeBackend, VelaOptions } from '../core/options';
+import type { VelaShellOptions } from '../widget/shell-options';
 import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
@@ -37,8 +38,9 @@ import { createAttributionMark } from '../renderers/native/chrome/AttributionMar
 import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
-import { encodeState, decodeState, sanitizeState, memoryStorageAdapter, type WorkspaceState, type WorkspaceStorage } from './persist';
-import { ChartCell, type CellSeed, type PooledCellState } from './ChartCell';
+import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
+import { localStorageAdapter } from '../widget/persist';
+import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
 import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
     registerBuiltinLayouts,
@@ -51,37 +53,23 @@ import {
 } from './layouts';
 import { SplitterLayer, evenTracks } from './splitters';
 
-export interface VelaWorkspaceOptions {
+/**
+ * The workspace options: the widget's chart vocabulary + the shared shell surface + the
+ * grid's own options. Every chart option given TOP-LEVEL (symbol, timeframe, priceStyle,
+ * upColor, glow, defaultLanguage, …) is the DEFAULT of each cell — `cells` overrides it
+ * per cell with the same words. `height` is the one chart option a grid cannot honor
+ * (the layout sizes cells), so it is omitted from the type.
+ */
+export interface VelaWorkspaceOptions extends Omit<VelaOptions, 'height'>, VelaShellOptions {
     /** Initial layout — a registered id (`'1'`, `'2h'`, `'2v'`, `'4'`, `'8'`, or a
      *  plugin-registered one) or an inline definition. Default `'4'`. */
     layout?: string | LayoutDefinition;
-    /** Per-slot market seeds, keyed by canonical cell id (`c1`…). Unseeded slots use `defaults`. */
+    /** Per-cell overrides of the top-level chart options, keyed by canonical cell id
+     *  (`c1`…) — same vocabulary, reduced to the per-cell seeds ({@link CellSeed}). */
     cells?: Record<string, CellSeed>;
-    /** Fallback seed for slots without an entry in `cells`. */
-    defaults?: CellSeed;
-    /** Provider factories — called ONCE and registered on the single shared feed. */
-    providers?: Record<string, () => DataProvider>;
-    /** Scripting-engine factories — called once PER CELL (e.g. a worker engine per cell). */
-    engines?: Record<string, () => ScriptingEngine>;
-    /** Indicator manifest (inline JSON or a URL) — resolved ONCE; `enabled` entries
-     *  auto-add to every FRESH cell (pool-restored cells re-add their own set). */
-    indicators?: string | IndicatorManifest;
-    /** Topbar timeframe presets. */
-    timeframes?: string[];
-    /** Workspace-global display timezone (IANA; applied to EVERY cell). Default 'Etc/UTC'. */
-    timezone?: string;
-    theme?: ThemeName | VelaTheme;
-    live?: boolean;
-    volume?: boolean;
-    statusline?: boolean;
-    watermark?: boolean;
-    bottombar?: boolean;
-    /** Focus the active chart when the workspace mounts so keyboard shortcuts work from
-     *  the first keystroke — no initial click needed. Default false: an embedded
-     *  workspace must never steal the page's focus from the host's own controls. */
-    autofocus?: boolean;
     /** The ONE shared drawing toolbar, docked left of the grid and acting on the active
-     *  cell (per-cell in-chart bars stay hidden either way). Default true. */
+     *  cell (per-cell in-chart bars stay hidden either way; a `drawings` object still
+     *  configures tools/persistence per cell). Default true. */
     drawingToolbar?: boolean;
     /** Sync links between cells: per kind, `true` = all cells, or a `{cellId: group}`
      *  record (only same-group cells follow each other). `crosshair` mirrors the
@@ -89,16 +77,9 @@ export interface VelaWorkspaceOptions {
      *  layout dropdown). Default: everything off. Change at runtime via
      *  `ws.sync.set(kind, setting)`. */
     sync?: SyncOptions;
-    /** Persist the workspace state and restore it as defaults (`true` = key
-     *  'vela-workspace'; a string is the key). The state document is what
-     *  `getState()` returns; writes are debounced and flushed on unload/destroy. */
-    persist?: boolean | string;
-    /** Storage backend for `persist` — DEFAULT: an in-memory, session-lived adapter
-     *  (a destroyed and re-created workspace restores; a reload starts fresh).
-     *  Plug any {@link WorkspaceStorage} (sync or async) for durable persistence. */
-    storage?: WorkspaceStorage;
     /** Above this many cells, EVERY cell uses the canvas2d backend (uniform look inside
-     *  the browser's WebGL-context budget; glow is unavailable there). Default 8. */
+     *  the browser's WebGL-context budget; glow is unavailable there). Default 8; an
+     *  explicit `nativeBackend` other than `'auto'` wins over this policy. */
     maxWebglCells?: number;
 }
 
@@ -215,7 +196,7 @@ export class VelaWorkspace {
         // ── persistence boot: a SYNC storage restores before the first build (no flash
         // of defaults); an async adapter resolves later and late-applies via applyState.
         this.persistKey = opts.persist === undefined || opts.persist === false ? null : opts.persist === true ? 'vela-workspace' : opts.persist;
-        this.storage = opts.storage ?? memoryStorageAdapter();
+        this.storage = opts.storage ?? localStorageAdapter();
         let boot: WorkspaceState | null = null;
         if (this.persistKey !== null) {
             const raw = this.storage.get(this.persistKey);
@@ -750,6 +731,9 @@ export class VelaWorkspace {
     }
 
     private backendFor(def: LayoutDefinition): NativeBackend {
+        // An explicit backend is the host's word — the WebGL budget policy only decides 'auto'.
+        const explicit = this.opts.nativeBackend;
+        if (explicit && explicit !== 'auto') return explicit;
         return def.cells.length > (this.opts.maxWebglCells ?? 8) ? 'canvas2d' : 'auto';
     }
 
@@ -789,11 +773,12 @@ export class VelaWorkspace {
         for (const slot of this.def.cells) {
             if (this.cellsById.has(slot.id)) continue;
             const pooled = this.pool.get(slot.id);
-            const seed: PooledCellState = pooled ?? { ...(this.opts.defaults ?? {}), ...(this.opts.cells?.[slot.id] ?? {}) };
+            const seed: CellBoot = pooled ?? { ...seedDefaults(this.opts), ...(this.opts.cells?.[slot.id] ?? {}) };
             this.pool.delete(slot.id); // the slot is live again — its pooled state is consumed
             const cell = new ChartCell(slot.id, this.gridEl, seed, {
                 feed: this.feed,
                 engines: this.opts.engines ?? {},
+                chartDefaults: cellChartDefaults(this.opts),
                 theme,
                 live: this.opts.live ?? false,
                 volume: this.opts.volume ?? true,

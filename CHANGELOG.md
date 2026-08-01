@@ -6,6 +6,21 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **One options vocabulary for both shells.** `VelaWidgetOptions` and
+  `VelaWorkspaceOptions` now share the same base: every chart option (`VelaOptions`) plus
+  the shell surface (`VelaShellOptions` — providers, engines, indicators, timeframes,
+  timezone, chrome toggles, persistence), the widget adding only `urlState`, the
+  workspace adding the grid (`layout`, `cells`, `sync`, `drawingToolbar`,
+  `maxWebglCells`) and dropping only `height`. A chart option means the same thing
+  everywhere: on the widget it configures the chart, on the workspace it is every
+  cell's DEFAULT and `cells` overrides it per cell with the same words — which hands
+  the workspace options it never had (`upColor`/`downColor`, `glow`, `animations`,
+  `logScale`, `currentPriceLine`, `drawings` — toolbar excepted, the shared bar keeps
+  that job — `defaultLanguage`, `renderer`, plus `data` and `visibleRange` top-level
+  and per cell). An explicit `nativeBackend` now wins over the `maxWebglCells` budget
+  policy. The storage contract is one type for both shells, `VelaStorage`
+  (`WidgetStorage` / `WorkspaceStorage` stay as deprecated aliases).
+
 - **An app can make an engine its default with one call.** `registerDefaultEngine(language,
   factory)` on `vela/plugin`: every widget and workspace cell built afterwards registers
   `factory()` on its chart automatically (one instance per chart — engines hold per-chart
@@ -24,6 +39,15 @@ All notable changes to Vela, newest first.
   `notifyBars(reason)` backfill run policy, the `symbolInfo` / `chartStyle` request
   subtleties, the widget's `engines` factories and their `defaultLanguage` caveat, and
   how to package an engine standalone.
+
+### Changed
+
+- **BREAKING (workspace): `defaults` is gone.** Its keys move to the top level, same
+  words: `defaults: { symbol: 'BTCUSDT', timeframe: '60' }` becomes
+  `symbol: 'BTCUSDT', timeframe: '60'`.
+- **BREAKING (workspace): `persist` now defaults to localStorage**, like the widget —
+  `persist: true` survives reloads out of the box. Session-only persistence is the
+  opt-in now: pass `storage: memoryStorageAdapter()`.
 
 ## [v0.3.0]
 

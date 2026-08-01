@@ -2,6 +2,11 @@
 
 The second argument to `new Vela(container, options, deps?)` configures market data, display, and behavior. Everything here is optional — `new Vela('#chart', { data: myBars })` is enough to render candles.
 
+This vocabulary is shared by all three entry points: the [widget](./widget.md) accepts
+every option below verbatim (plus its shell options), and the
+[workspace](./workspace.md) accepts them all except `height` — there, each one is the
+DEFAULT of every cell, overridable per cell through `cells`.
+
 Per-indicator options (the third argument to `addIndicator`) are covered at the end.
 
 ## Market options

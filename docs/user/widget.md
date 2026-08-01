@@ -28,7 +28,10 @@ const widget = new VelaWidget('#chart', {
 
 ## Options
 
-On top of every [chart option](./options.md), the widget adds:
+On top of every [chart option](./options.md), the widget adds the **shell options** —
+the surface it shares, name for name and meaning for meaning, with
+[the workspace](./workspace.md) (`VelaShellOptions`) — plus one extra of its own,
+`urlState`:
 
 | Option | Type | Default | What it does |
 | --- | --- | --- | --- |
@@ -36,12 +39,11 @@ On top of every [chart option](./options.md), the widget adds:
 | `engines` | `Record<string, () => ScriptingEngine>` | — | Scripting-engine factories, keyed by language (same rebuild semantics). Merged OVER any app-level defaults registered with `registerDefaultEngine` (`vela/plugin`) — the instance option wins per language. |
 | `indicators` | manifest \| URL string | — | The indicator manifest — inline JSON or a URL returning it (see below). |
 | `timeframes` | `string[]` | `['1','5','15','60','240','D','W']` | The topbar timeframe presets. |
-| `priceStyle` | string | `'candles'` | Initial chart style; changed live from the topbar dropdown. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
 | `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles. |
 | `autofocus` | boolean | `false` | Focus the chart on mount so keyboard shortcuts work from the first keystroke. Off by default: an embedded chart should not steal the page's focus. |
 | `persist` | boolean \| string | `false` | Bring the chart back as you left it — the widget persists its FULL state (the unified `getState()` document: market, prefs, renderer config, user drawings, indicators) and restores it at construction (`true` = key `'vela-widget'`; a string is the key). Old three-key payloads migrate transparently. |
-| `storage` | `WidgetStorage` | localStorage | The persistence backend — inject a custom adapter (see below). |
+| `storage` | `VelaStorage` | localStorage | The persistence backend — inject a custom adapter (see below); one contract for both shells. |
 | `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark flag) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
 
 ## The indicator manifest
@@ -159,14 +161,14 @@ directly.
 ## Custom persistence storage
 
 `persist` writes through a **storage adapter** — localStorage by default. Inject any
-backend by implementing `WidgetStorage` (methods may be synchronous *or* return
-promises):
+backend by implementing `VelaStorage` (one contract for both shells; methods may be
+synchronous *or* return promises):
 
 ```ts
-import { VelaWidget, type WidgetStorage } from 'vela/widget';
+import { VelaWidget, type VelaStorage } from 'vela/widget';
 
 // Example: a REST-backed store (per-user server-side settings).
-const restStorage: WidgetStorage = {
+const restStorage: VelaStorage = {
     async get(key) {
         const res = await fetch(`/api/settings/${encodeURIComponent(key)}`);
         return res.ok ? res.text() : null;

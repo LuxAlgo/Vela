@@ -26,7 +26,8 @@ import { ChartContextMenu } from './context-menu';
 import { widgetAttachments, resolveEngines, type WidgetContext } from './contributions';
 import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
-import { parsePersisted, legacyWidgetState, localStorageAdapter, type WidgetStorage } from './persist';
+import { parsePersisted, legacyWidgetState, localStorageAdapter, type VelaStorage } from './persist';
+import type { VelaShellOptions } from './shell-options';
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type CellState } from '../state/document';
 import { readUrlState, writeUrlState } from './url-state';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
@@ -37,36 +38,7 @@ import { Menu } from '../ui/components/menu';
 import { indicatorLedger, resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from './indicators';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 
-export interface VelaWidgetOptions extends VelaOptions {
-    /** Provider factories, keyed by provider name — called on every chart (re)build. */
-    providers?: Record<string, () => DataProvider>;
-    /** Scripting-engine factories, keyed by language — called on every chart (re)build. */
-    engines?: Record<string, () => ScriptingEngine>;
-    /** Indicator manifest (inline JSON) or a URL returning it — see widget/indicators.ts. */
-    indicators?: string | IndicatorManifest;
-    /** Topbar timeframe presets (chart timeframe values). */
-    timeframes?: string[];
-    /** Initial price style (default 'candles'); changed live via the topbar dropdown. */
-    priceStyle?: string;
-    /** Initial display timezone (IANA; default 'Etc/UTC'). */
-    timezone?: string;
-    /** Chrome toggles (all default true). */
-    statusline?: boolean;
-    watermark?: boolean;
-    bottombar?: boolean;
-    /** Focus the chart when it mounts so keyboard shortcuts work from the first
-     *  keystroke — no initial click needed. Default false: an embedded chart must
-     *  never steal the page's focus from the host's own controls. */
-    autofocus?: boolean;
-    /** Bring the chart back AS YOU LEFT IT: the widget persists its full state — the
-     *  unified single-cell document `getState()` returns (market, prefs, renderer
-     *  config, user drawings, indicators) — and restores it at construction. `true`
-     *  uses the key 'vela-widget'; a string is the storage key. Legacy three-key
-     *  payloads (pre-unified) migrate transparently on the first save. */
-    persist?: boolean | string;
-    /** Storage backend for `persist` — defaults to localStorage. Inject any
-     *  `WidgetStorage` (sync or async) for custom backends (REST, IndexedDB, …). */
-    storage?: WidgetStorage;
+export interface VelaWidgetOptions extends VelaOptions, VelaShellOptions {
     /** Mirror symbol/timeframe/style/timezone in the URL query (shareable links). A URL
      *  param wins over persisted state at load. Default false. */
     urlState?: boolean;
@@ -111,7 +83,7 @@ export class VelaWidget {
     /** Native-indicator catalog of the CURRENT chart (refreshed per rebuild/change). */
     private nativeCatalog: Array<{ type: string; title: string; supported: boolean; present: boolean; beta?: boolean }> = [];
     private readonly storageKey: string | null;
-    private readonly storage: WidgetStorage;
+    private readonly storage: VelaStorage;
     private openDialogs = 0;
     private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
     private symbol: string;

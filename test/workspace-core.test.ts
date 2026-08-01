@@ -13,6 +13,7 @@ import {
     type LayoutDefinition,
 } from '../src/workspace/layouts';
 import { evenTracks, resizeTracks, trackOffsets } from '../src/workspace/splitters';
+import { seedDefaults, cellChartDefaults, cellDrawings } from '../src/workspace/ChartCell';
 
 registerBuiltinLayouts();
 
@@ -155,5 +156,53 @@ describe('sync model (pure)', () => {
         expect(rangesWithin(a, { from: 1600, to: 2000 }, 500)).toBe(false); // from drifted past eps
         expect(rangesWithin(a, { from: 1000, to: 2601 }, 500)).toBe(false); // to drifted past eps
         expect(rangesWithin(a, a, 0)).toBe(true);
+    });
+});
+
+describe('unified options — the cell seed/defaults merge (pure)', () => {
+    it('seedDefaults picks exactly the widget market/view vocabulary', () => {
+        const seed = seedDefaults({
+            symbol: 'BTCUSDT', provider: 'binance', timeframe: '60', bars: 500,
+            priceStyle: 'footprint', data: [{ time: 1, open: 1, high: 1, low: 1, close: 1, volume: 1 }],
+            visibleRange: '1M',
+        });
+        expect(seed).toEqual({
+            symbol: 'BTCUSDT', provider: 'binance', timeframe: '60', bars: 500,
+            priceStyle: 'footprint', data: [{ time: 1, open: 1, high: 1, low: 1, close: 1, volume: 1 }],
+            visibleRange: '1M',
+        });
+    });
+
+    it('a per-cell entry overrides the top-level default, same words', () => {
+        const opts = { symbol: 'BTCUSDT', timeframe: '60', cells: { c2: { symbol: 'ETHUSDT', timeframe: '15' } } };
+        const c1 = { ...seedDefaults(opts), ...(opts.cells['c1' as 'c2'] ?? {}) };
+        const c2 = { ...seedDefaults(opts), ...opts.cells.c2 };
+        expect(c1.symbol).toBe('BTCUSDT');
+        expect(c2.symbol).toBe('ETHUSDT');
+        expect(c2.timeframe).toBe('15');
+        expect(c2.bars).toBeUndefined(); // untouched keys stay the (absent) default
+    });
+
+    it('cellChartDefaults forwards the renderer-config vocabulary and nothing else', () => {
+        const defaults = cellChartDefaults({
+            upColor: '#0a0', downColor: '#a00', glow: 0.5, logScale: true, currentPriceLine: false,
+            animations: { zoom: false, pan: true }, defaultLanguage: 'pine', drawings: true,
+            // extra keys a caller might hold — must NOT pass through:
+            ...( { symbol: 'BTCUSDT', height: 400, nativeBackend: 'webgl2' } as object),
+        });
+        expect(defaults).toEqual({
+            renderer: undefined, defaultLanguage: 'pine', currentPriceLine: false, logScale: true,
+            animations: { zoom: false, pan: true }, glow: 0.5, upColor: '#0a0', downColor: '#a00', drawings: true,
+        });
+        expect('symbol' in defaults).toBe(false);
+        expect('height' in defaults).toBe(false);
+        expect('nativeBackend' in defaults).toBe(false);
+    });
+
+    it('cellDrawings passes everything through EXCEPT the toolbar', () => {
+        expect(cellDrawings(undefined)).toEqual({ toolbar: false }); // today's default, preserved
+        expect(cellDrawings(true)).toEqual({ toolbar: false });
+        expect(cellDrawings(false)).toBe(false); // explicit opt-out respected
+        expect(cellDrawings({ tools: ['line'], toolbar: true } as never)).toEqual({ tools: ['line'], toolbar: false });
     });
 });
