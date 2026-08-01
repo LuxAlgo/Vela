@@ -5,14 +5,14 @@ This page gets you from a fresh clone to a working Vela build. You install and b
 ## Prerequisites
 
 - **Node.js and npm.** There is no pinned Node version in this repo (no `.nvmrc`, no `engines` range), so a current Node.js LTS and its bundled npm is the safe choice. If a pin is added later, treat that as the source of truth.
-- **`pinets`, the Pine scripting engine Vela depends on.** It is declared as an ordinary **optional peer dependency**, resolved normally from the npm registry — not via a local sibling checkout — plus a **devDependency** for local development and testing. The library will not produce a working scripting engine unless it is installed.
+- **No scripting-engine dependency.** Vela ships no engine and has none installed here: engines are separate packages behind the `ScriptingEngine` port (Pine Script: `@luxalgo/vela-pinets`). The playground carries its own tiny demo engine (`playground/demo-engine.ts`) so the indicator path is exercisable with zero extra installs.
 
-> **Standing rule:** Do **not** edit the sibling scripting package (or any other sibling package) from within Vela work without explicit permission. Concurrent edits across packages cause conflicts. If a change seems to require touching a sibling, stop and ask first. See [workflow.md](./workflow.md) for where changes belong by layer.
+> **Standing rule:** Do **not** edit a sibling package (the engine addon, or any other) from within Vela work without explicit permission. Concurrent edits across packages cause conflicts. If a change seems to require touching a sibling, stop and ask first. See [workflow.md](./workflow.md) for where changes belong by layer.
 
 ## Clone and install
 
 1. Clone the repository.
-2. Install Vela's dependencies with `npm install`. This resolves `pinets` and the other dependencies normally from the npm registry — no sibling checkout or extra build step is required for this.
+2. Install Vela's dependencies with `npm install`. Everything resolves normally from the npm registry — no sibling checkout or extra build step is required.
 
 That is the whole bootstrap. Everything else is a thin npm script.
 

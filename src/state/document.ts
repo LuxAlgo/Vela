@@ -35,10 +35,24 @@ export interface TrackSizes {
     rows?: number[];
 }
 
+/**
+ * The docked side panels — a SHELL-level pref (one dock serves every cell of a workspace).
+ * `open` is the single panel showing (the dock is exclusive); `widths` holds only the columns
+ * the user actually resized, by panel id, so a panel's declared width stays in charge until
+ * then. Absent altogether in documents written before the dock existed.
+ */
+export interface PanelsState {
+    open?: string;
+    widths?: Record<string, number>;
+}
+
 /** Per-chart (per-cell) state: the market, the display prefs, the content documents,
  *  and the indicator ledger. The widget's whole chart state is ONE of these. */
 export interface CellState {
     symbol?: string;
+    /** The symbol's venue. Mirrors the symbol's own `EXCHANGE:` prefix on new saves;
+     *  pre-prefix documents stored it beside a BARE symbol — {@link prefixedSymbol}
+     *  welds the two back into the one canonical form at restore time. */
     provider?: string;
     timeframe?: string;
     priceStyle?: string;
@@ -75,12 +89,23 @@ export interface WorkspaceState {
     timezone?: string;
     /** Favorite drawing-tool types — a SHARED preference (one star set per shell). */
     favorites?: string[];
+    /** The docked side panels: which one is open, and the widths the user dragged. */
+    panels?: PanelsState;
     /** Per-chart state, one entry per SLOT (a single `c1` entry for the widget).
      *  Ids are unique — the codec drops id-less entries and keeps the LAST duplicate. */
     charts: ChartState[];
 }
 
 /** Serialize a state document (the inverse of {@link decodeState}). */
+/** A cell's symbol in the canonical PREFIXED form: pre-prefix documents stored the
+ *  venue in `provider` beside a BARE symbol — weld the two back together on restore.
+ *  A symbol that already carries a prefix wins (new saves mirror it into `provider`). */
+export function prefixedSymbol(cell: Pick<CellState, 'symbol' | 'provider'> | null | undefined): string | undefined {
+    if (!cell?.symbol) return undefined;
+    if (cell.symbol.includes(':') || !cell.provider) return cell.symbol;
+    return `${cell.provider}:${cell.symbol}`;
+}
+
 export function encodeState(state: WorkspaceState): string {
     return JSON.stringify(state);
 }
@@ -127,6 +152,8 @@ export function sanitizeState(doc: unknown): WorkspaceState | null {
     if (sync) out.sync = sync;
     const tracks = sanitizeTrackSizes(d.trackSizes);
     if (tracks) out.trackSizes = tracks;
+    const panels = sanitizePanels(d.panels);
+    if (panels) out.panels = panels;
     return out;
 }
 
@@ -165,6 +192,23 @@ function sanitizeSync(raw: unknown): SyncOptions | null {
         }
     }
     return Object.keys(out).length > 0 ? out : null;
+}
+
+function sanitizePanels(raw: unknown): PanelsState | null {
+    if (raw == null || typeof raw !== 'object') return null;
+    const p = raw as Record<string, unknown>;
+    const out: PanelsState = {};
+    if (typeof p.open === 'string' && p.open) out.open = p.open;
+    if (p.widths != null && typeof p.widths === 'object') {
+        const widths: Record<string, number> = {};
+        // Widths are clamped again by the panel that receives them; here we only reject values
+        // that are not a usable number at all.
+        for (const [id, px] of Object.entries(p.widths as Record<string, unknown>)) {
+            if (typeof px === 'number' && Number.isFinite(px) && px > 0) widths[id] = px;
+        }
+        if (Object.keys(widths).length > 0) out.widths = widths;
+    }
+    return out.open || out.widths ? out : null;
 }
 
 function sanitizeTrackSizes(raw: unknown): Record<string, TrackSizes> | null {

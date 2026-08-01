@@ -1,8 +1,10 @@
 import type { VelaTheme } from '../../../core/options';
 import type { ChartConfig } from '../core/chartConfig';
 import { chartType, chartTypes } from '../../../chart-types/registry';
+import { toHex6, withAlpha } from '../../../core/color';
+import { iconAt } from '../../../core/icons';
 import { colorField, closeColorPopover } from './ColorField';
-import { priceStyleIds } from '../core/chartConfig';
+import { priceStyleIds, CHROME_BORDER_COLOR } from '../core/chartConfig';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -48,29 +50,44 @@ function styleLabel(id: string): string {
 
 const SD_STYLE_ID = 'vela-settings-controls';
 
+/**
+ * The dialog's surface palette. It follows the STABLE chrome surface (the tokens written on
+ * the chart container), not the live plot background: recoloring the plot must not repaint
+ * the dialog, but switching the app between dark and light must.
+ */
+export const SETTINGS_SURFACE = 'var(--vela-surface)';
+export const SETTINGS_BORDER = 'var(--vela-border)';
+export const SETTINGS_TEXT = 'var(--vela-fg)';
+
 /** The reference control styles (checkbox, selects/inputs, swatches, scrollbars). */
 function ensureControlStyles(): void {
     if (typeof document === 'undefined' || document.getElementById(SD_STYLE_ID)) return;
     const st = document.createElement('style');
     st.id = SD_STYLE_ID;
     st.textContent = `
-.vela-sd-check{width:18px;height:18px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid #34353b;border-radius:5px;background:transparent;color:transparent;cursor:pointer;}
-.vela-sd-check:hover{border-color:#868a96;}
-.vela-sd-check.on{background:#ffffff;border-color:#ffffff;color:#16181d;}
+.vela-sd-check{width:18px;height:18px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--vela-border-strong);border-radius:5px;background:transparent;color:transparent;cursor:pointer;}
+.vela-sd-check:hover{border-color:var(--vela-fg-muted);}
+.vela-sd-check.on{background:var(--vela-selected-bg);border-color:var(--vela-selected-bg);color:var(--vela-selected-fg);}
 .vela-sd-check svg{display:block;}
-.vela-sd-select,.vela-sd-number{height:28px;background:#151619;border:1px solid #2a2b30;border-radius:4px;color:#d1d4dc;padding:0 8px;font-size:13px;outline:none;font-family:inherit;}
-.vela-sd-select:hover,.vela-sd-number:hover{border-color:#34353b;}
+.vela-sd-select,.vela-sd-number{height:28px;background:var(--vela-surface-elev);border:1px solid var(--vela-border-strong);border-radius:var(--vela-radius-sm);color:var(--vela-fg);padding:0 8px;font-size:13px;outline:none;font-family:inherit;}
+.vela-sd-select:hover,.vela-sd-number:hover{border-color:var(--vela-fg-muted);}
+/* Custom caret: the native one hugs the right border; ours gets 8px of air. (A data URI
+   can't read currentColor, so it uses the shared muted-gray ink, legible on both themes.) */
+.vela-sd-select{-webkit-appearance:none;appearance:none;padding-right:26px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23868a96' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;}
 .vela-sd-number{width:64px;}
-.vela-sd-color{width:32px;height:26px;padding:0;border:1px solid #2a2b30;border-radius:4px;background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none;}
+.vela-sd-color{width:32px;height:26px;padding:0;border:1px solid var(--vela-border);border-radius:var(--vela-radius-sm);background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none;}
 .vela-sd-color::-webkit-color-swatch-wrapper{padding:2px;}
 .vela-sd-color::-webkit-color-swatch{border:none;border-radius:2px;}
 .vela-sd-pane::-webkit-scrollbar{width:8px;}
-.vela-sd-pane::-webkit-scrollbar-thumb{background:rgba(209,212,220,0.25);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
+.vela-sd-pane::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:var(--vela-radius-sm);border:2px solid transparent;background-clip:padding-box;}
 .vela-sd-pane::-webkit-scrollbar-track{background:transparent;}
-.vela-sd-toggle{position:relative;width:38px;height:22px;border-radius:11px;background:#1c1d20;border:1px solid #2a2b30;cursor:pointer;flex:none;padding:0;}
-.vela-sd-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#868a96;transition:transform .16s ease,background .16s ease;}
-.vela-sd-toggle.on{background:rgba(255,255,255,0.08);border-color:#ffffff;}
-.vela-sd-toggle.on::after{transform:translateX(16px);background:#ffffff;}
+.vela-sd-toggle{position:relative;width:38px;height:22px;border-radius:11px;background:var(--vela-surface-sunken);border:1px solid var(--vela-border);cursor:pointer;flex:none;padding:0;}
+.vela-sd-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--vela-fg-muted);transition:transform var(--vela-dur-med) ease,background var(--vela-dur-med) ease;}
+.vela-sd-toggle.on{background:var(--vela-active);border-color:var(--vela-selected-bg);}
+.vela-sd-toggle.on::after{transform:translateX(16px);background:var(--vela-selected-bg);}
+.vela-sd-tab:hover{background:var(--vela-hover);}
+.vela-sd-btn:hover{border-color:var(--vela-border-strong);}
+.vela-sd-close:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
 `;
     document.head.appendChild(st);
 }
@@ -83,6 +100,10 @@ export class SettingsDialog {
     private config: ChartConfig | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
+    /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
+    private tabs: Array<{ title: string; show: () => void }> = [];
+    /** The tab currently shown, so a theme change (which rebuilds) lands back on it. */
+    private activeSection: string | null = null;
 
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
@@ -102,8 +123,10 @@ export class SettingsDialog {
             const cfg = this.config;
             const oc = this.onChange;
             const oi = this.onImport;
+            const orst = this.onReset;
+            const section = this.activeSection;
             this.close();
-            if (cfg && oc) this.open(cfg, oc, oi ?? undefined);
+            if (cfg && oc) this.open(cfg, oc, oi ?? undefined, orst ?? undefined, section ?? undefined);
         }
     }
 
@@ -111,43 +134,53 @@ export class SettingsDialog {
         return this.root !== null;
     }
 
-    /** Toggle the dialog; `config` is the current resolved config to seed controls. */
-    toggle(config: ChartConfig, onChange: (patch: ConfigPatch) => void, onImport?: (json: unknown) => void, onReset?: () => void): void {
+    /** Toggle the dialog; `config` is the current resolved config to seed controls.
+     *  `section` selects the tab to land on (a tab title; unknown ones fall back to the first). */
+    toggle(config: ChartConfig, onChange: (patch: ConfigPatch) => void, onImport?: (json: unknown) => void, onReset?: () => void, section?: string): void {
         if (this.root) this.close();
-        else this.open(config, onChange, onImport, onReset);
+        else this.open(config, onChange, onImport, onReset, section);
     }
 
-    open(config: ChartConfig, onChange: (patch: ConfigPatch) => void, onImport?: (json: unknown) => void, onReset?: () => void): void {
+    /** Switch an already-open dialog to a tab by title — no-op when closed or unknown. */
+    showSection(section: string): void {
+        this.tabs.find((t) => t.title.toLowerCase() === section.toLowerCase())?.show();
+    }
+
+    open(config: ChartConfig, onChange: (patch: ConfigPatch) => void, onImport?: (json: unknown) => void, onReset?: () => void, section?: string): void {
         this.close();
         this.config = config;
         this.onChange = onChange;
         this.onImport = onImport ?? null;
         this.onReset = onReset ?? null;
-        const t = this.theme;
 
         // Scrim + centered box — the reference settings-dialog shell (top-aligned modal,
         // left tab rail, scrollable pane, footer). Section markers emitted by `section()`
-        // are post-processed into tabs below.
+        // are post-processed into tabs below. The scrim stays TRANSPARENT: the chart must
+        // remain fully readable while its settings are edited live; the scrim only exists
+        // to catch the click-outside-to-close.
         ensureControlStyles();
         const scrim = document.createElement('div');
-        scrim.style.cssText = 'position:absolute;inset:0;z-index:21;display:flex;align-items:flex-start;justify-content:center;background:rgba(0,0,0,0.45);padding-top:8vh;pointer-events:auto;';
+        scrim.style.cssText = 'position:absolute;inset:0;z-index:21;display:flex;align-items:flex-start;justify-content:center;background:transparent;padding-top:8vh;pointer-events:auto;';
         scrim.addEventListener('mousedown', (e) => {
             if (e.target === scrim) this.close();
         });
 
         const dlg = document.createElement('div');
-        dlg.style.cssText = `width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${t.background};border:1px solid ${withAlpha(t.textColor, 0.16)};border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:${t.textColor};font:13px -apple-system,Segoe UI,sans-serif;overflow:hidden;`;
+        // `cursor:default` shields the dialog from the plot's crosshair cursor; interactive
+        // controls re-declare their own.
+        dlg.style.cssText = `width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${SETTINGS_TEXT};font:13px var(--vela-font);overflow:hidden;cursor:default;`;
 
         const header = document.createElement('div');
-        header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${t.borderColor};flex:0 0 auto;user-select:none;`;
+        header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${SETTINGS_BORDER};flex:0 0 auto;user-select:none;`;
         const hTitle = document.createElement('span');
         hTitle.textContent = 'Chart settings';
         hTitle.style.cssText = 'font-size:17px;font-weight:600;letter-spacing:0.2px;';
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
-        closeBtn.textContent = '✕';
+        closeBtn.innerHTML = iconAt('close', 15);
         closeBtn.title = 'Close';
-        closeBtn.style.cssText = `cursor:pointer;background:transparent;border:none;color:${withAlpha(t.textColor, 0.65)};font-size:15px;line-height:1;width:30px;height:30px;border-radius:4px;`;
+        closeBtn.className = 'vela-sd-close';
+        closeBtn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;border-radius:var(--vela-radius-sm);';
         closeBtn.addEventListener('click', () => this.close());
         header.append(hTitle, closeBtn);
         header.style.cursor = 'move';
@@ -316,14 +349,14 @@ export class SettingsDialog {
         //    'always' keeps it visible. Values persist under config.chartTypes[<id>] and
         //    are pushed to the `<id>-settings` channel by the renderer's applyConfig.
         for (const def of chartTypes()) {
-            const section = def.settings;
-            if (!section) continue;
-            const marker = this.section(section.title);
+            const typeSettings = def.settings;
+            if (!typeSettings) continue;
+            const marker = this.section(typeSettings.title);
             marker.dataset.sdStyle = def.id;
-            marker.dataset.sdVisibility = section.visibility ?? 'active';
+            marker.dataset.sdVisibility = typeSettings.visibility ?? 'active';
             body.append(marker);
             const values = config.chartTypes[def.id] ?? {};
-            for (const r of section.rows) {
+            for (const r of typeSettings.rows) {
                 const current = values[r.key];
                 if (r.kind === 'toggle') {
                     body.append(this.boolRow(r.label, typeof current === 'boolean' ? current : r.defval, (v) => this.emitType(def.id, r.key, v)));
@@ -343,7 +376,7 @@ export class SettingsDialog {
         const shell = document.createElement('div');
         shell.style.cssText = 'display:flex;min-height:360px;max-height:calc(70vh - 100px);flex:1 1 auto;';
         const rail = document.createElement('div');
-        rail.style.cssText = `flex:0 0 170px;display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid ${t.borderColor};overflow-y:auto;`;
+        rail.style.cssText = `flex:0 0 170px;display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid ${SETTINGS_BORDER};overflow-y:auto;`;
         const paneHost = document.createElement('div');
         paneHost.className = 'vela-sd-pane';
         paneHost.style.cssText = 'flex:1;overflow-y:auto;padding:6px 18px 14px;';
@@ -358,7 +391,11 @@ export class SettingsDialog {
                 const tab = document.createElement('button');
                 tab.type = 'button';
                 tab.textContent = title;
-                tab.style.cssText = `text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:6px;color:${withAlpha(t.textColor, 0.62)};font:600 13px inherit;font-family:inherit;cursor:pointer;`;
+                tab.className = 'vela-sd-tab';
+                // Longhands on purpose: `font: 600 13px inherit` is an invalid shorthand
+                // (CSS-wide keywords can't be a shorthand component), so browsers drop it
+                // whole and the rail renders at weight 400.
+                tab.style.cssText = 'text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;';
                 panes.push({ title, el, tab, style: child.dataset.sdStyle, visibility: child.dataset.sdVisibility });
                 current = el;
                 child.remove();
@@ -381,16 +418,19 @@ export class SettingsDialog {
         const activate = (idx: number): void => {
             panes.forEach((p, i) => {
                 p.el.style.display = i === idx ? 'block' : 'none';
-                p.tab.style.background = i === idx ? withAlpha(t.textColor, 0.07) : 'transparent';
-                p.tab.style.color = i === idx ? t.textColor : withAlpha(t.textColor, 0.62);
+                p.tab.style.background = i === idx ? 'var(--vela-active)' : 'transparent';
+                p.tab.style.color = i === idx ? 'var(--vela-fg-bright)' : 'var(--vela-fg-muted)';
             });
+            this.activeSection = panes[idx]?.title ?? null;
         };
         panes.forEach((p, i) => {
             p.tab.addEventListener('click', () => activate(i));
             rail.appendChild(p.tab);
             paneHost.appendChild(p.el);
         });
-        activate(0);
+        this.tabs = panes.map((p, i) => ({ title: p.title, show: () => activate(i) }));
+        const wanted = section === undefined ? -1 : panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase());
+        activate(wanted >= 0 ? wanted : 0);
         this.syncTypeTabs?.(config.series.style);
 
         shell.append(rail, paneHost);
@@ -406,6 +446,7 @@ export class SettingsDialog {
         closeColorPopover();
         this.root?.remove();
         this.root = null;
+        this.tabs = [];
     }
 
     destroy(): void {
@@ -424,18 +465,20 @@ export class SettingsDialog {
         this.onChange?.(patch);
     }
 
-    /** In-pane section title (the reference `set-section-title`). */
+    /** In-pane section title (the reference `set-section-title`). The generous top margin
+     *  is what separates groups — whitespace, not rules. */
     private sectionTitle(text: string): HTMLElement {
         const el = document.createElement('div');
-        el.style.cssText = `margin:14px 0 2px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${withAlpha(this.theme.textColor, 0.55)};`;
+        el.style.cssText = 'margin:24px 0 6px;font-size:var(--vela-font-size-sm);font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);';
         el.textContent = text;
         return el;
     }
 
-    /** Thin horizontal rule between row clusters (the reference `set-separator`). */
+    /** Vertical breathing space between row clusters — grouping reads from whitespace,
+     *  so no drawn rule. */
     private separator(): HTMLElement {
         const el = document.createElement('div');
-        el.style.cssText = `height:1px;margin:8px 0;background:${withAlpha(this.theme.textColor, 0.1)};`;
+        el.style.cssText = 'height:14px;';
         return el;
     }
 
@@ -471,9 +514,12 @@ export class SettingsDialog {
         return el;
     }
 
-    private row(label: string): { wrap: HTMLLabelElement } {
-        const wrap = document.createElement('label');
-        wrap.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:24px;padding:8px 0;border-bottom:1px solid ${withAlpha(this.theme.textColor, 0.07)};`;
+    private row(label: string): { wrap: HTMLDivElement } {
+        // A DIV, not a <label>: a label forwards a click anywhere on the row to its embedded
+        // control (opening a color picker from the row's empty space) — only the control
+        // itself should respond.
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:24px;padding:8px 0;';
         const lbl = document.createElement('span');
         lbl.textContent = label;
         lbl.style.cssText = 'opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
@@ -498,11 +544,13 @@ export class SettingsDialog {
      *  controls it reads like a plain toggle row. */
     private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[]): HTMLElement {
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;cursor:pointer;';
+        // No cursor on the row itself: only the checkbox is clickable, so a row-wide
+        // pointer would promise a click target that isn't there.
+        wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;padding:5px 0;';
         const cb = document.createElement('button');
         cb.type = 'button';
         cb.className = 'vela-sd-check' + (value ? ' on' : '');
-        cb.innerHTML = '<svg viewBox="0 0 10 8" width="10" height="8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m1 4 2.6 2.6L9 1"/></svg>';
+        cb.innerHTML = iconAt('check', 11);
         let checked = value;
         const cbToggle = (): boolean => {
             checked = !checked;
@@ -673,17 +721,15 @@ export class SettingsDialog {
 
     /** Footer with the full config as JSON — the export/import (templating) surface. */
     private footer(_config: ChartConfig): HTMLElement {
-        const t = this.theme;
         // Reference footer: actions only (Reset defaults, left-aligned). The JSON
         // export/import lives on the public API (getConfig/applyConfig), not in the UI.
         const foot = document.createElement('div');
-        foot.style.cssText = `border-top:1px solid ${t.borderColor};padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 auto;`;
+        foot.style.cssText = `border-top:1px solid ${SETTINGS_BORDER};padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 auto;`;
         const resetBtn = document.createElement('button');
         resetBtn.type = 'button';
         resetBtn.textContent = 'Reset defaults';
-        resetBtn.style.cssText = `height:30px;padding:0 14px;font-size:12px;color:${t.textColor};background:#1c1d20;border:1px solid ${t.borderColor};border-radius:6px;cursor:pointer;font-family:inherit;`;
-        resetBtn.addEventListener('mouseenter', () => (resetBtn.style.borderColor = '#34353b'));
-        resetBtn.addEventListener('mouseleave', () => (resetBtn.style.borderColor = t.borderColor));
+        resetBtn.className = 'vela-sd-btn';
+        resetBtn.style.cssText = `height:30px;padding:0 14px;font-size:var(--vela-font-size-md);color:${SETTINGS_TEXT};background:var(--vela-surface-sunken);border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-md);cursor:pointer;font-family:inherit;`;
         resetBtn.addEventListener('click', () => this.onReset?.());
         foot.appendChild(resetBtn);
         return foot;
@@ -699,8 +745,7 @@ export class SettingsDialog {
     }
 
     private ctrlStyle(): string {
-        const t = this.theme;
-        return `background:${withAlpha(t.textColor, 0.08)};border:1px solid ${t.borderColor};color:${t.textColor};border-radius:4px;padding:3px 6px;font:12px inherit;outline:none;`;
+        return `background:var(--vela-surface-sunken);border:1px solid ${SETTINGS_BORDER};color:${SETTINGS_TEXT};border-radius:var(--vela-radius-sm);padding:3px 6px;font-size:var(--vela-font-size-md);font-family:inherit;outline:none;`;
     }
 }
 
@@ -715,23 +760,3 @@ function timezoneOptions(current: string): string[] {
     return COMMON_ZONES.includes(current) ? COMMON_ZONES : [current, ...COMMON_ZONES];
 }
 
-function toHex6(color: string): string {
-    const m = /^#([0-9a-fA-F]{6})/.exec(color.trim());
-    if (m) return `#${m[1]}`;
-    // rgb()/rgba() → hex (color inputs only accept #rrggbb)
-    const rgb = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(color);
-    if (rgb) {
-        const h = (n: string): string => Math.max(0, Math.min(255, parseInt(n, 10))).toString(16).padStart(2, '0');
-        return `#${h(rgb[1] ?? '0')}${h(rgb[2] ?? '0')}${h(rgb[3] ?? '0')}`;
-    }
-    return '#888888';
-}
-
-function withAlpha(color: string, alpha: number): string {
-    const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(color.trim());
-    if (!m) return color;
-    const r = parseInt(m[1] ?? '0', 16);
-    const g = parseInt(m[2] ?? '0', 16);
-    const b = parseInt(m[3] ?? '0', 16);
-    return `rgba(${r},${g},${b},${alpha})`;
-}

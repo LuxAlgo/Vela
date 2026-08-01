@@ -46,6 +46,20 @@ export interface IndicatorRenderHandle {
 /** An indicator's live status, shown in its legend row. */
 export type IndicatorStatus = 'idle' | 'loading' | 'live';
 
+/**
+ * One host-contributed legend-row action, as the renderer consumes it: pure data plus a
+ * thunk. The shell resolves the plugin descriptor (its `when` gate, the context, the
+ * indicator info) BEFORE it reaches the renderer, so the renderer stays ignorant of the
+ * plugin layer — it just paints an icon button and calls `run` on click.
+ */
+export interface LegendActionView {
+    id: string;
+    /** Icon id in the core icon registry (`registerIcon`). */
+    icon: string;
+    tooltip: string;
+    run(): void;
+}
+
 /** OHLCV of the price bar under the crosshair (the "data window" source). */
 export interface CrosshairOHLC {
     time: Millis;
@@ -182,6 +196,17 @@ export interface IChartRenderer {
      */
     setIndicatorStatus?(handle: IndicatorRenderHandle, status: IndicatorStatus): void;
 
+    /**
+     * A market load is in flight with NO bars painted yet — the first load, or a
+     * symbol/timeframe switch (the host clears the old series first). Renderers may show a
+     * subtle loading affordance, and must hide any content that does NOT ride the bar series
+     * (corner-anchored tables); bar-mapped content vanishes with the cleared series on its
+     * own. The host turns the flag off with the first series it hands over (or when a load
+     * fails or parks) — the core also mirrors this state to plugins as `load:start`/`load:end`.
+     * Optional.
+     */
+    setLoading?(loading: boolean): void;
+
     ensurePane(pane: Pane): void;
     removePane(id: string): void;
 
@@ -225,6 +250,15 @@ export interface IChartRenderer {
      * text field. Pass `null` to detach.
      */
     setSymbolPicker?(picker: SymbolPickerFn | null): void;
+
+    /**
+     * Supply the HOST-CONTRIBUTED actions of each legend row (the shells wire the plugin
+     * registry through this — see `registerLegendAction`). The provider is called per row,
+     * lazily, so `when()` gates and late registrations resolve at render time; calling this
+     * again replaces the provider AND re-projects the rows already on screen. Optional — a
+     * renderer without it simply never shows contributed legend actions.
+     */
+    setLegendActions?(provider: ((indicatorId: string) => LegendActionView[]) | null): void;
 
     /**
      * Hide (`false`) or show (`true`) a mounted indicator's visuals while keeping its legend row
@@ -315,8 +349,12 @@ export interface IChartRenderer {
      * exclusive with the renderer's. A no-op when nothing is open.
      */
     closeDialogs?(): void;
-    /** Open (or toggle) the renderer's own settings dialog, when it has one. */
-    openSettingsDialog?(): void;
+    /**
+     * Open (or toggle) the renderer's own settings dialog, when it has one. `section` names
+     * the tab to land on (matched against the dialog's section titles, unknown ones ignored);
+     * with a section an already-open dialog switches tab rather than closing.
+     */
+    openSettingsDialog?(section?: string): void;
     /** A chart type's SDK settings changed (dialog edit / applyConfig) — the core forwards
      *  them to the type's data engine. */
     onChartTypeSettingsChange?(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe;

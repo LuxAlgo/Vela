@@ -43,13 +43,14 @@ await chart.ready();
 
 ## Indicators
 
-Vela runs indicator scripts through pluggable engines. The Pine engine uses
-[PineTS](https://github.com/LuxAlgo/PineTS) — an **optional peer dependency licensed
-under AGPL-3.0** (Vela itself is Apache-2.0; installing `pinets` applies its own license
-to your bundle):
+Vela runs indicator scripts through pluggable engines and **ships none** — install the
+addon for the language you want, or write one against the public `ScriptingEngine` port.
+Pine Script lives in [`@luxalgo/vela-pinets`](https://github.com/LuxAlgo/Vela-pinets)
+(`npm i @luxalgo/vela-pinets pinets`), which is **AGPL-3.0** because the PineTS runtime it
+executes is — Vela itself stays Apache-2.0 and carries no Pine code:
 
 ```ts
-import { Vela, PineEngine } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets';
 
 chart.registerEngine('pine', new PineEngine());
 chart.addIndicator(`//@version=5
@@ -60,7 +61,8 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`);
 Host tooling can execute-and-inject safely (`chart.runIndicator(source)` — structured
 errors, no dead legend rows) and read a running script's state — including its **return
 value** — via `handle.context()` (read-only snapshots, worker-safe). See the
-[API reference](docs/user/api-reference.md#reading-a-scripts-execution-context).
+[API reference](docs/user/api-reference.md#reading-a-scripts-execution-context), and
+[Scripting engines](docs/user/scripting-engines.md) for the addon and for writing your own.
 
 The widget takes an **indicator manifest** — inline JSON or a URL returning it:
 
@@ -126,4 +128,5 @@ a small Vela attribution mark by default; it may be disabled
 "Vela" linking to the project page — is shown elsewhere on the same page. This is the
 same licensing model as other popular charting libraries.
 
-The optional `pinets` peer dependency is AGPL-3.0 (see *Indicators*).
+No scripting engine ships with this package; the Pine Script addon
+(`@luxalgo/vela-pinets`) is AGPL-3.0 and licensed separately (see *Indicators*).

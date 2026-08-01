@@ -18,15 +18,15 @@ Together these mean: to understand what the core does, you never have to read a 
 
 These boundaries are enforced by lint, not by discipline. An **import access-control list** governs which parts of the codebase may import which dependencies:
 
-- the Pine toolchain may be imported only by the **engine** layer;
+- a scripting-language toolchain may not be imported **anywhere** — Vela ships no engine, so no part of this codebase links one (the ACL bans `pinets` outright; the Pine engines live in the separate `@luxalgo/vela-pinets` package, which is AGPL-3.0 and must not pull that license onto this Apache-2.0 one);
 - a custom renderer's charting dependency belongs in **its own renderer folder** (never in core);
-- the renderer must **never** import the Pine toolchain.
+- the renderer must **never** import a scripting toolchain either.
 
 The ACL uses **named exception buckets** — explicit, labeled allowances rather than blanket exemptions. Adding a backend means *deliberately extending the ACL* with a new named bucket, which makes every cross-boundary dependency a conscious, reviewable decision. A stray import that violates the boundary fails lint.
 
 ## The data layer is provider-agnostic
 
-The built-in data providers (`src/data/providers/`) are written **from scratch** against the neutral feed port — they import no scripting or charting backend, so they are not a bundled third-party dependency that needs an ACL carve-out. The import ACL restricts only the Pine toolchain (to the engine layer) and the charting library (to its own renderer folder); the data layer touches neither. Providers are simply data-layer code — sources of bars behind the feed port — so they live where data lives, and the layering holds with no special allowance.
+The built-in data providers (`src/data/providers/`) are written **from scratch** against the neutral feed port — they import no scripting or charting backend, so they are not a bundled third-party dependency that needs an ACL carve-out. The import ACL bans the Pine toolchain everywhere and confines the charting library to its own renderer folder; the data layer touches neither. Providers are simply data-layer code — sources of bars behind the feed port — so they live where data lives, and the layering holds with no special allowance.
 
 ## Engine registry rules
 
@@ -46,7 +46,7 @@ The core trusts declared capabilities. It does not feature-sniff a backend; it r
 
 This trust makes capability declarations an invariant of the contract. A backend that declares a capability it does not actually have produces **silently wrong output**, because the core takes the flag at face value. Declaring honestly is part of implementing a port — not a nicety.
 
-This honesty matters precisely because the core *acts* on the flags. Concretely, the core takes the **live streaming path** only when all three of these hold: the chart is live, **and** the script is not viewport-dependent, **and** the engine declares the streaming capability. Fail any one and the core falls back to a static re-run. (This is why the off-thread Pine form, which declares no streaming capability, never takes the live path.) See [data-flow.md](data-flow.md) for the full trace of that decision.
+This honesty matters precisely because the core *acts* on the flags. Concretely, the core takes the **live streaming path** only when all three of these hold: the chart is live, **and** the script is not viewport-dependent, **and** the engine declares the streaming capability. Fail any one and the core falls back to a static re-run — which is exactly what an engine that declares no streaming capability always gets. See [data-flow.md](data-flow.md) for the full trace of that decision.
 
 ## Optional members degrade to defined fallbacks
 

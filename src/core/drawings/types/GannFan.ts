@@ -1,22 +1,23 @@
 import type { Projector } from '../geometry';
 import { extendRay } from '../hittest';
 import { FibRatios, type FibEntryLine, type FibLevel } from './FibRatios';
+import { fibLevels, LEVEL_AMBER, LEVEL_AQUA, LEVEL_BLUE, LEVEL_GREEN, LEVEL_ORANGE, LEVEL_PURPLE, LEVEL_RED, LEVEL_TEAL, LEVEL_UNITY } from '../levelPalette';
 
 /**
  * The Gann angles: price-per-time ratios relative to the 1×1 (the line through the second
  * anchor). A ratio > 1 is steeper (more price per unit time), < 1 shallower.
  */
-const GANN_FAN_LEVELS: readonly FibLevel[] = [
-    { ratio: 0.125, color: '#f23645', enabled: true, label: '1/8' },
-    { ratio: 0.25, color: '#ff9800', enabled: true, label: '1/4' },
-    { ratio: 0.333, color: '#ffb74d', enabled: true, label: '1/3' },
-    { ratio: 0.5, color: '#4caf50', enabled: true, label: '1/2' },
-    { ratio: 1, color: '#b2b5be', enabled: true, label: '1/1' },
-    { ratio: 2, color: '#089981', enabled: true, label: '2/1' },
-    { ratio: 3, color: '#5b9cf6', enabled: true, label: '3/1' },
-    { ratio: 4, color: '#26a69a', enabled: true, label: '4/1' },
-    { ratio: 8, color: '#9c27b0', enabled: true, label: '8/1' },
-];
+const GANN_FAN_LEVELS = fibLevels([
+    { ratio: 0.125, color: LEVEL_RED, label: '1/8' },
+    { ratio: 0.25, color: LEVEL_ORANGE, label: '1/4' },
+    { ratio: 0.333, color: LEVEL_AMBER, label: '1/3' },
+    { ratio: 0.5, color: LEVEL_GREEN, label: '1/2' },
+    { ratio: 1, color: LEVEL_UNITY, label: '1/1' },
+    { ratio: 2, color: LEVEL_TEAL, label: '2/1' },
+    { ratio: 3, color: LEVEL_BLUE, label: '3/1' },
+    { ratio: 4, color: LEVEL_AQUA, label: '4/1' },
+    { ratio: 8, color: LEVEL_PURPLE, label: '8/1' },
+]);
 
 /**
  * A Gann fan — rays from the first anchor at the Gann angles, scaled so the 1×1 passes

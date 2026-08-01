@@ -1,14 +1,17 @@
 import type { VelaTheme } from '../../../core/options';
 import type { Projector } from '../../../core/drawings';
 import { formatDuration } from '../../../core/drawings';
+import { BEARISH, BULLISH } from '../../../core/palette';
 
 /** Signed value with 2 decimals (e.g. "+12.34"). */
 function signed(n: number): string {
     return `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
 }
 
-const UP = '#0ecb81';
-const DOWN = '#f6465d';
+// The ruler's direction tint is fixed, not the theme's candle colors: it must stay readable
+// over candles of any user-chosen color.
+const UP = BULLISH;
+const DOWN = BEARISH;
 const DRAG_SLOP = 3;
 
 type MeasureState = 'idle' | 'measuring' | 'finished';

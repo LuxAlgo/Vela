@@ -8,6 +8,7 @@ import type {
     InputChangeEvent,
     VisibleRange,
     IndicatorStatus,
+    LegendActionView,
     PaneAction,
     DataWindowRow,
     DataWindowOHLC,
@@ -55,10 +56,14 @@ import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
-import { createAttributionMark } from './chrome/AttributionMark';
+import { applyAttributionMarkTheme, createAttributionMark } from './chrome/AttributionMark';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
-import { DARK_THEME } from '../../core/theme';
+import { DARK_THEME, LIGHT_THEME } from '../../core/theme';
+import { isDarkColor } from '../../core/color';
+import { iconAt } from '../../core/icons';
+import { BEARISH, BULLISH } from '../../core/palette';
+import { applyChromeTokens } from '../shared/theme-tokens';
 
 /** A vertically-scalable window: a pane's master scale or a merged indicator's own scale.
  *  Both expose the same four fields, so axis-drag / reset work uniformly on either. */
@@ -158,6 +163,8 @@ export class NativeRenderer implements IChartRenderer {
     private input!: InputController;
     private inputsUI!: InputsUI;
     private symbolPicker: SymbolPickerFn | null = null;
+    /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
+    private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
     private keyboard: KeyboardController | null = null;
     private keyboardEnabled = true;
@@ -166,13 +173,17 @@ export class NativeRenderer implements IChartRenderer {
     // ── animation state (eased zoom + inertial pan) ──
     private animZoom = true;
     private animPan = true;
-    // Brand default candles (the reference first-run palette).
-    private candleUp = '#089981';
-    private candleDown = '#f23645';
+    // Brand default candles.
+    private candleUp = BULLISH;
+    private candleDown = BEARISH;
     // ── intro reveal (plays once when candles first appear) ──
     private introStyle = 'settle'; // 'grow' | 'settle' | '' (off)
     private introPlayed = false;
     private introRaf: number | null = null;
+    /** The load affordance (three pulsing dots) — up while the host reports a bar load in
+     *  flight with nothing painted (first load, market switch). Rebuilt per show, so it
+     *  picks up the current theme without a setTheme hook. */
+    private loadingEl: HTMLElement | null = null;
     private modelAlpha = 1; // indicator-model opacity: 0 during the candle reveal, fades to 1 after
     private targetBarSpacing = 0; // eased zoom target
     private zoomAnchorLogical = 0; // logical kept pinned under the cursor while zooming
@@ -485,6 +496,45 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     /**
+     * The host reports a bar load in flight with nothing painted (first load, market switch —
+     * see the port): three small dots pulse at the center of the plot. Web-Animations-driven,
+     * so no stylesheet crosses the renderer boundary; pointer-transparent, and removed (not
+     * hidden) on clear so a re-show picks up the current theme.
+     */
+    setLoading(loading: boolean): void {
+        // Tables are the one series-independent content: corner-anchored DOM, so an emptied
+        // chart doesn't take them along — hide them for the load, restore with the bars.
+        for (const overlay of this.tableOverlays.values()) overlay.setVisible(!loading);
+        if (!loading || !this.wrapper) {
+            this.loadingEl?.remove();
+            this.loadingEl = null;
+            return;
+        }
+        if (this.loadingEl) return;
+        const doc = this.wrapper.ownerDocument;
+        const el = doc.createElement('div');
+        el.className = 'vela-loading'; // stable hook for probes and host styling
+        Object.assign(el.style, {
+            position: 'absolute',
+            inset: '0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '7px',
+            pointerEvents: 'none',
+        });
+        for (let i = 0; i < 3; i += 1) {
+            const dot = doc.createElement('span');
+            Object.assign(dot.style, { width: '7px', height: '7px', borderRadius: '50%', background: this.chromeTheme().textColor, opacity: '0.15' });
+            // Staggered phases via negative delays — every dot animates from the first frame.
+            dot.animate([{ opacity: 0.12 }, { opacity: 0.55 }], { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: -i * 260 });
+            el.appendChild(dot);
+        }
+        this.wrapper.appendChild(el); // appended last ⇒ above the canvases, still under dialogs
+        this.loadingEl = el;
+    }
+
+    /**
      * Set the active symbol's tick size so the price axis shows the instrument's true
      * precision (see the port). Undefined / non-positive ⇒ fall back to the zoom formula.
      */
@@ -681,7 +731,10 @@ export class NativeRenderer implements IChartRenderer {
 
         // Re-derive the candle-colored theme + repaint the DOM chrome that mirrors it.
         this.theme = this.deriveTheme(this.theme);
-        if (this.wrapper) this.applyBackground();
+        if (this.wrapper) {
+            applyChromeTokens(this.wrapper, this.chromeTheme());
+            this.applyBackground();
+        }
         this.inputsUI?.setTheme(this.theme);
         this.paneControls?.setTheme(this.theme);
         // Re-theme the docked drawing toolbar on the STABLE chrome surface, so editing the
@@ -690,6 +743,7 @@ export class NativeRenderer implements IChartRenderer {
         // The open settings dialog is NOT rebuilt here — re-seeding mid-edit would
         // steal focus from the control being dragged/typed. It re-themes on next open.
         this.refreshScrollButtonTheme();
+        this.refreshAttributionColor();
         this.scheduler?.invalidate(InvalidateLevel.Full);
     }
 
@@ -727,7 +781,7 @@ export class NativeRenderer implements IChartRenderer {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.title = 'Chart settings';
-        btn.textContent = '⚙';
+        btn.innerHTML = iconAt('gear', 14);
         Object.assign(btn.style, {
             position: 'absolute',
             bottom: `${TIME_AXIS_H + 10}px`,
@@ -755,15 +809,21 @@ export class NativeRenderer implements IChartRenderer {
         return btn;
     }
 
-    /** Port surface: hosts (topbar buttons) open the same dialog as the in-chart gear —
-     *  created on demand, independent of the gear feature being enabled. */
-    openSettingsDialog(): void {
+    /** Port surface: hosts (bottom-bar / chrome buttons) open the same dialog as the
+     *  in-chart gear — created on demand, independent of the gear feature being enabled. */
+    openSettingsDialog(section?: string): void {
         if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
-        this.toggleSettingsDialog();
+        this.toggleSettingsDialog(section);
     }
 
-    private toggleSettingsDialog(): void {
+    private toggleSettingsDialog(section?: string): void {
         if (!this.settingsDialog) return;
+        // A caller asking for a section wants to SEE it: an open dialog switches tabs
+        // instead of closing, so the same menu item never reads as a toggle.
+        if (section !== undefined && this.settingsDialog.isOpen()) {
+            this.settingsDialog.showSection(section);
+            return;
+        }
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
         this.settingsDialog.toggle(
@@ -776,6 +836,7 @@ export class NativeRenderer implements IChartRenderer {
                 this.settingsDialog?.close();
                 this.openSettingsDialog();
             },
+            section,
         );
     }
 
@@ -820,10 +881,9 @@ export class NativeRenderer implements IChartRenderer {
         return btn;
     }
 
-    /** Double-chevron icon — 12px box, mirroring playground `.toolbar-toggle` `fa-angles-left`. */
+    /** Double-chevron icon — the "jump back to the latest bar" affordance. */
     private scrollButtonIcon(): string {
-        const n = SCROLL_BTN_ICON_PX;
-        return `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="11 6 17 12 11 18"/><polyline points="5 6 11 12 5 18"/></svg>`;
+        return iconAt('chevrons-right', SCROLL_BTN_ICON_PX);
     }
 
     /** The button's fill — the chart background at 50% so it blends with the plot beneath. */
@@ -1002,7 +1062,9 @@ export class NativeRenderer implements IChartRenderer {
             ...this.theme,
             background: this.surfaceBackground,
             textColor: this.surfaceTextColor,
-            borderColor: CHROME_BORDER_COLOR,
+            // The divider follows the stable surface, not the live plot background, so a
+            // light app theme gets light dividers without plot cosmetics bleeding in.
+            borderColor: isDarkColor(this.surfaceBackground) ? DARK_THEME.borderColor : LIGHT_THEME.borderColor,
         };
     }
 
@@ -1015,6 +1077,8 @@ export class NativeRenderer implements IChartRenderer {
 
         this.wrapper = document.createElement('div');
         Object.assign(this.wrapper.style, { position: 'relative', width: '100%', height: '100%', overflow: 'hidden', cursor: 'crosshair' });
+        // Every DOM overlay below is a descendant, so the chrome tokens land once here.
+        applyChromeTokens(this.wrapper, this.chromeTheme());
 
         // L0.25 volume columns: bottom-anchored per-bar volume, ABOVE the geometry canvas so
         // grid lines and candles cannot paint over them. Transparent + pointer-transparent.
@@ -1067,7 +1131,7 @@ export class NativeRenderer implements IChartRenderer {
         this.plot.append(...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas, this.cursorCanvas, this.overlayRoot);
         this.wrapper.appendChild(this.plot);
         this.factoryConfig = this.getConfig();
-        this.attributionEl = createAttributionMark(document, this.theme.textColor);
+        this.attributionEl = createAttributionMark(document, this.theme.background);
         if (!this.attributionEnabled) this.attributionEl.style.display = 'none';
         this.positionAttribution();
         this.wrapper.appendChild(this.attributionEl);
@@ -1162,6 +1226,7 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
+        this.inputsUI.setLegendActions(this.legendActionsProvider);
         this.inputsUI.setOnChange((c) => {
             for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value });
         });
@@ -1291,6 +1356,7 @@ export class NativeRenderer implements IChartRenderer {
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
         this.surfaceSeeded = true;
+        if (this.wrapper) applyChromeTokens(this.wrapper, this.chromeTheme());
         this.applyBackground();
         this.inputsUI.setTheme(theme);
         this.paneControls?.setTheme(this.theme);
@@ -1302,6 +1368,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.refreshScrollButtonTheme();
         this.userDrawings?.setTheme(this.chromeTheme());
+        this.refreshAttributionColor();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -1328,6 +1395,8 @@ export class NativeRenderer implements IChartRenderer {
 
     destroy(): void {
         if (this.introRaf != null) cancelAnimationFrame(this.introRaf);
+        this.loadingEl?.remove();
+        this.loadingEl = null;
         if (this.countdownTimer != null) { clearInterval(this.countdownTimer); this.countdownTimer = null; }
         this.scheduler?.destroy();
         this.animator?.stop();
@@ -1647,6 +1716,11 @@ export class NativeRenderer implements IChartRenderer {
     setSymbolPicker(picker: SymbolPickerFn | null): void {
         this.symbolPicker = picker;
         this.inputsUI?.setSymbolPicker(picker);
+    }
+
+    setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
+        this.legendActionsProvider = provider;
+        this.inputsUI?.setLegendActions(provider);
     }
 
     /**
@@ -2853,6 +2927,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         if (!overlay) {
             overlay = new TableOverlay(this.plot, this.theme, (id) => this.paneBoundsFor(id));
+            overlay.setVisible(this.loadingEl === null); // born mid-load ⇒ born hidden
             this.tableOverlays.set(model.id, overlay);
         }
         overlay.update(tables);
@@ -2950,6 +3025,12 @@ export class NativeRenderer implements IChartRenderer {
             left: `${(this.toolbarGutter || 0) + 12}px`,
             bottom: `${TIME_AXIS_H + 10}px`,
         });
+    }
+
+    /** Re-tint the LuxAlgo SVGs when the plot background flips light/dark. */
+    private refreshAttributionColor(): void {
+        if (!this.attributionEl) return;
+        applyAttributionMarkTheme(this.attributionEl, this.theme.background);
     }
 
     private syncSize(): void {

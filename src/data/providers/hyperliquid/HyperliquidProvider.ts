@@ -113,7 +113,7 @@ function selectSubTf(targetMin: number): number | null {
 
 /**
  * Hyperliquid market-data provider, built from scratch on the public info API — no
- * `pinets`, no API key. Serves USD-margined perpetuals (bare coins like `BTC`) and
+ * third-party SDK, no API key. Serves USD-margined perpetuals (bare coins like `BTC`) and
  * spot pairs (`PURR/USDC`), and aggregates timeframes Hyperliquid doesn't serve
  * natively (e.g. `45`, `180`, `360`). Live ticks use a real WebSocket candle stream
  * (`subscribe`).

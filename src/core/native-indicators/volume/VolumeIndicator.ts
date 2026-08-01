@@ -2,9 +2,10 @@ import type { InputSchema, InputValue } from '../../model/inputs';
 import type { VolumeLayerData } from '../../model/volume-layers';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../NativeIndicator';
 import { registerNativeIndicator } from '../NativeIndicator';
+import { BEARISH, BULLISH } from '../../palette';
 
-const DEFAULT_UP = '#089981';
-const DEFAULT_DOWN = '#F23645';
+const DEFAULT_UP = BULLISH;
+const DEFAULT_DOWN = BEARISH;
 const DEFAULT_HEIGHT_PCT = 20;
 
 function num(v: InputValue | undefined, fallback: number): number {

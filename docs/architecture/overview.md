@@ -77,9 +77,9 @@ The bundled defaults are all **swappable defaults**, never load-bearing assumpti
 
 - the **native renderer** (default; WebGL2 with a canvas2d fallback),
 - the **provider-backed, cache-wrapped data feed**,
-- and the **Pine scripting engine** (in-process and Web-Worker forms) — present in the box, but only active once you opt in.
+- and — for the engine layer — **nothing at all**. No scripting engine ships with Vela: the port is the product, and you install an addon (Pine Script: `@luxalgo/vela-pinets`) or write your own. See [Scripting engines](../user/scripting-engines.md).
 
-The two Pine forms are **not** capability-equivalent: the **in-process** form declares the streaming capability and can run as a persistent live session on the main thread, while the **Web-Worker** form currently declares *no* streaming capability and instead serves live updates by re-running per tick off-thread. Both keep the main thread responsive in their own way; only the in-process form takes the live-streaming path. See [modules.md](modules.md) for the per-form detail and [data-flow.md](data-flow.md) for how that choice drives routing.
+An engine's **declared capabilities** — not its packaging — decide how the core routes it: an engine that declares `streaming` gets the live persistent-session path, one that doesn't gets static re-runs poked per bar change. Two engines for the same language can differ there (a main-thread one and a worker-backed one need not be capability-equivalent), and the core never guesses: it takes each declaration at face value. See [modules.md](modules.md) for the layer's defaults and [data-flow.md](data-flow.md) for how that choice drives routing.
 
 The port is deliberately renderer-agnostic — a custom `IChartRenderer` class passed as `options.renderer` swaps the whole backend.
 

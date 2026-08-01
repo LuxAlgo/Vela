@@ -17,6 +17,8 @@ export interface IndicatorController {
 export class IndicatorHandleImpl implements IndicatorHandle {
     readonly id: string;
     title: string;
+    /** The script source (see {@link IndicatorHandle.source}); undefined for natives. */
+    readonly source?: string;
     private schema: InputSchema[] = [];
     private visibleState = true;
     private readonly bus = new TypedEventBus<IndicatorEventMap>();
@@ -25,9 +27,11 @@ export class IndicatorHandleImpl implements IndicatorHandle {
         id: string,
         title: string,
         private readonly controller: IndicatorController,
+        source?: string,
     ) {
         this.id = id;
         this.title = title;
+        if (source !== undefined) this.source = source;
     }
 
     get inputs(): readonly InputSchema[] {

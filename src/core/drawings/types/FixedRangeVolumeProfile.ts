@@ -4,6 +4,7 @@ import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { LINE_STYLE_OPTIONS } from '../schema';
 import { pointInPolygon, handleAt, distToSegment } from '../hittest';
+import { ACCENT, BEARISH, BULLISH, NEUTRAL } from '../../palette';
 
 /** One OHLCV bar the fixed-range profile buckets (estimation uses O/H/L/C + volume). */
 export interface FrvpBar {
@@ -76,10 +77,10 @@ export interface FrvpStyle {
 }
 
 /** Outside-VA fills at 25% transparency; value-area fills at 60% transparency. */
-const OUTSIDE_UP = '#089981BF';
-const OUTSIDE_DOWN = '#f23645BF';
-const VA_UP = '#08998166';
-const VA_DOWN = '#f2364566';
+const OUTSIDE_UP = `${BULLISH}BF`;
+const OUTSIDE_DOWN = `${BEARISH}BF`;
+const VA_UP = `${BULLISH}66`;
+const VA_DOWN = `${BEARISH}66`;
 
 function defaultFrvpStyle(): FrvpStyle {
     return {
@@ -92,19 +93,19 @@ function defaultFrvpStyle(): FrvpStyle {
         vaUpColor: VA_UP,
         vaDownColor: VA_DOWN,
         showVah: true,
-        vahColor: '#787B86',
+        vahColor: NEUTRAL,
         vahStyle: 'solid',
         showVal: true,
-        valColor: '#787B86',
+        valColor: NEUTRAL,
         valStyle: 'solid',
         showPoc: true,
-        pocColor: '#2962FF',
+        pocColor: ACCENT,
         pocStyle: 'solid',
         showDevelopingPoc: false,
-        developingPocColor: '#2962FF',
+        developingPocColor: ACCENT,
         developingPocStyle: 'dotted',
         showDevelopingVa: false,
-        developingVaColor: '#2962FF',
+        developingVaColor: ACCENT,
         developingVaStyle: 'dotted',
     };
 }

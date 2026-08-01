@@ -18,14 +18,14 @@ More than one renderer adapter ships today — the native default and the second
 
 ## Consequences / Trade-offs
 
-- **The boundary is real, not aspirational, for the dependencies the ACL covers today** (`pinets`, the bundled renderer library). A forbidden import of those fails lint, so accidental cross-layer coupling there is caught before merge. One exception is unenforced: `core/DataControl.ts` imports the concrete `MultiProviderFeed` class directly (and does `instanceof` checks on it) to expose registry-only convenience methods — a deliberate gap the ACL doesn't cover, since it restricts `pinets`/renderer imports, not concrete backend classes in general.
+- **The boundary is real, not aspirational, for the dependencies the ACL covers today** (`pinets` — banned outright now that no engine ships here — and the bundled renderer library). A forbidden import of those fails lint, so accidental cross-layer coupling there is caught before merge. One exception is unenforced: `core/DataControl.ts` imports the concrete `MultiProviderFeed` class directly (and does `instanceof` checks on it) to expose registry-only convenience methods — a deliberate gap the ACL doesn't cover, since it restricts those named dependencies, not concrete backend classes in general.
 - **One place to wire defaults.** Concrete backends are imported only at the composition root, keeping every other module backend-agnostic and testable with injected doubles.
 - **Intentional extension.** Introducing a new backend forces an explicit ACL edit, which surfaces the architectural impact in review.
 - **Some friction.** Contributors occasionally hit a lint error that feels strict; the rule is teaching them the boundary, and the exception buckets document exactly where each dependency is allowed to live.
 
 ## Invariant
 
-**Layering is enforced by an ESLint import ACL for the dependencies it covers today (`pinets`, the bundled renderer library): the core otherwise imports no concrete backend, with one narrow, unenforced exception in `DataControl.ts`; only the composition root — the Vela class plus the package index — wires defaults, and dependency injection is the sanctioned external path into that wiring; backend dependencies are confined to their named layers (scripting → engine, renderer library → its own renderer folder, renderer never imports scripting). Adding a backend requires deliberately extending the ACL.**
+**Layering is enforced by an ESLint import ACL for the dependencies it covers today (`pinets`, the bundled renderer library): the core otherwise imports no concrete backend, with one narrow, unenforced exception in `DataControl.ts`; only the composition root — the Vela class plus the package index — wires defaults, and dependency injection is the sanctioned external path into that wiring; backend dependencies are confined to their named layers (a scripting toolchain is banned everywhere — engines are separate packages behind the port — and the renderer library is confined to its own renderer folder). Adding a backend requires deliberately extending the ACL.**
 
 ---
 

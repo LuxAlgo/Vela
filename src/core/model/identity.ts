@@ -7,11 +7,12 @@ export type IdentifiableKind = SeriesKind | 'fill' | 'background' | 'hline' | 'l
  * Content-addressed id for a plotted element, stable across re-runs of
  * identical source.
  *
- * Deliberately NOT PineTS's `_callsiteId`: that is a transpile-order counter
- * that renumbers whenever the source is edited (insert a `plot()` near the top
- * and every downstream callsite shifts), so keying persistent state on it would
- * silently rebind to the wrong element. The ordinal disambiguates multiple
- * plots that share a title within one indicator.
+ * Deliberately NOT an engine's own callsite counter: those renumber whenever the
+ * source is edited (insert a plot near the top and every downstream callsite
+ * shifts), so keying persistent state on one would silently rebind to the wrong
+ * element. The ordinal disambiguates multiple plots that share a title within one
+ * indicator. Every engine MUST mint its series ids through this — it is the
+ * identity contract value patches are keyed by.
  */
 export function stableSeriesId(parts: {
     instanceId: string;

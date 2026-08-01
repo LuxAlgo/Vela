@@ -52,11 +52,7 @@ This is what keeps the core clean: the core never names a backend, so the knowle
 Each layer ships with a **swappable default** — a working implementation of its port, chosen by the composition root unless you override it.
 
 - **Data feed** → a **provider-backed feed**, wrapped in an in-memory **caching decorator**. You get cached history and live ticks out of the box.
-- **Scripting engine** → the **Pine engine**, available in two forms, both streaming-capable (`streaming: true`):
-  - **in-process** — runs on the main thread and drives a persistent live session directly.
-  - **Web-Worker** — runs off-thread AND holds its persistent streaming session inside the worker: a live tick ships one bar across the message boundary and the script re-executes incrementally. Off-thread execution and the live-streaming path together.
-
-  Note: there is no engine wired by default — Pine is *available* in both forms but only active once you register one.
+- **Scripting engine** → **none**. This is the one layer with no bundled default: Vela defines the port and ships no runtime, so the package carries no language toolchain and no third-party license with it. Engines arrive as separate packages — Pine Script in [`@luxalgo/vela-pinets`](../user/scripting-engines.md), which exports an in-process form and a Web-Worker form (the worker holds its persistent streaming session inside the worker: a live tick ships one bar across the message boundary and the script re-executes incrementally) — or as host code written against the port.
 - **Renderer** → the **native renderer** (WebGL2 with a canvas2d fallback), the only bundled backend; the `IChartRenderer` port accepts custom classes.
 
 ## The caching decorator

@@ -9,24 +9,39 @@ drawings, and your subscriptions survive every symbol/timeframe change.
 
 ```ts
 import { VelaWorkspace } from 'vela/workspace';
-import { PineWorkerEngine } from 'vela';
+import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine — see ./scripting-engines.md
 import { BinanceProvider } from 'vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {
     layout: '4', // '1' | '2h' | '2v' | '4' | '8' | a registerLayout() id
+    // Chart options at the TOP LEVEL are every cell's DEFAULT — the same words the
+    // widget (and the bare chart) use. `cells` overrides them per cell; a cell's NAME
+    // is its durable identity, DECLARATION ORDER fills the layout's slots:
+    symbol: 'BTCUSDT',
+    timeframe: '60',
     cells: {
-        c1: { symbol: 'BTCUSDT', timeframe: '60' },
-        c2: { symbol: 'ETHUSDT', timeframe: '15' },
+        btc: { symbol: 'BTCUSDT', timeframe: '60' }, // 1st declared → 1st slot
+        eth: { symbol: 'ETHUSDT', timeframe: '15' }, // slots 3–4: no entry → pure defaults
     },
-    defaults: { symbol: 'BTCUSDT', timeframe: '60' },
     providers: { binance: () => new BinanceProvider() }, // registered ONCE, shared by every cell
     engines: { pine: () => new PineWorkerEngine() }, // instantiated per cell (a worker each)
     live: true,
     theme: 'dark',
     sync: { viewport: true }, // optional links — see below
-    persist: true, // session persistence (see State & persistence)
+    persist: true, // state persistence (localStorage by default — see State & persistence)
 });
 ```
+
+**One options vocabulary.** `VelaWorkspaceOptions` = the widget's chart options (all of
+`VelaOptions` except `height` — the grid sizes its cells) + the shared shell surface
+(`providers`, `engines`, `indicators`, `timeframes`, `timezone`, chrome toggles,
+`persist`/`storage`) + the grid's own options (`layout`, `cells`, `sync`,
+`drawingToolbar`, `maxWebglCells`). A chart option means the same thing everywhere: on
+the widget it configures *the* chart, here it is the *default* of each cell —
+`upColor`, `glow`, `logScale`, `animations`, `defaultLanguage`, `drawings` (its toolbar
+excepted: the shared bar replaces per-cell bars), even `renderer` all apply to every
+cell. An explicit `nativeBackend` (other than `'auto'`) wins over the `maxWebglCells`
+budget policy.
 
 ## Cells and the active cell
 
@@ -84,7 +99,8 @@ The state SURFACE is the product; persistence is an adapter on top of it.
 ```ts
 const state = ws.getState();
 // → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?, charts: […] }
-// One `charts` entry per SLOT (live AND dormant): { id: 'c1', symbol, provider?, timeframe,
+// One ORDERED `charts` entry per cell, live AND dormant — array position i restores
+// into slot i, `id` is the cell's durable name: { id: 'btc', symbol, provider?, timeframe,
 //   priceStyle, bars?, watermark?, rendererConfig (renderer.getConfig() document),
 //   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] } }
 
@@ -117,13 +133,15 @@ defaults at construction (synchronous adapters restore before the first paint; a
 ones late-apply when they resolve). Writes are debounced ~500ms and flushed on
 `beforeunload` and `destroy()`.
 
-**The default adapter is in-memory and session-lived**: a destroyed and re-created
-workspace (SPA navigation) restores, but a page reload starts fresh. Durable
-persistence is your choice of backend, through this interface:
+**The default adapter is localStorage** — the same default as the widget, so
+`persist: true` survives reloads out of the box. An in-memory, session-lived adapter
+stays available for state that must NOT outlive the page
+(`import { memoryStorageAdapter } from 'vela/workspace'`). Any backend fits through
+this interface (one contract for both shells):
 
 ```ts
 /** Both methods may be synchronous (localStorage-like) or return promises (REST/IndexedDB). */
-interface WorkspaceStorage {
+interface VelaStorage {
     get(key: string): string | null | Promise<string | null>;
     set(key: string, value: string): void | Promise<void>;
     remove?(key: string): void | Promise<void>;
@@ -133,9 +151,9 @@ interface WorkspaceStorage {
 Example — a REST-backed store (per-user server-side workspaces):
 
 ```ts
-import { VelaWorkspace, type WorkspaceStorage } from 'vela/workspace';
+import { VelaWorkspace, type VelaStorage } from 'vela/workspace';
 
-const restStorage: WorkspaceStorage = {
+const restStorage: VelaStorage = {
     async get(key) {
         const res = await fetch(`/api/workspaces/${encodeURIComponent(key)}`);
         return res.ok ? res.text() : null;
@@ -155,19 +173,45 @@ state referencing a custom layout id restores only if that layout is registered
 
 ## Options (summary)
 
+**Chart options** (every key of [the chart's options](./options.md) except `height`) sit
+at the top level and are each cell's **default** — `symbol` (bare = first declared
+provider; an `EXCHANGE:` prefix pins a venue), `timeframe`, `bars`, `priceStyle`,
+`data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`, `downColor`, `glow`,
+`animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar excepted),
+`defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
+`maxWebglCells` policy). `cells` overrides the market/view seeds per cell:
+`{ symbol, timeframe, bars, priceStyle, data, visibleRange }`.
+
+**Cell names are identities, not positions.** A `cells` key is free-form (`btc`, `main`,
+…): it names the cell durably — persistence, `sync` groups and `ws.cell(name)` all speak
+it — while DECLARATION ORDER decides which layout slot each one fills (first declared →
+first slot). Any entry is optional (an undeclared slot boots on the defaults, with an
+auto name); extra entries beyond the layout wait dormant and appear when a larger layout
+reveals them. Purely-numeric names are rejected with a warning (JS object keys would
+silently reorder them).
+
+**Shell options** (shared with the widget, same semantics):
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `providers` | — | Factories; the workspace instantiates ONCE onto the single shared feed. |
+| `engines` | — | Factories; one instance per cell (merged over `registerDefaultEngine`). |
+| `indicators` | — | Shared manifest; `enabled` entries auto-add to fresh cells. |
+| `timeframes` | presets | Topbar timeframe presets. |
+| `timezone` | `'Etc/UTC'` | Display timezone (every cell). |
+| `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
+| `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
+| `persist` / `storage` | off / localStorage | State persistence (see above). |
+
+**Workspace options** (the grid's own):
+
 | Option | Default | What it does |
 | --- | --- | --- |
 | `layout` | `'4'` | Initial grid — preset id, `registerLayout()` id, or inline definition. |
-| `cells` / `defaults` | — | Per-slot market seeds / fallback seed. |
-| `providers` | — | Factories, called ONCE onto the single shared feed. |
-| `engines` | — | Factories, called once per cell. |
-| `indicators` | — | Shared manifest; `enabled` entries auto-add to fresh cells. |
+| `cells` | — | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above). |
 | `sync` | off | Initial sync links (see above). |
-| `persist` / `storage` | off / memory | State persistence (see above). |
-| `timezone` | `'Etc/UTC'` | Workspace-global display timezone (every cell). |
 | `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |
-| `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
-| `autofocus` | `false` | Focus the active chart on mount so keyboard shortcuts work from the first keystroke. Off by default: an embedded workspace should not steal the page's focus. |
+| `maxWebglCells` | `8` | Above this many cells, every cell renders canvas2d (WebGL-context budget). |
 | `maxWebglCells` | `8` | Above this many cells, every cell uses canvas2d (uniform look inside the browser's WebGL budget; `glow` unavailable there). |
 
 Contributed actions/attachments (`vela/plugin`) work unchanged — `ctx.chart` resolves

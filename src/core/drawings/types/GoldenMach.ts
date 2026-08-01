@@ -3,24 +3,13 @@ import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_FIELDS } from '../schema';
 import type { FibLevel } from './FibRatios';
 import { MachFigure, SHOW_RATIOS_FIELD } from './MachFigure';
+import { fibLevels } from '../levelPalette';
 
 /**
  * Fibonacci radius steps for Golden Mach tools (multiples of the user-drawn first circle).
  * Colors follow the conventional fib palette used by retracement levels.
  */
-export const GOLDEN_MACH_LEVELS: readonly FibLevel[] = [
-    { ratio: 0.236, color: '#f23645', enabled: true },
-    { ratio: 0.382, color: '#ff9800', enabled: true },
-    { ratio: 0.5, color: '#4caf50', enabled: true },
-    { ratio: 0.618, color: '#089981', enabled: true },
-    { ratio: 0.786, color: '#5b9cf6', enabled: true },
-    { ratio: 1, color: '#787b86', enabled: true },
-    { ratio: 1.618, color: '#f23645', enabled: true },
-    { ratio: 2.618, color: '#ff9800', enabled: true },
-    { ratio: 4.236, color: '#4caf50', enabled: true },
-    { ratio: 6.854, color: '#089981', enabled: true },
-    { ratio: 11.09, color: '#5b9cf6', enabled: true },
-];
+export const GOLDEN_MACH_LEVELS = fibLevels([0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 4.236, 6.854, 11.09]);
 
 const DEFAULT_MACH = 2;
 

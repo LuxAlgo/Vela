@@ -1,5 +1,6 @@
 import type { VelaTheme } from '../../../core/options';
 import { DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
+import { ACCENT, BEARISH, BULLISH, NEUTRAL, WARNING } from '../../../core/palette';
 import { CHROME_BORDER_COLOR } from '../core/chartConfig';
 
 /** Split a color into its `#RRGGBB` part + alpha 0..1 (handles `#RGB`, `#RRGGBB(AA)`, `rgba()`). */
@@ -71,10 +72,17 @@ function buildPalette(): string[][] {
 }
 
 const PALETTE = buildPalette();
-const CHECKER = 'repeating-conic-gradient(#9aa0a6 0% 25%, #d3d6da 0% 50%) 0 0 / 10px 10px';
+
+/** The alpha checkerboard laid under translucent colors. Its grays are fixed on purpose:
+ *  it stands for "nothing here", so it must not shift with the theme. */
+export function transparencyChecker(size: number): string {
+    return `repeating-conic-gradient(#9aa0a6 0% 25%, #d3d6da 0% 50%) 0 0 / ${size}px ${size}px`; // palette-exempt: these grays stand for transparency itself
+}
+
+const CHECKER = transparencyChecker(10);
 
 /** Session-shared recently-picked colors (most-recent first). */
-const recents: string[] = ['#2962ff', '#089981', '#f23645', '#ff9800', '#787b86'];
+const recents: string[] = [ACCENT, BULLISH, BEARISH, WARNING, NEUTRAL];
 
 function addRecent(hex6: string): void {
     const i = recents.findIndex((c) => c.toLowerCase() === hex6.toLowerCase());
@@ -126,13 +134,13 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
 
     // ── recents + custom "+" ──
     const recentRow = document.createElement('div');
-    recentRow.style.cssText = `display:flex;align-items:center;gap:5px;flex-wrap:wrap;border-top:1px solid ${CHROME_BORDER_COLOR};padding-top:9px;`;
+    recentRow.style.cssText = 'display:flex;align-items:center;gap:5px;flex-wrap:wrap;border-top:1px solid var(--vela-border);padding-top:9px;';
     const renderRecents = (): void => {
         recentRow.replaceChildren();
         for (const c of recents) {
             const sw = document.createElement('button');
             sw.type = 'button';
-            sw.style.cssText = `width:17px;height:17px;border-radius:4px;border:1px solid rgba(148,163,184,0.25);cursor:pointer;background:${c};padding:0;`;
+            sw.style.cssText = `width:17px;height:17px;border-radius:var(--vela-radius-sm);border:1px solid var(--vela-border);cursor:pointer;background:${c};padding:0;`;
             sw.addEventListener('click', (e) => {
                 e.stopPropagation();
                 pickHex(c);
@@ -140,7 +148,7 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
             recentRow.appendChild(sw);
         }
         const add = document.createElement('label');
-        add.style.cssText = `width:17px;height:17px;border-radius:4px;border:1px dashed rgba(148,163,184,0.6);cursor:pointer;display:flex;align-items:center;justify-content:center;color:${theme.textColor};font:14px ${theme.fontFamily};position:relative;`;
+        add.style.cssText = `width:17px;height:17px;border-radius:var(--vela-radius-sm);border:1px dashed var(--vela-border-strong);cursor:pointer;display:flex;align-items:center;justify-content:center;color:${theme.textColor};font:14px ${theme.fontFamily};position:relative;`;
         add.textContent = '+';
         const input = document.createElement('input');
         input.type = 'color';
@@ -160,10 +168,10 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
     const track = document.createElement('div');
     track.style.cssText = 'flex:1;position:relative;height:13px;border-radius:7px;cursor:pointer;';
     const knob = document.createElement('div');
-    knob.style.cssText = 'position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.55);transform:translate(-50%,-50%);pointer-events:none;';
+    knob.style.cssText = 'position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:var(--vela-selected-bg);box-shadow:0 1px 3px rgba(0,0,0,0.55);transform:translate(-50%,-50%);pointer-events:none;';
     track.appendChild(knob);
     const pctBox = document.createElement('div');
-    pctBox.style.cssText = `min-width:42px;text-align:center;font:12px ${theme.fontFamily};border:1px solid ${CHROME_BORDER_COLOR};border-radius:5px;padding:3px 4px;`;
+    pctBox.style.cssText = `min-width:42px;text-align:center;font:var(--vela-font-size-md) ${theme.fontFamily};border:1px solid var(--vela-border);border-radius:5px;padding:3px 4px;`;
     opRow.append(track, pctBox);
     const paintOpacity = (): void => {
         track.style.background = `linear-gradient(to right, ${curHex}00, ${curHex}ff), ${CHECKER}`;

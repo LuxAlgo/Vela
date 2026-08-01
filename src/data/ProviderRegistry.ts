@@ -35,6 +35,23 @@ const normName = (n: string): string => n.trim().toLowerCase();
 const normTicker = (t: string): string => t.trim().toUpperCase();
 
 /**
+ * Split a raw symbol string into its parts — THE symbol grammar, shared by everything
+ * that reads one. The provider prefix may carry a dotted qualifier: a venue's
+ * regional/market variant is its own provider (e.g. `BINANCE.US:BTCUSDT`), never a
+ * modifier on the base venue. Case-insensitive on the prefix (normalized lower).
+ */
+export function parseSymbol(raw: string): ParsedSymbol {
+    const s = raw.trim();
+    const m = /^(?:([A-Za-z0-9_.]+):)?(.+)$/.exec(s);
+    if (!m) return { provider: null, ticker: s };
+    const provider = m[1] ? normName(m[1]) : null;
+    const ticker = m[2]!;
+    const dot = ticker.lastIndexOf('.');
+    const ext = dot > 0 ? ticker.slice(dot + 1) : undefined;
+    return { provider, ticker, ext };
+}
+
+/**
  * Holds the registered data providers, builds each provider's symbol index at
  * registration (eager), and resolves a symbol string to `{ provider, ticker }`.
  *
@@ -119,16 +136,7 @@ export class ProviderRegistry {
     }
 
     parse(raw: string): ParsedSymbol {
-        const s = raw.trim();
-        // The provider prefix may carry a dotted qualifier — a venue's regional/market variant
-        // is its own provider (e.g. `BINANCE.US:BTCUSDT`), never a modifier on the base venue.
-        const m = /^(?:([A-Za-z0-9_.]+):)?(.+)$/.exec(s);
-        if (!m) return { provider: null, ticker: s };
-        const provider = m[1] ? normName(m[1]) : null;
-        const ticker = m[2]!;
-        const dot = ticker.lastIndexOf('.');
-        const ext = dot > 0 ? ticker.slice(dot + 1) : undefined;
-        return { provider, ticker, ext };
+        return parseSymbol(raw);
     }
 
     /**
@@ -174,9 +182,12 @@ export class ProviderRegistry {
                 if (r) {
                     stop();
                     resolve(r);
-                } else if (settled) {
-                    // Report only after an index build finishes still unresolved — not on the
-                    // transient re-check fired right after a registration.
+                } else if (settled && this.allSettled()) {
+                    // Report only once EVERY registered provider has finished indexing. One
+                    // index settling proves nothing: with several providers the first to finish
+                    // is usually not the one that serves the symbol, and reporting there is a
+                    // false verdict — the user sees "no provider serves X" on a symbol that
+                    // resolves a moment later.
                     this.reportUnresolved(raw);
                 }
             });
@@ -188,6 +199,12 @@ export class ProviderRegistry {
             };
             this.waits.add(stop);
         });
+    }
+
+    /** Every registered provider has finished building its index (or failed trying). */
+    private allSettled(): boolean {
+        for (const e of this.entries.values()) if (!e.settled) return false;
+        return true;
     }
 
     /** Abandon every parked wait (chart/feed teardown). Their promises simply never settle. */

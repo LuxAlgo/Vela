@@ -14,6 +14,10 @@ export interface MenuOptions extends MenuControllerOptions {
     /** Element that opens the menu on click (gets the machine's trigger props). */
     trigger?: HTMLElement;
     host?: HTMLElement;
+    /** Override the root list's min-width (the stylesheet default suits full-word labels;
+     *  compact lists like the timeframe dropdown pass something snug). Submenus keep the
+     *  default. */
+    minWidth?: string;
 }
 
 interface SurfaceOptions {
@@ -24,6 +28,7 @@ interface SurfaceOptions {
     trigger?: HTMLElement;
     triggerId?: string;
     id?: string;
+    minWidth?: string;
 }
 
 /**
@@ -53,6 +58,7 @@ class Surface {
         this.positioner.className = 'vela-ui-layer';
         this.list = doc.createElement('ul');
         this.list.className = 'vela-menu';
+        if (opts.minWidth) this.list.style.minWidth = opts.minWidth;
         this.positioner.appendChild(this.list);
         this.host.appendChild(this.positioner);
 
@@ -140,15 +146,13 @@ class Surface {
             li.className = 'vela-menu-item';
             li.dataset.veiId = item.id;
             if (item.toggle) {
-                // Switch row: the pill carries the state — no accent recolor, no checkmark.
+                // Switch row: the pill carries the state.
                 // (Zag owns the item's ARIA props; the pill below is decorative.)
                 li.dataset.toggle = '1';
-            } else if (!branch) {
-                if (item.checked) li.dataset.checked = '1';
-                const check = doc.createElement('span');
-                check.className = 'vela-menu-check';
-                check.textContent = item.checked ? '✓' : '';
-                li.appendChild(check);
+            } else if (!branch && item.checked) {
+                // Selection reads from the row itself (brighter surface + bright ink) —
+                // no checkmark glyph.
+                li.dataset.checked = '1';
             }
             if (item.icon) li.appendChild(iconEl(item.icon, doc));
             const label = doc.createElement('span');
@@ -202,6 +206,7 @@ export class Menu {
             trigger: opts.trigger,
             triggerId: opts.triggerId,
             id: opts.id,
+            minWidth: opts.minWidth,
         });
         this.root.setItems(opts.items);
     }

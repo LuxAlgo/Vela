@@ -11,6 +11,7 @@ import type { VelaEventMap } from './core/events/types';
 import { EngineOrchestrator, type ResolvedConfig } from './core/engine/EngineOrchestrator';
 import type { SceneInspection } from './core/engine/inspect';
 import { resolveTheme } from './core/theme';
+import { BEARISH, BULLISH } from './core/palette';
 import { RendererControl } from './core/RendererControl';
 import { PanesControl } from './core/PanesControl';
 import { DataControl } from './core/DataControl';
@@ -80,8 +81,8 @@ export class Vela {
             animZoom,
             animPan,
             glow: options.glow ?? 0,
-            upColor: options.upColor ?? '#089981',
-            downColor: options.downColor ?? '#f23645',
+            upColor: options.upColor ?? BULLISH,
+            downColor: options.downColor ?? BEARISH,
             priceStyle: options.priceStyle ?? 'candles',
         };
         const RendererClass = options.renderer ?? NativeRenderer;
@@ -100,7 +101,6 @@ export class Vela {
         const feed = deps.dataFeed ?? new MultiProviderFeed();
         const config: ResolvedConfig = {
             market: {
-                provider: options.provider,
                 symbol: options.symbol,
                 timeframe: options.timeframe,
                 bars: options.bars,
@@ -122,9 +122,11 @@ export class Vela {
 
     /**
      * Register a scripting engine so `addIndicator({ language })` can run that
-     * language. No engine is registered by default — import and register the one
-     * you need (e.g. `chart.registerEngine('pine', new PineEngine())`); without it
-     * the chart only displays candles. Re-registering a language replaces it.
+     * language. Vela ships NO engine — install the one you need (Pine Script:
+     * `@luxalgo/vela-pinets`) and register it, e.g.
+     * `chart.registerEngine('pine', new PineEngine())`; without one the chart
+     * displays candles, drawings and native indicators only. Re-registering a
+     * language replaces it.
      */
     registerEngine(language: string, engine: ScriptingEngine): this {
         this.orchestrator.registerEngine(language, engine);
@@ -155,6 +157,16 @@ export class Vela {
      */
     availableNativeIndicators(): Promise<NativeIndicatorInfo[]> {
         return this.orchestrator.availableNativeIndicators();
+    }
+
+    /**
+     * The native-indicator types PRESENT on the chart right now — the synchronous slice of
+     * {@link availableNativeIndicators} (only support probing is async; presence never is).
+     * Persistence snapshots read this: an unload-time flush must see an add/remove that
+     * happened microseconds ago, which an async catalog mirror cannot guarantee.
+     */
+    presentNativeIndicators(): string[] {
+        return this.orchestrator.presentNativeIndicators();
     }
 
     /** Live handles of every indicator currently on the chart (script + native) — drive
@@ -218,9 +230,10 @@ export class Vela {
 
     /** Resolves once the chart is painted and interactive. For a symbol-backed chart this
      *  awaits a provider being registered that resolves the symbol (the parked load). On a
-     *  deep-history chart (beyond one ~10k-bar chunk) older bars keep backfilling BEHIND
-     *  this — await {@link historyComplete} for the full depth. Distinct from
-     *  `chart.data.ready()`, which awaits only the provider symbol indexes. */
+     *  ranged feed the first paint is a small recent head (~200 bars) and the rest of the
+     *  history keeps backfilling BEHIND this — await {@link historyComplete} for the full
+     *  depth. Distinct from `chart.data.ready()`, which awaits only the provider symbol
+     *  indexes. */
     ready(): Promise<void> {
         return this.orchestrator.ready();
     }

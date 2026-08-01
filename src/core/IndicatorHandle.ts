@@ -16,6 +16,10 @@ export interface IndicatorEventMap extends Record<string, unknown> {
 export interface IndicatorHandle {
     readonly id: string;
     readonly title: string;
+    /** The script source this indicator was added with. `undefined` for a NATIVE
+     *  (core-computed) indicator — there is no script to show. What a host editor
+     *  opens when a legend action asks for "the code behind this row". */
+    readonly source?: string;
     /** Inputs parsed from the Pine source (populated once the script is prepared). */
     readonly inputs: readonly InputSchema[];
     /** Whether the indicator is currently shown (vs hidden). Hidden indicators stop computing. */

@@ -24,6 +24,7 @@ import { DrawingController } from '../drawings/DrawingController';
 import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
 import { timeframeToMs } from '../../data/timeframe';
+import { parseSymbol } from '../../data/ProviderRegistry';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
 import { chartType, type SeriesDataEngine } from '../../chart-types/registry';
 
@@ -46,6 +47,15 @@ const VIEWPORT_DEBOUNCE_MS = 150;
 const PREVIEW_BARS = 300;
 /** Above this the full fetch paginates (Binance page size), so a preview pays off. */
 const SINGLE_REQUEST_BARS = 1000;
+/**
+ * The PROGRESSIVE head (ranged feeds): the first paint is one small request of this many
+ * bars — on screen while a monolithic fetch would still be in flight — and the rest of
+ * the history streams in behind it in steps that DOUBLE from here to {@link CHUNK_BARS}.
+ * Growth keeps the request count logarithmic: on a high-latency venue (~2s flat per
+ * request, size barely matters) flat 200-bar steps made the tail 10 round-trips where
+ * doubling takes 4.
+ */
+const STEP_BARS = 200;
 /**
  * Deep history loads BACKWARD in chunks of this many bars: the chart is interactive after
  * the first chunk while older ones stream in behind it (each a bounded request the data
@@ -71,7 +81,7 @@ const HEAL_COOLDOWN_MS = 5_000;
  * Renderer- and engine-agnostic orchestration: owns market data (via the injected
  * `MarketDataFeed`), runs/streams indicators through registered `ScriptingEngine`s
  * (selected by language), routes panes, and drives the injected `IChartRenderer`.
- * Imports neither a concrete renderer nor `pinets`.
+ * Imports neither a concrete renderer nor a concrete scripting engine.
  */
 export class EngineOrchestrator implements IndicatorController, PaneController {
     readonly events = new TypedEventBus<VelaEventMap>();
@@ -137,6 +147,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     /** A setMarket switch is in flight: bar/viewport pokes to the OLD sessions are held
      *  (they must not re-run over the incoming market's bars — re-execution follows the load). */
     private switchingMarket = false;
+    /** A load is in flight with nothing painted — the state behind the renderer's loading
+     *  affordance and the `load:start`/`load:end` event pair (transition-guarded). */
+    private loadingUp = false;
 
     constructor(
         container: HTMLElement,
@@ -181,7 +194,13 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.drawings = new DrawingController(this.renderer, this.events, config.drawings);
         // A symbol nothing can serve leaves the load PARKED; publish it so a host can say so
         // instead of showing a blank chart forever (it still resumes if a provider registers).
-        this.unresolvedUnsub = this.feed.onUnresolved?.((info) => this.events.emit('data:unresolved', info)) ?? null;
+        // A parked load also ends the loading state — nothing is coming, and an endless
+        // animation over the empty chart would promise otherwise.
+        this.unresolvedUnsub =
+            this.feed.onUnresolved?.((info) => {
+                this.endLoad();
+                this.events.emit('data:unresolved', info);
+            }) ?? null;
         this.readyPromise = this.init();
         // Seed a constructed chart-type DATA engine only now — `startChartTypeEngine`
         // awaits `readyPromise`, so this MUST come after the assignment above. Seeding
@@ -214,8 +233,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const engine = this.engines.get(lang);
         if (!engine) {
             throw new Error(
-                `[vela] no scripting engine registered for language "${lang}". Import and register ` +
-                    `one before addIndicator, e.g. chart.registerEngine('pine', new PineEngine()).`,
+                `[vela] no scripting engine registered for language "${lang}". Vela ships none — ` +
+                    `install one (Pine Script: @luxalgo/vela-pinets) and register it before addIndicator, ` +
+                    `e.g. chart.registerEngine('pine', new PineEngine()).`,
             );
         }
         return engine;
@@ -275,6 +295,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     private async init(): Promise<void> {
         const gen = this.bumpGeneration();
+        this.beginLoad(true); // first load — nothing painted until the first batch
         await this.loadMarket(gen, { firstLoad: true });
         if (this.generation !== gen) return; // superseded mid-load (a setMarket, or destroy)
         this.startLive();
@@ -290,43 +311,86 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     }
 
     /**
+     * Enter the loading state: raise the renderer's affordance and tell the plugins
+     * (`load:start`) — BEFORE the series is blanked or fetched, so extensions and custom
+     * indicators can hide or reset their own visuals first. Transition-guarded: a switch
+     * superseding a still-loading switch re-enters silently.
+     */
+    private beginLoad(firstLoad: boolean): void {
+        if (this.loadingUp) return;
+        this.loadingUp = true;
+        this.renderer.setLoading?.(true);
+        const m = this.config.market;
+        this.events.emit('load:start', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', firstLoad });
+    }
+
+    /** Leave the loading state (first bars painted, or a load that ended with none) —
+     *  drops the affordance and fires the matching `load:end`. */
+    private endLoad(): void {
+        if (!this.loadingUp) return;
+        this.loadingUp = false;
+        this.renderer.setLoading?.(false);
+        const m = this.config.market;
+        this.events.emit('load:end', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', bars: this.bars.length });
+    }
+
+    /**
      * Load the configured market's history into the chart — THE shared load pipeline
-     * behind {@link init} and {@link setMarket}. Deep histories paint a quick
-     * recent-window preview first (one request) so candles appear immediately, then the
-     * first chunk behind it (preserveView keeps the visible bars put); depth beyond one
-     * chunk BACKFILLS in a detached loop — sessions started meanwhile are stamped
-     * 'backfill' and the bundled engines hold their first run until 'complete'. Offline
-     * data and small charts are a single fetch. A requested initial window skips the
-     * fast preview: its recent-bars viewport would paint the WRONG range for a moment,
-     * then jump — one load, one paint, framed. EVERY await is followed by a generation
-     * check so a superseded load (newer setMarket, destroy) abandons without touching
-     * the chart. `firstLoad` activates the bar-following layers once (volume auto-add)
-     * — a market SWITCH must not re-add what the user has since removed.
+     * behind {@link init} and {@link setMarket}. On a ranged feed the load is
+     * PROGRESSIVE: one small request paints the newest {@link STEP_BARS} immediately,
+     * and the rest of the history streams in behind it through the shared backfill loop
+     * (fine steps through the near window, coarse chunks beyond) — the pipeline resolves
+     * at the first paint; await {@link historyComplete} for the full depth. Sessions
+     * started meanwhile are stamped 'backfill' and the bundled engines hold their first
+     * run until 'complete'. Offline data and small charts are a single fetch; a
+     * rangeless feed keeps the preview-then-chunk shape. A requested initial window
+     * skips the fast head: its recent-bars viewport would paint the WRONG range for a
+     * moment, then jump — one load, one paint, framed. EVERY await is followed by a
+     * generation check so a superseded load (newer setMarket, destroy) abandons without
+     * touching the chart. `firstLoad` activates the bar-following layers once (volume
+     * auto-add) — a market SWITCH must not re-add what the user has since removed.
      */
     private async loadMarket(gen: number, opts: { firstLoad: boolean }): Promise<void> {
+        try {
+            await this.loadMarketInner(gen, opts);
+        } finally {
+            // The owning load always ends the loading state — this is the belt for the paths
+            // that never hand the renderer a non-empty series (a failed fetch, an empty
+            // market). A superseded load leaves the state to its successor.
+            if (this.generation === gen) this.endLoad();
+        }
+    }
+
+    private async loadMarketInner(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         const market = this.config.market;
         const requested = market.bars ?? 500;
         const initialRange = market.visibleRange;
-        if (!market.data?.length && requested > SINGLE_REQUEST_BARS && initialRange == null) {
+        if (!market.data?.length && initialRange == null && requested > STEP_BARS && this.feed.loadRange) {
+            // Progressive head: candles are on screen after ONE small request — a monolithic
+            // fetch of the same history would still be in flight. The remaining depth rides
+            // the detached backfill loop (fine steps near the viewport, chunks beyond), so
+            // this pipeline resolves at first paint and live/indicators start immediately.
+            const head = await this.feed.load({ ...market, bars: STEP_BARS });
+            if (this.generation !== gen) return;
+            this.setBarSeries(head);
+            if (opts.firstLoad) this.activateBarLayers(); // bar-following layers ride the FIRST candles
+            if (head.length >= STEP_BARS && requested > head.length) {
+                this.historyState = 'backfill';
+                void this.backfillHistory(gen, requested);
+            } else {
+                this.completeHistory('depth'); // the source had no more than one step of history
+            }
+        } else if (!market.data?.length && requested > SINGLE_REQUEST_BARS && initialRange == null) {
+            // RANGELESS feed: stepping would re-download the head on every extension, so
+            // keep the two-fetch shape — a quick preview, then the whole depth in one load.
             const preview = await this.feed.load({ ...market, bars: PREVIEW_BARS });
             if (this.generation !== gen) return;
             this.setBarSeries(preview);
-            if (opts.firstLoad) this.activateBarLayers(); // bar-following layers (volume, chart-type engines) follow the FIRST candles, not the deep chunk
-            const chunk = await this.feed.load({ ...market, bars: Math.min(requested, CHUNK_BARS) });
+            if (opts.firstLoad) this.activateBarLayers(); // bar-following layers follow the FIRST candles, not the deep fetch
+            const full = await this.feed.load(market);
             if (this.generation !== gen) return;
-            this.setBarSeries(chunk, { preserveView: true });
-            if (requested > CHUNK_BARS && this.feed.loadRange) {
-                this.historyState = 'backfill';
-                void this.backfillHistory(gen, requested);
-            } else if (requested > CHUNK_BARS) {
-                // No ranged feed → can't chunk; keep the old single deep fetch behind the preview.
-                const full = await this.feed.load(market);
-                if (this.generation !== gen) return;
-                this.setBarSeries(full, { preserveView: true });
-                this.completeHistory('depth');
-            } else {
-                this.completeHistory('depth');
-            }
+            this.setBarSeries(full, { preserveView: true });
+            this.completeHistory('depth');
         } else {
             const bars = await this.feed.load(market);
             if (this.generation !== gen) return;
@@ -392,7 +456,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      *  an in-flight `setMarket` immediately (the config mutates before the load). */
     marketSnapshot(): MarketSnapshot {
         const m = this.config.market;
-        return { symbol: m.symbol, provider: m.provider, timeframe: m.timeframe, bars: m.bars, offline: m.data !== undefined };
+        return { symbol: m.symbol, provider: parseSymbol(m.symbol ?? '').provider ?? undefined, timeframe: m.timeframe, bars: m.bars, offline: m.data !== undefined };
     }
 
     /**
@@ -414,7 +478,6 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const m = this.config.market;
         const identityChanged =
             (next.symbol !== undefined && next.symbol !== m.symbol) ||
-            (next.provider !== undefined && next.provider !== m.provider) ||
             (next.timeframe !== undefined && next.timeframe !== m.timeframe) ||
             next.data !== undefined;
         const depthChanged = next.bars !== undefined && next.bars !== m.bars;
@@ -440,12 +503,31 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
             // Mutate the market in place (the config object is what every reader holds).
             if (next.symbol !== undefined) m.symbol = next.symbol;
-            if (next.provider !== undefined) m.provider = next.provider;
             if (next.timeframe !== undefined) m.timeframe = next.timeframe;
             if (next.bars !== undefined) m.bars = next.bars;
             if (next.data !== undefined) m.data = next.data;
-            else if (next.symbol !== undefined || next.provider !== undefined) delete m.data; // offline → provider switch
+            else if (next.symbol !== undefined) delete m.data; // offline → provider switch
             m.visibleRange = next.visibleRange; // consumed by THIS load only (overwritten every switch)
+
+            // An identity switch blanks the chart NOW: the old market's candles must not sit
+            // under the new market's name while its bars load — the loading affordance owns
+            // the gap. `load:start` goes out first (with the NEW identity, hence after the
+            // config mutation) so plugins hide their own visuals before the blank. A
+            // depth-only reload keeps the bars (same market, more history).
+            if (identityChanged) {
+                this.beginLoad(false);
+                this.setBarSeries([], { clearing: true });
+                // The active style's DATA ENGINE still rides the old market — its rebuild only
+                // follows the load. Silence it for the gap (its live pushes are stale the moment
+                // the identity changed) and blank its channels: per-bar payloads are keyed by
+                // bucket open-time, so on a same-timeframe switch the old market's cells would
+                // land exactly on the new market's first candles.
+                if (this.activeEngineStyle) {
+                    this.typeEngines.get(this.activeEngineStyle)?.suspend();
+                    this.renderer.setNativeData?.(this.activeEngineStyle, undefined);
+                    this.renderer.setNativeData?.(`${this.activeEngineStyle}-pending`, []);
+                }
+            }
 
             // Reload through the shared pipeline. The race lets a superseded caller resolve
             // promptly (e.g. a parked load on an unresolvable symbol) instead of hanging.
@@ -526,9 +608,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         try {
             while (this.generation === gen && this.rawBars.length < requested && this.rawBars.length > 0) {
                 const remaining = requested - this.rawBars.length;
+                // Each step matches what is already on the chart (≥ STEP_BARS, ≤ CHUNK_BARS),
+                // so the depth DOUBLES per request: small quick fills near the viewport, a
+                // logarithmic request count for the deep tail — high-latency venues pay per
+                // round-trip, not per bar.
+                const step = Math.min(Math.max(this.rawBars.length, STEP_BARS), CHUNK_BARS);
                 const chunk = await this.feed.loadRange!(this.config.market, {
                     to: this.rawBars[0]!.time, // overlap-by-one: the boundary bar dedupes below
-                    limit: Math.min(CHUNK_BARS, remaining) + 1,
+                    limit: Math.min(step, remaining) + 1,
                 });
                 if (this.generation !== gen) return; // superseded mid-fetch (switch/destroy)
                 // Merge against the CURRENT array — live ticks appended during the fetch —
@@ -576,13 +663,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         return this.historyCompletePromise;
     }
 
-    /** The provider-qualified primary symbol (e.g. `binance:BTCUSDT`), or null if no symbol is set. */
+    /** The primary symbol as the data layer resolves it, or null if no symbol is set. */
     private qualifiedSymbol(): string | null {
         const market = this.config.market;
         if (!market.symbol) return null;
-        // Resolve via the provider prefix so support + fetch route by the explicit prefix, not the
-        // bare symbol (which depends on the provider's eager index).
-        return market.provider && !market.symbol.includes(':') ? `${market.provider}:${market.symbol}` : market.symbol;
+        // The symbol travels BARE. The `provider` option is a preference the feed already applies
+        // (it resolves with the chart's provider as first candidate), never a prefix: welding it
+        // here made a hard requirement out of it, so metadata and capability probes were aimed at
+        // the configured venue even for a symbol only another venue lists — a 502 on the tick-size
+        // request and a capability verdict from the wrong venue after every cross-venue switch.
+        return market.symbol;
     }
 
     /** Push the active symbol's tick size to the renderer's price axis. No-op when unknown (formula stays). */
@@ -726,10 +816,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * (identity when no transform), and hand the view to the renderer. Everything downstream
      * (engines via `getBars`, natives, visible-range presets) reads `this.bars` — the view.
      */
-    private setBarSeries(raw: OHLCV[], opts?: { preserveView?: boolean }): void {
+    private setBarSeries(raw: OHLCV[], opts?: { preserveView?: boolean; clearing?: boolean }): void {
         this.rawBars = raw;
         this.bars = this.barTransform ? this.barTransform.full(raw) : raw;
-        this.renderer.setBars(this.bars, opts);
+        this.renderer.setBars(this.bars, { preserveView: opts?.preserveView });
+        // The first PAINTED batch ends the loading state — on a deep history that is the quick
+        // preview, well before the load pipeline completes. Only a non-empty series counts: the
+        // switch-time CLEARING call says so explicitly, and an empty COMPLETED load is closed
+        // by loadMarket's finally instead (a style re-derivation over empty bars mid-load must
+        // not end a load still in flight).
+        if (!opts?.clearing && this.bars.length > 0) this.endLoad();
     }
 
     /**
@@ -842,7 +938,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     addIndicator(source: string, options: AddIndicatorOptions = {}): IndicatorHandle {
         const id = this.registry.nextId();
         const title = options.title ?? 'Indicator';
-        const handle = new IndicatorHandleImpl(id, title, this);
+        const handle = new IndicatorHandleImpl(id, title, this, source);
         this.handles.set(id, handle);
         this.registry.add({ id, title, source, options, inputValues: { ...(options.inputs ?? {}) } });
         void this.startIndicator(id, source, options, handle);
@@ -881,9 +977,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * add is a no-op). Powers a host "add native indicator" menu that can gate + de-duplicate. Async
      * because a descriptor's `isSupported` may probe the provider for a required capability.
      */
+    /** The native types present on the chart — SYNC (registry state; no support probe). */
+    presentNativeIndicators(): string[] {
+        return this.registry
+            .all()
+            .map((r) => r.native?.type)
+            .filter((t): t is string => !!t);
+    }
+
     async availableNativeIndicators(): Promise<NativeIndicatorInfo[]> {
         const symbol = this.qualifiedSymbol();
-        const present = new Set(this.registry.all().map((r) => r.native?.type).filter((t): t is string => !!t));
+        const present = new Set(this.presentNativeIndicators());
         return Promise.all(
             nativeIndicatorDescriptors().map(async (d) => ({
                 type: d.type,

@@ -2,10 +2,221 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.4.0]
+
+### Removed
+
+- **BREAKING — the Pine Script engine has left this package.** `PineEngine`,
+  `PineWorkerEngine` and `PineWorkerOptions` are gone from the root export, and with them
+  the `pinets` peer/dev dependency and the build-time worker-inlining plumbing. Pine now
+  lives in the **`@luxalgo/vela-pinets`** addon, which implements the same public
+  `ScriptingEngine` port with identical semantics:
+
+  ```diff
+  - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
+  + import { Vela } from '@luxalgo/vela';
+  + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
+  ```
+
+  Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
+  option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
+  Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
+
+  The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
+  Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
+  ACL now bans the import outright, so the obligation is taken on only by an application
+  that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
+  (~515 KB minified), and the engine layer becomes the one layer with no bundled default
+  at all. See [Scripting engines](docs/user/scripting-engines.md).
+
+### Added
+
+- **Legend rows accept contributed actions: `registerLegendAction`.** An icon button on
+  every indicator's legend row (revealed with the built-in controls, before the ✕),
+  gated per indicator (`when(ind)`) and run with the shell's context — the seam a host
+  editor uses to put "open this script" on each row. Ships with its two supporting
+  pieces: **`handle.source`** (the script an indicator was added with — `undefined` for
+  natives, the natural `when` gate) and an optional renderer seam
+  (`setLegendActions?` on the port, wired by both shells through
+  `chart.renderer.setLegendActions`; a custom renderer without it simply never shows
+  the buttons). Late registrations appear after `refreshActions()`.
+- **Contributed side panels can dock controls in their header.** `mount` now receives a
+  third argument — `{ slot, setTitle }`: the slot is the space between the title and the
+  close button (icon buttons, a document name), and `setTitle` rewrites the title text
+  (empty hides it, the slot owning the row; the topbar toggle keeps the DECLARED title as
+  its tooltip). Backward compatible — a two-argument `mount` ignores it.
+- **`ctx.togglePanel(id, open?)`** on the plugin `WidgetContext` (both shells): open or
+  close a docked side panel programmatically — the seam a plugin uses to open ITS OWN
+  contributed panel (a code editor revealing itself on a host action, a panel opened from
+  a topbar button). Same semantics as the topbar toggles: the dock stays exclusive, a bare
+  call flips, unknown ids are ignored.
+- **The symbol string is the whole market identity.** A bare ticker resolves against the
+  registered providers in DECLARATION order (first whose index lists it); an `EXCHANGE:`
+  prefix — case-insensitive, regional variants included (`BINANCE.US:BTCUSDT`) — pins the
+  venue. One grammar everywhere the string travels: the options, `setMarket`, the symbol
+  picker (it now composes the prefix from the row you picked — the workspace picker used
+  to drop the venue entirely), `urlState` links (they finally carry the venue), and the
+  persisted documents (older saves that stored `provider` beside a bare symbol weld back
+  together transparently on restore).
+- **Workspace cells are NAMED, not numbered.** A `cells` key is a free-form durable
+  identity (`btc`, `main`, …) — persistence, `sync` groups and `ws.cell(name)` speak it —
+  and DECLARATION ORDER fills the layout's slots. Any entry is optional (an undeclared
+  slot boots on the top-level defaults with an auto name); entries beyond the layout wait
+  dormant and appear when a larger layout reveals them; purely-numeric names are rejected
+  with a warning (JS object keys would silently reorder them).
+- **The `indicators` manifest can be an async loader.** `indicators: async () => manifest`
+  — for filesystem reads, authenticated APIs, bundler dynamic imports — alongside the
+  existing inline and URL forms; a rejecting loader behaves like a failing manifest URL.
+
+- **One options vocabulary for both shells.** `VelaWidgetOptions` and
+  `VelaWorkspaceOptions` now share the same base: every chart option (`VelaOptions`) plus
+  the shell surface (`VelaShellOptions` — providers, engines, indicators, timeframes,
+  timezone, chrome toggles, persistence), the widget adding only `urlState`, the
+  workspace adding the grid (`layout`, `cells`, `sync`, `drawingToolbar`,
+  `maxWebglCells`) and dropping only `height`. A chart option means the same thing
+  everywhere: on the widget it configures the chart, on the workspace it is every
+  cell's DEFAULT and `cells` overrides it per cell with the same words — which hands
+  the workspace options it never had (`upColor`/`downColor`, `glow`, `animations`,
+  `logScale`, `currentPriceLine`, `drawings` — toolbar excepted, the shared bar keeps
+  that job — `defaultLanguage`, `renderer`, plus `data` and `visibleRange` top-level
+  and per cell). An explicit `nativeBackend` now wins over the `maxWebglCells` budget
+  policy. The storage contract is one type for both shells, `VelaStorage`
+  (`WidgetStorage` / `WorkspaceStorage` stay as deprecated aliases).
+
+- **An app can make an engine its default with one call.** `registerDefaultEngine(language,
+factory)` on `vela/plugin`: every widget and workspace cell built afterwards registers
+  `factory()` on its chart automatically (one instance per chart — engines hold per-chart
+  state). A per-instance `engines` option still wins for its language, and the bare `Vela`
+  chart never reads the registry — with nothing registered, nothing changes anywhere, and
+  Vela still bundles no engine.
+
+- **A scripting engine can now be built as a separate package.** `vela/plugin` gained the
+  engine-authoring surface: the `ScriptingEngine` port types (completed with
+  `EngineContextSnapshot`, `ContextSelect` and `BarsChangeReason`, now also on the root
+  entry), the model vocabulary engine output is built from, the `stableSeriesId` identity
+  contract — series ids, renderer reconciliation and persisted per-series settings stay
+  identical whichever package an engine ships in — and the semantic palette. All additive;
+  nothing moves or changes shape. The engine guide (`docs/contributing/adding-an-engine.md`)
+  now documents the whole contract to match: the identity rule, the `historyState` /
+  `notifyBars(reason)` backfill run policy, the `symbolInfo` / `chartStyle` request
+  subtleties, the widget's `engines` factories and their `defaultLanguage` caveat, and
+  how to package an engine standalone.
+
+### Changed
+
+- **BREAKING: the `provider` option is gone** — from the chart, the widget, the workspace
+  and `setMarket`. Put the venue in the symbol: `provider: 'coinbase', symbol: 'BTC-USD'`
+  becomes `symbol: 'coinbase:BTC-USD'`. `chart.market.provider` now reports the symbol's
+  own prefix (undefined when bare); the venue that actually served it is
+  `chart.data.resolve(symbol)`.
+- **BREAKING (workspace): `cells` keys no longer address layout slots.** `cells: { c3: … }`
+  used to target the THIRD slot; keys are names now and declaration order assigns slots —
+  configs that declared entries in slot order (as every example did) render identically.
+- **BREAKING (workspace): `defaults` is gone.** Its keys move to the top level, same
+  words: `defaults: { symbol: 'BTCUSDT', timeframe: '60' }` becomes
+  `symbol: 'BTCUSDT', timeframe: '60'`.
+- **BREAKING (workspace): `persist` now defaults to localStorage**, like the widget —
+  `persist: true` survives reloads out of the box. Session-only persistence is the
+  opt-in now: pass `storage: memoryStorageAdapter()`.
+
+### Fixed
+
+- **The legend's tooltips are themed, not native.** The row controls (eye, gear,
+  move-to-pane, ✕, contributed actions), the settings dialog's ✕ and its ⓘ input hints
+  used the browser's `title` bubble — foreign next to the kit tooltips everywhere else.
+  They now share one chrome tooltip (`renderers/shared/chrome-tooltip.ts`): same tokens,
+  radius and shadow as the kit, self-themed so it works on a BARE chart (no `.vela-ui`
+  host), with `aria-label`s kept for accessibility. The drawing toolbar's hand-rolled
+  dwell tooltip was folded into the same helper (keeping its deliberate 2 s delay and
+  beside-the-tool placement).
+- **Typing inside an embedded editor no longer triggers chart shortcuts.** Both shells
+  route any bare printable key to the symbol search (letters) or the timeframe entry
+  (digits), and the guard that exempts text entry recognised only form controls and
+  `contenteditable`. An element that merely declares `role="textbox"` — which is how
+  editors built on the **EditContext API** (Monaco among them) expose their input — fell
+  through it, so every letter typed into a docked code editor opened the symbol search
+  instead. The guard now accepts that third spelling, and the widget, the workspace and
+  the keymap share ONE definition of it (`isEditableTarget`) rather than the three
+  near-copies they had drifted into.
+
+## [v0.3.0]
+
+### Added
+
+- **Side panels are an extension point.** The column the object tree and the data window live in
+  is now a dock any plugin can join: `registerSidePanel({ id, title, icon, mount })` adds a panel
+  with the same header, the same close button, and its own toggle button in the topbar beside the
+  other two. The plugin fills the panel's body and never touches the rest of the interface; the
+  dock keeps exactly one panel open at a time, so the chart never loses more width than one
+  column. A panel can declare itself **resizable** — a handle on its inner edge, dragged within
+  the bounds it sets, double-click back to its declared width — and which panel is open plus the
+  widths you dragged now come back with the rest of your saved chart.
+
+- **The chart says when it is loading.** Three small dots pulse quietly at the center of the
+  plot while a market's first bars are on their way — when the chart first opens, and again
+  after every symbol or timeframe change. They disappear the moment the first candles paint
+  (on deep histories, the quick recent-window preview), and they never show over data. While
+  they are up the chart is genuinely blank: everything drawn from the bars goes with the
+  series, and script-drawn dashboards (tables), which are pinned to pane corners rather than
+  to bars, hide for the load and return with the data. A chart whose symbol no venue can
+  serve drops the dots rather than promising bars that aren't coming.
+- **Candles appear after one small request.** The first paint no longer waits for the whole
+  requested history: the newest 200 bars load first — one quick request, candles on screen —
+  and the rest streams in behind the interactive chart in steps that double up to the 10k
+  chunk size, with the viewport held in place as older bars extend the left edge. Doubling
+  keeps the request count logarithmic, so a slow venue costs a handful of round-trips instead
+  of one per fixed step. Every load works this way — the first open, and every symbol or
+  timeframe switch — so the loading dots give way to candles as fast as the venue can answer
+  one small request. `history:progress` now reports each step as it lands, and `ready()` (and
+  `setMarket`) resolve at that first paint — `historyComplete()` still awaits the full depth.
+- **Loads announce themselves to plugins.** Two new chart events bracket every bar load:
+  `load:start` fires before the first fetch — before the chart is blanked — carrying the new
+  market and a first-load flag, and exactly one `load:end` follows once the first candles
+  paint (or with `bars: 0` when a load fails, comes back empty, or parks). Extensions, plugins
+  and custom indicators use the pair to hide their own visuals during the gap and rebuild them
+  when the data is back; a depth-only reload fires neither.
+
+### Changed
+
+- **Switching markets clears the chart first.** Changing the symbol or timeframe now blanks the
+  old candles immediately and shows the loading dots until the new market's first bars arrive —
+  the previous market no longer lingers under the new symbol's name while its data loads.
+  A plugin chart type's data engine is silenced and its layer data blanked in the same breath:
+  its per-bar payloads are keyed by bucket time, so on a same-timeframe switch the old market's
+  cells would land exactly on the new market's first candles. Changing only the history depth
+  keeps the chart painted, as before.
+- **The topbar's panel buttons are built from the dock.** They used to be two fixed buttons wired
+  to two fixed callbacks. _(Breaking, for hosts that construct `Topbar` themselves: the
+  `onObjectsClick` and `onDataWindowClick` options are gone, and `setPanelActive` now takes any
+  panel id — the dock supplies the buttons through `setPanelButtons`. Nothing changes for users
+  of `VelaWidget` or `VelaWorkspace`.)_
+
+### Fixed
+
+- **Removed and added indicators are remembered reliably.** Two persistence flaws could
+  misremember the indicator set across a reload. A chart restored from a saved state kept its
+  boot-time indicator list as a fallback, and on charts built without an `indicators` manifest
+  (or before it resolved) that fallback shadowed a deliberately emptied set — removing the last
+  indicator, Volume included, brought it back on the next load, every time. And the saved
+  document read indicator presence from a copy that refreshed asynchronously, so an add or
+  remove followed quickly by a reload could be missed entirely. Snapshots now read presence
+  from the chart synchronously (`chart.presentNativeIndicators()`, a new public read) and the
+  restored-state fallback ends the moment the live set becomes the truth — an empty chart you
+  emptied stays empty, and a change made a heartbeat before leaving the page survives it.
+
+- **Symbol search understands exchanges again.** Typing an exchange's name surfaces its symbols
+  (after any ticker matches), and an exchange prefix scopes the search to that venue — `binance:btc`
+  and `binance btc` both list Binance's BTC… pairs, a unique shorthand like `coin btc` works too,
+  and the exchange name alone (or with `:`) browses the whole venue A to Z. This search shipped in
+  the picker's original design but was lost in a port.
+
 ## [v0.2.0]
 
 ### Added
 
+- **Undo and redo in the top bar.** Next to Indicators, a hairline and two icon buttons step
+  through the same undo/redo history as the keyboard shortcuts — drawings and indicator changes
+  alike. Each button dims when there is nothing to undo or redo.
 - **Stay in drawing mode.** A toolbar toggle under the magnet (pen with a lock) keeps the
   armed tool ready after each placement, so you can draw several of the same shape without
   re-picking the tool. Turn it off for the usual one-shot behavior; the brush family still
@@ -111,8 +322,43 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
-- **The price now reads on top by default.** A new overlay indicator starts *behind* the candles
-  (and behind the indicators already there), and a new drawing starts *just under* them, so the
+- **Chrome polish on the widget and workspace.** The top bar sits tighter, timeframe / chart
+  style / Indicators read in bright white, the Indicators count badge is gone, the camera sits
+  to the right of the object tree, and chart settings move to a gear on the bottom bar next to
+  the session switch. The in-chart attribution mark uses the LuxAlgo symbol and expands the
+  LuxAlgo wordmark on hover — white on dark charts, dark on light ones.
+- **One visual language across the whole chart.** Colors, icons and hover states now come from a
+  single set of definitions instead of being restated in each panel, so the interface reads as one
+  piece. The settings dialog, drawing toolbar, drawing style popups, color pickers, pane controls
+  and the legend follow the chart theme — on a light chart they are now light, where before they
+  stayed dark whatever the theme. Indicator titles in the legend all read in the normal chart text
+  color, native ones included, instead of a blue of their own. Every subdivided drawing tool paints
+  its levels with the same convention, so the 0.618 of a retracement, a fan, an arc set and a Gann
+  box match; the same holds for bullish/bearish reds and greens, which were previously two slightly
+  different pairs depending on the tool. Icons across the toolbars and menus are one consistent set
+  at one weight, and they take the color of the control they sit in; several were redrawn to read
+  more clearly at their small size — among them the gear, the trash bin, the baseline and
+  Heikin Ashi chart styles, the Fibonacci wedge, the Fibonacci speed-resistance arcs, the
+  trend-based Fibonacci extension, and the long/short position tools.
+  Indicators share one icon everywhere they appear — the top bar, the pickers and the
+  object tree — and every icon button responds to the pointer the same way: resting in a muted
+  tone and brightening to white on hover, with the same soft backing. Color swatches everywhere are
+  square, inputs and dropdowns in the chart settings share the dialog's own surface, the pointer
+  cursor only appears over things that actually respond to a click, and the indicator legend sits
+  on a solid chart-colored backing so its labels stay readable over the candles.
+- **Reorganized right-click menus.** Each part of the chart now offers what belongs to it. The
+  chart body gives you reset the view, remove every drawing, remove every indicator, and the
+  settings dialog — the two removals stay in place but grey out when there is nothing to remove.
+  The price axis carries the whole scale: autoscale, invert, and the choice between regular,
+  percent, indexed to 100 and logarithmic, plus submenus for the axis labels, the last-price
+  label, the countdown to bar close and the last-price line. Every pane has its own scale menu,
+  so a study pane's scale no longer follows the price one. The time axis picks the display
+  timezone, and choosing one there updates the timezone shown on the bottom bar as well. Each
+  menu's settings entry opens the chart settings on the tab it is about — the canvas colors and
+  grid from the chart body, the scales and lines from either axis — so you land on the controls
+  you were reaching for instead of the first tab.
+- **The price now reads on top by default.** A new overlay indicator starts _behind_ the candles
+  (and behind the indicators already there), and a new drawing starts _just under_ them, so the
   price stays the top of the pile until you restack things yourself — drag rows in the object
   tree, or use Bring to front / Send to back. _(Breaking: overlays and drawings used to paint
   over the candles by default; raise them in the object tree to get the old look back.)_
@@ -149,9 +395,10 @@ All notable changes to Vela, newest first.
 - **Hiding or locking a drawing now sticks.** Both are saved along with the rest of your chart,
   can be undone, and immediately update everywhere that drawing appears. Before, a hidden or
   locked drawing came back visible and unlocked after a reload.
-
-### Fixed
-
+- **One dialog at a time.** Opening the symbol search now closes an open chart settings or
+  indicator settings dialog instead of stacking on top of it. The quick timeframe entry dialog
+  centers its input properly, and the faint dots that appeared under the separator lines of
+  right-click menus are gone.
 - **Keyboard zoom and pan no longer wedge the chart.** Zooming or panning with `Ctrl` + arrow
   keys toward the edge of the chart (or past the zoom limits) could leave the view stuck: the
   animation silently kept running forever and overrode every later scroll-wheel or drag

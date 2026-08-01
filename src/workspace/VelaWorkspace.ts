@@ -9,19 +9,21 @@
 // undo-history are per-cell; everything else is shared.
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
-import type { ThemeName, VelaTheme, NativeBackend } from '../core/options';
+import type { VelaTheme, NativeBackend, VelaOptions } from '../core/options';
+import type { VelaShellOptions } from '../widget/shell-options';
 import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
-import { ensureUIHost, injectStyles, registerIcon } from '../ui';
-import { KeymapManager } from '../ui/keymap';
+import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
+import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Menu } from '../ui/components/menu';
 import type { Vela } from '../Vela';
 import { Topbar } from '../widget/topbar';
 import { Bottombar } from '../widget/bottombar';
 import { ObjectTree } from '../widget/object-tree';
 import { DataWindow } from '../widget/data-window';
+import { PanelDock } from '../widget/panel-dock';
 import { SymbolPicker } from '../widget/symbol-picker';
 import { IndicatorPicker } from '../widget/indicator-picker';
 import { TimeframeQuick } from '../widget/timeframe-quick';
@@ -29,15 +31,16 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { widgetAttachments } from '../widget/contributions';
+import { legendActionsProviderFor, widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { createAttributionMark } from '../renderers/native/chrome/AttributionMark';
 import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
-import { encodeState, decodeState, sanitizeState, memoryStorageAdapter, type WorkspaceState, type WorkspaceStorage } from './persist';
-import { ChartCell, type CellSeed, type PooledCellState } from './ChartCell';
+import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
+import { localStorageAdapter } from '../widget/persist';
+import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
 import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
     registerBuiltinLayouts,
@@ -50,37 +53,29 @@ import {
 } from './layouts';
 import { SplitterLayer, evenTracks } from './splitters';
 
-export interface VelaWorkspaceOptions {
+/**
+ * The workspace options: the widget's chart vocabulary + the shared shell surface + the
+ * grid's own options. Every chart option given TOP-LEVEL (symbol, timeframe, priceStyle,
+ * upColor, glow, defaultLanguage, …) is the DEFAULT of each cell — `cells` overrides it
+ * per cell with the same words. `height` is the one chart option a grid cannot honor
+ * (the layout sizes cells), so it is omitted from the type.
+ */
+export interface VelaWorkspaceOptions extends Omit<VelaOptions, 'height'>, VelaShellOptions {
     /** Initial layout — a registered id (`'1'`, `'2h'`, `'2v'`, `'4'`, `'8'`, or a
      *  plugin-registered one) or an inline definition. Default `'4'`. */
     layout?: string | LayoutDefinition;
-    /** Per-slot market seeds, keyed by canonical cell id (`c1`…). Unseeded slots use `defaults`. */
+    /** Per-cell overrides of the top-level chart defaults, keyed by a FREE-FORM cell
+     *  name — the name is the cell's durable IDENTITY (persistence, `sync` groups,
+     *  `ws.cell(name)`), never its position: DECLARATION ORDER fills the layout's
+     *  slots (first declared → first slot). Fewer entries than slots ⇒ the remaining
+     *  slots boot on the defaults (auto identity); more ⇒ the extras wait in the pool
+     *  and appear when a larger layout reveals them. Purely-numeric names are rejected
+     *  (JS object keys would reorder them). Same vocabulary as the widget, reduced to
+     *  the per-cell seeds ({@link CellSeed}). */
     cells?: Record<string, CellSeed>;
-    /** Fallback seed for slots without an entry in `cells`. */
-    defaults?: CellSeed;
-    /** Provider factories — called ONCE and registered on the single shared feed. */
-    providers?: Record<string, () => DataProvider>;
-    /** Scripting-engine factories — called once PER CELL (e.g. a worker engine per cell). */
-    engines?: Record<string, () => ScriptingEngine>;
-    /** Indicator manifest (inline JSON or a URL) — resolved ONCE; `enabled` entries
-     *  auto-add to every FRESH cell (pool-restored cells re-add their own set). */
-    indicators?: string | IndicatorManifest;
-    /** Topbar timeframe presets. */
-    timeframes?: string[];
-    /** Workspace-global display timezone (IANA; applied to EVERY cell). Default 'Etc/UTC'. */
-    timezone?: string;
-    theme?: ThemeName | VelaTheme;
-    live?: boolean;
-    volume?: boolean;
-    statusline?: boolean;
-    watermark?: boolean;
-    bottombar?: boolean;
-    /** Focus the active chart when the workspace mounts so keyboard shortcuts work from
-     *  the first keystroke — no initial click needed. Default false: an embedded
-     *  workspace must never steal the page's focus from the host's own controls. */
-    autofocus?: boolean;
     /** The ONE shared drawing toolbar, docked left of the grid and acting on the active
-     *  cell (per-cell in-chart bars stay hidden either way). Default true. */
+     *  cell (per-cell in-chart bars stay hidden either way; a `drawings` object still
+     *  configures tools/persistence per cell). Default true. */
     drawingToolbar?: boolean;
     /** Sync links between cells: per kind, `true` = all cells, or a `{cellId: group}`
      *  record (only same-group cells follow each other). `crosshair` mirrors the
@@ -88,16 +83,9 @@ export interface VelaWorkspaceOptions {
      *  layout dropdown). Default: everything off. Change at runtime via
      *  `ws.sync.set(kind, setting)`. */
     sync?: SyncOptions;
-    /** Persist the workspace state and restore it as defaults (`true` = key
-     *  'vela-workspace'; a string is the key). The state document is what
-     *  `getState()` returns; writes are debounced and flushed on unload/destroy. */
-    persist?: boolean | string;
-    /** Storage backend for `persist` — DEFAULT: an in-memory, session-lived adapter
-     *  (a destroyed and re-created workspace restores; a reload starts fresh).
-     *  Plug any {@link WorkspaceStorage} (sync or async) for durable persistence. */
-    storage?: WorkspaceStorage;
     /** Above this many cells, EVERY cell uses the canvas2d backend (uniform look inside
-     *  the browser's WebGL-context budget; glow is unavailable there). Default 8. */
+     *  the browser's WebGL-context budget; glow is unavailable there). Default 8; an
+     *  explicit `nativeBackend` other than `'auto'` wins over this policy. */
     maxWebglCells?: number;
 }
 
@@ -140,10 +128,31 @@ const CSS = `
 `;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
-registerIcon(
-    'layout',
-    '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/></svg>',
-);
+registerIcon('layout', svg16('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/>'));
+
+/**
+ * The cell identities the `cells` option declares, in DECLARATION order — a cell's
+ * NAME never encodes its position: the first declared entry fills the first layout
+ * slot, and so on. Purely-numeric names are rejected with a warning (JS object
+ * enumeration reorders integer-like keys ahead of everything, silently breaking the
+ * declared order).
+ */
+export function declaredOrder(cells: Record<string, unknown> | undefined): string[] {
+    const names = Object.keys(cells ?? {});
+    for (const n of names) {
+        if (/^\d+$/.test(n)) {
+            console.warn(`[vela] workspace cell "${n}" ignored — a purely-numeric name cannot keep its declaration order (JS object key semantics); use e.g. "cell${n}"`);
+        }
+    }
+    return names.filter((n) => !/^\d+$/.test(n));
+}
+
+/** The first `c<N>` name not already taken — identities for slots beyond the declared list. */
+export function nextAutoCellId(taken: ReadonlySet<string>): string {
+    for (let i = 1; ; i += 1) {
+        if (!taken.has(`c${i}`)) return `c${i}`;
+    }
+}
 
 export class VelaWorkspace {
     readonly root: HTMLElement;
@@ -160,6 +169,10 @@ export class VelaWorkspace {
     private readonly resizeObserver: ResizeObserver | null = null;
     private readonly opts: VelaWorkspaceOptions;
     private def: LayoutDefinition;
+    /** Cell identities by SLOT POSITION — `order[i]` lives in the layout's i-th slot.
+     *  Names come from the `cells` declaration order (then the persisted document);
+     *  slots beyond the list get auto identities. Grows, never reorders. */
+    private order: string[] = [];
     private activeId: string | null = null;
     private cellBackend: NativeBackend = 'auto';
     private destroyed = false;
@@ -169,6 +182,8 @@ export class VelaWorkspace {
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
     private readonly dataWindow: DataWindow;
+    /** The side-panel column, shared by the whole grid. */
+    private readonly dock: PanelDock;
     private readonly symbolPicker: SymbolPicker;
     private readonly indicatorPicker: IndicatorPicker;
     private readonly tfQuick: TimeframeQuick;
@@ -182,6 +197,8 @@ export class VelaWorkspace {
     private globalTool: DrawingTypeKey | null = null;
     private globalSnap: SnapMode = 'off';
     private globalStay = false;
+    /** Live subscription to the ACTIVE cell's unified history (rebound on every projection). */
+    private historyUnsub: (() => void) | null = null;
     /** Favorite drawing tools — a WORKSPACE preference (one star set, every cell). */
     private favs: string[] = [];
     /** Live sync configuration (mutable copy of the option). */
@@ -195,6 +212,9 @@ export class VelaWorkspace {
      *  (their setVisibleRange re-emits viewport:changed) must not re-propagate. */
     private syncBusy = false;
     private manifest: ResolvedIndicator[] = [];
+    /** The shared manifest can no longer change instance sets — resolved, or no
+     *  `indicators` option so nothing ever will. Gates the cells' ledger fallback. */
+    private manifestSettled = false;
     private timezone: string;
     private openDialogs = 0;
     private alerts: Array<{ cellId: string; symbol: string; title: string; message: string; time: number }> = [];
@@ -210,7 +230,7 @@ export class VelaWorkspace {
         // ── persistence boot: a SYNC storage restores before the first build (no flash
         // of defaults); an async adapter resolves later and late-applies via applyState.
         this.persistKey = opts.persist === undefined || opts.persist === false ? null : opts.persist === true ? 'vela-workspace' : opts.persist;
-        this.storage = opts.storage ?? memoryStorageAdapter();
+        this.storage = opts.storage ?? localStorageAdapter();
         let boot: WorkspaceState | null = null;
         if (this.persistKey !== null) {
             const raw = this.storage.get(this.persistKey);
@@ -231,6 +251,9 @@ export class VelaWorkspace {
         this.def = this.resolveLayout(boot?.layout && layoutDefinition(boot.layout) ? boot.layout : (opts.layout ?? '4'));
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
         if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
+        // Identity ↔ slot mapping: the persisted document's chart order wins (it IS the
+        // saved arrangement); a fresh boot takes the `cells` declaration order.
+        this.order = boot?.charts ? boot.charts.map((c) => c.id) : declaredOrder(opts.cells);
         const bootActive = boot?.activeCellId ?? null;
 
         const doc = hostEl.ownerDocument;
@@ -250,7 +273,13 @@ export class VelaWorkspace {
         this.symbolPicker = new SymbolPicker({
             host: this.root,
             onSelect: (ticker) => this.active.setSymbol(ticker),
-            onOpenChange: (open) => this.trackDialog(open),
+            onOpenChange: (open) => {
+                // In-chart dialogs (indicator inputs, chart settings) live inside a cell's
+                // chart container, so opening the search from the topbar never hits their
+                // outside-dismiss — close them on every cell explicitly.
+                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
         });
         this.symbolPicker.setSource(() => this.feed.symbols());
         this.indicatorPicker = new IndicatorPicker({
@@ -272,11 +301,10 @@ export class VelaWorkspace {
             symbol: '',
             onSymbolClick: () => this.symbolPicker.open(),
             onIndicatorsClick: () => this.indicatorPicker.open(),
-            onObjectsClick: () => this.objectTree.toggle(),
+            onUndoClick: () => this.active.history.undo(),
+            onRedoClick: () => this.active.history.redo(),
             onScreenshotClick: () => this.active.downloadScreenshot(),
-            onSettingsClick: () => this.active.chart.renderer.openSettings(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
-            onDataWindowClick: () => this.dataWindow.toggle(),
             timeframe: '60',
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
             priceStyle: 'candles',
@@ -309,24 +337,25 @@ export class VelaWorkspace {
         this.gridEl = doc.createElement('div');
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
+        // One dock for the WHOLE grid (the panels follow the active cell), owning the built-ins,
+        // the contributed panels, the single-open rule and the topbar's toggle group.
+        this.dock = new PanelDock(main, {
+            chrome: this.topbar,
+            context: () => this.context(),
+            changed: () => this.markStateDirty(),
+        });
         this.objectTree = new ObjectTree(main);
         this.dataWindow = new DataWindow(main);
-        // The docked panels are exclusive — one column at a time, so the grid keeps its width.
-        this.objectTree.onOpenChange = (open) => {
-            this.topbar.setPanelActive('objects', open);
-            if (open) this.dataWindow.toggle(false);
-        };
-        this.dataWindow.onOpenChange = (open) => {
-            this.topbar.setPanelActive('dataWindow', open);
-            if (open) this.objectTree.toggle(false);
-        };
+        this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
+        this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
+        this.dock.refresh();
         this.root.appendChild(main);
         this.toast = new Toast(this.gridEl);
 
         // ONE attribution mark for the whole grid (bottom-left, floating above the
         // bottom-left cell's time axis) — the cells disable their per-chart marks, and
         // this single mark is the NOTICE-required equivalent visible attribution.
-        const mark = createAttributionMark(doc, resolveTheme(opts.theme).textColor);
+        const mark = createAttributionMark(doc, resolveTheme(opts.theme).background);
         Object.assign(mark.style, { left: '12px', bottom: `${TIME_AXIS_H + 10}px`, zIndex: '11' });
         this.gridEl.appendChild(mark);
 
@@ -377,6 +406,7 @@ export class VelaWorkspace {
                           this.bottombar?.setActiveRange(preset.id);
                       },
                       onTimezone: (zone) => this.setTimezone(zone),
+                      onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
                 : null;
 
@@ -405,7 +435,7 @@ export class VelaWorkspace {
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
-        this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.def.cells[0]?.id ?? null));
+        this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.order[0] ?? null));
         // Shortcuts only fire while focus is INSIDE the workspace (the keymap listens
         // on the root) — autofocus makes them work before the first click.
         if (opts.autofocus) this.refocusActive();
@@ -415,9 +445,12 @@ export class VelaWorkspace {
             void resolveIndicators(opts.indicators).then((list) => {
                 if (this.destroyed) return;
                 this.manifest = list;
+                this.manifestSettled = true; // from here each cell's live instance set is the truth, empty included
                 for (const cell of this.cellsById.values()) cell.setManifest(list, true);
                 this.projectActiveCell();
             });
+        } else {
+            this.manifestSettled = true; // nothing will ever resolve — settled empty from the start
         }
         this.mountAttachments();
     }
@@ -484,15 +517,19 @@ export class VelaWorkspace {
             cells: () => this.cells(),
             setActiveCell: (id) => this.setActiveCell(id),
             openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
+            togglePanel: (id, open) => this.dock.toggle(id, open),
             root: this.root,
             toast: (message, kind) => this.toast.show(message, kind),
         });
     }
 
-    /** Re-project contributed topbar actions + mount late-registered attachments. */
+    /** Re-project contributed topbar actions + side panels, and mount late-registered attachments. */
     refreshActions(): void {
         this.mountAttachments();
         this.topbar.renderActions();
+        this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
+        // Re-project every cell's legend rows so a late registerLegendAction appears there too.
+        for (const cell of this.cells()) cell.chart.renderer.setLegendActions(legendActionsProviderFor(cell.chart, () => this.context()));
     }
 
     /** The sync-link control surface: `set(kind, true | {cellId: group} | false)`,
@@ -518,11 +555,22 @@ export class VelaWorkspace {
         const byId = new Map<string, PooledCellState>();
         for (const [id, cs] of this.pool) byId.set(id, cs); // dormant slots
         for (const [id, cell] of this.cellsById) byId.set(id, cell.dehydrate()); // live slots win
-        const charts = [...byId].map(([id, cs]) => ({ id, ...cs }));
+        // The charts array is ORDERED — position i of the document is slot i on restore.
+        const charts: WorkspaceState['charts'] = [];
+        for (const id of this.order) {
+            const cs = byId.get(id);
+            if (cs) {
+                charts.push({ id, ...cs });
+                byId.delete(id);
+            }
+        }
+        for (const [id, cs] of byId) charts.push({ id, ...cs }); // pooled strays keep restoring
         const state: WorkspaceState = { version: 1, layout: this.def.id, timezone: this.timezone, sync: { ...this.syncOpts }, charts };
         if (this.activeId) state.activeCellId = this.activeId;
         if (this.favs.length > 0) state.favorites = [...this.favs];
         if (this.trackSizes.size > 0) state.trackSizes = Object.fromEntries([...this.trackSizes].map(([k, v]) => [k, { ...v }]));
+        const panels = this.dock.getState();
+        if (panels) state.panels = panels;
         return state;
     }
 
@@ -541,6 +589,8 @@ export class VelaWorkspace {
             this.bottombar?.setTimezone(st.timezone);
         }
         if (st.favorites) this.favs = [...st.favorites]; // newborn cells inherit below (buildCells)
+        // Absent in documents written before the dock existed — those leave the column closed.
+        this.dock.applyState(st.panels);
         for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
         this.trackSizes.clear();
         if (st.trackSizes) for (const [id, ts] of Object.entries(st.trackSizes)) this.trackSizes.set(id, ts);
@@ -552,13 +602,14 @@ export class VelaWorkspace {
         }
         this.pool.clear();
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
+        this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
         const def = layoutDefinition(st.layout);
         if (def) this.def = def;
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
         this.topbar.setLayout(this.def.id);
-        const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.def.cells[0]?.id ?? null);
+        const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.order[0] ?? null);
         if (nextActive === this.activeId) this.projectActiveCell();
         else this.setActiveCell(nextActive);
         this.refreshRetention();
@@ -580,17 +631,18 @@ export class VelaWorkspace {
     }
 
     /**
-     * Switch the grid. Cells are diffed BY SLOT ID: surviving slots keep their live
-     * charts untouched; removed slots dehydrate into the pool; (re)appearing slots
-     * hydrate from the pool (or their seed). Crossing the WebGL budget rebuilds every
-     * cell through the pool so the backend stays uniform.
+     * Switch the grid. Cells are diffed BY IDENTITY (`order` head of the next size):
+     * surviving cells keep their live charts untouched; cells past the new size
+     * dehydrate into the pool; (re)appearing positions hydrate their identity from
+     * the pool (or its seed). Crossing the WebGL budget rebuilds every cell through
+     * the pool so the backend stays uniform.
      */
     setLayout(layout: string | LayoutDefinition): void {
         if (this.destroyed) return;
         const next = this.resolveLayout(layout);
         const nextBackend = this.backendFor(next);
         const rebuildAll = nextBackend !== this.cellBackend;
-        const keep = new Set(next.cells.map((c) => c.id));
+        const keep = new Set(this.order.slice(0, next.cells.length));
         for (const [id, cell] of [...this.cellsById]) {
             if (!keep.has(id) || rebuildAll) {
                 this.poolSet(id, cell.dehydrate());
@@ -604,7 +656,7 @@ export class VelaWorkspace {
         this.applyGrid();
         this.buildCells();
         this.topbar.setLayout(next.id);
-        const nextActive = activeAfterLayout(this.activeId, next.cells.map((c) => c.id));
+        const nextActive = activeAfterLayout(this.activeId, this.order.slice(0, next.cells.length));
         if (nextActive === this.activeId) this.projectActiveCell(); // same slot, maybe a rebuilt cell
         else this.setActiveCell(nextActive);
         this.refreshRetention();
@@ -641,6 +693,7 @@ export class VelaWorkspace {
         this.drawToolbar?.destroy();
         this.topbar.destroy();
         this.bottombar?.destroy();
+        this.dock.destroy(); // contributed panels; the two built-ins are ours to drop
         this.objectTree.destroy();
         this.dataWindow.destroy();
         this.symbolPicker.destroy();
@@ -666,9 +719,12 @@ export class VelaWorkspace {
         this.topbar.setPriceStyle(cell.priceStyle);
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
+        const pushHistory = (): void => this.topbar.setHistoryState(cell.history.canUndo, cell.history.canRedo);
+        this.historyUnsub?.();
+        this.historyUnsub = cell.history.onChange(pushHistory);
+        pushHistory();
         this.objectTree.setSymbol(cell.symbol);
-        this.objectTree.onChart(cell.chart);
-        this.dataWindow.onChart(cell.chart); // the readout follows the active cell
+        this.dock.onChart(cell.chart); // every docked panel follows the active cell
         this.bottombar?.setActiveRange(cell.activeRangeId);
         this.indicatorPicker.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
@@ -726,6 +782,9 @@ export class VelaWorkspace {
     }
 
     private backendFor(def: LayoutDefinition): NativeBackend {
+        // An explicit backend is the host's word — the WebGL budget policy only decides 'auto'.
+        const explicit = this.opts.nativeBackend;
+        if (explicit && explicit !== 'auto') return explicit;
         return def.cells.length > (this.opts.maxWebglCells ?? 8) ? 'canvas2d' : 'auto';
     }
 
@@ -745,31 +804,41 @@ export class VelaWorkspace {
         this.markStateDirty();
     }
 
-    /** Apply the grid template (+ per-cell areas) and reposition the splitter strips. */
+    /** Apply the grid template (+ per-cell areas) and reposition the splitter strips.
+     *  Geometry is keyed by SLOT (`perCell[slot.id]`); the cell living there is
+     *  `order[i]` — the identity/position decoupling in one line. */
     private applyGrid(): void {
         const { container, perCell } = gridStyles(this.def, this.trackSizes.get(this.def.id));
         this.gridEl.style.gridTemplateColumns = container.gridTemplateColumns ?? '';
         this.gridEl.style.gridTemplateRows = container.gridTemplateRows ?? '';
         this.gridEl.style.gridTemplateAreas = container.gridTemplateAreas ?? '';
-        for (const [id, styles] of Object.entries(perCell)) {
-            const host = this.cellsById.get(id)?.host;
-            if (host) host.style.gridArea = styles.gridArea ?? '';
+        for (const [i, slot] of this.def.cells.entries()) {
+            const host = this.cellsById.get(this.order[i] ?? '')?.host;
+            if (host) host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
         }
         this.splitters.layout();
     }
 
-    /** Create the cells the current layout wants but don't exist yet (pool-first). */
+    /** Create the cells the current layout wants but don't exist yet (pool-first).
+     *  A slot's CELL IDENTITY is `order[i]` (declaration order — never the slot's own
+     *  positional id); slots past the declared list mint an auto identity once. */
     private buildCells(): void {
         const theme = resolveTheme(this.opts.theme);
         const { perCell } = gridStyles(this.def, this.trackSizes.get(this.def.id));
-        for (const slot of this.def.cells) {
-            if (this.cellsById.has(slot.id)) continue;
-            const pooled = this.pool.get(slot.id);
-            const seed: PooledCellState = pooled ?? { ...(this.opts.defaults ?? {}), ...(this.opts.cells?.[slot.id] ?? {}) };
-            this.pool.delete(slot.id); // the slot is live again — its pooled state is consumed
-            const cell = new ChartCell(slot.id, this.gridEl, seed, {
+        for (const [i, slot] of this.def.cells.entries()) {
+            let id = this.order[i];
+            if (!id) {
+                id = nextAutoCellId(new Set([...this.order, ...this.pool.keys(), ...this.cellsById.keys()]));
+                this.order[i] = id;
+            }
+            if (this.cellsById.has(id)) continue;
+            const pooled = this.pool.get(id);
+            const seed: CellBoot = pooled ?? { ...seedDefaults(this.opts), ...(this.opts.cells?.[id] ?? {}) };
+            this.pool.delete(id); // the slot is live again — its pooled state is consumed
+            const cell = new ChartCell(id, this.gridEl, seed, {
                 feed: this.feed,
                 engines: this.opts.engines ?? {},
+                chartDefaults: cellChartDefaults(this.opts),
                 theme,
                 live: this.opts.live ?? false,
                 volume: this.opts.volume ?? true,
@@ -778,14 +847,16 @@ export class VelaWorkspace {
                 nativeBackend: this.cellBackend,
                 dialogHost: this.root,
                 timezone: () => this.timezone,
+                setTimezone: (zone) => this.setTimezone(zone),
                 context: () => this.context(),
                 activate: (id) => this.setActiveCell(id),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStateDirty: () => this.markStateDirty(),
+                manifestSettled: () => this.manifestSettled,
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
-            this.cellsById.set(slot.id, cell);
+            this.cellsById.set(id, cell);
             this.wireCell(cell);
             // The shared star set is a workspace pref — every newborn cell inherits it
             // silently (equal-set idempotence keeps the favorites event from echoing).
@@ -793,11 +864,11 @@ export class VelaWorkspace {
             // The indicator ledger: a restored cell re-adds ITS recorded set (held until
             // the manifest resolves); a fresh cell seeds the manifest's enabled entries.
             cell.setManifest(this.manifest, pooled?.indicators == null);
-            this.events.emit('cell:created', { id: slot.id });
+            this.events.emit('cell:created', { id });
         }
         // DOM order = slot order (auto-flow layouts place row-major by child order).
-        for (const slot of this.def.cells) {
-            const host = this.cellsById.get(slot.id)?.host;
+        for (const [i] of this.def.cells.entries()) {
+            const host = this.cellsById.get(this.order[i] ?? '')?.host;
             if (host) this.gridEl.appendChild(host);
         }
     }
@@ -1074,9 +1145,7 @@ export class VelaWorkspace {
     private routeTyping(ev: KeyboardEvent): void {
         if (this.destroyed || this.openDialogs > 0) return;
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-        const t = ev.target as Partial<HTMLElement> | null;
-        const tag = (t?.tagName ?? '').toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable === true) return;
+        if (isEditableTarget(ev)) return; // never hijack a keystroke someone is TYPING
         const key = ev.key;
         if (/^[a-zA-Z]$/.test(key)) {
             ev.preventDefault();

@@ -17,27 +17,63 @@ export function avatarColor(ticker: string): string {
     return `hsl(${h}, 42%, 38%)`;
 }
 
-/** Rank: ticker prefix > ticker substring > description substring. Pure — unit-tested. */
+/**
+ * Split a query into an optional venue SCOPE and a search TERM. A leading token — before a `:`
+ * or a space — naming a venue present in the list (exactly, or as a unique prefix) scopes the
+ * search to it: `binance:BTC`, `binance BTC` and `bina BTC` all read as Binance's BTC…; a token
+ * that is no venue (`BTC USD`) leaves the whole query as the term.
+ */
+function parseQuery(raw: string, venues: readonly string[]): { scope: string | null; term: string } {
+    const m = raw.match(/^\s*([^\s:]+)\s*[:\s]\s*(.*)$/);
+    if (m) {
+        const t = m[1]!.toLowerCase();
+        const scope = venues.includes(t) ? t : onlyOne(venues.filter((v) => v.startsWith(t)));
+        if (scope) return { scope, term: m[2]!.trim() };
+    }
+    return { scope: null, term: raw.trim() };
+}
+
+function onlyOne<T>(matches: readonly T[]): T | null {
+    return matches.length === 1 ? matches[0]! : null;
+}
+
+/**
+ * Rank: ticker prefix > ticker substring > description substring > venue-name substring (typing
+ * `binance` surfaces that venue's symbols after any literal matches). An optional venue prefix
+ * (see {@link parseQuery}) scopes the pool first — venue alone browses it whole, alphabetically.
+ * Pure — unit-tested.
+ */
 export function filterSymbols(list: readonly SymbolDescriptor[], query: string, limit = 100): SymbolDescriptor[] {
-    const q = query.trim().toUpperCase();
+    // The venues are the list's own — the picker's pool is already tab-filtered, and a scope
+    // token must never resolve to a venue that has nothing to show.
+    const venues = [...new Set(list.map((s) => s.provider?.toLowerCase()).filter((p): p is string => !!p))];
+    const { scope, term } = parseQuery(query, venues);
+    const pool = scope ? list.filter((s) => s.provider?.toLowerCase() === scope) : list;
+    const q = term.toUpperCase();
     if (!q) {
-        // Empty query: pin the majors that exist in the index, then fill with the head.
-        const byTicker = new Map(list.map((s) => [s.ticker.toUpperCase(), s]));
+        // Venue alone: browse the whole venue, alphabetically. Empty query: pin the majors
+        // that exist in the index, then fill with the head.
+        if (scope) return [...pool].sort((a, b) => a.ticker.localeCompare(b.ticker)).slice(0, limit);
+        const byTicker = new Map(pool.map((s) => [s.ticker.toUpperCase(), s]));
         const top = TOP_TICKERS.map((t) => byTicker.get(t)).filter((s): s is SymbolDescriptor => s !== undefined);
-        const rest = list.filter((s) => !TOP_TICKERS.includes(s.ticker.toUpperCase()));
+        const rest = pool.filter((s) => !TOP_TICKERS.includes(s.ticker.toUpperCase()));
         return [...top, ...rest].slice(0, limit);
     }
+    const qLower = term.toLowerCase();
     const prefix: SymbolDescriptor[] = [];
     const substr: SymbolDescriptor[] = [];
     const desc: SymbolDescriptor[] = [];
-    for (const s of list) {
+    const venue: SymbolDescriptor[] = [];
+    for (const s of pool) {
         const t = s.ticker.toUpperCase();
         if (t.startsWith(q)) prefix.push(s);
         else if (t.includes(q)) substr.push(s);
         else if ((s.description ?? '').toUpperCase().includes(q)) desc.push(s);
+        // Inside a scope the venue is fixed — the tier would swallow the whole pool.
+        else if (!scope && s.provider?.toLowerCase().includes(qLower)) venue.push(s);
         if (prefix.length >= limit) break;
     }
-    return [...prefix, ...substr, ...desc].slice(0, limit);
+    return [...prefix, ...substr, ...desc, ...venue].slice(0, limit);
 }
 
 const STYLE_ID = 'vela-widget-symbolpicker';
@@ -73,7 +109,7 @@ const CSS = `
     font-weight: 600;
 }
 .vela-sp-tab:hover { color: var(--vela-fg); }
-.vela-sp-tab[data-active] { background: #ffffff; color: #16181d; }
+.vela-sp-tab[data-active] { background: var(--vela-selected-bg); color: var(--vela-selected-fg); }
 .vela-sp-list { margin-top: var(--vela-space-2); max-height: 46vh; overflow: auto; }
 .vela-sp-list::-webkit-scrollbar { width: 8px; }
 .vela-sp-list::-webkit-scrollbar-thumb {
@@ -90,7 +126,7 @@ const CSS = `
     border-radius: 8px;
     cursor: pointer;
 }
-.vela-sp-row:hover, .vela-sp-row[data-highlighted] { background: var(--vela-surface-elev); }
+.vela-sp-row:hover, .vela-sp-row[data-highlighted] { background: var(--vela-hover); }
 .vela-sp-avatar {
     width: 28px;
     height: 28px;
@@ -99,8 +135,8 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
-    font-size: 12px;
+    color: var(--vela-fg-on-fill);
+    font-size: var(--vela-font-size-md);
     font-weight: 700;
 }
 .vela-sp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -118,13 +154,17 @@ const CSS = `
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
-.vela-sp-badge[data-p='binance'] { color: #f0b90b; }
-.vela-sp-badge[data-p='hyperliquid'] { color: #50d2c1; }
+/* Provider brand marks — fixed by the venue, deliberately outside the theme palette. */
+.vela-sp-badge[data-p='binance'] { color: #f0b90b; } /* palette-exempt: venue brand mark */
+.vela-sp-badge[data-p='hyperliquid'] { color: #50d2c1; } /* palette-exempt: venue brand mark */
 .vela-sp-empty { padding: var(--vela-space-3); color: var(--vela-fg-muted); text-align: center; }
 `;
 
 export interface SymbolPickerOptions {
-    onSelect: (ticker: string) => void;
+    /** `provider` is the venue of the chosen row — absent only for a source that has none. */
+    /** Called with the CHOSEN symbol — `EXCHANGE:`-prefixed when the row named a venue,
+     *  so the selection pins the venue the user actually pointed at. */
+    onSelect: (symbol: string) => void;
     onOpenChange?: (open: boolean) => void;
     host?: HTMLElement;
 }
@@ -195,14 +235,14 @@ export class SymbolPicker {
             else if (e.key === 'ArrowUp') this.moveHighlight(-1);
             else if (e.key === 'Enter') {
                 const pick = this.rows[this.highlighted];
-                if (pick) this.select(pick.ticker, opts.onSelect);
+                if (pick) this.select(pick.ticker, pick.provider, opts.onSelect);
                 return;
             } else return;
             e.preventDefault();
         });
         this.list.addEventListener('click', (e) => {
             const row = (e.target as HTMLElement).closest<HTMLElement>('.vela-sp-row');
-            if (row?.dataset.ticker) this.select(row.dataset.ticker, opts.onSelect);
+            if (row?.dataset.ticker) this.select(row.dataset.ticker, row.dataset.provider, opts.onSelect);
         });
     }
 
@@ -224,9 +264,11 @@ export class SymbolPicker {
         this.dialog.destroy();
     }
 
-    private select(ticker: string, onSelect: (t: string) => void): void {
+    private select(ticker: string, provider: string | undefined, onSelect: (symbol: string) => void): void {
         this.close();
-        onSelect(ticker);
+        // The prefix IS the disambiguation: several venues may list this ticker, and the
+        // user picked a specific row — a bare ticker would re-resolve by declaration order.
+        onSelect(provider ? `${provider.toLowerCase()}:${ticker}` : ticker);
     }
 
     private moveHighlight(delta: number): void {
@@ -265,6 +307,9 @@ export class SymbolPicker {
             const row = doc.createElement('div');
             row.className = 'vela-sp-row';
             row.dataset.ticker = s.ticker;
+            // The venue the user is pointing at travels with the pick — the same ticker can be
+            // listed by several providers, and dropping it would silently route to another one.
+            if (s.provider) row.dataset.provider = s.provider;
             const av = tickerIconEl(doc, baseOf(s), s.ticker, 'vela-sp-avatar');
             const main = doc.createElement('span');
             main.className = 'vela-sp-main';

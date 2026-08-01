@@ -4,7 +4,7 @@
 export { VelaWorkspace } from './VelaWorkspace';
 export type { VelaWorkspaceOptions, WorkspaceEventMap } from './VelaWorkspace';
 export { ChartCell } from './ChartCell';
-export type { CellSeed, PooledCellState, CellNativeInfo } from './ChartCell';
+export type { CellSeed, CellBoot, CellChartDefaults, PooledCellState, CellNativeInfo } from './ChartCell';
 export type { WorkspaceWidgetContext } from './context';
 export {
     registerLayout,
@@ -20,4 +20,4 @@ export { evenTracks, resizeTracks, trackOffsets } from './splitters';
 export { syncTargets, rangesWithin } from './sync';
 export type { SyncKind, SyncSetting, SyncOptions } from './sync';
 export { encodeState, decodeState, sanitizeState, memoryStorageAdapter } from './persist';
-export type { WorkspaceState, CellState, ChartState, WorkspaceStorage } from './persist';
+export type { WorkspaceState, CellState, ChartState, PanelsState, WorkspaceStorage } from './persist';

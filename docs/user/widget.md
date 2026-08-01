@@ -8,13 +8,12 @@ picker.
 
 ```ts
 import { VelaWidget } from 'vela/widget';
-import { PineEngine } from 'vela';
+import { PineEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine — see ./scripting-engines.md
 import { BinanceProvider } from 'vela/providers/binance';
 
 const widget = new VelaWidget('#chart', {
     // Everything VelaOptions accepts (symbol, timeframe, theme, live, …) plus:
-    provider: 'binance',
-    symbol: 'BTCUSDT',
+    symbol: 'BTCUSDT', // bare = first declared provider; 'coinbase:BTC-USD' pins a venue
     timeframe: '60',
     live: true,
     theme: 'dark',
@@ -28,20 +27,22 @@ const widget = new VelaWidget('#chart', {
 
 ## Options
 
-On top of every [chart option](./options.md), the widget adds:
+On top of every [chart option](./options.md), the widget adds the **shell options** —
+the surface it shares, name for name and meaning for meaning, with
+[the workspace](./workspace.md) (`VelaShellOptions`) — plus one extra of its own,
+`urlState`:
 
 | Option | Type | Default | What it does |
 | --- | --- | --- | --- |
 | `providers` | `Record<string, () => DataProvider>` | — | Provider **factories**, keyed by name. Called on every chart (re)build — a symbol or timeframe change destroys and recreates the inner chart, re-registering fresh provider instances. |
-| `engines` | `Record<string, () => ScriptingEngine>` | — | Scripting-engine factories, keyed by language (same rebuild semantics). |
+| `engines` | `Record<string, () => ScriptingEngine>` | — | Scripting-engine factories, keyed by language (same rebuild semantics). Merged OVER any app-level defaults registered with `registerDefaultEngine` (`vela/plugin`) — the instance option wins per language. |
 | `indicators` | manifest \| URL string | — | The indicator manifest — inline JSON or a URL returning it (see below). |
 | `timeframes` | `string[]` | `['1','5','15','60','240','D','W']` | The topbar timeframe presets. |
-| `priceStyle` | string | `'candles'` | Initial chart style; changed live from the topbar dropdown. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
 | `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles. |
 | `autofocus` | boolean | `false` | Focus the chart on mount so keyboard shortcuts work from the first keystroke. Off by default: an embedded chart should not steal the page's focus. |
 | `persist` | boolean \| string | `false` | Bring the chart back as you left it — the widget persists its FULL state (the unified `getState()` document: market, prefs, renderer config, user drawings, indicators) and restores it at construction (`true` = key `'vela-widget'`; a string is the key). Old three-key payloads migrate transparently. |
-| `storage` | `WidgetStorage` | localStorage | The persistence backend — inject a custom adapter (see below). |
+| `storage` | `VelaStorage` | localStorage | The persistence backend — inject a custom adapter (see below); one contract for both shells. |
 | `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark flag) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
 
 ## The indicator manifest
@@ -94,7 +95,8 @@ work from the very first keystroke, before any click.
 
 - **Topbar** — symbol button (opens the search), timeframe dropdown, chart-style dropdown
   (built-ins ∪ [plugin chart types](../contributing/plugin-sdk.md), with their icons and
-  labels), Indicators picker, data-window and object-tree panel toggles, then any
+  labels), Indicators picker, undo/redo (same history as Ctrl+Z / Ctrl+Y), data-window and
+  object-tree panel toggles, then any
   [contributed actions](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)
   in the right-hand cluster.
 - **Status line** — symbol + OHLC and change of the hovered bar (resting on the latest
@@ -115,12 +117,21 @@ work from the very first keystroke, before any click.
   its OHLCV tinted with the bar's direction, then one section per indicator showing each plot's
   value in its own color. It follows the crosshair and falls back to the latest bar when the
   pointer leaves the chart. The two panels share the dock, so opening one closes the other.
+- **The dock** — the column both panels live in, and the one plugins extend
+  ([`registerSidePanel`](../contributing/plugin-sdk.md#side-panels--registersidepanel)): every
+  panel gets a toggle in the topbar's panel group, one panel shows at a time, and a panel that
+  declares itself resizable has a drag handle on its inner edge (double-click returns it to its
+  declared width). Which panel is open and the widths you dragged are part of the saved state.
 - **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
   the timeframe, **fetches the depth its window needs**, and frames it: `1D`→1m, `7D`→5m,
   `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing the timeframe by hand
   leaves range mode (the chip clears and the fetch depth returns to your `bars` setting).
-- **Context menus** — right-click the chart body, the price axis, or the time axis for
-  zone-specific actions (copy price, reset view, screenshot, scale toggles).
+- **Context menus** — right-click the chart body for reset view, removing all drawings or all
+  indicators, and the settings dialog; the price axis for that pane's own scale (autoscale,
+  invert, regular/percent/indexed/logarithmic, and the label and level toggles); the time axis
+  for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
+  is independent of the main one. Each menu's settings entry opens the settings dialog on the
+  tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
 
 ## Widget state — the same surface as the workspace
 
@@ -131,6 +142,7 @@ the SAME document format — a widget is the single-chart case (`layout: '1'`, o
 ```ts
 const state = widget.getState();
 // → { version: 1, layout: '1', activeCellId: 'c1', timezone, favorites?,
+//     panels?: { open?, widths? },
 //     charts: [{ id: 'c1', symbol, provider?, timeframe, priceStyle, bars?, watermark?,
 //                rendererConfig, drawings, indicators }] }
 
@@ -148,14 +160,14 @@ directly.
 ## Custom persistence storage
 
 `persist` writes through a **storage adapter** — localStorage by default. Inject any
-backend by implementing `WidgetStorage` (methods may be synchronous *or* return
-promises):
+backend by implementing `VelaStorage` (one contract for both shells; methods may be
+synchronous *or* return promises):
 
 ```ts
-import { VelaWidget, type WidgetStorage } from 'vela/widget';
+import { VelaWidget, type VelaStorage } from 'vela/widget';
 
 // Example: a REST-backed store (per-user server-side settings).
-const restStorage: WidgetStorage = {
+const restStorage: VelaStorage = {
     async get(key) {
         const res = await fetch(`/api/settings/${encodeURIComponent(key)}`);
         return res.ok ? res.text() : null;

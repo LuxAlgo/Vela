@@ -52,6 +52,12 @@ export class TableOverlay {
         if (this.root.isConnected) this.update(this.lastTables);
     }
 
+    /** Show/hide the whole overlay. Tables anchor to pane corners, not to bars, so unlike the
+     *  series content they DON'T vanish with an emptied chart — the loading state hides them. */
+    setVisible(visible: boolean): void {
+        this.root.style.display = visible ? '' : 'none';
+    }
+
     destroy(): void {
         this.root.remove();
     }

@@ -154,7 +154,7 @@ function clampLimit(bars: OHLCV[], limit?: number): OHLCV[] {
 
 /**
  * Coinbase market-data provider, built from scratch on the public Exchange REST + WebSocket APIs
- * — no `pinets`, no API key. Serves spot products (`BTC-USD`, `ETH-EUR`, …), paginates past the
+ * — no third-party SDK, no API key. Serves spot products (`BTC-USD`, `ETH-EUR`, …), paginates past the
  * 300-candle cap, aggregates timeframes Coinbase doesn't serve natively (e.g. `30`, `4h`) and
  * folds `W`/`M` from daily. Live ticks build a forming candle from the `ticker` stream (Coinbase
  * has no native kline stream), with a poll fallback.

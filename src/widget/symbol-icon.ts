@@ -3,15 +3,9 @@
 // the image 404s. The 404 cache is shared, so a missing icon degrades to initials
 // everywhere at once (and everything keeps working fully offline).
 import type { SymbolDescriptor } from '../core/ports/DataProvider';
+import { categoricalColor } from '../core/palette';
 
-const ICON_COLORS = ['#2962ff', '#089981', '#f7525f', '#ff9800', '#7e57c2', '#26a69a', '#5d9cf5', '#e573b5'];
 const iconFailed = new Set<string>();
-
-function hashColor(s: string): string {
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    return ICON_COLORS[h % ICON_COLORS.length]!;
-}
 
 function initialsOf(name: string): string {
     return (name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?';
@@ -39,7 +33,7 @@ export function tickerIconEl(doc: Document, base: string, name: string, classNam
     const key = base.toUpperCase();
     const fallback = (): void => {
         wrap.replaceChildren();
-        wrap.style.background = hashColor(name);
+        wrap.style.background = categoricalColor(name);
         wrap.textContent = initialsOf(base || name);
     };
     if (!key || iconFailed.has(key)) {

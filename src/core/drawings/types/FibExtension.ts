@@ -1,16 +1,10 @@
 import { FibLevels } from './FibLevels';
 import type { FibLevel } from './FibRatios';
+import { fibLevels, LEVEL_PURPLE } from '../levelPalette';
 
-/** Extension ratios — the swing plus projections beyond it (>1) for price targets. */
-const LEVELS: readonly FibLevel[] = [
-    { ratio: 0, color: '#787b86', enabled: true },
-    { ratio: 0.382, color: '#ff9800', enabled: true },
-    { ratio: 0.618, color: '#089981', enabled: true },
-    { ratio: 1, color: '#787b86', enabled: true },
-    { ratio: 1.272, color: '#5b9cf6', enabled: true },
-    { ratio: 1.618, color: '#f23645', enabled: true },
-    { ratio: 2.618, color: '#9c27b0', enabled: true },
-];
+/** Extension ratios — the swing plus projections beyond it (>1) for price targets. The
+ *  furthest target breaks out of the shared hues to read as the outermost projection. */
+const LEVELS = fibLevels([0, 0.382, 0.618, 1, 1.272, 1.618, { ratio: 2.618, color: LEVEL_PURPLE }]);
 
 /**
  * Fibonacci extension: the same two-anchor levels as a retracement, but with ratios

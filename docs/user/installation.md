@@ -29,11 +29,11 @@ Vela is built around swappable **layers**. The core is small; you opt into the p
 | Piece | Status | Notes |
 |---|---|---|
 | **Core + native renderer** | Included, default | Renders candles out of the box. |
-| **Scripting engine** (Pine) | **Optional peer** | Candles work without it. Indicators need it **and** a registered engine. |
+| **Scripting engine** | **Not shipped** | Install an addon (Pine Script: `@luxalgo/vela-pinets` + its `pinets` peer) or write one against the port — see [Scripting engines](./scripting-engines.md). Candles work without any. |
 | **Provider data feed** | Included | Used when you fetch bars instead of supplying them. |
 
 - **Candles work with zero extra setup.** The native renderer is the default — WebGL2 with a canvas2d fallback.
-- **Indicators are opt-in.** They require the scripting package (an optional peer dependency) **and** an engine registered on the chart. See [quickstart.md](./quickstart.md).
+- **Indicators are opt-in.** They require a scripting engine — a separate package you install — **and** that engine registered on the chart. See [Scripting engines](./scripting-engines.md) and [quickstart.md](./quickstart.md).
 
 ## Two build artifacts
 

@@ -2,6 +2,11 @@
 
 The second argument to `new Vela(container, options, deps?)` configures market data, display, and behavior. Everything here is optional — `new Vela('#chart', { data: myBars })` is enough to render candles.
 
+This vocabulary is shared by all three entry points: the [widget](./widget.md) accepts
+every option below verbatim (plus its shell options), and the
+[workspace](./workspace.md) accepts them all except `height` — there, each one is the
+DEFAULT of every cell, overridable per cell through `cells`.
+
 Per-indicator options (the third argument to `addIndicator`) are covered at the end.
 
 ## Market options
@@ -10,8 +15,7 @@ How the chart obtains its candles.
 
 | Option | Type | Meaning |
 |---|---|---|
-| `symbol` | string | Symbol to load, e.g. `'BTCUSDT'` or `'BINANCE:BTCUSDT'`. |
-| `provider` | string | Default provider for a **bare** `symbol` (same as prefixing it `provider:symbol`). Omit when the symbol carries its own `EXCHANGE:` prefix. |
+| `symbol` | string | Symbol to load — the string is the WHOLE market identity. A **bare** ticker (`'BTCUSDT'`) resolves against the registered providers in **declaration order** (first one whose index lists it); an `EXCHANGE:` prefix (`'coinbase:BTC-USD'`, case-insensitive) **pins** the venue. |
 | `timeframe` | string | Bar interval, e.g. `'1h'`. |
 | `bars` | number | How many bars of history to load. Depths beyond one ~10k-bar chunk paint the recent window first, then backfill older bars in the background — watch `history:progress` / await `chart.historyComplete()` for the full depth. |
 | `visibleRange` | `VisibleRangePreset \| {from,to}` | — | The window to frame on the **first paint** (`'1D'`, `'YTD'`, an explicit range…). The chart then loads its depth in one pass and paints that window straight away, instead of flashing a recent-bars preview and re-framing a moment later. |
@@ -21,7 +25,7 @@ How the chart obtains its candles.
 >
 > **The fetch path needs a registered provider.** No provider is bundled — register one with [`chart.data.registerProvider(...)`](./data-providers.md); registering it fires the chart's parked initial load. Each bar is `{ time, open, high, low, close, volume? }` with `time` in epoch milliseconds.
 >
-> With offline `data`, `timeframe` is still honored — it sets bar spacing and axis labels — while `symbol`, `provider`, and `bars` are ignored.
+> With offline `data`, `timeframe` is still honored — it sets bar spacing and axis labels — while `symbol` and `bars` are ignored.
 
 A fetching chart pairs these market options with a registered provider — the display flags ride along in the same object, and registering the provider fires the parked initial load.
 
@@ -30,8 +34,7 @@ import { Vela } from 'vela';
 import { BinanceProvider } from 'vela/providers/binance';
 
 const chart = new Vela('#chart', {
-  provider: 'binance',      // default provider for the bare symbol below
-  symbol: 'BTCUSDT',
+  symbol: 'BTCUSDT',        // bare = first registered provider that lists it; 'binance:BTCUSDT' pins
   timeframe: '1h',
   bars: 500,                // how many bars of history to load
   live: true,               // history + a forming candle on each tick
@@ -53,14 +56,14 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `live` | boolean | `false` | `true` adds a forming candle + live ticks on top of history. |
 | `theme` | `'dark' \| 'light'` or a theme object | `dark` | Pass an object to fully customize colors/fonts. |
 | `renderer` | renderer **class** | native | A renderer class to instantiate; omit for the built-in native renderer (default). The multi-renderer port (`IChartRenderer`) stays open — pass any class implementing it. |
-| `defaultLanguage` | string | `'pine'`* | Scripting language used when `addIndicator` doesn't name one. |
+| `defaultLanguage` | string | first registered engine* | Scripting language used when `addIndicator` doesn't name one. Falls back to the first engine registered at construction, then to `'pine'`. |
 | `currentPriceLine` | boolean | `true` | Dashed line + axis label at the latest price. |
 | `logScale` | boolean | `false` | Logarithmic price scale. |
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |
 | `animations` | boolean or `{ zoom?, pan? }` | **on** | `true`/`false` toggles all; an object configures each. Defaults: eased zoom on, inertial pan on (short snappy glide). `{ pan: false }` = instant pan. |
 | `glow` | number | `0` | Neon glow/bloom for line series (~0.6 = strong). **WebGL2 only** — ignored on canvas2d. |
-| `upColor` | string | `#0d98c6` (cyan) | Bullish candle color (native renderer). |
-| `downColor` | string | `#ffffff` (white) | Bearish candle color (native renderer). |
+| `upColor` | string | `#089981` (green) | Bullish candle color (native renderer). |
+| `downColor` | string | `#f23645` (red) | Bearish candle color (native renderer). |
 | `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn (native renderer). |
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 
@@ -92,7 +95,6 @@ See [Drawing tools](./drawing-tools.md) for the full catalogue and the `chart.dr
 
 ### Non-obvious defaults, called out
 
-- **Candle colors are cyan up / white down** (`#0d98c6` / `#ffffff`), not the usual green/red. Override with `upColor`/`downColor`.
 - **Animations are on** by default (eased zoom, snappy inertial pan).
 - **The current-price line is on** by default.
 - **The price scale is linear** by default (`logScale: false`).

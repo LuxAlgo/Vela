@@ -28,8 +28,8 @@ Available on every renderer:
 |---|---|---|---|
 | `logScale` | boolean | `false` | Logarithmic price scale on the price pane. |
 | `currentPriceLine` | boolean | `true` | The dashed line at the latest price. The axis label is a separate feature — see `priceLabel` (native renderer). |
-| `upColor` | color string | `#0d98c6` | Bullish candle body/wick color. |
-| `downColor` | color string | `#ffffff` | Bearish candle body/wick color. |
+| `upColor` | color string | `#089981` | Bullish candle body/wick color. |
+| `downColor` | color string | `#f23645` | Bearish candle body/wick color. |
 
 ## Native renderer
 
