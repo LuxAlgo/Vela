@@ -1,7 +1,8 @@
 // The in-chart ATTRIBUTION mark — the LuxAlgo logomark at the bottom-left of the plot,
 // expanding its wordmark on hover and linking to the project. Rendered by DEFAULT on every
 // chart. Per the NOTICE file, products may disable it (`renderer.set('attribution', false)`)
-// ONLY if they display an equivalent visible attribution elsewhere in their UI.
+// ONLY if they display an equivalent visible attribution elsewhere in their UI, which the
+// same file also allows them to restyle or reposition to fit their design.
 
 import { isDarkColor } from '../../../core/color';
 import { LUXALGO_SYMBOL_SVG, LUXALGO_WORDMARK_SVG } from './luxalgo-logos';
@@ -83,6 +84,29 @@ export function applyAttributionMarkTheme(el: HTMLElement, background: string): 
     const dark = isDarkColor(background);
     el.style.color = dark ? '#ffffff' : '#000000';
     el.style.setProperty('--vela-attr-shadow', dark ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)');
+}
+
+/**
+ * Build a HOST-supplied mark for the same corner. The string is inserted as HTML inside a
+ * positioned wrapper, so plain text renders as plain text and markup renders as markup —
+ * it is DEVELOPER-supplied branding, never a place to pass user input through. The
+ * wrapper carries no link and no theming of its own beyond the ink color, so the content
+ * looks exactly as its author wrote it.
+ */
+export function createCustomMark(doc: Document, html: string, background: string): HTMLElement {
+    const el = doc.createElement('div');
+    el.className = 'vela-attribution-custom';
+    Object.assign(el.style, {
+        position: 'absolute',
+        zIndex: '6',
+        pointerEvents: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        lineHeight: '1',
+    });
+    el.style.color = attributionMarkColor(background);
+    el.innerHTML = html;
+    return el;
 }
 
 /** Build the mark element (an anchor; the caller owns absolute positioning). */

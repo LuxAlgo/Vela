@@ -57,7 +57,7 @@ import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
-import { applyAttributionMarkTheme, createAttributionMark } from './chrome/AttributionMark';
+import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
 import { DARK_THEME, LIGHT_THEME } from '../../core/theme';
@@ -144,8 +144,10 @@ export class NativeRenderer implements IChartRenderer {
     private extLayers: Array<{ def: RendererLayerDefinition; instance: RendererLayerInstance; canvas: HTMLCanvasElement }> = [];
     // The attribution mark (see chrome/AttributionMark + the NOTICE file): default-on;
     // disabling requires an equivalent visible attribution elsewhere in the host UI.
-    private attributionEl: HTMLAnchorElement | null = null;
+    private attributionEl: HTMLElement | null = null;
     private attributionEnabled = true;
+    /** Host-supplied mark shown INSTEAD of the built-in one (`attribution: '<html>'`). */
+    private attributionHtml: string | null = null;
     private readonly vpvrRenderer = new VpvrRenderer();
     private resizeObserver: ResizeObserver | null = null;
     private dprMedia: MediaQueryList | null = null;
@@ -413,8 +415,11 @@ export class NativeRenderer implements IChartRenderer {
                 this.setSettingsEnabled(Boolean(value));
                 return; // owns its own DOM (gear button + dialog)
             case 'attribution':
-                this.attributionEnabled = Boolean(value);
-                if (this.attributionEl) this.attributionEl.style.display = this.attributionEnabled ? 'flex' : 'none';
+                // `false` hides it, `true` restores the built-in mark, a non-empty STRING
+                // puts the host's own mark in that corner (see the NOTICE).
+                this.attributionHtml = typeof value === 'string' && value.trim() ? value : null;
+                this.attributionEnabled = this.attributionHtml !== null || Boolean(value);
+                this.rebuildAttribution();
                 return; // own DOM, no repaint needed
             case 'dialogHost':
                 // Where MODAL dialogs mount (chart settings, indicator settings). A
@@ -467,7 +472,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'keyboard': return this.keyboardEnabled;
             case 'settings': return this.settingsEnabled;
-            case 'attribution': return this.attributionEnabled;
+            case 'attribution': return this.attributionHtml ?? this.attributionEnabled;
             case 'dialogHost': return this.dialogHost ?? undefined;
             default: return undefined;
         }
@@ -1152,7 +1157,7 @@ export class NativeRenderer implements IChartRenderer {
         this.plot.append(...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas, this.cursorCanvas, this.overlayRoot);
         this.wrapper.appendChild(this.plot);
         this.factoryConfig = this.getConfig();
-        this.attributionEl = createAttributionMark(document, this.theme.background);
+        this.attributionEl = this.buildAttributionEl();
         if (!this.attributionEnabled) this.attributionEl.style.display = 'none';
         this.positionAttribution();
         this.wrapper.appendChild(this.attributionEl);
@@ -1464,7 +1469,8 @@ export class NativeRenderer implements IChartRenderer {
         // new scale) until the next tick re-seeds. The bars given here carry real values —
         // drop the ease; the next tick snaps fresh (liveEaseTime no longer matches).
         this.liveEaseTime = 0;
-        const prevHeadTime = this.bars[0]?.time;
+        const prevBars = this.bars;
+        const prevHeadTime = prevBars[0]?.time;
         this.bars = normalizeBars(bars);
         this.scene.bars = this.bars;
         this.coords.setBars(this.bars.map((b) => b.time));
@@ -1476,9 +1482,22 @@ export class NativeRenderer implements IChartRenderer {
         // mid-zoom would otherwise re-anchor thousands of bars into the past and teleport the
         // viewport (the "view jumps to the middle of history" bug). Same series only: on a
         // symbol/timeframe switch the head time won't match and the view re-fits anyway.
-        if (opts?.preserveView === true && prevHeadTime != null) {
-            const shift = this.bars.findIndex((b) => b.time === prevHeadTime);
-            if (shift > 0) {
+        if (opts?.preserveView === true && prevHeadTime != null && this.bars.length > 0) {
+            // The head can move BOTH ways on the same series: a backfill PREPENDS older bars
+            // (indices shift up), a shallower depth TRIMS from the front (indices shift down).
+            // Only the prepend used to be handled, so a trim left the anchors pointing past
+            // the data. The newest end is fixed either way, so the viewport itself never moves.
+            const newHeadTime = this.bars[0]!.time;
+            let shift = 0;
+            if (newHeadTime !== prevHeadTime) {
+                const prepended = this.bars.findIndex((b) => b.time === prevHeadTime);
+                if (prepended > 0) shift = prepended;
+                else {
+                    const trimmed = prevBars.findIndex((b) => b.time === newHeadTime);
+                    if (trimmed > 0) shift = -trimmed;
+                }
+            }
+            if (shift !== 0) {
                 this.zoomAnchorLogical += shift;
                 if (this.hoverLogical != null) this.hoverLogical += shift;
             }
@@ -1655,8 +1674,30 @@ export class NativeRenderer implements IChartRenderer {
      */
     private refreshAnchorOffset(model: IndicatorModel): void {
         const anchor = model.anchorTime;
-        if (anchor == null || this.bars.length === 0 || anchor <= this.bars[0]!.time) {
+        if (anchor == null || this.bars.length === 0) {
             this.scene.setAnchorOffset(model.id, 0);
+            return;
+        }
+        const head = this.bars[0]!.time;
+        if (anchor === head) {
+            this.scene.setAnchorOffset(model.id, 0);
+            return;
+        }
+        if (anchor < head) {
+            // The model starts BEFORE the chart's first bar — its own leading values fall off
+            // the left edge (the head moved forward under it: a trimmed series, or a shorter
+            // reload arriving before the model re-runs). A NEGATIVE offset skips exactly those
+            // points; treating this as "unanchored" (offset 0) is what pinned a stale model's
+            // first value onto the chart's first bar and drew the whole plot shifted.
+            const skip = leadingPointsBefore(model, head);
+            if (skip == null) {
+                // Nothing index-aligned to measure against (a drawings-only model). Keep the
+                // old, honest-but-approximate behavior rather than inventing a count.
+                console.warn(`[vela] indicator "${model.id}" starts before the first bar with no series to align on — rendering unanchored`);
+                this.scene.setAnchorOffset(model.id, 0);
+                return;
+            }
+            this.scene.setAnchorOffset(model.id, -skip);
             return;
         }
         // Lower-bound binary search over the sorted bar times.
@@ -1697,10 +1738,14 @@ export class NativeRenderer implements IChartRenderer {
     updateIndicator(handle: IndicatorRenderHandle, patch: ScenePatch): void {
         const model = this.scene.indicators.get(handle.id);
         if (!model) return;
-        // A value patch from a re-run over a DIFFERENT bar window carries its anchor.
-        if (patch.kind === 'value' && patch.anchorTime !== undefined && patch.anchorTime !== model.anchorTime) {
-            model.anchorTime = patch.anchorTime;
-            this.refreshAnchorOffset(model);
+        // A value patch from a re-run over a DIFFERENT bar window carries its anchor; `null`
+        // says the run spanned the whole chart and CLEARS the previous one.
+        if (patch.kind === 'value' && patch.anchorTime !== undefined) {
+            const next = patch.anchorTime ?? undefined;
+            if (next !== model.anchorTime) {
+                model.anchorTime = next;
+                this.refreshAnchorOffset(model);
+            }
         }
         applyPatch(model, patch);
         this.syncTables(model);
@@ -3077,6 +3122,23 @@ export class NativeRenderer implements IChartRenderer {
         this.syncSize();
     }
 
+    /** The built-in mark, or the host's own when one is set. */
+    private buildAttributionEl(): HTMLElement {
+        return this.attributionHtml !== null
+            ? createCustomMark(document, this.attributionHtml, this.theme.background)
+            : createAttributionMark(document, this.theme.background);
+    }
+
+    /** Swap the mark in place — the content kind changed (built-in ↔ host-supplied). */
+    private rebuildAttribution(): void {
+        if (!this.attributionEl) return; // pre-mount: mount() builds from the stored state
+        this.attributionEl.remove();
+        this.attributionEl = this.buildAttributionEl();
+        if (!this.attributionEnabled) this.attributionEl.style.display = 'none';
+        this.positionAttribution();
+        this.wrapper.appendChild(this.attributionEl);
+    }
+
     /** Bottom-left of the plot, above the time axis, clear of the drawings toolbar. */
     private positionAttribution(): void {
         if (!this.attributionEl) return;
@@ -3086,10 +3148,12 @@ export class NativeRenderer implements IChartRenderer {
         });
     }
 
-    /** Re-tint the LuxAlgo SVGs when the plot background flips light/dark. */
+    /** Re-tint the mark when the plot background flips light/dark. A host-supplied mark
+     *  only gets the ink color — its own artwork keeps whatever colors it declares. */
     private refreshAttributionColor(): void {
         if (!this.attributionEl) return;
-        applyAttributionMarkTheme(this.attributionEl, this.theme.background);
+        if (this.attributionHtml !== null) this.attributionEl.style.color = attributionMarkColor(this.theme.background);
+        else applyAttributionMarkTheme(this.attributionEl, this.theme.background);
     }
 
     private syncSize(): void {
@@ -3134,6 +3198,29 @@ export class NativeRenderer implements IChartRenderer {
     private applyBackground(): void {
         this.wrapper.style.background = this.theme.background;
     }
+}
+
+/**
+ * How many of a model's own index-aligned values sit strictly BEFORE `headTime` — the count
+ * to skip when the chart's first bar is later than the model's anchor. Read off the model's
+ * series, whose point/bar times ARE the bar times it ran over; a lower bound also covers a
+ * head that the model never saw (a gap) and a model that ended before the head entirely.
+ * `null` when the model carries no index-aligned series to measure.
+ */
+function leadingPointsBefore(model: IndicatorModel, headTime: number): number | null {
+    for (const s of model.series) {
+        const times: ReadonlyArray<{ time: number }> | null = s.kind === 'candle' || s.kind === 'bar' ? s.bars : isLineLikeSeries(s) ? s.points : null;
+        if (!times || times.length === 0) continue;
+        let lo = 0;
+        let hi = times.length; // lower bound: first index whose time is >= headTime
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (times[mid]!.time < headTime) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo;
+    }
+    return null;
 }
 
 /** Apply a scene patch to a stored indicator model so the next frame reflects it. */

@@ -2,6 +2,72 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.4.6]
+
+### Changed
+
+- **History loads in one request up to 5 000 bars, in 10 000-bar chunks beyond.** The load
+  used to start with a 200-bar head and widen by doubling (200 → 400 → 800 → …), which at
+  the shells' default depth meant FOUR serialized round trips before the full history was
+  there. That shape bought a faster first candle — but nothing downstream can use it: an
+  indicator's first run is held until the whole depth lands (Pine is causal, so running it
+  per chunk would repaint a different curve at every step). A round trip costs far more
+  than the extra rows, so the ordinary case is now a single request, and the progressive
+  path is reserved for genuinely deep history, where its chunks are flat 10 000-bar steps
+  rather than a ramp. A rangeless feed keeps its preview-then-full shape past the same
+  threshold, and a requested initial window still loads in one framed pass.
+
+### Fixed
+
+- **The chart-settings dialog closes when you click its ✕.** The header's drag handler
+  skipped itself for the close button by comparing `e.target` to the button — but the
+  button holds an SVG icon, so a press anywhere on the ✕ targets the icon's `<path>`
+  instead. The header therefore took pointer capture and swallowed the click: the button
+  only ever worked on the few pixels of padding around the glyph. It now tests ancestry
+  (`closest`), like the other two draggable dialog headers already did.
+- **Changing the bar count no longer rebuilds the chart.** `setMarket({ bars })` on the
+  same market went through the full reload pipeline: it handed the renderer a fresh
+  200-bar head, then doubled its way back up (200 → 400 → 800 → …), so the array was
+  wholly replaced ~6 times and momentarily held FEWER bars than before the change. Every
+  replacement was a "fresh series", which re-frames the view — the user's zoom was thrown
+  away on any depth change, in both directions. A depth-only change is now an EXTENSION:
+  growing re-enters the same backfill loop the initial load uses (older bars prepend, the
+  viewport is preserved), shrinking trims the array in place from the oldest end, and
+  neither restarts the indicator sessions. A feed with no ranged fetch, or an offline
+  `data` series, still reloads — there is nothing to extend from.
+- **An indicator no longer paints shifted while the bar array changes under it.** Anchor
+  offsets were stored only when positive, so a model whose `anchorTime` was OLDER than the
+  chart's first bar — exactly what a shorter series produces — was pinned at index 0 and
+  drawn with its first value on the chart's first bar, i.e. the whole plot shifted left,
+  for as long as the load took. Offsets are signed now: such a model skips the values that
+  fall off the left edge instead. The renderer's logical interaction anchors (zoom glide,
+  hover) learned the same symmetry — they followed a prepend but not a front trim.
+- **A value patch can clear an indicator's anchor.** `anchorTime` was omitted rather than
+  stated when a run spanned the whole chart, and an omitted key cannot undo a previous
+  anchor — the model kept the offset of an earlier, narrower run. Patches now always carry
+  the anchor, `null` included.
+- **Documentation that did not match the code.** The README advertised a screenshot
+  shortcut that never existed (`alt+S`; the binding has always been `mod+alt+S`), left
+  `vela/workspace` out of the entry-point list, described `persist` as restoring four
+  cosmetic keys when it restores the whole state document — drawings and indicators
+  included, listed two of the three `indicators` manifest forms (the async loader was
+  missing), and still passed the removed `provider` option in both quick-start snippets.
+  In the SDK, `WidgetContext.chart` claimed the shell rebuilds its chart on every
+  symbol/timeframe change; those switches are applied in place.
+
+### Added
+
+- **Renderer feature defaults for plugins: `registerRendererDefaults`.** A renderer
+  feature is per-chart state, set on an instance that does not exist yet when a plugin's
+  enabler runs — so a plugin could contribute a chart type, an engine or a panel, but not
+  "every chart should start with this feature set". This registry is the missing half,
+  shaped like the other contribution registries and the renderer-side counterpart of
+  `registerDefaultEngine`, except it reaches EVERY chart: the widget's, each workspace
+  cell's, and a bare `new Vela()`. Values apply once the renderer mounts, before the first
+  paint; they are defaults, not locks (an explicit `renderer.set(...)` or a restored
+  config still wins), and charts already built are untouched. The disposer removes
+  precisely what it set.
+
 ## [v0.4.5]
 
 ### Added

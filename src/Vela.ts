@@ -13,6 +13,7 @@ import type { SceneInspection } from './core/engine/inspect';
 import { resolveTheme } from './core/theme';
 import { BEARISH, BULLISH } from './core/palette';
 import { RendererControl } from './core/RendererControl';
+import { rendererDefaults } from './core/renderer-defaults';
 import { PanesControl } from './core/PanesControl';
 import { DataControl } from './core/DataControl';
 import { DrawingsControl } from './core/DrawingsControl';
@@ -116,6 +117,11 @@ export class Vela {
         this.rendererControl = new RendererControl(renderer);
         this.dataControl = new DataControl(feed);
         this.orchestrator = new EngineOrchestrator(element, renderer, feed, engines, config, this.dataControl);
+        // Plugin-contributed renderer defaults (`registerRendererDefaults`), applied once the
+        // orchestrator has mounted the renderer and before the first paint. Defaults only:
+        // an explicit `renderer.set(...)` or a restored config afterwards still wins.
+        const defaults = rendererDefaults();
+        if (Object.keys(defaults).length > 0) this.rendererControl.set(defaults);
         this.panesControl = new PanesControl(this.orchestrator);
         this.drawingsControl = new DrawingsControl(this.orchestrator.drawings);
     }

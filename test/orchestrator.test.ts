@@ -744,21 +744,30 @@ describe('EngineOrchestrator', () => {
         expect(engine.streamStops[ind.id]).toBe(1);
     });
 
-    it('history loads progressively: a fast 200-bar head, then doubling steps behind it', async () => {
+    it('an ordinary depth arrives in ONE request — no head, no steps', async () => {
         const renderer = new FakeRenderer();
         const chart = new Vela({} as unknown as HTMLElement, { bars: 2000 }, { renderer, engines: [new MockEngine()], dataFeed: new SizedDataFeed() });
-        await chart.ready(); // resolves at the FIRST paint (a sync feed's steps may already be racing in behind)
-        expect(renderer.setBarsCalls[0]).toEqual({ n: 200, preserveView: false });
+        await chart.ready();
         await chart.historyComplete();
-        // The head was ONE small request; behind it each step matches the painted depth,
-        // so the chart doubles per request (the last one bounded by the request).
-        expect(renderer.setBarsCalls).toEqual([
-            { n: 200, preserveView: false },
-            { n: 400, preserveView: true },
-            { n: 800, preserveView: true },
-            { n: 1600, preserveView: true },
-            { n: 2000, preserveView: true },
-        ]);
+        // Splitting this range only ever bought a faster FIRST candle, and nothing downstream
+        // can use it: an indicator's first run is held until the full depth lands anyway.
+        expect(renderer.setBarsCalls).toEqual([{ n: 2000, preserveView: false }]);
+    });
+
+    it('the single-request depth boundary: 5000 in one pass, and 5001 still one (a chunk covers it)', async () => {
+        const atLimit = new FakeRenderer();
+        const a = new Vela({} as unknown as HTMLElement, { bars: 5000 }, { renderer: atLimit, engines: [new MockEngine()], dataFeed: new SizedDataFeed() });
+        await a.ready();
+        await a.historyComplete();
+        expect(atLimit.setBarsCalls).toEqual([{ n: 5000, preserveView: false }]);
+
+        // Past the line the load is chunked, but the first chunk is 10 000 bars — so any depth
+        // up to that still lands in a single round trip.
+        const past = new FakeRenderer();
+        const b = new Vela({} as unknown as HTMLElement, { bars: 5001 }, { renderer: past, engines: [new MockEngine()], dataFeed: new SizedDataFeed() });
+        await b.ready();
+        await b.historyComplete();
+        expect(past.setBarsCalls).toEqual([{ n: 5001, preserveView: false }]);
     });
 
     it('a requested initial window loads in ONE pass and is framed BEFORE the first paint', async () => {
@@ -797,16 +806,16 @@ describe('EngineOrchestrator', () => {
             load: (cfg: { bars?: number }) => Promise.resolve(makeBars(cfg.bars ?? 500)),
             subscribe: (): Unsubscribe => () => {},
         };
-        const chart = new Vela({} as unknown as HTMLElement, { bars: 2000 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
+        const chart = new Vela({} as unknown as HTMLElement, { bars: 8000 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
         await chart.ready();
         await flush();
         expect(renderer.setBarsCalls).toEqual([
             { n: 300, preserveView: false },
-            { n: 2000, preserveView: true },
+            { n: 8000, preserveView: true },
         ]);
     });
 
-    it('requests at or under one step load in one shot (no progressive split)', async () => {
+    it('a small request loads in one shot', async () => {
         const renderer = new FakeRenderer();
         const chart = new Vela({} as unknown as HTMLElement, { bars: 200 }, { renderer, engines: [new MockEngine()], dataFeed: new SizedDataFeed() });
         await chart.ready();
@@ -814,23 +823,18 @@ describe('EngineOrchestrator', () => {
         expect(renderer.setBarsCalls).toEqual([{ n: 200, preserveView: false }]);
     });
 
-    it('a mid-sized chart steps to its requested depth and completes with reason depth', async () => {
+    it('a mid-sized chart loads in one pass and completes with reason depth', async () => {
         const renderer = new FakeRenderer();
         const chart = new Vela({} as unknown as HTMLElement, { bars: 500 }, { renderer, engines: [new MockEngine()], dataFeed: new SizedDataFeed() });
         const completes: { reason: string; barsLoaded: number }[] = [];
         chart.on('history:complete', (e) => completes.push(e));
         await chart.ready();
         await chart.historyComplete();
-        // 200 head + 200 step + the 100 remainder — the last step is bounded by the request.
-        expect(renderer.setBarsCalls).toEqual([
-            { n: 200, preserveView: false },
-            { n: 400, preserveView: true },
-            { n: 500, preserveView: true },
-        ]);
+        expect(renderer.setBarsCalls).toEqual([{ n: 500, preserveView: false }]);
         expect(completes).toEqual([{ reason: 'depth', oldestTime: renderer.bars[0]!.time, barsLoaded: 500 }]);
     });
 
-    it('very deep charts: doubling steps capped at the chunk size, remainder-bounded', async () => {
+    it('very deep charts: a first chunk on screen, then flat 10k steps, remainder-bounded', async () => {
         const renderer = new FakeRenderer();
         const feed = new DeepHistoryFeed(40_000);
         feed.gate = true; // park the backfill so the interactive intermediate state is observable
@@ -840,19 +844,19 @@ describe('EngineOrchestrator', () => {
         chart.on('history:progress', (e) => progress.push(e));
         chart.on('history:complete', (e) => completes.push(e));
 
-        await chart.ready(); // resolves at the FIRST paint — the chart is interactive on 200 bars
-        expect(renderer.setBarsCalls).toEqual([{ n: 200, preserveView: false }]);
+        await chart.ready(); // resolves at the FIRST paint — interactive on the first full chunk
+        expect(renderer.setBarsCalls).toEqual([{ n: 10_000, preserveView: false }]);
 
         feed.gate = false;
         feed.release(); // let the parked backfill run to completion
         await chart.historyComplete();
-        // Doubling steps behind the interactive chart, capped at 10k, then the remainder.
-        const sizes = [200, 400, 800, 1_600, 3_200, 6_400, 12_800, 22_800, 25_000];
+        // Flat chunks behind the interactive chart, the last one bounded by the remainder.
+        const sizes = [10_000, 20_000, 25_000];
         expect(renderer.setBarsCalls).toEqual(sizes.map((n, i) => ({ n, preserveView: i > 0 })));
         expect(progress).toEqual(sizes.slice(1).map((loaded) => ({ loaded, target: 25_000 })));
         expect(completes).toEqual([{ reason: 'depth', oldestTime: renderer.bars[0]!.time, barsLoaded: 25_000 }]);
         // Steps were requested backward, overlap-by-one, bounded by the remaining depth.
-        expect(feed.rangeCalls.map((r) => r.limit)).toEqual([201, 401, 801, 1_601, 3_201, 6_401, 10_001, 2_201]);
+        expect(feed.rangeCalls.map((r) => r.limit)).toEqual([10_001, 5_001]);
         // Bars stay strictly monotonic across every seam.
         for (let i = 1; i < renderer.bars.length; i += 1) expect(renderer.bars[i]!.time).toBeGreaterThan(renderer.bars[i - 1]!.time);
     });
@@ -881,8 +885,8 @@ describe('EngineOrchestrator', () => {
 
         await chart.ready();
         await chart.historyComplete();
-        expect(renderer.bars.length).toBe(200); // the painted head survives
-        expect(completes).toEqual([expect.objectContaining({ reason: 'aborted', barsLoaded: 200 })]);
+        expect(renderer.bars.length).toBe(10_000); // the painted first chunk survives
+        expect(completes).toEqual([expect.objectContaining({ reason: 'aborted', barsLoaded: 10_000 })]);
         warn.mockRestore();
     });
 
@@ -892,7 +896,7 @@ describe('EngineOrchestrator', () => {
         feed.gate = true; // hold every ranged fetch until released
         const chart = new Vela({} as unknown as HTMLElement, { bars: 25_000, volume: false }, { renderer, engines: [new MockEngine()], dataFeed: feed });
         await chart.ready();
-        expect(renderer.bars.length).toBe(200);
+        expect(renderer.bars.length).toBe(10_000);
 
         chart.destroy();
         feed.release(); // the in-flight step lands AFTER destroy — it must be discarded

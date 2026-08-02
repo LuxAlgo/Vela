@@ -10,6 +10,8 @@ renderer layers.
 - **`vela/ui`** — the component kit the widget is built on (design tokens + headless
   [Zag.js](https://zagjs.com) machines + vanilla views) and the `KeymapManager`.
 - **`vela/plugin`** — the extension SDK: chart types, renderer layers, native indicators.
+- **`vela/workspace`** — the multi-chart shell: a grid of full charts under one shared
+  topbar, with named cells, sync groups and one persisted state document.
 - **`vela/providers/*`** — data providers (Binance, Coinbase, Hyperliquid).
 
 ## Quick start
@@ -19,13 +21,13 @@ import { VelaWidget } from 'vela/widget';
 import { BinanceProvider } from 'vela/providers/binance';
 
 const widget = new VelaWidget('#chart', {
-    provider: 'binance',
-    symbol: 'BTCUSDT',
+    symbol: 'BTCUSDT', // bare = first declared provider listing it; 'binance:BTCUSDT' pins the venue
     timeframe: '60',
     live: true,
     theme: 'dark',
     providers: { binance: () => new BinanceProvider() },
-    persist: true,   // restore symbol/timeframe/style/timezone from localStorage
+    persist: true,   // restore the full state document — market, style, timezone, renderer
+                     // config, drawings and indicators — from localStorage
     urlState: true,  // ?symbol=…&interval=… shareable links
 });
 ```
@@ -36,7 +38,7 @@ Prefer full control? Use the headless core directly:
 import { Vela } from 'vela';
 import { BinanceProvider } from 'vela/providers/binance';
 
-const chart = new Vela('#chart', { provider: 'binance', symbol: 'BTCUSDT', timeframe: '60', live: true });
+const chart = new Vela('#chart', { symbol: 'binance:BTCUSDT', timeframe: '60', live: true });
 chart.data.registerProvider('binance', new BinanceProvider());
 await chart.ready();
 ```
@@ -64,7 +66,8 @@ value** — via `handle.context()` (read-only snapshots, worker-safe). See the
 [API reference](docs/user/api-reference.md#reading-a-scripts-execution-context), and
 [Scripting engines](docs/user/scripting-engines.md) for the addon and for writing your own.
 
-The widget takes an **indicator manifest** — inline JSON or a URL returning it:
+The widget takes an **indicator manifest** — inline JSON, a URL returning it, or an async
+loader (`() => Promise<manifest>`):
 
 ```ts
 new VelaWidget('#chart', {
@@ -77,7 +80,7 @@ new VelaWidget('#chart', {
 ## Keyboard
 
 Type a **letter** → symbol search. Type a **digit** → timeframe entry (`15`, `4h`, `D`, `3M`…).
-`alt+S` → screenshot. `?` → the shortcuts panel. Bindings are declarative
+`mod+alt+S` (Ctrl+Alt+S, ⌥⌘S on macOS) → screenshot. `?` → the shortcuts panel. Bindings are declarative
 (`widget.keymap.register({...})`) — plugins register theirs the same way.
 
 ## Extending (plugin SDK)

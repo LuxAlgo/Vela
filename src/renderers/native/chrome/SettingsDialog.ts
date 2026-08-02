@@ -187,7 +187,11 @@ export class SettingsDialog {
         {
             let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
             header.addEventListener('pointerdown', (e) => {
-                if (e.target === closeBtn) return;
+                // ANCESTRY, not identity: the button holds an SVG icon, so a press on the ✕
+                // targets the `<path>`. Comparing against the button itself let the header
+                // take pointer capture, which retargets the click away — the button was dead
+                // everywhere except its few pixels of padding.
+                if ((e.target as Element | null)?.closest('.vela-sd-close')) return;
                 dragging = true;
                 sx = e.clientX - ox;
                 sy = e.clientY - oy;

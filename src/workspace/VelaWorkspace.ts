@@ -34,7 +34,8 @@ import { toolShortcutHints } from '../widget/tool-shortcuts';
 import { legendActionsProviderFor, widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
-import { createAttributionMark } from '../renderers/native/chrome/AttributionMark';
+import { createAttributionMark, createCustomMark } from '../renderers/native/chrome/AttributionMark';
+import { rendererDefaults } from '../core/renderer-defaults';
 import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
@@ -354,10 +355,21 @@ export class VelaWorkspace {
 
         // ONE attribution mark for the whole grid (bottom-left, floating above the
         // bottom-left cell's time axis) — the cells disable their per-chart marks, and
-        // this single mark is the NOTICE-required equivalent visible attribution.
-        const mark = createAttributionMark(doc, resolveTheme(opts.theme).background);
-        Object.assign(mark.style, { left: '12px', bottom: `${TIME_AXIS_H + 10}px`, zIndex: '11' });
-        this.gridEl.appendChild(mark);
+        // this single mark is the NOTICE-required equivalent visible attribution. It
+        // follows the app-wide default a plugin may have set for the attribution corner
+        // (`registerRendererDefaults({ attribution })`): the cells read it through their
+        // renderer, and the grid reads it here, so one setting covers every surface
+        // instead of leaving this mark behind as the one a host cannot reach.
+        const attribution = rendererDefaults().attribution;
+        if (attribution !== false) {
+            const background = resolveTheme(opts.theme).background;
+            const mark =
+                typeof attribution === 'string' && attribution.trim()
+                    ? createCustomMark(doc, attribution, background)
+                    : createAttributionMark(doc, background);
+            Object.assign(mark.style, { left: '12px', bottom: `${TIME_AXIS_H + 10}px`, zIndex: '11' });
+            this.gridEl.appendChild(mark);
+        }
 
         // ONE drawing toolbar for the whole grid: commands go to the ACTIVE cell's
         // `chart.drawings` facade; the cell's own in-chart bar stays hidden (the cells

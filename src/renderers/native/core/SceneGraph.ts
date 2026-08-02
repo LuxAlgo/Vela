@@ -261,8 +261,13 @@ export class SceneGraph {
         return this.anchorOffsets.get(id) ?? 0;
     }
 
+    /** Offsets are SIGNED. Positive: the model starts after the chart's first bar (it ran
+     *  over a suffix) — readers skip its leading chart bars. Negative: the model starts
+     *  BEFORE it (the chart's head moved forward under a mounted model) — readers skip the
+     *  model's own leading points, `points[i - off]` reaching further in. Storing only the
+     *  positive case silently pinned such a model at index 0, i.e. drew it shifted. */
     setAnchorOffset(id: string, offset: number): void {
-        if (offset > 0) this.anchorOffsets.set(id, offset);
+        if (offset !== 0 && Number.isFinite(offset)) this.anchorOffsets.set(id, offset);
         else this.anchorOffsets.delete(id);
     }
 
