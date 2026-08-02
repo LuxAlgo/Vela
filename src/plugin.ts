@@ -27,6 +27,7 @@ export {
     type SeriesDataEngineHost,
 } from './chart-types/registry';
 export type { BarTransform } from './core/price-styles/BarTransform';
+export { registerRendererDefaults, unregisterRendererDefaults, rendererDefaults } from './core/renderer-defaults';
 export {
     registerNativeIndicator,
     unregisterNativeIndicator,

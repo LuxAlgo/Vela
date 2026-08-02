@@ -43,24 +43,22 @@ export interface ResolvedConfig {
 /** Coalesce rapid pan/zoom viewport events into one re-run (ms). */
 const VIEWPORT_DEBOUNCE_MS = 150;
 
-/** Bars in the quick recent-window preview painted before the full history loads. */
+/** Bars in the quick recent-window preview a RANGELESS feed paints before the deep fetch. */
 const PREVIEW_BARS = 300;
-/** Above this the full fetch paginates (Binance page size), so a preview pays off. */
-const SINGLE_REQUEST_BARS = 1000;
 /**
- * The PROGRESSIVE head (ranged feeds): the first paint is one small request of this many
- * bars — on screen while a monolithic fetch would still be in flight — and the rest of
- * the history streams in behind it in steps that DOUBLE from here to {@link CHUNK_BARS}.
- * Growth keeps the request count logarithmic: on a high-latency venue (~2s flat per
- * request, size barely matters) flat 200-bar steps made the tail 10 round-trips where
- * doubling takes 4.
+ * Depth a ranged feed serves in ONE request. A round trip costs far more than the extra
+ * rows: splitting this range into a small head plus a stream of widening chunks paid for
+ * itself only in time-to-first-candle, and nothing downstream can use those first candles
+ * anyway — an indicator's first run is held until the whole depth has landed (Pine is
+ * causal, so running it per chunk would repaint a different curve each time). Below this
+ * line, one request wins outright.
  */
-const STEP_BARS = 200;
+const SINGLE_LOAD_BARS = 5_000;
 /**
- * Deep history loads BACKWARD in chunks of this many bars: the chart is interactive after
- * the first chunk while older ones stream in behind it (each a bounded request the data
- * source answers quickly, instead of one giant fetch that stalls silently and lands as a
- * single main-thread-freezing parse). Sized so a chunk is a few provider pages.
+ * Beyond {@link SINGLE_LOAD_BARS} the history loads BACKWARD in chunks of this many bars:
+ * the chart is interactive after the first chunk while older ones stream in behind it
+ * (each a bounded request the data source answers quickly, instead of one giant fetch that
+ * stalls silently and lands as a single main-thread-freezing parse).
  */
 const CHUNK_BARS = 10_000;
 
@@ -336,19 +334,19 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     /**
      * Load the configured market's history into the chart — THE shared load pipeline
-     * behind {@link init} and {@link setMarket}. On a ranged feed the load is
-     * PROGRESSIVE: one small request paints the newest {@link STEP_BARS} immediately,
-     * and the rest of the history streams in behind it through the shared backfill loop
-     * (fine steps through the near window, coarse chunks beyond) — the pipeline resolves
-     * at the first paint; await {@link historyComplete} for the full depth. Sessions
-     * started meanwhile are stamped 'backfill' and the bundled engines hold their first
-     * run until 'complete'. Offline data and small charts are a single fetch; a
-     * rangeless feed keeps the preview-then-chunk shape. A requested initial window
-     * skips the fast head: its recent-bars viewport would paint the WRONG range for a
-     * moment, then jump — one load, one paint, framed. EVERY await is followed by a
-     * generation check so a superseded load (newer setMarket, destroy) abandons without
-     * touching the chart. `firstLoad` activates the bar-following layers once (volume
-     * auto-add) — a market SWITCH must not re-add what the user has since removed.
+     * behind {@link init} and {@link setMarket}. Up to {@link SINGLE_LOAD_BARS} the whole
+     * depth comes in ONE request: a round trip dominates the row count, and splitting the
+     * range buys a faster first candle that nothing can use — an indicator's first run is
+     * held until the full depth lands anyway. DEEPER than that, the load is progressive:
+     * the newest {@link CHUNK_BARS} paint immediately and the rest streams in behind them
+     * through the shared backfill loop, so the pipeline resolves at the first paint (await
+     * {@link historyComplete} for the full depth) and sessions started meanwhile are
+     * stamped 'backfill' until 'complete'. Offline data is a single fetch; a rangeless
+     * feed keeps the preview-then-full shape, since it cannot fetch a range at all.
+     * EVERY await is followed by a generation check so a superseded load (newer
+     * setMarket, destroy) abandons without touching the chart. `firstLoad` activates the
+     * bar-following layers once (volume auto-add) — a market SWITCH must not re-add what
+     * the user has since removed.
      */
     private async loadMarket(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         try {
@@ -365,24 +363,26 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const market = this.config.market;
         const requested = market.bars ?? 500;
         const initialRange = market.visibleRange;
-        if (!market.data?.length && initialRange == null && requested > STEP_BARS && this.feed.loadRange) {
-            // Progressive head: candles are on screen after ONE small request — a monolithic
-            // fetch of the same history would still be in flight. The remaining depth rides
-            // the detached backfill loop (fine steps near the viewport, chunks beyond), so
-            // this pipeline resolves at first paint and live/indicators start immediately.
-            const head = await this.feed.load({ ...market, bars: STEP_BARS });
+        // Only a DEEP request is worth splitting, and only when a requested initial window
+        // does not pin the frame (a chunked load would paint the wrong range, then jump).
+        const deep = !market.data?.length && initialRange == null && requested > SINGLE_LOAD_BARS;
+        if (deep && this.feed.loadRange) {
+            // Paint the newest chunk, stream the rest in behind it. The first chunk is a full
+            // CHUNK_BARS, not a token head: at this depth the round trips are what cost, so
+            // each one carries as much as the source answers well.
+            const head = await this.feed.load({ ...market, bars: Math.min(requested, CHUNK_BARS) });
             if (this.generation !== gen) return;
             this.setBarSeries(head);
             if (opts.firstLoad) this.activateBarLayers(); // bar-following layers ride the FIRST candles
-            if (head.length >= STEP_BARS && requested > head.length) {
+            if (head.length > 0 && requested > head.length) {
                 this.historyState = 'backfill';
                 void this.backfillHistory(gen, requested);
             } else {
-                this.completeHistory('depth'); // the source had no more than one step of history
+                this.completeHistory('depth'); // the source had no more than one chunk of history
             }
-        } else if (!market.data?.length && requested > SINGLE_REQUEST_BARS && initialRange == null) {
-            // RANGELESS feed: stepping would re-download the head on every extension, so
-            // keep the two-fetch shape — a quick preview, then the whole depth in one load.
+        } else if (deep) {
+            // RANGELESS feed at depth: it cannot fetch a range, so chunking would re-download
+            // the head every time — keep the two-fetch shape, a quick preview then everything.
             const preview = await this.feed.load({ ...market, bars: PREVIEW_BARS });
             if (this.generation !== gen) return;
             this.setBarSeries(preview);
@@ -481,6 +481,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             (next.timeframe !== undefined && next.timeframe !== m.timeframe) ||
             next.data !== undefined;
         const depthChanged = next.bars !== undefined && next.bars !== m.bars;
+        // Same market, only deeper/shallower, with bars already on screen: handled by moving
+        // the array's oldest edge instead of reloading (see `extendDepth`). An offline `data`
+        // series has no source to extend from, and GROWING needs a ranged feed to fetch the
+        // missing older bars — without one the reload is the only way to get them. Shrinking
+        // needs no source at all: it is a trim of what is already held.
+        const depthOnly =
+            depthChanged &&
+            !identityChanged &&
+            this.rawBars.length > 0 &&
+            !m.data?.length &&
+            ((next.bars ?? 0) <= this.rawBars.length || typeof this.feed.loadRange === 'function');
         if (!identityChanged && !depthChanged) {
             // Nothing to reload — honor at most a framing request.
             if (typeof next.visibleRange === 'string') this.setVisibleRangePreset(next.visibleRange);
@@ -529,23 +540,38 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 }
             }
 
-            // Reload through the shared pipeline. The race lets a superseded caller resolve
-            // promptly (e.g. a parked load on an unresolvable symbol) instead of hanging.
-            await Promise.race([
-                this.loadMarket(gen, { firstLoad: false }),
-                new Promise<void>((resolve) => this.supersedeWaiters.push(resolve)),
-            ]);
+            // A DEPTH-ONLY change is an extension, never a reload: the bars on screen are the
+            // same series, so the requested history is a superset (growing) or a suffix
+            // (shrinking) of what is already loaded. Re-entering the loader would hand the
+            // renderer a fresh short head — a shorter, LATER-starting array — which re-frames
+            // the viewport and strands every mounted model's anchor behind the new first bar.
+            if (depthOnly) {
+                this.extendDepth(gen, m.bars ?? 500);
+            } else {
+                // Reload through the shared pipeline. The race lets a superseded caller resolve
+                // promptly (e.g. a parked load on an unresolvable symbol) instead of hanging.
+                await Promise.race([
+                    this.loadMarket(gen, { firstLoad: false }),
+                    new Promise<void>((resolve) => this.supersedeWaiters.push(resolve)),
+                ]);
+            }
             if (this.generation !== gen) return; // superseded — the newer switch owns the chart
         } finally {
             // A superseding call set its own flag — only the owning generation clears it.
             if (this.generation === gen) this.switchingMarket = false;
         }
 
-        // Restart every consumer over the new market (records/panes/drawings survive).
-        this.restartNativeIndicators();
-        this.restartChartTypeEngine();
-        this.reexecuteIndicators();
-        this.startLive();
+        // Restart every consumer over the new market (records/panes/drawings survive). A
+        // depth-only change is NOT a new market: the bars kept their identity and their
+        // indices, so tearing the sessions down would recompute everything and flash a
+        // stale plot for the whole load. The backfill pokes them per prepend instead —
+        // the same path the initial progressive load already uses.
+        if (!depthOnly) {
+            this.restartNativeIndicators();
+            this.restartChartTypeEngine();
+            this.reexecuteIndicators();
+        }
+        this.startLive(); // stopped above on every path, depth-only included
         if (identityChanged) {
             this.events.emit('market:changed', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', prev });
         }
@@ -597,6 +623,34 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     }
 
     /**
+     * A depth-only reconfigure (`setMarket({ bars })` on the same market): move the array's
+     * OLDEST edge, never rebuild it. Growing re-enters the same backfill loop the initial load
+     * uses, so the extra history arrives as prepends with the viewport preserved; shrinking
+     * trims in place. Both keep the newest bars — the viewport is right-anchored, so what the
+     * user is looking at does not move, and mounted indicators keep their alignment (the
+     * renderer re-derives each model's anchor offset against the new indices, negative when
+     * the head moved forward).
+     *
+     * Sessions are NOT restarted here: the backfill pokes them per prepend (`'backfill'`), and
+     * a trim leaves every value they already computed valid.
+     */
+    private extendDepth(gen: number, requested: number): void {
+        if (this.rawBars.length > requested) {
+            this.setBarSeries(this.rawBars.slice(this.rawBars.length - requested), { preserveView: true });
+            this.completeHistory('depth');
+            return;
+        }
+        if (this.rawBars.length === requested) {
+            this.completeHistory('depth');
+            return;
+        }
+        // Detached, exactly like the initial load: `setMarket` resolves on what is already
+        // painted while the extra depth streams in behind it.
+        this.historyState = 'backfill';
+        void this.backfillHistory(gen, requested);
+    }
+
+    /**
      * The detached backward backfill: fetch chunks strictly older than the current oldest
      * bar until the requested depth (reason `'depth'`), the source's genesis (`'genesis'` —
      * a chunk added nothing older), or a fetch error (`'aborted'` — the chart keeps what
@@ -608,11 +662,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         try {
             while (this.generation === gen && this.rawBars.length < requested && this.rawBars.length > 0) {
                 const remaining = requested - this.rawBars.length;
-                // Each step matches what is already on the chart (≥ STEP_BARS, ≤ CHUNK_BARS),
-                // so the depth DOUBLES per request: small quick fills near the viewport, a
-                // logarithmic request count for the deep tail — high-latency venues pay per
-                // round-trip, not per bar.
-                const step = Math.min(Math.max(this.rawBars.length, STEP_BARS), CHUNK_BARS);
+                // A flat chunk per request: only depths past SINGLE_LOAD_BARS reach this loop,
+                // so there is no small near-window to fill quickly — every remaining round trip
+                // should carry as much as the source answers well.
+                const step = CHUNK_BARS;
                 const chunk = await this.feed.loadRange!(this.config.market, {
                     to: this.rawBars[0]!.time, // overlap-by-one: the boundary bar dedupes below
                     limit: Math.min(step, remaining) + 1,
@@ -1686,7 +1739,9 @@ function modelToValuePatch(model: IndicatorModel): ValuePatch {
         kind: 'value',
         indicatorId: model.id,
         dirty: { from: Number.isFinite(from) ? from : 0, to },
-        ...(model.anchorTime != null ? { anchorTime: model.anchorTime } : {}),
+        // ALWAYS stated, `null` included: an omitted key leaves the renderer on the previous
+        // run's offset, so a re-run that widened to the whole chart could not clear it.
+        anchorTime: model.anchorTime ?? null,
         series,
         lines: model.lines ?? [],
         boxes: model.boxes ?? [],

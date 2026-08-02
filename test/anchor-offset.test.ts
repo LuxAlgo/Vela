@@ -54,6 +54,31 @@ describe('SceneGraph anchor offsets', () => {
         scene.forgetAnchorOffset('b');
         expect(scene.offsetOf('b')).toBe(0);
     });
+
+    it('keeps NEGATIVE offsets — a model that starts before the chart head', () => {
+        // Dropping them (the old `if (offset > 0)`) pinned such a model at index 0, which is
+        // what drew a stale plot shifted hard to the left while a shorter series was on screen.
+        const scene = new SceneGraph();
+        scene.setAnchorOffset('a', -4);
+        expect(scene.offsetOf('a')).toBe(-4);
+        scene.setAnchorOffset('a', 0);
+        expect(scene.offsetOf('a')).toBe(0);
+        scene.setAnchorOffset('a', Number.NaN); // never storable
+        expect(scene.offsetOf('a')).toBe(0);
+    });
+});
+
+describe('autoscale with a model that starts BEFORE the chart head (negative offset)', () => {
+    it('reads the model values sitting under the visible bars, skipping its leading ones', () => {
+        // The chart holds the newest 4 bars of a series the model computed over 10: the model's
+        // first 6 values fall off the left edge, so offset = -6 and chart bar i reads value i+6.
+        const chart = bars(10).slice(6);
+        const m = lineModel('m', [1, 2, 3, 4, 5, 6, 1000, 1001, 1002, 1003]);
+        const scale = computePaneScale([m], chart, false, 0, 3, null, false, () => -6);
+        expect(scale.min).toBeLessThanOrEqual(1000);
+        expect(scale.max).toBeGreaterThanOrEqual(1003);
+        expect(scale.min).toBeGreaterThan(6); // the pre-head values (1..6) are NOT scanned
+    });
 });
 
 describe('autoscale with an anchored model', () => {

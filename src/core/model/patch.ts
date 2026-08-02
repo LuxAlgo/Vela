@@ -26,9 +26,11 @@ export interface ValuePatch {
     /**
      * The emitting run's anchor (see `IndicatorModel.anchorTime`): a re-run over a
      * DIFFERENT bar window arrives as a value patch, so the anchor must travel with
-     * it for index-aligned rendering to re-derive its offset. Absent ≡ whole-chart.
+     * it for index-aligned rendering to re-derive its offset. `null` states the run
+     * spanned the WHOLE chart and clears any previous anchor — an omitted key cannot,
+     * so a model that once had an anchor would otherwise keep that stale offset.
      */
-    anchorTime?: Millis;
+    anchorTime?: Millis | null;
     series: SeriesValueDelta[];
     /**
      * Full drawing snapshots for this tick. Pine drawing containers are emitted

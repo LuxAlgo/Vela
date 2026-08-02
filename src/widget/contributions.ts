@@ -8,7 +8,9 @@ import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 
 /** The runtime surface an action's `when`/`run` receives. */
 export interface WidgetContext {
-    /** The CURRENT inner chart (a new instance after each symbol/timeframe rebuild). */
+    /** The CURRENT inner chart. Read it through this getter rather than capturing it:
+     *  a shell may replace its chart instance, and a captured one would be destroyed.
+     *  (Symbol and timeframe switches are applied IN PLACE — the instance survives them.) */
     chart: Vela;
     symbol: string;
     timeframe: string;

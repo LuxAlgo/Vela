@@ -689,7 +689,7 @@ describe('load states — the cleared chart + the loading affordance', () => {
         await pending;
     });
 
-    it('a depth-only reload keeps the bars painted and never raises the affordance', async () => {
+    it('a depth-only change keeps the bars painted, never raises the affordance, and never re-pushes the series', async () => {
         const feed = new SwitchFeed();
         const renderer = new FakeRenderer();
         const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
@@ -697,7 +697,61 @@ describe('load states — the cleared chart + the loading affordance', () => {
         renderer.timeline = [];
 
         await chart.setMarket({ bars: 80 });
-        expect(renderer.timeline).toEqual(['bars:50']); // the feed has 50 — one silent reload
+        // Same market, deeper: the loaded bars ARE the requested series, so the depth change
+        // extends instead of reloading. The feed has nothing older than its 50, so there is
+        // nothing to prepend — and therefore no series push at all. A reload here used to hand
+        // the renderer the very same 50 bars as a "fresh series", which re-framed the viewport.
+        expect(renderer.timeline).toEqual([]);
+        expect(renderer.bars).toHaveLength(50); // still painted, never blanked
+        expect(renderer.loading).toBe(false);
+    });
+
+    it('growing the depth PREPENDS older bars and keeps the view (no fresh-series re-frame)', async () => {
+        const feed = new SwitchFeed();
+        feed.depth['AAA'] = 400; // deeper history than the first load asks for
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', bars: 50, volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        await chart.historyComplete();
+        await flush();
+        const firstHead = renderer.bars[0]!.time;
+        const newest = renderer.bars[renderer.bars.length - 1]!.time;
+        renderer.setBarsCalls = [];
+
+        await chart.setMarket({ bars: 200 });
+        await chart.historyComplete();
+        await flush();
+
+        expect(renderer.bars.length).toBeGreaterThan(50); // the extra depth arrived…
+        expect(renderer.bars[0]!.time).toBeLessThan(firstHead); // …as OLDER bars, prepended
+        expect(renderer.bars[renderer.bars.length - 1]!.time).toBe(newest); // newest end untouched
+        // EVERY push of the extension preserves the viewport — that is what stops a depth
+        // change from throwing the user's zoom away. A reload would have pushed at least one
+        // fresh (non-preserving) series first.
+        expect(renderer.setBarsCalls.length).toBeGreaterThan(0);
+        expect(renderer.setBarsCalls.every((c) => c.preserveView)).toBe(true);
+        expect(renderer.loading).toBe(false); // never re-raised: bars stayed on screen throughout
+    });
+
+    it('shrinking the depth trims in place, keeping the NEWEST bars and the view', async () => {
+        const feed = new SwitchFeed();
+        feed.depth['AAA'] = 400;
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', bars: 300, volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        await chart.historyComplete();
+        await flush();
+        const newest = renderer.bars[renderer.bars.length - 1]!.time;
+        expect(renderer.bars.length).toBeGreaterThan(100);
+        renderer.setBarsCalls = [];
+
+        await chart.setMarket({ bars: 100 });
+        await flush();
+
+        expect(renderer.bars).toHaveLength(100);
+        expect(renderer.bars[renderer.bars.length - 1]!.time).toBe(newest); // the newest end is kept
+        expect(renderer.setBarsCalls).toEqual([{ n: 100, close: renderer.bars[0]!.close, preserveView: true }]);
+        expect(renderer.loading).toBe(false);
     });
 
     it('a failed load still ends the affordance (empty chart, no eternal dots)', async () => {
