@@ -1,11 +1,12 @@
 // The workspace LAYOUT engine — pure data + pure functions (DOM-free, unit-testable).
 //
 // A layout is a registered descriptor (the same idiom as the chart-type registry): a
-// grid of weighted tracks plus the cell SLOTS it exposes. Cell ids are canonical
-// (`c1`…`cN`) and shared by every layout — they are identities of SLOTS, never of
-// content (a cell's symbol/timeframe/indicators are mutable state keyed by slot id, so
-// switching 4 → 2 → 4 restores `c3`/`c4` from the workspace pool). Asymmetric layouts
-// map slots onto named grid areas; the ids stay `cN` regardless.
+// grid of weighted tracks plus the SLOTS it exposes. Slot ids are canonical (`c1`…`cN`)
+// and shared by every layout, which is why two layouts need no id coordination — but a
+// slot id is pure geometry, NOT a cell identity: which cell lives in slot i is the
+// workspace's call (its `cells` declaration order), and a cell dropped by a smaller
+// layout parks its state in the pool under its own identity. Asymmetric layouts map
+// slots onto named grid areas; the slot ids stay `cN` regardless.
 //
 // `registerLayout` is the SDK seam: plugins/hosts add denser grids or bespoke
 // arrangements, and every workspace layout picker reads the registry live.

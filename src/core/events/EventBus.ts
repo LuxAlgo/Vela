@@ -21,6 +21,11 @@ export class TypedEventBus<Events extends Record<string, unknown>> {
         this.handlers.get(event)?.delete(handler as EventHandler<unknown>);
     }
 
+    /** Whether anyone is listening — lets an emitter skip building an expensive payload. */
+    hasListeners<K extends keyof Events>(event: K): boolean {
+        return (this.handlers.get(event)?.size ?? 0) > 0;
+    }
+
     emit<K extends keyof Events>(event: K, payload: Events[K]): void {
         const set = this.handlers.get(event);
         if (!set) return;

@@ -1,11 +1,11 @@
-// One workspace CELL — a stable SLOT identity (`c1`…`cN`) holding a full Vela chart
-// plus its per-cell overlays and per-cell state: statusline, watermark, context menu,
-// its own undo timeline, and its indicator ledger (shared manifest, per-cell
-// instances). The id never derives from content: symbol/timeframe/style are mutable
-// state, switched IN PLACE via `chart.setMarket` (the chart instance survives every
-// market change and only dies with the cell itself, on a layout change — its state
-// then round-trips through the workspace pool, so shrinking 4 → 2 → 4 restores
-// `c3`/`c4` exactly, indicators and drawings included).
+// One workspace CELL — a stable IDENTITY (its declared name, or `c<N>` for a slot no
+// entry declared) holding a full Vela chart plus its per-cell overlays and per-cell
+// state: statusline, watermark, context menu, its own undo timeline, and its indicator
+// ledger (shared manifest, per-cell instances). The identity never derives from content:
+// symbol/timeframe/style are mutable state, switched IN PLACE via `chart.setMarket` (the
+// chart instance survives every market change and only dies with the cell itself, on a
+// layout change — its state then round-trips through the workspace pool, so shrinking
+// 4 → 2 → 4 restores the third and fourth exactly, indicators and drawings included).
 import { Vela } from '../Vela';
 import type { VelaTheme, NativeBackend, VelaOptions } from '../core/options';
 import type { OHLCV } from '../core/model/ohlcv';
@@ -358,7 +358,7 @@ export class ChartCell {
     }
 
     /** The LIVE chart of this cell — never cache it across a layout change (the cell's
-     *  slot id is the durable identity; the chart dies with the cell). */
+     *  identity is what endures; the chart dies with the cell). */
     get chart(): Vela {
         if (!this.inner) throw new Error(`[vela] cell "${this.id}" is destroyed`);
         return this.inner;

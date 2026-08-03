@@ -3,6 +3,7 @@ import type { InputValue } from '../model/inputs';
 import type { PreparedScript, ScriptingEngine, ExecutionSession } from '../ports/ScriptingEngine';
 import type { IndicatorRenderHandle } from '../ports/IChartRenderer';
 import type { AddIndicatorOptions } from '../options';
+import type { ScriptRunCause } from '../script-run';
 import type { NativeIndicator, NativeIndicatorDescriptor } from '../native-indicators/NativeIndicator';
 
 /** Per-indicator instance state held by the orchestrator. */
@@ -28,6 +29,13 @@ export interface IndicatorRecord {
     inputValues: Record<string, InputValue>;
     /** The live execution session (static or streaming) — poked on input/viewport/bar changes. */
     session?: ExecutionSession;
+    /**
+     * What the NEXT emitted model should be attributed to on `script:run`. Set by whoever
+     * pokes the session (a bar change, an input edit, a viewport move, a market switch);
+     * a model that arrives with none was produced by the session's own first execution.
+     * Attribution is by last poke — the pokes are what make a model arrive at all.
+     */
+    pendingCause?: ScriptRunCause;
     /**
      * Set when the next emitted model should structurally remount (after an input
      * change) rather than value-patch (live tick / viewport re-run). Consumed by

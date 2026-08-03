@@ -31,6 +31,7 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 | `registerEngine(language, engine)` | Register a scripting engine under a language id so `addIndicator` can run that language. **Vela ships none** — install an addon or write one ([Scripting engines](./scripting-engines.md)). Re-registering a language replaces it (affects future indicators only). Returns the chart for chaining. |
 | `addIndicator(source, options?)` | Run an indicator script over the chart's market data and render it. Returns an **`IndicatorHandle` synchronously**; values fill in asynchronously. See [options.md](./options.md) for per-indicator options. |
 | `addNativeIndicator(type, options?)` | Add a core-computed (non-scripting) **native indicator** by registered `type`. Returns an `IndicatorHandle` (same lifecycle: legend row, eye/remove, events). **Single-instance per type** — a second call returns the existing handle. The built-in types are `'volume'` (auto-added) and `'vpvr'` (the visible-range volume profile); plugin chart types can register more. `options.inputs` seeds inputs. Native renderer only; an unregistered type returns a fail-soft handle that never mounts. |
+| `runScript(source, options?)` | Execute a script and resolve its **first computed run** — the data-out door for editors, consoles and dashboards. Resolves `{ ok: true, run }` with the [`ScriptRun`](#capturing-what-a-script-computes) itself, plus `onUpdate(cb)` to follow later runs and `remove()` to take it off the chart; `{ ok: false, error }` on a compile/runtime failure, which removes the script again (no dead legend row). Never rejects. Prefer it over `runIndicator` — same injection semantics, but it hands you the data instead of a handle to go fetch from. |
 | `runIndicator(source, options?)` | Execute a script and **inject it only if the run succeeds** — the seam for host editors/consoles. Resolves `{ ok: true, handle }` after the first successful evaluation, or `{ ok: false, error, context }` on a compile/runtime failure — `context` is the post-mortem execution-context snapshot when the engine had produced one, and the failed indicator is removed again (no dead legend row). Never rejects. |
 | `indicators()` | Live `IndicatorHandle[]` of everything on the chart (script + native), in insertion order — the seam for host panels (object trees, indicator lists) that need per-id visibility/removal. |
 | `availableNativeIndicators()` | Returns `Promise<NativeIndicatorInfo[]>` — the catalog of built-in native indicators with their live state on this chart, for building an "add indicator" picker UI (lets a host list them, gate unsupported ones, avoid duplicates). Async because support may need to probe the provider (a type may need data the symbol lacks). |
@@ -93,7 +94,7 @@ What `addIndicator` returns. Usable immediately.
 | `setInputs(values)` | Change several inputs at once, keyed by input key or title. |
 | `setVisible(visible)` | Hide or show the indicator. Hiding suspends it — its visuals are dropped and its computation stops; showing re-runs it over the current bars. |
 | `on(event, handler)` | Per-indicator events — `ready`, `error` (`{ error }`), `alert` (`{ id, message, title?, time }`). Returns an unsubscribe function. |
-| `context(select?)` | `Promise` of a **read-only, serializable snapshot** of the engine's execution context — see [below](#reading-a-scripts-execution-context). `null` when the engine lacks the capability or nothing ran yet. |
+| `context(select?)` | `Promise` of a **read-only, serializable snapshot** of the engine's execution context — see [below](#capturing-what-a-script-computes). `null` when the engine lacks the capability or nothing ran yet. |
 | `remove()` | Remove this indicator from the chart. |
 
 The handle is usable the moment `addIndicator` returns; drive the indicator's lifecycle through its events and mutators:
@@ -116,47 +117,106 @@ console.log(macd.visible); // false
 macd.remove(); // drop it from the chart
 ```
 
-### Reading a script's execution context
+### Capturing what a script computes
 
-`handle.context(select?)` resolves a **read-only snapshot** of the engine's execution
-context — the host-side window into a running script:
-
-| Field | What it is |
-|---|---|
-| `phase` | `'computing'` (static run in flight), `'streaming'` (live session), `'idle'`. |
-| `barIndex` | Index of the last computed bar. |
-| `meta` | `{ title, overlay, precision?, shorttitle? }`. |
-| `plots` | Named plot outputs — per key, index-aligned `{ time, value }` points. |
-| `variables` | The script's **serializable** variables, bucket-prefixed (`params.length`, `var.acc`, …). Functions, live series, and `_private` names are dropped. |
-| `result` | The script's **return value** — the designed data-out channel: a script that wants to hand structured data to host code simply returns it. |
-| `warnings` | The run's warnings. |
-
-Three guarantees: it is **read-only** (always a deep copy — mutating it never touches the
-engine), **async everywhere** (same API on the in-process and Web-Worker engines; the
-context itself never leaves the worker, only the snapshot crosses), and **selective** —
-pass `select` to extract only some keys and keep worker transfers small.
+Two doors, one vocabulary. `script:run` reports **every** script the chart runs; `runScript()`
+executes one and hands you its first run. Both deliver the same `ScriptRun` object, so host
+code reads a manifest indicator, a console `addIndicator`, and an editor's script identically.
 
 ```js
-const handle = chart.addIndicator(`//@version=5
-indicator("Levels")
-// ... compute ...
-return { support: 64200, resistance: 66800 }`);
+chart.on('script:run', (run) => {
+    run.title;          // 'SMA cross' — the title the script DECLARED
+    run.kind;           // 'indicator' | 'strategy'
+    run.cause;          // why it computed (see below)
+    run.bar;            // index of the last computed bar
+    run.plots.fast;     // that plot's value at that bar
+    run.vars.fastLen;   // the script's own variables, by their SOURCE names
 
-handle.on('ready', async () => {
-    const snap = await handle.context(['result', 'barIndex']);
-    console.log(snap.result); // { support: 64200, resistance: 66800 }
-});
-
-// Streaming: re-pull on the throttled notification (~1/s per indicator).
-chart.on('context:changed', async ({ id }) => {
-    if (id !== handle.id) return;
-    const { result } = await handle.context(['result']);
-    // feed dashboards, alerts, external tooling…
+    if (run.strategy) {
+        run.strategy.position; // signed contracts held
+        run.strategy.equity;
+        run.strategy.openPnl;
+        run.strategy.netPnl;
+    }
 });
 ```
 
-On a `runIndicator` failure the same snapshot is attached post-mortem
-(`{ ok: false, error, context }`) — the state at the moment of the crash.
+The handle is already resolved and the data already extracted — there is nothing to look up
+and nothing to await.
+
+#### Provisional vs final
+
+`cause` is the field that decides whether a value can be trusted:
+
+| `cause` | Fires when |
+|---|---|
+| `'history'` | The first computation over the loaded history. |
+| `'tick'` | The forming bar changed — **values can still move**. |
+| `'bar'` | A new bar opened, so the one before it is **final**. |
+| `'inputs'` | An input was edited. |
+| `'viewport'` | The visible range moved (viewport-aware scripts only). |
+| `'market'` | The chart's market changed and the script re-executed. |
+
+Anything that records, alerts, or exports should key off `'bar'`:
+
+```js
+chart.on('script:run', (run) => {
+    if (run.cause === 'bar') persist(run);  // a bar just closed — settled
+    else updateDashboard(run);              // provisional
+});
+```
+
+`'tick'` runs are **throttled to ~1/s** per indicator (a live stream re-executes the open
+candle several times a second, which no dashboard can use). Every other cause is emitted
+unconditionally — dropping a `'bar'` run would break exactly the case above.
+
+Two more flags round out the picture: `forming` is true while the run's last bar is still
+open (always so on a live chart, never on a static one), and `complete` is false only while
+an engine that computes progressively is still being fed a deep backfill.
+
+#### What rides the run, and what you ask for
+
+Flat and at the current bar → on the run. Historical and unbounded → an explicit call, so a
+per-tick listener never ships a ledger it will not read:
+
+```js
+const trades = await run.trades();      // the strategy's round trips, closed then open
+const history = await run.series('fast'); // one plot's full history
+```
+
+#### Executing a script and capturing its result
+
+```js
+const result = await chart.runScript(source);
+if (!result.ok) return console.error(result.error);
+
+result.run.strategy.netPnl;
+const off = result.onUpdate((run) => console.log(run.strategy.openPnl));
+result.remove();                        // take it off the chart
+```
+
+`runScript` resolves on the **first computed run**, injects the script only if it runs (a
+failure removes it again — no dead legend row), and never rejects.
+
+#### Across a grid
+
+`vela/workspace` relays the same event with the cell it came from, so one subscription covers
+every cell — including cells a later layout change creates:
+
+```js
+ws.on('script:run', (run) => console.log(run.cell, run.title, run.strategy?.equity));
+```
+
+#### The lower-level snapshot
+
+`handle.context(select?)` remains the pull counterpart — a **read-only** deep copy of the
+engine's execution context (`phase`, `barIndex`, `meta`, `plots`, `variables`, `strategy`,
+`trades`, `warnings`), async on both the in-process and Web-Worker engines (the context never
+leaves the worker; only the snapshot crosses), and selective via `select`. `script:run` is
+built on it and is what host code should normally use; reach for `context()` when you want a
+snapshot at a moment of *your* choosing rather than at a run. On a `runIndicator` failure the
+same snapshot is attached post-mortem (`{ ok: false, error, context }`) — the state at the
+moment of the crash.
 
 ---
 
@@ -175,7 +235,8 @@ Subscribe with `chart.on(event, handler)`; every subscription returns an unsubsc
 | `indicator:added` | `{ id }` | An indicator was added. |
 | `indicator:removed` | `{ id }` | An indicator was removed. |
 | `indicator:error` | `{ id, error }` | An indicator failed. |
-| `context:changed` | `{ id }` | An indicator's execution context advanced (run finished; throttled to ~1/s while streaming). Re-pull `handle.context()` if you consume it. Fires only for context-capable engines. |
+| `script:run` | the [`ScriptRun`](#capturing-what-a-script-computes) | A script computed — the first pass over the history, a live tick, a new bar, an input edit, a viewport move, a market switch. Carries the run itself (title, cause, the plots/variables/broker state at the computed bar), so a listener reads it instead of resolving a handle and pulling a snapshot. Forming-bar (`'tick'`) runs are throttled to ~1/s; every other cause fires unconditionally. Never fires for native indicators — they run no script. |
+| `context:changed` | `{ id }` | An indicator's execution context advanced (run finished; throttled to ~1/s while streaming). Re-pull `handle.context()` if you consume it. Fires only for context-capable engines. **Prefer `script:run`**, which delivers the data rather than a signal to go fetch it. |
 | `bar` | the bar (OHLCV) | A live tick — the forming bar updated or a new bar appended. |
 | `viewport:changed` | `{ from, to }` (epoch-ms) | The visible time range moved (pan/zoom/fit) — fires per applied change, not debounced. The seam viewport-sync links between charts build on. |
 | `alert` | engine alert | A script raised an alert. |

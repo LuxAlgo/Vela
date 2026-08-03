@@ -1,6 +1,7 @@
 import type { OHLCV } from '../model/ohlcv';
 import type { InputSchema, InputValue } from '../model/inputs';
 import type { IndicatorMeta, IndicatorModel } from '../model/indicator';
+import type { StrategyState, StrategyTrade } from '../model/strategy';
 import type { SymbolInfo, BarRange } from './MarketDataFeed';
 import type { PriceStyle } from '../options';
 
@@ -142,10 +143,22 @@ export interface EngineContextSnapshot {
     meta: { title: string; overlay: boolean; precision?: number; shorttitle?: string };
     /** Named plot outputs, per key: index-aligned `{time, value}` points. */
     plots: Record<string, ReadonlyArray<{ time: number; value: unknown }>>;
-    /** The script's variables — the engine's serializable subset (never live references). */
+    /**
+     * The script's variables at the last computed bar, keyed by the names WRITTEN in the
+     * source. An engine that mangles names internally un-mangles them here: a transpiler's
+     * scoping scheme is its own business and must not reach host code. Values are the
+     * serializable subset (never live references, never per-bar series buffers).
+     */
     variables: Record<string, unknown>;
-    /** The script's RETURN value — the designed data-out channel for host code. */
-    result: unknown;
+    /**
+     * A STRATEGY's broker state at the last computed bar — absent for a plain indicator,
+     * and for an engine whose language has no strategy concept. Neutral by contract: the
+     * engine translates its own vocabulary into these fields.
+     */
+    strategy?: StrategyState;
+    /** The strategy's round trips, closed then open. Absent when there are none. Select it
+     *  explicitly — a deep backtest's ledger is large. */
+    trades?: StrategyTrade[];
     warnings: EngineWarning[];
 }
 
