@@ -66,6 +66,9 @@ export type {
 } from './core/options';
 export type { IndicatorHandle, IndicatorEventMap } from './core/IndicatorHandle';
 export type { VelaEventMap } from './core/events/types';
+// The script-run surface: the `script:run` payload and what `chart.runScript()` resolves.
+export type { ScriptRun, ScriptRunCause, ScriptRunResult } from './core/script-run';
+export type { StrategyState, StrategyTrade, StrategyFill } from './core/model/strategy';
 export type {
     IChartRenderer,
     RendererCapabilities,

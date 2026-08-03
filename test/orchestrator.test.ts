@@ -19,6 +19,7 @@ import type {
     ExecutionSession,
     VisibleBarRange,
     EngineContextSnapshot,
+    ContextSelect,
 } from '../src/core/ports/ScriptingEngine';
 import type { MarketDataFeed, BarRange } from '../src/core/ports/MarketDataFeed';
 import { MultiProviderFeed } from '../src/data/MultiProviderFeed';
@@ -35,6 +36,7 @@ import type { ScenePatch } from '../src/core/model/patch';
 import type { InputValue } from '../src/core/model/inputs';
 import type { VelaTheme, PriceStyle } from '../src/core/options';
 import type { Unsubscribe } from '../src/core/util/types';
+import type { ScriptRun } from '../src/core/script-run';
 
 const flush = async (): Promise<void> => {
     for (let i = 0; i < 5; i += 1) await new Promise((r) => setTimeout(r, 0));
@@ -1466,6 +1468,22 @@ describe('Vela.runIndicator — execute-and-inject with structured failure', () 
     });
 });
 
+const STRATEGY_STATE = {
+    position: 2,
+    avgPrice: 100,
+    equity: 10_500,
+    openPnl: 250,
+    netPnl: 500,
+    grossProfit: 700,
+    grossLoss: 200,
+    wins: 3,
+    losses: 1,
+    even: 0,
+    maxDrawdown: 80,
+    maxRunup: 300,
+    initialCapital: 10_000,
+};
+
 describe('handle.context — positive proof the capability is wired end to end', () => {
     class ContextEngine extends MockEngine {
         override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
@@ -1480,7 +1498,7 @@ describe('handle.context — positive proof the capability is wired end to end',
                         meta: { title: 'Ctx', overlay: false },
                         plots: (select && !select.includes('plots') ? {} : { a: [{ time: 1, value: 2 }] }) as EngineContextSnapshot['plots'],
                         variables: {},
-                        result: { fromScript: true },
+                        strategy: STRATEGY_STATE,
                         warnings: [],
                     }),
             };
@@ -1497,9 +1515,9 @@ describe('handle.context — positive proof the capability is wired end to end',
         await flush();
         const snap = await handle.context();
         expect(snap).not.toBeNull(); // would FAIL if the session wiring silently vanished
-        expect(snap!.result).toEqual({ fromScript: true });
+        expect(snap!.strategy).toEqual(STRATEGY_STATE);
         expect(snap!.barIndex).toBe(9);
-        const filtered = await handle.context(['result']);
+        const filtered = await handle.context(['strategy']);
         expect(filtered!.plots).toEqual({}); // select honored
         expect(changed).toContain(handle.id); // the notification fired for a capable session
         chart.destroy();
@@ -1591,6 +1609,192 @@ describe('chart-type SDK settings — renderer edits reach the type engine', () 
         renderer.ctsCb?.('other-type', { x: 1 });
         expect(received).toHaveLength(1); // only the matching engine hears it
         unregisterChartType('settings-type');
+        chart.destroy();
+    });
+});
+
+// ── script:run — the run IS the payload ────────────────────────────────────────────
+/** A MockEngine that also answers `getContext`, so a run can carry vars/strategy/trades. */
+class RunEngine extends MockEngine {
+    contextCalls: ContextSelect[] = [];
+    strategy: typeof STRATEGY_STATE | undefined = STRATEGY_STATE;
+
+    override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        const base = super.execute(req, handlers);
+        return {
+            ...base,
+            getContext: (select): Promise<EngineContextSnapshot | null> => {
+                this.contextCalls.push(select ?? []);
+                return Promise.resolve({
+                    language: 'pine',
+                    phase: 'idle' as const,
+                    barIndex: 49,
+                    meta: { title: 'Ctx', overlay: false },
+                    plots: { Mock: [{ time: 1, value: 2 }] },
+                    variables: { posSize: 2, len: 14 },
+                    ...(this.strategy ? { strategy: this.strategy } : {}),
+                    trades: [{ id: 't1', side: 'long' as const, qty: 2, entry: { id: 'Long', time: 1, price: 100 }, open: true }],
+                    warnings: [],
+                });
+            },
+        };
+    }
+}
+
+describe('script:run — the run carries the data, not a signal to go fetch it', () => {
+    it('the first run reports the declared title, its plots, and cause "history"', async () => {
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: new FakeRenderer(), engines: [new RunEngine()], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const runs: ScriptRun[] = [];
+        chart.on('script:run', (run) => runs.push(run));
+        chart.addIndicator('plot(close)');
+        await flush();
+
+        expect(runs).toHaveLength(1);
+        const run = runs[0]!;
+        expect(run.title).toBe('Mock'); // the DECLARED title, not the 'Indicator' placeholder
+        expect(run.cause).toBe('history');
+        expect(run.first).toBe(true);
+        expect(run.kind).toBe('strategy'); // the engine reported broker state
+        expect(run.strategy).toEqual(STRATEGY_STATE);
+        expect(run.vars).toEqual({ posSize: 2, len: 14 }); // source names, at the current bar
+        expect(typeof run.plots.Mock).toBe('number'); // the plot's value at the last bar
+        expect(run.forming).toBe(false); // not a live chart
+        expect(run.complete).toBe(true);
+        chart.destroy();
+    });
+
+    it('costs nothing when nobody listens — no context pull without a subscriber', async () => {
+        const engine = new RunEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: new FakeRenderer(), engines: [engine], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        chart.addIndicator('plot(close)');
+        await flush();
+        expect(engine.contextCalls).toHaveLength(0); // would FAIL if the payload were built eagerly
+
+        chart.on('script:run', () => undefined);
+        chart.indicators()[0]!.setInput('Length', 21);
+        await flush();
+        expect(engine.contextCalls.length).toBeGreaterThan(0);
+        chart.destroy();
+    });
+
+    it('the unbounded parts stay off the event: trades() is a separate, explicit pull', async () => {
+        const engine = new RunEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: new FakeRenderer(), engines: [engine], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const runs: ScriptRun[] = [];
+        chart.on('script:run', (run) => runs.push(run));
+        chart.addIndicator('plot(close)');
+        await flush();
+
+        expect(engine.contextCalls.every((s) => !s.includes('trades'))).toBe(true); // never rides the run
+        const trades = await runs[0]!.trades();
+        expect(trades).toHaveLength(1);
+        expect(engine.contextCalls.some((s) => s.includes('trades'))).toBe(true); // pulled on demand
+        chart.destroy();
+    });
+
+    it('attributes an input edit to "inputs" and a market switch to "market"', async () => {
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: new FakeRenderer(), engines: [new RunEngine()], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const causes: string[] = [];
+        chart.on('script:run', (run) => causes.push(run.cause));
+        chart.addIndicator('plot(close)');
+        await flush();
+        causes.length = 0;
+
+        chart.indicators()[0]!.setInput('Length', 21);
+        await flush();
+        expect(causes).toContain('inputs');
+
+        causes.length = 0;
+        await chart.setMarket({ timeframe: '240' });
+        await flush();
+        expect(causes).toContain('market');
+        chart.destroy();
+    });
+
+    it('a new bar is "bar" and is never throttled away; forming-bar ticks collapse', async () => {
+        const feed = new GapFeed(50);
+        const engine = new RunEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: true, volume: false }, { renderer: new FakeRenderer(), engines: [engine], dataFeed: feed });
+        await chart.ready();
+        const runs: ScriptRun[] = [];
+        chart.on('script:run', (run) => runs.push(run));
+        const handle = chart.addIndicator('plot(close)');
+        await flush();
+        runs.length = 0;
+
+        const last = makeBars(50)[49]!;
+        // Three refinements of the SAME bar, back to back: the stream emits one model each.
+        for (let i = 1; i <= 3; i += 1) {
+            feed.push!({ ...last, close: last.close + i });
+            engine.emitStream(handle.id);
+            await flush();
+        }
+        expect(runs.filter((r) => r.cause === 'tick')).toHaveLength(1); // collapsed to ~1/s
+
+        // A NEW bar opens: the previous one is final, and this must never be dropped.
+        feed.push!({ ...last, time: last.time + 3_600_000 });
+        engine.emitStream(handle.id);
+        await flush();
+        const closed = runs.filter((r) => r.cause === 'bar');
+        expect(closed).toHaveLength(1); // would FAIL if the throttle treated it like a tick
+        expect(closed[0]!.forming).toBe(true); // the newly opened bar is itself provisional
+        chart.destroy();
+    });
+
+    it('never fires for a native indicator — there is no script to run', async () => {
+        registerNativeIndicator(testNativeDescriptor);
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: new FakeRenderer(), engines: [new RunEngine()], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const runs: ScriptRun[] = [];
+        chart.on('script:run', (run) => runs.push(run));
+        chart.addNativeIndicator('test-native');
+        await flush();
+        expect(runs).toHaveLength(0);
+        unregisterNativeIndicator('test-native');
+        chart.destroy();
+    });
+});
+
+describe('chart.runScript — execute and receive the run', () => {
+    it('resolves the FIRST run, then follows later ones through onUpdate', async () => {
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: new FakeRenderer(), engines: [new RunEngine()], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const result = await chart.runScript('plot(close)');
+
+        expect(result.ok).toBe(true);
+        expect(result.run).not.toBeNull(); // would FAIL if it resolved on `ready` instead of the run
+        expect(result.run!.title).toBe('Mock');
+        expect(result.run!.strategy).toEqual(STRATEGY_STATE);
+
+        const later: ScriptRun[] = [];
+        result.onUpdate((run) => later.push(run));
+        chart.indicators()[0]!.setInput('Length', 21);
+        await flush();
+        expect(later.map((r) => r.cause)).toContain('inputs');
+
+        result.remove();
+        await flush();
+        expect(chart.indicators()).toHaveLength(0);
+        chart.destroy();
+    });
+
+    it('a failing script resolves ok:false and leaves no dead legend row', async () => {
+        class FailingEngine extends RunEngine {
+            override prepare(): Promise<PreparedScript> {
+                return Promise.reject(new Error('compile blew up'));
+            }
+        }
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: new FakeRenderer(), engines: [new FailingEngine()], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const result = await chart.runScript('bad(');
+        expect(result.ok).toBe(false);
+        expect(result.run).toBeNull();
+        expect(result.error?.message).toBe('compile blew up');
+        expect(chart.indicators()).toHaveLength(0);
         chart.destroy();
     });
 });

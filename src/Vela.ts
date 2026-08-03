@@ -8,6 +8,7 @@ import type { IndicatorHandle } from './core/IndicatorHandle';
 import type { EngineContextSnapshot } from './core/ports/ScriptingEngine';
 import type { NativeIndicatorInfo } from './core/native-indicators';
 import type { VelaEventMap } from './core/events/types';
+import type { ScriptRun, ScriptRunResult } from './core/script-run';
 import { EngineOrchestrator, type ResolvedConfig } from './core/engine/EngineOrchestrator';
 import type { SceneInspection } from './core/engine/inspect';
 import { resolveTheme } from './core/theme';
@@ -188,6 +189,66 @@ export class Vela {
      * in which case the failed indicator is removed again (no dead legend row).
      * Never rejects.
      */
+    /**
+     * Execute a script and resolve its FIRST computed run — the data-out door for host
+     * editors, consoles and dashboards. The script is injected only if it runs (a failure
+     * removes it again, leaving no dead legend row), and the result carries the run itself
+     * plus the controls for what it put on the chart: `onUpdate` to follow later runs,
+     * `remove` to take it off. Never rejects.
+     *
+     * `runScript` is `runIndicator` with the run as its payload rather than a handle to go
+     * fetch from — the same relationship `script:run` has to `context:changed`.
+     */
+    runScript(source: string, options?: AddIndicatorOptions): Promise<ScriptRunResult> {
+        const handle = this.addIndicator(source, options);
+        const updates = new Set<(run: ScriptRun) => void>();
+        const drop = (): void => {
+            try {
+                handle.remove();
+            } catch {
+                /* already torn down */
+            }
+        };
+        return new Promise<ScriptRunResult>((resolve) => {
+            let settled = false;
+            // Resolving on the RUN, not on `ready`: the handle is announced while the model
+            // mounts, whereas the run is assembled a turn later (its execution-context pull
+            // may cross a worker). Waiting for the run is what makes `result.run` non-null.
+            // The subscription outlives the resolution — it feeds `onUpdate` too.
+            const offRun = this.on('script:run', (run) => {
+                if (run.id !== handle.id) return;
+                if (settled) {
+                    for (const handler of updates) handler(run);
+                    return;
+                }
+                settled = true;
+                offError();
+                resolve({
+                    ok: true,
+                    run,
+                    error: null,
+                    onUpdate: (handler) => {
+                        updates.add(handler);
+                        return () => updates.delete(handler);
+                    },
+                    remove: () => {
+                        offRun();
+                        updates.clear();
+                        drop();
+                    },
+                });
+            });
+            const offError = handle.on('error', ({ error }) => {
+                if (settled) return;
+                settled = true;
+                offRun();
+                offError();
+                drop(); // a failed script leaves no dead legend row
+                resolve({ ok: false, run: null, error, onUpdate: () => () => undefined, remove: () => undefined });
+            });
+        });
+    }
+
     runIndicator(source: string, options?: AddIndicatorOptions): Promise<RunIndicatorResult> {
         const handle = this.addIndicator(source, options);
         return new Promise((resolve) => {

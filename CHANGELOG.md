@@ -2,6 +2,60 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.5.0]
+
+### Added
+
+- **Capturing what a script computes, in one subscription: `script:run`.** Reading a running
+  script used to mean assembling it yourself — an event told you *that* something happened
+  and handed you an id, so you looked the indicator up, awaited a snapshot, and then decoded
+  it: variable names arrived scope-mangled by the transpiler, values arrived as per-bar
+  buffers you had to index, nothing said whether the script was a strategy, and the title on
+  the handle was a placeholder the declared name never replaced. The chart now reports the
+  run itself. One subscription gives the declared title, whether it is an indicator or a
+  strategy, each plot's value at the computed bar, the script's own variables under the names
+  written in the source, and — for a strategy — its broker state: position, average entry
+  price, equity, open and net P&L, win/loss counts, drawdown and run-up. Nothing to resolve,
+  nothing to await. `chart.runScript(source)` is the same thing for code you execute
+  yourself: it resolves the first run, follows later ones through `onUpdate`, and removes the
+  script with `remove()` — injecting it only if it ran, exactly like `runIndicator`. A
+  workspace relays every cell's runs as one event tagged with the cell, so a grid needs a
+  single listener even as layouts create and destroy cells.
+- **Runs say what caused them, so a recorder can tell provisional from final.** A live
+  script re-computes constantly, and until now every re-computation looked alike — which
+  made "write this to a database" or "raise this alert" quietly unsafe, because the value
+  could still move. Each run now carries its cause: the first pass over the history, a tick
+  refining the bar that is still open, a **new bar** (which makes the one before it final),
+  an input edit, a viewport move, or a market switch. Ticks are throttled to about one a
+  second, since a stream re-runs the open candle far faster than any dashboard can use;
+  every other cause is reported unconditionally, so the moment a bar closes is never
+  dropped. Two flags complete the picture: whether the run's last bar is still open, and
+  whether it saw the full history (false only while a progressive engine is still being fed
+  a deep backfill).
+- **The parts that can grow without bound stay off the event.** A strategy's trade ledger and
+  a plot's full history are a call away — `await run.trades()`, `await run.series('fast')` —
+  so a listener firing every second never carries thousands of rows it will not read. And a
+  chart with no listener does no work at all: the execution-context read that fills a run
+  happens only when someone is subscribed.
+
+### Changed
+
+- **Scripting engines report a strategy's state in neutral terms.** An engine that simulates
+  order execution now describes it with the same vocabulary whatever language it runs, so one
+  dashboard reads them all. Engines are also expected to report a script's variables under
+  the names written in the source: a transpiler's internal scoping scheme is its own business
+  and no longer reaches the page. _(Breaking for engine authors: the execution-context
+  snapshot gained `strategy` and `trades`, and its `variables` must no longer be
+  bucket-prefixed or mangled. Engines that report neither still work — a run then carries the
+  title, cause and plots the model already supplies.)_
+- **The script return value is gone from the execution-context snapshot.** It was documented
+  as the way a script hands structured data to host code, and it never worked: the bundled
+  Pine runtime rejects a `return` of an object or a tuple outright, and the field came back
+  as one null per bar. Anything a script wants to expose goes through its variables, its
+  plots, or — for a strategy — its broker state, all of which now arrive named and usable.
+  _(Breaking: `EngineContextSnapshot.result` and the `'result'` selector were removed. Nothing
+  could have been reading a meaningful value from them.)_
+
 ## [v0.4.6]
 
 ### Changed
@@ -46,6 +100,17 @@ All notable changes to Vela, newest first.
   stated when a run spanned the whole chart, and an omitted key cannot undo a previous
   anchor — the model kept the offset of an earlier, narrower run. Patches now always carry
   the anchor, `null` included.
+- **A workspace with named cells reported an empty grid.** `ws.cells()` came back empty
+  for any workspace that declared its cells (`cells: { btc: …, eth: … }`): it looked the
+  layout's positional slots up among the cells' own names, which only match when no name
+  was declared. Everything else already spoke names — `ws.cell('btc')`, the active cell,
+  the saved document — so the grid was consistent everywhere except this one list, and
+  what read it inherited the blank. A plugin asking its widget context which charts the
+  grid holds got nothing; a plugin registered *after* the workspace was built never got
+  its legend buttons onto the cells already on screen; and opening the symbol search left
+  the other cells' in-chart dialogs open. Cells are now listed the way the rest of the
+  workspace identifies them, in slot order, still leaving out the ones a smaller layout
+  has parked.
 - **Documentation that did not match the code.** The README advertised a screenshot
   shortcut that never existed (`alt+S`; the binding has always been `mod+alt+S`), left
   `vela/workspace` out of the entry-point list, described `persist` as restoring four

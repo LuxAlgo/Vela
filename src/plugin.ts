@@ -106,6 +106,10 @@ export type {
     ContextSelect,
 } from './core/ports/ScriptingEngine';
 export type { MarketDataFeed, SymbolInfo, BarRange } from './core/ports/MarketDataFeed';
+// What an engine fills so a host can read a running strategy (`EngineContextSnapshot.strategy`
+// / `.trades`) and what the core reshapes it into (`script:run`, `chart.runScript()`).
+export type { StrategyState, StrategyTrade, StrategyFill } from './core/model/strategy';
+export type { ScriptRun, ScriptRunCause, ScriptRunResult } from './core/script-run';
 // The full model vocabulary (`OHLCV`, `IndicatorModel`, series/scene/drawing specs) — what
 // engine `onModel` payloads and native-indicator outputs are made of.
 export type * from './core/model';

@@ -23,6 +23,7 @@ import { Topbar } from '../widget/topbar';
 import { Bottombar } from '../widget/bottombar';
 import { ObjectTree } from '../widget/object-tree';
 import { DataWindow } from '../widget/data-window';
+import type { ScriptRun } from '../core/script-run';
 import { PanelDock } from '../widget/panel-dock';
 import { SymbolPicker } from '../widget/symbol-picker';
 import { IndicatorPicker } from '../widget/indicator-picker';
@@ -90,9 +91,18 @@ export interface VelaWorkspaceOptions extends Omit<VelaOptions, 'height'>, VelaS
     maxWebglCells?: number;
 }
 
+/** A cell's {@link ScriptRun}, tagged with the cell it ran in. */
+export type WorkspaceScriptRun = ScriptRun & { cell: string };
+
 export interface WorkspaceEventMap extends Record<string, unknown> {
     /** The active cell changed (click/focus in a cell, or `setActiveCell`). */
     'cell:active': { id: string; prev: string | null };
+    /**
+     * A script computed in ANY cell — the per-chart `script:run` relayed up with its cell
+     * identity, so one subscription covers the whole grid, cells added by a later layout
+     * change included.
+     */
+    'script:run': WorkspaceScriptRun;
     /** The grid switched layouts (cells created/destroyed/restored around it). */
     'layout:changed': { layout: string };
     'cell:created': { id: string };
@@ -468,14 +478,18 @@ export class VelaWorkspace {
     }
 
     // ── access ──────────────────────────────────────────────────
-    /** The cell in slot `id`, or undefined when the current layout has no such slot. */
+    /** The cell with identity `id` (its declared name, or `c<N>` when undeclared), or
+     *  undefined when no live cell holds it. */
     cell(id: string): ChartCell | undefined {
         return this.cellsById.get(id);
     }
 
-    /** Every live cell, in layout slot order. */
+    /** Every live cell, in slot order. Enumerated over `order` — the IDENTITY space —
+     *  never the layout's positional slot ids, which only coincide with it for a
+     *  workspace whose cells are undeclared. Identities past the current layout size are
+     *  pooled, not live, so they drop out here. */
     cells(): ChartCell[] {
-        return this.def.cells.map((c) => this.cellsById.get(c.id)).filter((c): c is ChartCell => c != null);
+        return this.order.map((id) => this.cellsById.get(id)).filter((c): c is ChartCell => c != null);
     }
 
     /** The ACTIVE cell — the one the shared chrome reflects and acts on. */
@@ -890,6 +904,10 @@ export class VelaWorkspace {
     private wireCell(cell: ChartCell): void {
         const chart = cell.chart;
         chart.on('indicator:error', ({ error }) => this.toast.show(`[${cell.id}] ${error.message}`, 'error', 5000));
+        // Script runs relay up with the cell they came from, so ONE subscription on the
+        // workspace covers a grid whose cells come and go. Each cell runs its own engine
+        // session, so the `cell` field is what tells two identical scripts apart.
+        chart.on('script:run', (run) => this.events.emit('script:run', { ...run, cell: cell.id }));
         chart.on('alert', (alert) => {
             this.alerts.unshift({ cellId: cell.id, symbol: cell.symbol, title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
             if (this.alerts.length > ALERT_CAP) this.alerts.pop();

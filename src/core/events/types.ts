@@ -1,4 +1,5 @@
 import type { EngineAlert, EngineWarning } from '../ports/ScriptingEngine';
+import type { ScriptRun } from '../script-run';
 import type { OHLCV } from '../model/ohlcv';
 import type { DrawingTypeKey } from '../drawings/Drawing';
 import type { SnapMode } from '../drawings/geometry';
@@ -68,8 +69,18 @@ export interface VelaEventMap extends Record<string, unknown> {
     'drawing:removed': { id: string };
     /** The user requested a drawing's settings popup. */
     'drawing:settings': { id: string };
+    /**
+     * A SCRIPT computed — the first run over the history, a live tick, a new bar, an input
+     * edit, a viewport move, a market switch. The payload carries the run itself (title,
+     * cause, the plots/variables/broker state at the computed bar), so a listener reads it
+     * directly instead of resolving a handle and pulling a snapshot. Throttled to ~1/s per
+     * indicator while streaming, and only emitted for engines that expose an execution
+     * context. Native (core-computed) indicators never fire it — they run no script.
+     */
+    'script:run': ScriptRun;
     /** An indicator's execution context advanced (run finished, or throttled during
-     *  streaming) — re-pull `handle.context()` if you consume it. */
+     *  streaming) — re-pull `handle.context()` if you consume it. Prefer `script:run`,
+     *  which delivers the data rather than a signal to go fetch it. */
     'context:changed': { id: string };
     /** A live tick: the forming bar was updated or a new bar appended. */
     bar: OHLCV;
