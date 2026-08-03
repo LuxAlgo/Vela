@@ -12,6 +12,8 @@ import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
 import type { IndicatorHandle } from '../IndicatorHandle';
 import type { ContextSelect, EngineContextSnapshot } from '../ports/ScriptingEngine';
+import type { ScriptRun, ScriptRunCause } from '../script-run';
+import type { StrategyTrade } from '../model/strategy';
 import type { VelaEventMap } from '../events/types';
 import { TypedEventBus } from '../events/EventBus';
 import { IndicatorRegistry, type IndicatorRecord } from './IndicatorRegistry';
@@ -42,6 +44,10 @@ export interface ResolvedConfig {
 
 /** Coalesce rapid pan/zoom viewport events into one re-run (ms). */
 const VIEWPORT_DEBOUNCE_MS = 150;
+/** `script:run` collapse window for FORMING-bar runs only — a stream re-executes the open
+ *  candle several times a second, and a dashboard cannot use that rate. Every other cause
+ *  (a new bar above all) is emitted unconditionally. */
+const RUN_EMIT_THROTTLE_MS = 1_000;
 
 /** Bars in the quick recent-window preview a RANGELESS feed paints before the deep fetch. */
 const PREVIEW_BARS = 300;
@@ -127,6 +133,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     private lastHealAt = 0;
     /** The `visibilitychange` catch-up listener (removed on destroy). */
     private onVisible: (() => void) | null = null;
+    /** What the last applied bar did: refine the open candle, or open a new one (which
+     *  settles the previous). Read by the `script:run` cause attribution. */
+    private barCause: 'tick' | 'bar' = 'tick';
     // ── deep-history backfill (older chunks streaming in behind the interactive chart) ──
     /** Where the history load stands. Stamped into new sessions + every bar notification. */
     private historyState: 'backfill' | 'complete' = 'complete';
@@ -283,7 +292,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             for (const record of this.registry.all()) {
                 if (!record.renderHandle || record.hidden) continue;
                 // range-aware indicators re-run / refetch with the new window
-                if (record.session && record.prepared?.reactsToViewport) record.session.setVisibleRange(window);
+                if (record.session && record.prepared?.reactsToViewport) {
+                    record.pendingCause = 'viewport';
+                    record.session.setVisibleRange(window);
+                }
                 else if (record.native?.descriptor.reactsToViewport) record.native.instance.onViewport({ from: window.left, to: window.right });
             }
             // An active chart-type data engine streams in newly-visible data as the user scrolls.
@@ -834,6 +846,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             record.session.stop();
             record.session = undefined;
             record.pendingStructural = true; // every value changed → full remount, not a patch
+            record.pendingCause = 'market';
             this.setLoading(record, true);
             const handle = this.handles.get(record.id);
             if (handle) this.executeIndicator(record.id, handle);
@@ -895,6 +908,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         let viewBar = bar;
         if (last && bar.time === last.time) {
             this.rawBars[this.rawBars.length - 1] = bar;
+            // The forming candle refined — its values are still provisional.
+            this.barCause = 'tick';
             if (this.barTransform) {
                 // Replacing the FORMING bar: the previous view bar is the one BEFORE it.
                 viewBar = this.barTransform.next(bar, this.bars[this.bars.length - 2]);
@@ -902,6 +917,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             }
         } else if (!last || bar.time > last.time) {
             this.rawBars.push(bar);
+            // A new bar opened, so the one before it is now FINAL — the distinction
+            // `script:run` carries as `cause: 'bar'`.
+            this.barCause = 'bar';
             if (this.barTransform) {
                 viewBar = this.barTransform.next(bar, this.bars[this.bars.length - 1]);
                 this.bars.push(viewBar);
@@ -923,10 +941,15 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      */
     private notifySessionsBars(reason?: BarsChangeReason): void {
         if (this.switchingMarket) return; // old sessions must not run over the incoming market's bars
+        // A backfill chunk (or the run released by its completion) is still the script's
+        // FIRST look at the history, whichever bar arrived last.
+        const cause: ScriptRunCause = reason ? 'history' : this.barCause;
         for (const record of this.registry.all()) {
             if (!record.renderHandle || record.hidden) continue;
-            if (record.session) record.session.notifyBars(reason);
-            else if (record.native) record.native.instance.onBars();
+            if (record.session) {
+                record.pendingCause = cause;
+                record.session.notifyBars(reason);
+            } else if (record.native) record.native.instance.onBars();
         }
     }
 
@@ -1077,6 +1100,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         record.pendingStructural = true;
         // Spinner during the re-compute (Pine only — native indicators drive their own status).
         if (!record.hidden && !record.native) this.setLoading(record, true);
+        record.pendingCause = 'inputs';
         if (record.session) record.session.update(record.inputValues);
         else if (record.native && !record.hidden) record.native.instance.setInputs(record.inputValues);
     }
@@ -1284,8 +1308,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             },
             {
                 onModel: (model) => {
+                    // Read BEFORE applyModel: it is what announces the indicator, and the
+                    // consumed cause must not leak into the next model.
+                    const first = !record.announced;
+                    const cause = record.pendingCause ?? 'history';
+                    record.pendingCause = undefined;
                     this.applyModel(id, model);
                     this.emitContextChanged(id); // throttled — streamed ticks collapse to ~1/s
+                    this.emitScriptRun(id, cause, first);
                 },
                 onAlert: (a) => {
                     this.events.emit('alert', a);
@@ -1666,6 +1696,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         return overlay ? 'price' : `pane-${id}`;
     }
 
+    /** Each named value series' last plotted value — the model is the one source every
+     *  engine fills, so this works without an execution context. */
+    private static plotsAtLastBar(model: IndicatorModel): Record<string, number | null> {
+        const out: Record<string, number | null> = {};
+        for (const spec of model.series) {
+            if (!isLineLikeSeries(spec)) continue;
+            out[spec.title] = spec.points[spec.points.length - 1]?.value ?? null;
+        }
+        return out;
+    }
+
     private placeModel(model: IndicatorModel, id: string, paneId: string): void {
         model.id = id;
         model.paneId = paneId;
@@ -1690,6 +1731,75 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (now - (this.contextEmitAt.get(id) ?? 0) < 1000) return;
         this.contextEmitAt.set(id, now);
         this.events.emit('context:changed', { id });
+    }
+
+    /**
+     * Build and emit `script:run`. Costs NOTHING when nobody listens — the engine-context
+     * pull that fills `vars`/`strategy` only happens for an actual subscriber.
+     *
+     * Throttling is deliberately asymmetric: a stream re-executes the forming bar several
+     * times a second and those `'tick'` runs collapse to ~1/s, but every other cause fires
+     * unconditionally. Dropping a `'bar'` run would silently break the one thing a
+     * recorder keys off — the moment a bar became final.
+     */
+    private readonly runEmitAt = new Map<string, number>();
+    private emitScriptRun(id: string, cause: ScriptRunCause, first: boolean): void {
+        const record = this.registry.get(id);
+        if (!record || record.native || !this.events.hasListeners('script:run')) return;
+        const now = Date.now();
+        if (cause === 'tick' && now - (this.runEmitAt.get(id) ?? 0) < RUN_EMIT_THROTTLE_MS) return;
+        this.runEmitAt.set(id, now);
+        // Deferred one microtask on purpose: a SYNCHRONOUS engine emits its first model
+        // during `execute()`, before `record.session` has been assigned — pulling the
+        // execution context right now would find no session and silently drop `vars` and
+        // `strategy` from the first run.
+        void Promise.resolve()
+            .then(() => this.buildScriptRun(record, cause, first))
+            .then((run) => {
+                // The indicator may have been removed while the snapshot crossed the worker.
+                if (run && this.registry.get(id)) this.events.emit('script:run', run);
+            });
+    }
+
+    /** The neutral run payload: the model supplies what every engine has, the execution
+     *  context the rest (absent for an engine that exposes none). */
+    private async buildScriptRun(record: IndicatorRecord, cause: ScriptRunCause, first: boolean): Promise<ScriptRun | null> {
+        const model = record.model;
+        if (!model) return null;
+        const snapshot = await this.pullContext(record, ['variables', 'strategy', 'warnings']);
+        const lastBar = this.bars[this.bars.length - 1];
+        return {
+            id: record.id,
+            title: model.title,
+            kind: snapshot?.strategy || (model.trades?.length ?? 0) > 0 ? 'strategy' : 'indicator',
+            cause,
+            first,
+            // The CHART's frame of reference, the only one an engine and a host share.
+            bar: Math.max(0, this.bars.length - 1),
+            time: lastBar?.time ?? 0,
+            // A live chart's last bar is the open one, so its values are provisional
+            // whatever produced this run.
+            forming: this.config.live && this.bars.length > 0,
+            complete: this.historyState !== 'backfill',
+            plots: EngineOrchestrator.plotsAtLastBar(model),
+            vars: snapshot?.variables ?? {},
+            ...(snapshot?.strategy ? { strategy: snapshot.strategy } : {}),
+            warnings: snapshot?.warnings ?? [],
+            trades: async (): Promise<readonly StrategyTrade[]> => (await this.pullContext(record, ['trades']))?.trades ?? [],
+            series: async (key: string) => {
+                const points = (await this.pullContext(record, ['plots']))?.plots?.[key] ?? [];
+                return points.map((p) => ({ time: p.time, value: typeof p.value === 'number' ? p.value : null }));
+            },
+        };
+    }
+
+    /** One guarded execution-context pull; null for an engine without the capability. */
+    private async pullContext(record: IndicatorRecord, select: ContextSelect): Promise<EngineContextSnapshot | null> {
+        try {
+            return (await record.session?.getContext?.(select)) ?? null;
+        } catch {
+            return null; // a torn-down session mid-pull is not an error worth surfacing
+        }
     }
 
     private fail(id: string, handle: IndicatorHandleImpl | undefined, err: unknown): void {

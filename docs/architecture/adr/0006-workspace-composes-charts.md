@@ -32,12 +32,16 @@ chrome tier, and the drawing tool/modes gained port seams and events.
 
 The load-bearing rules:
 
-- **Cells are SLOT identities.** Ids `c1…cN` never derive from content — symbols
-  change, duplicates are legal. Every layout maps the same ids onto its grid; a
-  removed slot's full state (market, renderer config, drawings document, indicator
-  ledger) parks in a **pool** keyed by id, so `4 → 2 → 4` restores `c3`/`c4` exactly.
-  `cell.chart` is a live getter: the instance survives every market change and dies
-  only with its slot.
+- **Cells have identities, never content.** A cell's identity is its declared name
+  (the keys of `cells`), or `c<N>` for a slot no entry declared; it never derives from
+  what the cell shows — symbols change, duplicates are legal. Declaration order maps
+  identities onto the layout's positional slots, so every layout arranges the same
+  identities; a cell dropped by a smaller layout parks its full state (market, renderer
+  config, drawings document, indicator ledger) in a **pool** keyed by identity, and
+  `4 → 2 → 4` restores the third and fourth exactly. `cell.chart` is a live getter: the
+  instance survives every market change and dies only when its cell leaves the layout.
+  *(Identities were the positional ids `c1…cN` when this decision was taken; naming them
+  came later and changed only what an identity is spelled with, not the rule.)*
 - **Chrome is a stateless projection of the active cell**, re-projected on exactly
   two triggers: ① `cell:active` (full rebind — the pattern the widget's rebuild
   already proved) and ② the active cell's own events (filtered by `cellId ===
@@ -79,7 +83,7 @@ The load-bearing rules:
 
 ## Invariant
 
-The workspace composes **ordinary charts** behind **stable slot ids**; all shared
+The workspace composes **ordinary charts** behind **stable cell identities**; all shared
 chrome is a **stateless projection of the active cell**, rebound on `cell:active` and
 refreshed only by the active cell's own events. Cell content — symbol, timeframe,
 style, indicators, drawings — is mutable state, never identity. Both shells expose

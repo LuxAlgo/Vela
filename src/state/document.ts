@@ -67,9 +67,10 @@ export interface CellState {
     indicators?: { manifest: string[]; natives: string[] };
 }
 
-/** One entry of the document's `charts` array: a chart's state plus its SLOT id. */
+/** One entry of the document's `charts` array: a chart's state plus its cell IDENTITY. */
 export interface ChartState extends CellState {
-    /** The stable slot id (`c1`…`cN`) — unique within the document. */
+    /** The cell's durable identity — its declared name (`btc`), or `c<N>` for a slot no
+     *  entry declared. Unique within the document; array position restores slot order. */
     id: string;
 }
 

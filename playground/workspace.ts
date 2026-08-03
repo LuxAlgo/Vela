@@ -96,14 +96,14 @@ const ws = new VelaWorkspace('#workspace', {
 //     console.log('[state] changed → active cell:', ws.getState().activeCellId);
 // });
 //
-// // WRITE — the whole grid rebuilds from the document (cells diff by slot id; a
-// // layout id must be registered — registerLayout — before applying). Untrusted-
-// // safe: malformed fields are dropped by the shared codec.
+// // WRITE — the whole grid rebuilds from the document (cells diff by IDENTITY — the
+// // names declared above; a layout id must be registered — registerLayout — before
+// // applying). Untrusted-safe: malformed fields are dropped by the shared codec.
 // setTimeout(() => {
 //     const doc = ws.getState();
 //     doc.layout = '2h'; // switch the grid…
-//     const c1 = doc.charts.find((c) => c.id === 'c1');
-//     if (c1) c1.symbol = 'DOGEUSDT'; // …retarget slot c1…
+//     const btc = doc.charts.find((c) => c.id === 'btc');
+//     if (btc) btc.symbol = 'DOGEUSDT'; // …retarget the btc cell…
 //     doc.sync = { viewport: true }; // …and link every cell's viewport
 //     ws.applyState(doc);
 //     offState();

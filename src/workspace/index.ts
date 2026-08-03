@@ -1,8 +1,8 @@
-// vela/workspace — the multi-chart shell: a grid of ChartCells with stable slot ids,
+// vela/workspace — the multi-chart shell: a grid of ChartCells with stable identities,
 // one shared data feed, an active cell, resizable splitters, and a layout registry
 // (`registerLayout`) plugins extend like every other Vela registry.
 export { VelaWorkspace } from './VelaWorkspace';
-export type { VelaWorkspaceOptions, WorkspaceEventMap } from './VelaWorkspace';
+export type { VelaWorkspaceOptions, WorkspaceEventMap, WorkspaceScriptRun } from './VelaWorkspace';
 export { ChartCell } from './ChartCell';
 export type { CellSeed, CellBoot, CellChartDefaults, PooledCellState, CellNativeInfo } from './ChartCell';
 export type { WorkspaceWidgetContext } from './context';

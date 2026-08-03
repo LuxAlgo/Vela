@@ -45,24 +45,29 @@ budget policy.
 
 ## Cells and the active cell
 
-A cell id (`c1`…`cN`) is a **slot identity**, never content: the symbol, timeframe,
-style, indicators and drawings are mutable state of the slot. Slot ids are shared by
-every layout, so switching `4 → 2h → 4` restores `c3`/`c4` exactly (market, renderer
-config, drawings, indicators) from the workspace pool.
+A cell's **identity** is its declared name (`btc`, `eth`, … — the keys of `cells`), or
+`c<N>` for a slot no entry declared. It is durable and never content: the symbol,
+timeframe, style, indicators and drawings are mutable state *of that identity*. The
+layout's own `c1`…`cN` are slot POSITIONS, and declaration order is what maps an identity
+onto one. Identity is also what survives a layout change, so `4 → 2h → 4` restores the
+third and fourth cells exactly (market, renderer config, drawings, indicators) from the
+workspace pool.
 
 ```ts
 ws.active;               // the ChartCell the shared chrome reflects/acts on
 ws.chart;                // shortcut ≡ ws.active.chart (the widget.chart habit)
-ws.cell('c2');           // a specific cell — the DURABLE identity to hold
-ws.cells();              // every live cell, in layout order
-ws.setActiveCell('c3');
-ws.setLayout('8');       // cells diff BY SLOT ID; removed slots pool their state
+ws.cell('eth');          // a specific cell BY IDENTITY — the durable handle to hold
+ws.cells();              // every live cell, in slot order
+ws.setActiveCell('sol');
+ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size pool their state
 ws.on('cell:active' | 'layout:changed' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
 ```
 
-**Rule of thumb:** hold the cell (or its id), read `cell.chart` at the point of use.
-The chart instance survives market changes and only dies when its slot leaves the
-layout (`cell:destroyed`).
+**Rule of thumb:** hold the cell (or its identity), read `cell.chart` at the point of
+use. The chart instance survives market changes and only dies when its cell leaves the
+layout (`cell:destroyed`). Host code that tracks cells should **follow
+`cell:created`/`cell:destroyed`** rather than snapshot `ws.cells()` once: a later
+`setLayout` (or a restored document) mints cells that a one-time snapshot never sees.
 
 Layouts live in a registry (`registerLayout` from `vela/workspace`) — a plugin-added
 grid appears in the topbar's layout dropdown automatically. Splitters between cells
@@ -70,10 +75,10 @@ resize the grid tracks (double-click a divider for an even split).
 
 ## Sync links
 
-Per kind — `viewport`, `symbol`, `timeframe`, `crosshair` — link every cell (`true`)
-or named groups (`{ c1: 'a', c2: 'a', c3: 'b' }`: only same-group cells follow each
-other). Cross-timeframe viewport groups align on the **right edge** (a finer-timeframe
-cell clamps the window to its own minimum zoom).
+Per kind — `viewport`, `symbol`, `timeframe`, `crosshair` — link every cell (`true`) or
+named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a', sol: 'b' }`: only same-group
+cells follow each other). Cross-timeframe viewport groups align on the **right edge** (a
+finer-timeframe cell clamps the window to its own minimum zoom).
 
 `crosshair` mirrors the pointer's TIME onto same-group cells as a **ghost crosshair**
 (a dimmed vertical line snapped to each follower's own bar, with its time chip);
@@ -84,11 +89,29 @@ simply never shows one (enabling warns only when NO cell could).
 
 ```ts
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
-ws.sync.set('symbol', { c1: 'watch', c2: 'watch' });
-ws.sync.set('crosshair', true); // hover c1 → ghost time-line on c2/c3/c4
+ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
+ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
 ws.sync.get('viewport'); // true
 ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true }
 ```
+
+## Watching what the cells compute
+
+Every cell runs its own engine session, so a script's runs are per-cell. The workspace
+relays them as one event, tagged with the cell identity — **one subscription covers the
+whole grid**, cells created by a later layout change included:
+
+```ts
+ws.on('script:run', (run) => {
+    run.cell;              // 'btc' — which cell computed
+    run.title;             // the script's declared title
+    if (run.cause === 'bar') persist(run.cell, run.strategy);
+});
+```
+
+The payload is the chart-level [`ScriptRun`](./api-reference.md#capturing-what-a-script-computes)
+plus `cell`; everything there — `cause`, `forming`, `plots`, `vars`, `strategy`, `trades()` —
+applies unchanged.
 
 ## State & persistence
 
