@@ -40,7 +40,7 @@ export {
     type SidePanelButton,
 } from './contributions';
 export { parseTimeframe, timeframeMs, timeframeLabel, type ParsedTimeframe } from './timeframe';
-export { TIMEZONES, tzOffset, tzMenuLabel, tzButtonLabel, type TimezoneEntry } from './timezones';
+export { TIMEZONES, normalizeTimezone, tzOffset, tzMenuLabel, tzButtonLabel, type TimezoneEntry } from './timezones';
 export { decimalsFor, fmtPrice, fmtChange } from './format';
 export {
     resolveIndicators,

@@ -168,6 +168,12 @@ export class InputsUI {
 
     setTheme(theme: VelaTheme): void {
         this.theme = theme;
+        // Rows carry the chart background as an INLINE fill (set at creation) — repaint
+        // them, or a `layout.background` edit leaves stale chips floating over the plot.
+        for (const row of this.rows.values()) {
+            row.el.style.background = theme.background;
+            row.el.style.color = theme.textColor;
+        }
     }
 
     /** Provide (or clear) the host symbol picker that `input.symbol` opens on activation. */

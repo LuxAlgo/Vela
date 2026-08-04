@@ -89,7 +89,6 @@ const SCROLL_BTN_BOTTOM = TIME_AXIS_H + 30; // px from the plot's bottom edge �
 const SCROLL_BTN_PROXIMITY_PX = 120; // the button reveals only while the cursor is within this radius of its center
 const MIN_VISIBLE_BARS = 2; // never zoom/pan so far that fewer than this many candles stay on screen (the only pan limit)
 const ZOOM_OUT_MARGIN_BARS = 6; // breathing room at max zoom-out: all bars + this margin fill the width (no thin strip)
-const LEFT_GUTTER_W = 44; // px reserved on the left for the docked drawings toolbar (only while it is visible)
 // Animation time constants (exponential-approach time-constants, ms).
 const ZOOM_TAU_MS = 70; // wheel-zoom glide
 const SCALE_TAU_MS = 80; // autoscale glide during zoom/fling
@@ -171,6 +170,8 @@ export class NativeRenderer implements IChartRenderer {
     // ── keyboard navigation / accessibility (item 11) ──
     private keyboard: KeyboardController | null = null;
     private keyboardEnabled = true;
+    /** Drawings layer self-serves Ctrl+Z/Y (see the `historyChords` feature). */
+    private historyChordsEnabled = true;
     private liveRegion: HTMLDivElement | null = null;
 
     // ── animation state (eased zoom + inertial pan) ──
@@ -261,6 +262,7 @@ export class NativeRenderer implements IChartRenderer {
     private readonly viewportCbs = new Set<(r: VisibleRange) => void>();
     private readonly crosshairCbs = new Set<(e: CrosshairEvent) => void>();
     private readonly chartTypeSettingsCbs = new Set<(typeId: string, values: Record<string, unknown>) => void>();
+    private readonly configChangedCbs = new Set<() => void>();
     /** First-run config snapshot — what "Reset defaults" restores. */
     private factoryConfig: ChartConfig | null = null;
     private hostSettingsSections: HostSettingsSection[] = [];
@@ -291,7 +293,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost', 'tradeMarkers'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost', 'tradeMarkers'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -411,6 +413,12 @@ export class NativeRenderer implements IChartRenderer {
             case 'keyboard':
                 this.setKeyboardEnabled(Boolean(value));
                 return; // owns its own DOM (focus/listeners/live region)
+            case 'historyChords':
+                // Off = the host keymap owns Ctrl+Z/Y (a unified app+drawings history);
+                // the drawings layer stops consuming the chords so they bubble up.
+                this.historyChordsEnabled = Boolean(value);
+                if (this.userDrawings) this.userDrawings.historyChords = this.historyChordsEnabled;
+                return; // keyboard-path only — nothing to repaint
             case 'settings':
                 this.setSettingsEnabled(Boolean(value));
                 return; // owns its own DOM (gear button + dialog)
@@ -471,6 +479,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'priceBaseline': return this.scene.baselineValue;
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'keyboard': return this.keyboardEnabled;
+            case 'historyChords': return this.historyChordsEnabled;
             case 'settings': return this.settingsEnabled;
             case 'attribution': return this.attributionHtml ?? this.attributionEnabled;
             case 'dialogHost': return this.dialogHost ?? undefined;
@@ -771,6 +780,9 @@ export class NativeRenderer implements IChartRenderer {
         this.refreshScrollButtonTheme();
         this.refreshAttributionColor();
         this.scheduler?.invalidate(InvalidateLevel.Full);
+        // The settings dialog commits through applyConfig — this is how host chrome
+        // that mirrors a config value (bottom-bar timezone) learns about in-chart edits.
+        for (const cb of this.configChangedCbs) cb();
     }
 
     /**
@@ -1234,8 +1246,9 @@ export class NativeRenderer implements IChartRenderer {
             requestDataPaint: () => this.scheduler.invalidate(InvalidateLevel.Light),
             snap: (pt, paneId, mode, cursorPx) => this.snapToCandle(pt, paneId, mode, cursorPx),
             setSnapMode: (mode) => this.setSnapMode(mode),
-            setToolbarGutter: (visible) => this.setToolbarGutter(visible),
+            setToolbarGutter: (px) => this.setToolbarGutter(px),
         });
+        this.userDrawings.historyChords = this.historyChordsEnabled; // may be set before init()
 
         this.keyboard = new KeyboardController({
             panByBars: (bars) => this.panByBars(bars),
@@ -1857,6 +1870,11 @@ export class NativeRenderer implements IChartRenderer {
     onChartTypeSettingsChange(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe {
         this.chartTypeSettingsCbs.add(cb);
         return () => this.chartTypeSettingsCbs.delete(cb);
+    }
+
+    onConfigChanged(cb: () => void): Unsubscribe {
+        this.configChangedCbs.add(cb);
+        return () => this.configChangedCbs.delete(cb);
     }
 
     onCrosshairMove(cb: (e: CrosshairEvent) => void): Unsubscribe {
@@ -3113,9 +3131,8 @@ export class NativeRenderer implements IChartRenderer {
         return map;
     }
 
-    /** Reserve (or release) the left gutter for the docked drawings toolbar + re-lay-out the plot. */
-    private setToolbarGutter(visible: boolean): void {
-        const px = visible ? LEFT_GUTTER_W : 0;
+    /** Reserve `px` of left gutter for the docked drawings toolbar (0 releases it) + re-lay-out the plot. */
+    private setToolbarGutter(px: number): void {
         if (px === this.toolbarGutter) return;
         this.toolbarGutter = px;
         this.positionAttribution();

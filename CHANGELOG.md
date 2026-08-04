@@ -37,6 +37,19 @@ All notable changes to Vela, newest first.
   so a listener firing every second never carries thousands of rows it will not read. And a
   chart with no listener does no work at all: the execution-context read that fills a run
   happens only when someone is subscribed.
+- **The drawing toolbar collapses out of the way.** A chevron at the bottom of the docked
+  toolbar folds it into a slim strip, giving the chart the full width; the strip keeps just
+  that chevron, and one click brings the whole toolbar back. The plot re-flows to the new
+  width in both directions.
+- **The bottom-bar clock opens the time-zone menu.** The time and the zone label are now one
+  button: clicking the clock itself brings up the same zone picker as clicking the zone name
+  next to it.
+- **Hosts can follow in-chart settings edits.** `chart.renderer.onConfigChanged(cb)` fires
+  whenever the cosmetic config changes — the settings dialog commits through it — so host
+  chrome that mirrors a config value (a time-zone display, a saved template) can re-read it
+  instead of drifting. And a host that owns its own undo shortcuts can turn off the new
+  `historyChords` render feature, so the drawings layer lets Ctrl+Z/Y bubble up instead of
+  consuming them itself.
 
 ### Changed
 
@@ -55,6 +68,30 @@ All notable changes to Vela, newest first.
   plots, or — for a strategy — its broker state, all of which now arrive named and usable.
   _(Breaking: `EngineContextSnapshot.result` and the `'result'` selector were removed. Nothing
   could have been reading a meaningful value from them.)_
+- **One time-zone catalog, everywhere.** The bottom bar and the chart-settings dialog now
+  offer the same list of zones — every UTC offset from UTC-12 to UTC+14, half- and
+  quarter-hour offsets included, each shown with its live (DST-aware) offset and a city
+  label. Picking a zone in the settings dialog updates the bottom bar and vice versa — in a
+  workspace it updates every cell, since the display zone is workspace-global; the dialog
+  used to carry its own short list of raw zone identifiers, and a choice made there never
+  reached the rest of the interface.
+
+### Fixed
+
+- **Undo steps back exactly one action when drawings and indicators mix.** With a drawing
+  and an indicator change both in the history, one Ctrl+Z over the chart used to revert
+  both at once — the drawing layer and the app history each answered the shortcut. A single
+  press now undoes a single action, whatever its kind. The same holds in a workspace, where
+  a cell's drawing edits now enter that cell's own undo timeline alongside its indicator
+  changes instead of living in a parallel history.
+- **Removing an indicator from the legend can be undone.** Removals made outside the
+  indicator picker — the legend ✕, the object tree, `handle.remove()` — never entered the
+  undo history, so Ctrl+Z skipped straight past them. They now land in the same timeline as
+  every other edit, and undo brings the indicator back — in the widget and in every
+  workspace cell alike.
+- **The indicator legend follows the chart background.** Changing the background color in
+  chart settings repaints the legend rows with it; they used to keep the color they were
+  created with and float as stale chips over the new background.
 
 ## [v0.4.6]
 

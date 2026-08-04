@@ -59,6 +59,7 @@ Available on every renderer:
 | `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; double-clicking an axis strip resets it. |
 | `paneResize` | boolean | `true` | Drag the separator between panes to resize them; double-clicking a separator restores the two adjacent panes to an even split. |
 | `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. `Ctrl`/`Cmd` chords are left untouched for the host's own shortcuts (the widget's pan/zoom glides, the browser's `Ctrl`+`0`, …). When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
+| `historyChords` | boolean | `true` | The drawings layer answers `Ctrl`/`Cmd`+`Z` / `Y` itself (drawing undo/redo). A host that owns a **unified** history — drawings plus its own app actions in one timeline, like the widget — sets it to `false` so the chords bubble up to the host's keymap instead of being consumed in-chart. Copy/paste/duplicate/delete/nudge keys are unaffected. |
 
 > **Double-click behavior changed.** Double-clicking the **chart data area** no longer fits the
 > content to the view. Instead it maximizes the double-clicked pane so it fills the chart and every
