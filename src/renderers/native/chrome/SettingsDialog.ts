@@ -3,6 +3,7 @@ import type { ChartConfig } from '../core/chartConfig';
 import { chartType, chartTypes } from '../../../chart-types/registry';
 import { toHex6, withAlpha } from '../../../core/color';
 import { iconAt } from '../../../core/icons';
+import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
 import { colorField, closeColorPopover } from './ColorField';
 import { priceStyleIds, CHROME_BORDER_COLOR } from '../core/chartConfig';
 
@@ -291,7 +292,7 @@ export class SettingsDialog {
         showActive(config.series.style);
 
         body.append(this.sectionTitle('Time zone'));
-        body.append(this.selectRow('Time zone', config.timeScale.timezone, timezoneOptions(config.timeScale.timezone), (v) => this.emit({ timeScale: { timezone: v } })));
+        body.append(this.selectRowLabeled('Time zone', normalizeTimezone(config.timeScale.timezone), timezoneOptions(config.timeScale.timezone), (v) => this.emit({ timeScale: { timezone: v } })));
 
         // ══ HOST SECTIONS — tabs contributed by the embedding app (widget Status line…) ══
         const renderHostSections = (placement: 'after-symbol' | 'end' | 'symbol'): void => {
@@ -757,10 +758,12 @@ const AUTO_MANUAL_OPTS: readonly (readonly [string, string])[] = [['auto', 'Auto
 
 const FONT_FAMILIES = ['sans-serif', 'serif', 'monospace', 'Arial', 'Helvetica', 'Georgia', 'Courier New', '-apple-system, Segoe UI, sans-serif'];
 const LINE_STYLES = ['solid', 'dashed', 'dotted'];
-const COMMON_ZONES = ['UTC', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata', 'Australia/Sydney'];
-
-/** Curated zone list with the current value guaranteed present (so it shows selected). */
-function timezoneOptions(current: string): string[] {
-    return COMMON_ZONES.includes(current) ? COMMON_ZONES : [current, ...COMMON_ZONES];
+/** The shared zone catalog as labeled options, with the current value guaranteed
+ *  present (so an externally-set custom zone still shows selected). */
+function timezoneOptions(current: string): readonly (readonly [string, string])[] {
+    const options = TIMEZONES.map((t) => [t.value, tzMenuLabel(t.value, t.label)] as const);
+    const normalized = normalizeTimezone(current);
+    if (TIMEZONES.some((t) => t.value === normalized)) return options;
+    return [[normalized, tzMenuLabel(normalized, normalized)] as const, ...options];
 }
 

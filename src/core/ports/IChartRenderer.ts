@@ -339,6 +339,14 @@ export interface IChartRenderer {
      * repainting with no indicator re-run.
      */
     applyConfig?(config: unknown): void;
+    /**
+     * The renderer's cosmetic config changed via {@link applyConfig} — the in-chart
+     * settings dialog commits through it, so this is how host chrome mirroring a config
+     * value (a bottom-bar timezone, a persisted template) learns about in-chart edits.
+     * Re-pull {@link getConfig} / `readFeature` for the new values. Optional — paired
+     * with `applyConfig`.
+     */
+    onConfigChanged?(cb: () => void): Unsubscribe;
 
     /**
      * Move keyboard focus onto the chart's interactive surface (the element its keyboard

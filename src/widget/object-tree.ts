@@ -16,6 +16,7 @@ import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
 import { tickerIconEl } from './symbol-icon';
+import { parseSymbol } from '../data/ProviderRegistry';
 import {
     assignToGroup,
     buildTree,
@@ -382,7 +383,8 @@ export class ObjectTree extends SidePanel {
     }
 
     setSymbol(symbol: string): void {
-        this.symbolName = symbol;
+        // Bare ticker — the tree labels the price series, not its routing venue.
+        this.symbolName = parseSymbol(symbol).ticker;
     }
 
     /** (Re)bind to a chart instance — called after every widget rebuild. */

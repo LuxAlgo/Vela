@@ -6,7 +6,7 @@ import { Menu } from '../ui/components/menu';
 import { Tooltip } from '../ui/components/tooltip';
 import { iconEl } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
-import { TIMEZONES, tzMenuLabel, tzButtonLabel } from './timezones';
+import { TIMEZONES, tzMenuLabel, tzButtonLabel, normalizeTimezone } from './timezones';
 
 export interface RangePreset {
     /** Button label. */
@@ -73,6 +73,7 @@ const CSS = `
     height: 26px;
     display: inline-flex;
     align-items: center;
+    gap: 8px;
     padding: 0 8px;
     border-radius: 4px;
     font-weight: 600;
@@ -120,6 +121,7 @@ export interface BottombarOptions {
 export class Bottombar {
     readonly el: HTMLElement;
     private readonly clockEl: HTMLElement;
+    private readonly tzLabelEl: HTMLElement;
     private readonly tzButton: HTMLElement;
     private readonly tzMenu: Menu;
     private readonly settingsTip: Tooltip | null = null;
@@ -147,11 +149,16 @@ export class Bottombar {
         }
         const spacer = doc.createElement('span');
         spacer.className = 'vela-bb-spacer';
-        this.clockEl = doc.createElement('span');
-        this.clockEl.className = 'vela-bb-clock';
+        // The clock lives INSIDE the timezone trigger: clicking the time opens the same
+        // zone dropdown as clicking the zone label (one affordance, reference behavior).
         this.tzButton = doc.createElement('button');
         this.tzButton.className = 'vela-bb-tz';
-        this.tzButton.textContent = tzButtonLabel(this.timezone);
+        this.tzButton.setAttribute('aria-label', 'Time zone');
+        this.clockEl = doc.createElement('span');
+        this.clockEl.className = 'vela-bb-clock';
+        this.tzLabelEl = doc.createElement('span');
+        this.tzLabelEl.textContent = tzButtonLabel(this.timezone);
+        this.tzButton.append(this.clockEl, this.tzLabelEl);
         const session = doc.createElement('span');
         session.className = 'vela-bb-session';
         // Reference-exact stub: RTH is the active chip, both disabled — sessions only
@@ -170,7 +177,7 @@ export class Bottombar {
         settingsBtn.setAttribute('aria-label', 'Chart settings');
         if (opts.onSettingsClick) settingsBtn.addEventListener('click', opts.onSettingsClick);
         this.settingsTip = new Tooltip(settingsBtn, { content: 'Chart settings', triggerId: 'vela-bb-settings', host });
-        this.el.append(spacer, this.clockEl, this.tzButton, session, settingsBtn);
+        this.el.append(spacer, this.tzButton, session, settingsBtn);
         host.appendChild(this.el);
 
         this.tzMenu = new Menu({
@@ -191,7 +198,7 @@ export class Bottombar {
 
     setTimezone(zone: string): void {
         this.timezone = zone;
-        this.tzButton.textContent = tzButtonLabel(zone);
+        this.tzLabelEl.textContent = tzButtonLabel(zone);
         this.tzMenu.setItems(this.tzItems());
         this.tick();
     }
@@ -215,7 +222,7 @@ export class Bottombar {
         return TIMEZONES.map((t) => ({
             id: t.value,
             label: tzMenuLabel(t.value, t.label),
-            checked: t.value === this.timezone,
+            checked: t.value === normalizeTimezone(this.timezone),
         }));
     }
 

@@ -162,7 +162,7 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
     // ── opacity ──
     const opLabel = document.createElement('div');
     opLabel.textContent = 'Opacity';
-    opLabel.style.cssText = `font:11px ${theme.fontFamily};opacity:0.7;`;
+    opLabel.style.cssText = `font:11px ${theme.fontFamily};color:var(--vela-fg-muted);`;
     const opRow = document.createElement('div');
     opRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
     const track = document.createElement('div');
@@ -171,7 +171,7 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
     knob.style.cssText = 'position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:var(--vela-selected-bg);box-shadow:0 1px 3px rgba(0,0,0,0.55);transform:translate(-50%,-50%);pointer-events:none;';
     track.appendChild(knob);
     const pctBox = document.createElement('div');
-    pctBox.style.cssText = `min-width:42px;text-align:center;font:var(--vela-font-size-md) ${theme.fontFamily};border:1px solid var(--vela-border);border-radius:5px;padding:3px 4px;`;
+    pctBox.style.cssText = `min-width:42px;text-align:center;font:var(--vela-font-size-md) ${theme.fontFamily};color:var(--vela-fg);border:1px solid var(--vela-border);border-radius:5px;padding:3px 4px;`;
     opRow.append(track, pctBox);
     const paintOpacity = (): void => {
         track.style.background = `linear-gradient(to right, ${curHex}00, ${curHex}ff), ${CHECKER}`;

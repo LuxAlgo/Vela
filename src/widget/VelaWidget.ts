@@ -14,7 +14,7 @@ import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import { ensureUIHost, injectStyles } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
-import { Statusline } from './statusline';
+import { Statusline, statuslineInkOf } from './statusline';
 import { Watermark } from './watermark';
 import { Bottombar, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
@@ -34,6 +34,7 @@ import { readUrlState, writeUrlState } from './url-state';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
 import { toolShortcutHints } from './tool-shortcuts';
 import { WidgetHistory } from './history';
+import { normalizeTimezone } from './timezones';
 import { Toast } from './toast';
 import { Menu } from '../ui/components/menu';
 import { indicatorLedger, resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from './indicators';
@@ -83,6 +84,8 @@ export class VelaWidget {
     private instances: Array<{ entry: ResolvedIndicator; handle: IndicatorHandle | null }> = [];
     /** Native-indicator catalog of the CURRENT chart (refreshed per rebuild/change). */
     private nativeCatalog: Array<{ type: string; title: string; supported: boolean; present: boolean; beta?: boolean }> = [];
+    /** Present native types, mirrored SYNC from the chart (see syncPresentNatives). */
+    private presentNatives: string[] = [];
     private readonly storageKey: string | null;
     private readonly storage: VelaStorage;
     private openDialogs = 0;
@@ -598,13 +601,17 @@ export class VelaWidget {
         const chart = this.inner;
         if (!chart) return;
         this.ledgerVolume = led.natives.includes('volume');
-        for (const type of led.natives) {
-            if (!this.nativeCatalog.some((n) => n.type === type && n.present)) chart.addNativeIndicator(type);
-        }
-        for (const n of this.nativeCatalog) {
-            if (n.present && !led.natives.includes(n.type)) chart.addNativeIndicator(n.type).remove();
-        }
-        for (const it of [...this.instances]) this.dropInstance(it);
+        // Converging to the ledger is state application, not user edits — the
+        // indicator:removed handler must not record these into the undo timeline.
+        this.history.silently(() => {
+            for (const type of led.natives) {
+                if (!this.nativeCatalog.some((n) => n.type === type && n.present)) chart.addNativeIndicator(type);
+            }
+            for (const n of this.nativeCatalog) {
+                if (n.present && !led.natives.includes(n.type)) chart.addNativeIndicator(n.type).remove();
+            }
+            for (const it of [...this.instances]) this.dropInstance(it);
+        });
         if (this.manifest.length > 0) {
             for (const name of led.manifest) {
                 const entry = this.manifest.find((e) => e.name === name);
@@ -665,7 +672,16 @@ export class VelaWidget {
         this.priceStyle = style;
         this.topbar.setPriceStyle(style);
         this.inner?.renderer.set('priceStyle', style);
+        this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
         this.markStateDirty();
+    }
+
+    /** OHLC/change ink in the status line follows the ACTIVE price style's configured
+     *  colors and direction rule (candle bodies by close-vs-open, baseline by position
+     *  against the live baseline price, …) instead of the fixed theme tokens. */
+    private syncStatuslineColors(): void {
+        if (!this.statusline || !this.inner) return;
+        this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
     }
 
     /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
@@ -780,23 +796,59 @@ export class VelaWidget {
         this.objectTree.setSymbol(this.symbol);
         // Contributed legend-row actions (registerLegendAction) — resolved per row, per click.
         chart.renderer.setLegendActions(legendActionsProviderFor(chart, () => this.context()));
+        // The widget owns ONE unified undo timeline (drawings + indicator ops). The
+        // drawings layer must not self-serve Ctrl+Z/Y or the two histories desync
+        // (its preempt would pop the core drawing stack while the keymap pops an
+        // unrelated widget entry). With the chords bubbling up, the keymap is the
+        // single entry point and drawing steps replay as delegate entries.
+        if (chart.renderer.supports('historyChords')) chart.renderer.set('historyChords', false);
         this.dock.onChart(chart); // every docked panel rebinds, contributed ones included
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
         chart.on('indicator:added', () => {
+            this.syncPresentNatives();
             this.refreshNativeCatalog();
             this.markStateDirty();
         });
         chart.on('indicator:removed', ({ id }) => {
-            // Out-of-band removals (legend ✕, object tree, handle.remove()) must drop
-            // the matching manifest-instance ledger entry too — a stale entry kept the
-            // name in the persisted document and resurrected the indicator on reload.
-            // The picker path splices first, so this lookup no-ops there (idempotent).
+            // Out-of-band removals (legend ✕, object tree, middle-click, handle.remove())
+            // must drop the matching manifest-instance ledger entry too — a stale entry
+            // kept the name in the persisted document and resurrected the indicator on
+            // reload — AND enter the undo timeline like a picker removal would. The picker
+            // path splices/records first (so these lookups no-op there), and replays run
+            // muted, so an undo/redo never re-records itself.
             const idx = this.instances.findIndex((it) => it.handle?.id === id);
             if (idx >= 0) {
+                const snapshot = this.instances[idx]!;
                 this.instances.splice(idx, 1);
                 this.syncIndicatorCount();
+                this.history.push({
+                    undo: () => {
+                        snapshot.handle = this.inner ? this.addToChart(this.inner, snapshot.entry) : null;
+                        this.instances.push(snapshot);
+                        this.syncIndicatorCount();
+                    },
+                    redo: () => this.dropInstance(snapshot),
+                });
+            } else {
+                // A native indicator left the registry — whichever type vanished from the
+                // sync presence list is the one an undo must restore. This is the SINGLE
+                // recording site for native removals (picker, legend ✕, object tree).
+                const now = this.inner?.presentNativeIndicators() ?? [];
+                for (const type of this.presentNatives.filter((t) => !now.includes(t))) {
+                    this.history.push({
+                        undo: () => {
+                            this.inner?.addNativeIndicator(type);
+                            this.refreshNativeCatalog();
+                        },
+                        redo: () => {
+                            this.inner?.addNativeIndicator(type).remove();
+                            this.refreshNativeCatalog();
+                        },
+                    });
+                }
             }
+            this.syncPresentNatives();
             this.refreshNativeCatalog();
             this.markStateDirty();
         });
@@ -807,6 +859,7 @@ export class VelaWidget {
             // With the natives applied and no manifest ever coming, nothing is pending.
             if (this.manifestSettled) this.pendingIndicators = null;
         }
+        this.syncPresentNatives();
         // The volume auto-add rides the first candles — from `load:end` on, the registry
         // is the whole truth and the persisted ledger stops reporting the intent.
         chart.on('load:end', () => {
@@ -868,7 +921,19 @@ export class VelaWidget {
         // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).
         if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
         if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
+        // The renderer's settings dialog owns a Time zone row too (it commits through
+        // applyConfig) — mirror it back so the bottom-bar clock/label and the persisted
+        // state never disagree with the axis. `renderer.set` is a feature write, not an
+        // applyConfig, so adopting the value cannot loop.
+        chart.renderer.onConfigChanged(() => {
+            const zone = chart.renderer.get('timezone');
+            if (typeof zone === 'string' && normalizeTimezone(zone) !== normalizeTimezone(this.timezone)) {
+                this.setTimezone(normalizeTimezone(zone));
+            }
+            this.syncStatuslineColors(); // a settings edit may have recolored the active style
+        });
         this.statusline?.onChart(chart);
+        this.syncStatuslineColors();
         const advanced = {
             title: 'Advanced',
             placement: 'end' as const,
@@ -975,6 +1040,7 @@ export class VelaWidget {
     /** Add a native indicator (single-instance per type — the core dedupes). */
     private addNative(type: string): void {
         this.inner?.addNativeIndicator(type);
+        this.syncPresentNatives();
         this.refreshNativeCatalog();
         this.history.push({
             undo: () => {
@@ -989,19 +1055,17 @@ export class VelaWidget {
     }
 
     private removeNative(type: string): void {
-        // addNativeIndicator on a present type returns the EXISTING handle.
+        // addNativeIndicator on a present type returns the EXISTING handle. The undo
+        // entry is recorded by the indicator:removed handler — the single site shared
+        // with the legend ✕ and the object tree.
         this.inner?.addNativeIndicator(type).remove();
         this.refreshNativeCatalog();
-        this.history.push({
-            undo: () => {
-                this.inner?.addNativeIndicator(type);
-                this.refreshNativeCatalog();
-            },
-            redo: () => {
-                this.inner?.addNativeIndicator(type).remove();
-                this.refreshNativeCatalog();
-            },
-        });
+    }
+
+    /** Sync mirror of the chart's present native types — the removal handler diffs
+     *  against it to identify (and record) whichever type was just removed. */
+    private syncPresentNatives(): void {
+        this.presentNatives = this.inner?.presentNativeIndicators() ?? [];
     }
 
     /** Add ONE instance of a manifest entry (repeatable — duplicates are legitimate). */

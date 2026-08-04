@@ -97,11 +97,33 @@ registerIcon(
 registerIcon('search', S('<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/>'));
 registerIcon('bell', S('<path d="M8 2a4 4 0 0 0-4 4v2.5L2.5 11v1h11v-1L12 8.5V6a4 4 0 0 0-4-4z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/>'));
 
+// ── market status (statusline badge): sun / sunrise / sunset / moon / holiday ──
+// 24-grid bodies at the tier-B stroke — 1.8/24 carries the same apparent weight as the
+// 16-grid chrome icons, so the badge glyph sits evenly beside them.
+registerIcon(
+    'market-open',
+    svg24('<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>'),
+);
+registerIcon(
+    'market-pre',
+    svg24('<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m16 6-4 4-4-4"/><path d="M16 18a4 4 0 0 0-8 0"/>'),
+);
+registerIcon(
+    'market-post',
+    svg24('<path d="M12 10V2"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m16 18-4-4-4 4"/><path d="M16 6a4 4 0 0 0-8 0"/>'),
+);
+registerIcon('market-closed', svg24('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>'));
+registerIcon(
+    'market-holiday',
+    svg24('<path d="m10 20-1.25-2.5L6 16"/><path d="M10 4 8.75 6.5 6 8"/><path d="m14 20 1.25-2.5L18 16"/><path d="m14 4 1.25 2.5L18 8"/><path d="m17 10-5 5-5-5"/><path d="M4 12h16"/>'),
+);
+
 // ── disclosure, row actions and menu verbs (side panels, nested menus) ──
 registerIcon('chevron-right', S('<path d="m6 3.5 4.5 4.5L6 12.5"/>'));
 registerIcon('chevron-down', S('<path d="M3.5 6 8 10.5 12.5 6"/>'));
 registerIcon('chevron-up', S('<path d="M3.5 10 8 5.5 12.5 10"/>'));
 registerIcon('chevrons-right', S('<path d="m4 3.5 4.5 4.5L4 12.5"/><path d="m8.5 3.5 4.5 4.5-4.5 4.5"/>'));
+registerIcon('chevrons-left', S('<path d="M12 3.5 7.5 8l4.5 4.5"/><path d="M7.5 3.5 3 8l4.5 4.5"/>'));
 registerIcon('check', S('<path d="m2.8 8.4 3.4 3.4 7-7.6"/>'));
 registerIcon('close', S('<path d="m3.8 3.8 8.4 8.4M12.2 3.8l-8.4 8.4"/>'));
 registerIcon('eye', S('<path d="M1.5 8s2.5-4.2 6.5-4.2S14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="1.8"/>'));

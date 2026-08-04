@@ -42,7 +42,8 @@ Available on every renderer:
 |---|---|---|---|
 | `glow` | number (0 – ~0.7) | `0` | Neon glow/bloom on line series. **WebGL2 only** — the canvas2d backend stores the value but draws no glow. |
 | `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn. (Heikin Ashi is not yet available.) |
-| `priceBaseline` | number \| `null` | `null` | Reference price for `priceStyle: 'baseline'`. `null` uses the first visible bar's close. |
+| `priceBaseline` | number \| `null` | `null` | Reference price for `priceStyle: 'baseline'`. `null` derives it from the config's `baseline.baselineLevel` (a percent of the visible pane range). |
+| `baselinePrice` | number (read-only) | — | The RESOLVED baseline reference price the paint splits on: `priceBaseline` when set, else the level% of the price pane's current range. For host chrome that colors by baseline position (e.g. a status line's value ink). Writes are ignored. |
 | `candleZOrder` | number | `0` | Draw-order key of the price candles relative to overlay indicators. Indicators default to z ≥ 1, so candles sit behind all overlays by default. |
 | `seriesOrder` | `{ id, to: 'front' \| 'back' }` or `{ id, z }` | — | Reorder one indicator's series layer — move it to front/back, or set an explicit z key. |
 | `highlights` | `HighlightArea[]` | `[]` | Shaded vertical time bands (session highlighting, e.g. weekends or pre/regular/post), drawn behind grid + data. Malformed entries are dropped; bands are sorted by start time. |
@@ -59,6 +60,7 @@ Available on every renderer:
 | `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; double-clicking an axis strip resets it. |
 | `paneResize` | boolean | `true` | Drag the separator between panes to resize them; double-clicking a separator restores the two adjacent panes to an even split. |
 | `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. `Ctrl`/`Cmd` chords are left untouched for the host's own shortcuts (the widget's pan/zoom glides, the browser's `Ctrl`+`0`, …). When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
+| `historyChords` | boolean | `true` | The drawings layer answers `Ctrl`/`Cmd`+`Z` / `Y` itself (drawing undo/redo). A host that owns a **unified** history — drawings plus its own app actions in one timeline, like the widget — sets it to `false` so the chords bubble up to the host's keymap instead of being consumed in-chart. Copy/paste/duplicate/delete/nudge keys are unaffected. |
 
 > **Double-click behavior changed.** Double-clicking the **chart data area** no longer fits the
 > content to the view. Instead it maximizes the double-clicked pane so it fills the chart and every

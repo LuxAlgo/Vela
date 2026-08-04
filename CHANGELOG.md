@@ -37,6 +37,24 @@ All notable changes to Vela, newest first.
   so a listener firing every second never carries thousands of rows it will not read. And a
   chart with no listener does no work at all: the execution-context read that fills a run
   happens only when someone is subscribed.
+- **The drawing toolbar collapses out of the way.** A chevron at the bottom of the docked
+  toolbar folds it into a slim strip, giving the chart the full width; the strip keeps just
+  that chevron, and one click brings the whole toolbar back. The plot re-flows to the new
+  width in both directions.
+- **The bottom-bar clock opens the time-zone menu.** The time and the zone label are now one
+  button: clicking the clock itself brings up the same zone picker as clicking the zone name
+  next to it.
+- **The indicator legend folds away.** With two or more indicators on the chart, a
+  bordered chevron sits under the price-pane legend rows; clicking it folds every
+  pane's indicator titles — study panes included — into a compact "˅ N" chip (and
+  back), so a busy legend stops covering the plots. The toggle disappears when a
+  single indicator is left.
+- **Hosts can follow in-chart settings edits.** `chart.renderer.onConfigChanged(cb)` fires
+  whenever the cosmetic config changes — the settings dialog commits through it — so host
+  chrome that mirrors a config value (a time-zone display, a saved template) can re-read it
+  instead of drifting. And a host that owns its own undo shortcuts can turn off the new
+  `historyChords` render feature, so the drawings layer lets Ctrl+Z/Y bubble up instead of
+  consuming them itself.
 
 ### Changed
 
@@ -55,6 +73,57 @@ All notable changes to Vela, newest first.
   plots, or — for a strategy — its broker state, all of which now arrive named and usable.
   _(Breaking: `EngineContextSnapshot.result` and the `'result'` selector were removed. Nothing
   could have been reading a meaningful value from them.)_
+- **One time-zone catalog, everywhere.** The bottom bar and the chart-settings dialog now
+  offer the same list of zones — every UTC offset from UTC-12 to UTC+14, half- and
+  quarter-hour offsets included, each shown with its live (DST-aware) offset and a city
+  label. Picking a zone in the settings dialog updates the bottom bar and vice versa — in a
+  workspace it updates every cell, since the display zone is workspace-global; the dialog
+  used to carry its own short list of raw zone identifiers, and a choice made there never
+  reached the rest of the interface.
+
+### Fixed
+
+- **Undo steps back exactly one action when drawings and indicators mix.** With a drawing
+  and an indicator change both in the history, one Ctrl+Z over the chart used to revert
+  both at once — the drawing layer and the app history each answered the shortcut. A single
+  press now undoes a single action, whatever its kind. The same holds in a workspace, where
+  a cell's drawing edits now enter that cell's own undo timeline alongside its indicator
+  changes instead of living in a parallel history.
+- **Removing an indicator from the legend can be undone.** Removals made outside the
+  indicator picker — the legend ✕, the object tree, `handle.remove()` — never entered the
+  undo history, so Ctrl+Z skipped straight past them. They now land in the same timeline as
+  every other edit, and undo brings the indicator back — in the widget and in every
+  workspace cell alike.
+- **The indicator legend follows the chart background.** Changing the background color in
+  chart settings repaints the legend rows with it; they used to keep the color they were
+  created with and float as stale chips over the new background.
+- **The status line's readout follows the chart style.** Bar-shaped styles (candles,
+  bars, Heikin Ashi) read out all four O/H/L/C values; a one-line style (line, area,
+  baseline) plots a single series, so its readout is just that value — plus the change,
+  always. And the whole readout shares one ink that follows the ACTIVE style instead of
+  fixed theme tokens (the OHLC and the change even used two DIFFERENT palettes): the
+  configured candle-body colors, bar-tick colors, the plot color for line/area — and
+  for baseline, the top/bottom line colors picked by the bar's POSITION against the
+  live baseline price, the way the paint itself splits (a bar that closed down can sit
+  in the green region; its values are green there). Everything re-tints when a settings
+  edit recolors the style or the style switches, in the widget and in every workspace
+  cell. Hosts building similar chrome can read the new read-only `baselinePrice` render
+  feature — the resolved reference price the baseline paint splits on.
+- **The attribution mark stays on real plot area.** It anchors to the bottom-left of the
+  lowest visible, non-collapsed pane — the same rule the scroll-to-realtime button already
+  followed — so collapsing the bottom study pane (or maximizing another) lifts the mark
+  into the lowest open pane instead of leaving it on a collapsed strip's legend.
+- **The chrome shows the bare ticker, never `venue:TICKER`.** The topbar symbol button, the
+  in-chart status line, the watermark and the object tree used to echo the raw symbol
+  string, so a venue-pinned pick (the symbol picker composes `binance:BTCUSDT`) leaked the
+  routing prefix into every label. They now display the ticker alone — the venue already
+  shows where it belongs: the status line's meta segment and the picker's venue badges.
+- **The status line lines up with the indicator legend.** Its left offset was hardcoded to
+  clear the widget's docked drawing toolbar, so in a workspace cell (no per-cell toolbar) it
+  floated 44px right of the legend, and a collapsed toolbar left it hanging mid-air. The
+  renderer now publishes its toolbar gutter as `--vela-toolbar-gutter` on the mount
+  container and the status line anchors to it, keeping the two in one column in every
+  shell and toolbar state.
 
 ## [v0.4.6]
 
