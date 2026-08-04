@@ -131,7 +131,7 @@ const CSS = `
     content: '';
     position: absolute;
     inset: 0;
-    border: 2px solid var(--vela-accent-bright, var(--vela-accent));
+    border: 2px solid var(--vela-fg-bright);
     pointer-events: none;
     z-index: 10;
 }

@@ -175,6 +175,8 @@ export class ChartCell {
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
     private watermarkOn: boolean;
+    /** Indicator titles (this cell's in-chart legend rows) shown. */
+    private indicatorTitlesOn = true;
     private destroyed = false;
 
     constructor(
@@ -379,10 +381,21 @@ export class ChartCell {
                 {
                     title: 'Status line',
                     rows: [
+                        { kind: 'heading', label: 'Status line' },
                         { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
                         { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
                         { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
                         { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                        { kind: 'heading', label: 'Indicators' },
+                        {
+                            kind: 'toggle',
+                            label: 'Titles',
+                            get: () => this.indicatorTitlesOn,
+                            set: (v: boolean) => {
+                                this.indicatorTitlesOn = v;
+                                this.inner?.renderer.set('indicatorTitles', v);
+                            },
+                        },
                     ],
                 },
                 advanced,

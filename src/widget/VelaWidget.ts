@@ -96,6 +96,8 @@ export class VelaWidget {
     private timezone: string;
     private bars: number;
     private watermarkOn: boolean;
+    /** Indicator titles (the in-chart legend rows) shown — reapplied across rebuilds. */
+    private indicatorTitlesOn = true;
     private pendingRange: RangePreset | null = null;
     /** Symbol already reported as unservable (the core re-reports on every index settle). */
     private unresolvedToasted: string | null = null;
@@ -921,6 +923,7 @@ export class VelaWidget {
         // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).
         if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
         if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
+        if (!this.indicatorTitlesOn) chart.renderer.set('indicatorTitles', false);
         // The renderer's settings dialog owns a Time zone row too (it commits through
         // applyConfig) — mirror it back so the bottom-bar clock/label and the persisted
         // state never disagree with the axis. `renderer.set` is a feature write, not an
@@ -969,10 +972,21 @@ export class VelaWidget {
                 {
                     title: 'Status line',
                     rows: [
+                        { kind: 'heading', label: 'Status line' },
                         { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
                         { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
                         { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
                         { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                        { kind: 'heading', label: 'Indicators' },
+                        {
+                            kind: 'toggle',
+                            label: 'Titles',
+                            get: () => this.indicatorTitlesOn,
+                            set: (v: boolean) => {
+                                this.indicatorTitlesOn = v;
+                                chart.renderer.set('indicatorTitles', v);
+                            },
+                        },
                     ],
                 },
                 advanced,

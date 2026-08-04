@@ -165,6 +165,8 @@ export class NativeRenderer implements IChartRenderer {
     private input!: InputController;
     private inputsUI!: InputsUI;
     private symbolPicker: SymbolPickerFn | null = null;
+    /** Indicator titles (the legend rows) shown — held here so a remount re-applies it. */
+    private indicatorTitlesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
@@ -293,7 +295,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -422,6 +424,12 @@ export class NativeRenderer implements IChartRenderer {
             case 'settings':
                 this.setSettingsEnabled(Boolean(value));
                 return; // owns its own DOM (gear button + dialog)
+            case 'indicatorTitles':
+                // Show/hide the indicator legend rows chart-wide (the settings dialog's
+                // Indicators toggle drives it through the host section).
+                this.indicatorTitlesOn = value !== false;
+                this.inputsUI?.setTitlesVisible(this.indicatorTitlesOn);
+                return; // own DOM, no repaint needed
             case 'attribution':
                 // `false` hides it, `true` restores the built-in mark, a non-empty STRING
                 // puts the host's own mark in that corner (see the NOTICE).
@@ -489,6 +497,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'keyboard': return this.keyboardEnabled;
             case 'historyChords': return this.historyChordsEnabled;
             case 'settings': return this.settingsEnabled;
+            case 'indicatorTitles': return this.indicatorTitlesOn;
             case 'attribution': return this.attributionHtml ?? this.attributionEnabled;
             case 'dialogHost': return this.dialogHost ?? undefined;
             default: return undefined;
@@ -1270,6 +1279,7 @@ export class NativeRenderer implements IChartRenderer {
         this.setKeyboardEnabled(this.keyboardEnabled); // accessible by default; wires focus + ARIA
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
+        this.inputsUI.setTitlesVisible(this.indicatorTitlesOn); // a remount keeps the toggle state
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setLegendActions(this.legendActionsProvider);
