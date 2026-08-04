@@ -22,8 +22,10 @@ type ConfigPatch = Record<string, unknown>;
  * dependency-free and themed to match the chart, mirroring `InputsUI`.
  */
 
-/** A host-contributed settings row: callback-based (the host owns the state). */
+/** A host-contributed settings row: callback-based (the host owns the state).
+ *  `heading` opens a titled group inside the tab (an in-pane section title). */
 export type HostSettingsRow =
+    | { kind: 'heading'; label: string }
     | { kind: 'toggle'; label: string; get: () => boolean; set: (v: boolean) => void }
     | { kind: 'select'; label: string; options: readonly string[]; get: () => string; set: (v: string) => void };
 
@@ -86,8 +88,16 @@ function ensureControlStyles(): void {
 .vela-sd-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--vela-fg-muted);transition:transform var(--vela-dur-med) ease,background var(--vela-dur-med) ease;}
 .vela-sd-toggle.on{background:var(--vela-active);border-color:var(--vela-selected-bg);}
 .vela-sd-toggle.on::after{transform:translateX(16px);background:var(--vela-selected-bg);}
-.vela-sd-tab:hover{background:var(--vela-hover);}
-.vela-sd-btn:hover{border-color:var(--vela-border-strong);}
+/* Tab rail / footer button / header close: base styles live HERE, not inline on the
+   elements — inline declarations always beat stylesheet :hover rules, which is exactly
+   what killed these hovers before. Active tab state is the .on class (like .vela-sd-check),
+   hover fills follow the app convention (--vela-hover + --vela-fg-bright, fast transition). */
+.vela-sd-tab{text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-sd-tab:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-sd-tab.on{background:var(--vela-active);color:var(--vela-fg-bright);}
+.vela-sd-btn{height:30px;padding:0 14px;font-size:var(--vela-font-size-md);color:var(--vela-fg);background:var(--vela-surface-sunken);border:1px solid var(--vela-border);border-radius:var(--vela-radius-md);cursor:pointer;font-family:inherit;transition:background var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-sd-btn:hover{background:var(--vela-hover);border-color:var(--vela-border-strong);color:var(--vela-fg-bright);}
+.vela-sd-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;border-radius:var(--vela-radius-sm);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-sd-close:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
 `;
     document.head.appendChild(st);
@@ -169,7 +179,10 @@ export class SettingsDialog {
         const dlg = document.createElement('div');
         // `cursor:default` shields the dialog from the plot's crosshair cursor; interactive
         // controls re-declare their own.
-        dlg.style.cssText = `width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${SETTINGS_TEXT};font:13px var(--vela-font);overflow:hidden;cursor:default;`;
+        // Shrink-to-fit width (mirrors the indicator dialog's `w-fit` card): the box is only
+        // as wide as the rail + widest visible pane content needs, between a floor that keeps
+        // sparse tabs from looking cramped and the old 720px cap.
+        dlg.style.cssText = `width:fit-content;min-width:min(560px,94vw);max-width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${SETTINGS_TEXT};font:13px var(--vela-font);overflow:hidden;cursor:default;`;
 
         const header = document.createElement('div');
         header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${SETTINGS_BORDER};flex:0 0 auto;user-select:none;`;
@@ -181,7 +194,6 @@ export class SettingsDialog {
         closeBtn.innerHTML = iconAt('close', 15);
         closeBtn.title = 'Close';
         closeBtn.className = 'vela-sd-close';
-        closeBtn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;border-radius:var(--vela-radius-sm);';
         closeBtn.addEventListener('click', () => this.close());
         header.append(hTitle, closeBtn);
         header.style.cursor = 'move';
@@ -301,7 +313,8 @@ export class SettingsDialog {
                 // 'symbol' inlines rows into the CURRENT pane (a section title, no tab).
                 body.append(placement === 'symbol' ? this.sectionTitle(hs.title) : this.section(hs.title));
                 for (const hr of hs.rows) {
-                    if (hr.kind === 'toggle') body.append(this.boolRow(hr.label, hr.get(), (v) => hr.set(v)));
+                    if (hr.kind === 'heading') body.append(this.sectionTitle(hr.label));
+                    else if (hr.kind === 'toggle') body.append(this.boolRow(hr.label, hr.get(), (v) => hr.set(v)));
                     else body.append(this.selectRowLabeled(hr.label, hr.get() as string, hr.options.map((o) => [o, o] as const), (v) => hr.set(v)));
                 }
             }
@@ -397,10 +410,6 @@ export class SettingsDialog {
                 tab.type = 'button';
                 tab.textContent = title;
                 tab.className = 'vela-sd-tab';
-                // Longhands on purpose: `font: 600 13px inherit` is an invalid shorthand
-                // (CSS-wide keywords can't be a shorthand component), so browsers drop it
-                // whole and the rail renders at weight 400.
-                tab.style.cssText = 'text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;';
                 panes.push({ title, el, tab, style: child.dataset.sdStyle, visibility: child.dataset.sdVisibility });
                 current = el;
                 child.remove();
@@ -423,8 +432,7 @@ export class SettingsDialog {
         const activate = (idx: number): void => {
             panes.forEach((p, i) => {
                 p.el.style.display = i === idx ? 'block' : 'none';
-                p.tab.style.background = i === idx ? 'var(--vela-active)' : 'transparent';
-                p.tab.style.color = i === idx ? 'var(--vela-fg-bright)' : 'var(--vela-fg-muted)';
+                p.tab.classList.toggle('on', i === idx);
             });
             this.activeSection = panes[idx]?.title ?? null;
         };
@@ -445,6 +453,9 @@ export class SettingsDialog {
         scrim.appendChild(dlg);
         this.container.appendChild(scrim);
         this.root = scrim;
+        // Pane-wide label column — must run after mount so label clones can be measured
+        // against the live dialog (detached/`display:none` trees report width 0).
+        for (const p of panes) this.layoutSettingsGrids(p.el, dlg);
     }
 
     close(): void {
@@ -474,7 +485,8 @@ export class SettingsDialog {
      *  is what separates groups — whitespace, not rules. */
     private sectionTitle(text: string): HTMLElement {
         const el = document.createElement('div');
-        el.style.cssText = 'margin:24px 0 6px;font-size:var(--vela-font-size-sm);font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);';
+        el.className = 'vela-sd-sect';
+        el.style.cssText = 'margin:24px 0 0;padding-bottom:8px;font-size:var(--vela-font-size-sm);font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);';
         el.textContent = text;
         return el;
     }
@@ -483,8 +495,68 @@ export class SettingsDialog {
      *  so no drawn rule. */
     private separator(): HTMLElement {
         const el = document.createElement('div');
+        el.className = 'vela-sd-sep';
         el.style.cssText = 'height:14px;';
         return el;
+    }
+
+    /**
+     * One pane-wide control column (section-agnostic), sized to the longest setting
+     * title — same idea as the indicator settings dialog's `minmax(..., auto)` label
+     * track, but shared across every section in the tab.
+     *
+     * `measureHost` must be a visible, in-document ancestor (the dialog): panes are
+     * `display:none` until selected, which would zero layout measurements.
+     */
+    private layoutSettingsGrids(pane: HTMLElement, measureHost: HTMLElement): void {
+        if (pane.childElementCount === 0) return;
+        const rows = [...pane.querySelectorAll('.vela-sd-row')] as HTMLElement[];
+
+        // Clone labels into a visible host so hidden price-style groups still contribute
+        // (switching Type must not jump the column) and spanning bool/section rows can't
+        // inflate the track.
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;display:flex;flex-direction:column;font:13px var(--vela-font);pointer-events:none;';
+        measureHost.appendChild(probe);
+        let widest = 0;
+        for (const row of rows) {
+            const cell = row.children[0];
+            if (!cell) continue;
+            const clone = cell.cloneNode(true) as HTMLElement;
+            probe.appendChild(clone);
+            widest = Math.max(widest, clone.getBoundingClientRect().width);
+        }
+        probe.remove();
+
+        // A pane of only spanning rows (toggles, section titles) has no label column to
+        // measure — it still gets the grid, so its rows share the same 16px rhythm.
+        const labelTrack = widest > 0 ? `${Math.ceil(widest)}px` : 'max-content';
+        const grid = document.createElement('div');
+        grid.style.cssText =
+            `display:grid;grid-template-columns:${labelTrack} max-content;align-items:center;column-gap:12px;row-gap:16px;`;
+        while (pane.firstChild) grid.appendChild(pane.firstChild);
+        pane.appendChild(grid);
+        this.prepareGridItems(grid);
+    }
+
+    /** Mark rows/titles/bools so they participate in the pane grid; `display:contents`
+     *  groups dissolve so their children land on the same tracks. */
+    private prepareGridItems(container: HTMLElement): void {
+        for (const kid of [...container.children] as HTMLElement[]) {
+            if (kid.dataset.sdGroup !== undefined) {
+                this.prepareGridItems(kid);
+                continue;
+            }
+            if (kid.classList.contains('vela-sd-row')) {
+                kid.style.display = 'contents';
+            } else if (
+                kid.classList.contains('vela-sd-bool')
+                || kid.classList.contains('vela-sd-sect')
+                || kid.classList.contains('vela-sd-sep')
+            ) {
+                kid.style.gridColumn = '1 / -1';
+            }
+        }
     }
 
     /** A bare color swatch input (for toggle-row right groups / swatch pairs). */
@@ -493,7 +565,7 @@ export class SettingsDialog {
         return colorField(this.theme, () => current, (v) => { current = v; onChange(v); });
     }
 
-    /** A label row with arbitrary right-aligned controls (no toggle). */
+    /** A label row with arbitrary controls in the shared control column (no toggle). */
     private rowWith(label: string, controls: HTMLElement[]): HTMLElement {
         const { wrap } = this.row(label);
         const box = document.createElement('div');
@@ -515,6 +587,7 @@ export class SettingsDialog {
      *  (contents ⇄ none) shows/hides the set without disturbing the body flex layout. */
     private group(): HTMLElement {
         const el = document.createElement('div');
+        el.dataset.sdGroup = '';
         el.style.cssText = 'display:contents;';
         return el;
     }
@@ -522,12 +595,13 @@ export class SettingsDialog {
     private row(label: string): { wrap: HTMLDivElement } {
         // A DIV, not a <label>: a label forwards a click anywhere on the row to its embedded
         // control (opening a color picker from the row's empty space) — only the control
-        // itself should respond.
+        // itself should respond. `layoutSettingsGrids` later sets `display:contents` so the
+        // label + control participate in the pane's shared grid.
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:24px;padding:8px 0;';
+        wrap.className = 'vela-sd-row';
         const lbl = document.createElement('span');
         lbl.textContent = label;
-        lbl.style.cssText = 'opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        lbl.style.cssText = 'opacity:0.85;white-space:nowrap;';
         wrap.appendChild(lbl);
         return { wrap };
     }
@@ -544,14 +618,13 @@ export class SettingsDialog {
         return this.toggleRow(label, value, onChange, []);
     }
 
-    /** An enable row: checkbox + label on the left, dependent controls right-aligned;
-     *  the control group dims and ignores input while the toggle is off. With no
-     *  controls it reads like a plain toggle row. */
+    /** An enable row: checkbox + label in the label column, dependent controls in the
+     *  shared control column; the control group dims and ignores input while the toggle
+     *  is off. With no controls it reads like a plain toggle row (full-width in the grid). */
     private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[]): HTMLElement {
         const wrap = document.createElement('div');
         // No cursor on the row itself: only the checkbox is clickable, so a row-wide
         // pointer would promise a click target that isn't there.
-        wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;padding:5px 0;';
         const cb = document.createElement('button');
         cb.type = 'button';
         cb.className = 'vela-sd-check' + (value ? ' on' : '');
@@ -564,14 +637,20 @@ export class SettingsDialog {
         };
         const lbl = document.createElement('span');
         lbl.textContent = label;
-        lbl.style.cssText = 'opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        wrap.append(cb, lbl);
+        lbl.style.cssText = 'opacity:0.85;white-space:nowrap;';
         if (controls.length === 0) {
+            wrap.className = 'vela-sd-bool';
+            wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;';
+            wrap.append(cb, lbl);
             cb.addEventListener('click', () => onToggle(cbToggle()));
             return wrap;
         }
+        wrap.className = 'vela-sd-row';
+        const left = document.createElement('div');
+        left.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        left.append(cb, lbl);
         const box = document.createElement('div');
-        box.style.cssText = 'margin-left:auto;display:flex;align-items:center;gap:6px;flex:0 0 auto;';
+        box.style.cssText = 'display:flex;align-items:center;gap:6px;';
         for (const c of controls) box.appendChild(c);
         const syncDim = (on: boolean): void => {
             box.style.opacity = on ? '1' : '0.4';
@@ -579,7 +658,7 @@ export class SettingsDialog {
         };
         syncDim(value);
         cb.addEventListener('click', () => { const v = cbToggle(); onToggle(v); syncDim(v); });
-        wrap.appendChild(box);
+        wrap.append(left, box);
         return wrap;
     }
 
@@ -694,7 +773,7 @@ export class SettingsDialog {
         const { wrap } = this.row(label);
         const sel = document.createElement('select');
         sel.className = 'vela-sd-select';
-        sel.style.cssText = 'max-width:180px;flex:0 0 auto;';
+        sel.style.cssText = 'max-width:140px;flex:0 0 auto;';
         for (const [val, lbl] of options) {
             const o = document.createElement('option');
             o.value = val;
@@ -711,7 +790,7 @@ export class SettingsDialog {
         const { wrap } = this.row(label);
         const sel = document.createElement('select');
         sel.className = 'vela-sd-select';
-        sel.style.cssText = 'max-width:180px;flex:0 0 auto;';
+        sel.style.cssText = 'max-width:140px;flex:0 0 auto;';
         for (const opt of options) {
             const o = document.createElement('option');
             o.value = opt;
@@ -734,7 +813,6 @@ export class SettingsDialog {
         resetBtn.type = 'button';
         resetBtn.textContent = 'Reset defaults';
         resetBtn.className = 'vela-sd-btn';
-        resetBtn.style.cssText = `height:30px;padding:0 14px;font-size:var(--vela-font-size-md);color:${SETTINGS_TEXT};background:var(--vela-surface-sunken);border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-md);cursor:pointer;font-family:inherit;`;
         resetBtn.addEventListener('click', () => this.onReset?.());
         foot.appendChild(resetBtn);
         return foot;

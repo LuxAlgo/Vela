@@ -96,6 +96,8 @@ export class VelaWidget {
     private timezone: string;
     private bars: number;
     private watermarkOn: boolean;
+    /** Indicator titles (the in-chart legend rows) shown — reapplied across rebuilds. */
+    private indicatorTitlesOn = true;
     private pendingRange: RangePreset | null = null;
     /** Symbol already reported as unservable (the core re-reports on every index settle). */
     private unresolvedToasted: string | null = null;
@@ -173,6 +175,7 @@ export class VelaWidget {
         this.timezone = fromUrl.timezone ?? boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         this.bars = Number(fromUrl.bars ?? bootCell?.bars ?? opts.bars ?? 1000);
         this.watermarkOn = bootCell?.watermark !== undefined ? bootCell.watermark : opts.watermark !== false;
+        this.indicatorTitlesOn = bootCell?.indicatorTitles ?? true;
         this.favs = boot?.favorites ? [...boot.favorites] : [];
         this.savedConfig = bootCell?.rendererConfig ?? null;
         this.savedDrawings = bootCell?.drawings ?? null;
@@ -511,6 +514,7 @@ export class VelaWidget {
         cell.priceStyle = this.priceStyle;
         if (this.bars > 0) cell.bars = this.bars;
         cell.watermark = this.watermarkOn;
+        cell.indicatorTitles = this.indicatorTitlesOn;
         if (this.inner) {
             cell.rendererConfig = this.inner.renderer.getConfig();
             cell.drawings = this.inner.drawings.toJSON();
@@ -561,6 +565,7 @@ export class VelaWidget {
             const style = fromUrl.priceStyle ?? cell.priceStyle;
             if (style && style !== this.priceStyle) this.setPriceStyle(style);
             if (cell.watermark !== undefined && cell.watermark !== this.watermarkOn) this.setWatermarkVisible(cell.watermark);
+            if (cell.indicatorTitles !== undefined && cell.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cell.indicatorTitles);
             if (cell.rendererConfig != null) {
                 this.savedConfig = cell.rendererConfig;
                 this.inner?.renderer.applyConfig(cell.rendererConfig);
@@ -664,6 +669,13 @@ export class VelaWidget {
     setWatermarkVisible(visible: boolean): void {
         this.watermarkOn = visible;
         this.watermark?.setVisible(visible);
+        this.markStateDirty();
+    }
+
+    /** Show/hide the indicator titles — the in-chart legend rows (persisted). */
+    setIndicatorTitlesVisible(visible: boolean): void {
+        this.indicatorTitlesOn = visible;
+        this.inner?.renderer.set('indicatorTitles', visible);
         this.markStateDirty();
     }
 
@@ -921,6 +933,7 @@ export class VelaWidget {
         // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).
         if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
         if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
+        if (!this.indicatorTitlesOn) chart.renderer.set('indicatorTitles', false);
         // The renderer's settings dialog owns a Time zone row too (it commits through
         // applyConfig) — mirror it back so the bottom-bar clock/label and the persisted
         // state never disagree with the axis. `renderer.set` is a feature write, not an
@@ -969,10 +982,18 @@ export class VelaWidget {
                 {
                     title: 'Status line',
                     rows: [
+                        { kind: 'heading', label: 'Status line' },
                         { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
                         { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
                         { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
                         { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                        { kind: 'heading', label: 'Indicators' },
+                        {
+                            kind: 'toggle',
+                            label: 'Titles',
+                            get: () => this.indicatorTitlesOn,
+                            set: (v: boolean) => this.setIndicatorTitlesVisible(v),
+                        },
                     ],
                 },
                 advanced,

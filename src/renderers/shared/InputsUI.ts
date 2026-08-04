@@ -106,6 +106,9 @@ export class InputsUI {
      *  pane's rows hide (a pane-collapse strip keeps its master label, its only marker),
      *  unlike {@link paneCollapse} which collapses one pane to a strip. */
     private legendFolded = false;
+    /** Titles switched off entirely (a settings toggle): every pane's legend container
+     *  hides — rows, fold chevron and all — unlike the fold, which leaves its chip. */
+    private titlesVisible = true;
     /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
      *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
     private foldToggle: HTMLButtonElement | null = null;
@@ -234,6 +237,13 @@ export class InputsUI {
         for (const [paneId, lg] of this.legends) this.positionLegend(lg, paneId);
     }
 
+    /** Show/hide the indicator titles chart-wide (the settings dialog's Indicators toggle). */
+    setTitlesVisible(visible: boolean): void {
+        if (this.titlesVisible === visible) return;
+        this.titlesVisible = visible;
+        this.reposition(); // positionLegend applies the flag per pane
+    }
+
     // ── legend move/merge (menu + drag) ─────────────────────────────────────
 
     /** Open the "Move to" menu for a row, anchored under its move button. */
@@ -332,8 +342,9 @@ export class InputsUI {
     private positionLegend(lg: HTMLElement, paneId: string): void {
         const bounds = this.paneBoundsOf ? this.paneBoundsOf(paneId) : { top: 0, height: Infinity };
         // A pane hidden by a maximize elsewhere collapses to ~0 height — hide its legend entirely
-        // (a collapsed strip keeps a small height, so its title still shows).
-        lg.style.display = bounds.height < 4 ? 'none' : '';
+        // (a collapsed strip keeps a small height, so its title still shows). Titles switched
+        // off (the settings toggle) hide every pane's container the same way.
+        lg.style.display = bounds.height < 4 || !this.titlesVisible ? 'none' : '';
         // A collapsed pane is a legend-only strip: show just its master indicator's row. Restore
         // hidden rows to 'flex' (their intended layout — set in the row's cssText), NOT '' which
         // would revert them to block and break the inline button row (hide/show, settings, …).
