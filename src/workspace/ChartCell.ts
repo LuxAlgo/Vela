@@ -15,7 +15,7 @@ import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
-import { Statusline } from '../widget/statusline';
+import { Statusline, statuslineInkOf } from '../widget/statusline';
 import { Watermark } from '../widget/watermark';
 import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
@@ -247,6 +247,7 @@ export class ChartCell {
             if (typeof zone === 'string' && normalizeTimezone(zone) !== normalizeTimezone(this.deps.timezone())) {
                 this.deps.setTimezone(normalizeTimezone(zone));
             }
+            this.syncStatuslineColors(); // a settings edit may have recolored the active style
         });
         // Pool restore: cosmetics + drawings round-trip (both validate untrusted input).
         if (seed.rendererConfig != null) this.inner.renderer.applyConfig(seed.rendererConfig);
@@ -274,6 +275,7 @@ export class ChartCell {
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '') : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
+        this.syncStatuslineColors();
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => {
                 this.inner?.renderer.set('autoScale', true);
@@ -456,6 +458,15 @@ export class ChartCell {
     setPriceStyle(style: string): void {
         this.state.priceStyle = style;
         this.inner?.renderer.set('priceStyle', style);
+        this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
+    }
+
+    /** OHLC/change ink in the status line follows the ACTIVE price style's configured
+     *  colors and direction rule (candle bodies by close-vs-open, baseline by position
+     *  against the live baseline price, …) instead of the fixed theme tokens. */
+    private syncStatuslineColors(): void {
+        if (!this.statusline || !this.inner) return;
+        this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
     }
 
     /**

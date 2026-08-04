@@ -14,7 +14,7 @@ import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import { ensureUIHost, injectStyles } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
-import { Statusline } from './statusline';
+import { Statusline, statuslineInkOf } from './statusline';
 import { Watermark } from './watermark';
 import { Bottombar, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
@@ -672,7 +672,16 @@ export class VelaWidget {
         this.priceStyle = style;
         this.topbar.setPriceStyle(style);
         this.inner?.renderer.set('priceStyle', style);
+        this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
         this.markStateDirty();
+    }
+
+    /** OHLC/change ink in the status line follows the ACTIVE price style's configured
+     *  colors and direction rule (candle bodies by close-vs-open, baseline by position
+     *  against the live baseline price, …) instead of the fixed theme tokens. */
+    private syncStatuslineColors(): void {
+        if (!this.statusline || !this.inner) return;
+        this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
     }
 
     /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
@@ -921,8 +930,10 @@ export class VelaWidget {
             if (typeof zone === 'string' && normalizeTimezone(zone) !== normalizeTimezone(this.timezone)) {
                 this.setTimezone(normalizeTimezone(zone));
             }
+            this.syncStatuslineColors(); // a settings edit may have recolored the active style
         });
         this.statusline?.onChart(chart);
+        this.syncStatuslineColors();
         const advanced = {
             title: 'Advanced',
             placement: 'end' as const,

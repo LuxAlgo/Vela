@@ -121,12 +121,11 @@ export class NativeRenderer implements IChartRenderer {
 
     private theme!: VelaTheme;
     // The app "chrome" surface (drawing toolbar + axis-scale gutters): background + text.
-    // Seeded once from the initial theme/config so the chrome matches the chart on first
-    // paint, then held stable — later background/text edits recolor only the plot, keeping
-    // the toolbar and scales on a consistent, always-readable surface.
+    // Owned by the app theme alone (mount/setTheme) — config-level background/text edits
+    // (settings dialog, persisted configs) recolor only the plot, keeping the toolbar and
+    // scales on a consistent, always-readable surface.
     private surfaceBackground = DARK_THEME.background;
     private surfaceTextColor = DARK_THEME.textColor;
-    private surfaceSeeded = false;
     private wrapper!: HTMLDivElement; // outer root: holds the left toolbar gutter + the plot sub-container
     private plot!: HTMLDivElement; // the plot area (canvases + DOM overlays), inset to the right of the toolbar gutter
     private toolbarGutter = 0; // px reserved on the left for the docked drawings toolbar (0 when hidden)
@@ -294,7 +293,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost', 'tradeMarkers'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -478,6 +477,14 @@ export class NativeRenderer implements IChartRenderer {
             case 'timezone': return this.scene.timezone;
             case 'priceStyle': return this.scene.priceStyle;
             case 'priceBaseline': return this.scene.baselineValue;
+            case 'baselinePrice': {
+                // READ-ONLY: the RESOLVED baseline reference price the paint splits on —
+                // the explicit `priceBaseline` when set, else the configured level% of the
+                // price pane's current range. Host chrome coloring by baseline position
+                // (a status line's value ink) compares against this.
+                const price = this.scene.panes.get(PRICE_PANE_ID);
+                return price ? this.scene.baselinePriceFor(price.scale) : this.scene.baselineValue;
+            }
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'keyboard': return this.keyboardEnabled;
             case 'historyChords': return this.historyChordsEnabled;
@@ -683,13 +690,10 @@ export class NativeRenderer implements IChartRenderer {
             for (const cb of this.chartTypeSettingsCbs) cb(typeId, { ...vals });
         }
         s.chartTypes = Object.fromEntries(Object.entries(next.chartTypes).map(([k, v]) => [k, { ...v }]));
-        // Seed the chrome surface from the FIRST config so the toolbar/scales match the initial
-        // background; after that it's frozen, so later background edits don't bleed into them.
-        if (!this.surfaceSeeded) {
-            this.surfaceBackground = next.layout.background;
-            this.surfaceTextColor = next.layout.textColor;
-            this.surfaceSeeded = true;
-        }
+        // The chrome surface (toolbar/scales) deliberately does NOT follow the config: it is
+        // owned by the app theme (mount/setTheme) alone, so background edits — whether typed
+        // live in the settings dialog or replayed from a persisted config — recolor only the
+        // plot and never bleed into the chrome.
         // layout → theme (mutate our copy; mount/setTheme own the canonical one)
         this.theme = { ...this.theme, background: next.layout.background, textColor: next.layout.textColor, fontFamily: next.layout.fontFamily };
         s.fontSize = next.layout.fontSize;
@@ -1397,7 +1401,6 @@ export class NativeRenderer implements IChartRenderer {
         // a full app-theme swap re-bases the chrome surface
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
-        this.surfaceSeeded = true;
         if (this.wrapper) applyChromeTokens(this.wrapper, this.chromeTheme());
         this.applyBackground();
         this.inputsUI.setTheme(theme);
@@ -3081,6 +3084,7 @@ export class NativeRenderer implements IChartRenderer {
             this.inputsUI?.reposition();
             this.paneControls?.reposition();
             this.repositionScrollButton();
+            this.positionAttribution();
             return;
         }
         // Collapsed panes take a fixed strip; the rest share the remaining height by weight.
@@ -3098,6 +3102,7 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI?.reposition(); // keep each pane's legend pinned to its pane top
         this.paneControls?.reposition();
         this.repositionScrollButton();
+        this.positionAttribution(); // the mark follows the lowest open pane's bottom edge
     }
 
     /** Pin the scroll-to-realtime button above the bottom-most EXPANDED pane's data area (like the
@@ -3169,12 +3174,22 @@ export class NativeRenderer implements IChartRenderer {
         this.wrapper.appendChild(this.attributionEl);
     }
 
-    /** Bottom-left of the plot, above the time axis, clear of the drawings toolbar. */
+    /** Bottom-left of the LOWEST visible, non-collapsed pane, above the time axis, clear of
+     *  the drawings toolbar — the same anchor rule as the scroll-to-realtime button. With
+     *  collapsed strips (or a maximize hiding the rest) at the bottom, the mark climbs into
+     *  the lowest open pane instead of sitting on a strip's legend. */
     private positionAttribution(): void {
         if (!this.attributionEl) return;
+        const dataHeight = this.coords?.height ?? 0;
+        const maxPane = this.maximizedPaneId ? this.scene.panes.get(this.maximizedPaneId) : null;
+        const visible = maxPane ? [maxPane] : this.scene.orderedPanes().filter((p) => !p.collapsed);
+        // Bottom (in data-area coords) of the lowest open pane; falls back to the full data area.
+        const paneBottom = dataHeight > 0 && visible.length
+            ? Math.max(...visible.map((p) => p.bounds.top + p.bounds.height))
+            : dataHeight;
         Object.assign(this.attributionEl.style, {
             left: `${(this.toolbarGutter || 0) + 12}px`,
-            bottom: `${TIME_AXIS_H + 10}px`,
+            bottom: `${TIME_AXIS_H + 10 + Math.max(0, dataHeight - paneBottom)}px`,
         });
     }
 

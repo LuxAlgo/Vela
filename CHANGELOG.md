@@ -97,6 +97,22 @@ All notable changes to Vela, newest first.
 - **The indicator legend follows the chart background.** Changing the background color in
   chart settings repaints the legend rows with it; they used to keep the color they were
   created with and float as stale chips over the new background.
+- **The status line's readout follows the chart style.** Bar-shaped styles (candles,
+  bars, Heikin Ashi) read out all four O/H/L/C values; a one-line style (line, area,
+  baseline) plots a single series, so its readout is just that value — plus the change,
+  always. And the whole readout shares one ink that follows the ACTIVE style instead of
+  fixed theme tokens (the OHLC and the change even used two DIFFERENT palettes): the
+  configured candle-body colors, bar-tick colors, the plot color for line/area — and
+  for baseline, the top/bottom line colors picked by the bar's POSITION against the
+  live baseline price, the way the paint itself splits (a bar that closed down can sit
+  in the green region; its values are green there). Everything re-tints when a settings
+  edit recolors the style or the style switches, in the widget and in every workspace
+  cell. Hosts building similar chrome can read the new read-only `baselinePrice` render
+  feature — the resolved reference price the baseline paint splits on.
+- **The attribution mark stays on real plot area.** It anchors to the bottom-left of the
+  lowest visible, non-collapsed pane — the same rule the scroll-to-realtime button already
+  followed — so collapsing the bottom study pane (or maximizing another) lifts the mark
+  into the lowest open pane instead of leaving it on a collapsed strip's legend.
 - **The chrome shows the bare ticker, never `venue:TICKER`.** The topbar symbol button, the
   in-chart status line, the watermark and the object tree used to echo the raw symbol
   string, so a venue-pinned pick (the symbol picker composes `binance:BTCUSDT`) leaked the

@@ -1,7 +1,7 @@
 import type { InputSchema, InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { LegendActionView } from '../../core/ports/IChartRenderer';
 import type { VelaTheme, MoveTarget } from '../../core/options';
-import { isDarkColor, toHex6 } from '../../core/color';
+import { isDarkColor, toHex6, withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip } from './chrome-tooltip';
@@ -177,10 +177,12 @@ export class InputsUI {
 
     setTheme(theme: VelaTheme): void {
         this.theme = theme;
-        // Rows carry the chart background as an INLINE fill (set at creation) — repaint
-        // them, or a `layout.background` edit leaves stale chips floating over the plot.
+        // Rows carry the chart background as an INLINE fill (translucent when idle, solid
+        // when open) — repaint them, or a `layout.background` edit leaves stale chips
+        // floating over the plot. "Open" is what setRowHighlighted made visible.
         for (const row of this.rows.values()) {
-            row.el.style.background = theme.background;
+            const open = row.controlsEl.style.display !== 'none';
+            row.el.style.background = open ? theme.background : this.idleRowFill();
             row.el.style.color = theme.textColor;
         }
         if (this.foldToggle) this.foldToggle.style.background = theme.background;
@@ -436,9 +438,14 @@ export class InputsUI {
         // therefore exist as soon as a legend row does — not only once a dialog has opened.
         ensureDialogStyles();
         const el = document.createElement('div');
-        // Solid chart-background fill so the label stays readable over candles; hovering
-        // reveals the outline and controls, and leaving hides them again unless selected.
-        el.style.cssText = `pointer-events:auto;display:flex;align-items:center;gap:6px;background:${this.theme.background};border-radius:4px;padding:2px 7px;color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
+        // Idle rows are translucent chips sized by their title (status dot and controls are
+        // hidden) — enough wash to keep the label legible when candles reach it, without a
+        // solid block over the plot. Hovering/selecting fills the chip with the solid chart
+        // background so the revealed outline and controls stay readable (see setRowHighlighted).
+        // No left padding: the title's left edge must share the statusline avatar's left
+        // edge (both sit at the legend column's left:10px). Right/vertical padding stay so
+        // the chip still clears the controls when the row opens.
+        el.style.cssText = `pointer-events:auto;display:flex;align-items:center;gap:6px;background:${this.idleRowFill()};border-radius:4px;padding:2px 7px 2px 0;color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
         el.addEventListener('mouseenter', () => this.setRowHighlighted(id, true));
         el.addEventListener('mouseleave', () => { if (this.selectedId !== id) this.setRowHighlighted(id, false); });
         // Left-click the row (but not one of its control buttons) selects the indicator,
@@ -636,6 +643,9 @@ export class InputsUI {
         const row = this.rows.get(id);
         if (!row) return;
         row.el.style.boxShadow = highlighted ? `inset 0 0 0 1px ${this.neutralBorder()}` : 'none';
+        // The solid fill exists only while the row is open — an idle row is a translucent
+        // title-sized chip that lets the plot show through while keeping the label legible.
+        row.el.style.background = highlighted ? this.theme.background : this.idleRowFill();
         row.controlsEl.style.display = highlighted ? 'inline-flex' : 'none';
         if (row.eyeEl) row.eyeEl.style.display = highlighted || row.hidden ? 'inline-flex' : 'none';
     }
@@ -1150,6 +1160,12 @@ export class InputsUI {
     /** Whether the active theme is dark (drives the dialog's `color-scheme`). */
     private isDarkTheme(): boolean {
         return isDarkColor(this.theme.background);
+    }
+
+    /** Idle legend-row fill — a translucent wash of the chart background, so the title keeps
+     *  contrast when candles reach it without laying a solid block over the plot. */
+    private idleRowFill(): string {
+        return withAlpha(this.theme.background, 0.6);
     }
 
     /** Neutral field/separator border — the shared chrome border token. */
