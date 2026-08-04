@@ -1,11 +1,11 @@
-import type { VelaTheme } from '../../../core/options';
+import type { VelaTheme, ThemeName } from '../../../core/options';
 import type { ChartConfig } from '../core/chartConfig';
 import { chartType, chartTypes } from '../../../chart-types/registry';
 import { toHex6, withAlpha } from '../../../core/color';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
 import { colorField, closeColorPopover } from './ColorField';
-import { priceStyleIds, CHROME_BORDER_COLOR } from '../core/chartConfig';
+import { priceStyleIds } from '../core/chartConfig';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -111,6 +111,10 @@ export class SettingsDialog {
     private config: ChartConfig | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
+    /** The Canvas → Theme row: current app theme + where a pick is raised. The row is a
+     *  host callback, NOT a config patch — the app theme stays out of the persisted
+     *  `ChartConfig`, so exported templates never carry it. */
+    private themeControl: { current: ThemeName; onSelect: (name: ThemeName) => void } | null = null;
     /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
     private tabs: Array<{ title: string; show: () => void }> = [];
     /** The tab currently shown, so a theme change (which rebuilds) lands back on it. */
@@ -119,6 +123,18 @@ export class SettingsDialog {
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
         this.hostSections = sections;
+    }
+
+    /** Configure the Canvas → Theme row (see {@link themeControl}); null hides the row. */
+    setThemeControl(current: ThemeName, onSelect: (name: ThemeName) => void): void {
+        this.themeControl = { current, onSelect };
+    }
+
+    /** Refresh the stored config snapshot — a theme swap re-bases layout values while the
+     *  dialog is open, and the rebuilt controls must show the live ones, not the open-time
+     *  snapshot. */
+    refreshConfig(config: ChartConfig): void {
+        if (this.config) this.config = config;
     }
 
     constructor(
@@ -361,6 +377,11 @@ export class SettingsDialog {
         body.append(this.toggleRow('Horizontal', config.grid.horzLines.visible, (v) => this.emit({ grid: { horzLines: { visible: v } } }), [
             this.swatch(config.grid.horzLines.color, (v) => this.emit({ grid: { horzLines: { color: v } } })),
         ]));
+        if (this.themeControl) {
+            const tc = this.themeControl;
+            body.append(this.sectionTitle('Theme'));
+            body.append(this.selectRow('Color theme', tc.current === 'dark' ? 'Dark' : 'Light', ['Dark', 'Light'], (v) => tc.onSelect(v === 'Dark' ? 'dark' : 'light')));
+        }
 
         // ══ CHART-TYPE SDK SECTIONS — each registered type's declarative settings tab.
         //    visibility 'active' (default) shows the tab only while the style is active;

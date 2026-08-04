@@ -58,9 +58,6 @@ export const CROSSHAIR = '#9aa0ad';
 export const SLATE_DEEP = '#1e293b';
 export const SLATE = '#475569';
 
-/** Pane separator line on the dark chrome. */
-export const SEPARATOR = '#2e2e2e';
-
 /** Strategy trade markers — entry arrows per position side, and the exits' shared violet.
  *  The entry pair deliberately reuses the accent blue / bearish red (the reference palette
  *  of order-fill marks); the violet keeps exits apart from both directions. */

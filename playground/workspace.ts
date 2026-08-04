@@ -76,6 +76,15 @@ const ws = new VelaWorkspace('#workspace', {
     //                                 //  (browser WebGL-context budget; glow unavailable there)
 });
 
+// The page shell follows the app theme — flip it from any cell's chart settings →
+// Canvas → Theme (or `__ws.setTheme('light')` in the console); every LIVE cell relays
+// the change, and cells minted by later layout switches are wired as they appear.
+const syncShellTheme = (t: { background: string }): void => {
+    document.body.style.background = t.background;
+};
+for (const cell of ws.cells()) cell.chart.on('theme:changed', syncShellTheme);
+ws.on('cell:created', ({ id }) => ws.cell(id)?.chart.on('theme:changed', syncShellTheme));
+
 // Handy for poking around from the browser console (and for the automated probes).
 (window as unknown as { __ws: VelaWorkspace }).__ws = ws;
 

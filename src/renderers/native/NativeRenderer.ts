@@ -23,7 +23,7 @@ import type { Pane } from '../../core/model/scene';
 import type { IndicatorModel } from '../../core/model/indicator';
 import type { ScenePatch } from '../../core/model/patch';
 import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
-import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget } from '../../core/options';
+import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
 import { isLineLikeSeries } from '../../core/model/series';
 import { InputsUI } from '../shared/InputsUI';
@@ -54,7 +54,7 @@ import { computePaneScale, expandScaleByPixels } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
@@ -265,6 +265,8 @@ export class NativeRenderer implements IChartRenderer {
     private readonly crosshairCbs = new Set<(e: CrosshairEvent) => void>();
     private readonly chartTypeSettingsCbs = new Set<(typeId: string, values: Record<string, unknown>) => void>();
     private readonly configChangedCbs = new Set<() => void>();
+    /** The settings dialog's Canvas → Theme row raises the pick here; the host applies it. */
+    private readonly themeSelectCbs = new Set<(theme: ThemeName) => void>();
     /** First-run config snapshot — what "Reset defaults" restores. */
     private factoryConfig: ChartConfig | null = null;
     private hostSettingsSections: HostSettingsSection[] = [];
@@ -703,12 +705,35 @@ export class NativeRenderer implements IChartRenderer {
         // owned by the app theme (mount/setTheme) alone, so background edits — whether typed
         // live in the settings dialog or replayed from a persisted config — recolor only the
         // plot and never bleed into the chrome.
-        // layout → theme (mutate our copy; mount/setTheme own the canonical one)
-        this.theme = { ...this.theme, background: next.layout.background, textColor: next.layout.textColor, fontFamily: next.layout.fontFamily };
+        // layout → theme (mutate our copy; mount/setTheme own the canonical one).
+        // A background edit that lands the plot in the OTHER luminance class (a dark theme
+        // with a white background typed into the settings dialog) would leave the derived
+        // inks unreadable — light-gray legends and axis text on white. When the resulting
+        // text/background pair falls in the SAME luminance class and the patch itself did
+        // not choose a text color, re-base the derived inks (text/grid/border) from the
+        // built-in theme of the new class. An explicit `layout.textColor` in the same
+        // patch always wins (this also keeps full persisted configs, which serialize every
+        // value, byte-exact on restore).
+        const layoutPatch = config && typeof config === 'object' ? (config as { layout?: unknown }).layout : undefined;
+        const patchTextColor = layoutPatch && typeof layoutPatch === 'object' ? (layoutPatch as { textColor?: unknown }).textColor : undefined;
+        const explicitTextColor = typeof patchTextColor === 'string' && patchTextColor.trim().length > 0;
+        const prevTheme = this.theme;
+        let inks = { textColor: next.layout.textColor, gridColor: prevTheme.gridColor, borderColor: prevTheme.borderColor };
+        if (!explicitTextColor && isDarkColor(next.layout.textColor) === isDarkColor(next.layout.background)) {
+            const rebase = isDarkColor(next.layout.background) ? DARK_THEME : LIGHT_THEME;
+            inks = { textColor: rebase.textColor, gridColor: rebase.gridColor, borderColor: rebase.borderColor };
+        }
+        this.theme = { ...this.theme, background: next.layout.background, textColor: inks.textColor, gridColor: inks.gridColor, borderColor: inks.borderColor, fontFamily: next.layout.fontFamily };
         s.fontSize = next.layout.fontSize;
+        // `mergeConfig` runs over the RESOLVED getConfig(), so a live "inherit the theme"
+        // sentinel (null) comes back as its concrete value even when the patch never named
+        // the field. Writing that back would pin the old theme's color forever; keep the
+        // sentinel whenever the merged value is just the resolved echo of it.
+        const keepInherit = (cur: string | null, merged: string, resolved: string): string | null =>
+            cur === null && merged === resolved ? null : merged;
         // grid
-        s.gridVert = { visible: next.grid.vertLines.visible, color: next.grid.vertLines.color };
-        s.gridHorz = { visible: next.grid.horzLines.visible, color: next.grid.horzLines.color };
+        s.gridVert = { visible: next.grid.vertLines.visible, color: keepInherit(s.gridVert.color, next.grid.vertLines.color, prevTheme.gridColor) };
+        s.gridHorz = { visible: next.grid.horzLines.visible, color: keepInherit(s.gridHorz.color, next.grid.horzLines.color, prevTheme.gridColor) };
         // crosshair
         s.crosshair = {
             color: next.crosshair.color,
@@ -721,14 +746,14 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.scaleMode = next.priceScale.mode;
         this.scene.logScale = next.priceScale.log;
         this.scene.invertScale = next.priceScale.invert;
-        s.borderColor = next.priceScale.borderColor;
+        s.borderColor = keepInherit(s.borderColor, next.priceScale.borderColor, prevTheme.borderColor);
         this.scene.showAxisLabels = next.priceScale.labelsVisible;
         this.scene.showPriceLine = next.priceScale.currentPriceLine;
         this.scene.showPriceLabel = next.priceScale.priceLabel;
         this.scene.showCountdown = next.priceScale.countdown;
         this.syncCountdownTimer();
         // panes
-        s.separatorColor = next.panes.separatorColor;
+        s.separatorColor = keepInherit(s.separatorColor, next.panes.separatorColor, prevTheme.borderColor);
         // trade markers
         this.scene.tradeMarkers = {
             visible: next.trades.visible,
@@ -868,6 +893,16 @@ export class NativeRenderer implements IChartRenderer {
         this.toggleSettingsDialog(section);
     }
 
+    /** (Re)aim the dialog's Canvas → Theme row: the current selection reflects the STABLE
+     *  app-theme surface (not the plot background, which the config recolors
+     *  independently); a pick is raised to the host (`onThemeSelect`), which owns the
+     *  canonical theme. */
+    private syncThemeControl(): void {
+        this.settingsDialog?.setThemeControl(isDarkColor(this.surfaceBackground) ? 'dark' : 'light', (name) => {
+            for (const cb of this.themeSelectCbs) cb(name);
+        });
+    }
+
     private toggleSettingsDialog(section?: string): void {
         if (!this.settingsDialog) return;
         // A caller asking for a section wants to SEE it: an open dialog switches tabs
@@ -878,6 +913,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
+        this.syncThemeControl();
         this.settingsDialog.toggle(
             this.getConfig(),
             (patch) => this.applyConfig(patch),
@@ -1415,6 +1451,10 @@ export class NativeRenderer implements IChartRenderer {
         this.applyBackground();
         this.inputsUI.setTheme(theme);
         this.paneControls?.setTheme(this.theme);
+        // An open dialog rebuilds on setTheme — hand it the re-based config + the new
+        // current of its Theme row first, so the rebuilt controls show live values.
+        this.settingsDialog?.refreshConfig(this.getConfig());
+        this.syncThemeControl();
         this.settingsDialog?.setTheme(this.theme);
         if (this.settingsButton) {
             this.settingsButton.style.background = this.theme.background;
@@ -1893,6 +1933,11 @@ export class NativeRenderer implements IChartRenderer {
     onConfigChanged(cb: () => void): Unsubscribe {
         this.configChangedCbs.add(cb);
         return () => this.configChangedCbs.delete(cb);
+    }
+
+    onThemeSelect(cb: (theme: ThemeName) => void): Unsubscribe {
+        this.themeSelectCbs.add(cb);
+        return () => this.themeSelectCbs.delete(cb);
     }
 
     onCrosshairMove(cb: (e: CrosshairEvent) => void): Unsubscribe {

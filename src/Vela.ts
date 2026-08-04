@@ -2,7 +2,7 @@ import type { IChartRenderer, VisibleRange } from './core/ports/IChartRenderer';
 import type { ScriptingEngine } from './core/ports/ScriptingEngine';
 import type { MarketDataFeed } from './core/ports/MarketDataFeed';
 import type { VisibleRangePreset } from './core/visible-range';
-import type { VelaOptions, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
+import type { VelaOptions, VelaTheme, ThemeName, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
 import type { InputValue } from './core/model/inputs';
 import type { IndicatorHandle } from './core/IndicatorHandle';
 import type { EngineContextSnapshot } from './core/ports/ScriptingEngine';
@@ -406,6 +406,19 @@ export class Vela {
 
     resize(): void {
         this.orchestrator.resize();
+    }
+
+    /**
+     * Swap the app theme at runtime — `'dark'`, `'light'`, or a full custom
+     * {@link VelaTheme}. Re-skins the chart surface, axes, legends and in-chart chrome
+     * live (no indicator re-run, no rebuild) and emits `theme:changed` with the resolved
+     * theme so host chrome around the chart can follow. Explicitly customized plot
+     * cosmetics (a config-set background or series color) are re-based only when they
+     * were inherited from the previous theme.
+     */
+    setTheme(theme: ThemeName | VelaTheme): this {
+        this.orchestrator.setTheme(resolveTheme(theme));
+        return this;
     }
 
     destroy(): void {

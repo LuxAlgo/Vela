@@ -1,8 +1,7 @@
 import type { LineStyle } from '../../../core/model/series';
 import { chartTypes } from '../../../chart-types/registry';
 import { withAlpha } from '../../../core/color';
-import { BEARISH, BULLISH, CROSSHAIR, SEPARATOR, SERIES_LINE, SLATE } from '../../../core/palette';
-import { DARK_THEME } from '../../../core/theme';
+import { BEARISH, BULLISH, CROSSHAIR, SERIES_LINE, SLATE } from '../../../core/palette';
 import type { PriceStyle } from '../../../core/options';
 import type { ScaleMode } from './SceneGraph';
 
@@ -38,11 +37,6 @@ export const BASELINE_BOTTOM_LINE = BEARISH;
 export const BASELINE_FILL_ALPHA = 0.25;
 export const BASELINE_FILL_ALPHA_FAR = 0.05;
 export const BASELINE_LEVEL_DEFAULT = 50;
-
-/** Chrome divider fallback for chrome built before a theme is applied — the dark theme's
- *  border. Live chrome reads `--vela-border` instead (see the UI token layer). */
-export const CHROME_BORDER_COLOR = DARK_THEME.borderColor;
-
 
 export { withAlpha } from '../../../core/color';
 
@@ -153,8 +147,8 @@ export function defaultChartStyle(): ChartStyle {
         fontSize: 11,
         gridVert: { visible: true, color: null },
         gridHorz: { visible: true, color: null },
-        borderColor: CHROME_BORDER_COLOR,
-        separatorColor: SEPARATOR,
+        borderColor: null,
+        separatorColor: null,
         crosshair: { color: CROSSHAIR, width: 1, style: 'dashed', opacity: 0.4, labelBackground: SLATE },
         candle: {
             bodyVisible: true,

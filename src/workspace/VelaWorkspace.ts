@@ -35,7 +35,7 @@ import { toolShortcutHints } from '../widget/tool-shortcuts';
 import { legendActionsProviderFor, widgetAttachments } from '../widget/contributions';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
-import { createAttributionMark, createCustomMark } from '../renderers/native/chrome/AttributionMark';
+import { applyAttributionMarkTheme, createAttributionMark, createCustomMark } from '../renderers/native/chrome/AttributionMark';
 import { rendererDefaults } from '../core/renderer-defaults';
 import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
@@ -231,6 +231,8 @@ export class VelaWorkspace {
     private alerts: Array<{ cellId: string; symbol: string; title: string; message: string; time: number }> = [];
     private alertsMenu: Menu | null = null;
     private readonly attachmentDisposers = new Map<string, () => void>();
+    /** The single grid-wide attribution mark — re-inked on a live theme swap. */
+    private attributionMark: HTMLElement | null = null;
     private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
 
     constructor(container: HTMLElement | string, opts: VelaWorkspaceOptions = {}) {
@@ -379,6 +381,7 @@ export class VelaWorkspace {
                     : createAttributionMark(doc, background);
             Object.assign(mark.style, { left: '12px', bottom: `${TIME_AXIS_H + 10}px`, zIndex: '11' });
             this.gridEl.appendChild(mark);
+            this.attributionMark = mark; // kept so a live theme swap re-inks it
         }
 
         // ONE drawing toolbar for the whole grid: commands go to the ACTIVE cell's
@@ -649,6 +652,24 @@ export class VelaWorkspace {
         this.bottombar?.setTimezone(zone);
         for (const cell of this.cellsById.values()) cell.chart.renderer.set('timezone', zone);
         this.markStateDirty();
+    }
+
+    /**
+     * Swap the workspace theme at runtime — `'dark'`, `'light'`, or a full custom theme,
+     * applied to the shared chrome (topbar, panels, drawing toolbar) and EVERY cell.
+     * Also reached from any cell's chart settings → Canvas → Theme. The choice sticks:
+     * cells rebuilt by later layout switches reconstruct with it.
+     */
+    setTheme(theme: NonNullable<VelaWorkspaceOptions['theme']>): void {
+        if (this.destroyed) return;
+        const t = resolveTheme(theme);
+        this.opts.theme = theme;
+        ensureUIHost(this.root, t); // token re-write re-skins all token-driven chrome in place
+        this.drawToolbar?.setTheme(t);
+        if (this.attributionMark) applyAttributionMarkTheme(this.attributionMark, t.background);
+        // Each cell's own `setTheme` no-ops once the theme already matches, so the
+        // per-cell `theme:changed` echoes (see wireCell) terminate immediately.
+        for (const cell of this.cellsById.values()) cell.chart.setTheme(t);
     }
 
     // ── layout ──────────────────────────────────────────────────
@@ -957,6 +978,9 @@ export class VelaWorkspace {
         });
         // Viewport sync: every applied pan/zoom/fit propagates to the same-group cells.
         chart.on('viewport:changed', (range) => this.propagateViewport(cell.id, range));
+        // A theme picked in ONE cell (its settings dialog's Canvas → Theme) re-skins the
+        // WHOLE workspace — shared chrome plus every other cell.
+        chart.on('theme:changed', (t) => this.setTheme(t));
     }
 
     // ── sync links ──────────────────────────────────────────────

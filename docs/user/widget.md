@@ -217,6 +217,14 @@ their factories, manifest indicators re-added) only at construction. `widget.cha
 still points at the **current** inner chart — prefer reading it at the point of use
 rather than caching it long-term.
 
+## Theming
+
+The `theme` option (`'dark'`, `'light'`, or a full theme object) skins the whole widget —
+chart, topbar, menus, panels. Swap it at runtime with `widget.setTheme(...)`: the chart
+re-skins live and the widget chrome follows, no rebuild. Users reach the same switch in
+chart settings → Canvas → Theme. The built-in themes share the same candle colors, so
+switching never recolors the series.
+
 ## Customization
 
 Three levels, shallow to deep:
