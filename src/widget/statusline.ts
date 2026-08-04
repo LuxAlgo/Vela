@@ -7,13 +7,18 @@ import { injectStyles } from '../ui/styles';
 import { fmtPrice, fmtChange, decimalsFor } from './format';
 import { timeframeLabel } from './timeframe';
 import { tickerIconEl } from './symbol-icon';
+import { parseSymbol } from '../data/ProviderRegistry';
 
 const STYLE_ID = 'vela-widget-statusline';
 const CSS = `
 .vela-statusline {
     position: absolute;
     top: var(--vela-space-2);
-    left: 54px; /* clear of the drawing toolbar (40px) */
+    /* Track the indicator legend's left edge: the renderer publishes its toolbar gutter
+     * on the mount container, and the legend sits 10px into the plot to its right —
+     * so the two columns stay aligned whether the toolbar is docked (44px), collapsed
+     * (16px), or absent entirely (a workspace cell: 0). */
+    left: calc(var(--vela-toolbar-gutter, 0px) + 10px);
     z-index: 10;
     display: flex;
     align-items: baseline;
@@ -81,10 +86,13 @@ export class Statusline {
         host.classList.add('vela-has-statusline'); // scopes the price-legend shift to THIS host
         this.el = doc.createElement('div');
         this.el.className = 'vela-statusline';
-        this.avatarEl = tickerIconEl(doc, baseOfTicker(symbol), symbol, 'vela-sl-avatar');
+        // Display the bare ticker — the venue prefix is identity, not label; the venue
+        // itself shows in the meta segment ("· 1h · BINANCE") beside it.
+        const ticker = parseSymbol(symbol).ticker;
+        this.avatarEl = tickerIconEl(doc, baseOfTicker(ticker), ticker, 'vela-sl-avatar');
         this.symbolEl = doc.createElement('span');
         this.symbolEl.className = 'vela-sl-symbol';
-        this.symbolEl.textContent = symbol;
+        this.symbolEl.textContent = ticker;
         this.metaEl = doc.createElement('span');
         this.metaEl.className = 'vela-sl-meta';
         this.marketEl = doc.createElement('span');
@@ -100,8 +108,9 @@ export class Statusline {
     }
 
     setSymbol(symbol: string): void {
-        this.symbolEl.textContent = symbol;
-        const fresh = tickerIconEl(this.el.ownerDocument, baseOfTicker(symbol), symbol, 'vela-sl-avatar');
+        const ticker = parseSymbol(symbol).ticker;
+        this.symbolEl.textContent = ticker;
+        const fresh = tickerIconEl(this.el.ownerDocument, baseOfTicker(ticker), ticker, 'vela-sl-avatar');
         this.avatarEl.replaceWith(fresh);
         this.avatarEl = fresh;
     }

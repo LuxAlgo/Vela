@@ -130,6 +130,7 @@ export class NativeRenderer implements IChartRenderer {
     private wrapper!: HTMLDivElement; // outer root: holds the left toolbar gutter + the plot sub-container
     private plot!: HTMLDivElement; // the plot area (canvases + DOM overlays), inset to the right of the toolbar gutter
     private toolbarGutter = 0; // px reserved on the left for the docked drawings toolbar (0 when hidden)
+    private mountContainer: HTMLElement | null = null; // the host-owned element mount() renders into
     private dataCanvas!: HTMLCanvasElement;
     private volumeCanvas!: HTMLCanvasElement; // bottom-anchored volume columns above grid/candles
     private vpvrCanvas!: HTMLCanvasElement; // visible-range volume profile (above candles, right edge)
@@ -1108,6 +1109,8 @@ export class NativeRenderer implements IChartRenderer {
 
     // ── lifecycle ──
     mount(container: HTMLElement, theme: VelaTheme): void {
+        this.mountContainer = container;
+        this.publishToolbarGutter();
         this.theme = this.deriveTheme(theme);
         // provisional chrome surface (refined by the first applyConfig)
         this.surfaceBackground = theme.background;
@@ -1470,6 +1473,8 @@ export class NativeRenderer implements IChartRenderer {
         this.crosshairLayer.destroy();
         this.attributionEl?.remove();
         this.attributionEl = null;
+        this.mountContainer?.style.removeProperty('--vela-toolbar-gutter');
+        this.mountContainer = null;
         this.wrapper?.remove();
     }
 
@@ -3135,8 +3140,16 @@ export class NativeRenderer implements IChartRenderer {
     private setToolbarGutter(px: number): void {
         if (px === this.toolbarGutter) return;
         this.toolbarGutter = px;
+        this.publishToolbarGutter();
         this.positionAttribution();
         this.syncSize();
+    }
+
+    /** Publish the gutter on the mount container as `--vela-toolbar-gutter`, so host
+     *  overlays sharing that container (a status line, a custom legend) can anchor to
+     *  the plot's left edge without reaching into the renderer's DOM. */
+    private publishToolbarGutter(): void {
+        this.mountContainer?.style.setProperty('--vela-toolbar-gutter', `${this.toolbarGutter}px`);
     }
 
     /** The built-in mark, or the host's own when one is set. */

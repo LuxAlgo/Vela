@@ -58,6 +58,8 @@ const EYE_SVG = iconAt('eye', LEGEND_ICON_PX);
 const EYE_OFF_SVG = iconAt('eye-off', LEGEND_ICON_PX);
 const GEAR_SVG = iconAt('gear', LEGEND_ICON_PX);
 const CLOSE_SVG = iconAt('close', 11);
+const FOLD_SVG = iconAt('chevron-up', LEGEND_ICON_PX);
+const UNFOLD_SVG = iconAt('chevron-down', LEGEND_ICON_PX);
 
 /**
  * Chart-style inputs UI built on top of lightweight-charts (which has no
@@ -100,6 +102,13 @@ export class InputsUI {
     private moveMenu: HTMLElement | null = null;
     /** Collapsed panes → the master indicator id to keep visible (others hidden in the strip). */
     private paneCollapse = new Map<string, string | null>();
+    /** The user folded the indicator legend away behind the chevron — CHART-WIDE: every
+     *  pane's rows hide (a pane-collapse strip keeps its master label, its only marker),
+     *  unlike {@link paneCollapse} which collapses one pane to a strip. */
+    private legendFolded = false;
+    /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
+     *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
+    private foldToggle: HTMLButtonElement | null = null;
     /** Esc-to-close for the settings modal (bound so focus can sit anywhere). */
     private readonly onDialogKey = (e: KeyboardEvent): void => {
         if (e.key === 'Escape') {
@@ -174,6 +183,7 @@ export class InputsUI {
             row.el.style.background = theme.background;
             row.el.style.color = theme.textColor;
         }
+        if (this.foldToggle) this.foldToggle.style.background = theme.background;
     }
 
     /** Provide (or clear) the host symbol picker that `input.symbol` opens on activation. */
@@ -294,6 +304,7 @@ export class InputsUI {
         const prev = row.paneId;
         row.paneId = paneId;
         this.attach(this.legendFor(paneId), row.el, row.native);
+        this.syncFoldToggle(); // a moved row must follow the fold state in its new pane
         if (prev !== 'price') {
             const lg = this.legends.get(prev);
             if (lg && lg.childElementCount === 0) { lg.remove(); this.legends.delete(prev); }
@@ -324,11 +335,14 @@ export class InputsUI {
         // A collapsed pane is a legend-only strip: show just its master indicator's row. Restore
         // hidden rows to 'flex' (their intended layout — set in the row's cssText), NOT '' which
         // would revert them to block and break the inline button row (hide/show, settings, …).
+        // A FOLDED legend (the chevron under the price-pane rows) hides every pane's rows —
+        // study panes included — leaving only the bordered "˅ N" chip; a strip keeps its
+        // master label, since that label is the strip's only marker.
         const collapsed = this.paneCollapse.has(paneId);
         const masterId = this.paneCollapse.get(paneId) ?? null;
         for (const row of this.rows.values()) {
             if (row.paneId !== paneId) continue;
-            row.el.style.display = collapsed && row.id !== masterId ? 'none' : 'flex';
+            row.el.style.display = (collapsed ? row.id !== masterId : this.legendFolded) ? 'none' : 'flex';
         }
         // Expanded panes inset the legend from the top; a collapsed strip is too short for that —
         // center the single master row in it so its hover controls (hide/show, settings, …) stay
@@ -346,6 +360,63 @@ export class InputsUI {
         this.paneCollapse = map;
     }
 
+    /**
+     * Keep the fold toggle in step with the indicator count: with 2+ indicators anywhere
+     * on the chart, a bordered ^ chevron sits under the price-pane rows (click folds every
+     * pane's rows away — study panes included — leaving a bordered "˅ N" chip that unfolds
+     * them); with fewer, the toggle disappears and a fold in force is undone. Re-appended
+     * last so {@link attach}'s prepend/append never leaves it above a row.
+     */
+    private syncFoldToggle(): void {
+        const count = this.rows.size;
+        if (count < 2) {
+            const wasFolded = this.legendFolded;
+            this.legendFolded = false;
+            if (this.foldToggle) {
+                this.foldToggle.remove();
+                this.foldToggle = null;
+                this.disposeTips(this.rowTips, 'fold');
+            }
+            if (wasFolded) this.reposition(); // unhide the surviving row(s)
+            return;
+        }
+        let btn = this.foldToggle;
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'vela-ind-fold';
+            this.tip(this.rowTips, 'fold', btn, () => (this.legendFolded ? 'Show indicator legend' : 'Hide indicator legend'));
+            btn.addEventListener('click', () => {
+                this.legendFolded = !this.legendFolded;
+                this.syncFoldToggle();
+            });
+            this.foldToggle = btn;
+        }
+        const folded = this.legendFolded;
+        btn.setAttribute('aria-label', folded ? 'Show indicator legend' : 'Hide indicator legend');
+        // Bordered chip in both states; folded shows chevron then the count to its right
+        // (reference: "˅ 12"), expanded is just the up chevron that folds the list away.
+        // Border uses the shared chrome token (same as menus/dialogs) — `--vela-fg-muted`
+        // was too bright against the plot. Extra margin-top clears the last indicator
+        // title; the legend column's own 3px gap is too tight under a bordered chip.
+        btn.style.cssText = `pointer-events:auto;display:inline-flex;align-items:center;gap:4px;background:${this.theme.background};border:1px solid var(--vela-border);border-radius:4px;padding:2px 6px;margin-top:6px;cursor:pointer;font:inherit;line-height:0;`;
+        btn.replaceChildren();
+        const icon = document.createElement('span');
+        icon.style.cssText = 'display:inline-flex;align-items:center;line-height:0;';
+        icon.innerHTML = folded ? UNFOLD_SVG : FOLD_SVG;
+        btn.appendChild(icon);
+        if (folded) {
+            const label = document.createElement('span');
+            label.textContent = String(count);
+            label.style.cssText = 'font-weight:600;line-height:normal;font-size:12px;color:var(--vela-fg-bright);';
+            btn.appendChild(label);
+        }
+        // The toggle lives on the PRICE pane's legend (created on demand — the price pane
+        // may carry no indicator itself while study panes do).
+        this.legendFor('price').appendChild(btn);
+        this.reposition(); // every pane's rows follow the fold, not just the price pane's
+    }
+
     /** Create or update an indicator's legend row (in the legend for its pane). */
     upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean } = {}): void {
         const existing = this.rows.get(id);
@@ -357,6 +428,7 @@ export class InputsUI {
             if (existing.paneId !== paneId) { // re-routed to a different pane
                 existing.paneId = paneId;
                 this.attach(this.legendFor(paneId), existing.el, existing.native);
+                this.syncFoldToggle(); // a re-routed row must follow the fold state in its new pane
             }
             return;
         }
@@ -478,6 +550,7 @@ export class InputsUI {
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
         this.rows.set(id, { id, title, inputs, values: { ...values }, el, titleEl, statusEl, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
+        this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
     }
 
     /** Place a row in its pane's legend — native rows PREPEND (pinned to the top), Pine rows append. */
@@ -582,6 +655,7 @@ export class InputsUI {
         this.disposeTips(this.extrasTips, id);
         if (this.selectedId === id) this.selectedId = null;
         if (this.openId === id) this.closeDialog();
+        this.syncFoldToggle(); // below 2 indicators the chevron goes (and a fold in force lifts)
         // Drop an emptied non-price pane legend container (the pane itself is gone too).
         if (row && row.paneId !== 'price') {
             const lg = this.legends.get(row.paneId);
@@ -597,6 +671,8 @@ export class InputsUI {
         for (const lg of this.legends.values()) lg.remove();
         this.legends.clear();
         this.rows.clear();
+        this.foldToggle = null; // its element left with the legend containers
+        this.legendFolded = false;
         this.selectedId = null;
         if (typeof document !== 'undefined') document.removeEventListener('click', this.onDocClick);
     }
@@ -1190,6 +1266,8 @@ function ensureDialogStyles(): void {
 .vela-ind-ctl:hover{color:var(--vela-fg-bright);}
 .vela-ind-close{transition:color var(--vela-dur-fast) ease;}
 .vela-ind-close:hover{color:var(--vela-danger) !important;}
+.vela-ind-fold{color:var(--vela-fg-muted);transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
+.vela-ind-fold:hover{color:var(--vela-fg-bright);border-color:var(--vela-border-strong);}
 .vela-ind-menuitem{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-ind-menuitem:hover{background:var(--vela-hover-strong);}
 .vela-ind-btn{cursor:pointer;padding:7px 14px;border-radius:var(--vela-radius-md);border:1px solid transparent;background:transparent;color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}

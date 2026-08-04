@@ -44,6 +44,11 @@ All notable changes to Vela, newest first.
 - **The bottom-bar clock opens the time-zone menu.** The time and the zone label are now one
   button: clicking the clock itself brings up the same zone picker as clicking the zone name
   next to it.
+- **The indicator legend folds away.** With two or more indicators on the chart, a
+  bordered chevron sits under the price-pane legend rows; clicking it folds every
+  pane's indicator titles — study panes included — into a compact "˅ N" chip (and
+  back), so a busy legend stops covering the plots. The toggle disappears when a
+  single indicator is left.
 - **Hosts can follow in-chart settings edits.** `chart.renderer.onConfigChanged(cb)` fires
   whenever the cosmetic config changes — the settings dialog commits through it — so host
   chrome that mirrors a config value (a time-zone display, a saved template) can re-read it
@@ -92,6 +97,17 @@ All notable changes to Vela, newest first.
 - **The indicator legend follows the chart background.** Changing the background color in
   chart settings repaints the legend rows with it; they used to keep the color they were
   created with and float as stale chips over the new background.
+- **The chrome shows the bare ticker, never `venue:TICKER`.** The topbar symbol button, the
+  in-chart status line, the watermark and the object tree used to echo the raw symbol
+  string, so a venue-pinned pick (the symbol picker composes `binance:BTCUSDT`) leaked the
+  routing prefix into every label. They now display the ticker alone — the venue already
+  shows where it belongs: the status line's meta segment and the picker's venue badges.
+- **The status line lines up with the indicator legend.** Its left offset was hardcoded to
+  clear the widget's docked drawing toolbar, so in a workspace cell (no per-cell toolbar) it
+  floated 44px right of the legend, and a collapsed toolbar left it hanging mid-air. The
+  renderer now publishes its toolbar gutter as `--vela-toolbar-gutter` on the mount
+  container and the status line anchors to it, keeping the two in one column in every
+  shell and toolbar state.
 
 ## [v0.4.6]
 
