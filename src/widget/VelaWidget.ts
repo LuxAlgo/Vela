@@ -175,6 +175,7 @@ export class VelaWidget {
         this.timezone = fromUrl.timezone ?? boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         this.bars = Number(fromUrl.bars ?? bootCell?.bars ?? opts.bars ?? 1000);
         this.watermarkOn = bootCell?.watermark !== undefined ? bootCell.watermark : opts.watermark !== false;
+        this.indicatorTitlesOn = bootCell?.indicatorTitles ?? true;
         this.favs = boot?.favorites ? [...boot.favorites] : [];
         this.savedConfig = bootCell?.rendererConfig ?? null;
         this.savedDrawings = bootCell?.drawings ?? null;
@@ -513,6 +514,7 @@ export class VelaWidget {
         cell.priceStyle = this.priceStyle;
         if (this.bars > 0) cell.bars = this.bars;
         cell.watermark = this.watermarkOn;
+        cell.indicatorTitles = this.indicatorTitlesOn;
         if (this.inner) {
             cell.rendererConfig = this.inner.renderer.getConfig();
             cell.drawings = this.inner.drawings.toJSON();
@@ -563,6 +565,7 @@ export class VelaWidget {
             const style = fromUrl.priceStyle ?? cell.priceStyle;
             if (style && style !== this.priceStyle) this.setPriceStyle(style);
             if (cell.watermark !== undefined && cell.watermark !== this.watermarkOn) this.setWatermarkVisible(cell.watermark);
+            if (cell.indicatorTitles !== undefined && cell.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cell.indicatorTitles);
             if (cell.rendererConfig != null) {
                 this.savedConfig = cell.rendererConfig;
                 this.inner?.renderer.applyConfig(cell.rendererConfig);
@@ -666,6 +669,13 @@ export class VelaWidget {
     setWatermarkVisible(visible: boolean): void {
         this.watermarkOn = visible;
         this.watermark?.setVisible(visible);
+        this.markStateDirty();
+    }
+
+    /** Show/hide the indicator titles — the in-chart legend rows (persisted). */
+    setIndicatorTitlesVisible(visible: boolean): void {
+        this.indicatorTitlesOn = visible;
+        this.inner?.renderer.set('indicatorTitles', visible);
         this.markStateDirty();
     }
 
@@ -982,10 +992,7 @@ export class VelaWidget {
                             kind: 'toggle',
                             label: 'Titles',
                             get: () => this.indicatorTitlesOn,
-                            set: (v: boolean) => {
-                                this.indicatorTitlesOn = v;
-                                chart.renderer.set('indicatorTitles', v);
-                            },
+                            set: (v: boolean) => this.setIndicatorTitlesVisible(v),
                         },
                     ],
                 },

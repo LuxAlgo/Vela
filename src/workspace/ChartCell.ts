@@ -133,7 +133,7 @@ export interface CellDeps {
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** Persistable per-cell state changed outside the market/indicator channels
-     *  (bars budget, watermark toggle) — the workspace debounces a save. */
+     *  (bars budget, watermark/titles toggles) — the workspace debounces a save. */
     onStateDirty(): void;
 }
 
@@ -271,6 +271,8 @@ export class ChartCell {
         const tz = deps.timezone();
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
+        this.indicatorTitlesOn = seed.indicatorTitles ?? true;
+        if (!this.indicatorTitlesOn) this.inner.renderer.set('indicatorTitles', false);
         this.watermarkOn = seed.watermark ?? deps.watermark;
         this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60') : null;
         if (!this.watermarkOn) this.watermark?.setVisible(false);
@@ -344,8 +346,9 @@ export class ChartCell {
 
         // HOST settings sections — the same set the widget contributes, per cell
         // (the shared topbar gear opens the ACTIVE cell's dialog): status line parts,
-        // the per-cell fetch depth, and the per-cell watermark toggle. Bars/watermark
-        // are persistable cell state; a depth-only reload is silent, so mark dirty here.
+        // the per-cell fetch depth, and the per-cell watermark/titles toggles.
+        // Bars/watermark/titles are persistable cell state; a depth-only reload is
+        // silent, so mark dirty here.
         const advanced = {
             title: 'Advanced',
             placement: 'end' as const,
@@ -391,10 +394,7 @@ export class ChartCell {
                             kind: 'toggle',
                             label: 'Titles',
                             get: () => this.indicatorTitlesOn,
-                            set: (v: boolean) => {
-                                this.indicatorTitlesOn = v;
-                                this.inner?.renderer.set('indicatorTitles', v);
-                            },
+                            set: (v: boolean) => this.setIndicatorTitlesVisible(v),
                         },
                     ],
                 },
@@ -425,6 +425,13 @@ export class ChartCell {
     setWatermarkVisible(visible: boolean): void {
         this.watermarkOn = visible;
         this.watermark?.setVisible(visible);
+        this.deps.onStateDirty();
+    }
+
+    /** Show/hide this cell's indicator titles — the in-chart legend rows (persisted per cell). */
+    setIndicatorTitlesVisible(visible: boolean): void {
+        this.indicatorTitlesOn = visible;
+        this.inner?.renderer.set('indicatorTitles', visible);
         this.deps.onStateDirty();
     }
 
@@ -688,6 +695,7 @@ export class ChartCell {
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
             priceStyle: this.priceStyle,
             watermark: this.watermarkOn,
+            indicatorTitles: this.indicatorTitlesOn,
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
             // Natives from the chart's SYNC registry read — an async catalog mirror here
