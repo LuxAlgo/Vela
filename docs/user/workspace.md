@@ -70,20 +70,22 @@ layout (`cell:destroyed`). Host code that tracks cells should **follow
 `setLayout` (or a restored document) mints cells that a one-time snapshot never sees.
 
 Layouts live in a registry (`registerLayout` from `vela/workspace`), and the topbar's
-**layout dropdown** composes them on a 4×4 grid canvas, driven by an icon-only
-orientation switch (Grid / Columns / Rows — the last Columns/Rows choice sticks
-across reopen until you switch):
+**layout dropdown** offers two tabs:
 
-- **Grid** — hover previews the full *columns × rows* rectangle from the top-left
-  (the table-insert idiom); a click applies it immediately. Rectangles matching a
-  classic preset (`1`, `2h`, `2v`, `4`, `8`) reuse it; anything else gets a
-  self-describing dynamic id (`g3x2` = 3 rows × 2 columns).
-- **Columns / Rows** — each click sets a **chart stack** along that orientation
-  (clicking a stack's exact end clears it), and **Apply** commits. Switching between
-  the two orientations keeps the painted pattern in place, re-reading it along the
-  other axis. Mixed stacks (say 3 charts in the first column, 2 in the second)
-  render as full-height columns via LCM row tracks; their ids are `p3-2`-style
-  (`r3-2` for row-based mixes).
+- **Presets** — curated multi-chart splits as clickable pictogram tiles, the most
+  useful setups first (2 × 2 grid, 2 side by side, 2 stacked, 1 large + 2 small,
+  1 large + 3 small, 1 wide + 2 below, 1 wide + 3 below, 3 × 2 grid). The **⇄** tile
+  mirrors the asymmetric splits (large pane right/bottom instead of left/top). A
+  click applies the preset immediately. Mixed splits render as full-height columns
+  via LCM row tracks; their ids are `p1-2`-style (`r1-2` for row-based splits).
+- **Grid** — a 4×4 canvas with an icon-only mode trio. In *Grid* mode, hover
+  previews the full *columns × rows* rectangle from the top-left (the table-insert
+  idiom) and a click applies it immediately; rectangles matching a classic preset
+  (`1`, `2h`, `2v`, `4`, `8`) reuse it, anything else gets a self-describing dynamic
+  id (`g3x2` = 3 rows × 2 columns). In *Columns* / *Rows* mode, each click sets a
+  **chart stack** along that orientation (clicking a stack's exact end clears it)
+  and **Apply** commits — switching between the two keeps the painted pattern in
+  place, re-reading it along the other axis.
 
 Both id families resolve without registration (persisted picks restore across boots).
 Plugin layouts the canvas cannot express (bespoke `areas`) list as labeled rows under
