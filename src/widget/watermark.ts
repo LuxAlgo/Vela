@@ -1,6 +1,7 @@
 // Symbol watermark — large faded "SYMBOL · TF" centered behind the chart chrome.
 import { injectStyles } from '../ui/styles';
 import { timeframeLabel } from './timeframe';
+import { parseSymbol } from '../data/ProviderRegistry';
 
 const STYLE_ID = 'vela-widget-watermark';
 const CSS = `
@@ -38,7 +39,8 @@ export class Watermark {
     }
 
     update(symbol: string, timeframe: string): void {
-        this.el.textContent = symbol ? `${symbol} · ${timeframeLabel(timeframe)}` : '';
+        // Bare ticker — the venue prefix is routing identity, not something to watermark.
+        this.el.textContent = symbol ? `${parseSymbol(symbol).ticker} · ${timeframeLabel(timeframe)}` : '';
     }
 
     destroy(): void {

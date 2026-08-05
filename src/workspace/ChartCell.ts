@@ -15,7 +15,7 @@ import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
-import { Statusline } from '../widget/statusline';
+import { Statusline, statuslineInkOf } from '../widget/statusline';
 import { Watermark } from '../widget/watermark';
 import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
@@ -24,6 +24,8 @@ import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
 import { legendActionsProviderFor, resolveEngines, type WidgetContext } from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
+import { normalizeTimezone } from '../core/timezones';
+import { applyPlotOverlayTokens } from '../ui';
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
  *  The SAME vocabulary as the widget's chart options: the workspace's top-level chart
@@ -132,7 +134,7 @@ export interface CellDeps {
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** Persistable per-cell state changed outside the market/indicator channels
-     *  (bars budget, watermark toggle) — the workspace debounces a save. */
+     *  (bars budget, watermark/titles toggles) — the workspace debounces a save. */
     onStateDirty(): void;
 }
 
@@ -152,6 +154,9 @@ export class ChartCell {
     activeRangeId: string | null = null;
 
     private inner: Vela | null;
+    /** The live app theme — seeded from deps, updated on `theme:changed` (the base the
+     *  plot-overlay tokens re-derive from). */
+    private appTheme: VelaTheme;
     private readonly statusline: Statusline | null;
     private readonly watermark: Watermark | null;
     private readonly contextMenu: ChartContextMenu;
@@ -168,9 +173,14 @@ export class ChartCell {
     private volumeMayBePending = true;
     /** Volume intent: the seed's ledger, else the workspace `volume` option. */
     private readonly volumeIntent: boolean;
+    /** Sync mirror of the chart's present native types — the removal handler diffs
+     *  against it to identify (and record) whichever type was just removed. */
+    private presentNatives: string[] = [];
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
     private watermarkOn: boolean;
+    /** Indicator titles (this cell's in-chart legend rows) shown. */
+    private indicatorTitlesOn = true;
     private destroyed = false;
 
     constructor(
@@ -179,6 +189,7 @@ export class ChartCell {
         seed: CellBoot,
         private readonly deps: CellDeps,
     ) {
+        this.appTheme = deps.theme;
         // The canonical symbol form: pre-prefix pooled/persisted states carried the venue
         // in `provider` beside a bare symbol — weld them back together once, at boot.
         const symbol = prefixedSymbol(seed);
@@ -228,6 +239,31 @@ export class ChartCell {
         // Contributed legend-row actions — the row resolves on THIS cell's chart; the
         // context follows the workspace rule (built fresh per click, active-cell bound).
         this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
+        // The cell owns ONE unified undo timeline (drawings + indicator ops), driven by
+        // the workspace keymap. The drawings layer must not self-serve Ctrl+Z/Y or the
+        // two histories desync (its preempt would pop the core drawing stack while the
+        // keymap pops an unrelated cell entry).
+        if (this.inner.renderer.supports('historyChords')) this.inner.renderer.set('historyChords', false);
+        this.history.onChart(this.inner);
+        // The renderer's settings dialog owns a Time zone row too (it commits through
+        // applyConfig) — mirror it back so the workspace bottom bar, the other cells and
+        // the persisted state never disagree with this cell's axis. `renderer.set` is a
+        // feature write, not an applyConfig, so adopting the value cannot loop.
+        this.inner.renderer.onConfigChanged(() => {
+            const zone = this.inner?.renderer.get('timezone');
+            if (typeof zone === 'string' && normalizeTimezone(zone) !== normalizeTimezone(this.deps.timezone())) {
+                this.deps.setTimezone(normalizeTimezone(zone));
+            }
+            this.syncStatuslineColors(); // a settings edit may have recolored the active style
+            this.syncPlotOverlayTokens(); // a background edit may have flipped the plot's luminance
+        });
+        // A live theme swap re-bases this cell's overlay tokens too (the workspace already
+        // re-skins the shared chrome).
+        this.inner.on('theme:changed', (t) => {
+            this.appTheme = t;
+            this.syncPlotOverlayTokens();
+        });
+        this.syncPlotOverlayTokens();
         // Pool restore: cosmetics + drawings round-trip (both validate untrusted input).
         if (seed.rendererConfig != null) this.inner.renderer.applyConfig(seed.rendererConfig);
         if (seed.drawings != null) this.inner.drawings.fromJSON(seed.drawings);
@@ -248,12 +284,15 @@ export class ChartCell {
         const tz = deps.timezone();
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
+        this.indicatorTitlesOn = seed.indicatorTitles ?? true;
+        if (!this.indicatorTitlesOn) this.inner.renderer.set('indicatorTitles', false);
         this.watermarkOn = seed.watermark ?? deps.watermark;
         this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60') : null;
         if (!this.watermarkOn) this.watermark?.setVisible(false);
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '') : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
+        this.syncStatuslineColors();
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => {
                 this.inner?.renderer.set('autoScale', true);
@@ -270,22 +309,59 @@ export class ChartCell {
             this.lastCrossTime = e.time;
             this.lastCrossPrice = e.price;
         });
-        this.inner.on('indicator:added', () => this.refreshNativeCatalog());
-        this.inner.on('indicator:removed', ({ id }) => {
-            // Out-of-band removals (legend ✕, object tree, handle.remove()) must drop
-            // the matching manifest-instance ledger entry too — a stale entry kept the
-            // name in the persisted document and resurrected the indicator on reload.
-            // The picker path splices first, so this lookup no-ops there (idempotent).
-            const idx = this.instances.findIndex((it) => it.handle?.id === id);
-            if (idx >= 0) this.instances.splice(idx, 1);
+        this.inner.on('indicator:added', () => {
+            this.syncPresentNatives();
             this.refreshNativeCatalog();
         });
+        this.inner.on('indicator:removed', ({ id }) => {
+            if (this.destroyed) return;
+            // Out-of-band removals (legend ✕, object tree, middle-click, handle.remove())
+            // must drop the matching manifest-instance ledger entry too — a stale entry
+            // kept the name in the persisted document and resurrected the indicator on
+            // reload — AND enter the undo timeline like a picker removal would. The picker
+            // path splices/records first (so these lookups no-op there), and replays run
+            // muted, so an undo/redo never re-records itself.
+            const idx = this.instances.findIndex((it) => it.handle?.id === id);
+            if (idx >= 0) {
+                const snapshot = this.instances[idx]!;
+                this.instances.splice(idx, 1);
+                this.history.push({
+                    undo: () => {
+                        snapshot.handle = this.addToChart(snapshot.entry);
+                        this.instances.push(snapshot);
+                        this.deps.onIndicatorsChanged(this.id);
+                    },
+                    redo: () => this.dropInstance(snapshot),
+                });
+            } else {
+                // A native indicator left the registry — whichever type vanished from the
+                // sync presence list is the one an undo must restore. This is the SINGLE
+                // recording site for native removals (picker, legend ✕, object tree).
+                const now = this.inner?.presentNativeIndicators() ?? [];
+                for (const type of this.presentNatives.filter((t) => !now.includes(t))) {
+                    this.history.push({
+                        undo: () => {
+                            this.inner?.addNativeIndicator(type);
+                            this.refreshNativeCatalog();
+                        },
+                        redo: () => {
+                            this.inner?.addNativeIndicator(type).remove();
+                            this.refreshNativeCatalog();
+                        },
+                    });
+                }
+            }
+            this.syncPresentNatives();
+            this.refreshNativeCatalog();
+        });
+        this.syncPresentNatives();
         this.refreshNativeCatalog();
 
         // HOST settings sections — the same set the widget contributes, per cell
         // (the shared topbar gear opens the ACTIVE cell's dialog): status line parts,
-        // the per-cell fetch depth, and the per-cell watermark toggle. Bars/watermark
-        // are persistable cell state; a depth-only reload is silent, so mark dirty here.
+        // the per-cell fetch depth, and the per-cell watermark/titles toggles.
+        // Bars/watermark/titles are persistable cell state; a depth-only reload is
+        // silent, so mark dirty here.
         const advanced = {
             title: 'Advanced',
             placement: 'end' as const,
@@ -321,10 +397,18 @@ export class ChartCell {
                 {
                     title: 'Status line',
                     rows: [
+                        { kind: 'heading', label: 'Status line' },
                         { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
                         { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
                         { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
                         { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                        { kind: 'heading', label: 'Indicators' },
+                        {
+                            kind: 'toggle',
+                            label: 'Titles',
+                            get: () => this.indicatorTitlesOn,
+                            set: (v: boolean) => this.setIndicatorTitlesVisible(v),
+                        },
                     ],
                 },
                 advanced,
@@ -354,6 +438,13 @@ export class ChartCell {
     setWatermarkVisible(visible: boolean): void {
         this.watermarkOn = visible;
         this.watermark?.setVisible(visible);
+        this.deps.onStateDirty();
+    }
+
+    /** Show/hide this cell's indicator titles — the in-chart legend rows (persisted per cell). */
+    setIndicatorTitlesVisible(visible: boolean): void {
+        this.indicatorTitlesOn = visible;
+        this.inner?.renderer.set('indicatorTitles', visible);
         this.deps.onStateDirty();
     }
 
@@ -400,6 +491,21 @@ export class ChartCell {
     setPriceStyle(style: string): void {
         this.state.priceStyle = style;
         this.inner?.renderer.set('priceStyle', style);
+        this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
+    }
+
+    /** OHLC/change ink in the status line follows the ACTIVE price style's configured
+     *  colors and direction rule (candle bodies by close-vs-open, baseline by position
+     *  against the live baseline price, …) instead of the fixed theme tokens. */
+    private syncStatuslineColors(): void {
+        if (!this.statusline || !this.inner) return;
+        this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
+    }
+
+    /** The workspace shell keeps the app theme; the cell host's tokens re-derive from
+     *  the LIVE plot surface (see {@link applyPlotOverlayTokens}). */
+    private syncPlotOverlayTokens(): void {
+        applyPlotOverlayTokens(this.host, this.appTheme, this.inner?.renderer.getConfig() ?? null);
     }
 
     /**
@@ -547,6 +653,7 @@ export class ChartCell {
     /** Add a native indicator (single-instance per type — the core dedupes). */
     addNative(type: string): void {
         this.inner?.addNativeIndicator(type);
+        this.syncPresentNatives();
         this.refreshNativeCatalog();
         this.history.push({
             undo: () => {
@@ -561,19 +668,17 @@ export class ChartCell {
     }
 
     private removeNative(type: string): void {
-        // addNativeIndicator on a present type returns the EXISTING handle.
+        // addNativeIndicator on a present type returns the EXISTING handle. The undo
+        // entry is recorded by the indicator:removed handler — the single site shared
+        // with the legend ✕ and the object tree.
         this.inner?.addNativeIndicator(type).remove();
         this.refreshNativeCatalog();
-        this.history.push({
-            undo: () => {
-                this.inner?.addNativeIndicator(type);
-                this.refreshNativeCatalog();
-            },
-            redo: () => {
-                this.inner?.addNativeIndicator(type).remove();
-                this.refreshNativeCatalog();
-            },
-        });
+    }
+
+    /** Sync mirror of the chart's present native types — the removal handler diffs
+     *  against it to identify (and record) whichever type was just removed. */
+    private syncPresentNatives(): void {
+        this.presentNatives = this.inner?.presentNativeIndicators() ?? [];
     }
 
     /** Refresh the native catalog (supported/present flags) for this cell's market. */
@@ -609,6 +714,7 @@ export class ChartCell {
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
             priceStyle: this.priceStyle,
             watermark: this.watermarkOn,
+            indicatorTitles: this.indicatorTitlesOn,
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
             // Natives from the chart's SYNC registry read — an async catalog mirror here

@@ -39,6 +39,12 @@ export const MARKER = '#ff5d00';
 export const VALID = '#0ecb81';
 export const INVALID = '#f6465d';
 
+/** Market-session states beside the theme's up-colored "open": pre-market dawn amber,
+ *  post-market dusk sky, and the shared closed/holiday gray (statusline badge). */
+export const SESSION_PRE = '#f97316';
+export const SESSION_POST = '#0ea5e9';
+export const SESSION_OFF = '#9ca3af';
+
 /** Default color of a plain line/area series — a softer blue than {@link ACCENT}, which is
  *  reserved for interactive chrome. */
 export const SERIES_LINE = '#3b82f6';
@@ -51,9 +57,6 @@ export const CROSSHAIR = '#9aa0ad';
  *  readable. `SLATE_DEEP` is the plate, `SLATE` its border. */
 export const SLATE_DEEP = '#1e293b';
 export const SLATE = '#475569';
-
-/** Pane separator line on the dark chrome. */
-export const SEPARATOR = '#2e2e2e';
 
 /** Strategy trade markers — entry arrows per position side, and the exits' shared violet.
  *  The entry pair deliberately reuses the accent blue / bearish red (the reference palette

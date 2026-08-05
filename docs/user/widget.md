@@ -43,7 +43,7 @@ the surface it shares, name for name and meaning for meaning, with
 | `autofocus` | boolean | `false` | Focus the chart on mount so keyboard shortcuts work from the first keystroke. Off by default: an embedded chart should not steal the page's focus. |
 | `persist` | boolean \| string | `false` | Bring the chart back as you left it — the widget persists its FULL state (the unified `getState()` document: market, prefs, renderer config, user drawings, indicators) and restores it at construction (`true` = key `'vela-widget'`; a string is the key). Old three-key payloads migrate transparently. |
 | `storage` | `VelaStorage` | localStorage | The persistence backend — inject a custom adapter (see below); one contract for both shells. |
-| `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark flag) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
+| `urlState` | boolean | `false` | Mirror the persisted values (all but the watermark and indicator-titles flags) in the URL query (`?symbol=…&interval=…&style=…&tz=…&bars=…`) — shareable links. A URL param **wins** over persisted state at load. |
 
 ## The indicator manifest
 
@@ -144,7 +144,7 @@ const state = widget.getState();
 // → { version: 1, layout: '1', activeCellId: 'c1', timezone, favorites?,
 //     panels?: { open?, widths? },
 //     charts: [{ id: 'c1', symbol, provider?, timeframe, priceStyle, bars?, watermark?,
-//                rendererConfig, drawings, indicators }] }
+//                indicatorTitles?, rendererConfig, drawings, indicators }] }
 
 widget.applyState(state); // untrusted-safe; applied IN PLACE (the chart survives)
 widget.on('state:changed', () => {
@@ -216,6 +216,14 @@ The inner chart is destroyed and recreated (providers/engines re-registered from
 their factories, manifest indicators re-added) only at construction. `widget.chart`
 still points at the **current** inner chart — prefer reading it at the point of use
 rather than caching it long-term.
+
+## Theming
+
+The `theme` option (`'dark'`, `'light'`, or a full theme object) skins the whole widget —
+chart, topbar, menus, panels. Swap it at runtime with `widget.setTheme(...)`: the chart
+re-skins live and the widget chrome follows, no rebuild. Users reach the same switch in
+chart settings → Canvas → Theme. The built-in themes share the same candle colors, so
+switching never recolors the series.
 
 ## Customization
 

@@ -47,6 +47,17 @@ describe('drawings/annotations (Wave 13)', () => {
         expect(mk('signpost', 2).text?.value).toBe('Signpost');
     });
 
+    it('seeds NO text color — the creation path fixes a theme-contrast ink instead', () => {
+        // A forced white seed would be invisible on a light plate; `undefined` lets the
+        // renderer fix the ink against the active theme (and auto-contrast until then).
+        for (const [t, n] of [['note', 1], ['pricenote', 2], ['comment', 2], ['pricelabel', 1], ['signpost', 2], ['callout', 2]] as const) {
+            expect(mk(t, n).text?.color).toBeUndefined();
+        }
+        // …while an explicit color (a deserialized document) passes through untouched.
+        const kept = createDrawing('note', { paneId: 'price', anchors: [{ time: 0, price: 1 }], text: { value: 'x', color: '#ffffff', size: 'normal', hAlign: 'left', vAlign: 'top' } })!;
+        expect(kept.text?.color).toBe('#ffffff');
+    });
+
     it('round-trips through serialize', () => {
         for (const [t, n] of [['note', 1], ['pricenote', 2], ['comment', 2], ['pricelabel', 1], ['signpost', 2]] as const) {
             const a = mk(t, n).serialize();

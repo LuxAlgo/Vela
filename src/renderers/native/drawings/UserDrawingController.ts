@@ -13,13 +13,13 @@ import type {
 } from '../../../core/drawings';
 import { deserializeDrawing, resetDrawingSettings, Callout, TextLabel } from '../../../core/drawings';
 import type { Unsubscribe } from '../../../core/util/types';
-import { namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
+import { contrastColor, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { withAlpha } from '../core/chartConfig';
 import { blendOver, splitColor } from './colorPicker';
 import { DrawingPainter, handleIdsFor, type PaintTargets } from './DrawingPainter';
 import { DrawingInteraction } from './DrawingInteraction';
 import { DrawingSettingsPopup } from './DrawingSettingsPopup';
-import { DrawingToolbar } from './DrawingToolbar';
+import { DrawingToolbar, TOOLBAR_WIDTH, TOOLBAR_COLLAPSED_WIDTH } from './DrawingToolbar';
 import { MeasureOverlay } from './MeasureOverlay';
 import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
 import { keyToDrawingAction, isEditingText } from './DrawingKeys';
@@ -59,8 +59,8 @@ export interface UserDrawingDeps {
     snap(point: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }): DrawingPoint;
     /** Set the sticky magnet mode (driven by the toolbar's 3-state button). */
     setSnapMode(mode: SnapMode): void;
-    /** Reserve (or release) the left gutter for the docked toolbar — the plot insets to its right. */
-    setToolbarGutter(visible: boolean): void;
+    /** Reserve `px` of left gutter for the docked toolbar (0 releases it) — the plot insets to its right. */
+    setToolbarGutter(px: number): void;
 }
 
 /** No interaction targets on the interleave layers — handles always paint in front. */
@@ -103,6 +103,12 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private activeToolStyle: SerializedDrawing['style'] | undefined; // last-used style for the armed tool (seeds the placement ghost)
     private intentCb: ((i: DrawingIntent) => void) | null = null;
     private readonly measure = new MeasureOverlay(); // transient ruler — not a persistent drawing
+    private toolbarVisible = false; // mirrors showToolbar (drives the gutter reservation)
+    private toolbarCollapsed = false; // the bar is a slim expand-strip (narrower gutter)
+    /** Self-serve Ctrl+Z / Ctrl+Y as drawing undo/redo. A host that owns a UNIFIED
+     *  history (drawings + app ops in one timeline) turns this off so the chords
+     *  bubble to its keymap instead — see the renderer's `historyChords` feature. */
+    historyChords = true;
     private measureMode = false; // the ruler is armed (placing a measurement)
     private eraserMode = false; // click/drag over a drawing deletes it
     private erasing = false; // a button is held during eraser mode (so a drag erases multiple)
@@ -136,6 +142,12 @@ export class UserDrawingController implements IDrawingsRendererPort {
             () => this.withModeIntent(() => this.toggleEraser()),
             (type, on) => this.emit({ kind: 'favorite', type, on }),
             (on) => this.emit({ kind: 'stay-mode', on }),
+            {
+                onCollapse: (collapsed) => {
+                    this.toolbarCollapsed = collapsed;
+                    this.syncToolbarGutter();
+                },
+            },
         );
         this.interaction = new DrawingInteraction({
             projector: () => this.deps.projector(),
@@ -160,8 +172,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
     }
 
     showToolbar(visible: boolean): void {
+        this.toolbarVisible = visible;
         this.toolbar.setVisible(visible);
-        this.deps.setToolbarGutter(visible); // reserve/release the left gutter so the bar never overlaps the plot
+        this.syncToolbarGutter(); // reserve/release the left gutter so the bar never overlaps the plot
+    }
+
+    /** The gutter follows the bar's current footprint: hidden 0, collapsed a slim strip, else full width. */
+    private syncToolbarGutter(): void {
+        this.deps.setToolbarGutter(this.toolbarVisible ? (this.toolbarCollapsed ? TOOLBAR_COLLAPSED_WIDTH : TOOLBAR_WIDTH) : 0);
     }
 
     syncDrawings(docs: readonly SerializedDrawing[]): void {
@@ -642,9 +660,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
         if (!action) return false;
         switch (action.kind) {
             case 'undo':
+                if (!this.historyChords) return false; // the host's keymap owns Ctrl+Z/Y
                 this.emit({ kind: 'undo' });
                 break;
             case 'redo':
+                if (!this.historyChords) return false;
                 this.emit({ kind: 'redo' });
                 break;
             case 'copy':
@@ -871,6 +891,13 @@ export class UserDrawingController implements IDrawingsRendererPort {
         // caret is already waiting. Works for both click + drag finalize — the core reassigns the id,
         // so we diff the drawing set around the create to find the new one.
         if (i.kind === 'create') {
+            // A fresh annotation FIXES its text ink at creation: max contrast against the
+            // live theme's plot background, stored on the drawing itself — so a later theme
+            // or background change never recolors what is already placed. A color the user
+            // chose (or a deserialized document carries) always passes through untouched.
+            if (i.doc.text && i.doc.text.color === undefined) {
+                i.doc.text = { ...i.doc.text, color: contrastColor(this.deps.theme().background) };
+            }
             const before = new Set(this.drawings.map((d) => d.id));
             this.intentCb?.(i);
             // Defer past the sync + the placing click (which would otherwise steal focus / dismiss

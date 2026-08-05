@@ -11,10 +11,10 @@ import type { VelaOptions } from '../core/options';
 import { resolveTheme } from '../core/theme';
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
-import { ensureUIHost, injectStyles } from '../ui';
+import { applyPlotOverlayTokens, ensureUIHost, injectStyles } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
-import { Statusline } from './statusline';
+import { Statusline, statuslineInkOf } from './statusline';
 import { Watermark } from './watermark';
 import { Bottombar, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
@@ -34,6 +34,7 @@ import { readUrlState, writeUrlState } from './url-state';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from './glide';
 import { toolShortcutHints } from './tool-shortcuts';
 import { WidgetHistory } from './history';
+import { normalizeTimezone } from './timezones';
 import { Toast } from './toast';
 import { Menu } from '../ui/components/menu';
 import { indicatorLedger, resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from './indicators';
@@ -83,6 +84,8 @@ export class VelaWidget {
     private instances: Array<{ entry: ResolvedIndicator; handle: IndicatorHandle | null }> = [];
     /** Native-indicator catalog of the CURRENT chart (refreshed per rebuild/change). */
     private nativeCatalog: Array<{ type: string; title: string; supported: boolean; present: boolean; beta?: boolean }> = [];
+    /** Present native types, mirrored SYNC from the chart (see syncPresentNatives). */
+    private presentNatives: string[] = [];
     private readonly storageKey: string | null;
     private readonly storage: VelaStorage;
     private openDialogs = 0;
@@ -93,6 +96,8 @@ export class VelaWidget {
     private timezone: string;
     private bars: number;
     private watermarkOn: boolean;
+    /** Indicator titles (the in-chart legend rows) shown — reapplied across rebuilds. */
+    private indicatorTitlesOn = true;
     private pendingRange: RangePreset | null = null;
     /** Symbol already reported as unservable (the core re-reports on every index settle). */
     private unresolvedToasted: string | null = null;
@@ -170,6 +175,7 @@ export class VelaWidget {
         this.timezone = fromUrl.timezone ?? boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         this.bars = Number(fromUrl.bars ?? bootCell?.bars ?? opts.bars ?? 1000);
         this.watermarkOn = bootCell?.watermark !== undefined ? bootCell.watermark : opts.watermark !== false;
+        this.indicatorTitlesOn = bootCell?.indicatorTitles ?? true;
         this.favs = boot?.favorites ? [...boot.favorites] : [];
         this.savedConfig = bootCell?.rendererConfig ?? null;
         this.savedDrawings = bootCell?.drawings ?? null;
@@ -508,6 +514,7 @@ export class VelaWidget {
         cell.priceStyle = this.priceStyle;
         if (this.bars > 0) cell.bars = this.bars;
         cell.watermark = this.watermarkOn;
+        cell.indicatorTitles = this.indicatorTitlesOn;
         if (this.inner) {
             cell.rendererConfig = this.inner.renderer.getConfig();
             cell.drawings = this.inner.drawings.toJSON();
@@ -558,6 +565,7 @@ export class VelaWidget {
             const style = fromUrl.priceStyle ?? cell.priceStyle;
             if (style && style !== this.priceStyle) this.setPriceStyle(style);
             if (cell.watermark !== undefined && cell.watermark !== this.watermarkOn) this.setWatermarkVisible(cell.watermark);
+            if (cell.indicatorTitles !== undefined && cell.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cell.indicatorTitles);
             if (cell.rendererConfig != null) {
                 this.savedConfig = cell.rendererConfig;
                 this.inner?.renderer.applyConfig(cell.rendererConfig);
@@ -598,13 +606,17 @@ export class VelaWidget {
         const chart = this.inner;
         if (!chart) return;
         this.ledgerVolume = led.natives.includes('volume');
-        for (const type of led.natives) {
-            if (!this.nativeCatalog.some((n) => n.type === type && n.present)) chart.addNativeIndicator(type);
-        }
-        for (const n of this.nativeCatalog) {
-            if (n.present && !led.natives.includes(n.type)) chart.addNativeIndicator(n.type).remove();
-        }
-        for (const it of [...this.instances]) this.dropInstance(it);
+        // Converging to the ledger is state application, not user edits — the
+        // indicator:removed handler must not record these into the undo timeline.
+        this.history.silently(() => {
+            for (const type of led.natives) {
+                if (!this.nativeCatalog.some((n) => n.type === type && n.present)) chart.addNativeIndicator(type);
+            }
+            for (const n of this.nativeCatalog) {
+                if (n.present && !led.natives.includes(n.type)) chart.addNativeIndicator(n.type).remove();
+            }
+            for (const it of [...this.instances]) this.dropInstance(it);
+        });
         if (this.manifest.length > 0) {
             for (const name of led.manifest) {
                 const entry = this.manifest.find((e) => e.name === name);
@@ -660,12 +672,47 @@ export class VelaWidget {
         this.markStateDirty();
     }
 
+    /** Show/hide the indicator titles — the in-chart legend rows (persisted). */
+    setIndicatorTitlesVisible(visible: boolean): void {
+        this.indicatorTitlesOn = visible;
+        this.inner?.renderer.set('indicatorTitles', visible);
+        this.markStateDirty();
+    }
+
     /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
     setPriceStyle(style: string): void {
         this.priceStyle = style;
         this.topbar.setPriceStyle(style);
         this.inner?.renderer.set('priceStyle', style);
+        this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
         this.markStateDirty();
+    }
+
+    /** OHLC/change ink in the status line follows the ACTIVE price style's configured
+     *  colors and direction rule (candle bodies by close-vs-open, baseline by position
+     *  against the live baseline price, …) instead of the fixed theme tokens. */
+    private syncStatuslineColors(): void {
+        if (!this.statusline || !this.inner) return;
+        this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
+    }
+
+    /** The widget shell (topbar, panels) keeps the app theme; the chart host's tokens
+     *  re-derive from the LIVE plot surface (see {@link applyPlotOverlayTokens}). */
+    private syncPlotOverlayTokens(): void {
+        applyPlotOverlayTokens(this.chartHost, resolveTheme(this.opts.theme), this.inner?.renderer.getConfig() ?? null);
+    }
+
+    /**
+     * Swap the widget theme at runtime — `'dark'`, `'light'`, or a full custom theme.
+     * Applied LIVE: the inner chart re-skins through `Vela.setTheme` and its
+     * `theme:changed` event re-tokens the widget chrome (topbar, menus, panels) in
+     * place; the choice also persists into rebuilds. Same switch the user reaches from
+     * chart settings → Canvas → Theme.
+     */
+    setTheme(theme: NonNullable<VelaOptions['theme']>): void {
+        if (this.destroyed) return;
+        this.opts.theme = theme;
+        this.inner?.setTheme(theme);
     }
 
     /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
@@ -780,23 +827,59 @@ export class VelaWidget {
         this.objectTree.setSymbol(this.symbol);
         // Contributed legend-row actions (registerLegendAction) — resolved per row, per click.
         chart.renderer.setLegendActions(legendActionsProviderFor(chart, () => this.context()));
+        // The widget owns ONE unified undo timeline (drawings + indicator ops). The
+        // drawings layer must not self-serve Ctrl+Z/Y or the two histories desync
+        // (its preempt would pop the core drawing stack while the keymap pops an
+        // unrelated widget entry). With the chords bubbling up, the keymap is the
+        // single entry point and drawing steps replay as delegate entries.
+        if (chart.renderer.supports('historyChords')) chart.renderer.set('historyChords', false);
         this.dock.onChart(chart); // every docked panel rebinds, contributed ones included
         this.contextMenu.onChart(chart);
         this.refreshNativeCatalog();
         chart.on('indicator:added', () => {
+            this.syncPresentNatives();
             this.refreshNativeCatalog();
             this.markStateDirty();
         });
         chart.on('indicator:removed', ({ id }) => {
-            // Out-of-band removals (legend ✕, object tree, handle.remove()) must drop
-            // the matching manifest-instance ledger entry too — a stale entry kept the
-            // name in the persisted document and resurrected the indicator on reload.
-            // The picker path splices first, so this lookup no-ops there (idempotent).
+            // Out-of-band removals (legend ✕, object tree, middle-click, handle.remove())
+            // must drop the matching manifest-instance ledger entry too — a stale entry
+            // kept the name in the persisted document and resurrected the indicator on
+            // reload — AND enter the undo timeline like a picker removal would. The picker
+            // path splices/records first (so these lookups no-op there), and replays run
+            // muted, so an undo/redo never re-records itself.
             const idx = this.instances.findIndex((it) => it.handle?.id === id);
             if (idx >= 0) {
+                const snapshot = this.instances[idx]!;
                 this.instances.splice(idx, 1);
                 this.syncIndicatorCount();
+                this.history.push({
+                    undo: () => {
+                        snapshot.handle = this.inner ? this.addToChart(this.inner, snapshot.entry) : null;
+                        this.instances.push(snapshot);
+                        this.syncIndicatorCount();
+                    },
+                    redo: () => this.dropInstance(snapshot),
+                });
+            } else {
+                // A native indicator left the registry — whichever type vanished from the
+                // sync presence list is the one an undo must restore. This is the SINGLE
+                // recording site for native removals (picker, legend ✕, object tree).
+                const now = this.inner?.presentNativeIndicators() ?? [];
+                for (const type of this.presentNatives.filter((t) => !now.includes(t))) {
+                    this.history.push({
+                        undo: () => {
+                            this.inner?.addNativeIndicator(type);
+                            this.refreshNativeCatalog();
+                        },
+                        redo: () => {
+                            this.inner?.addNativeIndicator(type).remove();
+                            this.refreshNativeCatalog();
+                        },
+                    });
+                }
             }
+            this.syncPresentNatives();
             this.refreshNativeCatalog();
             this.markStateDirty();
         });
@@ -807,6 +890,7 @@ export class VelaWidget {
             // With the natives applied and no manifest ever coming, nothing is pending.
             if (this.manifestSettled) this.pendingIndicators = null;
         }
+        this.syncPresentNatives();
         // The volume auto-add rides the first candles — from `load:end` on, the registry
         // is the whole truth and the persisted ledger stops reporting the intent.
         chart.on('load:end', () => {
@@ -817,6 +901,15 @@ export class VelaWidget {
         // resting OHLC belongs to the old market, and an out-of-band switch (host code calling
         // chart.setMarket directly) must still update the chrome. The widget's own setters
         // already synced most of it — the guards make this a cheap no-op then.
+        // The app theme changed — `widget.setTheme(...)` or the chart's in-chart settings
+        // dialog (Canvas → Theme). The widget chrome is token-driven, so re-writing the
+        // tokens on the root re-skins topbar/menus/panels in place; the resolved theme is
+        // kept on the options so a later `rebuild()` reconstructs with it.
+        chart.on('theme:changed', (t) => {
+            this.opts.theme = t;
+            ensureUIHost(this.root, t);
+            this.syncPlotOverlayTokens();
+        });
         chart.on('market:changed', ({ symbol, timeframe }) => {
             this.refreshNativeCatalog();
             if (this.statusline) this.statusline.onChart(chart); // drop the old market's resting OHLC
@@ -868,7 +961,22 @@ export class VelaWidget {
         // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).
         if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
         if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
+        if (!this.indicatorTitlesOn) chart.renderer.set('indicatorTitles', false);
+        // The renderer's settings dialog owns a Time zone row too (it commits through
+        // applyConfig) — mirror it back so the bottom-bar clock/label and the persisted
+        // state never disagree with the axis. `renderer.set` is a feature write, not an
+        // applyConfig, so adopting the value cannot loop.
+        chart.renderer.onConfigChanged(() => {
+            const zone = chart.renderer.get('timezone');
+            if (typeof zone === 'string' && normalizeTimezone(zone) !== normalizeTimezone(this.timezone)) {
+                this.setTimezone(normalizeTimezone(zone));
+            }
+            this.syncStatuslineColors(); // a settings edit may have recolored the active style
+            this.syncPlotOverlayTokens(); // a background edit may have flipped the plot's luminance
+        });
+        this.syncPlotOverlayTokens();
         this.statusline?.onChart(chart);
+        this.syncStatuslineColors();
         const advanced = {
             title: 'Advanced',
             placement: 'end' as const,
@@ -904,10 +1012,18 @@ export class VelaWidget {
                 {
                     title: 'Status line',
                     rows: [
+                        { kind: 'heading', label: 'Status line' },
                         { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
                         { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
                         { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
                         { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                        { kind: 'heading', label: 'Indicators' },
+                        {
+                            kind: 'toggle',
+                            label: 'Titles',
+                            get: () => this.indicatorTitlesOn,
+                            set: (v: boolean) => this.setIndicatorTitlesVisible(v),
+                        },
                     ],
                 },
                 advanced,
@@ -975,6 +1091,7 @@ export class VelaWidget {
     /** Add a native indicator (single-instance per type — the core dedupes). */
     private addNative(type: string): void {
         this.inner?.addNativeIndicator(type);
+        this.syncPresentNatives();
         this.refreshNativeCatalog();
         this.history.push({
             undo: () => {
@@ -989,19 +1106,17 @@ export class VelaWidget {
     }
 
     private removeNative(type: string): void {
-        // addNativeIndicator on a present type returns the EXISTING handle.
+        // addNativeIndicator on a present type returns the EXISTING handle. The undo
+        // entry is recorded by the indicator:removed handler — the single site shared
+        // with the legend ✕ and the object tree.
         this.inner?.addNativeIndicator(type).remove();
         this.refreshNativeCatalog();
-        this.history.push({
-            undo: () => {
-                this.inner?.addNativeIndicator(type);
-                this.refreshNativeCatalog();
-            },
-            redo: () => {
-                this.inner?.addNativeIndicator(type).remove();
-                this.refreshNativeCatalog();
-            },
-        });
+    }
+
+    /** Sync mirror of the chart's present native types — the removal handler diffs
+     *  against it to identify (and record) whichever type was just removed. */
+    private syncPresentNatives(): void {
+        this.presentNatives = this.inner?.presentNativeIndicators() ?? [];
     }
 
     /** Add ONE instance of a manifest entry (repeatable — duplicates are legitimate). */

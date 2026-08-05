@@ -23,7 +23,7 @@ import type { Pane } from '../../core/model/scene';
 import type { IndicatorModel } from '../../core/model/indicator';
 import type { ScenePatch } from '../../core/model/patch';
 import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
-import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget } from '../../core/options';
+import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
 import { isLineLikeSeries } from '../../core/model/series';
 import { InputsUI } from '../shared/InputsUI';
@@ -54,7 +54,7 @@ import { computePaneScale, expandScaleByPixels } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, CHROME_BORDER_COLOR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
@@ -89,7 +89,6 @@ const SCROLL_BTN_BOTTOM = TIME_AXIS_H + 30; // px from the plot's bottom edge �
 const SCROLL_BTN_PROXIMITY_PX = 120; // the button reveals only while the cursor is within this radius of its center
 const MIN_VISIBLE_BARS = 2; // never zoom/pan so far that fewer than this many candles stay on screen (the only pan limit)
 const ZOOM_OUT_MARGIN_BARS = 6; // breathing room at max zoom-out: all bars + this margin fill the width (no thin strip)
-const LEFT_GUTTER_W = 44; // px reserved on the left for the docked drawings toolbar (only while it is visible)
 // Animation time constants (exponential-approach time-constants, ms).
 const ZOOM_TAU_MS = 70; // wheel-zoom glide
 const SCALE_TAU_MS = 80; // autoscale glide during zoom/fling
@@ -122,15 +121,15 @@ export class NativeRenderer implements IChartRenderer {
 
     private theme!: VelaTheme;
     // The app "chrome" surface (drawing toolbar + axis-scale gutters): background + text.
-    // Seeded once from the initial theme/config so the chrome matches the chart on first
-    // paint, then held stable — later background/text edits recolor only the plot, keeping
-    // the toolbar and scales on a consistent, always-readable surface.
+    // Owned by the app theme alone (mount/setTheme) — config-level background/text edits
+    // (settings dialog, persisted configs) recolor only the plot, keeping the toolbar and
+    // scales on a consistent, always-readable surface.
     private surfaceBackground = DARK_THEME.background;
     private surfaceTextColor = DARK_THEME.textColor;
-    private surfaceSeeded = false;
     private wrapper!: HTMLDivElement; // outer root: holds the left toolbar gutter + the plot sub-container
     private plot!: HTMLDivElement; // the plot area (canvases + DOM overlays), inset to the right of the toolbar gutter
     private toolbarGutter = 0; // px reserved on the left for the docked drawings toolbar (0 when hidden)
+    private mountContainer: HTMLElement | null = null; // the host-owned element mount() renders into
     private dataCanvas!: HTMLCanvasElement;
     private volumeCanvas!: HTMLCanvasElement; // bottom-anchored volume columns above grid/candles
     private vpvrCanvas!: HTMLCanvasElement; // visible-range volume profile (above candles, right edge)
@@ -166,11 +165,15 @@ export class NativeRenderer implements IChartRenderer {
     private input!: InputController;
     private inputsUI!: InputsUI;
     private symbolPicker: SymbolPickerFn | null = null;
+    /** Indicator titles (the legend rows) shown — held here so a remount re-applies it. */
+    private indicatorTitlesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
     private keyboard: KeyboardController | null = null;
     private keyboardEnabled = true;
+    /** Drawings layer self-serves Ctrl+Z/Y (see the `historyChords` feature). */
+    private historyChordsEnabled = true;
     private liveRegion: HTMLDivElement | null = null;
 
     // ── animation state (eased zoom + inertial pan) ──
@@ -261,6 +264,9 @@ export class NativeRenderer implements IChartRenderer {
     private readonly viewportCbs = new Set<(r: VisibleRange) => void>();
     private readonly crosshairCbs = new Set<(e: CrosshairEvent) => void>();
     private readonly chartTypeSettingsCbs = new Set<(typeId: string, values: Record<string, unknown>) => void>();
+    private readonly configChangedCbs = new Set<() => void>();
+    /** The settings dialog's Canvas → Theme row raises the pick here; the host applies it. */
+    private readonly themeSelectCbs = new Set<(theme: ThemeName) => void>();
     /** First-run config snapshot — what "Reset defaults" restores. */
     private factoryConfig: ChartConfig | null = null;
     private hostSettingsSections: HostSettingsSection[] = [];
@@ -291,7 +297,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'priceStyle', 'priceBaseline', 'settings', 'attribution', 'dialogHost', 'tradeMarkers'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -411,9 +417,21 @@ export class NativeRenderer implements IChartRenderer {
             case 'keyboard':
                 this.setKeyboardEnabled(Boolean(value));
                 return; // owns its own DOM (focus/listeners/live region)
+            case 'historyChords':
+                // Off = the host keymap owns Ctrl+Z/Y (a unified app+drawings history);
+                // the drawings layer stops consuming the chords so they bubble up.
+                this.historyChordsEnabled = Boolean(value);
+                if (this.userDrawings) this.userDrawings.historyChords = this.historyChordsEnabled;
+                return; // keyboard-path only — nothing to repaint
             case 'settings':
                 this.setSettingsEnabled(Boolean(value));
                 return; // owns its own DOM (gear button + dialog)
+            case 'indicatorTitles':
+                // Show/hide the indicator legend rows chart-wide (the settings dialog's
+                // Indicators toggle drives it through the host section).
+                this.indicatorTitlesOn = value !== false;
+                this.inputsUI?.setTitlesVisible(this.indicatorTitlesOn);
+                return; // own DOM, no repaint needed
             case 'attribution':
                 // `false` hides it, `true` restores the built-in mark, a non-empty STRING
                 // puts the host's own mark in that corner (see the NOTICE).
@@ -469,9 +487,19 @@ export class NativeRenderer implements IChartRenderer {
             case 'timezone': return this.scene.timezone;
             case 'priceStyle': return this.scene.priceStyle;
             case 'priceBaseline': return this.scene.baselineValue;
+            case 'baselinePrice': {
+                // READ-ONLY: the RESOLVED baseline reference price the paint splits on —
+                // the explicit `priceBaseline` when set, else the configured level% of the
+                // price pane's current range. Host chrome coloring by baseline position
+                // (a status line's value ink) compares against this.
+                const price = this.scene.panes.get(PRICE_PANE_ID);
+                return price ? this.scene.baselinePriceFor(price.scale) : this.scene.baselineValue;
+            }
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'keyboard': return this.keyboardEnabled;
+            case 'historyChords': return this.historyChordsEnabled;
             case 'settings': return this.settingsEnabled;
+            case 'indicatorTitles': return this.indicatorTitlesOn;
             case 'attribution': return this.attributionHtml ?? this.attributionEnabled;
             case 'dialogHost': return this.dialogHost ?? undefined;
             default: return undefined;
@@ -673,19 +701,39 @@ export class NativeRenderer implements IChartRenderer {
             for (const cb of this.chartTypeSettingsCbs) cb(typeId, { ...vals });
         }
         s.chartTypes = Object.fromEntries(Object.entries(next.chartTypes).map(([k, v]) => [k, { ...v }]));
-        // Seed the chrome surface from the FIRST config so the toolbar/scales match the initial
-        // background; after that it's frozen, so later background edits don't bleed into them.
-        if (!this.surfaceSeeded) {
-            this.surfaceBackground = next.layout.background;
-            this.surfaceTextColor = next.layout.textColor;
-            this.surfaceSeeded = true;
+        // The chrome surface (toolbar/scales) deliberately does NOT follow the config: it is
+        // owned by the app theme (mount/setTheme) alone, so background edits — whether typed
+        // live in the settings dialog or replayed from a persisted config — recolor only the
+        // plot and never bleed into the chrome.
+        // layout → theme (mutate our copy; mount/setTheme own the canonical one).
+        // A background edit that lands the plot in the OTHER luminance class (a dark theme
+        // with a white background typed into the settings dialog) would leave the derived
+        // inks unreadable — light-gray legends and axis text on white. When the resulting
+        // text/background pair falls in the SAME luminance class and the patch itself did
+        // not choose a text color, re-base the derived inks (text/grid/border) from the
+        // built-in theme of the new class. An explicit `layout.textColor` in the same
+        // patch always wins (this also keeps full persisted configs, which serialize every
+        // value, byte-exact on restore).
+        const layoutPatch = config && typeof config === 'object' ? (config as { layout?: unknown }).layout : undefined;
+        const patchTextColor = layoutPatch && typeof layoutPatch === 'object' ? (layoutPatch as { textColor?: unknown }).textColor : undefined;
+        const explicitTextColor = typeof patchTextColor === 'string' && patchTextColor.trim().length > 0;
+        const prevTheme = this.theme;
+        let inks = { textColor: next.layout.textColor, gridColor: prevTheme.gridColor, borderColor: prevTheme.borderColor };
+        if (!explicitTextColor && isDarkColor(next.layout.textColor) === isDarkColor(next.layout.background)) {
+            const rebase = isDarkColor(next.layout.background) ? DARK_THEME : LIGHT_THEME;
+            inks = { textColor: rebase.textColor, gridColor: rebase.gridColor, borderColor: rebase.borderColor };
         }
-        // layout → theme (mutate our copy; mount/setTheme own the canonical one)
-        this.theme = { ...this.theme, background: next.layout.background, textColor: next.layout.textColor, fontFamily: next.layout.fontFamily };
+        this.theme = { ...this.theme, background: next.layout.background, textColor: inks.textColor, gridColor: inks.gridColor, borderColor: inks.borderColor, fontFamily: next.layout.fontFamily };
         s.fontSize = next.layout.fontSize;
+        // `mergeConfig` runs over the RESOLVED getConfig(), so a live "inherit the theme"
+        // sentinel (null) comes back as its concrete value even when the patch never named
+        // the field. Writing that back would pin the old theme's color forever; keep the
+        // sentinel whenever the merged value is just the resolved echo of it.
+        const keepInherit = (cur: string | null, merged: string, resolved: string): string | null =>
+            cur === null && merged === resolved ? null : merged;
         // grid
-        s.gridVert = { visible: next.grid.vertLines.visible, color: next.grid.vertLines.color };
-        s.gridHorz = { visible: next.grid.horzLines.visible, color: next.grid.horzLines.color };
+        s.gridVert = { visible: next.grid.vertLines.visible, color: keepInherit(s.gridVert.color, next.grid.vertLines.color, prevTheme.gridColor) };
+        s.gridHorz = { visible: next.grid.horzLines.visible, color: keepInherit(s.gridHorz.color, next.grid.horzLines.color, prevTheme.gridColor) };
         // crosshair
         s.crosshair = {
             color: next.crosshair.color,
@@ -698,14 +746,14 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.scaleMode = next.priceScale.mode;
         this.scene.logScale = next.priceScale.log;
         this.scene.invertScale = next.priceScale.invert;
-        s.borderColor = next.priceScale.borderColor;
+        s.borderColor = keepInherit(s.borderColor, next.priceScale.borderColor, prevTheme.borderColor);
         this.scene.showAxisLabels = next.priceScale.labelsVisible;
         this.scene.showPriceLine = next.priceScale.currentPriceLine;
         this.scene.showPriceLabel = next.priceScale.priceLabel;
         this.scene.showCountdown = next.priceScale.countdown;
         this.syncCountdownTimer();
         // panes
-        s.separatorColor = next.panes.separatorColor;
+        s.separatorColor = keepInherit(s.separatorColor, next.panes.separatorColor, prevTheme.borderColor);
         // trade markers
         this.scene.tradeMarkers = {
             visible: next.trades.visible,
@@ -771,6 +819,9 @@ export class NativeRenderer implements IChartRenderer {
         this.refreshScrollButtonTheme();
         this.refreshAttributionColor();
         this.scheduler?.invalidate(InvalidateLevel.Full);
+        // The settings dialog commits through applyConfig — this is how host chrome
+        // that mirrors a config value (bottom-bar timezone) learns about in-chart edits.
+        for (const cb of this.configChangedCbs) cb();
     }
 
     /**
@@ -842,6 +893,16 @@ export class NativeRenderer implements IChartRenderer {
         this.toggleSettingsDialog(section);
     }
 
+    /** (Re)aim the dialog's Canvas → Theme row: the current selection reflects the STABLE
+     *  app-theme surface (not the plot background, which the config recolors
+     *  independently); a pick is raised to the host (`onThemeSelect`), which owns the
+     *  canonical theme. */
+    private syncThemeControl(): void {
+        this.settingsDialog?.setThemeControl(isDarkColor(this.surfaceBackground) ? 'dark' : 'light', (name) => {
+            for (const cb of this.themeSelectCbs) cb(name);
+        });
+    }
+
     private toggleSettingsDialog(section?: string): void {
         if (!this.settingsDialog) return;
         // A caller asking for a section wants to SEE it: an open dialog switches tabs
@@ -852,6 +913,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
+        this.syncThemeControl();
         this.settingsDialog.toggle(
             this.getConfig(),
             (patch) => this.applyConfig(patch),
@@ -1096,6 +1158,8 @@ export class NativeRenderer implements IChartRenderer {
 
     // ── lifecycle ──
     mount(container: HTMLElement, theme: VelaTheme): void {
+        this.mountContainer = container;
+        this.publishToolbarGutter();
         this.theme = this.deriveTheme(theme);
         // provisional chrome surface (refined by the first applyConfig)
         this.surfaceBackground = theme.background;
@@ -1234,8 +1298,9 @@ export class NativeRenderer implements IChartRenderer {
             requestDataPaint: () => this.scheduler.invalidate(InvalidateLevel.Light),
             snap: (pt, paneId, mode, cursorPx) => this.snapToCandle(pt, paneId, mode, cursorPx),
             setSnapMode: (mode) => this.setSnapMode(mode),
-            setToolbarGutter: (visible) => this.setToolbarGutter(visible),
+            setToolbarGutter: (px) => this.setToolbarGutter(px),
         });
+        this.userDrawings.historyChords = this.historyChordsEnabled; // may be set before init()
 
         this.keyboard = new KeyboardController({
             panByBars: (bars) => this.panByBars(bars),
@@ -1250,6 +1315,7 @@ export class NativeRenderer implements IChartRenderer {
         this.setKeyboardEnabled(this.keyboardEnabled); // accessible by default; wires focus + ARIA
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
+        this.inputsUI.setTitlesVisible(this.indicatorTitlesOn); // a remount keeps the toggle state
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setLegendActions(this.legendActionsProvider);
@@ -1381,11 +1447,14 @@ export class NativeRenderer implements IChartRenderer {
         // a full app-theme swap re-bases the chrome surface
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
-        this.surfaceSeeded = true;
         if (this.wrapper) applyChromeTokens(this.wrapper, this.chromeTheme());
         this.applyBackground();
         this.inputsUI.setTheme(theme);
         this.paneControls?.setTheme(this.theme);
+        // An open dialog rebuilds on setTheme — hand it the re-based config + the new
+        // current of its Theme row first, so the rebuilt controls show live values.
+        this.settingsDialog?.refreshConfig(this.getConfig());
+        this.syncThemeControl();
         this.settingsDialog?.setTheme(this.theme);
         if (this.settingsButton) {
             this.settingsButton.style.background = this.theme.background;
@@ -1457,6 +1526,8 @@ export class NativeRenderer implements IChartRenderer {
         this.crosshairLayer.destroy();
         this.attributionEl?.remove();
         this.attributionEl = null;
+        this.mountContainer?.style.removeProperty('--vela-toolbar-gutter');
+        this.mountContainer = null;
         this.wrapper?.remove();
     }
 
@@ -1857,6 +1928,16 @@ export class NativeRenderer implements IChartRenderer {
     onChartTypeSettingsChange(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe {
         this.chartTypeSettingsCbs.add(cb);
         return () => this.chartTypeSettingsCbs.delete(cb);
+    }
+
+    onConfigChanged(cb: () => void): Unsubscribe {
+        this.configChangedCbs.add(cb);
+        return () => this.configChangedCbs.delete(cb);
+    }
+
+    onThemeSelect(cb: (theme: ThemeName) => void): Unsubscribe {
+        this.themeSelectCbs.add(cb);
+        return () => this.themeSelectCbs.delete(cb);
     }
 
     onCrosshairMove(cb: (e: CrosshairEvent) => void): Unsubscribe {
@@ -3058,6 +3139,7 @@ export class NativeRenderer implements IChartRenderer {
             this.inputsUI?.reposition();
             this.paneControls?.reposition();
             this.repositionScrollButton();
+            this.positionAttribution();
             return;
         }
         // Collapsed panes take a fixed strip; the rest share the remaining height by weight.
@@ -3075,6 +3157,7 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI?.reposition(); // keep each pane's legend pinned to its pane top
         this.paneControls?.reposition();
         this.repositionScrollButton();
+        this.positionAttribution(); // the mark follows the lowest open pane's bottom edge
     }
 
     /** Pin the scroll-to-realtime button above the bottom-most EXPANDED pane's data area (like the
@@ -3113,13 +3196,20 @@ export class NativeRenderer implements IChartRenderer {
         return map;
     }
 
-    /** Reserve (or release) the left gutter for the docked drawings toolbar + re-lay-out the plot. */
-    private setToolbarGutter(visible: boolean): void {
-        const px = visible ? LEFT_GUTTER_W : 0;
+    /** Reserve `px` of left gutter for the docked drawings toolbar (0 releases it) + re-lay-out the plot. */
+    private setToolbarGutter(px: number): void {
         if (px === this.toolbarGutter) return;
         this.toolbarGutter = px;
+        this.publishToolbarGutter();
         this.positionAttribution();
         this.syncSize();
+    }
+
+    /** Publish the gutter on the mount container as `--vela-toolbar-gutter`, so host
+     *  overlays sharing that container (a status line, a custom legend) can anchor to
+     *  the plot's left edge without reaching into the renderer's DOM. */
+    private publishToolbarGutter(): void {
+        this.mountContainer?.style.setProperty('--vela-toolbar-gutter', `${this.toolbarGutter}px`);
     }
 
     /** The built-in mark, or the host's own when one is set. */
@@ -3139,12 +3229,22 @@ export class NativeRenderer implements IChartRenderer {
         this.wrapper.appendChild(this.attributionEl);
     }
 
-    /** Bottom-left of the plot, above the time axis, clear of the drawings toolbar. */
+    /** Bottom-left of the LOWEST visible, non-collapsed pane, above the time axis, clear of
+     *  the drawings toolbar — the same anchor rule as the scroll-to-realtime button. With
+     *  collapsed strips (or a maximize hiding the rest) at the bottom, the mark climbs into
+     *  the lowest open pane instead of sitting on a strip's legend. */
     private positionAttribution(): void {
         if (!this.attributionEl) return;
+        const dataHeight = this.coords?.height ?? 0;
+        const maxPane = this.maximizedPaneId ? this.scene.panes.get(this.maximizedPaneId) : null;
+        const visible = maxPane ? [maxPane] : this.scene.orderedPanes().filter((p) => !p.collapsed);
+        // Bottom (in data-area coords) of the lowest open pane; falls back to the full data area.
+        const paneBottom = dataHeight > 0 && visible.length
+            ? Math.max(...visible.map((p) => p.bounds.top + p.bounds.height))
+            : dataHeight;
         Object.assign(this.attributionEl.style, {
             left: `${(this.toolbarGutter || 0) + 12}px`,
-            bottom: `${TIME_AXIS_H + 10}px`,
+            bottom: `${TIME_AXIS_H + 10 + Math.max(0, dataHeight - paneBottom)}px`,
         });
     }
 

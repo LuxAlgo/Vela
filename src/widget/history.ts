@@ -44,6 +44,12 @@ export class WidgetHistory {
         this.notify();
     }
 
+    /** Run `fn` without recording — for programmatic state application (setState,
+     *  ledger restore), whose indicator/drawing events are not user edits. */
+    silently(fn: () => void): void {
+        this.mutedRun(fn);
+    }
+
     get canUndo(): boolean {
         return this.undoStack.length > 0;
     }

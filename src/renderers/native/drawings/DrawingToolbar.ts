@@ -4,18 +4,25 @@ import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/dr
 import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
-import { CHROME_BORDER_COLOR } from '../core/chartConfig';
+
+/** Expanded bar width in px — a docked host's left-gutter reservation must match it. */
+export const TOOLBAR_WIDTH = 44;
+/** Collapsed-strip width in px — just the expand chevron. */
+export const TOOLBAR_COLLAPSED_WIDTH = 16;
 
 /** Cosmetic/placement options — defaults reproduce the in-renderer docked bar exactly. */
 export interface DrawingToolbarOptions {
-    /** Border/divider color. Default: the chrome divider color. */
+    /** Border/divider color. Default: the theme's border color (follows theme swaps). */
     borderColor?: string;
     /** Bar width in px. In docked (`'absolute'`) use it MUST match the host renderer's
-     *  left-gutter reservation (NativeRenderer's `LEFT_GUTTER_W`, 44). Default 44. */
+     *  left-gutter reservation ({@link TOOLBAR_WIDTH}, 44). Default 44. */
     width?: number;
     /** `'absolute'` (default): pinned over the renderer's left gutter. `'static'`: a
      *  normal column child — a workspace docks ONE shared bar in its own layout. */
     dock?: 'absolute' | 'static';
+    /** Collapse/expand notification — a docked host resizes its gutter reservation to
+     *  {@link TOOLBAR_COLLAPSED_WIDTH} / the full width (a static bar reflows on its own). */
+    onCollapse?: (collapsed: boolean) => void;
 }
 
 /**
@@ -55,14 +62,18 @@ export class DrawingToolbar {
     private eraserActive = false;
     private stayBtn: HTMLButtonElement | null = null;
     private stayActive = false;
+    private collapseBtn: HTMLButtonElement | null = null;
+    private collapsed = false;
     private visible = false;
     private readonly tipText = new WeakMap<HTMLElement, string>(); // per-anchor tooltip text (magnet's changes with mode)
     /** Chrome-tooltip disposers — flushed whenever the cells are recreated (rebuild/destroy). */
     private tipDisposers: Array<() => void> = [];
 
-    private readonly borderColor: string;
+    /** Explicit border override from options; `null` follows the live theme's border. */
+    private readonly borderOverride: string | null;
     private readonly width: number;
     private readonly dock: 'absolute' | 'static';
+    private readonly onCollapse: (collapsed: boolean) => void;
 
     constructor(
         private readonly host: HTMLElement,
@@ -75,13 +86,21 @@ export class DrawingToolbar {
         private readonly onStayMode: (on: boolean) => void = () => {},
         options: DrawingToolbarOptions = {},
     ) {
-        this.borderColor = options.borderColor ?? CHROME_BORDER_COLOR;
-        this.width = options.width ?? 44;
+        this.borderOverride = options.borderColor ?? null;
+        this.width = options.width ?? TOOLBAR_WIDTH;
         this.dock = options.dock ?? 'absolute';
+        this.onCollapse = options.onCollapse ?? (() => {});
         ensureStyles();
         this.root = document.createElement('div');
+        this.root.className = 'vela-dtb';
         this.styleRoot();
         host.appendChild(this.root);
+    }
+
+    /** Live divider/border ink — the option override, else the current theme's border
+     *  (so a theme swap re-inks the bar without a rebuild option). */
+    private get borderColor(): string {
+        return this.borderOverride ?? this.theme.borderColor;
     }
 
     /** Flush vertical bar pinned to the left gutter (full height, right border, no card chrome).
@@ -91,12 +110,15 @@ export class DrawingToolbar {
     private styleRoot(): void {
         const t = this.theme;
         applyChromeTokens(this.root, t);
-        // Docked (default): pinned over the renderer's left gutter — width must match
-        // NativeRenderer's LEFT_GUTTER_W. Static: a normal column child (a workspace's
-        // shared bar) — the host's own layout places it.
+        // Docked (default): pinned over the renderer's left gutter — width must match the
+        // host's gutter reservation. Static: a normal column child (a workspace's
+        // shared bar) — the host's own layout places it. Collapsed, the bar narrows to a
+        // slim strip carrying only the expand chevron (the stylesheet hides the rest).
+        const width = this.collapsed ? TOOLBAR_COLLAPSED_WIDTH : this.width;
+        this.root.dataset.collapsed = this.collapsed ? '1' : '';
         const placement = this.dock === 'absolute'
-            ? `position:absolute;left:0;top:0;height:100%;width:${this.width}px;z-index:21;`
-            : `position:relative;height:100%;width:${this.width}px;flex:none;`;
+            ? `position:absolute;left:0;top:0;height:100%;width:${width}px;z-index:21;`
+            : `position:relative;height:100%;width:${width}px;flex:none;`;
         this.root.style.cssText =
             placement +
             `display:${this.visible ? 'flex' : 'none'};flex-direction:column;gap:4px;` +
@@ -188,11 +210,35 @@ export class DrawingToolbar {
         this.root.appendChild(this.makeMagnetCell());
         this.stayBtn = this.makeButton(STAY_ICON, 'Stay in drawing mode', () => this.toggleStay());
         this.root.appendChild(this.stayBtn);
+        // Collapse/expand toggle — pinned to the bottom; the only child a collapsed strip shows.
+        this.collapseBtn = this.makeButton(COLLAPSE_ICON, 'Collapse toolbar', () => this.toggleCollapsed());
+        this.collapseBtn.classList.add('vela-dtb-collapse');
+        this.root.appendChild(this.collapseBtn);
         this.paintMeasure();
         this.paintEraser();
         this.paintMagnet();
         this.paintStay();
+        this.paintCollapse();
         this.highlight();
+    }
+
+    /** Collapse to a slim expand-strip / restore the full bar, and tell the host so a
+     *  docked renderer can resize its gutter reservation. */
+    private toggleCollapsed(): void {
+        this.collapsed = !this.collapsed;
+        this.closeFlyout();
+        this.styleRoot();
+        this.paintCollapse();
+        this.onCollapse(this.collapsed);
+    }
+
+    private paintCollapse(): void {
+        const b = this.collapseBtn;
+        if (!b) return;
+        const label = this.collapsed ? 'Expand toolbar' : 'Collapse toolbar';
+        b.innerHTML = hitHtml(this.collapsed ? EXPAND_ICON : COLLAPSE_ICON, 12);
+        b.setAttribute('aria-label', label);
+        this.tipText.set(b, label);
     }
 
     /** A cell: a full-width icon button (arms/toggles the primary action) plus, when
@@ -626,6 +672,9 @@ function ensureStyles(): void {
 .vela-dtb-icon:hover .vela-dtb-hit,.vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-hover);}
 .vela-dtb-cell.vela-open .vela-dtb-arrow .vela-dtb-hit{background:var(--vela-active);}
 .vela-dtb-cell.vela-open .vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-hover);}
+.vela-dtb-collapse{margin-top:auto;}
+.vela-dtb[data-collapsed='1']>*:not(.vela-dtb-collapse){display:none;}
+.vela-dtb[data-collapsed='1'] .vela-dtb-collapse .vela-dtb-hit{width:14px;}
 .vela-dtb-item{background:transparent;border:none;transition:background var(--vela-dur-fast) ease;}
 .vela-dtb-item:hover{background:var(--vela-hover-strong);}
 .vela-dtb-star{width:26px;height:22px;margin:-3px -5px -3px 0;padding:3px 5px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;opacity:0;color:inherit;border-radius:var(--vela-radius-sm);transition:opacity .1s ease,color .1s ease,background .1s ease;}
@@ -646,6 +695,9 @@ function ensureStyles(): void {
 
 const CURSOR_ICON = icon('cursor');
 const RULER_ICON = icon('ruler');
+/** Double chevrons for the bottom collapse/expand toggle. */
+const COLLAPSE_ICON = icon('chevrons-left');
+const EXPAND_ICON = icon('chevrons-right');
 const MAGNET_ICON = icon('magnet');
 /** Pen with a padlock — stay-in-drawing-mode (tools remain armed after each placement). */
 const STAY_ICON = icon('pen-lock');

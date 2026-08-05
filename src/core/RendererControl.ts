@@ -89,6 +89,16 @@ export class RendererControl {
     }
 
     /**
+     * Subscribe to cosmetic-config changes (`applyConfig` — the in-chart settings dialog
+     * commits through it). Host chrome that mirrors a config value (a bottom-bar timezone)
+     * re-pulls {@link get}/{@link getConfig} here. Silent no-op unsubscribe on a renderer
+     * without a rich config.
+     */
+    onConfigChanged(cb: () => void): Unsubscribe {
+        return this.renderer.onConfigChanged?.(cb) ?? (() => undefined);
+    }
+
+    /**
      * Subscribe to crosshair movement — `time`/`price` under the cursor, per-series values,
      * and the hovered bar's OHLC (null fields when the cursor leaves the chart). This is the
      * public seam host chrome (status lines, data windows) builds on.

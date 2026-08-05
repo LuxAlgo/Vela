@@ -8,6 +8,7 @@ import { chartType } from '../chart-types/registry';
 import { widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { timeframeLabel } from './timeframe';
+import { parseSymbol } from '../data/ProviderRegistry';
 
 // The component owns its stylesheet (id-guarded, injected at construction) so EVERY
 // host that mounts a Topbar — the widget, a multi-chart workspace — gets the same look.
@@ -203,7 +204,9 @@ export class Topbar {
         this.el.className = 'vela-widget-topbar';
         this.symbolEl = doc.createElement('button');
         this.symbolEl.className = 'vela-widget-symbol';
-        this.symbolEl.textContent = opts.symbol;
+        // The button DISPLAYS the bare ticker; the venue-prefixed identity stays in the
+        // shell's state (the statusline meta and the picker badges name the venue).
+        this.symbolEl.textContent = parseSymbol(opts.symbol).ticker;
         if (opts.onSymbolClick) this.symbolEl.addEventListener('click', opts.onSymbolClick);
         this.tfButton = doc.createElement('button');
         this.tfButton.className = 'vela-widget-tf';
@@ -302,7 +305,7 @@ export class Topbar {
     }
 
     setSymbol(symbol: string): void {
-        this.symbolEl.textContent = symbol;
+        this.symbolEl.textContent = parseSymbol(symbol).ticker;
     }
 
     setTimeframe(tf: string): void {

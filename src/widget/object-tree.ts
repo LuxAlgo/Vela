@@ -16,6 +16,7 @@ import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
 import { tickerIconEl } from './symbol-icon';
+import { parseSymbol } from '../data/ProviderRegistry';
 import {
     assignToGroup,
     buildTree,
@@ -184,7 +185,7 @@ const CSS = `
 /* Buttons would only invite a click that a drag is about to swallow. */
 .vela-ot .vela-panel-body[data-dragging] .vela-ot-btn { visibility: hidden; }
 
-/* The band between two pane blocks: a hairline at rest, an accent bar when dropping there
+/* The band between two pane blocks: a hairline at rest, a bright bar when dropping there
    would open a new pane. Doubles as the plain separator when dragging isn't available. */
 .vela-ot-gap { position: relative; height: 11px; border-radius: 3px; margin: 0 8px; }
 .vela-ot-gap::before {
@@ -197,14 +198,14 @@ const CSS = `
     background: var(--vela-border);
     transform: translateY(-50%);
 }
-.vela-ot-gap[data-drop] { height: 4px; background: var(--vela-accent); }
+.vela-ot-gap[data-drop] { height: 4px; background: var(--vela-fg-bright); }
 .vela-ot-gap[data-drop]::before { display: none; }
 /* A whole container accepts the drop: merging into a pane, or a pane with no drawings yet.
    The pane block's transparent border reserves the room for this outline. */
-.vela-ot [data-drop='target'] { border-color: var(--vela-accent); background: var(--vela-hover); }
+.vela-ot [data-drop='target'] { border-color: var(--vela-fg-bright); background: var(--vela-hover); }
 /* Where a reorder would insert. */
-.vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 var(--vela-accent); }
-.vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 var(--vela-accent); }
+.vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 var(--vela-fg-bright); }
+.vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 var(--vela-fg-bright); }
 
 .vela-ot-ghost {
     position: fixed;
@@ -212,7 +213,7 @@ const CSS = `
     pointer-events: none;
     max-width: 220px;
     padding: 3px 10px;
-    border: 1px solid var(--vela-accent);
+    border: 1px solid var(--vela-fg-bright);
     border-radius: var(--vela-radius-sm);
     background: var(--vela-surface-overlay);
     color: var(--vela-fg);
@@ -382,7 +383,8 @@ export class ObjectTree extends SidePanel {
     }
 
     setSymbol(symbol: string): void {
-        this.symbolName = symbol;
+        // Bare ticker — the tree labels the price series, not its routing venue.
+        this.symbolName = parseSymbol(symbol).ticker;
     }
 
     /** (Re)bind to a chart instance — called after every widget rebuild. */

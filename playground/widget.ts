@@ -74,6 +74,12 @@ const widget = new VelaWidget('#chart', {
 
 void widget.chart.ready().then(() => console.log('[vela-dev] chart ready'));
 
+// The page shell follows the app theme — flip it from chart settings → Canvas → Theme
+// (or `widget.setTheme('light')` in the console) and the body around the chart follows.
+widget.chart.on('theme:changed', (t) => {
+    document.body.style.background = t.background;
+});
+
 // Handy for poking around from the browser console.
 (window as unknown as { widget: VelaWidget }).widget = widget;
 

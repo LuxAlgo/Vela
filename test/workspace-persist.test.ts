@@ -23,6 +23,7 @@ const fullDoc: WorkspaceState = {
             priceStyle: 'candles',
             bars: 500,
             watermark: false,
+            indicatorTitles: false,
             rendererConfig: { theme: 'dark', nested: { any: ['shape'] } },
             drawings: { version: 1, items: [{ type: 'trendline' }] },
             indicators: { manifest: ['EMA 20'], natives: ['volume'] },
@@ -109,16 +110,16 @@ describe('sanitizeState (the applyState gate)', () => {
         expect(doc!.sync).toEqual({ symbol: { c1: 'a' } }); // timeframe record emptied → dropped
     });
 
-    it('filters shared favorites and per-chart watermark by type', () => {
+    it('filters shared favorites and per-chart display toggles by type', () => {
         const doc = sanitizeState({
             version: 1,
             layout: '1',
             favorites: ['trendline', 7, null, 'hline'],
-            charts: [{ id: 'c1', watermark: 'yes' }, { id: 'c2', watermark: false }],
+            charts: [{ id: 'c1', watermark: 'yes', indicatorTitles: 0 }, { id: 'c2', watermark: false, indicatorTitles: false }],
         });
         expect(doc!.favorites).toEqual(['trendline', 'hline']); // non-strings dropped
-        expect(doc!.charts[0]).toEqual({ id: 'c1' }); // non-boolean watermark dropped
-        expect(doc!.charts[1]).toEqual({ id: 'c2', watermark: false });
+        expect(doc!.charts[0]).toEqual({ id: 'c1' }); // non-boolean toggles dropped
+        expect(doc!.charts[1]).toEqual({ id: 'c2', watermark: false, indicatorTitles: false });
         // an all-junk favorites array disappears entirely
         expect(sanitizeState({ version: 1, layout: '1', favorites: [1, 2], charts: [] })!.favorites).toBeUndefined();
     });

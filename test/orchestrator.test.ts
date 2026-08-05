@@ -73,7 +73,8 @@ class FakeRenderer implements IChartRenderer {
     private removeCb: ((id: string) => void) | null = null;
 
     mount(_c: HTMLElement, _t: VelaTheme): void { this.mounted = true; }
-    setTheme(): void {}
+    themes: VelaTheme[] = [];
+    setTheme(t: VelaTheme): void { this.themes.push(t); }
     resize(): void {}
     readonly name = 'fake';
     readonly features: readonly string[] = [];
@@ -379,6 +380,25 @@ describe('EngineOrchestrator', () => {
         expect(renderer.mountedModels.length).toBe(beforeMounts + 1);
         expect(renderer.mountedModels[renderer.mountedModels.length - 1]?.id).toBe(ema.id);
         expect(renderer.removed).toHaveLength(0);
+    });
+
+    it('setTheme re-skins the renderer and emits theme:changed; a same-theme call no-ops', async () => {
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        const seen: string[] = [];
+        chart.on('theme:changed', (t) => seen.push(t.background));
+        chart.setTheme('light');
+        expect(renderer.themes.map((t) => t.background)).toEqual(['#ffffff']);
+        expect(seen).toEqual(['#ffffff']);
+        // Candle hues are shared across themes — a theme swap never recolors the series.
+        expect(renderer.themes[0]!.upColor).toBe(BULLISH);
+        expect(renderer.themes[0]!.downColor).toBe(BEARISH);
+        chart.setTheme('light'); // already active → no re-skin, no event (breaks host echo loops)
+        expect(renderer.themes).toHaveLength(1);
+        expect(seen).toHaveLength(1);
+        chart.setTheme('dark');
+        expect(seen).toHaveLength(2);
     });
 
     it('the in-chart legend ✕ removes the indicator (renderer teardown + stream stop + event)', async () => {
