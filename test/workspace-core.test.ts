@@ -10,6 +10,7 @@ import {
     layouts,
     gridStyles,
     activeAfterLayout,
+    orderAfterLayout,
     layoutForGrid,
     ensureLayout,
     layoutShape,
@@ -143,6 +144,23 @@ describe('activeAfterLayout (pure reducer)', () => {
         expect(activeAfterLayout('c3', ['c1', 'c2'])).toBe('c1'); // its slot left with the layout
         expect(activeAfterLayout(null, ['c1', 'c2'])).toBe('c1');
         expect(activeAfterLayout('c1', [])).toBe(null);
+    });
+});
+
+describe('orderAfterLayout (pure reducer)', () => {
+    it('moves an active identity that would pool into the last surviving slot', () => {
+        // 2×2 → single: the active chart becomes the one remaining chart.
+        expect(orderAfterLayout(['a', 'b', 'c', 'd'], 1, 'c')).toEqual(['c', 'a', 'b', 'd']);
+        // 2×2 → 2 side by side: the first chart keeps its slot, active takes the second.
+        expect(orderAfterLayout(['a', 'b', 'c', 'd'], 2, 'd')).toEqual(['a', 'd', 'b', 'c']);
+    });
+
+    it('leaves the order alone when the active chart already survives (or is unknown)', () => {
+        expect(orderAfterLayout(['a', 'b', 'c', 'd'], 2, 'b')).toEqual(['a', 'b', 'c', 'd']);
+        expect(orderAfterLayout(['a', 'b', 'c', 'd'], 8, 'd')).toEqual(['a', 'b', 'c', 'd']);
+        expect(orderAfterLayout(['a', 'b'], 1, null)).toEqual(['a', 'b']);
+        expect(orderAfterLayout(['a', 'b'], 1, 'nope')).toEqual(['a', 'b']);
+        expect(orderAfterLayout(['a', 'b'], 0, 'b')).toEqual(['a', 'b']);
     });
 });
 

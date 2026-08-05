@@ -60,6 +60,8 @@ ws.cell('eth');          // a specific cell BY IDENTITY — the durable handle t
 ws.cells();              // every live cell, in slot order
 ws.setActiveCell('sol');
 ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size pool their state
+// Shrinking never pools the ACTIVE chart: if its slot would leave the layout, it
+// moves into the last surviving slot instead (the other cells keep their order).
 ws.on('cell:active' | 'layout:changed' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
 ```
 

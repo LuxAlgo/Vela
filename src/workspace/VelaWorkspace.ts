@@ -49,6 +49,7 @@ import {
     layouts,
     gridStyles,
     activeAfterLayout,
+    orderAfterLayout,
     ensureLayout,
     layoutForGrid,
     layoutShape,
@@ -688,6 +689,10 @@ export class VelaWorkspace {
         const next = this.resolveLayout(layout);
         const nextBackend = this.backendFor(next);
         const rebuildAll = nextBackend !== this.cellBackend;
+        // The ACTIVE chart always survives a shrink — it moves into the last kept
+        // slot instead of pooling, so changing the grid never hides the chart the
+        // user is working in.
+        this.order = orderAfterLayout(this.order, next.cells.length, this.activeId);
         const keep = new Set(this.order.slice(0, next.cells.length));
         for (const [id, cell] of [...this.cellsById]) {
             if (!keep.has(id) || rebuildAll) {

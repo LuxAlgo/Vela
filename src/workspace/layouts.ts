@@ -194,3 +194,19 @@ export function activeAfterLayout(current: string | null, cellIds: readonly stri
     if (current != null && cellIds.includes(current)) return current;
     return cellIds[0] ?? null;
 }
+
+/**
+ * The identity order after a layout change: shrinking the grid must never pool the
+ * ACTIVE chart, so an active identity that would fall past the new slot count moves
+ * into the LAST surviving slot — every other identity keeps its relative order
+ * (the order reducer behind `setLayout`; pure for tests).
+ */
+export function orderAfterLayout(order: readonly string[], slots: number, active: string | null): string[] {
+    const next = [...order];
+    if (active == null || slots <= 0) return next;
+    const idx = next.indexOf(active);
+    if (idx < 0 || idx < slots) return next;
+    next.splice(idx, 1);
+    next.splice(slots - 1, 0, active);
+    return next;
+}
