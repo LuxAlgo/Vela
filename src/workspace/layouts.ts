@@ -241,6 +241,18 @@ export function layoutShape(def: LayoutDefinition): LayoutShape | null {
     return null;
 }
 
+/**
+ * Which slot occupies each `[row][col]` track — PURE. Area layouts read their
+ * `grid-template-areas` rows; auto-flow layouts place `cells` row-major. The grid is
+ * what the splitter layer segments its strips against: a boundary is only a real seam
+ * where the two neighboring tracks hold DIFFERENT slots.
+ */
+export function occupancyGrid(def: LayoutDefinition): string[][] {
+    if (def.areas) return def.areas.map((row) => row.trim().split(/\s+/));
+    const cols = def.cols.length;
+    return def.rows.map((_, r) => def.cols.map((_, c) => def.cells[r * cols + c]?.id ?? `·${r}x${c}`));
+}
+
 /** Inline styles for the grid container + each cell — PURE (the workspace applies them). */
 export function gridStyles(
     def: LayoutDefinition,

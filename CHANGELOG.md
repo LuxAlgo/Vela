@@ -124,6 +124,27 @@ All notable changes to Vela, newest first.
   renderer now publishes its toolbar gutter as `--vela-toolbar-gutter` on the mount
   container and the status line anchors to it, keeping the two in one column in every
   shell and toolbar state.
+- **Workspace dividers stay between charts.** In a mixed layout — say three charts stacked
+  on the left beside two taller ones on the right — the divider between two stacked charts
+  used to run the full width of the grid, so hovering or dragging over a neighboring chart
+  could grab the divider instead of the chart under the pointer. A divider now covers only
+  the stretch where two charts actually meet. Its hover highlight also matches the pane
+  dividers inside a chart — the same soft band with a solid center line, in the theme's
+  text color — instead of the old blue accent strip.
+- **The symbol watermark stays inside its own chart.** The faded "SYMBOL · TF" mark was
+  sized against the browser window, so in a multi-chart workspace a small cell could get
+  type far wider than itself, spilling the text across its neighbors. The mark now measures
+  itself against its own chart and shrinks to fit — a lone full-size chart keeps the large
+  type, a dense grid gets proportionally smaller marks, and dragging a divider refits them
+  live.
+- **Resizing no longer makes charts flash or shake.** Two resize bugs, most visible in a
+  workspace: dragging a divider across a chart mid-animation (a live tick easing in, a zoom
+  glide) could blank it for a frame on every move, because the resized canvases waited for
+  the next animation frame to repaint — they now repaint immediately. And a resize or layout
+  change could leave a chart trembling rapidly (and burning a full animation loop in the
+  background) until it was clicked: the zoom limits move with the chart's width, and an
+  in-flight zoom or scroll animation whose destination fell outside the new limits kept
+  chasing it forever. The animation now settles on the nearest reachable point and stops.
 
 ## [v0.4.6]
 

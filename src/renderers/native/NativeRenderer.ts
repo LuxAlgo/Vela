@@ -2063,7 +2063,15 @@ export class NativeRenderer implements IChartRenderer {
             }
         }
 
-        this.coords.setViewport(this.clampViewport(barSpacing, rightOffset));
+        const clamped = this.clampViewport(barSpacing, rightOffset);
+        // The clamp bounds depend on the chart WIDTH, so a resize (splitter drag, layout
+        // change) can strand a target outside the reachable range mid-ease. Snap a target
+        // the clamp rejected onto the bound it chose — otherwise the ease above re-arms
+        // forever: a permanent rAF loop emitting a viewport change every frame and
+        // jittering rightOffset through the zoom anchor until a pointerdown re-aligns it.
+        if (clamped.barSpacing !== barSpacing) this.targetBarSpacing = clamped.barSpacing;
+        if (this.scrollTargetRO != null && clamped.rightOffset !== rightOffset) this.scrollTargetRO = clamped.rightOffset;
+        this.coords.setViewport(clamped);
         this.computeScales(); // sets pane.scaleTarget (animator active → no snap)
         if (this.easeScales(dtMs)) active = true;
         if (this.easeLiveBar(dtMs)) active = true; // glide the forming bar toward the latest tick
@@ -3247,7 +3255,18 @@ export class NativeRenderer implements IChartRenderer {
             this.fitContent();
             this.didInitialFit = true;
         }
-        this.scheduler.flushNow(InvalidateLevel.Full);
+        if (this.animator.active) {
+            // The width/height assignments above just CLEARED every canvas, and renderFrame
+            // yields to the Animator while it runs — so a scheduler flush would paint
+            // nothing and the browser would present blank canvases until the animator's
+            // next rAF tick (a visible flash on every splitter/divider move of an
+            // animating chart, live-bar easing included). Paint synchronously instead.
+            this.computeScales();
+            this.paintData();
+            this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx());
+        } else {
+            this.scheduler.flushNow(InvalidateLevel.Full);
+        }
     }
 
     private applyBackground(): void {

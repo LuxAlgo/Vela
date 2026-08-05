@@ -15,9 +15,10 @@ import {
     layoutForRows,
     ensureLayout,
     layoutShape,
+    occupancyGrid,
     type LayoutDefinition,
 } from '../src/workspace/layouts';
-import { evenTracks, resizeTracks, trackOffsets } from '../src/workspace/splitters';
+import { evenTracks, resizeTracks, trackOffsets, seamSegments, segmentSpanPx } from '../src/workspace/splitters';
 import { seedDefaults, cellChartDefaults, cellDrawings } from '../src/workspace/ChartCell';
 import { declaredOrder, nextAutoCellId } from '../src/workspace/VelaWorkspace';
 import { parseSymbol } from '../src/data/ProviderRegistry';
@@ -221,6 +222,69 @@ describe('splitter track math (pure)', () => {
         // Four even tracks, 800px, no gap: 200/400/600.
         expect(trackOffsets([1, 1, 1, 1], 800, 0)).toEqual([200, 400, 600]);
         expect(trackOffsets([1], 800, 4)).toEqual([]); // no internal boundary
+    });
+});
+
+describe('seam segmentation (strips never cross a spanning cell)', () => {
+    it('occupancyGrid reads area layouts and auto-flows plain grids', () => {
+        // Columns 3·2 (LCM 6 row tracks): the left stack spans 2 tracks each, the right 3.
+        const p32 = layoutForColumns([3, 2]);
+        const grid = occupancyGrid(p32);
+        expect(grid).toHaveLength(6);
+        expect(grid[0]).toEqual(['c1', 'c4']);
+        expect(grid[2]).toEqual(['c2', 'c4']);
+        expect(grid[5]).toEqual(['c3', 'c5']);
+        // Auto-flow 2×2 grid: row-major cells order.
+        expect(occupancyGrid(layoutDefinition('4')!)).toEqual([
+            ['c1', 'c2'],
+            ['c3', 'c4'],
+        ]);
+    });
+
+    it('a uniform grid boundary is one full-length seam', () => {
+        const grid = occupancyGrid(layoutDefinition('4')!);
+        expect(seamSegments(grid, 'cols', 0)).toEqual([[0, 1]]);
+        expect(seamSegments(grid, 'rows', 0)).toEqual([[0, 1]]);
+    });
+
+    it('a row boundary inside one stack never covers the neighboring spanning cell', () => {
+        // Columns 3·2: left column stacked 3 (c1..c3), right stacked 2 (c4, c5).
+        const grid = occupancyGrid(layoutForColumns([3, 2]));
+        // Row-track boundary 1 (between tracks 1|2) separates c1/c2 on the left ONLY —
+        // the right column's c4 spans it, so the seam stops at column 0.
+        expect(seamSegments(grid, 'rows', 1)).toEqual([[0, 0]]);
+        // Boundary 2 (tracks 2|3) is the right column's c4/c5 seam only.
+        expect(seamSegments(grid, 'rows', 2)).toEqual([[1, 1]]);
+        // Boundary 0 (tracks 0|1) crosses NO cell edge at all — no strip anywhere.
+        expect(seamSegments(grid, 'rows', 0)).toEqual([]);
+        // The single column boundary separates different cells over every row track.
+        expect(seamSegments(grid, 'cols', 0)).toEqual([[0, 5]]);
+    });
+
+    it('a spanning tall cell splits a boundary into disjoint segments', () => {
+        // ['a b', 'c b', 'd e']: the col boundary is a seam everywhere; row boundary 1
+        // (c|d and b|e) is full, row boundary 0 (a|c, b spans) is left-only.
+        const grid = [
+            ['a', 'b'],
+            ['c', 'b'],
+            ['d', 'e'],
+        ];
+        expect(seamSegments(grid, 'rows', 0)).toEqual([[0, 0]]);
+        expect(seamSegments(grid, 'rows', 1)).toEqual([[0, 1]]);
+        expect(seamSegments(grid, 'cols', 0)).toEqual([[0, 2]]);
+    });
+
+    it('segmentSpanPx runs flush at container edges and half a gap into interior gaps', () => {
+        // Six even tracks, 602px, 2px gap: content 592, each track 98.666…
+        const full = segmentSpanPx([1, 1, 1, 1, 1, 1], 602, 2, 0, 5);
+        expect(full.start).toBe(0);
+        expect(full.end).toBe(602);
+        const first = segmentSpanPx([1, 1, 1, 1, 1, 1], 602, 2, 0, 0);
+        expect(first.start).toBe(0);
+        expect(first.end).toBeCloseTo(98.666 + 1, 1); // track end + half the gap
+        const inner = segmentSpanPx([1, 1, 1, 1, 1, 1], 602, 2, 2, 3);
+        expect(inner.start).toBeCloseTo(2 * (98.666 + 2) - 1, 1);
+        expect(inner.end).toBeCloseTo(4 * (98.666 + 2) - 1, 1);
     });
 });
 

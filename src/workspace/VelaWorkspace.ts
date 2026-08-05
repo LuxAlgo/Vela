@@ -54,6 +54,7 @@ import {
     layoutForColumns,
     layoutForRows,
     layoutShape,
+    occupancyGrid,
     type LayoutDefinition,
     type TrackSizes,
 } from './layouts';
@@ -141,7 +142,12 @@ const CSS = `
     pointer-events: none;
     z-index: 10;
 }
-.vela-ws-splitter:hover { background: var(--vela-accent); opacity: 0.35; }
+/* Splitter hover mirrors the in-chart pane separator hover (CrosshairRenderer):
+   a soft band over the whole grab target + a solid 2px line on the seam center. */
+.vela-ws-splitter:hover { background: var(--vela-separator-hover-band); }
+.vela-ws-splitter:hover::after { content: ''; position: absolute; background: var(--vela-separator-hover-line); }
+.vela-ws-splitter[data-axis='cols']:hover::after { left: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
+.vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); left: 0; height: 2px; width: 100%; }
 `;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
@@ -452,6 +458,7 @@ export class VelaWorkspace {
 
         this.splitters = new SplitterLayer(this.gridEl, {
             tracks: () => this.currentTracks(),
+            grid: () => occupancyGrid(this.def),
             apply: (axis, weights) => this.applyTracks(axis, weights),
             reset: (axis) => this.applyTracks(axis, evenTracks(this.currentTracks()[axis].length)),
             gapPx: () => GAP_PX,
