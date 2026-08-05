@@ -12,8 +12,10 @@ All notable changes to Vela, newest first.
   (anchors are time+price, so it lands at the same spot whatever each cell shows), and
   the set stays linked — moving, restyling or deleting any member follows on its peers.
   Placement mirrors **live**: while anchors are still being clicked, linked charts show
-  the in-progress shape as a reduced-opacity ghost. The link is session-scoped (a
-  reload leaves existing drawings independent) and persists like the other sync kinds.
+  the in-progress shape as a reduced-opacity ghost. Link membership is session-scoped
+  and survives a toggle-off (re-enabling resumes edit/delete for drawings paired
+  earlier; drawings created while off stay independent), and a reload leaves every
+  drawing unpaired again. The on/off setting persists like the other sync kinds.
 - **Plugin SDK: a draft seam on the drawings port.** `DrawingIntent` gains an optional
   `draft` arm (placement progress, `null` at the end) surfaced as the `drawing:draft`
   chart event, and `IDrawingsRendererPort` gains an optional `setExternalGhost(doc)` —

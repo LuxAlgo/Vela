@@ -240,8 +240,9 @@ export class VelaWorkspace {
     private drawingSyncBusy = false;
     /** LINKED drawings (the drawings sync): one map per synced set (cellId → that
      *  cell's drawing id), reachable from every member under its `cellId\0drawingId`
-     *  key — any member finds its peers to push edits/removals onto. Session-scoped:
-     *  a reload (or `applyState`) leaves previously synced drawings independent. */
+     *  key — any member finds its peers to push edits/removals onto. Survives a
+     *  toggle-off (propagation freezes while the setting is off; re-enabling resumes
+     *  edit/delete for these pairs). Cleared on reload / `applyState`. */
     private readonly drawingLinks = new Map<string, Map<string, string>>();
     private manifest: ResolvedIndicator[] = [];
     /** The shared manifest can no longer change instance sets — resolved, or no
@@ -1033,8 +1034,9 @@ export class VelaWorkspace {
         if (setting == null || setting === false) delete this.syncOpts[kind];
         else this.syncOpts[kind] = setting;
         if (kind === 'drawings') {
-            // Only FUTURE drawings follow the link — nothing to align retroactively,
-            // but any mirrored placement ghosts are stale under the new setting.
+            // Placement ghosts are stale under the new setting. Link pairs stay —
+            // turning off freezes propagation; turning on resumes edit/delete for
+            // drawings paired earlier (never copies unpaired ones onto peers).
             for (const cell of this.cellsById.values()) cell.chart.drawings.setExternalGhost(null);
             // The toggle lives on the shared drawing toolbar; keep it truthful.
             this.drawToolbar?.setDrawingsSyncMode(!!setting);

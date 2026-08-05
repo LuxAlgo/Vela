@@ -104,9 +104,12 @@ shows — and keeps the set **linked**: moving/restyling/deleting any member fol
 its peers (while the link stays on). Placement itself mirrors **live**: while you are
 still clicking anchors, the followers show the in-progress shape as a reduced-opacity
 ghost (the same seam as crosshair ghosts — a custom renderer without it simply syncs
-at completion). The link is session-scoped: after a reload, previously synced drawings
-are independent again, and turning the link on syncs nothing retroactively — only
-drawings created under it.
+at completion). Link membership is session-scoped and survives a toggle-off: turning
+the link off freezes create/edit/delete propagation (and clears placement ghosts) but
+keeps the in-memory pairs, so re-enabling resumes edit/delete for drawings that were
+linked earlier in the session. Drawings created while the link was off stay
+independent — re-enabling never copies or pairs them. A reload (or `applyState`)
+drops the pairs, so previously synced drawings are independent again.
 
 **Symbol**, **Interval** (timeframe) and **Crosshair** are also switches in the
 topbar's layout dropdown (its SYNC section), and **Drawings** is a toggle on the

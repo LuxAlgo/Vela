@@ -14,8 +14,9 @@
  *  cells as GHOST crosshairs (renderers without the optional `setExternalCrosshair`
  *  seam simply never display one). `drawings` copies each NEWLY CREATED drawing onto
  *  same-group cells and keeps the set linked: edits and removals of any member
- *  follow. The link itself is session-scoped — after a reload, existing drawings
- *  are independent again (new ones link as usual). */
+ *  follow. Link membership is session-scoped and survives a toggle-off (re-enabling
+ *  resumes edit/delete for drawings paired earlier; drawings created while off stay
+ *  independent). After a reload, every drawing is unpaired again. */
 export type SyncKind = 'viewport' | 'symbol' | 'timeframe' | 'crosshair' | 'drawings';
 
 /**
