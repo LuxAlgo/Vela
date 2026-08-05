@@ -46,10 +46,14 @@ import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoo
 import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
     registerBuiltinLayouts,
-    layoutDefinition,
     layouts,
     gridStyles,
     activeAfterLayout,
+    ensureLayout,
+    layoutForGrid,
+    layoutForColumns,
+    layoutForRows,
+    layoutShape,
     type LayoutDefinition,
     type TrackSizes,
 } from './layouts';
@@ -126,8 +130,10 @@ const CSS = `
 .vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
 .vela-cell { background: var(--vela-bg); position: relative; }
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
-   outline on the cell is painted under them) — inert to the pointer. */
-.vela-cell[data-active='1']::after {
+   outline on the cell is painted under them) — inert to the pointer. Scoped to
+   multi-cell grids ([data-multi]): a single-cell layout always has an active cell,
+   and ringing the only chart would just be noise. */
+.vela-ws-grid[data-multi='1'] .vela-cell[data-active='1']::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -259,7 +265,7 @@ export class VelaWorkspace {
         for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) {
             this.applySyncSetting(kind, sync?.[kind]);
         }
-        this.def = this.resolveLayout(boot?.layout && layoutDefinition(boot.layout) ? boot.layout : (opts.layout ?? '4'));
+        this.def = this.resolveLayout(boot?.layout && ensureLayout(boot.layout) ? boot.layout : (opts.layout ?? '4'));
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
         if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
         // Identity ↔ slot mapping: the persisted document's chart order wins (it IS the
@@ -323,14 +329,24 @@ export class VelaWorkspace {
             onPriceStyle: (style) => this.active.setPriceStyle(style),
             layout: {
                 current: this.def.id,
-                options: () => layouts().map((l) => ({ id: l.id, label: l.label })),
-                onSelect: (id) => this.setLayout(id),
-                // Workspace-wide view toggles live under the grid presets. The check
-                // reflects the simple all-cells form; flipping OVERRIDES a host-set
-                // group record with plain on/off (groups stay an API-only shape).
-                toggles: () => [{ id: 'crosshair-sync', label: 'Sync crosshair', checked: this.syncOpts.crosshair === true }],
-                onToggle: (id) => {
-                    if (id === 'crosshair-sync') this.sync.set('crosshair', this.syncOpts.crosshair ? false : true);
+                // The picker composes dynamic layouts on its grid canvas; registered
+                // presets the canvas cannot express (bespoke plugin areas) list as rows.
+                shape: () => layoutShape(this.def),
+                presets: () => layouts().filter((l) => layoutShape(l) === null).map((l) => ({ id: l.id, label: l.label })),
+                onSelectGrid: (rows, cols) => this.setLayout(layoutForGrid(rows, cols)),
+                onSelectStacks: (counts, axis) => this.setLayout(axis === 'rows' ? layoutForRows(counts) : layoutForColumns(counts)),
+                onSelectPreset: (id) => this.setLayout(id),
+                // The SYNC switches reflect the simple all-cells form; flipping one
+                // OVERRIDES a host-set group record with plain on/off (groups stay an
+                // API-only shape).
+                syncs: () => [
+                    { id: 'symbol', label: 'Symbol', checked: this.syncOpts.symbol === true },
+                    { id: 'timeframe', label: 'Interval', checked: this.syncOpts.timeframe === true },
+                    { id: 'crosshair', label: 'Crosshair', checked: this.syncOpts.crosshair === true },
+                ],
+                onToggleSync: (id) => {
+                    const kind = id as SyncKind;
+                    this.sync.set(kind, this.syncOpts[kind] ? false : true);
                 },
             },
             getContext: () => this.context(),
@@ -629,7 +645,7 @@ export class VelaWorkspace {
         this.pool.clear();
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
         this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
-        const def = layoutDefinition(st.layout);
+        const def = ensureLayout(st.layout);
         if (def) this.def = def;
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
@@ -802,7 +818,9 @@ export class VelaWorkspace {
     // ── internals ───────────────────────────────────────────────
     private resolveLayout(layout: string | LayoutDefinition): LayoutDefinition {
         if (typeof layout !== 'string') return layout;
-        const def = layoutDefinition(layout);
+        // Registered ids first, then the picker's self-describing dynamic ids
+        // (`g3x2`, `p3-2`) — those synthesize without touching the registry.
+        const def = ensureLayout(layout);
         if (!def) throw new Error(`[vela] unknown workspace layout "${layout}" — register it with registerLayout().`);
         return def;
     }
@@ -835,6 +853,9 @@ export class VelaWorkspace {
      *  `order[i]` — the identity/position decoupling in one line. */
     private applyGrid(): void {
         const { container, perCell } = gridStyles(this.def, this.trackSizes.get(this.def.id));
+        // The active-cell ring only exists on multi-cell grids (see the stylesheet).
+        if (this.def.cells.length > 1) this.gridEl.dataset.multi = '1';
+        else delete this.gridEl.dataset.multi;
         this.gridEl.style.gridTemplateColumns = container.gridTemplateColumns ?? '';
         this.gridEl.style.gridTemplateRows = container.gridTemplateRows ?? '';
         this.gridEl.style.gridTemplateAreas = container.gridTemplateAreas ?? '';
@@ -883,6 +904,9 @@ export class VelaWorkspace {
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(id, cell);
+            // A REBUILT active cell (backend flip, pool round-trip) gets a fresh host —
+            // re-assert the highlight attribute setActiveCell put on the old one.
+            if (id === this.activeId) cell.host.dataset.active = '1';
             this.wireCell(cell);
             // The shared star set is a workspace pref — every newborn cell inherits it
             // silently (equal-set idempotence keeps the favorites event from echoing).
@@ -972,11 +996,14 @@ export class VelaWorkspace {
             if (setting && ![...this.cellsById.values()].some((c) => c.chart.renderer.supportsExternalCrosshair)) {
                 console.warn('[vela] crosshair sync: no cell renderer supports an external crosshair — nothing will show.');
             }
-            // Refresh the layout dropdown's toggle check (absent during constructor boot).
+            // Refresh the layout dropdown's switch state (absent during constructor boot).
             if (this.topbar && this.def) this.topbar.setLayout(this.def.id);
             this.markStateDirty();
             return; // no market/viewport alignment applies to a pointer link
         }
+        // Symbol/interval switches live in the layout dropdown too — keep an open
+        // panel truthful when the setting flips through the API.
+        if (this.topbar && this.def) this.topbar.setLayout(this.def.id);
         this.markStateDirty();
         if (align && setting && this.activeId) {
             if (kind === 'viewport') {

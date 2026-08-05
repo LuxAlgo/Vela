@@ -76,6 +76,171 @@ export function registerBuiltinLayouts(): void {
     registerLayout({ id: '8', label: '8 grid', cols: [1, 1, 1, 1], rows: [1, 1], cells: slots(8) });
 }
 
+// ── dynamic layouts (the topbar's grid picker) ──────────────────────────────
+//
+// The picker composes layouts on a bounded canvas instead of choosing from a fixed
+// list: a UNIFORM rows×cols grid (Grid mode) or per-column / per-row chart stacks
+// (Custom mode). Dynamic definitions are NOT registered — their ids are
+// self-describing (`g3x2`, `p3-2`, `r3-2`) and `ensureLayout` re-synthesizes them,
+// so persisted picks restore across boots without polluting the plugin registry.
+
+/** Picker canvas bound — dynamic layouts stay within a 4×4 grid (16 cells, the
+ *  workspace's dormant-state pool capacity). */
+export const GRID_PICKER_MAX = 4;
+
+/** Classic preset ids by uniform geometry, so grid picks land on the builtins. */
+const GRID_BUILTIN_IDS: Record<string, string> = {
+    '1x1': '1',
+    '1x2': '2h',
+    '2x1': '2v',
+    '2x2': '4',
+    '2x4': '8',
+};
+
+const clampTrack = (n: number): number => Math.max(1, Math.min(GRID_PICKER_MAX, Math.round(n)));
+
+/**
+ * The layout for a UNIFORM rows×cols grid (Grid picker mode), clamped to the
+ * picker canvas. Geometry matching a registered classic preset returns that preset
+ * (id `'4'`, `'2h'`, …); anything else synthesizes a `g<rows>x<cols>` definition.
+ */
+export function layoutForGrid(rows: number, cols: number): LayoutDefinition {
+    const r = clampTrack(rows);
+    const c = clampTrack(cols);
+    const builtin = GRID_BUILTIN_IDS[`${r}x${c}`];
+    const registered = builtin ? registry.get(builtin) : undefined;
+    if (registered) return registered;
+    return {
+        id: `g${r}x${c}`,
+        // Width-first label — matches the picker's caption ("3 × 2" = 3 wide, 2 tall).
+        label: `${c} × ${r} grid`,
+        cols: Array.from({ length: c }, () => 1),
+        rows: Array.from({ length: r }, () => 1),
+        cells: slots(r * c),
+    };
+}
+
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+const lcm = (a: number, b: number): number => (a * b) / gcd(a, b);
+
+/**
+ * The layout for per-column chart stacks (Custom picker mode): `counts[i]` charts
+ * stacked in column i, every column filling the full height. Zero-count columns are
+ * dropped; uniform counts collapse to the plain grid. Mixed counts use LCM row
+ * tracks bound through `grid-template-areas` (e.g. `[3, 2]` → 6 tracks, the left
+ * column's cells spanning 2 each, the right's spanning 3). Slots are column-major.
+ */
+export function layoutForColumns(counts: readonly number[]): LayoutDefinition {
+    const stacks = normalizeStacks(counts);
+    if (stacks.length === 0) return layoutForGrid(1, 1);
+    if (stacks.every((n) => n === stacks[0])) return layoutForGrid(stacks[0]!, stacks.length);
+    const trackRows = stacks.reduce(lcm, 1);
+    const starts = stackStarts(stacks);
+    const areas = Array.from({ length: trackRows }, (_, r) =>
+        stacks.map((n, c) => `c${starts[c]! + Math.floor(r / (trackRows / n)) + 1}`).join(' '),
+    );
+    return {
+        id: `p${stacks.join('-')}`,
+        label: `Columns ${stacks.join('·')}`,
+        cols: stacks.map(() => 1),
+        rows: Array.from({ length: trackRows }, () => 1),
+        areas,
+        cells: stackCells(stacks),
+    };
+}
+
+/**
+ * The row-based counterpart of `layoutForColumns`: `counts[i]` charts side by side
+ * in row i, every row filling the full width. Mixed counts use LCM column tracks
+ * (e.g. `[3, 2]` → 6 tracks, the top row's cells spanning 2 each, the bottom's
+ * spanning 3). Slots are row-major; ids are `r3-2`-style.
+ */
+export function layoutForRows(counts: readonly number[]): LayoutDefinition {
+    const stacks = normalizeStacks(counts);
+    if (stacks.length === 0) return layoutForGrid(1, 1);
+    if (stacks.every((n) => n === stacks[0])) return layoutForGrid(stacks.length, stacks[0]!);
+    const trackCols = stacks.reduce(lcm, 1);
+    const starts = stackStarts(stacks);
+    const areas = stacks.map((n, r) =>
+        Array.from({ length: trackCols }, (_, c) => `c${starts[r]! + Math.floor(c / (trackCols / n)) + 1}`).join(' '),
+    );
+    return {
+        id: `r${stacks.join('-')}`,
+        label: `Rows ${stacks.join('·')}`,
+        cols: Array.from({ length: trackCols }, () => 1),
+        rows: stacks.map(() => 1),
+        areas,
+        cells: stackCells(stacks),
+    };
+}
+
+function normalizeStacks(counts: readonly number[]): number[] {
+    return counts
+        .filter((n) => n > 0)
+        .slice(0, GRID_PICKER_MAX)
+        .map(clampTrack);
+}
+
+function stackStarts(stacks: readonly number[]): number[] {
+    const starts: number[] = [];
+    let total = 0;
+    for (const n of stacks) {
+        starts.push(total);
+        total += n;
+    }
+    return starts;
+}
+
+function stackCells(stacks: readonly number[]): Array<{ id: string; area: string }> {
+    const total = stacks.reduce((a, b) => a + b, 0);
+    return Array.from({ length: total }, (_, i) => ({ id: `c${i + 1}`, area: `c${i + 1}` }));
+}
+
+const GRID_ID_RE = /^g([1-4])x([1-4])$/;
+const COLUMNS_ID_RE = /^p([1-4](?:-[1-4]){0,3})$/;
+const ROWS_ID_RE = /^r([1-4](?:-[1-4]){0,3})$/;
+
+/**
+ * Resolve a layout id to its definition, synthesizing the picker's dynamic ids
+ * (`g<rows>x<cols>`, `p<count>-<count>…`, `r<count>-<count>…`) when they are not
+ * registered — the boot path for persisted picks. Unknown ids stay undefined.
+ */
+export function ensureLayout(id: string): LayoutDefinition | undefined {
+    const registered = registry.get(id);
+    if (registered) return registered;
+    const g = GRID_ID_RE.exec(id);
+    if (g) return layoutForGrid(Number(g[1]), Number(g[2]));
+    const p = COLUMNS_ID_RE.exec(id);
+    if (p) return layoutForColumns(p[1]!.split('-').map(Number));
+    const r = ROWS_ID_RE.exec(id);
+    if (r) return layoutForRows(r[1]!.split('-').map(Number));
+    return undefined;
+}
+
+/** A layout's shape on the picker canvas. */
+export type LayoutShape = { rows: number; cols: number } | { counts: number[]; axis: 'columns' | 'rows' };
+
+/**
+ * The picker-canvas shape of a layout: `{rows, cols}` for uniform grids,
+ * `{counts, axis}` for column/row stacks, `null` when the layout is not expressible
+ * on the canvas (bespoke plugin presets) — pickers list those as labeled rows instead.
+ */
+export function layoutShape(def: LayoutDefinition): LayoutShape | null {
+    const p = COLUMNS_ID_RE.exec(def.id);
+    if (p && def.areas) return { counts: p[1]!.split('-').map(Number), axis: 'columns' };
+    const r = ROWS_ID_RE.exec(def.id);
+    if (r && def.areas) return { counts: r[1]!.split('-').map(Number), axis: 'rows' };
+    if (
+        !def.areas &&
+        def.rows.length <= GRID_PICKER_MAX &&
+        def.cols.length <= GRID_PICKER_MAX &&
+        def.cells.length === def.rows.length * def.cols.length
+    ) {
+        return { rows: def.rows.length, cols: def.cols.length };
+    }
+    return null;
+}
+
 /** Inline styles for the grid container + each cell — PURE (the workspace applies them). */
 export function gridStyles(
     def: LayoutDefinition,

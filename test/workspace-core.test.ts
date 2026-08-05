@@ -10,6 +10,11 @@ import {
     layouts,
     gridStyles,
     activeAfterLayout,
+    layoutForGrid,
+    layoutForColumns,
+    layoutForRows,
+    ensureLayout,
+    layoutShape,
     type LayoutDefinition,
 } from '../src/workspace/layouts';
 import { evenTracks, resizeTracks, trackOffsets } from '../src/workspace/splitters';
@@ -49,6 +54,97 @@ describe('layout registry + presets', () => {
         expect(layoutDefinition('custom-16')!.label).toBe('Sixteen'); // last registration wins
         unregisterLayout('custom-16');
         expect(layoutDefinition('custom-16')).toBeUndefined();
+    });
+});
+
+describe('dynamic picker layouts (pure)', () => {
+    it('layoutForGrid lands on the classic presets when the geometry matches', () => {
+        expect(layoutForGrid(1, 1).id).toBe('1');
+        expect(layoutForGrid(1, 2).id).toBe('2h');
+        expect(layoutForGrid(2, 1).id).toBe('2v');
+        expect(layoutForGrid(2, 2).id).toBe('4');
+        expect(layoutForGrid(2, 4).id).toBe('8');
+    });
+
+    it('layoutForGrid synthesizes other geometries WITHOUT registering them', () => {
+        const def = layoutForGrid(3, 2);
+        expect(def.id).toBe('g3x2');
+        expect(def.rows).toEqual([1, 1, 1]);
+        expect(def.cols).toEqual([1, 1]);
+        expect(def.areas).toBeUndefined();
+        expect(def.cells.map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4', 'c5', 'c6']);
+        expect(layoutDefinition('g3x2')).toBeUndefined(); // the registry stays presets-only
+    });
+
+    it('layoutForGrid clamps to the picker canvas (1..4 per axis)', () => {
+        expect(layoutForGrid(9, 0).id).toBe('g4x1');
+        expect(layoutForGrid(4, 4).cells).toHaveLength(16);
+    });
+
+    it('layoutForColumns: uniform stacks collapse to the plain grid', () => {
+        expect(layoutForColumns([2, 2]).id).toBe('4');
+        expect(layoutForColumns([3, 3]).id).toBe('g3x2');
+        expect(layoutForColumns([0, 2, 0]).id).toBe('2v'); // zero columns drop first
+        expect(layoutForColumns([]).id).toBe('1');
+    });
+
+    it('layoutForColumns: mixed stacks use LCM row tracks + column-major areas', () => {
+        const def = layoutForColumns([3, 2]);
+        expect(def.id).toBe('p3-2');
+        expect(def.cols).toEqual([1, 1]);
+        expect(def.rows).toHaveLength(6); // lcm(3, 2) tracks
+        expect(def.cells.map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4', 'c5']);
+        // Left column stacks c1..c3 (2 tracks each); right stacks c4..c5 (3 each).
+        expect(def.areas).toEqual(['c1 c4', 'c1 c4', 'c2 c4', 'c2 c5', 'c3 c5', 'c3 c5']);
+        // The synthesized definition renders through the same pure grid math.
+        const { container, perCell } = gridStyles(def);
+        expect(container.gridTemplateRows).toBe('1fr 1fr 1fr 1fr 1fr 1fr');
+        expect(perCell.c4).toEqual({ gridArea: 'c4' });
+    });
+
+    it('layoutForRows: uniform stacks collapse; mixed stacks use LCM column tracks + row-major areas', () => {
+        expect(layoutForRows([2, 2]).id).toBe('4');
+        expect(layoutForRows([3, 3]).id).toBe('g2x3'); // 2 rows of 3
+        expect(layoutForRows([]).id).toBe('1');
+        const def = layoutForRows([3, 2]);
+        expect(def.id).toBe('r3-2');
+        expect(def.rows).toEqual([1, 1]);
+        expect(def.cols).toHaveLength(6); // lcm(3, 2) tracks
+        expect(def.cells.map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4', 'c5']);
+        // Top row spreads c1..c3 (2 tracks each); bottom spreads c4..c5 (3 each).
+        expect(def.areas).toEqual(['c1 c1 c2 c2 c3 c3', 'c4 c4 c4 c5 c5 c5']);
+        const { container, perCell } = gridStyles(def);
+        expect(container.gridTemplateColumns).toBe('1fr 1fr 1fr 1fr 1fr 1fr');
+        expect(perCell.c4).toEqual({ gridArea: 'c4' });
+    });
+
+    it('ensureLayout: registered ids win; dynamic ids re-synthesize; junk stays undefined', () => {
+        expect(ensureLayout('4')).toBe(layoutDefinition('4'));
+        expect(ensureLayout('g3x3')?.cells).toHaveLength(9);
+        expect(ensureLayout('p3-2')?.areas).toEqual(layoutForColumns([3, 2]).areas);
+        expect(ensureLayout('r3-2')?.areas).toEqual(layoutForRows([3, 2]).areas);
+        expect(ensureLayout('g5x5')).toBeUndefined(); // beyond the canvas — not a picker id
+        expect(ensureLayout('p3-2-1-1-1')).toBeUndefined(); // more columns than the canvas
+        expect(ensureLayout('r3-2-1-1-1')).toBeUndefined(); // more rows than the canvas
+        expect(ensureLayout('nope')).toBeUndefined();
+    });
+
+    it('layoutShape reads grids and stacks back; bespoke areas stay null', () => {
+        expect(layoutShape(layoutDefinition('1')!)).toEqual({ rows: 1, cols: 1 });
+        expect(layoutShape(layoutDefinition('8')!)).toEqual({ rows: 2, cols: 4 });
+        expect(layoutShape(layoutForGrid(3, 2))).toEqual({ rows: 3, cols: 2 });
+        expect(layoutShape(layoutForColumns([3, 2]))).toEqual({ counts: [3, 2], axis: 'columns' });
+        expect(layoutShape(layoutForRows([3, 2]))).toEqual({ counts: [3, 2], axis: 'rows' });
+        expect(
+            layoutShape({
+                id: 'bespoke',
+                label: 'Bespoke',
+                cols: [2, 1],
+                rows: [1, 1],
+                areas: ['main a', 'main b'],
+                cells: [{ id: 'c1', area: 'main' }, { id: 'c2', area: 'a' }, { id: 'c3', area: 'b' }],
+            }),
+        ).toBeNull();
     });
 });
 

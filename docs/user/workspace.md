@@ -13,7 +13,7 @@ import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine
 import { BinanceProvider } from 'vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {
-    layout: '4', // '1' | '2h' | '2v' | '4' | '8' | a registerLayout() id
+    layout: '4', // '1' | '2h' | '2v' | '4' | '8' | picker ids ('g3x2', 'p3-2') | a registerLayout() id
     // Chart options at the TOP LEVEL are every cell's DEFAULT — the same words the
     // widget (and the bare chart) use. `cells` overrides them per cell; a cell's NAME
     // is its durable identity, DECLARATION ORDER fills the layout's slots:
@@ -69,9 +69,31 @@ layout (`cell:destroyed`). Host code that tracks cells should **follow
 `cell:created`/`cell:destroyed`** rather than snapshot `ws.cells()` once: a later
 `setLayout` (or a restored document) mints cells that a one-time snapshot never sees.
 
-Layouts live in a registry (`registerLayout` from `vela/workspace`) — a plugin-added
-grid appears in the topbar's layout dropdown automatically. Splitters between cells
-resize the grid tracks (double-click a divider for an even split).
+Layouts live in a registry (`registerLayout` from `vela/workspace`), and the topbar's
+**layout dropdown** composes them on a 4×4 grid canvas, driven by an icon-only
+orientation switch (Grid / Columns / Rows — the last Columns/Rows choice sticks
+across reopen until you switch):
+
+- **Grid** — hover previews the full *columns × rows* rectangle from the top-left
+  (the table-insert idiom); a click applies it immediately. Rectangles matching a
+  classic preset (`1`, `2h`, `2v`, `4`, `8`) reuse it; anything else gets a
+  self-describing dynamic id (`g3x2` = 3 rows × 2 columns).
+- **Columns / Rows** — each click sets a **chart stack** along that orientation
+  (clicking a stack's exact end clears it), and **Apply** commits. Switching between
+  the two orientations keeps the painted pattern in place, re-reading it along the
+  other axis. Mixed stacks (say 3 charts in the first column, 2 in the second)
+  render as full-height columns via LCM row tracks; their ids are `p3-2`-style
+  (`r3-2` for row-based mixes).
+
+Both id families resolve without registration (persisted picks restore across boots).
+Plugin layouts the canvas cannot express (bespoke `areas`) list as labeled rows under
+the canvas, so `registerLayout` contributions keep appearing automatically. In code,
+the same compositions are `layoutForGrid(rows, cols)` / `layoutForColumns(counts)` /
+`layoutForRows(counts)` (all exported from `vela/workspace`), handed to
+`ws.setLayout(...)`.
+
+Splitters between cells resize the grid tracks (double-click a divider for an even
+split).
 
 ## Sync links
 
@@ -82,10 +104,14 @@ finer-timeframe cell clamps the window to its own minimum zoom).
 
 `crosshair` mirrors the pointer's TIME onto same-group cells as a **ghost crosshair**
 (a dimmed vertical line snapped to each follower's own bar, with its time chip);
-leaving the origin clears every ghost. It is also a **toggle in the topbar's layout
-dropdown** ("Sync crosshair"). The ghost needs the renderer's optional
+leaving the origin clears every ghost. The ghost needs the renderer's optional
 `setExternalCrosshair` seam — the native renderer has it; a custom renderer without it
 simply never shows one (enabling warns only when NO cell could).
+
+**Symbol**, **Interval** (timeframe) and **Crosshair** are also switches in the
+topbar's layout dropdown (its SYNC section). A switch reflects the simple all-cells
+form (`true`/off); flipping one overrides a host-set group record with plain on/off —
+group records stay an API-only shape.
 
 ```ts
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
@@ -191,8 +217,9 @@ new VelaWorkspace('#app', { persist: 'main', storage: restStorage /* … */ });
 
 Notes: writes are fire-and-forget (the UI never blocks on storage); a remote adapter
 that must survive tab-close should use `navigator.sendBeacon` in its `set`. A saved
-state referencing a custom layout id restores only if that layout is registered
-(`registerLayout`) before `applyState` runs.
+state referencing a plugin layout id restores only if that layout is registered
+(`registerLayout`) before `applyState` runs; the layout picker's dynamic ids (`g3x2`,
+`p3-2`) are self-describing and always resolve.
 
 ## Options (summary)
 
@@ -230,7 +257,7 @@ silently reorder them).
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `layout` | `'4'` | Initial grid — preset id, `registerLayout()` id, or inline definition. |
+| `layout` | `'4'` | Initial grid — preset id, picker id (`g3x2`, `p3-2`), `registerLayout()` id, or inline definition. |
 | `cells` | — | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above). |
 | `sync` | off | Initial sync links (see above). |
 | `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |

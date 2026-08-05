@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { encodeState, decodeState, sanitizeState, memoryStorageAdapter, type WorkspaceState } from '../src/workspace/persist';
 import { localStorageAdapter } from '../src/widget/persist';
+import { ensureLayout, registerBuiltinLayouts } from '../src/workspace/layouts';
 
 const fullDoc: WorkspaceState = {
     version: 1,
@@ -35,6 +36,20 @@ const fullDoc: WorkspaceState = {
 describe('state codec round-trip', () => {
     it('decodeState(encodeState(doc)) preserves a full valid document', () => {
         expect(decodeState(encodeState(fullDoc))).toEqual(fullDoc);
+    });
+
+    it('a dynamic picker layout id survives the round-trip and resolves at boot', () => {
+        registerBuiltinLayouts();
+        // The picker's ids are never registered — the boot path re-synthesizes them
+        // (ensureLayout), so a persisted custom grid restores across sessions.
+        const doc: WorkspaceState = { ...fullDoc, layout: 'p3-2' };
+        const restored = decodeState(encodeState(doc));
+        expect(restored!.layout).toBe('p3-2');
+        expect(ensureLayout(restored!.layout)?.cells).toHaveLength(5);
+        const grid: WorkspaceState = { ...fullDoc, layout: 'g3x3' };
+        expect(ensureLayout(decodeState(encodeState(grid))!.layout)?.cells).toHaveLength(9);
+        const rows: WorkspaceState = { ...fullDoc, layout: 'r3-2' };
+        expect(ensureLayout(decodeState(encodeState(rows))!.layout)?.cells).toHaveLength(5);
     });
 
     it('rejects unusable payloads with null, never throws', () => {
