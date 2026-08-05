@@ -6,6 +6,20 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **A light theme that actually works — switchable live.** `theme: 'light'` now skins the
+  whole product coherently: white surfaces with dark, readable text across the toolbar,
+  menus, dialogs, legends, axes, and pane separators. The theme can be swapped at runtime —
+  `chart.setTheme('light')`, `widget.setTheme(...)`, or `workspace.setTheme(...)` (which
+  re-skins the shared chrome and every cell together) — and users reach the same switch in
+  chart settings → Canvas → Theme. A `theme:changed` event carries the resolved theme so
+  the page around the chart can follow. Candle colors are shared between the built-in
+  themes, so switching never recolors the series. Setting just a white background on the
+  dark theme (settings → Canvas → Background) now re-bases the derived inks — text, grid,
+  axis border — so legends and axis labels stay readable, while an explicitly chosen text
+  color always wins. New text annotations (notes, callouts, price tags) pick a
+  maximum-contrast text color for the active theme at creation and keep it; existing
+  drawings are never recolored.
+
 - **Capturing what a script computes, in one subscription: `script:run`.** Reading a running
   script used to mean assembling it yourself — an event told you *that* something happened
   and handed you an id, so you looked the indicator up, awaited a snapshot, and then decoded

@@ -18,7 +18,9 @@ export abstract class CalloutBase extends Drawing {
     constructor(init: Partial<SerializedDrawing> & { paneId: string }) {
         super(init);
         // `defaultLabel()` dispatches to the subclass (a prototype method, available during super()).
-        if (!this.text) this.text = { ...defaultText(this.defaultLabel()), color: '#ffffff' };
+        // No color seed: the interactive creation path fixes a theme-contrast ink on the
+        // fresh drawing; until then the painter auto-contrasts (`undefined` semantics).
+        if (!this.text) this.text = defaultText(this.defaultLabel());
     }
 
     /** The placeholder text seeded for a fresh annotation. */

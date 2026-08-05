@@ -4,7 +4,6 @@ import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/dr
 import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
-import { CHROME_BORDER_COLOR } from '../core/chartConfig';
 
 /** Expanded bar width in px — a docked host's left-gutter reservation must match it. */
 export const TOOLBAR_WIDTH = 44;
@@ -13,7 +12,7 @@ export const TOOLBAR_COLLAPSED_WIDTH = 16;
 
 /** Cosmetic/placement options — defaults reproduce the in-renderer docked bar exactly. */
 export interface DrawingToolbarOptions {
-    /** Border/divider color. Default: the chrome divider color. */
+    /** Border/divider color. Default: the theme's border color (follows theme swaps). */
     borderColor?: string;
     /** Bar width in px. In docked (`'absolute'`) use it MUST match the host renderer's
      *  left-gutter reservation ({@link TOOLBAR_WIDTH}, 44). Default 44. */
@@ -70,7 +69,8 @@ export class DrawingToolbar {
     /** Chrome-tooltip disposers — flushed whenever the cells are recreated (rebuild/destroy). */
     private tipDisposers: Array<() => void> = [];
 
-    private readonly borderColor: string;
+    /** Explicit border override from options; `null` follows the live theme's border. */
+    private readonly borderOverride: string | null;
     private readonly width: number;
     private readonly dock: 'absolute' | 'static';
     private readonly onCollapse: (collapsed: boolean) => void;
@@ -86,7 +86,7 @@ export class DrawingToolbar {
         private readonly onStayMode: (on: boolean) => void = () => {},
         options: DrawingToolbarOptions = {},
     ) {
-        this.borderColor = options.borderColor ?? CHROME_BORDER_COLOR;
+        this.borderOverride = options.borderColor ?? null;
         this.width = options.width ?? TOOLBAR_WIDTH;
         this.dock = options.dock ?? 'absolute';
         this.onCollapse = options.onCollapse ?? (() => {});
@@ -95,6 +95,12 @@ export class DrawingToolbar {
         this.root.className = 'vela-dtb';
         this.styleRoot();
         host.appendChild(this.root);
+    }
+
+    /** Live divider/border ink — the option override, else the current theme's border
+     *  (so a theme swap re-inks the bar without a rebuild option). */
+    private get borderColor(): string {
+        return this.borderOverride ?? this.theme.borderColor;
     }
 
     /** Flush vertical bar pinned to the left gutter (full height, right border, no card chrome).

@@ -115,6 +115,16 @@ const midnight = {
 new Vela('#chart', { data: bars, theme: midnight });
 ```
 
+The theme can also be swapped at runtime — `chart.setTheme('light')` (or a full theme
+object) re-skins the chart live and emits `theme:changed` so your surrounding UI can
+follow; users reach the same switch in chart settings → Canvas → Theme. The built-in
+dark and light themes share the same candle colors, so switching never recolors the
+series. Setting only a background color through the settings dialog (or `applyConfig`)
+keeps the app theme: when that background lands in the other luminance class (a white
+plot on the dark theme), the derived inks — text, grid, axis border — re-base
+automatically so legends and axis labels stay readable, while any explicitly chosen
+text color wins.
+
 ### Capability-gated options
 
 Some options only take effect when the active backend supports them. **`glow` is WebGL2-only** — it is silently ignored on the canvas2d backend. If you force `nativeBackend: 'canvas2d'`, glow has no effect.

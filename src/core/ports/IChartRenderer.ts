@@ -4,7 +4,7 @@ import type { IndicatorModel } from '../model/indicator';
 import type { ScenePatch } from '../model/patch';
 import type { InputValue, SymbolPickerFn } from '../model/inputs';
 import type { Millis } from '../model/time';
-import type { VelaTheme, MoveTarget, PriceStyle } from '../options';
+import type { VelaTheme, ThemeName, MoveTarget, PriceStyle } from '../options';
 import type { Unsubscribe } from '../util/types';
 import type { IDrawingsRendererPort } from '../drawings/port';
 
@@ -347,6 +347,15 @@ export interface IChartRenderer {
      * with `applyConfig`.
      */
     onConfigChanged?(cb: () => void): Unsubscribe;
+
+    /**
+     * The renderer reports a user request to switch the APP THEME, made from its own
+     * in-chart UI (the settings dialog's Canvas → Theme row). The core owns the
+     * canonical theme: it resolves the name, calls {@link setTheme}, and emits
+     * `theme:changed` so host chrome follows. Optional — a renderer without an
+     * in-chart theme control omits it.
+     */
+    onThemeSelect?(cb: (theme: ThemeName) => void): Unsubscribe;
 
     /**
      * Move keyboard focus onto the chart's interactive surface (the element its keyboard

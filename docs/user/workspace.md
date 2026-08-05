@@ -60,6 +60,7 @@ ws.cell('eth');          // a specific cell BY IDENTITY — the durable handle t
 ws.cells();              // every live cell, in slot order
 ws.setActiveCell('sol');
 ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size pool their state
+ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also reachable from any cell's chart settings → Canvas → Theme)
 ws.on('cell:active' | 'layout:changed' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
 ```
 

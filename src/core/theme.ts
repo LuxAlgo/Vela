@@ -16,10 +16,14 @@ export const DARK_THEME: VelaTheme = {
 export const LIGHT_THEME: VelaTheme = {
     background: '#ffffff',
     textColor: '#1e293b',
-    gridColor: '#e2e8f0',
-    borderColor: '#cbd5e1',
-    upColor: '#26a69a',
-    downColor: '#ef5350',
+    // Soft chrome on white: grid is a neutral wash; pane separator / axis border
+    // (they inherit `borderColor`) sit a step darker so stacked panes stay distinct.
+    gridColor: '#cccccc',
+    borderColor: '#d4dae3',
+    // Candle hues are shared across themes: switching themes recolors surfaces and
+    // text, never the series (a green candle stays the same green on white).
+    upColor: BULLISH,
+    downColor: BEARISH,
     fontFamily: 'sans-serif',
 };
 
