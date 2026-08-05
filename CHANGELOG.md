@@ -69,6 +69,11 @@ All notable changes to Vela, newest first.
   instead of drifting. And a host that owns its own undo shortcuts can turn off the new
   `historyChords` render feature, so the drawings layer lets Ctrl+Z/Y bubble up instead of
   consuming them itself.
+- **Hold Shift to draw lines at exact angles.** While placing a trend line, ray, extended
+  line, info line, trend angle, or arrow — or dragging one of its endpoints later — holding
+  Shift rounds the line to the nearest 45° step as drawn on screen: horizontal, vertical, or
+  a perfect diagonal. The magnet is set aside while Shift is held, so the locked angle is
+  kept exactly rather than being pulled off-axis by a nearby candle.
 
 ### Changed
 
@@ -94,6 +99,10 @@ All notable changes to Vela, newest first.
   workspace it updates every cell, since the display zone is workspace-global; the dialog
   used to carry its own short list of raw zone identifiers, and a choice made there never
   reached the rest of the interface.
+- **Drawing-toolbar tooltips appear when you'd expect them.** Hovering a toolbar icon now
+  shows its tooltip after a short pause instead of a two-second wait, and a tool group's
+  tooltip names the exact tool its icon will arm (the group's last-used one), not just the
+  group.
 
 ### Fixed
 
@@ -111,6 +120,10 @@ All notable changes to Vela, newest first.
 - **The indicator legend follows the chart background.** Changing the background color in
   chart settings repaints the legend rows with it; they used to keep the color they were
   created with and float as stale chips over the new background.
+- **The price and time scales follow the chart background.** Changing the background color
+  in chart settings now repaints the axis scales with it, so the plot and its scales read
+  as one surface; they used to stay on the app theme's color and frame a recolored chart
+  with the old one.
 - **The status line's readout follows the chart style.** Bar-shaped styles (candles,
   bars, Heikin Ashi) read out all four O/H/L/C values; a one-line style (line, area,
   baseline) plots a single series, so its readout is just that value — plus the change,
