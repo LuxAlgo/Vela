@@ -13,7 +13,7 @@ import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine
 import { BinanceProvider } from 'vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {
-    layout: '4', // '1' | '2h' | '2v' | '4' | '8' | picker ids ('g3x2', 'p3-2') | a registerLayout() id
+    layout: '4', // '1' | '2h' | '2v' | '4' | '8' | picker ids ('g3x2') | a registerLayout() id
     // Chart options at the TOP LEVEL are every cell's DEFAULT — the same words the
     // widget (and the bare chart) use. `cells` overrides them per cell; a cell's NAME
     // is its durable identity, DECLARATION ORDER fills the layout's slots:
@@ -70,29 +70,15 @@ layout (`cell:destroyed`). Host code that tracks cells should **follow
 `setLayout` (or a restored document) mints cells that a one-time snapshot never sees.
 
 Layouts live in a registry (`registerLayout` from `vela/workspace`), and the topbar's
-**layout dropdown** offers two tabs:
-
-- **Presets** — curated multi-chart splits as clickable pictogram tiles, the most
-  useful setups first (2 × 2 grid, 2 side by side, 2 stacked, 1 large + 2 small,
-  1 large + 3 small, 1 wide + 2 below, 1 wide + 3 below, 3 × 2 grid). The **⇄** tile
-  mirrors the asymmetric splits (large pane right/bottom instead of left/top). A
-  click applies the preset immediately. Mixed splits render as full-height columns
-  via LCM row tracks; their ids are `p1-2`-style (`r1-2` for row-based splits).
-- **Grid** — a 4×4 canvas with an icon-only mode trio. In *Grid* mode, hover
-  previews the full *columns × rows* rectangle from the top-left (the table-insert
-  idiom) and a click applies it immediately; rectangles matching a classic preset
-  (`1`, `2h`, `2v`, `4`, `8`) reuse it, anything else gets a self-describing dynamic
-  id (`g3x2` = 3 rows × 2 columns). In *Columns* / *Rows* mode, each click sets a
-  **chart stack** along that orientation (clicking a stack's exact end clears it)
-  and **Apply** commits — switching between the two keeps the painted pattern in
-  place, re-reading it along the other axis.
-
-Both id families resolve without registration (persisted picks restore across boots).
+**layout dropdown** composes them on a 4×4 grid canvas: hover previews the full
+*columns × rows* rectangle from the top-left (the table-insert idiom); a click
+applies it immediately. Rectangles matching a classic preset (`1`, `2h`, `2v`, `4`,
+`8`) reuse it; anything else gets a self-describing dynamic id (`g3x2` = 3 rows ×
+2 columns) that resolves without registration (persisted picks restore across boots).
 Plugin layouts the canvas cannot express (bespoke `areas`) list as labeled rows under
 the canvas, so `registerLayout` contributions keep appearing automatically. In code,
-the same compositions are `layoutForGrid(rows, cols)` / `layoutForColumns(counts)` /
-`layoutForRows(counts)` (all exported from `vela/workspace`), handed to
-`ws.setLayout(...)`.
+the same composition is `layoutForGrid(rows, cols)` (exported from `vela/workspace`),
+handed to `ws.setLayout(...)`.
 
 Splitters between cells resize the grid tracks (double-click a divider for an even
 split).
@@ -220,8 +206,8 @@ new VelaWorkspace('#app', { persist: 'main', storage: restStorage /* … */ });
 Notes: writes are fire-and-forget (the UI never blocks on storage); a remote adapter
 that must survive tab-close should use `navigator.sendBeacon` in its `set`. A saved
 state referencing a plugin layout id restores only if that layout is registered
-(`registerLayout`) before `applyState` runs; the layout picker's dynamic ids (`g3x2`,
-`p3-2`) are self-describing and always resolve.
+(`registerLayout`) before `applyState` runs; the layout picker's dynamic ids (`g3x2`)
+are self-describing and always resolve.
 
 ## Options (summary)
 
@@ -259,7 +245,7 @@ silently reorder them).
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `layout` | `'4'` | Initial grid — preset id, picker id (`g3x2`, `p3-2`), `registerLayout()` id, or inline definition. |
+| `layout` | `'4'` | Initial grid — preset id, picker id (`g3x2`), `registerLayout()` id, or inline definition. |
 | `cells` | — | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above). |
 | `sync` | off | Initial sync links (see above). |
 | `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |

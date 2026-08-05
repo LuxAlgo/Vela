@@ -15,8 +15,6 @@ export {
     gridStyles,
     activeAfterLayout,
     layoutForGrid,
-    layoutForColumns,
-    layoutForRows,
     ensureLayout,
     layoutShape,
     GRID_PICKER_MAX,

@@ -78,11 +78,10 @@ export function registerBuiltinLayouts(): void {
 
 // ── dynamic layouts (the topbar's grid picker) ──────────────────────────────
 //
-// The picker composes layouts on a bounded canvas instead of choosing from a fixed
-// list: a UNIFORM rows×cols grid (Grid mode) or per-column / per-row chart stacks
-// (Custom mode). Dynamic definitions are NOT registered — their ids are
-// self-describing (`g3x2`, `p3-2`, `r3-2`) and `ensureLayout` re-synthesizes them,
-// so persisted picks restore across boots without polluting the plugin registry.
+// The picker composes UNIFORM rows×cols grids on a bounded canvas instead of choosing
+// from a fixed list. Dynamic definitions are NOT registered — their ids are
+// self-describing (`g3x2`) and `ensureLayout` re-synthesizes them, so persisted picks
+// restore across boots without polluting the plugin registry.
 
 /** Picker canvas bound — dynamic layouts stay within a 4×4 grid (16 cells, the
  *  workspace's dormant-state pool capacity). */
@@ -120,116 +119,30 @@ export function layoutForGrid(rows: number, cols: number): LayoutDefinition {
     };
 }
 
-const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
-const lcm = (a: number, b: number): number => (a * b) / gcd(a, b);
-
-/**
- * The layout for per-column chart stacks (Custom picker mode): `counts[i]` charts
- * stacked in column i, every column filling the full height. Zero-count columns are
- * dropped; uniform counts collapse to the plain grid. Mixed counts use LCM row
- * tracks bound through `grid-template-areas` (e.g. `[3, 2]` → 6 tracks, the left
- * column's cells spanning 2 each, the right's spanning 3). Slots are column-major.
- */
-export function layoutForColumns(counts: readonly number[]): LayoutDefinition {
-    const stacks = normalizeStacks(counts);
-    if (stacks.length === 0) return layoutForGrid(1, 1);
-    if (stacks.every((n) => n === stacks[0])) return layoutForGrid(stacks[0]!, stacks.length);
-    const trackRows = stacks.reduce(lcm, 1);
-    const starts = stackStarts(stacks);
-    const areas = Array.from({ length: trackRows }, (_, r) =>
-        stacks.map((n, c) => `c${starts[c]! + Math.floor(r / (trackRows / n)) + 1}`).join(' '),
-    );
-    return {
-        id: `p${stacks.join('-')}`,
-        label: `Columns ${stacks.join('·')}`,
-        cols: stacks.map(() => 1),
-        rows: Array.from({ length: trackRows }, () => 1),
-        areas,
-        cells: stackCells(stacks),
-    };
-}
-
-/**
- * The row-based counterpart of `layoutForColumns`: `counts[i]` charts side by side
- * in row i, every row filling the full width. Mixed counts use LCM column tracks
- * (e.g. `[3, 2]` → 6 tracks, the top row's cells spanning 2 each, the bottom's
- * spanning 3). Slots are row-major; ids are `r3-2`-style.
- */
-export function layoutForRows(counts: readonly number[]): LayoutDefinition {
-    const stacks = normalizeStacks(counts);
-    if (stacks.length === 0) return layoutForGrid(1, 1);
-    if (stacks.every((n) => n === stacks[0])) return layoutForGrid(stacks.length, stacks[0]!);
-    const trackCols = stacks.reduce(lcm, 1);
-    const starts = stackStarts(stacks);
-    const areas = stacks.map((n, r) =>
-        Array.from({ length: trackCols }, (_, c) => `c${starts[r]! + Math.floor(c / (trackCols / n)) + 1}`).join(' '),
-    );
-    return {
-        id: `r${stacks.join('-')}`,
-        label: `Rows ${stacks.join('·')}`,
-        cols: Array.from({ length: trackCols }, () => 1),
-        rows: stacks.map(() => 1),
-        areas,
-        cells: stackCells(stacks),
-    };
-}
-
-function normalizeStacks(counts: readonly number[]): number[] {
-    return counts
-        .filter((n) => n > 0)
-        .slice(0, GRID_PICKER_MAX)
-        .map(clampTrack);
-}
-
-function stackStarts(stacks: readonly number[]): number[] {
-    const starts: number[] = [];
-    let total = 0;
-    for (const n of stacks) {
-        starts.push(total);
-        total += n;
-    }
-    return starts;
-}
-
-function stackCells(stacks: readonly number[]): Array<{ id: string; area: string }> {
-    const total = stacks.reduce((a, b) => a + b, 0);
-    return Array.from({ length: total }, (_, i) => ({ id: `c${i + 1}`, area: `c${i + 1}` }));
-}
-
 const GRID_ID_RE = /^g([1-4])x([1-4])$/;
-const COLUMNS_ID_RE = /^p([1-4](?:-[1-4]){0,3})$/;
-const ROWS_ID_RE = /^r([1-4](?:-[1-4]){0,3})$/;
 
 /**
  * Resolve a layout id to its definition, synthesizing the picker's dynamic ids
- * (`g<rows>x<cols>`, `p<count>-<count>…`, `r<count>-<count>…`) when they are not
- * registered — the boot path for persisted picks. Unknown ids stay undefined.
+ * (`g<rows>x<cols>`) when they are not registered — the boot path for persisted
+ * picks. Unknown ids stay undefined.
  */
 export function ensureLayout(id: string): LayoutDefinition | undefined {
     const registered = registry.get(id);
     if (registered) return registered;
     const g = GRID_ID_RE.exec(id);
     if (g) return layoutForGrid(Number(g[1]), Number(g[2]));
-    const p = COLUMNS_ID_RE.exec(id);
-    if (p) return layoutForColumns(p[1]!.split('-').map(Number));
-    const r = ROWS_ID_RE.exec(id);
-    if (r) return layoutForRows(r[1]!.split('-').map(Number));
     return undefined;
 }
 
 /** A layout's shape on the picker canvas. */
-export type LayoutShape = { rows: number; cols: number } | { counts: number[]; axis: 'columns' | 'rows' };
+export type LayoutShape = { rows: number; cols: number };
 
 /**
- * The picker-canvas shape of a layout: `{rows, cols}` for uniform grids,
- * `{counts, axis}` for column/row stacks, `null` when the layout is not expressible
- * on the canvas (bespoke plugin presets) — pickers list those as labeled rows instead.
+ * The picker-canvas shape of a layout: `{rows, cols}` for uniform grids, `null`
+ * when the layout is not expressible on the canvas (bespoke plugin presets) —
+ * pickers list those as labeled rows instead.
  */
 export function layoutShape(def: LayoutDefinition): LayoutShape | null {
-    const p = COLUMNS_ID_RE.exec(def.id);
-    if (p && def.areas) return { counts: p[1]!.split('-').map(Number), axis: 'columns' };
-    const r = ROWS_ID_RE.exec(def.id);
-    if (r && def.areas) return { counts: r[1]!.split('-').map(Number), axis: 'rows' };
     if (
         !def.areas &&
         def.rows.length <= GRID_PICKER_MAX &&

@@ -51,8 +51,6 @@ import {
     activeAfterLayout,
     ensureLayout,
     layoutForGrid,
-    layoutForColumns,
-    layoutForRows,
     layoutShape,
     occupancyGrid,
     type LayoutDefinition,
@@ -340,7 +338,6 @@ export class VelaWorkspace {
                 shape: () => layoutShape(this.def),
                 presets: () => layouts().filter((l) => layoutShape(l) === null).map((l) => ({ id: l.id, label: l.label })),
                 onSelectGrid: (rows, cols) => this.setLayout(layoutForGrid(rows, cols)),
-                onSelectStacks: (counts, axis) => this.setLayout(axis === 'rows' ? layoutForRows(counts) : layoutForColumns(counts)),
                 onSelectPreset: (id) => this.setLayout(id),
                 // The SYNC switches reflect the simple all-cells form; flipping one
                 // OVERRIDES a host-set group record with plain on/off (groups stay an
@@ -826,7 +823,7 @@ export class VelaWorkspace {
     private resolveLayout(layout: string | LayoutDefinition): LayoutDefinition {
         if (typeof layout !== 'string') return layout;
         // Registered ids first, then the picker's self-describing dynamic ids
-        // (`g3x2`, `p3-2`) — those synthesize without touching the registry.
+        // (`g3x2`) — those synthesize without touching the registry.
         const def = ensureLayout(layout);
         if (!def) throw new Error(`[vela] unknown workspace layout "${layout}" — register it with registerLayout().`);
         return def;

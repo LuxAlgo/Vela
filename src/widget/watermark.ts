@@ -14,7 +14,14 @@ const STYLE_ID = 'vela-widget-watermark';
 const CSS = `
 .vela-watermark {
     position: absolute;
-    inset: 0;
+    /* Insets follow the renderer-published gutters (mount container), so the mark
+     * centers and fits within the PLOT — never bleeding into the drawings toolbar
+     * on the left or the price scale on the right (visible in small multi-chart
+     * cells, where the scale is a large share of the width). */
+    top: 0;
+    bottom: 0;
+    left: var(--vela-toolbar-gutter, 0px);
+    right: var(--vela-scale-gutter, 0px);
     display: flex;
     align-items: center;
     justify-content: center;

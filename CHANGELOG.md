@@ -136,7 +136,8 @@ All notable changes to Vela, newest first.
   type far wider than itself, spilling the text across its neighbors. The mark now measures
   itself against its own chart and shrinks to fit — a lone full-size chart keeps the large
   type, a dense grid gets proportionally smaller marks, and dragging a divider refits them
-  live.
+  live. The mark also fits and centers on the plot itself rather than the full chart, so in
+  a narrow cell the text no longer runs under the price scale's numbers.
 - **Resizing no longer makes charts flash or shake.** Two resize bugs, most visible in a
   workspace: dragging a divider across a chart mid-animation (a live tick easing in, a zoom
   glide) could blank it for a frame on every move, because the resized canvases waited for

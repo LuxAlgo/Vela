@@ -137,9 +137,9 @@ export interface TopbarOptions {
     onTimeframe: (tf: string) => void;
     onPriceStyle: (style: string) => void;
     /** Optional workspace LAYOUT dropdown (rendered after the style dropdown when
-     *  given) — the grid-canvas picker composing uniform grids and per-column stacks,
-     *  with the workspace SYNC switches beside it. Everything is read live, so
-     *  plugin-registered layouts and setting flips appear automatically. */
+     *  given) — the grid-canvas picker composing uniform grids, with the workspace
+     *  SYNC switches beside it. Everything is read live, so plugin-registered
+     *  layouts and setting flips appear automatically. */
     layout?: {
         current: string;
         /** Current layout's picker-canvas shape (null = not canvas-expressible). */
@@ -147,8 +147,6 @@ export interface TopbarOptions {
         /** Registered layouts the canvas cannot express — rendered as labeled rows. */
         presets: () => Array<{ id: string; label: string }>;
         onSelectGrid: (rows: number, cols: number) => void;
-        /** Custom-mode commit: per-column or per-row chart stacks, per `axis`. */
-        onSelectStacks: (counts: number[], axis: 'columns' | 'rows') => void;
         onSelectPreset: (id: string) => void;
         /** SYNC switch rows (re-read on every open and after each toggle). */
         syncs: () => Array<{ id: string; label: string; checked: boolean }>;
@@ -283,7 +281,6 @@ export class Topbar {
                 shape: () => layout.shape(),
                 presets: () => layout.presets().map((p) => ({ ...p, checked: p.id === this.layoutId })),
                 onSelectGrid: (rows, cols) => layout.onSelectGrid(rows, cols),
-                onSelectStacks: (counts, axis) => layout.onSelectStacks(counts, axis),
                 onSelectPreset: (id) => layout.onSelectPreset(id),
                 syncs: () => layout.syncs(),
                 onToggleSync: (id) => layout.onToggleSync(id),
