@@ -87,10 +87,10 @@ split).
 
 ## Sync links
 
-Per kind — `viewport`, `symbol`, `timeframe`, `crosshair` — link every cell (`true`) or
-named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a', sol: 'b' }`: only same-group
-cells follow each other). Cross-timeframe viewport groups align on the **right edge** (a
-finer-timeframe cell clamps the window to its own minimum zoom).
+Per kind — `viewport`, `symbol`, `timeframe`, `crosshair`, `drawings` — link every cell
+(`true`) or named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a', sol: 'b' }`:
+only same-group cells follow each other). Cross-timeframe viewport groups align on the
+**right edge** (a finer-timeframe cell clamps the window to its own minimum zoom).
 
 `crosshair` mirrors the pointer's TIME onto same-group cells as a **ghost crosshair**
 (a dimmed vertical line snapped to each follower's own bar, with its time chip);
@@ -98,17 +98,29 @@ leaving the origin clears every ghost. The ghost needs the renderer's optional
 `setExternalCrosshair` seam — the native renderer has it; a custom renderer without it
 simply never shows one (enabling warns only when NO cell could).
 
+`drawings` copies each **newly created** drawing onto its same-group cells — the
+anchors are time+price, so the copy lands at the same spot whatever each follower
+shows — and keeps the set **linked**: moving/restyling/deleting any member follows on
+its peers (while the link stays on). Placement itself mirrors **live**: while you are
+still clicking anchors, the followers show the in-progress shape as a reduced-opacity
+ghost (the same seam as crosshair ghosts — a custom renderer without it simply syncs
+at completion). The link is session-scoped: after a reload, previously synced drawings
+are independent again, and turning the link on syncs nothing retroactively — only
+drawings created under it.
+
 **Symbol**, **Interval** (timeframe) and **Crosshair** are also switches in the
-topbar's layout dropdown (its SYNC section). A switch reflects the simple all-cells
-form (`true`/off); flipping one overrides a host-set group record with plain on/off —
-group records stay an API-only shape.
+topbar's layout dropdown (its SYNC section), and **Drawings** is a toggle on the
+shared drawing toolbar (the pen-with-panes icon under stay-in-drawing-mode). A
+switch reflects the simple all-cells form (`true`/off); flipping one overrides a
+host-set group record with plain on/off — group records stay an API-only shape.
 
 ```ts
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
+ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
 ws.sync.get('viewport'); // true
-ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true }
+ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true }
 ```
 
 ## Watching what the cells compute

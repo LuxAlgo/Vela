@@ -24,6 +24,11 @@ export interface DrawingToolbarOptions {
     /** Collapse/expand notification — a docked host resizes its gutter reservation to
      *  {@link TOOLBAR_COLLAPSED_WIDTH} / the full width (a static bar reflows on its own). */
     onCollapse?: (collapsed: boolean) => void;
+    /** When given, a drawings-sync toggle renders below the stay button: enabled, every
+     *  NEWLY CREATED drawing is copied onto the other linked charts and the set stays
+     *  linked — edits and removals follow (a multi-chart host's concern — a
+     *  single-chart bar omits the callback and never shows it). */
+    onDrawingsSync?: (on: boolean) => void;
 }
 
 /**
@@ -63,6 +68,8 @@ export class DrawingToolbar {
     private eraserActive = false;
     private stayBtn: HTMLButtonElement | null = null;
     private stayActive = false;
+    private syncBtn: HTMLButtonElement | null = null;
+    private syncActive = false;
     private collapseBtn: HTMLButtonElement | null = null;
     private collapsed = false;
     private visible = false;
@@ -74,6 +81,7 @@ export class DrawingToolbar {
     private readonly width: number;
     private readonly dock: 'absolute' | 'static';
     private readonly onCollapse: (collapsed: boolean) => void;
+    private readonly onDrawingsSync: ((on: boolean) => void) | null;
 
     constructor(
         private readonly host: HTMLElement,
@@ -90,6 +98,7 @@ export class DrawingToolbar {
         this.width = options.width ?? TOOLBAR_WIDTH;
         this.dock = options.dock ?? 'absolute';
         this.onCollapse = options.onCollapse ?? (() => {});
+        this.onDrawingsSync = options.onDrawingsSync ?? null;
         ensureStyles();
         this.root = document.createElement('div');
         this.root.className = 'vela-dtb';
@@ -204,6 +213,11 @@ export class DrawingToolbar {
         this.root.appendChild(this.makeMagnetCell());
         this.stayBtn = this.makeButton(STAY_ICON, 'Stay in drawing mode', () => this.toggleStay());
         this.root.appendChild(this.stayBtn);
+        // Drawings-sync toggle — only a multi-chart host provides the callback.
+        if (this.onDrawingsSync) {
+            this.syncBtn = this.makeButton(SYNC_ICON, 'Sync drawings on all charts', () => this.toggleDrawingsSync());
+            this.root.appendChild(this.syncBtn);
+        }
         // Collapse/expand toggle — pinned to the bottom; the only child a collapsed strip shows.
         this.collapseBtn = this.makeButton(COLLAPSE_ICON, 'Collapse toolbar', () => this.toggleCollapsed());
         this.collapseBtn.classList.add('vela-dtb-collapse');
@@ -212,6 +226,7 @@ export class DrawingToolbar {
         this.paintEraser();
         this.paintMagnet();
         this.paintStay();
+        this.paintDrawingsSync();
         this.paintCollapse();
         this.highlight();
     }
@@ -393,6 +408,26 @@ export class DrawingToolbar {
         if (!b) return;
         b.dataset.active = this.stayActive ? '1' : '';
         b.style.opacity = this.stayActive ? '1' : '0.5';
+    }
+
+    /** Toggle drawings sync on/off and notify the host. */
+    private toggleDrawingsSync(): void {
+        this.syncActive = !this.syncActive;
+        this.onDrawingsSync?.(this.syncActive);
+        this.paintDrawingsSync();
+    }
+
+    /** Reflect drawings sync externally (e.g. set through the API) without notifying back. */
+    setDrawingsSyncMode(on: boolean): void {
+        this.syncActive = on;
+        this.paintDrawingsSync();
+    }
+
+    private paintDrawingsSync(): void {
+        const b = this.syncBtn;
+        if (!b) return;
+        b.dataset.active = this.syncActive ? '1' : '';
+        b.style.opacity = this.syncActive ? '1' : '0.5';
     }
 
     // ── flyout ──
@@ -695,6 +730,8 @@ const EXPAND_ICON = icon('chevrons-right');
 const MAGNET_ICON = icon('magnet');
 /** Pen with a padlock — stay-in-drawing-mode (tools remain armed after each placement). */
 const STAY_ICON = icon('pen-lock');
+/** Pen with stacked panes — sync new drawings onto every linked chart. */
+const SYNC_ICON = icon('pen-sync');
 const ERASER_ICON = icon('eraser');
 /** A right-pointing chevron for the group/magnet flyout arrow (beside the icon). */
 const ARROW_ICON = icon('chevron-right');

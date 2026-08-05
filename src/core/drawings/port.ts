@@ -19,6 +19,12 @@ export type DrawingMode = 'measure' | 'eraser' | null;
  */
 export type DrawingIntent =
     | { kind: 'arm'; type: DrawingTypeKey | null }
+    /** Placement in progress: the ghost's current shape after every anchor click and
+     *  cursor move; `null` when placement ends (finalized OR cancelled). No store
+     *  mutation — the core only re-emits it (`drawing:draft`) so a multi-chart host
+     *  can mirror the ghost live. Optional — a renderer that never emits it simply
+     *  syncs at completion. */
+    | { kind: 'draft'; doc: SerializedDrawing | null }
     | { kind: 'create'; doc: SerializedDrawing }
     | { kind: 'edit'; doc: SerializedDrawing }
     | { kind: 'edit-many'; docs: SerializedDrawing[] } // atomic multi-drag / multi-nudge (one undo entry)
@@ -81,6 +87,11 @@ export interface IDrawingsRendererPort {
     setMode?(mode: DrawingMode): void;
     /** Open a drawing's settings popup (selecting it too) — the programmatic twin of a click on it. */
     openSettings(id: string): void;
+    /** Display another chart's in-progress placement as a GHOST at reduced opacity
+     *  (`null` clears it) — the drawings-sync twin of `setExternalCrosshair`. Never a
+     *  store drawing: no selection, no hit-testing, no persistence. Optional — a
+     *  renderer without it simply never previews remote placements. */
+    setExternalGhost?(doc: SerializedDrawing | null): void;
     /**
      * The pane's SERIES stack in z terms, for renderers whose drawings share one draw-order
      * space with the series (`drawingDepth`): the extremes ("bring to front" beats `front`,

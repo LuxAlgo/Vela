@@ -2,6 +2,24 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Drawings sync across a workspace grid.** A new `drawings` sync kind
+  (`ws.sync.set('drawings', true)`, also a toggle on the shared drawing toolbar) links
+  drawings across same-group cells: a newly created drawing is copied onto the others
+  (anchors are time+price, so it lands at the same spot whatever each cell shows), and
+  the set stays linked — moving, restyling or deleting any member follows on its peers.
+  Placement mirrors **live**: while anchors are still being clicked, linked charts show
+  the in-progress shape as a reduced-opacity ghost. The link is session-scoped (a
+  reload leaves existing drawings independent) and persists like the other sync kinds.
+- **Plugin SDK: a draft seam on the drawings port.** `DrawingIntent` gains an optional
+  `draft` arm (placement progress, `null` at the end) surfaced as the `drawing:draft`
+  chart event, and `IDrawingsRendererPort` gains an optional `setExternalGhost(doc)` —
+  the drawings twin of `setExternalCrosshair`. Both are additive: a renderer that
+  implements neither keeps today's behavior (sync at completion, no remote preview).
+
 ## [v0.5.0]
 
 ### Added

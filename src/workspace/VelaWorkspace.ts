@@ -37,7 +37,7 @@ import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } fro
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { createAttributionMark, createCustomMark } from '../renderers/native/chrome/AttributionMark';
 import { rendererDefaults } from '../core/renderer-defaults';
-import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
+import { defaultToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
@@ -86,8 +86,10 @@ export interface VelaWorkspaceOptions extends Omit<VelaOptions, 'height'>, VelaS
     /** Sync links between cells: per kind, `true` = all cells, or a `{cellId: group}`
      *  record (only same-group cells follow each other). `crosshair` mirrors the
      *  pointer time as ghost crosshairs on the followers (also toggleable from the
-     *  layout dropdown). Default: everything off. Change at runtime via
-     *  `ws.sync.set(kind, setting)`. */
+     *  layout dropdown); `drawings` copies each newly created drawing onto the
+     *  followers and keeps the set linked — edits and removals follow (also
+     *  toggleable from the shared drawing toolbar). Default: everything off.
+     *  Change at runtime via `ws.sync.set(kind, setting)`. */
     sync?: SyncOptions;
     /** Above this many cells, EVERY cell uses the canvas2d backend (uniform look inside
      *  the browser's WebGL-context budget; glow is unavailable there). Default 8; an
@@ -233,6 +235,14 @@ export class VelaWorkspace {
     /** Re-entrance guard around one propagation tick: followers' synchronous echoes
      *  (their setVisibleRange re-emits viewport:changed) must not re-propagate. */
     private syncBusy = false;
+    /** Same guard for the drawings link: the propagated mutations' own `drawing:*`
+     *  events fire synchronously inside the propagation loop and must not fan out again. */
+    private drawingSyncBusy = false;
+    /** LINKED drawings (the drawings sync): one map per synced set (cellId → that
+     *  cell's drawing id), reachable from every member under its `cellId\0drawingId`
+     *  key — any member finds its peers to push edits/removals onto. Session-scoped:
+     *  a reload (or `applyState`) leaves previously synced drawings independent. */
+    private readonly drawingLinks = new Map<string, Map<string, string>>();
     private manifest: ResolvedIndicator[] = [];
     /** The shared manifest can no longer change instance sets — resolved, or no
      *  `indicators` option so nothing ever will. Gates the cells' ledger fallback. */
@@ -267,7 +277,7 @@ export class VelaWorkspace {
         this.timezone = boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         if (boot?.favorites) this.favs = [...boot.favorites];
         const sync = boot?.sync ?? opts.sync;
-        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) {
+        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair', 'drawings'] as const) {
             this.applySyncSetting(kind, sync?.[kind]);
         }
         this.def = this.resolveLayout(boot?.layout && ensureLayout(boot.layout) ? boot.layout : (opts.layout ?? '4'));
@@ -433,11 +443,21 @@ export class VelaWorkspace {
                       this.active.chart.drawings.setStayMode(on);
                       this.refocusActive();
                   },
-                  { dock: 'static' },
+                  {
+                      dock: 'static',
+                      // Drawings sync is a WORKSPACE link (same model as the layout
+                      // dropdown's switches) — the bar only hosts its toggle.
+                      onDrawingsSync: (on) => {
+                          this.sync.set('drawings', on);
+                          this.refocusActive();
+                      },
+                  },
               )
             : null;
         this.drawToolbar?.setDefinition(defaultToolbar());
         this.drawToolbar?.setVisible(true);
+        // Sync settings applied before the bar existed (boot/persisted) — reflect now.
+        this.drawToolbar?.setDrawingsSyncMode(!!this.syncOpts.drawings);
 
         this.bottombar =
             opts.bottombar !== false
@@ -638,7 +658,7 @@ export class VelaWorkspace {
         if (st.favorites) this.favs = [...st.favorites]; // newborn cells inherit below (buildCells)
         // Absent in documents written before the dock existed — those leave the column closed.
         this.dock.applyState(st.panels);
-        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
+        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair', 'drawings'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
         this.trackSizes.clear();
         if (st.trackSizes) for (const [id, ts] of Object.entries(st.trackSizes)) this.trackSizes.set(id, ts);
         // Full rebuild from the document — every current slot is replaced by the restored one.
@@ -648,6 +668,7 @@ export class VelaWorkspace {
             this.events.emit('cell:destroyed', { id });
         }
         this.pool.clear();
+        this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
         this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
         const def = ensureLayout(st.layout);
@@ -962,9 +983,24 @@ export class VelaWorkspace {
         // as ghost markers. Leave already emits `time: null` — the clear rides along.
         chart.renderer.onCrosshairMove((e) => this.propagateCrosshair(cell.id, e.time));
         // Drawing edits are cell state (the per-slot drawings document) — persistable.
-        chart.on('drawing:created', () => this.markStateDirty());
-        chart.on('drawing:edited', () => this.markStateDirty());
-        chart.on('drawing:removed', () => this.markStateDirty());
+        // When the drawings link is on, a CREATED drawing copies onto the same-group
+        // cells and the set stays LINKED: edits and removals of any member follow
+        // (the guard stops the propagated mutations from fanning out again).
+        chart.on('drawing:created', ({ id }) => {
+            this.propagateDrawing(cell.id, id);
+            this.markStateDirty();
+        });
+        // Placement progress mirrors LIVE as ghosts on the same-group cells; the end of
+        // the placement carries `null`, which clears them (the created copy takes over).
+        chart.on('drawing:draft', ({ doc }) => this.propagateDraft(cell.id, doc));
+        chart.on('drawing:edited', ({ id }) => {
+            this.propagateDrawingEdit(cell.id, id);
+            this.markStateDirty();
+        });
+        chart.on('drawing:removed', ({ id }) => {
+            this.propagateDrawingRemoval(cell.id, id);
+            this.markStateDirty();
+        });
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).
@@ -996,6 +1032,15 @@ export class VelaWorkspace {
     private applySyncSetting(kind: SyncKind, setting: SyncSetting | undefined, align = false): void {
         if (setting == null || setting === false) delete this.syncOpts[kind];
         else this.syncOpts[kind] = setting;
+        if (kind === 'drawings') {
+            // Only FUTURE drawings follow the link — nothing to align retroactively,
+            // but any mirrored placement ghosts are stale under the new setting.
+            for (const cell of this.cellsById.values()) cell.chart.drawings.setExternalGhost(null);
+            // The toggle lives on the shared drawing toolbar; keep it truthful.
+            this.drawToolbar?.setDrawingsSyncMode(!!setting);
+            this.markStateDirty();
+            return;
+        }
         if (kind === 'crosshair') {
             // Any setting change invalidates current ghosts — they rebuild on the next
             // pointer move under the NEW grouping (and vanish entirely when disabled).
@@ -1064,6 +1109,105 @@ export class VelaWorkspace {
             }
         } finally {
             this.syncBusy = false;
+        }
+    }
+
+    /**
+     * Copy a freshly created drawing onto the origin's same-group followers (fresh ids
+     * through `drawings.add` — anchors are time+price, so the copy lands at the same
+     * spot whatever the follower shows) and register the whole set as LINKED: edits
+     * and removals of any member follow while the link is on ({@link drawingLinks}).
+     * The busy guard stops the copies' own `drawing:created` events from fanning out.
+     */
+    private propagateDrawing(originId: string, drawingId: string): void {
+        if (this.drawingSyncBusy || this.destroyed) return;
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        const doc = this.cellsById.get(originId)?.chart.drawings.all().find((d) => d.id === drawingId);
+        if (!doc) return;
+        this.drawingSyncBusy = true;
+        try {
+            const group = new Map([[originId, drawingId]]);
+            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+                const copy = this.cellsById.get(id)?.chart.drawings.add(doc.type, {
+                    paneId: doc.paneId,
+                    anchors: doc.anchors,
+                    style: doc.style,
+                    text: doc.text,
+                    props: doc.props,
+                });
+                if (copy) group.set(id, copy.id);
+            }
+            if (group.size > 1) {
+                for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
+            }
+        } finally {
+            this.drawingSyncBusy = false;
+        }
+    }
+
+    /** Mirror an in-progress placement (its current ghost, `null` = placement ended)
+     *  onto the origin's same-group followers — the live half of the drawings link;
+     *  the created copy replaces the ghosts when the placement completes. One-way by
+     *  contract (an external ghost never re-emits drafts), so no busy guard needed. */
+    private propagateDraft(originId: string, doc: SerializedDrawing | null): void {
+        if (this.destroyed) return;
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+            this.cellsById.get(id)?.chart.drawings.setExternalGhost(doc);
+        }
+    }
+
+    /** Push a linked drawing's edited CONTENT (anchors, style, text, per-type props)
+     *  onto its same-group peers — any member propagates, not just the original. */
+    private propagateDrawingEdit(originId: string, drawingId: string): void {
+        if (this.drawingSyncBusy || this.destroyed) return;
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        const group = this.drawingLinks.get(`${originId}\u0000${drawingId}`);
+        if (!group) return;
+        const doc = this.cellsById.get(originId)?.chart.drawings.all().find((d) => d.id === drawingId);
+        if (!doc) return;
+        this.drawingSyncBusy = true;
+        try {
+            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+                const peerId = group.get(id);
+                if (peerId == null) continue;
+                this.cellsById.get(id)?.chart.drawings.update(peerId, {
+                    anchors: doc.anchors,
+                    style: doc.style,
+                    text: doc.text,
+                    props: doc.props,
+                });
+            }
+        } finally {
+            this.drawingSyncBusy = false;
+        }
+    }
+
+    /** Remove a linked drawing's peers with it. The removed member always leaves its
+     *  link group (whatever the setting); peers are only deleted while the link is on.
+     *  A propagated peer removal re-enters here under the busy guard and just cleans
+     *  its own link key. */
+    private propagateDrawingRemoval(originId: string, drawingId: string): void {
+        if (this.destroyed) return;
+        const key = `${originId}\u0000${drawingId}`;
+        const group = this.drawingLinks.get(key);
+        if (!group) return;
+        this.drawingLinks.delete(key);
+        group.delete(originId);
+        if (this.drawingSyncBusy) return;
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        this.drawingSyncBusy = true;
+        try {
+            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+                const peerId = group.get(id);
+                if (peerId != null) this.cellsById.get(id)?.chart.drawings.remove(peerId);
+            }
+        } finally {
+            this.drawingSyncBusy = false;
         }
     }
 

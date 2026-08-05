@@ -1,7 +1,7 @@
 import type { EngineAlert, EngineWarning } from '../ports/ScriptingEngine';
 import type { ScriptRun } from '../script-run';
 import type { OHLCV } from '../model/ohlcv';
-import type { DrawingTypeKey } from '../drawings/Drawing';
+import type { DrawingTypeKey, SerializedDrawing } from '../drawings/Drawing';
 import type { SnapMode } from '../drawings/geometry';
 import type { DrawingMode } from '../drawings/port';
 
@@ -48,6 +48,11 @@ export interface VelaEventMap extends Record<string, unknown> {
     'pane:moved': { paneId: string; dir: 'up' | 'down' };
     /** A user drawing was created (interactively or via `chart.drawings.add`). */
     'drawing:created': { id: string };
+    /** An interactive placement is in progress — the ghost's current shape after each
+     *  anchor click / cursor move, `null` when placement ends (finalized or
+     *  cancelled). Transient: nothing is in the store yet. Multi-chart hosts mirror
+     *  it on linked charts via `drawings.setExternalGhost`. */
+    'drawing:draft': { doc: SerializedDrawing | null };
     /** A user drawing's anchors/style/text changed. */
     'drawing:edited': { id: string };
     /** Selection changed (`id` is null when nothing is selected). */

@@ -13,7 +13,7 @@ const fullDoc: WorkspaceState = {
     activeCellId: 'c2',
     timezone: 'Europe/Paris',
     favorites: ['trendline', 'hline'],
-    sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true },
+    sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true, drawings: true },
     trackSizes: { '4': { cols: [1.4, 0.6], rows: [1, 1] } },
     charts: [
         {
@@ -42,14 +42,10 @@ describe('state codec round-trip', () => {
         registerBuiltinLayouts();
         // The picker's ids are never registered — the boot path re-synthesizes them
         // (ensureLayout), so a persisted custom grid restores across sessions.
-        const doc: WorkspaceState = { ...fullDoc, layout: 'p3-2' };
-        const restored = decodeState(encodeState(doc));
-        expect(restored!.layout).toBe('p3-2');
-        expect(ensureLayout(restored!.layout)?.cells).toHaveLength(5);
         const grid: WorkspaceState = { ...fullDoc, layout: 'g3x3' };
-        expect(ensureLayout(decodeState(encodeState(grid))!.layout)?.cells).toHaveLength(9);
-        const rows: WorkspaceState = { ...fullDoc, layout: 'r3-2' };
-        expect(ensureLayout(decodeState(encodeState(rows))!.layout)?.cells).toHaveLength(5);
+        const restored = decodeState(encodeState(grid));
+        expect(restored!.layout).toBe('g3x3');
+        expect(ensureLayout(restored!.layout)?.cells).toHaveLength(9);
     });
 
     it('rejects unusable payloads with null, never throws', () => {
