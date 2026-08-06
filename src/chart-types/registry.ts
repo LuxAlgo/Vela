@@ -115,8 +115,13 @@ export interface SettingsRowSwatch {
  * `heading` titles a GROUP of rows: the heading plus everything after it up to the next
  * heading. In a flat `rows` section headings render as inline group titles; inside
  * `instances`/`subsections` they become entries of the pane's group TOC (see
- * {@link ChartTypeSettingsSection}). Any row may carry `when` — it is shown only while
- * the condition holds.
+ * {@link ChartTypeSettingsSection}).
+ *
+ * `header` is an in-pane subgroup title: same visual as a flat heading, but inside a
+ * structured pane it stays in the rows column (does NOT become a TOC entry). Use it to
+ * cluster rows inside a TOC group (e.g. Colors / Values under Display).
+ *
+ * Any row may carry `when` — it is shown only while the condition holds.
  *
  * `range` is a min–max pair on one row (two number inputs storing under `minKey` /
  * `maxKey`, both seeded from the shared `defval`). When `placeholder` is given, an
@@ -132,6 +137,7 @@ export type SettingsSelectOption = string | readonly [value: string, label: stri
 
 export type SettingsRowDescriptor =
     | { kind: 'heading'; label: string; when?: SettingsRowWhen }
+    | { kind: 'header'; label: string; when?: SettingsRowWhen }
     | { kind: 'toggle'; key: string; label: string; defval: boolean; colors?: readonly SettingsRowSwatch[]; when?: SettingsRowWhen }
     | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number; when?: SettingsRowWhen }
     | { kind: 'color'; key: string; label: string; defval: string; when?: SettingsRowWhen }

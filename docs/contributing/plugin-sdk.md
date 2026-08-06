@@ -67,9 +67,9 @@ only while another key holds a value), a toggle row may carry inline color swatc
 (`colors`, dimmed while off), a `range` row edits a min–max pair on one line, and a
 section may go structured: an `instances` tab strip (repeated blocks with add/remove
 via an `enableKey` boolean), `subsections` as indented rail entries, a group TOC built
-from `heading` rows, and a `placement: 'after-symbol'` rail position — all pure data,
-evaluated live by the dialog. See
-[architecture/settings-rows.md](../architecture/settings-rows.md) for the row kinds,
+from `heading` rows (with optional in-group `header` subgroup titles), and a
+`placement: 'after-symbol'` rail position — all pure data, evaluated live by the dialog.
+See [architecture/settings-rows.md](../architecture/settings-rows.md) for the row kinds,
 conditions, the structured form, and how to add new ones.
 
 ## Renderer layers — `registerRendererLayer`

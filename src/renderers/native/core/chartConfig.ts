@@ -451,7 +451,7 @@ export function factoryResetConfig(factory: ChartConfig): ChartConfig {
         const defaults: Record<string, unknown> = {};
         const addRows = (rows: readonly SettingsRowDescriptor[] | undefined): void => {
             for (const r of rows ?? []) {
-                if (r.kind === 'heading') continue;
+                if (r.kind === 'heading' || r.kind === 'header') continue;
                 if (r.kind === 'range') {
                     defaults[r.minKey] = r.defval;
                     defaults[r.maxKey] = r.defval;
