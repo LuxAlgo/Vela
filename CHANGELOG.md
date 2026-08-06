@@ -6,6 +6,14 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Candle settings for plugin chart types that draw candles.** A registered chart type
+  that keeps the candle series under its own layer (an order-flow style, for example) now
+  gets a Candles group in chart settings → Symbol while it is active: body, border, and
+  wick toggles with their up/down colors, plus the bar spacing. These cosmetics belong to
+  that chart type alone — changing them restyles its candles without touching the Candles
+  or Heikin Ashi styles, and any value left untouched keeps following the shared candle
+  settings. They persist and export with the rest of the chart config.
+
 - **Plugin layers can fade the chart under them and follow the pointer.** A renderer
   layer registered through the plugin SDK gains three quieter levers. It can now dim or
   slim the base painting gradually — its `modulateBase` hook returns per-frame candle
