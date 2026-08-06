@@ -17,6 +17,28 @@ All notable changes to Vela, newest first.
   type's settings tab can now include `heading` rows — group titles that organize a
   large tab into named sections.
 
+- **Settings tabs that show only what matters — and scale past one flat list.**
+  Chart-type settings stay pure data but gain structure. A row may carry a `when`
+  condition (`{ key, equals }` / `{ key, anyOf }`, or an AND-ed array) and is shown only
+  while the gate passes against the tab's current values — the dialog re-evaluates live
+  on every edit, so mode-specific colors or a manual-size input appear exactly when they
+  apply. A section may declare `instances` instead of flat rows: the pane opens with a
+  tab strip — one tab per present instance, a dashed `+` that turns the next one on, an
+  `×` on the active removable tab — with presence stored as a plain boolean
+  (`enableKey`) in the same per-type bag. Inside an instance (and inside the new
+  `subsections`, indented entries under the section's rail tab), `heading` rows become a
+  group TOC on the left of the pane that shows one group at a time. And
+  `placement: 'after-symbol'` puts a type's tab directly under Symbol. Two row forms
+  keep panes static where a conditional reveal would jump the layout: a toggle row may
+  carry inline color swatches (`colors` — edited on the toggle's own row, dimmed while
+  it is off), and a `range` row edits a min–max pair on one line (with an optional
+  `placeholder` naming the unset state, so a cleared input reads "Off" instead of a
+  magic 0). Select options may be `[value, label]` pairs so camelCase ids show as
+  human text. A subsection's `enableKey` soft-disables its other rows (visible but
+  grayed) while off, instead of hiding them. Hidden rows keep their stored values;
+  persistence and delivery are unchanged — consumers still receive one flat settings
+  object.
+
 - **A light theme that actually works — switchable live.** `theme: 'light'` now skins the
   whole product coherently: white surfaces with dark, readable text across the toolbar,
   menus, dialogs, legends, axes, and pane separators. The theme can be swapped at runtime —

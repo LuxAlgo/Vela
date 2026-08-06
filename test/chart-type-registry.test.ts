@@ -2,7 +2,7 @@
 // extended-ticker modifiers, and the dynamic price-style id list the renderer validates
 // against. Heikin Ashi is registered through the SAME public API (builtins.ts).
 import { describe, it, expect, afterEach } from 'vitest';
-import { registerChartType, unregisterChartType, chartType, chartTypes, tickerModifierIds } from '../src/chart-types/registry';
+import { registerChartType, unregisterChartType, chartType, chartTypes, tickerModifierIds, settingsRowVisible } from '../src/chart-types/registry';
 import { basePaintingOf } from '../src/renderers/native/core/chartConfig';
 import { registerBuiltinChartTypes } from '../src/chart-types/builtins';
 import { barTransformFor, parseExtendedTicker } from '../src/core/price-styles/BarTransform';
@@ -62,6 +62,78 @@ describe('chart-type registry', () => {
         expect(priceStyleIds()).toContain('renko-like');
         unregisterChartType('renko-like');
         expect(priceStyleIds()).not.toContain('renko-like');
+    });
+});
+
+describe('structured settings sections (instances + subsections)', () => {
+    it('a section may declare an instance strip, subsections, and rail placement', () => {
+        registerChartType({
+            id: 'renko-like',
+            settings: {
+                title: 'Renko-like',
+                placement: 'after-symbol',
+                instances: [
+                    { label: 'Block 1', rows: [{ kind: 'heading', label: 'Display' }, { kind: 'number', key: 'size', label: 'Size', defval: 4 }] },
+                    { label: 'Block 2', enableKey: 'b2Enabled', rows: [{ kind: 'number', key: 'b2Size', label: 'Size', defval: 4 }] },
+                ],
+                subsections: [
+                    { title: 'Overlay', rows: [{ kind: 'toggle', key: 'overlay', label: 'Show overlay', defval: false }] },
+                ],
+            },
+        });
+        const def = chartType('renko-like')!;
+        expect(def.settings?.placement).toBe('after-symbol');
+        expect(def.settings?.instances?.[1]?.enableKey).toBe('b2Enabled');
+        expect(def.settings?.subsections?.[0]?.title).toBe('Overlay');
+        unregisterChartType('renko-like');
+    });
+
+    it('toggle rows may carry inline swatches; range rows edit a min–max pair', () => {
+        registerChartType({
+            id: 'renko-like',
+            settings: {
+                title: 'Renko-like',
+                rows: [
+                    { kind: 'toggle', key: 'hl', label: 'Highlights', defval: false, colors: [
+                        { key: 'hlAskColor', label: 'Ask color', defval: '#e0b400' },
+                        { key: 'hlBidColor', label: 'Bid color', defval: '#e0b400' },
+                    ] },
+                    { kind: 'range', label: 'Volume', minKey: 'minVolume', maxKey: 'maxVolume', defval: 0, min: 0, max: 1e9, step: 1, placeholder: 'Off' },
+                ],
+            },
+        });
+        const rows = chartType('renko-like')!.settings!.rows!;
+        const toggle = rows[0]!;
+        const range = rows[1]!;
+        expect(toggle.kind === 'toggle' && toggle.colors?.[1]?.key).toBe('hlBidColor');
+        expect(range.kind === 'range' && range.placeholder).toBe('Off');
+        unregisterChartType('renko-like');
+    });
+});
+
+describe('settings row `when` conditions (settingsRowVisible)', () => {
+    it('no gate is always visible', () => {
+        expect(settingsRowVisible(undefined, {})).toBe(true);
+    });
+
+    it('equals matches the bag value strictly', () => {
+        expect(settingsRowVisible({ key: 'mode', equals: 'volume' }, { mode: 'volume' })).toBe(true);
+        expect(settingsRowVisible({ key: 'mode', equals: 'volume' }, { mode: 'delta' })).toBe(false);
+        expect(settingsRowVisible({ key: 'on', equals: true }, { on: false })).toBe(false);
+        expect(settingsRowVisible({ key: 'on', equals: true }, {})).toBe(false); // unset never matches
+    });
+
+    it('anyOf wins over equals and matches membership', () => {
+        const when = { key: 'mode', equals: 'x', anyOf: ['delta', 'deltaAbs'] } as const;
+        expect(settingsRowVisible(when, { mode: 'delta' })).toBe(true);
+        expect(settingsRowVisible(when, { mode: 'x' })).toBe(false);
+    });
+
+    it('an array of conditions ANDs them', () => {
+        const when = [{ key: 'mode', equals: 'volume' }, { key: 'dual', equals: false }] as const;
+        expect(settingsRowVisible(when, { mode: 'volume', dual: false })).toBe(true);
+        expect(settingsRowVisible(when, { mode: 'volume', dual: true })).toBe(false);
+        expect(settingsRowVisible(when, { mode: 'delta', dual: false })).toBe(false);
     });
 });
 

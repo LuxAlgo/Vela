@@ -82,21 +82,129 @@ export interface ChartTypeDefinition {
     basePainting?: 'candles' | 'none';
 }
 
-/** One declarative settings row. To add a NEW kind, see docs/architecture/settings-rows.md. */
-export type SettingsRowDescriptor =
-    | { kind: 'heading'; label: string }
-    | { kind: 'toggle'; key: string; label: string; defval: boolean }
-    | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number }
-    | { kind: 'color'; key: string; label: string; defval: string }
-    | { kind: 'select'; key: string; label: string; options: readonly string[]; defval: string };
+/**
+ * A declarative visibility condition on another row's CURRENT value (stored value,
+ * or that row's `defval` while unset). Pure data — the dialog evaluates it live as
+ * the user edits, so dependent rows appear/disappear without a rebuild.
+ * `anyOf` wins over `equals` when both are given.
+ */
+export interface SettingsRowCondition {
+    key: string;
+    equals?: boolean | string | number;
+    anyOf?: readonly (boolean | string | number)[];
+}
 
+/** A row's visibility gate: one condition, or several AND-ed together. */
+export type SettingsRowWhen = SettingsRowCondition | readonly SettingsRowCondition[];
+
+/**
+ * An inline color swatch on a toggle row — the color(s) the toggle governs, edited
+ * right on the toggle's row (dimmed while the toggle is off) instead of a
+ * conditionally revealed row below. Each swatch stores under its own bag key.
+ */
+export interface SettingsRowSwatch {
+    key: string;
+    /** Names the color for the swatch's tooltip (`'Highlight color'`). */
+    label: string;
+    defval: string;
+}
+
+/**
+ * One declarative settings row. To add a NEW kind, see docs/architecture/settings-rows.md.
+ *
+ * `heading` titles a GROUP of rows: the heading plus everything after it up to the next
+ * heading. In a flat `rows` section headings render as inline group titles; inside
+ * `instances`/`subsections` they become entries of the pane's group TOC (see
+ * {@link ChartTypeSettingsSection}). Any row may carry `when` — it is shown only while
+ * the condition holds.
+ *
+ * `range` is a min–max pair on one row (two number inputs storing under `minKey` /
+ * `maxKey`, both seeded from the shared `defval`). When `placeholder` is given, an
+ * input holding the default value renders EMPTY showing the placeholder, and clearing
+ * an input stores the default back — so the placeholder names the "unset" state
+ * (`'Off'` for a 0-disables filter bound).
+ */
+/**
+ * A select option: a bare string (value = label) or a `[value, label]` pair when the
+ * stored id differs from the human-readable text (`['bidAskProfile', 'Bid × Ask Profile']`).
+ */
+export type SettingsSelectOption = string | readonly [value: string, label: string];
+
+export type SettingsRowDescriptor =
+    | { kind: 'heading'; label: string; when?: SettingsRowWhen }
+    | { kind: 'toggle'; key: string; label: string; defval: boolean; colors?: readonly SettingsRowSwatch[]; when?: SettingsRowWhen }
+    | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number; when?: SettingsRowWhen }
+    | { kind: 'color'; key: string; label: string; defval: string; when?: SettingsRowWhen }
+    | { kind: 'select'; key: string; label: string; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }
+    | { kind: 'range'; label: string; minKey: string; maxKey: string; defval: number; min?: number; max?: number; step?: number; placeholder?: string; when?: SettingsRowWhen };
+
+/** Whether a row's `when` gate passes against the current values bag. */
+export function settingsRowVisible(when: SettingsRowWhen | undefined, bag: Record<string, unknown>): boolean {
+    if (!when) return true;
+    const conds: readonly SettingsRowCondition[] = Array.isArray(when) ? when : [when as SettingsRowCondition];
+    return conds.every((c) => (c.anyOf ? c.anyOf.some((x) => x === bag[c.key]) : bag[c.key] === c.equals));
+}
+
+/**
+ * One tab of a section's INSTANCE STRIP — a repeated block of settings (e.g. one of
+ * several overlays a style can paint). The dialog shows a tab per PRESENT instance,
+ * a dashed `+` that turns on the next absent one, and an `×` on the active removable
+ * tab that turns it off. Presence is the boolean at `enableKey` (stored in the same
+ * per-type bag as every other value); an instance without `enableKey` is always
+ * present and not removable — the base instance.
+ */
+export interface ChartTypeSettingsInstance {
+    /** Tab label in the strip (`'Footprint 1'`). */
+    label: string;
+    /** Boolean bag key controlling presence; omitted = always present, not removable. */
+    enableKey?: string;
+    rows: readonly SettingsRowDescriptor[];
+}
+
+/** An indented sub-entry under the section's rail tab, with its own pane of rows. */
+export interface ChartTypeSettingsSubsection {
+    title: string;
+    rows: readonly SettingsRowDescriptor[];
+    /**
+     * Boolean bag key that masters this pane. While it is false, every row EXCEPT the
+     * one whose `key` matches stays visible but grayed out (not hidden) — so users can
+     * still browse and preview settings with the feature off. The matching toggle is
+     * typically the first row of the Display group.
+     */
+    enableKey?: string;
+}
+
+/**
+ * A chart type's settings tab. Two forms:
+ *
+ * - **Flat**: `rows` only — rendered as one scrollable pane, `heading` rows as inline
+ *   group titles (the historical form).
+ * - **Structured**: `instances` (and optionally `subsections`) — the pane opens with an
+ *   instance TAB STRIP, and each instance's rows are organized by a GROUP TOC on the
+ *   left built from its `heading` rows (rows before the first heading always show above
+ *   the groups; selecting a TOC entry shows only that group's rows). `subsections` add
+ *   indented rail entries under the section's tab, each a pane with the same TOC
+ *   treatment. A TOC entry hides itself while every row of its group is hidden by
+ *   `when` gates.
+ *
+ * All values — every instance and subsection included — live in the ONE per-type bag
+ * (`config.chartTypes[<id>]`), so consumers keep receiving a single flat object.
+ */
 export interface ChartTypeSettingsSection {
     /** Section heading in the settings dialog. */
     title: string;
-    rows: readonly SettingsRowDescriptor[];
+    /** Flat form. Ignored when `instances` is declared. */
+    rows?: readonly SettingsRowDescriptor[];
+    /** Structured form: the pane's instance tab strip. */
+    instances?: readonly ChartTypeSettingsInstance[];
+    /** Indented sub-entries under this section's rail tab. */
+    subsections?: readonly ChartTypeSettingsSubsection[];
     /** `'active'` (default): shown only while this chart type is the active price style;
      *  `'always'`: shown whenever the type is registered. */
     visibility?: 'always' | 'active';
+    /** Rail position: `'end'` (default, after the built-in tabs) or `'after-symbol'`
+     *  (directly under the Symbol tab). Subsections follow their parent. */
+    placement?: 'after-symbol' | 'end';
 }
 
 const registry = new Map<string, ChartTypeDefinition>();
