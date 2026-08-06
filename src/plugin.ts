@@ -46,6 +46,7 @@ export {
     type RendererLayerDefinition,
     type RendererLayerInstance,
     type RendererLayerArgs,
+    type BasePaintingModulation,
 } from './renderers/native/layers';
 export {
     registerWidgetAction,

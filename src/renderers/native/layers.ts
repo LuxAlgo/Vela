@@ -31,6 +31,21 @@ export interface RendererLayerArgs {
     priceStyle: string;
     /** Frame clock (ms) for pulses/fades; monotonic within a session. */
     nowMs: number;
+    /** Plot-relative pointer position, or null when the pointer is off the plot. Layers
+     *  that hover-test set `repaintOnCursor` on their definition so pointer moves repaint
+     *  them (only data-tier frames repaint layers otherwise). */
+    cursor: { x: number; y: number } | null;
+}
+
+/** How the active style's layer dims/slims the BASE painting under it (see
+ *  {@link RendererLayerInstance.modulateBase}). Omitted fields keep their defaults. */
+export interface BasePaintingModulation {
+    /** Candle body width multiplier, (0..1] (1 = full width). */
+    candleBodyScale?: number;
+    /** Candle body-fill opacity, [0..1] (wick + border keep their own opacity). */
+    candleBodyAlpha?: number;
+    /** Gridline opacity, [0..1] (fade the grid as a reveal-under layer opens). */
+    gridAlpha?: number;
 }
 
 /** One live layer instance (per mounted renderer). */
@@ -41,6 +56,14 @@ export interface RendererLayerInstance {
     render(args: RendererLayerArgs): void;
     /** Return true while the layer needs CONTINUOUS frames (a pulse/fade) — keeps the animator alive. */
     animating?(): boolean;
+    /**
+     * How the base painting (candles, grid) should be dimmed/slimmed under this layer for
+     * the CURRENT frame — a gradual counterpart of the chart type's all-or-nothing
+     * `basePainting: 'none'`. Called after `render`, only for the layer whose id matches
+     * the active price style; returning null (or omitting the method) leaves the base
+     * painting untouched. Values are clamped by the renderer.
+     */
+    modulateBase?(args: RendererLayerArgs): BasePaintingModulation | null;
     /** The renderer unmounted — release everything (the canvas itself is removed by the renderer). */
     destroy?(): void;
 }
@@ -52,6 +75,9 @@ export interface RendererLayerDefinition {
     /** Stacking: `'below-data'` = behind the candles (reveal-under styles); `'above-data'` =
      *  over the candles, under the chrome/axes. Default `'above-data'`. */
     placement?: 'below-data' | 'above-data';
+    /** Repaint this layer when the pointer moves (hover hit-testing UIs). Off by default:
+     *  pointer moves normally repaint only the crosshair overlay, not the layers. */
+    repaintOnCursor?: boolean;
     /** Instance factory — called once per mounted renderer. */
     create(): RendererLayerInstance;
 }

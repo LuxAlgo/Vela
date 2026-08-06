@@ -11,6 +11,7 @@ registerChartType({
         visibility: 'active',   // 'active' (default): tab shown only while the style is
                                 // active; 'always': shown whenever the type is registered
         rows: [
+            { kind: 'heading', label: 'Levels' },   // key-less: an in-tab group title, stores nothing
             { kind: 'toggle', key: 'imbalances', label: 'Imbalances', defval: true },
             { kind: 'number', key: 'levels', label: 'Max levels', defval: 20, min: 5, max: 50, step: 1 },
             { kind: 'color',  key: 'buyColor', label: 'Buy color', defval: '#089981' },
@@ -38,9 +39,11 @@ delivery, and engine delivery.
 ## The row-kind contract
 
 `SettingsRowDescriptor` (in `src/chart-types/registry.ts`) is a **discriminated union on
-`kind`**. Each variant carries its `key` (the storage key inside the type's bag), a
+`kind`**. Each value variant carries its `key` (the storage key inside the type's bag), a
 `label`, its `defval`, and kind-specific fields. Values are stored as-is (`boolean` /
-`number` / `string`).
+`number` / `string`). The `heading` variant is the exception: label only, no key and no
+stored value — it renders as a group title inside the tab, so a large section can be
+organized without splitting into multiple tabs.
 
 ## Adding a NEW row kind
 

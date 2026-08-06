@@ -396,6 +396,10 @@ export class SettingsDialog {
             body.append(marker);
             const values = config.chartTypes[def.id] ?? {};
             for (const r of typeSettings.rows) {
+                if (r.kind === 'heading') {
+                    body.append(this.sectionTitle(r.label));
+                    continue;
+                }
                 const current = values[r.key];
                 if (r.kind === 'toggle') {
                     body.append(this.boolRow(r.label, typeof current === 'boolean' ? current : r.defval, (v) => this.emitType(def.id, r.key, v)));

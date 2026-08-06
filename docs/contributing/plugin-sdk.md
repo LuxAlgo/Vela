@@ -78,20 +78,37 @@ import { registerRendererLayer } from 'vela/plugin';
 registerRendererLayer({
     id: 'mytype',                    // = the `setNativeData` channel it receives
     placement: 'above-data',         // or 'below-data' (behind the candles)
+    repaintOnCursor: true,           // opt-in: pointer moves repaint this layer too
     create: () => ({
         mount(canvas) { /* keep the canvas reference */ },
-        render({ bars, data, pending, coords, scale, bounds, theme, priceStyle, nowMs }) {
+        render({ bars, data, pending, coords, scale, bounds, theme, priceStyle, nowMs, cursor }) {
             // Always clear + repaint your own canvas. Gate on `priceStyle` if the
             // layer belongs to a chart type. Key mappings:
             //   coords.logicalToX(i) / coords.timeToX(ms)  → x
             //   coords.priceToY(price, scale, bounds)      → y
             //   coords.width / coords.dpr                  → sizing
+            // `cursor` is the plot-relative pointer ({ x, y } | null) — hover
+            // hit-testing input for layers that set `repaintOnCursor`.
         },
         animating?: () => false,     // return true while a pulse/fade needs frames
+        modulateBase?: (args) => ({ candleBodyScale: 0.07, gridAlpha: 0 }),
         destroy?: () => {},
     }),
 });
 ```
+
+Two per-frame levers beyond the basic contract:
+
+- **`repaintOnCursor`** (definition): pointer moves normally repaint only the crosshair
+  overlay; a layer that hover-tests (tooltips, row highlights) sets this flag and is
+  repainted — its own canvas only — whenever the cursor moves, with `args.cursor` fresh.
+- **`modulateBase`** (instance): the gradual counterpart of the chart type's
+  all-or-nothing `basePainting: 'none'`. Called after `render`, only for the layer whose
+  id matches the ACTIVE price style; the returned `{ candleBodyScale?, candleBodyAlpha?,
+  gridAlpha? }` dims/slims the base painting for that same frame (values clamped to
+  [0..1]; omitted fields keep their defaults). Return null to leave the base painting
+  untouched — this is how a reveal-under style fades candles down as its own layer
+  fades in, instead of switching them off entirely.
 
 ## Native indicators — `registerNativeIndicator`
 

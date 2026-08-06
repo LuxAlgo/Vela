@@ -84,6 +84,7 @@ export interface ChartTypeDefinition {
 
 /** One declarative settings row. To add a NEW kind, see docs/architecture/settings-rows.md. */
 export type SettingsRowDescriptor =
+    | { kind: 'heading'; label: string }
     | { kind: 'toggle'; key: string; label: string; defval: boolean }
     | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number }
     | { kind: 'color'; key: string; label: string; defval: string }

@@ -6,6 +6,17 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Plugin layers can fade the chart under them and follow the pointer.** A renderer
+  layer registered through the plugin SDK gains three quieter levers. It can now dim or
+  slim the base painting gradually — its `modulateBase` hook returns per-frame candle
+  body width/opacity and grid opacity, the smooth counterpart of the all-or-nothing
+  `basePainting: 'none'` — so a style that reveals under the candles as you zoom in can
+  fade them down instead of switching them off. A layer that reacts to hovering
+  (tooltips, row highlights) can declare `repaintOnCursor` and is repainted whenever the
+  pointer moves, receiving the pointer position with its paint arguments. And a chart
+  type's settings tab can now include `heading` rows — group titles that organize a
+  large tab into named sections.
+
 - **A light theme that actually works — switchable live.** `theme: 'light'` now skins the
   whole product coherently: white surfaces with dark, readable text across the toolbar,
   menus, dialogs, legends, axes, and pane separators. The theme can be swapped at runtime —
