@@ -1159,7 +1159,7 @@ export class NativeRenderer implements IChartRenderer {
     // ── lifecycle ──
     mount(container: HTMLElement, theme: VelaTheme): void {
         this.mountContainer = container;
-        this.publishToolbarGutter();
+        this.publishGutters();
         this.theme = this.deriveTheme(theme);
         // provisional chrome surface (refined by the first applyConfig)
         this.surfaceBackground = theme.background;
@@ -1527,6 +1527,7 @@ export class NativeRenderer implements IChartRenderer {
         this.attributionEl?.remove();
         this.attributionEl = null;
         this.mountContainer?.style.removeProperty('--vela-toolbar-gutter');
+        this.mountContainer?.style.removeProperty('--vela-scale-gutter');
         this.mountContainer = null;
         this.wrapper?.remove();
     }
@@ -1731,6 +1732,7 @@ export class NativeRenderer implements IChartRenderer {
         const w = RIGHT_AXIS_W + AXIS_COL_W * this.maxOwnScaleColumns();
         if (w === this.rightAxisW) return false;
         this.rightAxisW = w;
+        this.publishGutters();
         if (this.coords.width > 0) this.syncSize();
         return true;
     }
@@ -2108,7 +2110,15 @@ export class NativeRenderer implements IChartRenderer {
             }
         }
 
-        this.coords.setViewport(this.clampViewport(barSpacing, rightOffset));
+        const clamped = this.clampViewport(barSpacing, rightOffset);
+        // The clamp bounds depend on the chart WIDTH, so a resize (splitter drag, layout
+        // change) can strand a target outside the reachable range mid-ease. Snap a target
+        // the clamp rejected onto the bound it chose — otherwise the ease above re-arms
+        // forever: a permanent rAF loop emitting a viewport change every frame and
+        // jittering rightOffset through the zoom anchor until a pointerdown re-aligns it.
+        if (clamped.barSpacing !== barSpacing) this.targetBarSpacing = clamped.barSpacing;
+        if (this.scrollTargetRO != null && clamped.rightOffset !== rightOffset) this.scrollTargetRO = clamped.rightOffset;
+        this.coords.setViewport(clamped);
         this.computeScales(); // sets pane.scaleTarget (animator active → no snap)
         if (this.easeScales(dtMs)) active = true;
         if (this.easeLiveBar(dtMs)) active = true; // glide the forming bar toward the latest tick
@@ -3200,16 +3210,19 @@ export class NativeRenderer implements IChartRenderer {
     private setToolbarGutter(px: number): void {
         if (px === this.toolbarGutter) return;
         this.toolbarGutter = px;
-        this.publishToolbarGutter();
+        this.publishGutters();
         this.positionAttribution();
         this.syncSize();
     }
 
-    /** Publish the gutter on the mount container as `--vela-toolbar-gutter`, so host
-     *  overlays sharing that container (a status line, a custom legend) can anchor to
-     *  the plot's left edge without reaching into the renderer's DOM. */
-    private publishToolbarGutter(): void {
+    /** Publish the gutters on the mount container as `--vela-toolbar-gutter` (left,
+     *  drawings toolbar) and `--vela-scale-gutter` (right, the full price-scale width
+     *  incl. merged own-scale columns), so host overlays sharing that container (a
+     *  status line, a watermark, a custom legend) can anchor to the plot's edges
+     *  without reaching into the renderer's DOM. */
+    private publishGutters(): void {
         this.mountContainer?.style.setProperty('--vela-toolbar-gutter', `${this.toolbarGutter}px`);
+        this.mountContainer?.style.setProperty('--vela-scale-gutter', `${this.rightAxisW}px`);
     }
 
     /** The built-in mark, or the host's own when one is set. */
@@ -3292,7 +3305,18 @@ export class NativeRenderer implements IChartRenderer {
             this.fitContent();
             this.didInitialFit = true;
         }
-        this.scheduler.flushNow(InvalidateLevel.Full);
+        if (this.animator.active) {
+            // The width/height assignments above just CLEARED every canvas, and renderFrame
+            // yields to the Animator while it runs — so a scheduler flush would paint
+            // nothing and the browser would present blank canvases until the animator's
+            // next rAF tick (a visible flash on every splitter/divider move of an
+            // animating chart, live-bar easing included). Paint synchronously instead.
+            this.computeScales();
+            this.paintData();
+            this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx());
+        } else {
+            this.scheduler.flushNow(InvalidateLevel.Full);
+        }
     }
 
     private applyBackground(): void {

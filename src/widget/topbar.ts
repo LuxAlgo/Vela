@@ -2,6 +2,7 @@
 // every chart type registered through the plugin SDK, labels from the registry).
 import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
 import { Tooltip } from '../ui/components/tooltip';
+import { LayoutPicker, type LayoutPickerShape } from './layout-picker';
 import { iconEl, iconMarkup, registerIcon } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import { chartType } from '../chart-types/registry';
@@ -135,16 +136,21 @@ export interface TopbarOptions {
     priceStyle: string;
     onTimeframe: (tf: string) => void;
     onPriceStyle: (style: string) => void;
-    /** Optional workspace LAYOUT dropdown (rendered after the style dropdown when given).
-     *  `options` is read live, so plugin-registered layouts appear automatically. */
+    /** Optional workspace LAYOUT dropdown (rendered after the style dropdown when
+     *  given) — the grid-canvas picker composing uniform grids, with the workspace
+     *  SYNC switches beside it. Everything is read live, so plugin-registered
+     *  layouts and setting flips appear automatically. */
     layout?: {
         current: string;
-        options: () => Array<{ id: string; label: string }>;
-        onSelect: (id: string) => void;
-        /** Optional TOGGLE rows appended under the layout presets (e.g. the workspace's
-         *  "Sync crosshair"). Re-read on every open/refresh; `onToggle` flips one. */
-        toggles?: () => Array<{ id: string; label: string; checked: boolean }>;
-        onToggle?: (id: string) => void;
+        /** Current layout's picker-canvas shape (null = not canvas-expressible). */
+        shape: () => LayoutPickerShape | null;
+        /** Registered layouts the canvas cannot express — rendered as labeled rows. */
+        presets: () => Array<{ id: string; label: string }>;
+        onSelectGrid: (rows: number, cols: number) => void;
+        onSelectPreset: (id: string) => void;
+        /** SYNC switch rows (re-read on every open and after each toggle). */
+        syncs: () => Array<{ id: string; label: string; checked: boolean }>;
+        onToggleSync: (id: string) => void;
     };
     onIndicatorsClick?: () => void;
     /** Unified undo/redo (same stack as Ctrl+Z / Ctrl+Y). Enabled state is pushed with
@@ -163,7 +169,7 @@ export class Topbar {
     private readonly tfButton: HTMLElement;
     private readonly styleButton: HTMLElement;
     private layoutButton: HTMLElement | null = null;
-    private layoutMenu: Menu | null = null;
+    private layoutPicker: LayoutPicker | null = null;
     private layoutId: string | null = null;
     private readonly tfMenu: Menu;
     private readonly styleMenu: Menu;
@@ -268,21 +274,16 @@ export class Topbar {
         this.tooltips.push(new Tooltip(this.styleButton, { content: 'Chart style', triggerId: 'vela-topbar-style', host }));
         if (this.layoutButton && opts.layout) {
             this.tooltips.push(new Tooltip(this.layoutButton, { content: 'Layout', triggerId: 'vela-topbar-layout', host }));
-            this.layoutMenu = new Menu({
+            const layout = opts.layout;
+            this.layoutPicker = new LayoutPicker({
                 trigger: this.layoutButton,
-                triggerId: 'vela-topbar-layout',
                 host,
-                items: this.layoutItems(),
-                onSelect: (id) => {
-                    // Toggle rows flip their setting and stay reflected on next open;
-                    // every other id is a layout preset.
-                    if (id.startsWith('toggle:')) {
-                        opts.layout!.onToggle?.(id.slice('toggle:'.length));
-                        this.layoutMenu?.setItems(this.layoutItems());
-                        return;
-                    }
-                    opts.layout!.onSelect(id);
-                },
+                shape: () => layout.shape(),
+                presets: () => layout.presets().map((p) => ({ ...p, checked: p.id === this.layoutId })),
+                onSelectGrid: (rows, cols) => layout.onSelectGrid(rows, cols),
+                onSelectPreset: (id) => layout.onSelectPreset(id),
+                syncs: () => layout.syncs(),
+                onToggleSync: (id) => layout.onToggleSync(id),
             });
         }
         this.tfMenu = new Menu({
@@ -325,7 +326,7 @@ export class Topbar {
         if (!this.layoutButton) return;
         this.layoutId = id;
         this.renderLayoutButton(this.layoutButton.ownerDocument);
-        this.layoutMenu?.setItems(this.layoutItems());
+        this.layoutPicker?.refresh();
     }
 
     private renderLayoutButton(doc: Document): void {
@@ -336,12 +337,6 @@ export class Topbar {
         if (iconMarkup('layout')) this.layoutButton.appendChild(iconEl('layout', doc));
         else this.layoutButton.appendChild(doc.createTextNode(this.layoutId ?? ''));
         this.layoutButton.setAttribute('aria-label', `Layout — ${this.layoutId ?? ''}`);
-    }
-
-    private layoutItems(): MenuItemDescriptor[] {
-        const presets = (this.opts.layout?.options() ?? []).map((l) => ({ id: l.id, label: l.label, checked: l.id === this.layoutId }));
-        const toggles = (this.opts.layout?.toggles?.() ?? []).map((t, i) => ({ id: `toggle:${t.id}`, label: t.label, checked: t.checked, toggle: true, separatorBefore: i === 0 }));
-        return [...presets, ...toggles];
     }
 
     private renderStyleButton(doc: Document): void {
@@ -418,7 +413,7 @@ export class Topbar {
         if (this.hairlineRaf) win?.cancelAnimationFrame(this.hairlineRaf);
         this.tfMenu.destroy();
         this.styleMenu.destroy();
-        this.layoutMenu?.destroy();
+        this.layoutPicker?.destroy();
         for (const t of [...this.tooltips, ...this.panelTooltips]) t.destroy();
         this.el.remove();
     }

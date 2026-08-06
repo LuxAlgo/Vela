@@ -13,7 +13,7 @@ import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine
 import { BinanceProvider } from 'vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {
-    layout: '4', // '1' | '2h' | '2v' | '4' | '8' | a registerLayout() id
+    layout: '4', // '1' | '2h' | '2v' | '4' | '8' | picker ids ('g3x2') | a registerLayout() id
     // Chart options at the TOP LEVEL are every cell's DEFAULT — the same words the
     // widget (and the bare chart) use. `cells` overrides them per cell; a cell's NAME
     // is its durable identity, DECLARATION ORDER fills the layout's slots:
@@ -60,6 +60,8 @@ ws.cell('eth');          // a specific cell BY IDENTITY — the durable handle t
 ws.cells();              // every live cell, in slot order
 ws.setActiveCell('sol');
 ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size pool their state
+// Shrinking never pools the ACTIVE chart: if its slot would leave the layout, it
+// moves into the last surviving slot instead (the other cells keep their order).
 ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also reachable from any cell's chart settings → Canvas → Theme)
 ws.on('cell:active' | 'layout:changed' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
 ```
@@ -70,30 +72,59 @@ layout (`cell:destroyed`). Host code that tracks cells should **follow
 `cell:created`/`cell:destroyed`** rather than snapshot `ws.cells()` once: a later
 `setLayout` (or a restored document) mints cells that a one-time snapshot never sees.
 
-Layouts live in a registry (`registerLayout` from `vela/workspace`) — a plugin-added
-grid appears in the topbar's layout dropdown automatically. Splitters between cells
-resize the grid tracks (double-click a divider for an even split).
+Layouts live in a registry (`registerLayout` from `vela/workspace`), and the topbar's
+**layout dropdown** composes them on a 4×4 grid canvas: hover previews the full
+*columns × rows* rectangle from the top-left (the table-insert idiom); a click
+applies it immediately. Rectangles matching a classic preset (`1`, `2h`, `2v`, `4`,
+`8`) reuse it; anything else gets a self-describing dynamic id (`g3x2` = 3 rows ×
+2 columns) that resolves without registration (persisted picks restore across boots).
+Plugin layouts the canvas cannot express (bespoke `areas`) list as labeled rows under
+the canvas, so `registerLayout` contributions keep appearing automatically. In code,
+the same composition is `layoutForGrid(rows, cols)` (exported from `vela/workspace`),
+handed to `ws.setLayout(...)`.
+
+Splitters between cells resize the grid tracks (double-click a divider for an even
+split).
 
 ## Sync links
 
-Per kind — `viewport`, `symbol`, `timeframe`, `crosshair` — link every cell (`true`) or
-named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a', sol: 'b' }`: only same-group
-cells follow each other). Cross-timeframe viewport groups align on the **right edge** (a
-finer-timeframe cell clamps the window to its own minimum zoom).
+Per kind — `viewport`, `symbol`, `timeframe`, `crosshair`, `drawings` — link every cell
+(`true`) or named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a', sol: 'b' }`:
+only same-group cells follow each other). Cross-timeframe viewport groups align on the
+**right edge** (a finer-timeframe cell clamps the window to its own minimum zoom).
 
 `crosshair` mirrors the pointer's TIME onto same-group cells as a **ghost crosshair**
 (a dimmed vertical line snapped to each follower's own bar, with its time chip);
-leaving the origin clears every ghost. It is also a **toggle in the topbar's layout
-dropdown** ("Sync crosshair"). The ghost needs the renderer's optional
+leaving the origin clears every ghost. The ghost needs the renderer's optional
 `setExternalCrosshair` seam — the native renderer has it; a custom renderer without it
 simply never shows one (enabling warns only when NO cell could).
+
+`drawings` copies each **newly created** drawing onto its same-group cells — the
+anchors are time+price, so the copy lands at the same spot whatever each follower
+shows — and keeps the set **linked**: moving/restyling/deleting any member follows on
+its peers (while the link stays on). Placement itself mirrors **live**: while you are
+still clicking anchors, the followers show the in-progress shape as a reduced-opacity
+ghost (the same seam as crosshair ghosts — a custom renderer without it simply syncs
+at completion). Link membership is session-scoped and survives a toggle-off: turning
+the link off freezes create/edit/delete propagation (and clears placement ghosts) but
+keeps the in-memory pairs, so re-enabling resumes edit/delete for drawings that were
+linked earlier in the session. Drawings created while the link was off stay
+independent — re-enabling never copies or pairs them. A reload (or `applyState`)
+drops the pairs, so previously synced drawings are independent again.
+
+**Symbol**, **Interval** (timeframe) and **Crosshair** are also switches in the
+topbar's layout dropdown (its SYNC section), and **Drawings** is a toggle on the
+shared drawing toolbar (the pen-with-panes icon under stay-in-drawing-mode). A
+switch reflects the simple all-cells form (`true`/off); flipping one overrides a
+host-set group record with plain on/off — group records stay an API-only shape.
 
 ```ts
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
+ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
 ws.sync.get('viewport'); // true
-ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true }
+ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true }
 ```
 
 ## Watching what the cells compute
@@ -192,8 +223,9 @@ new VelaWorkspace('#app', { persist: 'main', storage: restStorage /* … */ });
 
 Notes: writes are fire-and-forget (the UI never blocks on storage); a remote adapter
 that must survive tab-close should use `navigator.sendBeacon` in its `set`. A saved
-state referencing a custom layout id restores only if that layout is registered
-(`registerLayout`) before `applyState` runs.
+state referencing a plugin layout id restores only if that layout is registered
+(`registerLayout`) before `applyState` runs; the layout picker's dynamic ids (`g3x2`)
+are self-describing and always resolve.
 
 ## Options (summary)
 
@@ -231,7 +263,7 @@ silently reorder them).
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `layout` | `'4'` | Initial grid — preset id, `registerLayout()` id, or inline definition. |
+| `layout` | `'4'` | Initial grid — preset id, picker id (`g3x2`), `registerLayout()` id, or inline definition. |
 | `cells` | — | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above). |
 | `sync` | off | Initial sync links (see above). |
 | `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |

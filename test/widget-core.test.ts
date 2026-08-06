@@ -14,6 +14,7 @@ import { avatarColor } from '../src/widget/symbol-picker';
 import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, registerLegendAction, unregisterLegendAction, legendActions, legendActionsProviderFor, type EngineFactory, type LegendIndicatorInfo } from '../src/widget/contributions';
 import type { ScriptingEngine } from '../src/core/ports/ScriptingEngine';
 import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
+import { watermarkFontPx } from '../src/widget/watermark';
 import { sanitizeState } from '../src/state/document';
 
 describe('parseTimeframe', () => {
@@ -563,5 +564,28 @@ describe('resolveIndicators — async loader form', () => {
 
     it('a rejecting loader behaves like a failing manifest URL (throws)', async () => {
         await expect(resolveIndicators(async () => Promise.reject(new Error('fs unavailable')))).rejects.toThrow('fs unavailable');
+    });
+});
+
+describe('watermarkFontPx — the mark fits the chart, not the viewport', () => {
+    it('keeps the cap when the text already fits with room to spare', () => {
+        // Text is 500px wide at the 72px cap; a 900px chart holds it (900*0.9 = 810 ≥ 500).
+        expect(watermarkFontPx(900, 500)).toBe(72);
+    });
+
+    it('shrinks proportionally when the chart is narrower than the text', () => {
+        // A 400px multichart cell: 72 * (400*0.9)/500 = 51.84 → floored.
+        expect(watermarkFontPx(400, 500)).toBe(51);
+        // Half the cell again → half the font.
+        expect(watermarkFontPx(200, 500)).toBe(25);
+    });
+
+    it('never drops below the floor nor exceeds the cap', () => {
+        expect(watermarkFontPx(30, 500)).toBe(12); // tiny cell → floor
+        expect(watermarkFontPx(100000, 10)).toBe(72); // huge chart → cap
+    });
+
+    it('an unmeasurable text (0 width) keeps the cap instead of dividing by zero', () => {
+        expect(watermarkFontPx(400, 0)).toBe(72);
     });
 });
