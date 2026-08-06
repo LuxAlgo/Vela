@@ -67,6 +67,11 @@ export function themeTokens(t: VelaTheme): Record<string, string> {
         '--vela-hover-strong': wash(0.16),
         '--vela-focus': withAlpha(t.textColor, 0.5),
         '--vela-focus-soft': withAlpha(t.textColor, 0.12),
+        // Separator hover — the SAME wash the chart's pane separators paint on hover
+        // (soft full-thickness band + solid 2px center line), so DOM-drawn dividers
+        // (the workspace grid) and canvas-drawn ones read as one family.
+        '--vela-separator-hover-band': withAlpha(t.textColor, 0.1),
+        '--vela-separator-hover-line': withAlpha(t.textColor, 0.55),
         '--vela-scroll': withAlpha(t.textColor, 0.3),
         '--vela-accent': ACCENT,
         '--vela-accent-bright': ACCENT_BRIGHT,

@@ -170,6 +170,12 @@ export class DrawingController {
         this.port?.setToolbar(buildToolbar(option).definition);
     }
 
+    /** Display (or clear) another chart's in-progress placement as a ghost — silently
+     *  inert on a renderer without the optional `setExternalGhost` seam. */
+    setExternalGhost(doc: SerializedDrawing | null): void {
+        this.port?.setExternalGhost?.(doc);
+    }
+
     /** Push per-tool shortcut hints (pre-formatted display strings) to the toolbar flyouts. */
     setToolShortcuts(map: Readonly<Partial<Record<DrawingTypeKey, string>>>): void {
         this.port?.setToolShortcuts?.(map);
@@ -439,6 +445,11 @@ export class DrawingController {
         switch (i.kind) {
             case 'arm':
                 this.setTool(i.type); // toolbar click → core-authoritative tool state
+                break;
+            case 'draft':
+                // Placement progress — transient, no store mutation. Re-emitted so a
+                // multi-chart host can mirror the ghost on linked charts live.
+                this.events.emit('drawing:draft', { doc: i.doc });
                 break;
             case 'create': {
                 const before = this.store.serialize();

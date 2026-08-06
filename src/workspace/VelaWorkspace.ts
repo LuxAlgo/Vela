@@ -37,7 +37,7 @@ import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } fro
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { applyAttributionMarkTheme, createAttributionMark, createCustomMark } from '../renderers/native/chrome/AttributionMark';
 import { rendererDefaults } from '../core/renderer-defaults';
-import { defaultToolbar, type DrawingTypeKey, type SnapMode } from '../core/drawings';
+import { defaultToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
@@ -46,10 +46,14 @@ import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoo
 import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
     registerBuiltinLayouts,
-    layoutDefinition,
     layouts,
     gridStyles,
     activeAfterLayout,
+    orderAfterLayout,
+    ensureLayout,
+    layoutForGrid,
+    layoutShape,
+    occupancyGrid,
     type LayoutDefinition,
     type TrackSizes,
 } from './layouts';
@@ -82,8 +86,10 @@ export interface VelaWorkspaceOptions extends Omit<VelaOptions, 'height'>, VelaS
     /** Sync links between cells: per kind, `true` = all cells, or a `{cellId: group}`
      *  record (only same-group cells follow each other). `crosshair` mirrors the
      *  pointer time as ghost crosshairs on the followers (also toggleable from the
-     *  layout dropdown). Default: everything off. Change at runtime via
-     *  `ws.sync.set(kind, setting)`. */
+     *  layout dropdown); `drawings` copies each newly created drawing onto the
+     *  followers and keeps the set linked — edits and removals follow (also
+     *  toggleable from the shared drawing toolbar). Default: everything off.
+     *  Change at runtime via `ws.sync.set(kind, setting)`. */
     sync?: SyncOptions;
     /** Above this many cells, EVERY cell uses the canvas2d backend (uniform look inside
      *  the browser's WebGL-context budget; glow is unavailable there). Default 8; an
@@ -126,8 +132,10 @@ const CSS = `
 .vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
 .vela-cell { background: var(--vela-bg); position: relative; }
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
-   outline on the cell is painted under them) — inert to the pointer. */
-.vela-cell[data-active='1']::after {
+   outline on the cell is painted under them) — inert to the pointer. Scoped to
+   multi-cell grids ([data-multi]): a single-cell layout always has an active cell,
+   and ringing the only chart would just be noise. */
+.vela-ws-grid[data-multi='1'] .vela-cell[data-active='1']::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -135,7 +143,12 @@ const CSS = `
     pointer-events: none;
     z-index: 10;
 }
-.vela-ws-splitter:hover { background: var(--vela-accent); opacity: 0.35; }
+/* Splitter hover mirrors the in-chart pane separator hover (CrosshairRenderer):
+   a soft band over the whole grab target + a solid 2px line on the seam center. */
+.vela-ws-splitter:hover { background: var(--vela-separator-hover-band); }
+.vela-ws-splitter:hover::after { content: ''; position: absolute; background: var(--vela-separator-hover-line); }
+.vela-ws-splitter[data-axis='cols']:hover::after { left: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
+.vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); left: 0; height: 2px; width: 100%; }
 `;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
@@ -222,6 +235,15 @@ export class VelaWorkspace {
     /** Re-entrance guard around one propagation tick: followers' synchronous echoes
      *  (their setVisibleRange re-emits viewport:changed) must not re-propagate. */
     private syncBusy = false;
+    /** Same guard for the drawings link: the propagated mutations' own `drawing:*`
+     *  events fire synchronously inside the propagation loop and must not fan out again. */
+    private drawingSyncBusy = false;
+    /** LINKED drawings (the drawings sync): one map per synced set (cellId → that
+     *  cell's drawing id), reachable from every member under its `cellId\0drawingId`
+     *  key — any member finds its peers to push edits/removals onto. Survives a
+     *  toggle-off (propagation freezes while the setting is off; re-enabling resumes
+     *  edit/delete for these pairs). Cleared on reload / `applyState`. */
+    private readonly drawingLinks = new Map<string, Map<string, string>>();
     private manifest: ResolvedIndicator[] = [];
     /** The shared manifest can no longer change instance sets — resolved, or no
      *  `indicators` option so nothing ever will. Gates the cells' ledger fallback. */
@@ -258,10 +280,10 @@ export class VelaWorkspace {
         this.timezone = boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         if (boot?.favorites) this.favs = [...boot.favorites];
         const sync = boot?.sync ?? opts.sync;
-        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) {
+        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair', 'drawings'] as const) {
             this.applySyncSetting(kind, sync?.[kind]);
         }
-        this.def = this.resolveLayout(boot?.layout && layoutDefinition(boot.layout) ? boot.layout : (opts.layout ?? '4'));
+        this.def = this.resolveLayout(boot?.layout && ensureLayout(boot.layout) ? boot.layout : (opts.layout ?? '4'));
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
         if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
         // Identity ↔ slot mapping: the persisted document's chart order wins (it IS the
@@ -325,14 +347,23 @@ export class VelaWorkspace {
             onPriceStyle: (style) => this.active.setPriceStyle(style),
             layout: {
                 current: this.def.id,
-                options: () => layouts().map((l) => ({ id: l.id, label: l.label })),
-                onSelect: (id) => this.setLayout(id),
-                // Workspace-wide view toggles live under the grid presets. The check
-                // reflects the simple all-cells form; flipping OVERRIDES a host-set
-                // group record with plain on/off (groups stay an API-only shape).
-                toggles: () => [{ id: 'crosshair-sync', label: 'Sync crosshair', checked: this.syncOpts.crosshair === true }],
-                onToggle: (id) => {
-                    if (id === 'crosshair-sync') this.sync.set('crosshair', this.syncOpts.crosshair ? false : true);
+                // The picker composes dynamic layouts on its grid canvas; registered
+                // presets the canvas cannot express (bespoke plugin areas) list as rows.
+                shape: () => layoutShape(this.def),
+                presets: () => layouts().filter((l) => layoutShape(l) === null).map((l) => ({ id: l.id, label: l.label })),
+                onSelectGrid: (rows, cols) => this.setLayout(layoutForGrid(rows, cols)),
+                onSelectPreset: (id) => this.setLayout(id),
+                // The SYNC switches reflect the simple all-cells form; flipping one
+                // OVERRIDES a host-set group record with plain on/off (groups stay an
+                // API-only shape).
+                syncs: () => [
+                    { id: 'symbol', label: 'Symbol', checked: this.syncOpts.symbol === true },
+                    { id: 'timeframe', label: 'Interval', checked: this.syncOpts.timeframe === true },
+                    { id: 'crosshair', label: 'Crosshair', checked: this.syncOpts.crosshair === true },
+                ],
+                onToggleSync: (id) => {
+                    const kind = id as SyncKind;
+                    this.sync.set(kind, this.syncOpts[kind] ? false : true);
                 },
             },
             getContext: () => this.context(),
@@ -416,11 +447,21 @@ export class VelaWorkspace {
                       this.active.chart.drawings.setStayMode(on);
                       this.refocusActive();
                   },
-                  { dock: 'static' },
+                  {
+                      dock: 'static',
+                      // Drawings sync is a WORKSPACE link (same model as the layout
+                      // dropdown's switches) — the bar only hosts its toggle.
+                      onDrawingsSync: (on) => {
+                          this.sync.set('drawings', on);
+                          this.refocusActive();
+                      },
+                  },
               )
             : null;
         this.drawToolbar?.setDefinition(defaultToolbar());
         this.drawToolbar?.setVisible(true);
+        // Sync settings applied before the bar existed (boot/persisted) — reflect now.
+        this.drawToolbar?.setDrawingsSyncMode(!!this.syncOpts.drawings);
 
         this.bottombar =
             opts.bottombar !== false
@@ -439,6 +480,7 @@ export class VelaWorkspace {
 
         this.splitters = new SplitterLayer(this.gridEl, {
             tracks: () => this.currentTracks(),
+            grid: () => occupancyGrid(this.def),
             apply: (axis, weights) => this.applyTracks(axis, weights),
             reset: (axis) => this.applyTracks(axis, evenTracks(this.currentTracks()[axis].length)),
             gapPx: () => GAP_PX,
@@ -620,7 +662,7 @@ export class VelaWorkspace {
         if (st.favorites) this.favs = [...st.favorites]; // newborn cells inherit below (buildCells)
         // Absent in documents written before the dock existed — those leave the column closed.
         this.dock.applyState(st.panels);
-        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
+        for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair', 'drawings'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
         this.trackSizes.clear();
         if (st.trackSizes) for (const [id, ts] of Object.entries(st.trackSizes)) this.trackSizes.set(id, ts);
         // Full rebuild from the document — every current slot is replaced by the restored one.
@@ -630,9 +672,10 @@ export class VelaWorkspace {
             this.events.emit('cell:destroyed', { id });
         }
         this.pool.clear();
+        this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
         this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
-        const def = layoutDefinition(st.layout);
+        const def = ensureLayout(st.layout);
         if (def) this.def = def;
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
@@ -689,6 +732,10 @@ export class VelaWorkspace {
         const next = this.resolveLayout(layout);
         const nextBackend = this.backendFor(next);
         const rebuildAll = nextBackend !== this.cellBackend;
+        // The ACTIVE chart always survives a shrink — it moves into the last kept
+        // slot instead of pooling, so changing the grid never hides the chart the
+        // user is working in.
+        this.order = orderAfterLayout(this.order, next.cells.length, this.activeId);
         const keep = new Set(this.order.slice(0, next.cells.length));
         for (const [id, cell] of [...this.cellsById]) {
             if (!keep.has(id) || rebuildAll) {
@@ -823,7 +870,9 @@ export class VelaWorkspace {
     // ── internals ───────────────────────────────────────────────
     private resolveLayout(layout: string | LayoutDefinition): LayoutDefinition {
         if (typeof layout !== 'string') return layout;
-        const def = layoutDefinition(layout);
+        // Registered ids first, then the picker's self-describing dynamic ids
+        // (`g3x2`) — those synthesize without touching the registry.
+        const def = ensureLayout(layout);
         if (!def) throw new Error(`[vela] unknown workspace layout "${layout}" — register it with registerLayout().`);
         return def;
     }
@@ -856,6 +905,9 @@ export class VelaWorkspace {
      *  `order[i]` — the identity/position decoupling in one line. */
     private applyGrid(): void {
         const { container, perCell } = gridStyles(this.def, this.trackSizes.get(this.def.id));
+        // The active-cell ring only exists on multi-cell grids (see the stylesheet).
+        if (this.def.cells.length > 1) this.gridEl.dataset.multi = '1';
+        else delete this.gridEl.dataset.multi;
         this.gridEl.style.gridTemplateColumns = container.gridTemplateColumns ?? '';
         this.gridEl.style.gridTemplateRows = container.gridTemplateRows ?? '';
         this.gridEl.style.gridTemplateAreas = container.gridTemplateAreas ?? '';
@@ -904,6 +956,9 @@ export class VelaWorkspace {
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(id, cell);
+            // A REBUILT active cell (backend flip, pool round-trip) gets a fresh host —
+            // re-assert the highlight attribute setActiveCell put on the old one.
+            if (id === this.activeId) cell.host.dataset.active = '1';
             this.wireCell(cell);
             // The shared star set is a workspace pref — every newborn cell inherits it
             // silently (equal-set idempotence keeps the favorites event from echoing).
@@ -950,9 +1005,24 @@ export class VelaWorkspace {
         // as ghost markers. Leave already emits `time: null` — the clear rides along.
         chart.renderer.onCrosshairMove((e) => this.propagateCrosshair(cell.id, e.time));
         // Drawing edits are cell state (the per-slot drawings document) — persistable.
-        chart.on('drawing:created', () => this.markStateDirty());
-        chart.on('drawing:edited', () => this.markStateDirty());
-        chart.on('drawing:removed', () => this.markStateDirty());
+        // When the drawings link is on, a CREATED drawing copies onto the same-group
+        // cells and the set stays LINKED: edits and removals of any member follow
+        // (the guard stops the propagated mutations from fanning out again).
+        chart.on('drawing:created', ({ id }) => {
+            this.propagateDrawing(cell.id, id);
+            this.markStateDirty();
+        });
+        // Placement progress mirrors LIVE as ghosts on the same-group cells; the end of
+        // the placement carries `null`, which clears them (the created copy takes over).
+        chart.on('drawing:draft', ({ doc }) => this.propagateDraft(cell.id, doc));
+        chart.on('drawing:edited', ({ id }) => {
+            this.propagateDrawingEdit(cell.id, id);
+            this.markStateDirty();
+        });
+        chart.on('drawing:removed', ({ id }) => {
+            this.propagateDrawingRemoval(cell.id, id);
+            this.markStateDirty();
+        });
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).
@@ -987,6 +1057,16 @@ export class VelaWorkspace {
     private applySyncSetting(kind: SyncKind, setting: SyncSetting | undefined, align = false): void {
         if (setting == null || setting === false) delete this.syncOpts[kind];
         else this.syncOpts[kind] = setting;
+        if (kind === 'drawings') {
+            // Placement ghosts are stale under the new setting. Link pairs stay —
+            // turning off freezes propagation; turning on resumes edit/delete for
+            // drawings paired earlier (never copies unpaired ones onto peers).
+            for (const cell of this.cellsById.values()) cell.chart.drawings.setExternalGhost(null);
+            // The toggle lives on the shared drawing toolbar; keep it truthful.
+            this.drawToolbar?.setDrawingsSyncMode(!!setting);
+            this.markStateDirty();
+            return;
+        }
         if (kind === 'crosshair') {
             // Any setting change invalidates current ghosts — they rebuild on the next
             // pointer move under the NEW grouping (and vanish entirely when disabled).
@@ -996,11 +1076,14 @@ export class VelaWorkspace {
             if (setting && ![...this.cellsById.values()].some((c) => c.chart.renderer.supportsExternalCrosshair)) {
                 console.warn('[vela] crosshair sync: no cell renderer supports an external crosshair — nothing will show.');
             }
-            // Refresh the layout dropdown's toggle check (absent during constructor boot).
+            // Refresh the layout dropdown's switch state (absent during constructor boot).
             if (this.topbar && this.def) this.topbar.setLayout(this.def.id);
             this.markStateDirty();
             return; // no market/viewport alignment applies to a pointer link
         }
+        // Symbol/interval switches live in the layout dropdown too — keep an open
+        // panel truthful when the setting flips through the API.
+        if (this.topbar && this.def) this.topbar.setLayout(this.def.id);
         this.markStateDirty();
         if (align && setting && this.activeId) {
             if (kind === 'viewport') {
@@ -1052,6 +1135,105 @@ export class VelaWorkspace {
             }
         } finally {
             this.syncBusy = false;
+        }
+    }
+
+    /**
+     * Copy a freshly created drawing onto the origin's same-group followers (fresh ids
+     * through `drawings.add` — anchors are time+price, so the copy lands at the same
+     * spot whatever the follower shows) and register the whole set as LINKED: edits
+     * and removals of any member follow while the link is on ({@link drawingLinks}).
+     * The busy guard stops the copies' own `drawing:created` events from fanning out.
+     */
+    private propagateDrawing(originId: string, drawingId: string): void {
+        if (this.drawingSyncBusy || this.destroyed) return;
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        const doc = this.cellsById.get(originId)?.chart.drawings.all().find((d) => d.id === drawingId);
+        if (!doc) return;
+        this.drawingSyncBusy = true;
+        try {
+            const group = new Map([[originId, drawingId]]);
+            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+                const copy = this.cellsById.get(id)?.chart.drawings.add(doc.type, {
+                    paneId: doc.paneId,
+                    anchors: doc.anchors,
+                    style: doc.style,
+                    text: doc.text,
+                    props: doc.props,
+                });
+                if (copy) group.set(id, copy.id);
+            }
+            if (group.size > 1) {
+                for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
+            }
+        } finally {
+            this.drawingSyncBusy = false;
+        }
+    }
+
+    /** Mirror an in-progress placement (its current ghost, `null` = placement ended)
+     *  onto the origin's same-group followers — the live half of the drawings link;
+     *  the created copy replaces the ghosts when the placement completes. One-way by
+     *  contract (an external ghost never re-emits drafts), so no busy guard needed. */
+    private propagateDraft(originId: string, doc: SerializedDrawing | null): void {
+        if (this.destroyed) return;
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+            this.cellsById.get(id)?.chart.drawings.setExternalGhost(doc);
+        }
+    }
+
+    /** Push a linked drawing's edited CONTENT (anchors, style, text, per-type props)
+     *  onto its same-group peers — any member propagates, not just the original. */
+    private propagateDrawingEdit(originId: string, drawingId: string): void {
+        if (this.drawingSyncBusy || this.destroyed) return;
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        const group = this.drawingLinks.get(`${originId}\u0000${drawingId}`);
+        if (!group) return;
+        const doc = this.cellsById.get(originId)?.chart.drawings.all().find((d) => d.id === drawingId);
+        if (!doc) return;
+        this.drawingSyncBusy = true;
+        try {
+            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+                const peerId = group.get(id);
+                if (peerId == null) continue;
+                this.cellsById.get(id)?.chart.drawings.update(peerId, {
+                    anchors: doc.anchors,
+                    style: doc.style,
+                    text: doc.text,
+                    props: doc.props,
+                });
+            }
+        } finally {
+            this.drawingSyncBusy = false;
+        }
+    }
+
+    /** Remove a linked drawing's peers with it. The removed member always leaves its
+     *  link group (whatever the setting); peers are only deleted while the link is on.
+     *  A propagated peer removal re-enters here under the busy guard and just cleans
+     *  its own link key. */
+    private propagateDrawingRemoval(originId: string, drawingId: string): void {
+        if (this.destroyed) return;
+        const key = `${originId}\u0000${drawingId}`;
+        const group = this.drawingLinks.get(key);
+        if (!group) return;
+        this.drawingLinks.delete(key);
+        group.delete(originId);
+        if (this.drawingSyncBusy) return;
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        this.drawingSyncBusy = true;
+        try {
+            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+                const peerId = group.get(id);
+                if (peerId != null) this.cellsById.get(id)?.chart.drawings.remove(peerId);
+            }
+        } finally {
+            this.drawingSyncBusy = false;
         }
     }
 

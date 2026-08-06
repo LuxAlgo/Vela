@@ -88,6 +88,15 @@ export class DrawingsControl {
         return this;
     }
 
+    /** Display another chart's in-progress placement as a GHOST at reduced opacity
+     *  (`null` clears it) — how a multi-chart host mirrors `drawing:draft` onto linked
+     *  charts. Never a real drawing: no store entry, no selection, no persistence.
+     *  Silently inert on a renderer without the optional seam. */
+    setExternalGhost(doc: SerializedDrawing | null): this {
+        this.ctrl.setExternalGhost(doc);
+        return this;
+    }
+
     /** Create a drawing programmatically (no clicking). Returns it, or null if unsupported. */
     add(type: DrawingTypeKey, init: AddInit = {}): Drawing | null {
         if (!this.ok('add')) return null;

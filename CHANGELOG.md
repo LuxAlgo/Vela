@@ -2,6 +2,26 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Drawings sync across a workspace grid.** A new `drawings` sync kind
+  (`ws.sync.set('drawings', true)`, also a toggle on the shared drawing toolbar) links
+  drawings across same-group cells: a newly created drawing is copied onto the others
+  (anchors are time+price, so it lands at the same spot whatever each cell shows), and
+  the set stays linked — moving, restyling or deleting any member follows on its peers.
+  Placement mirrors **live**: while anchors are still being clicked, linked charts show
+  the in-progress shape as a reduced-opacity ghost. Link membership is session-scoped
+  and survives a toggle-off (re-enabling resumes edit/delete for drawings paired
+  earlier; drawings created while off stay independent), and a reload leaves every
+  drawing unpaired again. The on/off setting persists like the other sync kinds.
+- **Plugin SDK: a draft seam on the drawings port.** `DrawingIntent` gains an optional
+  `draft` arm (placement progress, `null` at the end) surfaced as the `drawing:draft`
+  chart event, and `IDrawingsRendererPort` gains an optional `setExternalGhost(doc)` —
+  the drawings twin of `setExternalCrosshair`. Both are additive: a renderer that
+  implements neither keeps today's behavior (sync at completion, no remote preview).
+
 ## [v0.5.0]
 
 ### Added
@@ -151,6 +171,28 @@ All notable changes to Vela, newest first.
   renderer now publishes its toolbar gutter as `--vela-toolbar-gutter` on the mount
   container and the status line anchors to it, keeping the two in one column in every
   shell and toolbar state.
+- **Workspace dividers stay between charts.** In a mixed layout — say three charts stacked
+  on the left beside two taller ones on the right — the divider between two stacked charts
+  used to run the full width of the grid, so hovering or dragging over a neighboring chart
+  could grab the divider instead of the chart under the pointer. A divider now covers only
+  the stretch where two charts actually meet. Its hover highlight also matches the pane
+  dividers inside a chart — the same soft band with a solid center line, in the theme's
+  text color — instead of the old blue accent strip.
+- **The symbol watermark stays inside its own chart.** The faded "SYMBOL · TF" mark was
+  sized against the browser window, so in a multi-chart workspace a small cell could get
+  type far wider than itself, spilling the text across its neighbors. The mark now measures
+  itself against its own chart and shrinks to fit — a lone full-size chart keeps the large
+  type, a dense grid gets proportionally smaller marks, and dragging a divider refits them
+  live. The mark also fits and centers on the plot itself rather than the full chart, so in
+  a narrow cell the text no longer runs under the price scale's numbers.
+- **Resizing no longer makes charts flash or shake.** Two resize bugs, most visible in a
+  workspace: dragging a divider across a chart mid-animation (a live tick easing in, a zoom
+  glide) could blank it for a frame on every move, because the resized canvases waited for
+  the next animation frame to repaint — they now repaint immediately. And a resize or layout
+  change could leave a chart trembling rapidly (and burning a full animation loop in the
+  background) until it was clicked: the zoom limits move with the chart's width, and an
+  in-flight zoom or scroll animation whose destination fell outside the new limits kept
+  chasing it forever. The animation now settles on the nearest reachable point and stops.
 
 ## [v0.4.6]
 
