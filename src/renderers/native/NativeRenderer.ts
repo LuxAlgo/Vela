@@ -54,7 +54,7 @@ import { computePaneScale, expandScaleByPixels } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
@@ -290,6 +290,7 @@ export class NativeRenderer implements IChartRenderer {
             this.candleDown = opts.downColor;
             this.scene.priceStyle = opts.priceStyle;
             this.scene.basePainting = basePaintingOf(opts.priceStyle);
+            this.scene.candleOverride = candleOverrideFor(opts.priceStyle, this.scene.style.chartTypes);
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
         // it with the real, Vela-resolved theme). Candle colors follow opts.
@@ -796,6 +797,10 @@ export class NativeRenderer implements IChartRenderer {
         };
         // series
         this.setPriceStyle(next.series.style);
+        // Re-read the active style's candle override: setPriceStyle no-ops when the style
+        // did not change, but the per-type bag (candle* keys) may have — this is the live
+        // path behind the Symbol tab's Candles group for plugin styles.
+        this.scene.candleOverride = candleOverrideFor(this.scene.priceStyle, s.chartTypes);
         this.scene.baselineValue = next.series.baseline;
         // Spacing multiplier: widens the center-to-center pitch (and crosshair step) without
         // touching body width. Re-clamp because it changes how many bars fit → the zoom/pan limits.
@@ -1912,6 +1917,7 @@ export class NativeRenderer implements IChartRenderer {
         if (style === this.scene.priceStyle) return;
         this.scene.priceStyle = style;
         this.scene.basePainting = basePaintingOf(style);
+        this.scene.candleOverride = candleOverrideFor(style, this.scene.style.chartTypes);
         for (const cb of this.priceStyleCbs) cb(style);
     }
 

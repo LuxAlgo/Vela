@@ -292,6 +292,79 @@ export function basePaintingOf(style: PriceStyle): 'candles' | 'none' {
     return 'candles';
 }
 
+/**
+ * Candle cosmetics a candle-based PLUGIN style stores in its own per-type bag
+ * (`chartTypes.<id>.candle*` — reserved keys, edited by the Symbol tab's Candles
+ * group while that style is active). Per-key: `null` inherits the shared `candles`
+ * block, so an untouched plugin style paints exactly like before — and edits never
+ * leak back into the candles/heikin-ashi styles.
+ */
+export interface CandlePaintOverride {
+    upColor: string | null;
+    downColor: string | null;
+    bodyVisible: boolean | null;
+    borderVisible: boolean | null;
+    borderUpColor: string | null;
+    borderDownColor: string | null;
+    wickVisible: boolean | null;
+    wickUpColor: string | null;
+    wickDownColor: string | null;
+}
+
+/** Whether a style carries its OWN candle cosmetics: a registered plugin type whose
+ *  base painting is candles. Built-ins — heikin-ashi included — share the `candles`
+ *  block instead. */
+export function hasOwnCandlePaint(style: PriceStyle): boolean {
+    if ((BUILTIN_PRICE_STYLES as readonly string[]).includes(style)) return false;
+    for (const t of chartTypes()) if (t.id === style) return (t.basePainting ?? 'candles') === 'candles';
+    return false;
+}
+
+/** The candle override for a style, read from the per-type bags — null for built-ins
+ *  and for `basePainting: 'none'` types (nothing of theirs is candle-painted). */
+export function candleOverrideFor(style: PriceStyle, bags: Record<string, Record<string, unknown>>): CandlePaintOverride | null {
+    if (!hasOwnCandlePaint(style)) return null;
+    const bag = bags[style] ?? {};
+    const color = (v: unknown): string | null => (isColor(v) ? v : null);
+    const bool = (v: unknown): boolean | null => (isBool(v) ? v : null);
+    return {
+        upColor: color(bag.candleUpColor),
+        downColor: color(bag.candleDownColor),
+        bodyVisible: bool(bag.candleBodyVisible),
+        borderVisible: bool(bag.candleBorderVisible),
+        borderUpColor: color(bag.candleBorderUpColor),
+        borderDownColor: color(bag.candleBorderDownColor),
+        wickVisible: bool(bag.candleWickVisible),
+        wickUpColor: color(bag.candleWickUpColor),
+        wickDownColor: color(bag.candleWickDownColor),
+    };
+}
+
+/** The candle cosmetics to PAINT: the shared block overridden per-key by the active
+ *  style's override; body colors default to the theme's up/down (shared by both
+ *  backends, so their candle paths stay pixel-identical). */
+export function effectiveCandlePaint(
+    base: CandleStyle,
+    override: CandlePaintOverride | null,
+    themeUp: string,
+    themeDown: string,
+): { up: string; down: string; candle: CandleStyle } {
+    if (!override) return { up: themeUp, down: themeDown, candle: base };
+    return {
+        up: override.upColor ?? themeUp,
+        down: override.downColor ?? themeDown,
+        candle: {
+            bodyVisible: override.bodyVisible ?? base.bodyVisible,
+            borderVisible: override.borderVisible ?? base.borderVisible,
+            borderUpColor: override.borderUpColor ?? base.borderUpColor,
+            borderDownColor: override.borderDownColor ?? base.borderDownColor,
+            wickVisible: override.wickVisible ?? base.wickVisible,
+            wickUpColor: override.wickUpColor ?? base.wickUpColor,
+            wickDownColor: override.wickDownColor ?? base.wickDownColor,
+        },
+    };
+}
+
 /** Every valid price-style id RIGHT NOW: the built-ins plus SDK-registered chart types. */
 export function priceStyleIds(): PriceStyle[] {
     const out: PriceStyle[] = [...BUILTIN_PRICE_STYLES];

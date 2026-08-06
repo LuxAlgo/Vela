@@ -10,7 +10,7 @@ import { paneAxisTicks, timeTicks } from '../chrome/ticks';
 import { percentScaleFor } from '../core/SceneGraph';
 import { tzOffsetMs } from '../chrome/tz';
 import { candleTier, wickWidth, candleGeometry } from './candle-lod';
-import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha } from '../core/chartConfig';
+import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
 import { Batch, type RGBA } from './gl/Batch';
 import { parseColor } from './gl/color';
@@ -878,14 +878,17 @@ export class WebGL2Backend implements IRenderBackend {
     private emitCandles(b: Batch, scene: SceneGraph, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, theme: VelaTheme, barColors: ReadonlyMap<number, string>): void {
         const spacing = coords.bodySpacing();
         const tier = candleTier(spacing);
+        // A candle-based plugin style paints with its OWN cosmetics (unset keys inherit
+        // the shared candles block); built-ins pass through untouched.
+        const paint = effectiveCandlePaint(scene.style.candle, scene.candleOverride, theme.upColor, theme.downColor);
         if (tier === 'aggregate') {
-            this.emitCandlesAggregated(b, bars, i0, i1, coords, pane, theme.upColor, theme.downColor, barColors);
+            this.emitCandlesAggregated(b, bars, i0, i1, coords, pane, paint.up, paint.down, barColors);
             return;
         }
         const drawBody = tier === 'full';
-        const up = theme.upColor;
-        const down = theme.downColor;
-        const cs = scene.style.candle;
+        const up = paint.up;
+        const down = paint.down;
+        const cs = paint.candle;
         // When a fading style drops the body below the structure, draw a body outline even
         // if no border is configured — so the candle keeps a visible (hollow) skeleton.
         const fading = this.candleStructureAlpha > this.candleBodyAlpha + 0.001;

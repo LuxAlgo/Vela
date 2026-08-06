@@ -11,11 +11,10 @@ import {
     type SettingsSelectOption,
 } from '../../../chart-types/registry';
 import { toHex6, withAlpha } from '../../../core/color';
-import { CATEGORICAL } from '../../../core/palette';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
 import { colorField, closeColorPopover } from './ColorField';
-import { priceStyleIds } from '../core/chartConfig';
+import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -62,9 +61,6 @@ function styleLabel(id: string): string {
 }
 
 const SD_STYLE_ID = 'vela-settings-controls';
-
-/** Accent dots for instance-strip tabs (by instance index) — decoration, not data. */
-const INSTANCE_DOT_COLORS = CATEGORICAL;
 
 /**
  * The dialog's surface palette. It follows the STABLE chrome surface (the tokens written on
@@ -118,14 +114,13 @@ function ensureControlStyles(): void {
 .vela-sd-hide{display:none !important;}
 /* Indented rail sub-entry (a chart-type section's subsection tab). */
 .vela-sd-tab-sub{padding-left:28px;font-weight:600;font-size:12px;}
-/* Instance strip: a tab per present instance (accent dot + label, ✕ on the active
-   removable one) and a dashed + that turns on the next absent instance. The rule
-   under it separates the strip from the instance's TOC + rows area. */
+/* Instance strip: a tab per present instance (label, ✕ on the active removable one)
+   and a dashed + that turns on the next absent instance. The rule under it separates
+   the strip from the instance's TOC + rows area. */
 .vela-sd-itabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:14px 0 0;padding-bottom:12px;border-bottom:1px solid var(--vela-border);}
 .vela-sd-itab{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;background:transparent;border:1px solid var(--vela-border);border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-family:inherit;font-size:var(--vela-font-size-md);font-weight:600;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
 .vela-sd-itab:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
 .vela-sd-itab.on{background:var(--vela-active);color:var(--vela-fg-bright);border-color:var(--vela-border-strong);}
-.vela-sd-idot{width:7px;height:7px;border-radius:50%;flex:none;}
 .vela-sd-ix{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:-4px;border-radius:var(--vela-radius-sm);color:var(--vela-fg-muted);font-size:10px;line-height:1;}
 .vela-sd-ix:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
 .vela-sd-itab-add{border-style:dashed;min-width:30px;justify-content:center;padding:0;}
@@ -366,6 +361,34 @@ export class SettingsDialog {
         baseline.append(this.numberRow('Width', config.baseline.width, 1, 10, 1, (v) => this.emit({ baseline: { width: v } })));
         groups.baseline = baseline;
         body.append(baseline);
+
+        // Candle-based PLUGIN styles (an order-flow type keeps candles under its layer):
+        // the same candle rows, but stored in the type's OWN bag (chartTypes.<id>.candle*)
+        // so edits style THAT type's candles without touching the shared candles block the
+        // candles/heikin-ashi styles paint with. Unset keys inherit the shared values.
+        for (const def of chartTypes()) {
+            if (!hasOwnCandlePaint(def.id)) continue;
+            const bag = config.chartTypes[def.id] ?? {};
+            const colorOf = (key: string, shared: string): string => (typeof bag[key] === 'string' && bag[key] !== '' ? bag[key] as string : shared);
+            const boolOf = (key: string, shared: boolean): boolean => (typeof bag[key] === 'boolean' ? bag[key] as boolean : shared);
+            const g = this.group();
+            g.append(this.sectionTitle('Candles'));
+            g.append(this.toggleRow('Body', boolOf('candleBodyVisible', config.candles.bodyVisible), (v) => this.emitType(def.id, 'candleBodyVisible', v), [
+                this.swatch(colorOf('candleUpColor', config.candles.upColor), (v) => this.emitType(def.id, 'candleUpColor', v)),
+                this.swatch(colorOf('candleDownColor', config.candles.downColor), (v) => this.emitType(def.id, 'candleDownColor', v)),
+            ]));
+            g.append(this.toggleRow('Borders', boolOf('candleBorderVisible', config.candles.borderVisible), (v) => this.emitType(def.id, 'candleBorderVisible', v), [
+                this.swatch(colorOf('candleBorderUpColor', config.candles.borderUpColor), (v) => this.emitType(def.id, 'candleBorderUpColor', v)),
+                this.swatch(colorOf('candleBorderDownColor', config.candles.borderDownColor), (v) => this.emitType(def.id, 'candleBorderDownColor', v)),
+            ]));
+            g.append(this.toggleRow('Wick', boolOf('candleWickVisible', config.candles.wickVisible), (v) => this.emitType(def.id, 'candleWickVisible', v), [
+                this.swatch(colorOf('candleWickUpColor', config.candles.wickUpColor), (v) => this.emitType(def.id, 'candleWickUpColor', v)),
+                this.swatch(colorOf('candleWickDownColor', config.candles.wickDownColor), (v) => this.emitType(def.id, 'candleWickDownColor', v)),
+            ]));
+            g.append(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })));
+            groups[def.id] = g;
+            body.append(g);
+        }
         showActive(config.series.style);
 
         body.append(this.sectionTitle('Time zone'));
@@ -722,8 +745,8 @@ export class SettingsDialog {
     }
 
     /**
-     * The INSTANCE STRIP block: a tab per present instance (dot + label, `×` on the
-     * active removable one), a dashed `+` while an instance is still absent, and one
+     * The INSTANCE STRIP block: a tab per present instance (label, `×` on the active
+     * removable one), a dashed `+` while an instance is still absent, and one
      * grouped-rows content per instance below — only the active tab's content shows.
      * Presence is the boolean at each instance's `enableKey`; the strip rebuilds on
      * every section edit, so gates elsewhere stay coherent.
@@ -757,12 +780,9 @@ export class SettingsDialog {
                 const tab = document.createElement('button');
                 tab.type = 'button';
                 tab.className = 'vela-sd-itab' + (i === active ? ' on' : '');
-                const dot = document.createElement('span');
-                dot.className = 'vela-sd-idot';
-                dot.style.background = INSTANCE_DOT_COLORS[i % INSTANCE_DOT_COLORS.length]!;
                 const lbl = document.createElement('span');
                 lbl.textContent = inst.label;
-                tab.append(dot, lbl);
+                tab.append(lbl);
                 if (i === active && inst.enableKey) {
                     const x = document.createElement('span');
                     x.className = 'vela-sd-ix';
