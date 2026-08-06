@@ -154,7 +154,6 @@ export function settingsRowVisible(when: SettingsRowWhen | undefined, bag: Recor
  * present and not removable — the base instance.
  */
 export interface ChartTypeSettingsInstance {
-    /** Tab label in the strip (`'Footprint 1'`). */
     label: string;
     /** Boolean bag key controlling presence; omitted = always present, not removable. */
     enableKey?: string;
