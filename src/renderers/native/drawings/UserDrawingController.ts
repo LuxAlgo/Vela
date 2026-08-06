@@ -13,7 +13,7 @@ import type {
 } from '../../../core/drawings';
 import { deserializeDrawing, resetDrawingSettings, Callout, TextLabel } from '../../../core/drawings';
 import type { Unsubscribe } from '../../../core/util/types';
-import { namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
+import { contrastColor, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { withAlpha } from '../core/chartConfig';
 import { blendOver, splitColor } from './colorPicker';
 import { DrawingPainter, handleIdsFor, type PaintTargets } from './DrawingPainter';
@@ -918,6 +918,13 @@ export class UserDrawingController implements IDrawingsRendererPort {
         // caret is already waiting. Works for both click + drag finalize — the core reassigns the id,
         // so we diff the drawing set around the create to find the new one.
         if (i.kind === 'create') {
+            // A fresh annotation FIXES its text ink at creation: max contrast against the
+            // live theme's plot background, stored on the drawing itself — so a later theme
+            // or background change never recolors what is already placed. A color the user
+            // chose (or a deserialized document carries) always passes through untouched.
+            if (i.doc.text && i.doc.text.color === undefined) {
+                i.doc.text = { ...i.doc.text, color: contrastColor(this.deps.theme().background) };
+            }
             const before = new Set(this.drawings.map((d) => d.id));
             this.intentCb?.(i);
             // Defer past the sync + the placing click (which would otherwise steal focus / dismiss

@@ -28,9 +28,19 @@ const CSS = `
     gap: var(--vela-space-2);
     color: var(--vela-fg);
     font-size: var(--vela-font-size-md);
-    pointer-events: none;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    /* Same chip treatment as the indicator legend rows (InputsUI): a translucent wash of
+     * the chart background when idle — enough to keep the readout legible when candles
+     * reach it — and the solid chart background on hover. Symmetric 7px padding with a
+     * compensating negative margin (mirroring the legend rows) keeps the avatar's left
+     * edge on the legend column's left edge (both at left:10px) while the chip itself
+     * extends 7px further left, so both columns' chips share the same left edge. */
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--vela-bg) 60%, transparent);
+    border-radius: 4px;
+    padding: 2px 7px;
+    margin-left: -7px;
 }
+.vela-statusline:hover { background: var(--vela-bg); }
 .vela-statusline .vela-sl-avatar {
     width: 18px;
     height: 18px;
@@ -46,10 +56,7 @@ const CSS = `
 }
 .vela-statusline .vela-sl-symbol { font-weight: 600; font-size: var(--vela-font-size-lg); }
 .vela-statusline .vela-sl-meta { color: var(--vela-fg-muted); font-size: var(--vela-font-size-md); font-weight: 600; }
-/* Market status badge — icon-only 16px circle, label on hover (kit tooltip). The
- * statusline container is pointer-events:none; the badge opts back in so it can hover.
- * text-shadow is cleared: the statusline's readout halo inherits onto the SVG and
- * optically pulls the strokes off-center inside the disc. */
+/* Market status badge — icon-only 16px circle, label on hover (kit tooltip). */
 .vela-statusline .vela-sl-market {
     display: inline-grid;
     place-items: center;
@@ -59,8 +66,6 @@ const CSS = `
     flex: none;
     align-self: center;
     line-height: 0;
-    text-shadow: none;
-    pointer-events: auto;
     cursor: default;
 }
 .vela-statusline .vela-sl-market svg {

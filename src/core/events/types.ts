@@ -2,6 +2,8 @@ import type { EngineAlert, EngineWarning } from '../ports/ScriptingEngine';
 import type { ScriptRun } from '../script-run';
 import type { OHLCV } from '../model/ohlcv';
 import type { DrawingTypeKey, SerializedDrawing } from '../drawings/Drawing';
+import type { VelaTheme } from '../options';
+import type { DrawingTypeKey } from '../drawings/Drawing';
 import type { SnapMode } from '../drawings/geometry';
 import type { DrawingMode } from '../drawings/port';
 
@@ -44,6 +46,14 @@ export interface VelaEventMap extends Record<string, unknown> {
     'indicator:visibility': { id: string; visible: boolean };
     /** A pane's layout changed: order, collapse/maximize, creation or removal. */
     'pane:changed': undefined;
+    /**
+     * The app theme changed — `chart.setTheme(...)` or the in-chart settings dialog's
+     * Canvas → Theme row. Payload is the RESOLVED theme; host chrome around the chart
+     * (toolbars, panels, page shells) re-skins from it. Not fired for plot-only
+     * cosmetic edits (`layout.background` through the config), which deliberately
+     * leave the app theme alone.
+     */
+    'theme:changed': VelaTheme;
     /** A study pane was reordered one slot (`dir`) — carries enough to invert for undo/redo. */
     'pane:moved': { paneId: string; dir: 'up' | 'down' };
     /** A user drawing was created (interactively or via `chart.drawings.add`). */

@@ -25,6 +25,7 @@ import { legendActionsProviderFor, resolveEngines, type WidgetContext } from '..
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { normalizeTimezone } from '../core/timezones';
+import { applyPlotOverlayTokens } from '../ui';
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
  *  The SAME vocabulary as the widget's chart options: the workspace's top-level chart
@@ -153,6 +154,9 @@ export class ChartCell {
     activeRangeId: string | null = null;
 
     private inner: Vela | null;
+    /** The live app theme — seeded from deps, updated on `theme:changed` (the base the
+     *  plot-overlay tokens re-derive from). */
+    private appTheme: VelaTheme;
     private readonly statusline: Statusline | null;
     private readonly watermark: Watermark | null;
     private readonly contextMenu: ChartContextMenu;
@@ -185,6 +189,7 @@ export class ChartCell {
         seed: CellBoot,
         private readonly deps: CellDeps,
     ) {
+        this.appTheme = deps.theme;
         // The canonical symbol form: pre-prefix pooled/persisted states carried the venue
         // in `provider` beside a bare symbol — weld them back together once, at boot.
         const symbol = prefixedSymbol(seed);
@@ -250,7 +255,15 @@ export class ChartCell {
                 this.deps.setTimezone(normalizeTimezone(zone));
             }
             this.syncStatuslineColors(); // a settings edit may have recolored the active style
+            this.syncPlotOverlayTokens(); // a background edit may have flipped the plot's luminance
         });
+        // A live theme swap re-bases this cell's overlay tokens too (the workspace already
+        // re-skins the shared chrome).
+        this.inner.on('theme:changed', (t) => {
+            this.appTheme = t;
+            this.syncPlotOverlayTokens();
+        });
+        this.syncPlotOverlayTokens();
         // Pool restore: cosmetics + drawings round-trip (both validate untrusted input).
         if (seed.rendererConfig != null) this.inner.renderer.applyConfig(seed.rendererConfig);
         if (seed.drawings != null) this.inner.drawings.fromJSON(seed.drawings);
@@ -487,6 +500,12 @@ export class ChartCell {
     private syncStatuslineColors(): void {
         if (!this.statusline || !this.inner) return;
         this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
+    }
+
+    /** The workspace shell keeps the app theme; the cell host's tokens re-derive from
+     *  the LIVE plot surface (see {@link applyPlotOverlayTokens}). */
+    private syncPlotOverlayTokens(): void {
+        applyPlotOverlayTokens(this.host, this.appTheme, this.inner?.renderer.getConfig() ?? null);
     }
 
     /**

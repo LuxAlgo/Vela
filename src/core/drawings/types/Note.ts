@@ -10,7 +10,9 @@ export class Note extends PinnedLabel {
 
     constructor(init: Partial<SerializedDrawing> & { paneId: string }) {
         super(init);
-        if (!this.text) this.text = { ...defaultText('Note'), color: '#ffffff' };
+        // No color seed: the interactive creation path fixes a theme-contrast ink on the
+        // fresh drawing; until then the painter auto-contrasts (`undefined` semantics).
+        if (!this.text) this.text = defaultText('Note');
     }
 
     protected override defaultLabel(): string {

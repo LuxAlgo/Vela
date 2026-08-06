@@ -1,7 +1,6 @@
 import type { VelaTheme } from '../../../core/options';
 import { DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import { ACCENT, BEARISH, BULLISH, NEUTRAL, WARNING } from '../../../core/palette';
-import { CHROME_BORDER_COLOR } from '../core/chartConfig';
 
 /** Split a color into its `#RRGGBB` part + alpha 0..1 (handles `#RGB`, `#RRGGBB(AA)`, `rgba()`). */
 export function splitColor(color: string): { hex6: string; alpha: number } {

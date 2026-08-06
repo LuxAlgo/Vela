@@ -11,7 +11,7 @@ import type { VelaOptions } from '../core/options';
 import { resolveTheme } from '../core/theme';
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
-import { ensureUIHost, injectStyles } from '../ui';
+import { applyPlotOverlayTokens, ensureUIHost, injectStyles } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
 import { Statusline, statuslineInkOf } from './statusline';
@@ -696,6 +696,25 @@ export class VelaWidget {
         this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
     }
 
+    /** The widget shell (topbar, panels) keeps the app theme; the chart host's tokens
+     *  re-derive from the LIVE plot surface (see {@link applyPlotOverlayTokens}). */
+    private syncPlotOverlayTokens(): void {
+        applyPlotOverlayTokens(this.chartHost, resolveTheme(this.opts.theme), this.inner?.renderer.getConfig() ?? null);
+    }
+
+    /**
+     * Swap the widget theme at runtime — `'dark'`, `'light'`, or a full custom theme.
+     * Applied LIVE: the inner chart re-skins through `Vela.setTheme` and its
+     * `theme:changed` event re-tokens the widget chrome (topbar, menus, panels) in
+     * place; the choice also persists into rebuilds. Same switch the user reaches from
+     * chart settings → Canvas → Theme.
+     */
+    setTheme(theme: NonNullable<VelaOptions['theme']>): void {
+        if (this.destroyed) return;
+        this.opts.theme = theme;
+        this.inner?.setTheme(theme);
+    }
+
     /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
     setTimezone(zone: string): void {
         this.timezone = zone;
@@ -882,6 +901,15 @@ export class VelaWidget {
         // resting OHLC belongs to the old market, and an out-of-band switch (host code calling
         // chart.setMarket directly) must still update the chrome. The widget's own setters
         // already synced most of it — the guards make this a cheap no-op then.
+        // The app theme changed — `widget.setTheme(...)` or the chart's in-chart settings
+        // dialog (Canvas → Theme). The widget chrome is token-driven, so re-writing the
+        // tokens on the root re-skins topbar/menus/panels in place; the resolved theme is
+        // kept on the options so a later `rebuild()` reconstructs with it.
+        chart.on('theme:changed', (t) => {
+            this.opts.theme = t;
+            ensureUIHost(this.root, t);
+            this.syncPlotOverlayTokens();
+        });
         chart.on('market:changed', ({ symbol, timeframe }) => {
             this.refreshNativeCatalog();
             if (this.statusline) this.statusline.onChart(chart); // drop the old market's resting OHLC
@@ -944,7 +972,9 @@ export class VelaWidget {
                 this.setTimezone(normalizeTimezone(zone));
             }
             this.syncStatuslineColors(); // a settings edit may have recolored the active style
+            this.syncPlotOverlayTokens(); // a background edit may have flipped the plot's luminance
         });
+        this.syncPlotOverlayTokens();
         this.statusline?.onChart(chart);
         this.syncStatuslineColors();
         const advanced = {

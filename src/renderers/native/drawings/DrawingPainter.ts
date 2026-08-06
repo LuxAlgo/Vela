@@ -1,7 +1,7 @@
 import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
 import { SegmentDrawing, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
-import { dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
+import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
 import { withAlpha } from '../../../core/color';
 import { valueDecimals } from '../chrome/ticks';
@@ -913,7 +913,9 @@ export class DrawingPainter {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.fillStyle = text?.color ?? theme.textColor;
+        // No explicit ink ⇒ auto-contrast against the plate the text actually sits on
+        // (the safety net for documents that predate the creation-time ink fixation).
+        ctx.fillStyle = text?.color ?? contrastColor(effectiveFillColor(d, theme) ?? theme.background);
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
         lines.forEach((line, i) => ctx.fillText(line, x + padX, y + padY + i * lh));
@@ -931,7 +933,7 @@ export class DrawingPainter {
         roundRect(ctx, x, y, w, h, 5);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = d.text?.color ?? theme.textColor;
+        ctx.fillStyle = d.text?.color ?? contrastColor(effectiveFillColor(d, theme) ?? theme.background);
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
         lines.forEach((line, i) => ctx.fillText(line, x + padX, y + padY + i * lh));
@@ -993,7 +995,7 @@ export class DrawingPainter {
         roundRect(ctx, x, y, w, h, 5);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = text?.color ?? '#ffffff';
+        ctx.fillStyle = text?.color ?? contrastColor(effectiveFillColor(d, theme) ?? theme.background);
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
         ctx.fillText(priceStr, cx, cy + 0.5);
@@ -1054,7 +1056,7 @@ export class DrawingPainter {
         roundRect(ctx, ax + ptr, y, w, h, 4);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = text?.color ?? '#ffffff';
+        ctx.fillStyle = text?.color ?? contrastColor(fill);
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
         ctx.fillText(priceStr, ax + ptr + padX, ay + 0.5);

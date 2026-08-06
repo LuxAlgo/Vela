@@ -343,8 +343,10 @@ export class InputsUI {
         const bounds = this.paneBoundsOf ? this.paneBoundsOf(paneId) : { top: 0, height: Infinity };
         // A pane hidden by a maximize elsewhere collapses to ~0 height — hide its legend entirely
         // (a collapsed strip keeps a small height, so its title still shows). Titles switched
-        // off (the settings toggle) hide every pane's container the same way.
-        lg.style.display = bounds.height < 4 || !this.titlesVisible ? 'none' : '';
+        // off (the settings toggle) hide every pane's container the same way. Restore to 'flex'
+        // (the container's intended layout — set in its cssText), NOT '' which would revert it
+        // to block: block children stretch to the widest row, fusing the chips into one slab.
+        lg.style.display = bounds.height < 4 || !this.titlesVisible ? 'none' : 'flex';
         // A collapsed pane is a legend-only strip: show just its master indicator's row. Restore
         // hidden rows to 'flex' (their intended layout — set in the row's cssText), NOT '' which
         // would revert them to block and break the inline button row (hide/show, settings, …).
@@ -453,10 +455,10 @@ export class InputsUI {
         // hidden) — enough wash to keep the label legible when candles reach it, without a
         // solid block over the plot. Hovering/selecting fills the chip with the solid chart
         // background so the revealed outline and controls stay readable (see setRowHighlighted).
-        // No left padding: the title's left edge must share the statusline avatar's left
-        // edge (both sit at the legend column's left:10px). Right/vertical padding stay so
-        // the chip still clears the controls when the row opens.
-        el.style.cssText = `pointer-events:auto;display:flex;align-items:center;gap:6px;background:${this.idleRowFill()};border-radius:4px;padding:2px 7px 2px 0;color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
+        // Symmetric 7px padding keeps the title clear of the hover outline on BOTH sides; the
+        // negative left margin cancels the left padding so the title's left edge still shares
+        // the statusline avatar's left edge (both sit at the legend column's left:10px).
+        el.style.cssText = `pointer-events:auto;display:flex;align-items:center;gap:6px;background:${this.idleRowFill()};border-radius:4px;padding:2px 7px;margin-left:-7px;color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
         el.addEventListener('mouseenter', () => this.setRowHighlighted(id, true));
         el.addEventListener('mouseleave', () => { if (this.selectedId !== id) this.setRowHighlighted(id, false); });
         // Left-click the row (but not one of its control buttons) selects the indicator,

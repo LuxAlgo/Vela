@@ -33,6 +33,18 @@ export function applyThemeTokens(el: HTMLElement, t: VelaTheme): void {
     for (const key in tokens) el.style.setProperty(key, tokens[key]!);
 }
 
+/** Re-token a chart-overlay host (statusline, watermark, toast, context menu — chrome
+ *  floating OVER the plot) from the LIVE plot surface: a config edit can recolor the
+ *  plot background independently of the app theme (a white plot typed into settings on
+ *  the dark theme), and the overlay ink must stay readable either way. `config` is the
+ *  renderer's `getConfig()` snapshot; a missing/shapeless one falls back to the base
+ *  app theme. */
+export function applyPlotOverlayTokens(host: HTMLElement, base: VelaTheme, config: unknown): void {
+    const layout = (config as { layout?: { background?: string; textColor?: string } } | null)?.layout;
+    const t = layout?.background && layout.textColor ? { ...base, background: layout.background, textColor: layout.textColor } : base;
+    applyThemeTokens(host, t);
+}
+
 /** Mark an element as a kit host: static token sheet + the `.vela-ui` class. */
 export function ensureUIHost(el: HTMLElement, theme?: VelaTheme): void {
     injectStyles(STATIC_ID, STATIC_CSS, el.getRootNode() as Document | ShadowRoot);

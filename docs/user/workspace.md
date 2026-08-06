@@ -62,6 +62,7 @@ ws.setActiveCell('sol');
 ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size pool their state
 // Shrinking never pools the ACTIVE chart: if its slot would leave the layout, it
 // moves into the last surviving slot instead (the other cells keep their order).
+ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also reachable from any cell's chart settings → Canvas → Theme)
 ws.on('cell:active' | 'layout:changed' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
 ```
 

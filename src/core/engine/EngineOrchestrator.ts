@@ -29,6 +29,7 @@ import { timeframeToMs } from '../../data/timeframe';
 import { parseSymbol } from '../../data/ProviderRegistry';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
 import { chartType, type SeriesDataEngine } from '../../chart-types/registry';
+import { resolveTheme } from '../theme';
 
 export interface ResolvedConfig {
     market: MarketConfig;
@@ -184,6 +185,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.renderer.onChartTypeSettingsChange?.((typeId, values) => this.typeEngines.get(typeId)?.onSettings?.(values));
         // The renderer's legend "Move to" menu / row drag reports a move here → route it.
         this.renderer.onMoveIndicator?.((id, target) => this.moveIndicator(id, target));
+        // The renderer's in-chart theme control (settings dialog Canvas → Theme) reports a
+        // request here — the core owns the canonical theme, applies it, and announces it.
+        this.renderer.onThemeSelect?.((name) => this.setTheme(resolveTheme(name)));
         // Pan/zoom → re-run ONLY visible-range-dependent scripts (e.g. visible-range
         // volume profile) with the new window. Debounced so a drag re-runs once.
         this.viewportUnsub = this.renderer.onViewportChange((range) => this.onViewportChange(range));
@@ -1193,6 +1197,20 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     resize(): void {
         this.renderer.resize();
+    }
+
+    /**
+     * Swap the app theme live: re-skins the renderer (surfaces, axes, legends, in-chart
+     * chrome) and emits `theme:changed` so host chrome around the chart follows. No-ops
+     * when the resolved theme is already active — which also breaks the echo when a host
+     * reacts to `theme:changed` by calling back into `setTheme`.
+     */
+    setTheme(theme: VelaTheme): void {
+        const cur = this.config.theme;
+        if ((Object.keys(theme) as Array<keyof VelaTheme>).every((k) => theme[k] === cur[k])) return;
+        this.config.theme = theme;
+        this.renderer.setTheme(theme);
+        this.events.emit('theme:changed', theme);
     }
 
     /** The current visible time range (left/right bar times), or null before data loads. */
