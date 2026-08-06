@@ -54,7 +54,7 @@ import { computePaneScale, expandScaleByPixels } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
@@ -924,7 +924,7 @@ export class NativeRenderer implements IChartRenderer {
             (patch) => this.applyConfig(patch),
             (json) => this.applyConfig(json),
             () => {
-                if (this.factoryConfig) this.applyConfig(this.factoryConfig);
+                if (this.factoryConfig) this.applyConfig(factoryResetConfig(this.factoryConfig));
                 // Re-open so every control re-reads the restored values.
                 this.settingsDialog?.close();
                 this.openSettingsDialog();

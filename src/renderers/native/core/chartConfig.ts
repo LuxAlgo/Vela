@@ -1,5 +1,5 @@
 import type { LineStyle } from '../../../core/model/series';
-import { chartTypes } from '../../../chart-types/registry';
+import { chartTypes, type SettingsRowDescriptor } from '../../../chart-types/registry';
 import { withAlpha } from '../../../core/color';
 import { BEARISH, BULLISH, CROSSHAIR, SERIES_LINE, SLATE } from '../../../core/palette';
 import type { PriceStyle } from '../../../core/options';
@@ -433,6 +433,53 @@ function nullableBound(v: unknown, base: number | null): number | null {
     return isNum(v) ? (v < 0 ? 0 : v) : base;
 }
 
+
+/**
+ * The document "Reset defaults" applies. `mergeConfig` is deliberately ADDITIVE for
+ * `chartTypes` (a patch only touches the type ids it names), so the factory snapshot
+ * alone cannot undo SDK settings edited after mount — the reset document must name
+ * every registered type at its registry-declared row defaults, covering EVERY key the
+ * section can store (instances, subsections, range min/max, toggle swatches). The
+ * registry is read at call time (types may register after mount), and values the
+ * snapshot itself pinned win over the defvals — they ARE the first-run state.
+ */
+export function factoryResetConfig(factory: ChartConfig): ChartConfig {
+    const bag: Record<string, Record<string, unknown>> = {};
+    for (const t of chartTypes()) {
+        const section = t.settings;
+        if (!section) continue;
+        const defaults: Record<string, unknown> = {};
+        const addRows = (rows: readonly SettingsRowDescriptor[] | undefined): void => {
+            for (const r of rows ?? []) {
+                if (r.kind === 'heading') continue;
+                if (r.kind === 'range') {
+                    defaults[r.minKey] = r.defval;
+                    defaults[r.maxKey] = r.defval;
+                    continue;
+                }
+                defaults[r.key] = r.defval;
+                if (r.kind === 'toggle') for (const c of r.colors ?? []) defaults[c.key] = c.defval;
+            }
+        };
+        // An absent enable key means OFF — seed it explicitly so an instance the user
+        // turned on cannot survive the additive merge; a row that declares the same key
+        // (a subsection's master toggle) overrides it with its own defval via addRows.
+        for (const inst of section.instances ?? []) {
+            if (inst.enableKey) defaults[inst.enableKey] = false;
+            addRows(inst.rows);
+        }
+        for (const sub of section.subsections ?? []) {
+            if (sub.enableKey) defaults[sub.enableKey] = false;
+            addRows(sub.rows);
+        }
+        if (!section.instances) addRows(section.rows);
+        bag[t.id] = defaults;
+    }
+    for (const [typeId, vals] of Object.entries(factory.chartTypes)) {
+        bag[typeId] = { ...(bag[typeId] ?? {}), ...vals };
+    }
+    return { ...factory, chartTypes: bag };
+}
 
 /**
  * Deep-merge an untrusted partial `patch` onto a known-good `base`, validating every
