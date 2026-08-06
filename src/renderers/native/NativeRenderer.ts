@@ -31,7 +31,7 @@ import { PaneControls } from './chrome/PaneControls';
 import { TableOverlay } from '../shared/TableOverlay';
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
-import { CoordinateSystem, type PriceScale } from './core/CoordinateSystem';
+import { CoordinateSystem, type PaneBounds, type PriceScale } from './core/CoordinateSystem';
 import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from './core/Scheduler';
 import { Animator, easeToward } from './core/Animator';
 import { InputController } from './core/InputController';
@@ -54,9 +54,9 @@ import { computePaneScale, expandScaleByPixels } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
-import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
+import { rendererLayers, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
@@ -290,6 +290,7 @@ export class NativeRenderer implements IChartRenderer {
             this.candleDown = opts.downColor;
             this.scene.priceStyle = opts.priceStyle;
             this.scene.basePainting = basePaintingOf(opts.priceStyle);
+            this.scene.candleOverride = candleOverrideFor(opts.priceStyle, this.scene.style.chartTypes);
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
         // it with the real, Vela-resolved theme). Candle colors follow opts.
@@ -796,6 +797,10 @@ export class NativeRenderer implements IChartRenderer {
         };
         // series
         this.setPriceStyle(next.series.style);
+        // Re-read the active style's candle override: setPriceStyle no-ops when the style
+        // did not change, but the per-type bag (candle* keys) may have — this is the live
+        // path behind the Symbol tab's Candles group for plugin styles.
+        this.scene.candleOverride = candleOverrideFor(this.scene.priceStyle, s.chartTypes);
         this.scene.baselineValue = next.series.baseline;
         // Spacing multiplier: widens the center-to-center pitch (and crosshair step) without
         // touching body width. Re-clamp because it changes how many bars fit → the zoom/pan limits.
@@ -919,7 +924,7 @@ export class NativeRenderer implements IChartRenderer {
             (patch) => this.applyConfig(patch),
             (json) => this.applyConfig(json),
             () => {
-                if (this.factoryConfig) this.applyConfig(this.factoryConfig);
+                if (this.factoryConfig) this.applyConfig(factoryResetConfig(this.factoryConfig));
                 // Re-open so every control re-reads the restored values.
                 this.settingsDialog?.close();
                 this.openSettingsDialog();
@@ -1921,6 +1926,7 @@ export class NativeRenderer implements IChartRenderer {
         if (style === this.scene.priceStyle) return;
         this.scene.priceStyle = style;
         this.scene.basePainting = basePaintingOf(style);
+        this.scene.candleOverride = candleOverrideFor(style, this.scene.style.chartTypes);
         for (const cb of this.priceStyleCbs) cb(style);
     }
 
@@ -2642,6 +2648,38 @@ export class NativeRenderer implements IChartRenderer {
             this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
         }
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx()); // L2 crosshair
+        // Hover-testing SDK layers (repaintOnCursor) follow pointer moves too — each owns
+        // one transparent canvas, so this stays as cheap as the crosshair tier itself.
+        if (!repaintsData(level) && this.paintedData) this.repaintCursorLayers();
+    }
+
+    /** Repaint the SDK layers that opted into cursor tracking (their own canvas only). */
+    private repaintCursorLayers(): void {
+        const pane = this.scene.panes.get(PRICE_PANE_ID);
+        if (!pane) return;
+        const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        for (const l of this.extLayers) {
+            if (!l.def.repaintOnCursor) continue;
+            l.instance.render(this.extLayerArgs(l.def.id, pane.scale, pane.bounds, nowMs));
+            if (this.animZoom && l.instance.animating?.()) this.animator.start();
+        }
+    }
+
+    /** One frame's args for an SDK renderer layer (shared by the data + cursor paint paths). */
+    private extLayerArgs(id: string, scale: PriceScale, bounds: PaneBounds, nowMs: number): RendererLayerArgs {
+        return {
+            bars: this.scene.bars,
+            data: this.scene.nativeData.get(id),
+            settings: (this.scene.nativeData.get(`${id}-settings`) as Record<string, unknown> | undefined) ?? {},
+            pending: this.scene.nativePending.get(id) ?? [],
+            coords: this.coords,
+            scale,
+            bounds,
+            theme: this.theme,
+            priceStyle: this.scene.priceStyle,
+            nowMs,
+            cursor: this.lastPointer,
+        };
     }
 
     /** Paint the below-data (L-1) + geometry (L0) + chrome (L1) layers from the current scene/coords. */
@@ -2678,18 +2716,19 @@ export class NativeRenderer implements IChartRenderer {
             // SDK renderer layers: shared paint cycle, own channel data, own canvas.
             const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
             for (const l of this.extLayers) {
-                l.instance.render({
-                    bars: this.scene.bars,
-                    data: this.scene.nativeData.get(l.def.id),
-                settings: (this.scene.nativeData.get(`${l.def.id}-settings`) as Record<string, unknown> | undefined) ?? {},
-                    pending: this.scene.nativePending.get(l.def.id) ?? [],
-                    coords: this.coords,
-                    scale: pane.scale,
-                    bounds: pane.bounds,
-                    theme: this.theme,
-                    priceStyle: this.scene.priceStyle,
-                    nowMs,
-                });
+                const args = this.extLayerArgs(l.def.id, pane.scale, pane.bounds, nowMs);
+                l.instance.render(args);
+                // The active style's layer may dim/slim the base painting under it (a
+                // gradual counterpart of basePainting 'none') — applied this same frame,
+                // before the backend paints.
+                if (l.def.id === this.scene.priceStyle && l.instance.modulateBase) {
+                    const mod = l.instance.modulateBase(args);
+                    if (mod) {
+                        if (mod.candleBodyScale != null) this.backend.candleBodyScale = clamp01(mod.candleBodyScale) || 0.01;
+                        if (mod.candleBodyAlpha != null) this.backend.candleBodyAlpha = clamp01(mod.candleBodyAlpha) * this.candleBodyAlpha;
+                        if (mod.gridAlpha != null) this.backend.gridAlpha = clamp01(mod.gridAlpha);
+                    }
+                }
                 // A pulsing/fading layer keeps the animator alive; it stops itself when done.
                 if (this.animZoom && l.instance.animating?.()) this.animator.start();
             }
@@ -3411,6 +3450,10 @@ function sanitizeHighlights(value: unknown): HighlightArea[] {
 }
 
 /** Whether a value is one of the supported price-series styles (built-ins + SDK-registered). */
+function clamp01(v: number): number {
+    return Math.max(0, Math.min(1, v));
+}
+
 function isPriceStyle(v: unknown): v is PriceStyle {
     return typeof v === 'string' && (priceStyleIds() as readonly string[]).includes(v);
 }

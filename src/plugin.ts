@@ -22,7 +22,13 @@ export {
     tickerModifierIds,
     type ChartTypeDefinition,
     type ChartTypeSettingsSection,
+    type ChartTypeSettingsInstance,
+    type ChartTypeSettingsSubsection,
     type SettingsRowDescriptor,
+    type SettingsRowSwatch,
+    type SettingsSelectOption,
+    type SettingsRowCondition,
+    type SettingsRowWhen,
     type SeriesDataEngine,
     type SeriesDataEngineHost,
 } from './chart-types/registry';
@@ -46,6 +52,7 @@ export {
     type RendererLayerDefinition,
     type RendererLayerInstance,
     type RendererLayerArgs,
+    type BasePaintingModulation,
 } from './renderers/native/layers';
 export {
     registerWidgetAction,

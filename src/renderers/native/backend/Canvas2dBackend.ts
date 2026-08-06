@@ -10,7 +10,7 @@ import { paneAxisTicks, timeTicks } from '../chrome/ticks';
 import { percentScaleFor } from '../core/SceneGraph';
 import { tzOffsetMs } from '../chrome/tz';
 import { candleTier, wickWidth, candleGeometry } from './candle-lod';
-import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha } from '../core/chartConfig';
+import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
 
 /**
@@ -401,12 +401,15 @@ export class Canvas2dBackend implements IRenderBackend {
     ): void {
         const spacing = coords.bodySpacing();
         const tier = candleTier(spacing);
+        // A candle-based plugin style paints with its OWN cosmetics (unset keys inherit
+        // the shared candles block); built-ins pass through untouched.
+        const paint = effectiveCandlePaint(scene.style.candle, scene.candleOverride, theme.upColor, theme.downColor);
         if (tier === 'aggregate') {
-            this.drawCandlesAggregated(ctx, bars, i0, i1, coords, pane, theme.upColor, theme.downColor, barColors);
+            this.drawCandlesAggregated(ctx, bars, i0, i1, coords, pane, paint.up, paint.down, barColors);
             return;
         }
         const drawBody = tier === 'full';
-        const cs = scene.style.candle;
+        const cs = paint.candle;
         // When a fading style drops the body below the structure, draw a body outline even
         // if no border is configured — so the candle keeps a visible (hollow) skeleton.
         const fading = this.candleStructureAlpha > this.candleBodyAlpha + 0.001;
@@ -418,7 +421,7 @@ export class Canvas2dBackend implements IRenderBackend {
             const g = candleGeometry(coords.logicalToX(i), spacing, coords.dpr, this.candleBodyScale);
             const x = g.center;
             const up = b.close >= b.open;
-            const dir = up ? theme.upColor : theme.downColor;
+            const dir = up ? paint.up : paint.down;
             const bc = barColors.get(b.time);
             const color = bc ?? dir;
             // Body geometry up front so the wick can be clipped to it when the body is hollow.
