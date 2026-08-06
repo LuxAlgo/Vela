@@ -52,8 +52,9 @@ export interface InputControllerDeps {
     drawingsDeleteAt?(x: number, y: number): boolean;
     /** A claimed press began. `snap` = effective magnet mode; `shift` = additive (multi-) select. */
     drawingsPointerDown?(x: number, y: number, snap: SnapMode, shift: boolean): void;
-    /** Pointer moved (forwarded for the placing ghost / drag preview). `snap` = effective magnet mode. */
-    drawingsPointerMove?(x: number, y: number, snap: SnapMode): void;
+    /** Pointer moved (forwarded for the placing ghost / drag preview). `snap` = effective magnet
+     *  mode; `shift` = lock a line tool's segment angle to 45° steps. */
+    drawingsPointerMove?(x: number, y: number, snap: SnapMode, shift: boolean): void;
     /** Cursor to show while hovering the drawings layer (e.g. `'pointer'` over a drawing), or null. */
     drawingsCursor?(x: number, y: number): string | null;
     /** The sticky magnet mode set on the toolbar (off/weak/strong) — Ctrl/Cmd overrides it to strong. */
@@ -164,6 +165,10 @@ export class InputController {
     private lastT = 0;
     private vx = 0; // smoothed pointer velocity, px/ms
     private middleDeleted = false; // the last middle press deleted a drawing (suppress autoscroll/paste)
+    // Last cursor position over the element (NaN once it leaves) — lets a modifier
+    // press/release re-shape the drawings preview with the pointer stationary.
+    private cursorX = NaN;
+    private cursorY = NaN;
 
     constructor(private readonly deps: InputControllerDeps) {}
 
@@ -180,11 +185,21 @@ export class InputController {
         // drawing (see onDown) can veto them here.
         el.addEventListener('mousedown', this.onMiddleGuard);
         el.addEventListener('auxclick', this.onMiddleGuard);
+        // Modifiers change the drawings preview (Shift = angle lock, Ctrl/Cmd = magnet
+        // override) and must take effect the moment they are pressed/released, not on the
+        // next mouse move — window-level so no chart focus is required. Optional chaining
+        // keeps headless fakes (unit tests) attachable without a document.
+        const win = el.ownerDocument?.defaultView;
+        win?.addEventListener('keydown', this.onModifier);
+        win?.addEventListener('keyup', this.onModifier);
     }
 
     detach(): void {
         const el = this.el;
         if (!el) return;
+        const win = el.ownerDocument?.defaultView;
+        win?.removeEventListener('keydown', this.onModifier);
+        win?.removeEventListener('keyup', this.onModifier);
         el.removeEventListener('pointerdown', this.onDown);
         el.removeEventListener('pointermove', this.onMove);
         el.removeEventListener('pointerup', this.onUp);
@@ -198,6 +213,16 @@ export class InputController {
 
     private readonly onMiddleGuard = (e: MouseEvent): void => {
         if (e.button === 1 && this.middleDeleted) e.preventDefault();
+    };
+
+    /** A modifier press/release with the pointer stationary: re-issue the last cursor
+     *  position so the placing ghost / drag preview reflects the new state immediately
+     *  (Shift's 45° angle lock, Ctrl/Cmd's momentary strong magnet). */
+    private readonly onModifier = (e: KeyboardEvent): void => {
+        if (e.repeat || (e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Meta')) return;
+        if (Number.isNaN(this.cursorX)) return; // pointer is not over the chart
+        if (this.dragging && this.region !== 'drawing') return; // mid pan/axis gesture — nothing to re-shape
+        this.deps.drawingsPointerMove?.(this.cursorX, this.cursorY, this.snapMode(e), e.shiftKey);
     };
 
     private local(e: PointerEvent | WheelEvent | MouseEvent): { x: number; y: number } {
@@ -283,6 +308,8 @@ export class InputController {
 
     private readonly onMove = (e: PointerEvent): void => {
         const { x, y } = this.local(e);
+        this.cursorX = x;
+        this.cursorY = y;
         if (this.dragging) {
             if (this.region === 'price') {
                 if (Math.abs(y - this.startY) > DRAG_SLOP) this.moved = true;
@@ -298,7 +325,7 @@ export class InputController {
                 this.deps.apply({ barSpacing, rightOffset: this.startRightOffset });
             } else if (this.region === 'drawing') {
                 if (Math.abs(x - this.startX) > DRAG_SLOP || Math.abs(y - this.startY) > DRAG_SLOP) this.moved = true;
-                this.deps.drawingsPointerMove?.(x, y, this.snapMode(e));
+                this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey);
             } else {
                 const coords = this.deps.getCoords();
                 const vp = coords.getViewport();
@@ -328,7 +355,7 @@ export class InputController {
             this.el.style.cursor = drawCursor ?? (r === 'price' ? 'ns-resize' : r === 'time' ? 'ew-resize' : r === 'separator' ? 'row-resize' : '');
             // Forward hover moves so the drawings layer can advance a placing ghost
             // (placing is click-based, so the cursor follow happens with no button down).
-            this.deps.drawingsPointerMove?.(x, y, this.snapMode(e));
+            this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey);
         }
         this.deps.onPointerMove(x, y);
     };
@@ -356,6 +383,8 @@ export class InputController {
     };
 
     private readonly onLeave = (): void => {
+        this.cursorX = NaN;
+        this.cursorY = NaN;
         this.deps.onPointerMove(null, null);
     };
 

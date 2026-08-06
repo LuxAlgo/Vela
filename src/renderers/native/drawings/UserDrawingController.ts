@@ -374,7 +374,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.interaction.down(x, y, snap, shift); // the popup self-dismisses on any outside press
     }
 
-    pointerMove(x: number, y: number, snap: SnapMode = 'off'): void {
+    pointerMove(x: number, y: number, snap: SnapMode = 'off', shift = false): void {
         if (this.eraserMode) {
             if (this.erasing) this.deleteAt(x, y); // erase only while the button is held (not on hover)
             return;
@@ -384,7 +384,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
             this.render();
             return;
         }
-        this.interaction.move(x, y, snap);
+        this.interaction.move(x, y, snap, shift);
         this.updateHover(x, y); // show handles for the drawing under the cursor
     }
 

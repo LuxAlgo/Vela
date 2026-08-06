@@ -39,7 +39,8 @@ right, so the bar never overlaps candles, the legend, or the axes).
     finishing a drawing leaves the tool armed so you can keep placing the same tool without
     re-picking it; when off, most tools disarm after one placement (the brush family always stays
     armed either way). Click the cursor button or press Escape to return to select/idle.
-- **Tooltips.** Hovering any control for ~2 seconds shows a small label beside it.
+- **Tooltips.** Hovering any control briefly shows a small label beside it; a tool group's
+  tooltip names the tool its icon will arm (the group's last-used one).
 - **Favorites.** Every tool row in a flyout carries a **star** at its right edge (revealed on row
   hover, gold when set). Starring is a user preference, not document data: the set survives
   symbol/timeframe rebuilds, is persisted by the widget alongside the other UI state (`persist`),
@@ -54,6 +55,12 @@ right, so the bar never overlaps candles, the legend, or the axes).
 Arm a tool, then **click** to place its anchors (most tools, including shapes, are
 click-then-move-then-click; freehand/brush is the exception and captures the drag path; the
 polyline takes any number of clicks and finishes on **Enter** or double-click).
+
+**Hold Shift for exact angles.** On the segment line tools (trend line, ray, extended line,
+info line, trend angle, arrow), holding **Shift** after the first anchor rounds the line to
+the nearest 45° step as drawn on screen — horizontal, vertical, or a perfect diagonal. It
+works the same when dragging an endpoint of an existing line, and it temporarily overrides
+the magnet so the locked angle is kept exactly.
 
 ## Editing a drawing
 

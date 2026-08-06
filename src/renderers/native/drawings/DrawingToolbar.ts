@@ -37,8 +37,10 @@ export interface DrawingToolbarOptions {
  * cursor button returns to select/idle; measure/eraser modes sit at the bottom, and the magnet is a
  * cell whose chevron opens an Off/Weak/Strong menu (its icon toggles the last-used strength on/off).
  * Below the magnet, a stay-in-drawing-mode toggle keeps tools armed after each placement.
- * Hover and active tints are CSS-driven (`:hover` + `[data-active]`) so they never lag. Tooltips
- * appear after a 2s hover. Pure vanilla DOM on the host (a `pointer-events:auto` island).
+ * Hover and active tints are CSS-driven (`:hover` + `[data-active]`) so they never lag. Every
+ * icon carries a themed tooltip (the chrome default 700ms dwell); a group cell's tip names the
+ * tool its icon arms (the last-used one). Pure vanilla DOM on the host (a `pointer-events:auto`
+ * island).
  */
 export class DrawingToolbar {
     private readonly root: HTMLDivElement;
@@ -289,7 +291,7 @@ export class DrawingToolbar {
             cell.appendChild(arrow);
         }
         this.tipDisposers.push(
-            attachChromeTooltip(cell, { host: this.host, theme: () => this.theme, text: () => this.tipText.get(cell) ?? label, placement: 'right', delayMs: 2000 }),
+            attachChromeTooltip(cell, { host: this.host, theme: () => this.theme, text: () => this.tipText.get(cell) ?? label, placement: 'right' }),
         );
         return { cell, icon, arrow };
     }
@@ -634,6 +636,9 @@ export class DrawingToolbar {
         const type = this.lastUsed.get(group.id) ?? group.tools[0]?.type;
         const tool = group.tools.find((t) => t.type === type) ?? group.tools[0];
         iconBtn.innerHTML = hitHtml(tool?.icon ?? '');
+        // The tip names the tool the icon arms (the group's last-used), not the group label.
+        const cell = this.groupCells.get(group.id);
+        if (cell) this.tipText.set(cell, tool?.label ?? group.label);
     }
 
     /** Reconcile active tints from state (armed group / open flyout / cursor / modes). Active is a
@@ -659,7 +664,7 @@ export class DrawingToolbar {
         this.tipText.set(btn, title);
         if (icon) btn.innerHTML = hitHtml(icon);
         this.tipDisposers.push(
-            attachChromeTooltip(btn, { host: this.host, theme: () => this.theme, text: () => this.tipText.get(btn) ?? title, placement: 'right', delayMs: 2000 }),
+            attachChromeTooltip(btn, { host: this.host, theme: () => this.theme, text: () => this.tipText.get(btn) ?? title, placement: 'right' }),
         );
         btn.addEventListener('click', onClick);
         return btn;

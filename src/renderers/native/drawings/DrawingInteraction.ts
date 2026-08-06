@@ -6,6 +6,10 @@ import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
 const DRAG_SLOP = 3;
 /** Minimum pixel gap between captured freehand points (keeps a stroke from over-sampling). */
 const FREEHAND_SAMPLE_PX = 4;
+/** Shift-snap quantum: the free endpoint of a line locks to 45° steps (0/±45/±90/±135/180). */
+const ANGLE_SNAP_STEP = Math.PI / 4;
+/** Two-point segment tools whose free endpoint angle-snaps while Shift is held. */
+const ANGLE_SNAP_TYPES: ReadonlySet<DrawingTypeKey> = new Set<DrawingTypeKey>(['trendline', 'ray', 'extendedline', 'infoline', 'trendangle', 'arrow']);
 
 /** What the interaction needs from its host (the {@link UserDrawingController}). */
 export interface InteractionDeps {
@@ -84,6 +88,29 @@ export class DrawingInteraction {
         return snapped;
     }
 
+    /** Resolve a pixel to a data point with the segment angle locked to 45° steps around
+     *  `pivot` (Shift held on a line tool). Works in PIXEL space — the user reasons about
+     *  the angle they see, not about time/price units. The magnet is bypassed: snapping
+     *  the result to a candle afterwards would break the exact angle just enforced. */
+    private resolveAngleSnapped(pivot: DrawingPoint, paneId: string, x: number, y: number): DrawingPoint {
+        const proj = this.deps.projector();
+        const px = proj.xOf(pivot.time);
+        const py = proj.yOf(pivot.price, paneId);
+        this.snapAt = null;
+        if (py == null) return proj.pxToPoint(x, y, paneId);
+        const r = Math.hypot(x - px, y - py);
+        if (r < 1) return proj.pxToPoint(x, y, paneId); // too close to define an angle
+        const angle = Math.round(Math.atan2(y - py, x - px) / ANGLE_SNAP_STEP) * ANGLE_SNAP_STEP;
+        return proj.pxToPoint(px + r * Math.cos(angle), py + r * Math.sin(angle), paneId);
+    }
+
+    /** The pivot the free endpoint angle-snaps around while placing `draft`, or null when
+     *  the tool is not a two-point segment (or no anchor is committed yet). */
+    private placingPivot(draft: Drawing): DrawingPoint | null {
+        if (!ANGLE_SNAP_TYPES.has(draft.type)) return null;
+        return draft.anchors[draft.anchors.length - 1] ?? null;
+    }
+
     /** Should the drawing layer win this press (vs pan)? Armed/placing/pressed, or over a drawing/handle. */
     claim(x: number, y: number): boolean {
         if (this.deps.activeTool() != null || this.state.kind !== 'idle') return true;
@@ -110,12 +137,17 @@ export class DrawingInteraction {
     }
 
     /** A press: place the next anchor, or grab a drawing/handle (resolved as click or drag on release).
-     *  `shift` over a drawing toggles it in/out of the selection (multi-select) instead of dragging. */
+     *  `shift` over a drawing toggles it in/out of the selection (multi-select) instead of dragging;
+     *  while placing a line tool it locks the segment angle to 45° steps. */
     down(x: number, y: number, mode: SnapMode = 'off', shift = false): void {
         const proj = this.deps.projector();
         if (this.state.kind === 'placing') {
             if (this.state.draft.placementMode() !== 'click') return; // drag/freehand finalize on release, not extra clicks
-            this.state.draft.anchors.push(this.placementAnchor(this.state.draft, this.resolve(x, y, this.state.draft.paneId, mode)));
+            const pivot = shift ? this.placingPivot(this.state.draft) : null;
+            const point = pivot
+                ? this.resolveAngleSnapped(pivot, this.state.draft.paneId, x, y)
+                : this.resolve(x, y, this.state.draft.paneId, mode);
+            this.state.draft.anchors.push(this.placementAnchor(this.state.draft, point));
             if (this.state.draft.anchors.length >= this.state.need) this.finalize();
             else this.deps.changed();
             return;
@@ -145,8 +177,9 @@ export class DrawingInteraction {
         // empty space → nothing here: the popup self-dismisses + hover already cleared handles.
     }
 
-    /** Pointer move: advance the placing ghost, or live-preview a drag once past the slop. */
-    move(x: number, y: number, mode: SnapMode = 'off'): void {
+    /** Pointer move: advance the placing ghost, or live-preview a drag once past the slop.
+     *  `shift` on a line tool locks the segment angle to 45° steps (placing + handle drags). */
+    move(x: number, y: number, mode: SnapMode = 'off', shift = false): void {
         if (this.state.kind === 'idle') {
             // Armed but not yet placing: preview where the FIRST anchor will magnet-snap.
             const tool = this.deps.activeTool();
@@ -161,7 +194,10 @@ export class DrawingInteraction {
                 this.captureFreehand(x, y);
                 return;
             }
-            this.state.cursor = this.resolve(x, y, this.state.draft.paneId, mode);
+            const pivot = shift ? this.placingPivot(this.state.draft) : null;
+            this.state.cursor = pivot
+                ? this.resolveAngleSnapped(pivot, this.state.draft.paneId, x, y)
+                : this.resolve(x, y, this.state.draft.paneId, mode);
             this.deps.changed();
             return;
         }
@@ -172,7 +208,12 @@ export class DrawingInteraction {
         this.state.moved = true;
         if (this.state.handle >= 0) {
             const a = d.anchors[this.state.handle]; // a handle snaps to the candle
-            if (a) applyFree(a, this.resolve(x, y, d.paneId, mode), d.anchorSchema().slots[this.state.handle]?.free ?? 'both');
+            if (a) {
+                // Shift on a two-point line re-locks the dragged endpoint's angle around the other one.
+                const pivot = shift && ANGLE_SNAP_TYPES.has(d.type) && d.anchors.length === 2 ? d.anchors[1 - this.state.handle] : undefined;
+                const point = pivot ? this.resolveAngleSnapped(pivot, d.paneId, x, y) : this.resolve(x, y, d.paneId, mode);
+                applyFree(a, point, d.anchorSchema().slots[this.state.handle]?.free ?? 'both');
+            }
             d.constrainHandleDrag(this.state.handle); // e.g. a position flips its reward/stop to stay opposed
         } else {
             const pt = this.deps.projector().pxToPoint(x, y, d.paneId); // whole-body move stays smooth (no snap)

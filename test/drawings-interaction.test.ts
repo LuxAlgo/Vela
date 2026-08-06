@@ -194,6 +194,58 @@ describe('DrawingInteraction: placing', () => {
     });
 });
 
+describe('DrawingInteraction: Shift angle snap (45° steps)', () => {
+    // fake projector is linear (x = time, y = 100 − price), so pixel angles map 1:1 to
+    // time/price deltas: horizontal = equal prices, 45° = |Δtime| == |Δprice|.
+
+    it('shift while placing locks the ghost to the nearest 45° ray (near-horizontal → flat)', () => {
+        const h = harness('trendline');
+        h.it.down(10, 90); // p1 → {time:10, price:10}
+        h.it.move(50, 85, 'off', true); // ~7° off horizontal → snaps flat, radius preserved
+        const ghost = h.it.ghost()!;
+        expect(ghost.anchors[1]!.price).toBeCloseTo(10, 6);
+        expect(ghost.anchors[1]!.time).toBeCloseTo(10 + Math.hypot(40, 5), 6);
+    });
+
+    it('a diagonal cursor snaps to the 45° ray (|Δtime| == |Δprice|)', () => {
+        const h = harness('trendline');
+        h.it.down(10, 90);
+        h.it.move(45, 60, 'off', true); // ~40.6° up → snaps to 45°
+        const p2 = h.it.ghost()!.anchors[1]!;
+        expect(p2.time - 10).toBeCloseTo(p2.price - 10, 6);
+        expect(p2.price).toBeGreaterThan(10);
+    });
+
+    it('a shift-click commits the snapped anchor and bypasses the magnet', () => {
+        const h = harness('trendline');
+        h.it.down(10, 90);
+        h.it.move(47, 92, 'strong', true); // shift → magnet skipped, no ring
+        expect(h.it.snapMarker()).toBeNull();
+        h.it.down(47, 92, 'strong', true); // near-horizontal → flat at p1's price
+        const create = h.intents.find((i) => i.kind === 'create');
+        expect(create?.kind === 'create' && create.doc.anchors[1]!.price).toBeCloseTo(10, 6);
+    });
+
+    it('shift while dragging a line endpoint re-locks its angle around the other anchor', () => {
+        const d = createDrawing('trendline', { id: 'dw-1', paneId: 'price', anchors: [{ time: 10, price: 10 }, { time: 50, price: 50 }] })!;
+        const h = harness(null, [d]);
+        h.setHovered('dw-1');
+        h.it.down(50, 50); // grab handle p2 (px of anchor 1)
+        h.it.move(90, 85, 'off', true); // ~4° below horizontal from p1 → snaps flat
+        h.it.up(90, 85);
+        const edit = h.intents.find((i) => i.kind === 'edit');
+        expect(edit?.kind === 'edit' && edit.doc.anchors[0]).toEqual({ time: 10, price: 10 }); // pivot untouched
+        expect(edit?.kind === 'edit' && edit.doc.anchors[1]!.price).toBeCloseTo(10, 6);
+    });
+
+    it('shift leaves non-line tools alone (raw cursor)', () => {
+        const h = harness('datepricerange');
+        h.it.down(10, 90);
+        h.it.move(40, 80, 'off', true); // not a segment tool → no angle lock
+        expect(h.it.ghost()!.anchors[1]).toEqual({ time: 40, price: 20 });
+    });
+});
+
 describe('DrawingInteraction: selection + claim', () => {
     const hline = () => createDrawing('hline', { id: 'dw-1', paneId: 'price', anchors: [{ time: 10, price: 30 }] })!;
 

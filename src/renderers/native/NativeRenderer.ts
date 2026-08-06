@@ -120,10 +120,10 @@ export class NativeRenderer implements IChartRenderer {
     readonly capabilities: RendererCapabilities = NATIVE_CAPABILITIES;
 
     private theme!: VelaTheme;
-    // The app "chrome" surface (drawing toolbar + axis-scale gutters): background + text.
+    // The app "chrome" surface (drawing toolbar + in-chart dialogs): background + text.
     // Owned by the app theme alone (mount/setTheme) — config-level background/text edits
-    // (settings dialog, persisted configs) recolor only the plot, keeping the toolbar and
-    // scales on a consistent, always-readable surface.
+    // (settings dialog, persisted configs) recolor the plot AND the axis scales (see
+    // axisSurface), but never the toolbar/dialog chrome.
     private surfaceBackground = DARK_THEME.background;
     private surfaceTextColor = DARK_THEME.textColor;
     private wrapper!: HTMLDivElement; // outer root: holds the left toolbar gutter + the plot sub-container
@@ -1156,6 +1156,13 @@ export class NativeRenderer implements IChartRenderer {
         };
     }
 
+    /** The colors the axis-scale gutters (price + time) paint with: the LIVE chart background
+     *  (`layout.background`) and its contrast-corrected text, so the scales read as part of the
+     *  plot. Only the toolbar/dialog chrome stays on the stable app-theme surface. */
+    private axisSurface(): { background: string; textColor: string } {
+        return { background: this.theme.background, textColor: this.theme.textColor };
+    }
+
     // ── lifecycle ──
     mount(container: HTMLElement, theme: VelaTheme): void {
         this.mountContainer = container;
@@ -1263,7 +1270,7 @@ export class NativeRenderer implements IChartRenderer {
             drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
             drawingsSnapMode: () => this.snapMode,
             drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
-            drawingsPointerMove: (x, y, snap) => this.userDrawings?.pointerMove(x, y, snap),
+            drawingsPointerMove: (x, y, snap, shift) => this.userDrawings?.pointerMove(x, y, snap, shift),
             drawingsPointerUp: (x, y) => this.userDrawings?.pointerUp(x, y),
             drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? null,
             drawingsDblClick: (x, y) => this.userDrawings?.dblClick(x, y) ?? false,
@@ -2632,7 +2639,7 @@ export class NativeRenderer implements IChartRenderer {
             // the geometry backend, volume/VPVR and SDK layers stay untouched. prepare()
             // re-wires the drawing resolvers (three closures over live refs — cheap).
             this.chrome.prepare(this.scene, this.coords, this.theme);
-            this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
+            this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
         }
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx()); // L2 crosshair
     }
@@ -2699,7 +2706,7 @@ export class NativeRenderer implements IChartRenderer {
         // so the backend can composite them mid-stack (under the candles, between indicators).
         this.scene.drawingSlices = this.userDrawings?.prepareSlices(this.scene.orderedPanes().map((p) => p.id)) ?? new Map();
         this.backend.render(this.scene, this.coords, this.theme);
-        this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
+        this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair
 
         if (easeLive && liveActual) this.bars[li] = liveActual; // restore the true forming bar
