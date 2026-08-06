@@ -11,9 +11,10 @@ registerChartType({
         visibility: 'active',   // 'active' (default): tab shown only while the style is
                                 // active; 'always': shown whenever the type is registered
         rows: [
-            { kind: 'heading', label: 'Levels' },   // key-less: an in-tab group title, stores nothing
+            { kind: 'heading', label: 'Levels' },   // key-less: TOC group (or flat in-tab title)
             { kind: 'toggle', key: 'highlights', label: 'Highlights', defval: true,
               colors: [{ key: 'highlightColor', label: 'Highlight color', defval: '#e0b400' }] },
+            { kind: 'header', label: 'Colors' },    // in-group subgroup title (not a TOC entry)
             { kind: 'number', key: 'levels', label: 'Max levels', defval: 20, min: 5, max: 50, step: 1,
               when: { key: 'highlights', equals: true } },   // shown only while the toggle is on
             { kind: 'color',  key: 'buyColor', label: 'Buy color', defval: '#089981' },
@@ -45,9 +46,13 @@ delivery, and engine delivery.
 `SettingsRowDescriptor` (in `src/chart-types/registry.ts`) is a **discriminated union on
 `kind`**. Each value variant carries its `key` (the storage key inside the type's bag), a
 `label`, its `defval`, and kind-specific fields. Values are stored as-is (`boolean` /
-`number` / `string`). The `heading` variant is the exception: label only, no key and no
-stored value — it renders as a group title inside the tab, so a large section can be
-organized without splitting into multiple tabs.
+`number` / `string`). Two key-less variants organize the pane without storing values:
+
+- **`heading`** — a GROUP title. Flat sections render it inline; structured
+  `instances`/`subsections` promote it to the left-hand group TOC.
+- **`header`** — an in-pane subgroup title (same visual as a flat heading). Inside a
+  structured pane it stays in the rows column so you can cluster rows *inside* a TOC
+  group (Colors / Values under Display) without adding another TOC entry.
 
 Two kinds bundle several values on one row, which keeps panes STATIC where a
 conditionally revealed row would jump the layout:
@@ -104,10 +109,11 @@ settings: {
 ```
 
 Inside an instance (and inside every subsection) the `heading` rows become a **group
-TOC** on the left of the pane: selecting an entry shows only that group's rows. Rows
-before the first heading form the *always block*, visible above every group (put an
-enable toggle there). A group whose rows are all gated out by `when` — or whose heading's
-own `when` fails — leaves the TOC; the TOC hides entirely when no group is live, which is
+TOC** on the left of the pane: selecting an entry shows only that group's rows. `header`
+rows stay in the rows column as subgroup titles within the active group. Rows before the
+first heading form the *always block*, visible above every group (put an enable toggle
+there). A group whose value rows are all gated out by `when` — or whose heading's own
+`when` fails — leaves the TOC; the TOC hides entirely when no group is live, which is
 how a subsection collapses to just its enable toggle while switched off.
 
 **`subsections`** add indented entries under the section's rail tab, each with its own

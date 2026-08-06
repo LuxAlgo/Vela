@@ -608,7 +608,7 @@ export class SettingsDialog {
         };
         const seed = (rows: readonly SettingsRowDescriptor[]): void => {
             for (const r of rows) {
-                if (r.kind === 'heading') continue;
+                if (r.kind === 'heading' || r.kind === 'header') continue;
                 if (r.kind === 'range') {
                     seedKey(r.minKey, 'number', r.defval);
                     seedKey(r.maxKey, 'number', r.defval);
@@ -656,7 +656,7 @@ export class SettingsDialog {
     }
 
     /** The FLAT chart-type form: rows appended straight to the body (the pane grid wraps
-     *  them), headings as inline group titles, `when` gates refreshed live. */
+     *  them), headings/headers as inline group titles, `when` gates refreshed live. */
     private flatTypeRows(
         rows: readonly SettingsRowDescriptor[],
         bag: Record<string, unknown>,
@@ -666,7 +666,7 @@ export class SettingsDialog {
     ): void {
         const entries: Array<{ el: HTMLElement; when?: SettingsRowWhen }> = [];
         for (const r of rows) {
-            const el = r.kind === 'heading' ? this.sectionTitle(r.label) : this.typeRow(r, bag, put);
+            const el = r.kind === 'heading' || r.kind === 'header' ? this.sectionTitle(r.label) : this.typeRow(r, bag, put);
             entries.push({ el, when: r.when });
             body.append(el);
         }
@@ -679,7 +679,7 @@ export class SettingsDialog {
 
     /** One value row for a chart-type descriptor, writing through `put`. */
     private typeRow(
-        r: Exclude<SettingsRowDescriptor, { kind: 'heading' }>,
+        r: Exclude<SettingsRowDescriptor, { kind: 'heading' | 'header' }>,
         bag: Record<string, unknown>,
         put: (key: string, v: unknown) => void,
     ): HTMLElement {
@@ -824,9 +824,11 @@ export class SettingsDialog {
      * A GROUPED rows pane: a TOC column of the group labels (from `heading` rows) and
      * ONE rows host holding every row — the active group's rows show, the rest hide.
      * Rows BEFORE the first heading are the always block, visible above every group.
-     * A group whose rows are all gated out (or whose heading's own `when` fails) leaves
-     * the TOC; the whole TOC hides when no group is live. The rows host is tagged for
-     * `layoutSettingsGrids`, keeping one shared label column across all groups.
+     * `header` rows stay in the rows column as in-group subgroup titles (not TOC
+     * entries). A group whose value rows are all gated out (or whose heading's own
+     * `when` fails) leaves the TOC; the whole TOC hides when no group is live. The
+     * rows host is tagged for `layoutSettingsGrids`, keeping one shared label column
+     * across all groups.
      *
      * `enableKey` (optional): while that bag boolean is false, every row except the one
      * whose key matches is soft-disabled (visible but grayed / non-interactive) so the
@@ -849,7 +851,7 @@ export class SettingsDialog {
         rowsHost.style.cssText = 'flex:1 1 auto;min-width:0;';
         wrap.append(toc, rowsHost);
 
-        const entries: Array<{ el: HTMLElement; when?: SettingsRowWhen; group: number; key?: string }> = [];
+        const entries: Array<{ el: HTMLElement; when?: SettingsRowWhen; group: number; key?: string; header?: boolean }> = [];
         const groups: string[] = [];
         const groupWhens: Array<SettingsRowWhen | undefined> = [];
         let g = -1; // -1 = the always block before the first heading
@@ -860,6 +862,11 @@ export class SettingsDialog {
                 groupWhens.push(r.when);
                 continue; // headings live in the TOC, not the rows column
             }
+            if (r.kind === 'header') {
+                entries.push({ el: this.sectionTitle(r.label), when: r.when, group: g, header: true });
+                rowsHost.append(entries[entries.length - 1]!.el);
+                continue;
+            }
             const el = this.typeRow(r, bag, put);
             const key = r.kind === 'range' ? undefined : r.key;
             entries.push({ el, when: r.when, group: g, key });
@@ -867,9 +874,10 @@ export class SettingsDialog {
         }
 
         const refresh = (): void => {
+            // Headers don't keep a TOC group alive — only value rows do.
             const live = groups.map((_, gi) =>
                 settingsRowVisible(groupWhens[gi], bag)
-                && entries.some((e) => e.group === gi && settingsRowVisible(e.when, bag)));
+                && entries.some((e) => e.group === gi && !e.header && settingsRowVisible(e.when, bag)));
             let activeIdx = groups.indexOf(this.typeActiveGroup.get(paneKey) ?? '');
             if (activeIdx < 0 || !live[activeIdx]) activeIdx = live.findIndex(Boolean);
             if (activeIdx >= 0) this.typeActiveGroup.set(paneKey, groups[activeIdx]!);
@@ -892,8 +900,20 @@ export class SettingsDialog {
             wrap.classList.toggle('no-toc', !anyGroup);
 
             const enabled = !enableKey || bag[enableKey] === true;
-            for (const e of entries) {
-                const visible = (e.group === -1 || e.group === activeIdx) && settingsRowVisible(e.when, bag);
+            for (let i = 0; i < entries.length; i++) {
+                const e = entries[i]!;
+                let visible = (e.group === -1 || e.group === activeIdx) && settingsRowVisible(e.when, bag);
+                // A header with no visible content under it (until the next header /
+                // group end) collapses so empty subgroups don't leave orphan titles.
+                if (visible && e.header) {
+                    let hasContent = false;
+                    for (let j = i + 1; j < entries.length; j++) {
+                        const n = entries[j]!;
+                        if (n.group !== e.group || n.header) break;
+                        if (settingsRowVisible(n.when, bag)) { hasContent = true; break; }
+                    }
+                    visible = hasContent;
+                }
                 e.el.classList.toggle('vela-sd-hide', !visible);
                 // Soft-disable everything except the master toggle while the feature is off.
                 e.el.classList.toggle('vela-sd-soft', visible && !enabled && e.key !== enableKey);
