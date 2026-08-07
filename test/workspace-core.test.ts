@@ -10,9 +10,14 @@ import {
     layouts,
     gridStyles,
     activeAfterLayout,
+    orderAfterLayout,
+    layoutForGrid,
+    ensureLayout,
+    layoutShape,
+    occupancyGrid,
     type LayoutDefinition,
 } from '../src/workspace/layouts';
-import { evenTracks, resizeTracks, trackOffsets } from '../src/workspace/splitters';
+import { evenTracks, resizeTracks, trackOffsets, seamSegments, segmentSpanPx } from '../src/workspace/splitters';
 import { seedDefaults, cellChartDefaults, cellDrawings } from '../src/workspace/ChartCell';
 import { declaredOrder, nextAutoCellId } from '../src/workspace/VelaWorkspace';
 import { parseSymbol } from '../src/data/ProviderRegistry';
@@ -49,6 +54,54 @@ describe('layout registry + presets', () => {
         expect(layoutDefinition('custom-16')!.label).toBe('Sixteen'); // last registration wins
         unregisterLayout('custom-16');
         expect(layoutDefinition('custom-16')).toBeUndefined();
+    });
+});
+
+describe('dynamic picker layouts (pure)', () => {
+    it('layoutForGrid lands on the classic presets when the geometry matches', () => {
+        expect(layoutForGrid(1, 1).id).toBe('1');
+        expect(layoutForGrid(1, 2).id).toBe('2h');
+        expect(layoutForGrid(2, 1).id).toBe('2v');
+        expect(layoutForGrid(2, 2).id).toBe('4');
+        expect(layoutForGrid(2, 4).id).toBe('8');
+    });
+
+    it('layoutForGrid synthesizes other geometries WITHOUT registering them', () => {
+        const def = layoutForGrid(3, 2);
+        expect(def.id).toBe('g3x2');
+        expect(def.rows).toEqual([1, 1, 1]);
+        expect(def.cols).toEqual([1, 1]);
+        expect(def.areas).toBeUndefined();
+        expect(def.cells.map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4', 'c5', 'c6']);
+        expect(layoutDefinition('g3x2')).toBeUndefined(); // the registry stays presets-only
+    });
+
+    it('layoutForGrid clamps to the picker canvas (1..4 per axis)', () => {
+        expect(layoutForGrid(9, 0).id).toBe('g4x1');
+        expect(layoutForGrid(4, 4).cells).toHaveLength(16);
+    });
+
+    it('ensureLayout: registered ids win; dynamic ids re-synthesize; junk stays undefined', () => {
+        expect(ensureLayout('4')).toBe(layoutDefinition('4'));
+        expect(ensureLayout('g3x3')?.cells).toHaveLength(9);
+        expect(ensureLayout('g5x5')).toBeUndefined(); // beyond the canvas — not a picker id
+        expect(ensureLayout('nope')).toBeUndefined();
+    });
+
+    it('layoutShape reads grids back; bespoke areas stay null', () => {
+        expect(layoutShape(layoutDefinition('1')!)).toEqual({ rows: 1, cols: 1 });
+        expect(layoutShape(layoutDefinition('8')!)).toEqual({ rows: 2, cols: 4 });
+        expect(layoutShape(layoutForGrid(3, 2))).toEqual({ rows: 3, cols: 2 });
+        expect(
+            layoutShape({
+                id: 'bespoke',
+                label: 'Bespoke',
+                cols: [2, 1],
+                rows: [1, 1],
+                areas: ['main a', 'main b'],
+                cells: [{ id: 'c1', area: 'main' }, { id: 'c2', area: 'a' }, { id: 'c3', area: 'b' }],
+            }),
+        ).toBeNull();
     });
 });
 
@@ -94,6 +147,23 @@ describe('activeAfterLayout (pure reducer)', () => {
     });
 });
 
+describe('orderAfterLayout (pure reducer)', () => {
+    it('moves an active identity that would pool into the last surviving slot', () => {
+        // 2×2 → single: the active chart becomes the one remaining chart.
+        expect(orderAfterLayout(['a', 'b', 'c', 'd'], 1, 'c')).toEqual(['c', 'a', 'b', 'd']);
+        // 2×2 → 2 side by side: the first chart keeps its slot, active takes the second.
+        expect(orderAfterLayout(['a', 'b', 'c', 'd'], 2, 'd')).toEqual(['a', 'd', 'b', 'c']);
+    });
+
+    it('leaves the order alone when the active chart already survives (or is unknown)', () => {
+        expect(orderAfterLayout(['a', 'b', 'c', 'd'], 2, 'b')).toEqual(['a', 'b', 'c', 'd']);
+        expect(orderAfterLayout(['a', 'b', 'c', 'd'], 8, 'd')).toEqual(['a', 'b', 'c', 'd']);
+        expect(orderAfterLayout(['a', 'b'], 1, null)).toEqual(['a', 'b']);
+        expect(orderAfterLayout(['a', 'b'], 1, 'nope')).toEqual(['a', 'b']);
+        expect(orderAfterLayout(['a', 'b'], 0, 'b')).toEqual(['a', 'b']);
+    });
+});
+
 describe('splitter track math (pure)', () => {
     it('evenTracks resets to a uniform split', () => {
         expect(evenTracks(3)).toEqual([1, 1, 1]);
@@ -125,6 +195,78 @@ describe('splitter track math (pure)', () => {
         // Four even tracks, 800px, no gap: 200/400/600.
         expect(trackOffsets([1, 1, 1, 1], 800, 0)).toEqual([200, 400, 600]);
         expect(trackOffsets([1], 800, 4)).toEqual([]); // no internal boundary
+    });
+});
+
+describe('seam segmentation (strips never cross a spanning cell)', () => {
+    // An area layout with spanning cells: 3 charts stacked left, 2 stacked right,
+    // bound through 6 LCM row tracks (left cells span 2 each, right cells span 3).
+    const stacked32: LayoutDefinition = {
+        id: 'stacked-3-2',
+        label: 'Stacked 3·2',
+        cols: [1, 1],
+        rows: [1, 1, 1, 1, 1, 1],
+        areas: ['c1 c4', 'c1 c4', 'c2 c4', 'c2 c5', 'c3 c5', 'c3 c5'],
+        cells: Array.from({ length: 5 }, (_, i) => ({ id: `c${i + 1}`, area: `c${i + 1}` })),
+    };
+
+    it('occupancyGrid reads area layouts and auto-flows plain grids', () => {
+        const grid = occupancyGrid(stacked32);
+        expect(grid).toHaveLength(6);
+        expect(grid[0]).toEqual(['c1', 'c4']);
+        expect(grid[2]).toEqual(['c2', 'c4']);
+        expect(grid[5]).toEqual(['c3', 'c5']);
+        // Auto-flow 2×2 grid: row-major cells order.
+        expect(occupancyGrid(layoutDefinition('4')!)).toEqual([
+            ['c1', 'c2'],
+            ['c3', 'c4'],
+        ]);
+    });
+
+    it('a uniform grid boundary is one full-length seam', () => {
+        const grid = occupancyGrid(layoutDefinition('4')!);
+        expect(seamSegments(grid, 'cols', 0)).toEqual([[0, 1]]);
+        expect(seamSegments(grid, 'rows', 0)).toEqual([[0, 1]]);
+    });
+
+    it('a row boundary inside one stack never covers the neighboring spanning cell', () => {
+        // Stacked 3·2: left column stacked 3 (c1..c3), right stacked 2 (c4, c5).
+        const grid = occupancyGrid(stacked32);
+        // Row-track boundary 1 (between tracks 1|2) separates c1/c2 on the left ONLY —
+        // the right column's c4 spans it, so the seam stops at column 0.
+        expect(seamSegments(grid, 'rows', 1)).toEqual([[0, 0]]);
+        // Boundary 2 (tracks 2|3) is the right column's c4/c5 seam only.
+        expect(seamSegments(grid, 'rows', 2)).toEqual([[1, 1]]);
+        // Boundary 0 (tracks 0|1) crosses NO cell edge at all — no strip anywhere.
+        expect(seamSegments(grid, 'rows', 0)).toEqual([]);
+        // The single column boundary separates different cells over every row track.
+        expect(seamSegments(grid, 'cols', 0)).toEqual([[0, 5]]);
+    });
+
+    it('a spanning tall cell splits a boundary into disjoint segments', () => {
+        // ['a b', 'c b', 'd e']: the col boundary is a seam everywhere; row boundary 1
+        // (c|d and b|e) is full, row boundary 0 (a|c, b spans) is left-only.
+        const grid = [
+            ['a', 'b'],
+            ['c', 'b'],
+            ['d', 'e'],
+        ];
+        expect(seamSegments(grid, 'rows', 0)).toEqual([[0, 0]]);
+        expect(seamSegments(grid, 'rows', 1)).toEqual([[0, 1]]);
+        expect(seamSegments(grid, 'cols', 0)).toEqual([[0, 2]]);
+    });
+
+    it('segmentSpanPx runs flush at container edges and half a gap into interior gaps', () => {
+        // Six even tracks, 602px, 2px gap: content 592, each track 98.666…
+        const full = segmentSpanPx([1, 1, 1, 1, 1, 1], 602, 2, 0, 5);
+        expect(full.start).toBe(0);
+        expect(full.end).toBe(602);
+        const first = segmentSpanPx([1, 1, 1, 1, 1, 1], 602, 2, 0, 0);
+        expect(first.start).toBe(0);
+        expect(first.end).toBeCloseTo(98.666 + 1, 1); // track end + half the gap
+        const inner = segmentSpanPx([1, 1, 1, 1, 1, 1], 602, 2, 2, 3);
+        expect(inner.start).toBeCloseTo(2 * (98.666 + 2) - 1, 1);
+        expect(inner.end).toBeCloseTo(4 * (98.666 + 2) - 1, 1);
     });
 });
 

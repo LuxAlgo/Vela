@@ -1,5 +1,5 @@
 import type { LineStyle } from '../../../core/model/series';
-import { chartTypes } from '../../../chart-types/registry';
+import { chartTypes, type SettingsRowDescriptor } from '../../../chart-types/registry';
 import { withAlpha } from '../../../core/color';
 import { BEARISH, BULLISH, CROSSHAIR, SERIES_LINE, SLATE } from '../../../core/palette';
 import type { PriceStyle } from '../../../core/options';
@@ -292,6 +292,79 @@ export function basePaintingOf(style: PriceStyle): 'candles' | 'none' {
     return 'candles';
 }
 
+/**
+ * Candle cosmetics a candle-based PLUGIN style stores in its own per-type bag
+ * (`chartTypes.<id>.candle*` — reserved keys, edited by the Symbol tab's Candles
+ * group while that style is active). Per-key: `null` inherits the shared `candles`
+ * block, so an untouched plugin style paints exactly like before — and edits never
+ * leak back into the candles/heikin-ashi styles.
+ */
+export interface CandlePaintOverride {
+    upColor: string | null;
+    downColor: string | null;
+    bodyVisible: boolean | null;
+    borderVisible: boolean | null;
+    borderUpColor: string | null;
+    borderDownColor: string | null;
+    wickVisible: boolean | null;
+    wickUpColor: string | null;
+    wickDownColor: string | null;
+}
+
+/** Whether a style carries its OWN candle cosmetics: a registered plugin type whose
+ *  base painting is candles. Built-ins — heikin-ashi included — share the `candles`
+ *  block instead. */
+export function hasOwnCandlePaint(style: PriceStyle): boolean {
+    if ((BUILTIN_PRICE_STYLES as readonly string[]).includes(style)) return false;
+    for (const t of chartTypes()) if (t.id === style) return (t.basePainting ?? 'candles') === 'candles';
+    return false;
+}
+
+/** The candle override for a style, read from the per-type bags — null for built-ins
+ *  and for `basePainting: 'none'` types (nothing of theirs is candle-painted). */
+export function candleOverrideFor(style: PriceStyle, bags: Record<string, Record<string, unknown>>): CandlePaintOverride | null {
+    if (!hasOwnCandlePaint(style)) return null;
+    const bag = bags[style] ?? {};
+    const color = (v: unknown): string | null => (isColor(v) ? v : null);
+    const bool = (v: unknown): boolean | null => (isBool(v) ? v : null);
+    return {
+        upColor: color(bag.candleUpColor),
+        downColor: color(bag.candleDownColor),
+        bodyVisible: bool(bag.candleBodyVisible),
+        borderVisible: bool(bag.candleBorderVisible),
+        borderUpColor: color(bag.candleBorderUpColor),
+        borderDownColor: color(bag.candleBorderDownColor),
+        wickVisible: bool(bag.candleWickVisible),
+        wickUpColor: color(bag.candleWickUpColor),
+        wickDownColor: color(bag.candleWickDownColor),
+    };
+}
+
+/** The candle cosmetics to PAINT: the shared block overridden per-key by the active
+ *  style's override; body colors default to the theme's up/down (shared by both
+ *  backends, so their candle paths stay pixel-identical). */
+export function effectiveCandlePaint(
+    base: CandleStyle,
+    override: CandlePaintOverride | null,
+    themeUp: string,
+    themeDown: string,
+): { up: string; down: string; candle: CandleStyle } {
+    if (!override) return { up: themeUp, down: themeDown, candle: base };
+    return {
+        up: override.upColor ?? themeUp,
+        down: override.downColor ?? themeDown,
+        candle: {
+            bodyVisible: override.bodyVisible ?? base.bodyVisible,
+            borderVisible: override.borderVisible ?? base.borderVisible,
+            borderUpColor: override.borderUpColor ?? base.borderUpColor,
+            borderDownColor: override.borderDownColor ?? base.borderDownColor,
+            wickVisible: override.wickVisible ?? base.wickVisible,
+            wickUpColor: override.wickUpColor ?? base.wickUpColor,
+            wickDownColor: override.wickDownColor ?? base.wickDownColor,
+        },
+    };
+}
+
 /** Every valid price-style id RIGHT NOW: the built-ins plus SDK-registered chart types. */
 export function priceStyleIds(): PriceStyle[] {
     const out: PriceStyle[] = [...BUILTIN_PRICE_STYLES];
@@ -360,6 +433,53 @@ function nullableBound(v: unknown, base: number | null): number | null {
     return isNum(v) ? (v < 0 ? 0 : v) : base;
 }
 
+
+/**
+ * The document "Reset defaults" applies. `mergeConfig` is deliberately ADDITIVE for
+ * `chartTypes` (a patch only touches the type ids it names), so the factory snapshot
+ * alone cannot undo SDK settings edited after mount — the reset document must name
+ * every registered type at its registry-declared row defaults, covering EVERY key the
+ * section can store (instances, subsections, range min/max, toggle swatches). The
+ * registry is read at call time (types may register after mount), and values the
+ * snapshot itself pinned win over the defvals — they ARE the first-run state.
+ */
+export function factoryResetConfig(factory: ChartConfig): ChartConfig {
+    const bag: Record<string, Record<string, unknown>> = {};
+    for (const t of chartTypes()) {
+        const section = t.settings;
+        if (!section) continue;
+        const defaults: Record<string, unknown> = {};
+        const addRows = (rows: readonly SettingsRowDescriptor[] | undefined): void => {
+            for (const r of rows ?? []) {
+                if (r.kind === 'heading' || r.kind === 'header') continue;
+                if (r.kind === 'range') {
+                    defaults[r.minKey] = r.defval;
+                    defaults[r.maxKey] = r.defval;
+                    continue;
+                }
+                defaults[r.key] = r.defval;
+                if (r.kind === 'toggle') for (const c of r.colors ?? []) defaults[c.key] = c.defval;
+            }
+        };
+        // An absent enable key means OFF — seed it explicitly so an instance the user
+        // turned on cannot survive the additive merge; a row that declares the same key
+        // (a subsection's master toggle) overrides it with its own defval via addRows.
+        for (const inst of section.instances ?? []) {
+            if (inst.enableKey) defaults[inst.enableKey] = false;
+            addRows(inst.rows);
+        }
+        for (const sub of section.subsections ?? []) {
+            if (sub.enableKey) defaults[sub.enableKey] = false;
+            addRows(sub.rows);
+        }
+        if (!section.instances) addRows(section.rows);
+        bag[t.id] = defaults;
+    }
+    for (const [typeId, vals] of Object.entries(factory.chartTypes)) {
+        bag[typeId] = { ...(bag[typeId] ?? {}), ...vals };
+    }
+    return { ...factory, chartTypes: bag };
+}
 
 /**
  * Deep-merge an untrusted partial `patch` onto a known-good `base`, validating every

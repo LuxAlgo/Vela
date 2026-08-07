@@ -31,7 +31,7 @@ import { PaneControls } from './chrome/PaneControls';
 import { TableOverlay } from '../shared/TableOverlay';
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
-import { CoordinateSystem, type PriceScale } from './core/CoordinateSystem';
+import { CoordinateSystem, type PaneBounds, type PriceScale } from './core/CoordinateSystem';
 import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from './core/Scheduler';
 import { Animator, easeToward } from './core/Animator';
 import { InputController } from './core/InputController';
@@ -54,9 +54,9 @@ import { computePaneScale, expandScaleByPixels } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
-import { rendererLayers, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
+import { rendererLayers, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
@@ -120,10 +120,10 @@ export class NativeRenderer implements IChartRenderer {
     readonly capabilities: RendererCapabilities = NATIVE_CAPABILITIES;
 
     private theme!: VelaTheme;
-    // The app "chrome" surface (drawing toolbar + axis-scale gutters): background + text.
+    // The app "chrome" surface (drawing toolbar + in-chart dialogs): background + text.
     // Owned by the app theme alone (mount/setTheme) — config-level background/text edits
-    // (settings dialog, persisted configs) recolor only the plot, keeping the toolbar and
-    // scales on a consistent, always-readable surface.
+    // (settings dialog, persisted configs) recolor the plot AND the axis scales (see
+    // axisSurface), but never the toolbar/dialog chrome.
     private surfaceBackground = DARK_THEME.background;
     private surfaceTextColor = DARK_THEME.textColor;
     private wrapper!: HTMLDivElement; // outer root: holds the left toolbar gutter + the plot sub-container
@@ -290,6 +290,7 @@ export class NativeRenderer implements IChartRenderer {
             this.candleDown = opts.downColor;
             this.scene.priceStyle = opts.priceStyle;
             this.scene.basePainting = basePaintingOf(opts.priceStyle);
+            this.scene.candleOverride = candleOverrideFor(opts.priceStyle, this.scene.style.chartTypes);
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
         // it with the real, Vela-resolved theme). Candle colors follow opts.
@@ -796,6 +797,10 @@ export class NativeRenderer implements IChartRenderer {
         };
         // series
         this.setPriceStyle(next.series.style);
+        // Re-read the active style's candle override: setPriceStyle no-ops when the style
+        // did not change, but the per-type bag (candle* keys) may have — this is the live
+        // path behind the Symbol tab's Candles group for plugin styles.
+        this.scene.candleOverride = candleOverrideFor(this.scene.priceStyle, s.chartTypes);
         this.scene.baselineValue = next.series.baseline;
         // Spacing multiplier: widens the center-to-center pitch (and crosshair step) without
         // touching body width. Re-clamp because it changes how many bars fit → the zoom/pan limits.
@@ -919,7 +924,7 @@ export class NativeRenderer implements IChartRenderer {
             (patch) => this.applyConfig(patch),
             (json) => this.applyConfig(json),
             () => {
-                if (this.factoryConfig) this.applyConfig(this.factoryConfig);
+                if (this.factoryConfig) this.applyConfig(factoryResetConfig(this.factoryConfig));
                 // Re-open so every control re-reads the restored values.
                 this.settingsDialog?.close();
                 this.openSettingsDialog();
@@ -1156,10 +1161,17 @@ export class NativeRenderer implements IChartRenderer {
         };
     }
 
+    /** The colors the axis-scale gutters (price + time) paint with: the LIVE chart background
+     *  (`layout.background`) and its contrast-corrected text, so the scales read as part of the
+     *  plot. Only the toolbar/dialog chrome stays on the stable app-theme surface. */
+    private axisSurface(): { background: string; textColor: string } {
+        return { background: this.theme.background, textColor: this.theme.textColor };
+    }
+
     // ── lifecycle ──
     mount(container: HTMLElement, theme: VelaTheme): void {
         this.mountContainer = container;
-        this.publishToolbarGutter();
+        this.publishGutters();
         this.theme = this.deriveTheme(theme);
         // provisional chrome surface (refined by the first applyConfig)
         this.surfaceBackground = theme.background;
@@ -1263,7 +1275,7 @@ export class NativeRenderer implements IChartRenderer {
             drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
             drawingsSnapMode: () => this.snapMode,
             drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
-            drawingsPointerMove: (x, y, snap) => this.userDrawings?.pointerMove(x, y, snap),
+            drawingsPointerMove: (x, y, snap, shift) => this.userDrawings?.pointerMove(x, y, snap, shift),
             drawingsPointerUp: (x, y) => this.userDrawings?.pointerUp(x, y),
             drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? null,
             drawingsDblClick: (x, y) => this.userDrawings?.dblClick(x, y) ?? false,
@@ -1527,6 +1539,7 @@ export class NativeRenderer implements IChartRenderer {
         this.attributionEl?.remove();
         this.attributionEl = null;
         this.mountContainer?.style.removeProperty('--vela-toolbar-gutter');
+        this.mountContainer?.style.removeProperty('--vela-scale-gutter');
         this.mountContainer = null;
         this.wrapper?.remove();
     }
@@ -1731,6 +1744,7 @@ export class NativeRenderer implements IChartRenderer {
         const w = RIGHT_AXIS_W + AXIS_COL_W * this.maxOwnScaleColumns();
         if (w === this.rightAxisW) return false;
         this.rightAxisW = w;
+        this.publishGutters();
         if (this.coords.width > 0) this.syncSize();
         return true;
     }
@@ -1912,6 +1926,7 @@ export class NativeRenderer implements IChartRenderer {
         if (style === this.scene.priceStyle) return;
         this.scene.priceStyle = style;
         this.scene.basePainting = basePaintingOf(style);
+        this.scene.candleOverride = candleOverrideFor(style, this.scene.style.chartTypes);
         for (const cb of this.priceStyleCbs) cb(style);
     }
 
@@ -2108,7 +2123,15 @@ export class NativeRenderer implements IChartRenderer {
             }
         }
 
-        this.coords.setViewport(this.clampViewport(barSpacing, rightOffset));
+        const clamped = this.clampViewport(barSpacing, rightOffset);
+        // The clamp bounds depend on the chart WIDTH, so a resize (splitter drag, layout
+        // change) can strand a target outside the reachable range mid-ease. Snap a target
+        // the clamp rejected onto the bound it chose — otherwise the ease above re-arms
+        // forever: a permanent rAF loop emitting a viewport change every frame and
+        // jittering rightOffset through the zoom anchor until a pointerdown re-aligns it.
+        if (clamped.barSpacing !== barSpacing) this.targetBarSpacing = clamped.barSpacing;
+        if (this.scrollTargetRO != null && clamped.rightOffset !== rightOffset) this.scrollTargetRO = clamped.rightOffset;
+        this.coords.setViewport(clamped);
         this.computeScales(); // sets pane.scaleTarget (animator active → no snap)
         if (this.easeScales(dtMs)) active = true;
         if (this.easeLiveBar(dtMs)) active = true; // glide the forming bar toward the latest tick
@@ -2622,9 +2645,41 @@ export class NativeRenderer implements IChartRenderer {
             // the geometry backend, volume/VPVR and SDK layers stay untouched. prepare()
             // re-wires the drawing resolvers (three closures over live refs — cheap).
             this.chrome.prepare(this.scene, this.coords, this.theme);
-            this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
+            this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
         }
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx()); // L2 crosshair
+        // Hover-testing SDK layers (repaintOnCursor) follow pointer moves too — each owns
+        // one transparent canvas, so this stays as cheap as the crosshair tier itself.
+        if (!repaintsData(level) && this.paintedData) this.repaintCursorLayers();
+    }
+
+    /** Repaint the SDK layers that opted into cursor tracking (their own canvas only). */
+    private repaintCursorLayers(): void {
+        const pane = this.scene.panes.get(PRICE_PANE_ID);
+        if (!pane) return;
+        const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        for (const l of this.extLayers) {
+            if (!l.def.repaintOnCursor) continue;
+            l.instance.render(this.extLayerArgs(l.def.id, pane.scale, pane.bounds, nowMs));
+            if (this.animZoom && l.instance.animating?.()) this.animator.start();
+        }
+    }
+
+    /** One frame's args for an SDK renderer layer (shared by the data + cursor paint paths). */
+    private extLayerArgs(id: string, scale: PriceScale, bounds: PaneBounds, nowMs: number): RendererLayerArgs {
+        return {
+            bars: this.scene.bars,
+            data: this.scene.nativeData.get(id),
+            settings: (this.scene.nativeData.get(`${id}-settings`) as Record<string, unknown> | undefined) ?? {},
+            pending: this.scene.nativePending.get(id) ?? [],
+            coords: this.coords,
+            scale,
+            bounds,
+            theme: this.theme,
+            priceStyle: this.scene.priceStyle,
+            nowMs,
+            cursor: this.lastPointer,
+        };
     }
 
     /** Paint the below-data (L-1) + geometry (L0) + chrome (L1) layers from the current scene/coords. */
@@ -2661,18 +2716,19 @@ export class NativeRenderer implements IChartRenderer {
             // SDK renderer layers: shared paint cycle, own channel data, own canvas.
             const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
             for (const l of this.extLayers) {
-                l.instance.render({
-                    bars: this.scene.bars,
-                    data: this.scene.nativeData.get(l.def.id),
-                settings: (this.scene.nativeData.get(`${l.def.id}-settings`) as Record<string, unknown> | undefined) ?? {},
-                    pending: this.scene.nativePending.get(l.def.id) ?? [],
-                    coords: this.coords,
-                    scale: pane.scale,
-                    bounds: pane.bounds,
-                    theme: this.theme,
-                    priceStyle: this.scene.priceStyle,
-                    nowMs,
-                });
+                const args = this.extLayerArgs(l.def.id, pane.scale, pane.bounds, nowMs);
+                l.instance.render(args);
+                // The active style's layer may dim/slim the base painting under it (a
+                // gradual counterpart of basePainting 'none') — applied this same frame,
+                // before the backend paints.
+                if (l.def.id === this.scene.priceStyle && l.instance.modulateBase) {
+                    const mod = l.instance.modulateBase(args);
+                    if (mod) {
+                        if (mod.candleBodyScale != null) this.backend.candleBodyScale = clamp01(mod.candleBodyScale) || 0.01;
+                        if (mod.candleBodyAlpha != null) this.backend.candleBodyAlpha = clamp01(mod.candleBodyAlpha) * this.candleBodyAlpha;
+                        if (mod.gridAlpha != null) this.backend.gridAlpha = clamp01(mod.gridAlpha);
+                    }
+                }
                 // A pulsing/fading layer keeps the animator alive; it stops itself when done.
                 if (this.animZoom && l.instance.animating?.()) this.animator.start();
             }
@@ -2689,7 +2745,7 @@ export class NativeRenderer implements IChartRenderer {
         // so the backend can composite them mid-stack (under the candles, between indicators).
         this.scene.drawingSlices = this.userDrawings?.prepareSlices(this.scene.orderedPanes().map((p) => p.id)) ?? new Map();
         this.backend.render(this.scene, this.coords, this.theme);
-        this.chrome.render(this.scene, this.coords, this.theme, { background: this.surfaceBackground, textColor: this.surfaceTextColor });
+        this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair
 
         if (easeLive && liveActual) this.bars[li] = liveActual; // restore the true forming bar
@@ -3200,16 +3256,19 @@ export class NativeRenderer implements IChartRenderer {
     private setToolbarGutter(px: number): void {
         if (px === this.toolbarGutter) return;
         this.toolbarGutter = px;
-        this.publishToolbarGutter();
+        this.publishGutters();
         this.positionAttribution();
         this.syncSize();
     }
 
-    /** Publish the gutter on the mount container as `--vela-toolbar-gutter`, so host
-     *  overlays sharing that container (a status line, a custom legend) can anchor to
-     *  the plot's left edge without reaching into the renderer's DOM. */
-    private publishToolbarGutter(): void {
+    /** Publish the gutters on the mount container as `--vela-toolbar-gutter` (left,
+     *  drawings toolbar) and `--vela-scale-gutter` (right, the full price-scale width
+     *  incl. merged own-scale columns), so host overlays sharing that container (a
+     *  status line, a watermark, a custom legend) can anchor to the plot's edges
+     *  without reaching into the renderer's DOM. */
+    private publishGutters(): void {
         this.mountContainer?.style.setProperty('--vela-toolbar-gutter', `${this.toolbarGutter}px`);
+        this.mountContainer?.style.setProperty('--vela-scale-gutter', `${this.rightAxisW}px`);
     }
 
     /** The built-in mark, or the host's own when one is set. */
@@ -3292,7 +3351,18 @@ export class NativeRenderer implements IChartRenderer {
             this.fitContent();
             this.didInitialFit = true;
         }
-        this.scheduler.flushNow(InvalidateLevel.Full);
+        if (this.animator.active) {
+            // The width/height assignments above just CLEARED every canvas, and renderFrame
+            // yields to the Animator while it runs — so a scheduler flush would paint
+            // nothing and the browser would present blank canvases until the animator's
+            // next rAF tick (a visible flash on every splitter/divider move of an
+            // animating chart, live-bar easing included). Paint synchronously instead.
+            this.computeScales();
+            this.paintData();
+            this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx());
+        } else {
+            this.scheduler.flushNow(InvalidateLevel.Full);
+        }
     }
 
     private applyBackground(): void {
@@ -3380,6 +3450,10 @@ function sanitizeHighlights(value: unknown): HighlightArea[] {
 }
 
 /** Whether a value is one of the supported price-series styles (built-ins + SDK-registered). */
+function clamp01(v: number): number {
+    return Math.max(0, Math.min(1, v));
+}
+
 function isPriceStyle(v: unknown): v is PriceStyle {
     return typeof v === 'string' && (priceStyleIds() as readonly string[]).includes(v);
 }

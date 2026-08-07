@@ -5,7 +5,7 @@ import type { PaneKind } from '../../../core/model/scene';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { PriceStyle } from '../../../core/options';
 import type { PriceScale, PaneBounds } from './CoordinateSystem';
-import { type ChartStyle, defaultChartStyle } from './chartConfig';
+import { type CandlePaintOverride, type ChartStyle, defaultChartStyle } from './chartConfig';
 import { defaultTradeMarkersState, type TradeMarkersState } from '../../shared/trade-markers';
 
 /** A user-defined shaded time band spanning the full plot height (all panes) — the
@@ -123,6 +123,9 @@ export class SceneGraph {
     priceStyle: PriceStyle = 'candles';
     /** Price-series base painting for the ACTIVE style (see ChartTypeDefinition.basePainting). */
     basePainting: 'candles' | 'none' = 'candles';
+    /** The ACTIVE style's own candle cosmetics (`chartTypes.<id>.candle*`) when it is a
+     *  candle-based plugin type; null ⇒ paint with the shared `style.candle` block. */
+    candleOverride: CandlePaintOverride | null = null;
     /** Explicit baseline reference price for `priceStyle:'baseline'`; when null the
      *  baseline follows `style.baseline.baselineLevel` as a percent of the visible pane
      *  range (resolved per frame via `baselinePriceFor`). */

@@ -14,8 +14,12 @@ export {
     registerBuiltinLayouts,
     gridStyles,
     activeAfterLayout,
+    layoutForGrid,
+    ensureLayout,
+    layoutShape,
+    GRID_PICKER_MAX,
 } from './layouts';
-export type { LayoutDefinition, TrackSizes } from './layouts';
+export type { LayoutDefinition, LayoutShape, TrackSizes } from './layouts';
 export { evenTracks, resizeTracks, trackOffsets } from './splitters';
 export { syncTargets, rangesWithin } from './sync';
 export type { SyncKind, SyncSetting, SyncOptions } from './sync';

@@ -2,9 +2,70 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.5.1]
+
+### Added
+
+- **Drawings sync across a workspace grid.** A new `drawings` sync kind
+  (`ws.sync.set('drawings', true)`, also a toggle on the shared drawing toolbar) links
+  drawings across same-group cells: a newly created drawing is copied onto the others
+  (anchors are time+price, so it lands at the same spot whatever each cell shows), and
+  the set stays linked — moving, restyling or deleting any member follows on its peers.
+  Placement mirrors **live**: while anchors are still being clicked, linked charts show
+  the in-progress shape as a reduced-opacity ghost. Link membership is session-scoped
+  and survives a toggle-off (re-enabling resumes edit/delete for drawings paired
+  earlier; drawings created while off stay independent), and a reload leaves every
+  drawing unpaired again. The on/off setting persists like the other sync kinds.
+- **Plugin SDK: a draft seam on the drawings port.** `DrawingIntent` gains an optional
+  `draft` arm (placement progress, `null` at the end) surfaced as the `drawing:draft`
+  chart event, and `IDrawingsRendererPort` gains an optional `setExternalGhost(doc)` —
+  the drawings twin of `setExternalCrosshair`. Both are additive: a renderer that
+  implements neither keeps today's behavior (sync at completion, no remote preview).
+
 ## [v0.5.0]
 
 ### Added
+
+- **Candle settings for plugin chart types that draw candles.** A registered chart type
+  that keeps the candle series under its own layer (an order-flow style, for example) now
+  gets a Candles group in chart settings → Symbol while it is active: body, border, and
+  wick toggles with their up/down colors, plus the bar spacing. These cosmetics belong to
+  that chart type alone — changing them restyles its candles without touching the Candles
+  or Heikin Ashi styles, and any value left untouched keeps following the shared candle
+  settings. They persist and export with the rest of the chart config.
+
+- **Plugin layers can fade the chart under them and follow the pointer.** A renderer
+  layer registered through the plugin SDK gains three quieter levers. It can now dim or
+  slim the base painting gradually — its `modulateBase` hook returns per-frame candle
+  body width/opacity and grid opacity, the smooth counterpart of the all-or-nothing
+  `basePainting: 'none'` — so a style that reveals under the candles as you zoom in can
+  fade them down instead of switching them off. A layer that reacts to hovering
+  (tooltips, row highlights) can declare `repaintOnCursor` and is repainted whenever the
+  pointer moves, receiving the pointer position with its paint arguments. And a chart
+  type's settings tab can now include `heading` rows — group titles that organize a
+  large tab into named sections.
+
+- **Settings tabs that show only what matters — and scale past one flat list.**
+  Chart-type settings stay pure data but gain structure. A row may carry a `when`
+  condition (`{ key, equals }` / `{ key, anyOf }`, or an AND-ed array) and is shown only
+  while the gate passes against the tab's current values — the dialog re-evaluates live
+  on every edit, so mode-specific colors or a manual-size input appear exactly when they
+  apply. A section may declare `instances` instead of flat rows: the pane opens with a
+  tab strip — one tab per present instance, a dashed `+` that turns the next one on, an
+  `×` on the active removable tab — with presence stored as a plain boolean
+  (`enableKey`) in the same per-type bag. Inside an instance (and inside the new
+  `subsections`, indented entries under the section's rail tab), `heading` rows become a
+  group TOC on the left of the pane that shows one group at a time. And
+  `placement: 'after-symbol'` puts a type's tab directly under Symbol. Two row forms
+  keep panes static where a conditional reveal would jump the layout: a toggle row may
+  carry inline color swatches (`colors` — edited on the toggle's own row, dimmed while
+  it is off), and a `range` row edits a min–max pair on one line (with an optional
+  `placeholder` naming the unset state, so a cleared input reads "Off" instead of a
+  magic 0). Select options may be `[value, label]` pairs so camelCase ids show as
+  human text. A subsection's `enableKey` soft-disables its other rows (visible but
+  grayed) while off, instead of hiding them. Hidden rows keep their stored values;
+  persistence and delivery are unchanged — consumers still receive one flat settings
+  object.
 
 - **A light theme that actually works — switchable live.** `theme: 'light'` now skins the
   whole product coherently: white surfaces with dark, readable text across the toolbar,
@@ -21,7 +82,7 @@ All notable changes to Vela, newest first.
   drawings are never recolored.
 
 - **Capturing what a script computes, in one subscription: `script:run`.** Reading a running
-  script used to mean assembling it yourself — an event told you *that* something happened
+  script used to mean assembling it yourself — an event told you _that_ something happened
   and handed you an id, so you looked the indicator up, awaited a snapshot, and then decoded
   it: variable names arrived scope-mangled by the transpiler, values arrived as per-bar
   buffers you had to index, nothing said whether the script was a strategy, and the title on
@@ -69,6 +130,11 @@ All notable changes to Vela, newest first.
   instead of drifting. And a host that owns its own undo shortcuts can turn off the new
   `historyChords` render feature, so the drawings layer lets Ctrl+Z/Y bubble up instead of
   consuming them itself.
+- **Hold Shift to draw lines at exact angles.** While placing a trend line, ray, extended
+  line, info line, trend angle, or arrow — or dragging one of its endpoints later — holding
+  Shift rounds the line to the nearest 45° step as drawn on screen: horizontal, vertical, or
+  a perfect diagonal. The magnet is set aside while Shift is held, so the locked angle is
+  kept exactly rather than being pulled off-axis by a nearby candle.
 
 ### Changed
 
@@ -94,6 +160,10 @@ All notable changes to Vela, newest first.
   workspace it updates every cell, since the display zone is workspace-global; the dialog
   used to carry its own short list of raw zone identifiers, and a choice made there never
   reached the rest of the interface.
+- **Drawing-toolbar tooltips appear when you'd expect them.** Hovering a toolbar icon now
+  shows its tooltip after a short pause instead of a two-second wait, and a tool group's
+  tooltip names the exact tool its icon will arm (the group's last-used one), not just the
+  group.
 
 ### Fixed
 
@@ -111,6 +181,10 @@ All notable changes to Vela, newest first.
 - **The indicator legend follows the chart background.** Changing the background color in
   chart settings repaints the legend rows with it; they used to keep the color they were
   created with and float as stale chips over the new background.
+- **The price and time scales follow the chart background.** Changing the background color
+  in chart settings now repaints the axis scales with it, so the plot and its scales read
+  as one surface; they used to stay on the app theme's color and frame a recolored chart
+  with the old one.
 - **The status line's readout follows the chart style.** Bar-shaped styles (candles,
   bars, Heikin Ashi) read out all four O/H/L/C values; a one-line style (line, area,
   baseline) plots a single series, so its readout is just that value — plus the change,
@@ -138,6 +212,28 @@ All notable changes to Vela, newest first.
   renderer now publishes its toolbar gutter as `--vela-toolbar-gutter` on the mount
   container and the status line anchors to it, keeping the two in one column in every
   shell and toolbar state.
+- **Workspace dividers stay between charts.** In a mixed layout — say three charts stacked
+  on the left beside two taller ones on the right — the divider between two stacked charts
+  used to run the full width of the grid, so hovering or dragging over a neighboring chart
+  could grab the divider instead of the chart under the pointer. A divider now covers only
+  the stretch where two charts actually meet. Its hover highlight also matches the pane
+  dividers inside a chart — the same soft band with a solid center line, in the theme's
+  text color — instead of the old blue accent strip.
+- **The symbol watermark stays inside its own chart.** The faded "SYMBOL · TF" mark was
+  sized against the browser window, so in a multi-chart workspace a small cell could get
+  type far wider than itself, spilling the text across its neighbors. The mark now measures
+  itself against its own chart and shrinks to fit — a lone full-size chart keeps the large
+  type, a dense grid gets proportionally smaller marks, and dragging a divider refits them
+  live. The mark also fits and centers on the plot itself rather than the full chart, so in
+  a narrow cell the text no longer runs under the price scale's numbers.
+- **Resizing no longer makes charts flash or shake.** Two resize bugs, most visible in a
+  workspace: dragging a divider across a chart mid-animation (a live tick easing in, a zoom
+  glide) could blank it for a frame on every move, because the resized canvases waited for
+  the next animation frame to repaint — they now repaint immediately. And a resize or layout
+  change could leave a chart trembling rapidly (and burning a full animation loop in the
+  background) until it was clicked: the zoom limits move with the chart's width, and an
+  in-flight zoom or scroll animation whose destination fell outside the new limits kept
+  chasing it forever. The animation now settles on the nearest reachable point and stops.
 
 ## [v0.4.6]
 
@@ -189,7 +285,7 @@ All notable changes to Vela, newest first.
   was declared. Everything else already spoke names — `ws.cell('btc')`, the active cell,
   the saved document — so the grid was consistent everywhere except this one list, and
   what read it inherited the blank. A plugin asking its widget context which charts the
-  grid holds got nothing; a plugin registered *after* the workspace was built never got
+  grid holds got nothing; a plugin registered _after_ the workspace was built never got
   its legend buttons onto the cells already on screen; and opening the symbol search left
   the other cells' in-chart dialogs open. Cells are now listed the way the rest of the
   workspace identifies them, in slot order, still leaving out the ones a smaller layout

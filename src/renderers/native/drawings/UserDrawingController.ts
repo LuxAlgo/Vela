@@ -102,6 +102,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private activeTool: DrawingTypeKey | null = null;
     private activeToolStyle: SerializedDrawing['style'] | undefined; // last-used style for the armed tool (seeds the placement ghost)
     private intentCb: ((i: DrawingIntent) => void) | null = null;
+    /** Another chart's in-progress placement, mirrored here as a ghost (drawings sync). */
+    private externalGhost: Drawing | null = null;
+    /** Last draft fingerprint reported upstream — gates the per-render emission to actual changes. */
+    private lastDraftKey: string | null = null;
     private readonly measure = new MeasureOverlay(); // transient ruler — not a persistent drawing
     private toolbarVisible = false; // mirrors showToolbar (drives the gutter reservation)
     private toolbarCollapsed = false; // the bar is a slim expand-strip (narrower gutter)
@@ -180,6 +184,12 @@ export class UserDrawingController implements IDrawingsRendererPort {
     /** The gutter follows the bar's current footprint: hidden 0, collapsed a slim strip, else full width. */
     private syncToolbarGutter(): void {
         this.deps.setToolbarGutter(this.toolbarVisible ? (this.toolbarCollapsed ? TOOLBAR_COLLAPSED_WIDTH : TOOLBAR_WIDTH) : 0);
+    }
+
+    /** Core push: mirror (or clear) another chart's in-progress placement as a ghost. */
+    setExternalGhost(doc: SerializedDrawing | null): void {
+        this.externalGhost = doc ? deserializeDrawing(doc) : null;
+        this.render();
     }
 
     syncDrawings(docs: readonly SerializedDrawing[]): void {
@@ -364,7 +374,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.interaction.down(x, y, snap, shift); // the popup self-dismisses on any outside press
     }
 
-    pointerMove(x: number, y: number, snap: SnapMode = 'off'): void {
+    pointerMove(x: number, y: number, snap: SnapMode = 'off', shift = false): void {
         if (this.eraserMode) {
             if (this.erasing) this.deleteAt(x, y); // erase only while the button is held (not on hover)
             return;
@@ -374,7 +384,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
             this.render();
             return;
         }
-        this.interaction.move(x, y, snap);
+        this.interaction.move(x, y, snap, shift);
         this.updateHover(x, y); // show handles for the drawing under the cursor
     }
 
@@ -815,6 +825,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.layoutTextEditor();
         const ghost = this.interaction.ghost();
         if (ghost) this.painter.paintGhost(ctx, ghost, proj, this.deps.theme());
+        // A remote placement mirrored here (drawings sync) paints as the same ghost.
+        if (this.externalGhost) this.painter.paintGhost(ctx, this.externalGhost, proj, this.deps.theme());
+        // Every placing change re-renders (deps.changed), so this catches each anchor
+        // click, cursor move and cancel; the fingerprint gate drops the no-change frames.
+        this.emitDraft(ghost);
         // While placing, show control circles on the points clicked so far (so the user
         // sees where each anchor — e.g. a pitchfork's pivot — landed before it completes).
         const markers = this.interaction.placingMarkers(proj);
@@ -883,6 +898,18 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.emit({ kind: 'delete', ids: [id] });
             },
         }, () => this.clearSelection()); // dismiss-on-outside-click also clears the selection/highlight
+    }
+
+    /** Report placement progress upstream (`draft` intent) so the drawings sync can
+     *  mirror the ghost live on linked charts. Called from every render; only actual
+     *  shape changes emit, and the end of a placement emits one `null`. */
+    private emitDraft(ghost: Drawing | null): void {
+        const key = ghost
+            ? JSON.stringify({ t: ghost.type, p: ghost.paneId, a: ghost.anchors, s: ghost.style, x: ghost.text })
+            : null;
+        if (key === this.lastDraftKey) return;
+        this.lastDraftKey = key;
+        this.intentCb?.({ kind: 'draft', doc: ghost ? ghost.serialize() : null });
     }
 
     private emit(i: DrawingIntent): void {

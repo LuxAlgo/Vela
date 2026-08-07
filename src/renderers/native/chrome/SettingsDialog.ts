@@ -1,11 +1,20 @@
 import type { VelaTheme, ThemeName } from '../../../core/options';
 import type { ChartConfig } from '../core/chartConfig';
-import { chartType, chartTypes } from '../../../chart-types/registry';
+import {
+    chartType,
+    chartTypes,
+    settingsRowVisible,
+    type ChartTypeSettingsInstance,
+    type ChartTypeSettingsSection,
+    type SettingsRowDescriptor,
+    type SettingsRowWhen,
+    type SettingsSelectOption,
+} from '../../../chart-types/registry';
 import { toHex6, withAlpha } from '../../../core/color';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
 import { colorField, closeColorPopover } from './ColorField';
-import { priceStyleIds } from '../core/chartConfig';
+import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -99,6 +108,37 @@ function ensureControlStyles(): void {
 .vela-sd-btn:hover{background:var(--vela-hover);border-color:var(--vela-border-strong);color:var(--vela-fg-bright);}
 .vela-sd-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;border-radius:var(--vela-radius-sm);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-sd-close:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+/* Rows/blocks gated away by chart-type conditions, TOC filters, or the instance strip.
+   !important: the pane grid rewrites inline display ('contents') AFTER the initial
+   visibility pass, so a class must win. */
+.vela-sd-hide{display:none !important;}
+/* Indented rail sub-entry (a chart-type section's subsection tab). */
+.vela-sd-tab-sub{padding-left:28px;font-weight:600;font-size:12px;}
+/* Instance strip: a tab per present instance (label, ✕ on the active removable one)
+   and a dashed + that turns on the next absent instance. The rule under it separates
+   the strip from the instance's TOC + rows area. */
+.vela-sd-itabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:14px 0 0;padding-bottom:12px;border-bottom:1px solid var(--vela-border);}
+.vela-sd-itab{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;background:transparent;border:1px solid var(--vela-border);border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-family:inherit;font-size:var(--vela-font-size-md);font-weight:600;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
+.vela-sd-itab:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-sd-itab.on{background:var(--vela-active);color:var(--vela-fg-bright);border-color:var(--vela-border-strong);}
+.vela-sd-ix{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:-4px;border-radius:var(--vela-radius-sm);color:var(--vela-fg-muted);font-size:10px;line-height:1;}
+.vela-sd-ix:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-sd-itab-add{border-style:dashed;min-width:30px;justify-content:center;padding:0;}
+/* Structured pane: group TOC column + rows column, TOP-ALIGNED (the shared padding-top
+   lives on the wrap, never on one column). The TOC sticks while the pane scrolls; the
+   vertical rule sits on the rows column so it spans the full content height. When every
+   group gates out the TOC hides and .no-toc drops the rule with it. */
+.vela-sd-struct{display:flex;align-items:flex-start;padding-top:14px;}
+.vela-sd-toc{position:sticky;top:0;flex:0 0 auto;min-width:104px;display:flex;flex-direction:column;gap:2px;padding:2px 14px 0 0;}
+.vela-sd-struct>[data-sd-rows-host]{border-left:1px solid var(--vela-border);padding-left:18px;}
+.vela-sd-struct.no-toc>[data-sd-rows-host]{border-left:none;padding-left:0;}
+.vela-sd-toc-btn{text-align:left;padding:6px 10px;background:transparent;border:none;border-radius:var(--vela-radius-sm);color:var(--vela-fg-muted);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-sd-toc-btn:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-sd-toc-btn.on{background:var(--vela-active);color:var(--vela-fg-bright);}
+/* Soft-disable: a subsection's enableKey is off — rows stay visible (browseable) but
+   muted and non-interactive. Applied to each row's children so it survives display:contents;
+   !important beats the inline opacity on labels. */
+.vela-sd-soft>*{opacity:0.4 !important;pointer-events:none !important;}
 `;
     document.head.appendChild(st);
 }
@@ -117,6 +157,10 @@ export class SettingsDialog {
     private themeControl: { current: ThemeName; onSelect: (name: ThemeName) => void } | null = null;
     /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
     private tabs: Array<{ title: string; show: () => void }> = [];
+    /** Active instance-strip tab per chart type — remembered across dialog rebuilds. */
+    private readonly typeActiveInstance = new Map<string, number>();
+    /** Active TOC group per structured pane (`<typeId>/<pane>` → group label). */
+    private readonly typeActiveGroup = new Map<string, string>();
     /** The tab currently shown, so a theme change (which rebuilds) lands back on it. */
     private activeSection: string | null = null;
 
@@ -317,6 +361,34 @@ export class SettingsDialog {
         baseline.append(this.numberRow('Width', config.baseline.width, 1, 10, 1, (v) => this.emit({ baseline: { width: v } })));
         groups.baseline = baseline;
         body.append(baseline);
+
+        // Candle-based PLUGIN styles (an order-flow type keeps candles under its layer):
+        // the same candle rows, but stored in the type's OWN bag (chartTypes.<id>.candle*)
+        // so edits style THAT type's candles without touching the shared candles block the
+        // candles/heikin-ashi styles paint with. Unset keys inherit the shared values.
+        for (const def of chartTypes()) {
+            if (!hasOwnCandlePaint(def.id)) continue;
+            const bag = config.chartTypes[def.id] ?? {};
+            const colorOf = (key: string, shared: string): string => (typeof bag[key] === 'string' && bag[key] !== '' ? bag[key] as string : shared);
+            const boolOf = (key: string, shared: boolean): boolean => (typeof bag[key] === 'boolean' ? bag[key] as boolean : shared);
+            const g = this.group();
+            g.append(this.sectionTitle('Candles'));
+            g.append(this.toggleRow('Body', boolOf('candleBodyVisible', config.candles.bodyVisible), (v) => this.emitType(def.id, 'candleBodyVisible', v), [
+                this.swatch(colorOf('candleUpColor', config.candles.upColor), (v) => this.emitType(def.id, 'candleUpColor', v)),
+                this.swatch(colorOf('candleDownColor', config.candles.downColor), (v) => this.emitType(def.id, 'candleDownColor', v)),
+            ]));
+            g.append(this.toggleRow('Borders', boolOf('candleBorderVisible', config.candles.borderVisible), (v) => this.emitType(def.id, 'candleBorderVisible', v), [
+                this.swatch(colorOf('candleBorderUpColor', config.candles.borderUpColor), (v) => this.emitType(def.id, 'candleBorderUpColor', v)),
+                this.swatch(colorOf('candleBorderDownColor', config.candles.borderDownColor), (v) => this.emitType(def.id, 'candleBorderDownColor', v)),
+            ]));
+            g.append(this.toggleRow('Wick', boolOf('candleWickVisible', config.candles.wickVisible), (v) => this.emitType(def.id, 'candleWickVisible', v), [
+                this.swatch(colorOf('candleWickUpColor', config.candles.wickUpColor), (v) => this.emitType(def.id, 'candleWickUpColor', v)),
+                this.swatch(colorOf('candleWickDownColor', config.candles.wickDownColor), (v) => this.emitType(def.id, 'candleWickDownColor', v)),
+            ]));
+            g.append(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })));
+            groups[def.id] = g;
+            body.append(g);
+        }
         showActive(config.series.style);
 
         body.append(this.sectionTitle('Time zone'));
@@ -335,9 +407,27 @@ export class SettingsDialog {
                 }
             }
         };
+        // ══ CHART-TYPE SDK SECTIONS — each registered type's declarative settings tab.
+        //    visibility 'active' (default) shows the tab only while the style is active;
+        //    'always' keeps it visible. Values persist under config.chartTypes[<id>] and
+        //    are pushed to the `<id>-settings` channel by the renderer's applyConfig.
+        //    placement 'after-symbol' puts the tab (and its subsections) right under
+        //    Symbol; 'end' (default) keeps the historical position after the built-ins.
+        const renderChartTypeSections = (placement: 'after-symbol' | 'end'): void => {
+            for (const def of chartTypes()) {
+                const typeSettings = def.settings;
+                if (!typeSettings) continue;
+                if ((typeSettings.placement ?? 'end') !== placement) continue;
+                this.chartTypeSection(def.id, typeSettings, config, body);
+            }
+        };
+
         // 'symbol' rows FIRST — they must land before any host TAB marker, or the
         // split walker files them into that tab's pane instead of Symbol's.
+        // Chart-type 'after-symbol' tabs precede host ones: an active style's own tab
+        // sits DIRECTLY under Symbol.
         renderHostSections('symbol');
+        renderChartTypeSections('after-symbol');
         renderHostSections('after-symbol');
 
         // ══ SCALES AND LINES — price scale + crosshair (the reference tab) ══
@@ -383,31 +473,7 @@ export class SettingsDialog {
             body.append(this.selectRow('Color theme', tc.current === 'dark' ? 'Dark' : 'Light', ['Dark', 'Light'], (v) => tc.onSelect(v === 'Dark' ? 'dark' : 'light')));
         }
 
-        // ══ CHART-TYPE SDK SECTIONS — each registered type's declarative settings tab.
-        //    visibility 'active' (default) shows the tab only while the style is active;
-        //    'always' keeps it visible. Values persist under config.chartTypes[<id>] and
-        //    are pushed to the `<id>-settings` channel by the renderer's applyConfig.
-        for (const def of chartTypes()) {
-            const typeSettings = def.settings;
-            if (!typeSettings) continue;
-            const marker = this.section(typeSettings.title);
-            marker.dataset.sdStyle = def.id;
-            marker.dataset.sdVisibility = typeSettings.visibility ?? 'active';
-            body.append(marker);
-            const values = config.chartTypes[def.id] ?? {};
-            for (const r of typeSettings.rows) {
-                const current = values[r.key];
-                if (r.kind === 'toggle') {
-                    body.append(this.boolRow(r.label, typeof current === 'boolean' ? current : r.defval, (v) => this.emitType(def.id, r.key, v)));
-                } else if (r.kind === 'number') {
-                    body.append(this.numberRow(r.label, typeof current === 'number' ? current : r.defval, r.min ?? 0, r.max ?? 1_000_000, r.step ?? 1, (v) => this.emitType(def.id, r.key, v)));
-                } else if (r.kind === 'color') {
-                    body.append(this.colorRow(r.label, typeof current === 'string' ? current : r.defval, (v) => this.emitType(def.id, r.key, v)));
-                } else {
-                    body.append(this.selectRow(r.label, typeof current === 'string' ? current : r.defval, [...r.options], (v) => this.emitType(def.id, r.key, v)));
-                }
-            }
-        }
+        renderChartTypeSections('end');
 
         renderHostSections('end');
 
@@ -430,7 +496,7 @@ export class SettingsDialog {
                 const tab = document.createElement('button');
                 tab.type = 'button';
                 tab.textContent = title;
-                tab.className = 'vela-sd-tab';
+                tab.className = 'vela-sd-tab' + (child.dataset.sdSub !== undefined ? ' vela-sd-tab-sub' : '');
                 panes.push({ title, el, tab, style: child.dataset.sdStyle, visibility: child.dataset.sdVisibility });
                 current = el;
                 child.remove();
@@ -476,7 +542,16 @@ export class SettingsDialog {
         this.root = scrim;
         // Pane-wide label column — must run after mount so label clones can be measured
         // against the live dialog (detached/`display:none` trees report width 0).
-        for (const p of panes) this.layoutSettingsGrids(p.el, dlg);
+        // Structured chart-type panes (instance strip / group TOC) own their layout and
+        // tag their rows hosts instead; each host gets its own grid.
+        for (const p of panes) {
+            const hosts = [...p.el.querySelectorAll('[data-sd-rows-host]')] as HTMLElement[];
+            if (hosts.length === 0) {
+                this.layoutSettingsGrids(p.el, dlg);
+                continue;
+            }
+            for (const h of hosts) this.layoutSettingsGrids(h, dlg);
+        }
     }
 
     close(): void {
@@ -510,6 +585,342 @@ export class SettingsDialog {
         el.style.cssText = 'margin:24px 0 0;padding-bottom:8px;font-size:var(--vela-font-size-sm);font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);';
         el.textContent = text;
         return el;
+    }
+
+    /**
+     * One chart type's settings tab (and its subsection tabs), appended to the linear
+     * `body` for the pane splitter to file. One live values BAG serves the whole section
+     * — instances and subsections share the per-type store, so a `when` gate anywhere
+     * can reference a key edited anywhere else; every edit runs every registered
+     * refresher.
+     */
+    private chartTypeSection(typeId: string, section: ChartTypeSettingsSection, config: ChartConfig, body: HTMLElement): void {
+        const marker = this.section(section.title);
+        marker.dataset.sdStyle = typeId;
+        marker.dataset.sdVisibility = section.visibility ?? 'active';
+        body.append(marker);
+
+        const values = config.chartTypes[typeId] ?? {};
+        const bag: Record<string, unknown> = {};
+        const seedKey = (key: string, want: 'boolean' | 'number' | 'string', defval: unknown): void => {
+            const v = values[key];
+            bag[key] = typeof v === want ? v : defval;
+        };
+        const seed = (rows: readonly SettingsRowDescriptor[]): void => {
+            for (const r of rows) {
+                if (r.kind === 'heading' || r.kind === 'header') continue;
+                if (r.kind === 'range') {
+                    seedKey(r.minKey, 'number', r.defval);
+                    seedKey(r.maxKey, 'number', r.defval);
+                    continue;
+                }
+                seedKey(r.key, r.kind === 'toggle' ? 'boolean' : r.kind === 'number' ? 'number' : 'string', r.defval);
+                if (r.kind === 'toggle') for (const c of r.colors ?? []) seedKey(c.key, 'string', c.defval);
+            }
+        };
+        if (section.rows) seed(section.rows);
+        for (const inst of section.instances ?? []) seed(inst.rows);
+        for (const sub of section.subsections ?? []) seed(sub.rows);
+        // Instance / subsection presence keys may have no row of their own — absent means OFF.
+        for (const inst of section.instances ?? []) {
+            if (!inst.enableKey || inst.enableKey in bag) continue;
+            bag[inst.enableKey] = values[inst.enableKey] === true;
+        }
+        for (const sub of section.subsections ?? []) {
+            if (!sub.enableKey || sub.enableKey in bag) continue;
+            bag[sub.enableKey] = values[sub.enableKey] === true;
+        }
+
+        const refreshers: Array<() => void> = [];
+        const put = (key: string, v: unknown): void => {
+            bag[key] = v;
+            this.emitType(typeId, key, v);
+            for (const r of refreshers) r();
+        };
+
+        if (section.instances && section.instances.length > 0) {
+            body.append(this.instancesBlock(typeId, section.instances, bag, put, refreshers));
+        } else if (section.rows) {
+            this.flatTypeRows(section.rows, bag, put, refreshers, body);
+        }
+
+        for (const sub of section.subsections ?? []) {
+            const subMarker = this.section(sub.title);
+            subMarker.dataset.sdStyle = typeId;
+            subMarker.dataset.sdVisibility = section.visibility ?? 'active';
+            subMarker.dataset.sdSub = '1';
+            body.append(subMarker);
+            body.append(this.groupedRows(`${typeId}/${sub.title}`, sub.rows, bag, put, refreshers, sub.enableKey));
+        }
+        for (const r of refreshers) r();
+    }
+
+    /** The FLAT chart-type form: rows appended straight to the body (the pane grid wraps
+     *  them), headings/headers as inline group titles, `when` gates refreshed live. */
+    private flatTypeRows(
+        rows: readonly SettingsRowDescriptor[],
+        bag: Record<string, unknown>,
+        put: (key: string, v: unknown) => void,
+        refreshers: Array<() => void>,
+        body: HTMLElement,
+    ): void {
+        const entries: Array<{ el: HTMLElement; when?: SettingsRowWhen }> = [];
+        for (const r of rows) {
+            const el = r.kind === 'heading' || r.kind === 'header' ? this.sectionTitle(r.label) : this.typeRow(r, bag, put);
+            entries.push({ el, when: r.when });
+            body.append(el);
+        }
+        refreshers.push(() => {
+            // A class, not inline display: the pane grid dissolves rows into
+            // display:contents AFTER the first pass, which would wipe inline 'none'.
+            for (const e of entries) e.el.classList.toggle('vela-sd-hide', !settingsRowVisible(e.when, bag));
+        });
+    }
+
+    /** One value row for a chart-type descriptor, writing through `put`. */
+    private typeRow(
+        r: Exclude<SettingsRowDescriptor, { kind: 'heading' | 'header' }>,
+        bag: Record<string, unknown>,
+        put: (key: string, v: unknown) => void,
+    ): HTMLElement {
+        if (r.kind === 'toggle') {
+            const swatches = (r.colors ?? []).map((c) => {
+                const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v));
+                sw.title = c.label;
+                return sw;
+            });
+            return this.toggleRow(r.label, bag[r.key] as boolean, (v) => put(r.key, v), swatches);
+        }
+        if (r.kind === 'number') return this.numberRow(r.label, bag[r.key] as number, r.min ?? 0, r.max ?? 1_000_000, r.step ?? 1, (v) => put(r.key, v));
+        if (r.kind === 'color') return this.colorRow(r.label, bag[r.key] as string, (v) => put(r.key, v));
+        if (r.kind === 'range') return this.rangeRow(r, bag, put);
+        return this.selectRowLabeled(r.label, bag[r.key] as string, normalizeSelectOptions(r.options), (v) => put(r.key, v));
+    }
+
+    /**
+     * A MIN–MAX row: two number inputs on one row (stored under the descriptor's
+     * `minKey`/`maxKey`). With a `placeholder`, an input at the DEFAULT value renders
+     * empty showing it, and clearing an input stores the default back — the
+     * placeholder names the unset state ('Off' for 0-disables bounds).
+     */
+    private rangeRow(
+        r: Extract<SettingsRowDescriptor, { kind: 'range' }>,
+        bag: Record<string, unknown>,
+        put: (key: string, v: unknown) => void,
+    ): HTMLElement {
+        const { wrap } = this.row(r.label);
+        const input = (key: string, title: string): HTMLInputElement => {
+            const ni = document.createElement('input');
+            ni.type = 'number';
+            ni.className = 'vela-sd-number';
+            ni.min = String(r.min ?? 0);
+            ni.max = String(r.max ?? 1_000_000);
+            ni.step = String(r.step ?? 1);
+            ni.title = title;
+            const current = bag[key] as number;
+            if (r.placeholder !== undefined) {
+                ni.placeholder = r.placeholder;
+                if (current !== r.defval) ni.value = String(current);
+            } else {
+                ni.value = String(current);
+            }
+            // 'change' (commit), not 'input': an empty field means "default" only once
+            // the user is done, never while they are mid-edit.
+            ni.addEventListener('change', () => {
+                const raw = ni.value.trim() === '' ? r.defval : Number(ni.value);
+                const v = Number.isFinite(raw) ? Math.min(r.max ?? Infinity, Math.max(r.min ?? -Infinity, raw)) : r.defval;
+                ni.value = r.placeholder !== undefined && v === r.defval ? '' : String(v);
+                put(key, v);
+            });
+            return ni;
+        };
+        const box = document.createElement('div');
+        box.style.cssText = 'display:flex;align-items:center;gap:6px;flex:0 0 auto;';
+        const dash = document.createElement('span');
+        dash.textContent = '–';
+        dash.style.cssText = 'color:var(--vela-fg-muted);';
+        box.append(input(r.minKey, `${r.label} — min`), dash, input(r.maxKey, `${r.label} — max`));
+        wrap.appendChild(box);
+        return wrap;
+    }
+
+    /**
+     * The INSTANCE STRIP block: a tab per present instance (label, `×` on the active
+     * removable one), a dashed `+` while an instance is still absent, and one
+     * grouped-rows content per instance below — only the active tab's content shows.
+     * Presence is the boolean at each instance's `enableKey`; the strip rebuilds on
+     * every section edit, so gates elsewhere stay coherent.
+     */
+    private instancesBlock(
+        typeId: string,
+        instances: readonly ChartTypeSettingsInstance[],
+        bag: Record<string, unknown>,
+        put: (key: string, v: unknown) => void,
+        refreshers: Array<() => void>,
+    ): HTMLElement {
+        const wrap = document.createElement('div');
+        const strip = document.createElement('div');
+        strip.className = 'vela-sd-itabs';
+        wrap.append(strip);
+        const contents = instances.map((inst, i) => {
+            const content = this.groupedRows(`${typeId}/#${i}`, inst.rows, bag, put, refreshers);
+            wrap.append(content);
+            return content;
+        });
+
+        const present = (inst: ChartTypeSettingsInstance): boolean => !inst.enableKey || bag[inst.enableKey] === true;
+        const refresh = (): void => {
+            let active = this.typeActiveInstance.get(typeId) ?? 0;
+            if (!present(instances[active] ?? instances[0]!)) active = 0;
+            this.typeActiveInstance.set(typeId, active);
+
+            strip.replaceChildren();
+            instances.forEach((inst, i) => {
+                if (!present(inst)) return;
+                const tab = document.createElement('button');
+                tab.type = 'button';
+                tab.className = 'vela-sd-itab' + (i === active ? ' on' : '');
+                const lbl = document.createElement('span');
+                lbl.textContent = inst.label;
+                tab.append(lbl);
+                if (i === active && inst.enableKey) {
+                    const x = document.createElement('span');
+                    x.className = 'vela-sd-ix';
+                    x.textContent = '✕';
+                    x.title = `Remove ${inst.label}`;
+                    x.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.typeActiveInstance.set(typeId, 0);
+                        put(inst.enableKey!, false); // put() re-runs every refresher, this one included
+                    });
+                    tab.append(x);
+                }
+                tab.addEventListener('click', () => {
+                    this.typeActiveInstance.set(typeId, i);
+                    refresh();
+                });
+                strip.append(tab);
+            });
+            const absent = instances.findIndex((inst) => !present(inst));
+            if (absent >= 0) {
+                const add = document.createElement('button');
+                add.type = 'button';
+                add.className = 'vela-sd-itab vela-sd-itab-add';
+                add.textContent = '+';
+                add.title = `Add ${instances[absent]!.label}`;
+                add.addEventListener('click', () => {
+                    this.typeActiveInstance.set(typeId, absent);
+                    put(instances[absent]!.enableKey!, true);
+                });
+                strip.append(add);
+            }
+            contents.forEach((c, i) => c.classList.toggle('vela-sd-hide', i !== active));
+        };
+        refreshers.push(refresh);
+        return wrap;
+    }
+
+    /**
+     * A GROUPED rows pane: a TOC column of the group labels (from `heading` rows) and
+     * ONE rows host holding every row — the active group's rows show, the rest hide.
+     * Rows BEFORE the first heading are the always block, visible above every group.
+     * `header` rows stay in the rows column as in-group subgroup titles (not TOC
+     * entries). A group whose value rows are all gated out (or whose heading's own
+     * `when` fails) leaves the TOC; the whole TOC hides when no group is live. The
+     * rows host is tagged for `layoutSettingsGrids`, keeping one shared label column
+     * across all groups.
+     *
+     * `enableKey` (optional): while that bag boolean is false, every row except the one
+     * whose key matches is soft-disabled (visible but grayed / non-interactive) so the
+     * pane stays browseable with the feature off.
+     */
+    private groupedRows(
+        paneKey: string,
+        rows: readonly SettingsRowDescriptor[],
+        bag: Record<string, unknown>,
+        put: (key: string, v: unknown) => void,
+        refreshers: Array<() => void>,
+        enableKey?: string,
+    ): HTMLElement {
+        const wrap = document.createElement('div');
+        wrap.className = 'vela-sd-struct';
+        const toc = document.createElement('div');
+        toc.className = 'vela-sd-toc';
+        const rowsHost = document.createElement('div');
+        rowsHost.dataset.sdRowsHost = '1';
+        rowsHost.style.cssText = 'flex:1 1 auto;min-width:0;';
+        wrap.append(toc, rowsHost);
+
+        const entries: Array<{ el: HTMLElement; when?: SettingsRowWhen; group: number; key?: string; header?: boolean }> = [];
+        const groups: string[] = [];
+        const groupWhens: Array<SettingsRowWhen | undefined> = [];
+        let g = -1; // -1 = the always block before the first heading
+        for (const r of rows) {
+            if (r.kind === 'heading') {
+                g = groups.length;
+                groups.push(r.label);
+                groupWhens.push(r.when);
+                continue; // headings live in the TOC, not the rows column
+            }
+            if (r.kind === 'header') {
+                entries.push({ el: this.sectionTitle(r.label), when: r.when, group: g, header: true });
+                rowsHost.append(entries[entries.length - 1]!.el);
+                continue;
+            }
+            const el = this.typeRow(r, bag, put);
+            const key = r.kind === 'range' ? undefined : r.key;
+            entries.push({ el, when: r.when, group: g, key });
+            rowsHost.append(el);
+        }
+
+        const refresh = (): void => {
+            // Headers don't keep a TOC group alive — only value rows do.
+            const live = groups.map((_, gi) =>
+                settingsRowVisible(groupWhens[gi], bag)
+                && entries.some((e) => e.group === gi && !e.header && settingsRowVisible(e.when, bag)));
+            let activeIdx = groups.indexOf(this.typeActiveGroup.get(paneKey) ?? '');
+            if (activeIdx < 0 || !live[activeIdx]) activeIdx = live.findIndex(Boolean);
+            if (activeIdx >= 0) this.typeActiveGroup.set(paneKey, groups[activeIdx]!);
+
+            toc.replaceChildren();
+            groups.forEach((label, gi) => {
+                if (!live[gi]) return;
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'vela-sd-toc-btn' + (gi === activeIdx ? ' on' : '');
+                b.textContent = label;
+                b.addEventListener('click', () => {
+                    this.typeActiveGroup.set(paneKey, label);
+                    refresh();
+                });
+                toc.append(b);
+            });
+            const anyGroup = live.some(Boolean);
+            toc.classList.toggle('vela-sd-hide', !anyGroup);
+            wrap.classList.toggle('no-toc', !anyGroup);
+
+            const enabled = !enableKey || bag[enableKey] === true;
+            for (let i = 0; i < entries.length; i++) {
+                const e = entries[i]!;
+                let visible = (e.group === -1 || e.group === activeIdx) && settingsRowVisible(e.when, bag);
+                // A header with no visible content under it (until the next header /
+                // group end) collapses so empty subgroups don't leave orphan titles.
+                if (visible && e.header) {
+                    let hasContent = false;
+                    for (let j = i + 1; j < entries.length; j++) {
+                        const n = entries[j]!;
+                        if (n.group !== e.group || n.header) break;
+                        if (settingsRowVisible(n.when, bag)) { hasContent = true; break; }
+                    }
+                    visible = hasContent;
+                }
+                e.el.classList.toggle('vela-sd-hide', !visible);
+                // Soft-disable everything except the master toggle while the feature is off.
+                e.el.classList.toggle('vela-sd-soft', visible && !enabled && e.key !== enableKey);
+            }
+        };
+        refreshers.push(refresh);
+        return wrap;
     }
 
     /** Vertical breathing space between row clusters — grouping reads from whitespace,
@@ -794,7 +1205,7 @@ export class SettingsDialog {
         const { wrap } = this.row(label);
         const sel = document.createElement('select');
         sel.className = 'vela-sd-select';
-        sel.style.cssText = 'max-width:140px;flex:0 0 auto;';
+        sel.style.cssText = 'max-width:200px;flex:0 0 auto;';
         for (const [val, lbl] of options) {
             const o = document.createElement('option');
             o.value = val;
@@ -811,7 +1222,7 @@ export class SettingsDialog {
         const { wrap } = this.row(label);
         const sel = document.createElement('select');
         sel.className = 'vela-sd-select';
-        sel.style.cssText = 'max-width:140px;flex:0 0 auto;';
+        sel.style.cssText = 'max-width:200px;flex:0 0 auto;';
         for (const opt of options) {
             const o = document.createElement('option');
             o.value = opt;
@@ -854,6 +1265,11 @@ export class SettingsDialog {
 }
 
 const AUTO_MANUAL_OPTS: readonly (readonly [string, string])[] = [['auto', 'Auto'], ['manual', 'Manual']];
+
+/** Normalize a select descriptor's options to `[value, label]` pairs. */
+function normalizeSelectOptions(options: readonly SettingsSelectOption[]): readonly (readonly [string, string])[] {
+    return options.map((o) => (typeof o === 'string' ? [o, o] as const : o));
+}
 
 const FONT_FAMILIES = ['sans-serif', 'serif', 'monospace', 'Arial', 'Helvetica', 'Georgia', 'Courier New', '-apple-system, Segoe UI, sans-serif'];
 const LINE_STYLES = ['solid', 'dashed', 'dotted'];

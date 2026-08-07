@@ -31,7 +31,7 @@ import { tzOffsetMs } from './tz';
 export class ChromeRenderer {
     private canvas: HTMLCanvasElement | null = null;
     private ctx: CanvasRenderingContext2D | null = null;
-    // The color for axis tick labels — the stable chrome surface text, set each frame in render().
+    // The color for axis tick labels — the host-passed surface text, set each frame in render().
     private axisTextColor = DARK_THEME.textColor;
     // Shared Pine-drawing renderer (line/box/label/polyline/linefill); widthCache persists.
     private readonly drawScene = new DrawingSceneRenderer({ timeToLogical: () => 0, barAt: () => null, theme: {} as VelaTheme });
@@ -66,8 +66,8 @@ export class ChromeRenderer {
     }
 
     /** Clear the chrome canvas and draw drawings + axes + current-price line.
-     *  `surface` (background + text) paints the axis-scale gutters so they keep the app
-     *  chrome color and stay readable, rather than tracking the user-editable plot cosmetics.
+     *  `surface` (background + text) paints the axis-scale gutters — the host passes the live
+     *  chart background so the scales read as part of the plot, with contrast-corrected text.
      *  Falls back to the theme's own colors when no surface is supplied. */
     render(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, surface?: { background: string; textColor: string }): void {
         const ctx = this.ctx;
@@ -79,14 +79,14 @@ export class ChromeRenderer {
         const fullH = canvas.height / dpr;
         const dataW = coords.width;
         const dataH = coords.height;
-        // The gutters (and their labels) use the stable chrome surface; everything data-side
-        // keeps the live theme.
+        // The gutters (and their labels) use the surface the host passes (the live chart
+        // background); everything data-side keeps the live theme.
         this.axisTextColor = surface?.textColor ?? theme.textColor;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, fullW, fullH);
-        // Paint the price-axis (right) + time-axis (bottom) gutters with the chrome surface,
-        // decoupling the scales from the plot background. Data/drawings stay clear of these
-        // strips, so this only ever covers the axis areas.
+        // Paint the price-axis (right) + time-axis (bottom) gutters opaquely so drawings or
+        // series pixels beneath never bleed into the scales. Data/drawings stay clear of
+        // these strips, so this only ever covers the axis areas.
         if (surface && (fullW > dataW || fullH > dataH)) {
             ctx.fillStyle = surface.background;
             if (fullW > dataW) ctx.fillRect(dataW, 0, fullW - dataW, fullH);

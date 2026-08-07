@@ -2,7 +2,7 @@
 // generic native-data channel routing on the renderer (unmounted — mounted painting is
 // exercised in the browser playground; the channel/scene plumbing is the unit-testable part).
 import { describe, it, expect, afterEach } from 'vitest';
-import { registerRendererLayer, unregisterRendererLayer, rendererLayers } from '../src/renderers/native/layers';
+import { registerRendererLayer, unregisterRendererLayer, rendererLayers, type RendererLayerArgs, type RendererLayerInstance } from '../src/renderers/native/layers';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
 import { SceneGraph } from '../src/renderers/native/core/SceneGraph';
 
@@ -17,6 +17,29 @@ describe('renderer-layer registry', () => {
         expect(rendererLayers().find((d) => d.id === 'demo')?.placement).toBe('below-data'); // last wins
         unregisterRendererLayer('demo');
         expect(rendererLayers().some((d) => d.id === 'demo')).toBe(false);
+    });
+
+    it('carries the cursor-repaint opt-in on the definition', () => {
+        registerRendererLayer({ id: 'demo', repaintOnCursor: true, create: () => ({ mount() {}, render() {} }) });
+        expect(rendererLayers().find((d) => d.id === 'demo')?.repaintOnCursor).toBe(true);
+    });
+
+    it('accepts a base-painting-modulating, cursor-reading instance (contract shape)', () => {
+        // Compile-time + shape check for the modulation seam: a layer may read args.cursor
+        // and return partial modulation values; the mounted paint path (clamping + backend
+        // application) is exercised in the browser/oracle suites.
+        const instance: RendererLayerInstance = {
+            mount() {},
+            render(args: RendererLayerArgs) {
+                void args.cursor; // { x, y } | null — hover hit-testing input
+            },
+            modulateBase(args: RendererLayerArgs) {
+                return args.priceStyle === 'demo' ? { candleBodyScale: 0.07, gridAlpha: 0 } : null;
+            },
+        };
+        registerRendererLayer({ id: 'demo', create: () => instance });
+        const mod = rendererLayers().find((d) => d.id === 'demo')!.create().modulateBase?.({ priceStyle: 'demo' } as RendererLayerArgs);
+        expect(mod).toEqual({ candleBodyScale: 0.07, gridAlpha: 0 });
     });
 });
 

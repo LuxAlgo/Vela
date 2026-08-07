@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
-import { CHART_CONFIG_VERSION, defaultChartStyle, mergeConfig, type ChartConfig } from '../src/renderers/native/core/chartConfig';
+import { registerChartType, unregisterChartType } from '../src/chart-types/registry';
+import { CHART_CONFIG_VERSION, defaultChartStyle, factoryResetConfig, mergeConfig, type ChartConfig } from '../src/renderers/native/core/chartConfig';
 
 /** A known-good baseline config for the pure mergeConfig tests. */
 function baseConfig(): ChartConfig {
@@ -238,6 +239,110 @@ describe('NativeRenderer.applyConfig — applies + syncs the live scene fields',
         expect(cfg.stacking.candles).toBe(2);
         expect(cfg.stacking.series['ind-1']).toBe(3); // held for the indicator's (later) mount
         expect(r.readFeature('candleZOrder')).toBe(2);
+    });
+});
+
+describe('factoryResetConfig — "Reset defaults" restores chart-type SDK settings', () => {
+    afterEach(() => unregisterChartType('sdktype'));
+
+    function registerSdkType(): void {
+        registerChartType({
+            id: 'sdktype',
+            settings: {
+                title: 'SDK Type',
+                rows: [
+                    { kind: 'number', key: 'rows', label: 'Rows', defval: 10 },
+                    { kind: 'toggle', key: 'shade', label: 'Shade', defval: true },
+                ],
+            },
+        });
+    }
+
+    it('the factory snapshot alone cannot undo SDK settings (additive chartTypes merge)', () => {
+        registerSdkType();
+        const r = new NativeRenderer();
+        const factory = r.getConfig();
+        expect(factory.chartTypes).toEqual({}); // nothing stored until a value is edited
+        r.applyConfig({ chartTypes: { sdktype: { rows: 25, shade: false } } });
+        r.applyConfig(factory); // the raw snapshot names no type ids → values survive
+        expect(r.getConfig().chartTypes.sdktype).toEqual({ rows: 25, shade: false });
+    });
+
+    it('names every registered type at its registry-declared row defaults', () => {
+        registerSdkType();
+        const r = new NativeRenderer();
+        const factory = r.getConfig();
+        r.applyConfig({ chartTypes: { sdktype: { rows: 25, shade: false } } });
+        const pushed: Array<[string, Record<string, unknown>]> = [];
+        r.onChartTypeSettingsChange((typeId, values) => pushed.push([typeId, values]));
+        r.applyConfig(factoryResetConfig(factory));
+        expect(r.getConfig().chartTypes.sdktype).toEqual({ rows: 10, shade: true });
+        // the change is announced (settings channel + data engine), not just stored
+        expect(pushed).toContainEqual(['sdktype', { rows: 10, shade: true }]);
+    });
+
+    it('keeps values the factory snapshot itself pinned (pre-mount edits win over defvals)', () => {
+        registerSdkType();
+        const r = new NativeRenderer();
+        r.applyConfig({ chartTypes: { sdktype: { rows: 40 } } });
+        const factory = r.getConfig(); // snapshot taken AFTER a value was stored
+        r.applyConfig({ chartTypes: { sdktype: { rows: 99, shade: false } } });
+        r.applyConfig(factoryResetConfig(factory));
+        expect(r.getConfig().chartTypes.sdktype).toEqual({ rows: 40, shade: true });
+    });
+
+    it('covers a type registered after the snapshot was taken', () => {
+        const r = new NativeRenderer();
+        const factory = r.getConfig(); // 'sdktype' not registered yet
+        registerSdkType();
+        r.applyConfig({ chartTypes: { sdktype: { rows: 25 } } });
+        r.applyConfig(factoryResetConfig(factory)); // registry is read at reset time
+        expect(r.getConfig().chartTypes.sdktype).toEqual({ rows: 10, shade: true });
+    });
+
+    it('covers structured sections: instances, subsections, ranges, and toggle swatches', () => {
+        registerChartType({
+            id: 'sdktype',
+            settings: {
+                title: 'SDK Type',
+                instances: [
+                    { label: 'One', rows: [{ kind: 'number', key: 'size', label: 'Size', defval: 5 }] },
+                    {
+                        label: 'Two',
+                        enableKey: 'twoEnabled',
+                        rows: [
+                            { kind: 'toggle', key: 'shade', label: 'Shade', defval: false, colors: [{ key: 'shadeColor', label: 'Shade color', defval: '#111111' }] },
+                            { kind: 'range', label: 'Filter', minKey: 'filterMin', maxKey: 'filterMax', defval: 0 },
+                        ],
+                    },
+                ],
+                subsections: [
+                    {
+                        title: 'Extra',
+                        enableKey: 'extraOn',
+                        rows: [
+                            { kind: 'toggle', key: 'extraOn', label: 'Extra', defval: true },
+                            { kind: 'heading', label: 'Group' },
+                            { kind: 'select', key: 'flavor', label: 'Flavor', options: ['a', 'b'], defval: 'a' },
+                        ],
+                    },
+                ],
+            },
+        });
+        const r = new NativeRenderer();
+        const factory = r.getConfig();
+        r.applyConfig({ chartTypes: { sdktype: { size: 9, twoEnabled: true, shade: true, shadeColor: '#ff0000', filterMin: 3, filterMax: 8, extraOn: false, flavor: 'b' } } });
+        r.applyConfig(factoryResetConfig(factory));
+        expect(r.getConfig().chartTypes.sdktype).toEqual({
+            size: 5,
+            twoEnabled: false, // enable key without a row — instance presence resets to off
+            shade: false,
+            shadeColor: '#111111',
+            filterMin: 0,
+            filterMax: 0,
+            extraOn: true, // enable key WITH a row — the row's defval wins over the off seed
+            flavor: 'a',
+        });
     });
 });
 
