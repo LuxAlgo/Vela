@@ -46,7 +46,11 @@ export interface SeriesDataEngine {
     stop(): void;
     /** The visible range changed (pan/zoom) while the style is active. */
     onViewport?(range: { from: number; to: number }): void;
-    /** New settings values from the chart-settings dialog (the type's SDK section). */
+    /** New settings values from the chart-settings dialog (the type's SDK section).
+     *  Also delivered once just BEFORE `start()` whenever stored values exist (a
+     *  persisted config, a market switch recreating the engine) — an engine must
+     *  accept a pre-start call as pure configuration, so it never fetches on
+     *  schema defaults the user has edited away. */
     onSettings?(values: Record<string, unknown>): void;
 }
 

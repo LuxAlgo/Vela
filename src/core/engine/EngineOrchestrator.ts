@@ -117,6 +117,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     private barTransform: BarTransform | null = null;
     // ── chart-type data engines (SDK): one lazily-created engine per style id ──
     private readonly typeEngines = new Map<string, SeriesDataEngine>();
+    /** Last-seen chart-type settings per type id (dialog edits + persisted restores) —
+     *  replayed into a data engine whenever one is (re)created. */
+    private readonly typeSettings = new Map<string, Record<string, unknown>>();
     /** The style id whose data engine is currently ACTIVE (drives suspend/resume + pokes). */
     private activeEngineStyle: string | null = null;
     /** The chart's current price style (tracked from the renderer's change events + initial read). */
@@ -181,8 +184,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // pane's indicators; the rest are already applied by the renderer — this keeps the
         // `chart.panes` view + collapse/maximize mirror in sync).
         this.paneActionUnsub = this.renderer.onPaneAction?.((a) => this.handlePaneAction(a)) ?? null;
-        // Chart-type SDK settings edited in the renderer's dialog → the type's data engine.
-        this.renderer.onChartTypeSettingsChange?.((typeId, values) => this.typeEngines.get(typeId)?.onSettings?.(values));
+        // Chart-type SDK settings edited in the renderer's dialog (or replayed by
+        // applyConfig on a persisted restore) → remember them AND forward to the
+        // type's data engine. The cache matters: the engine may not exist yet (a
+        // restored config lands before the style's first activation) or may be
+        // recreated later (a market switch) — `startChartTypeEngine` replays the
+        // last-seen values into every fresh engine, so one never fetches on schema
+        // defaults the user has edited away.
+        this.renderer.onChartTypeSettingsChange?.((typeId, values) => {
+            this.typeSettings.set(typeId, values);
+            this.typeEngines.get(typeId)?.onSettings?.(values);
+        });
         // The renderer's legend "Move to" menu / row drag reports a move here → route it.
         this.renderer.onMoveIndicator?.((id, target) => this.moveIndicator(id, target));
         // The renderer's in-chart theme control (settings dialog Canvas → Theme) reports a
@@ -814,6 +826,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (!def?.dataEngine) return;
         const engine = def.dataEngine();
         this.typeEngines.set(id, engine);
+        // Seed the stored settings BEFORE start (a pre-start onSettings is pure
+        // configuration by contract), so the engine's first fetch already runs on
+        // the user's values — never on schema defaults they edited away.
+        const stored = this.typeSettings.get(id);
+        if (stored) engine.onSettings?.(stored);
         engine.start({
             symbol: this.config.market.symbol ?? 'TEST',
             timeframe: this.config.market.timeframe ?? '60',

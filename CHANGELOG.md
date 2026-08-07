@@ -4,6 +4,16 @@ All notable changes to Vela, newest first.
 
 ## [v0.5.0]
 
+### Fixed
+
+- **Chart-type data engines now receive stored settings on (re)creation.** A type's
+  data engine used to hear about its settings only through live dialog edits — a
+  persisted config restore or a market switch (which recreates engines) left the
+  fresh engine fetching on schema defaults until the user touched the dialog. The
+  orchestrator now remembers the last-seen per-type values and replays them into
+  every newly created engine just before `start()` (a pre-start `onSettings` is
+  pure configuration by contract).
+
 ### Added
 
 - **Duplicate-keyed settings rows stay in sync.** Several `when`-gated chart-type
