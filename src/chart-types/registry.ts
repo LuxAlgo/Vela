@@ -107,6 +107,14 @@ export interface SettingsRowSwatch {
     /** Names the color for the swatch's tooltip (`'Highlight color'`). */
     label: string;
     defval: string;
+    /**
+     * Optional visibility gate, evaluated live against the values bag exactly like a
+     * row's own `when` — lets one toggle row swap its swatch set as another value
+     * changes (a mode's two colors while it is on, its one alternative while off).
+     * A gated swatch is EXEMPT from the toggle-off dim: its gate already says when
+     * it matters, and it may exist specifically for the off state.
+     */
+    when?: SettingsRowWhen;
 }
 
 /**

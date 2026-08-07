@@ -678,7 +678,7 @@ export class SettingsDialog {
     ): void {
         const entries: Array<{ el: HTMLElement; when?: SettingsRowWhen }> = [];
         for (const r of rows) {
-            const el = r.kind === 'heading' || r.kind === 'header' ? this.sectionTitle(r.label) : this.typeRow(r, bag, put);
+            const el = r.kind === 'heading' || r.kind === 'header' ? this.sectionTitle(r.label) : this.typeRow(r, bag, put, refreshers);
             entries.push({ el, when: r.when });
             body.append(el);
         }
@@ -689,11 +689,14 @@ export class SettingsDialog {
         });
     }
 
-    /** One value row for a chart-type descriptor, writing through `put`. */
+    /** One value row for a chart-type descriptor, writing through `put`. Swatches
+     *  carrying their own `when` register a visibility refresher — they appear and
+     *  disappear live as the bag changes, independent of the row's gate. */
     private typeRow(
         r: Exclude<SettingsRowDescriptor, { kind: 'heading' | 'header' }>,
         bag: Record<string, unknown>,
         put: (key: string, v: unknown) => void,
+        refreshers: Array<() => void>,
     ): HTMLElement {
         if (r.kind === 'toggle') {
             const controls: HTMLElement[] = [];
@@ -717,6 +720,15 @@ export class SettingsDialog {
             for (const c of r.colors ?? []) {
                 const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v));
                 sw.title = c.label;
+                if (c.when) {
+                    // Self-gated: shows/hides with its own condition, and stays LIVE
+                    // through the toggle-off dim (it may exist FOR the off state).
+                    sw.dataset.sdSelfGated = '1';
+                    const when = c.when;
+                    refreshers.push(() => {
+                        sw.style.display = settingsRowVisible(when, bag) ? '' : 'none';
+                    });
+                }
                 controls.push(sw);
             }
             if (r.width) {
@@ -909,7 +921,7 @@ export class SettingsDialog {
                 rowsHost.append(entries[entries.length - 1]!.el);
                 continue;
             }
-            const el = this.typeRow(r, bag, put);
+            const el = this.typeRow(r, bag, put, refreshers);
             const key = r.kind === 'range' ? undefined : r.key;
             entries.push({ el, when: r.when, group: g, key });
             rowsHost.append(el);
@@ -1126,9 +1138,14 @@ export class SettingsDialog {
         const box = document.createElement('div');
         box.style.cssText = 'display:flex;align-items:center;gap:6px;';
         for (const c of controls) box.appendChild(c);
+        // Dim per CONTROL, not the box: a self-gated swatch (its own `when`) stays
+        // live through the off state — it may exist specifically for it.
         const syncDim = (on: boolean): void => {
-            box.style.opacity = on ? '1' : '0.4';
-            box.style.pointerEvents = on ? '' : 'none';
+            for (const c of controls) {
+                if (c.dataset.sdSelfGated === '1') continue;
+                c.style.opacity = on ? '1' : '0.4';
+                c.style.pointerEvents = on ? '' : 'none';
+            }
         };
         syncDim(value);
         cb.addEventListener('click', () => { const v = cbToggle(); onToggle(v); syncDim(v); });

@@ -58,9 +58,13 @@ Two kinds bundle several values on one row, which keeps panes STATIC where a
 conditionally revealed row would jump the layout:
 
 - **`toggle` with `colors`** — inline color swatches on the toggle's row (each swatch a
-  `{ key, label, defval }`, the label its tooltip). The swatches dim and ignore input
-  while the toggle is off. Prefer this over a separate `color` row gated on the toggle
-  whenever the toggle governs one or two colors.
+  `{ key, label, defval, when? }`, the label its tooltip). The swatches dim and ignore
+  input while the toggle is off. Prefer this over a separate `color` row gated on the
+  toggle whenever the toggle governs one or two colors. A swatch may carry its own
+  `when` gate (same shape as a row's), letting one row swap its swatch set as another
+  value changes — a mode's two colors while it is on, its one alternative while off.
+  A self-gated swatch is exempt from the toggle-off dim: its gate already says when it
+  matters, and it may exist specifically for the off state.
 - **`toggle` with `width`** — an inline line-width dropdown beside the row's swatches
   (a `{ key, label, defval }` storing a px number). The control offers the classic
   drawing-bar weights (1–5 px), each option previewed as a line at that weight, and
