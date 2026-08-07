@@ -14,7 +14,6 @@ import {
     type SettingsSelectOption,
     type SettingsValueRow,
 } from '../../../chart-types/registry';
-import { toHex6, withAlpha } from '../../../core/color';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
 import { colorField, closeColorPopover } from './ColorField';
@@ -1177,95 +1176,6 @@ export class SettingsDialog {
         return wrap;
     }
 
-    /** Inline Auto/Manual row (Resolution, Text size): a mode dropdown + a value input greyed out in Auto. */
-    private autoManualRow(label: string, isAuto: boolean, value: number, min: number, max: number, unit: string, onMode: (auto: boolean) => void, onValue: (v: number) => void): HTMLElement {
-        const { wrap } = this.row(label);
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;flex:0 0 auto;';
-        const sel = document.createElement('select');
-        sel.className = 'vela-sd-select';
-        for (const [val, lbl] of AUTO_MANUAL_OPTS) {
-            const o = document.createElement('option');
-            o.value = val;
-            o.textContent = lbl;
-            if ((val === 'auto') === isAuto) o.selected = true;
-            sel.appendChild(o);
-        }
-        const ni = document.createElement('input');
-        ni.type = 'number';
-        ni.min = String(min);
-        ni.max = String(max);
-        ni.step = '1';
-        ni.value = String(value);
-        ni.className = 'vela-sd-number';
-        const unitLbl = document.createElement('span');
-        unitLbl.textContent = unit;
-        unitLbl.style.cssText = 'opacity:0.6;';
-        const syncDisabled = (auto: boolean): void => {
-            ni.disabled = auto;
-            ni.style.opacity = auto ? '0.4' : '1';
-        };
-        syncDisabled(isAuto);
-        sel.addEventListener('change', () => { const auto = sel.value === 'auto'; onMode(auto); syncDisabled(auto); });
-        ni.addEventListener('input', () => { const n = Number(ni.value); if (Number.isFinite(n)) onValue(n); });
-        box.append(sel, ni, unitLbl);
-        wrap.appendChild(box);
-        return wrap;
-    }
-
-    /** A row whose control area holds several inline controls (e.g. show + color + width). */
-    private inlineRow(label: string, controls: HTMLElement[]): HTMLElement {
-        const { wrap } = this.row(label);
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;flex:0 0 auto;';
-        for (const c of controls) box.appendChild(c);
-        wrap.appendChild(box);
-        return wrap;
-    }
-
-    /** A small dimmed hint span (e.g. the ≥ / ≤ between filter inputs). */
-    private hint(text: string): HTMLElement {
-        const s = document.createElement('span');
-        s.textContent = text;
-        s.style.cssText = 'opacity:0.5;font-size:12px;';
-        return s;
-    }
-
-    /** A bare color input (for inline groups). */
-    private colorInput(value: string, onChange: (v: string) => void): HTMLElement {
-        const ci = document.createElement('input');
-        ci.type = 'color';
-        ci.value = toHex6(value);
-        ci.style.cssText = 'cursor:pointer;width:34px;height:22px;border:none;background:transparent;padding:0;flex:0 0 auto;';
-        ci.addEventListener('input', () => onChange(ci.value));
-        return ci;
-    }
-
-    /** A bare compact number input (for inline groups). */
-    private numberInput(value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
-        const ni = document.createElement('input');
-        ni.type = 'number';
-        ni.value = String(value);
-        ni.min = String(min);
-        ni.max = String(max);
-        ni.step = String(step);
-        ni.className = 'vela-sd-number';
-        ni.style.flex = '0 0 auto';
-        ni.addEventListener('input', () => {
-            const n = Number(ni.value);
-            if (Number.isFinite(n)) onChange(n);
-        });
-        return ni;
-    }
-
-    /** A small in-group heading (lighter than a top-level section divider). */
-    private subheading(text: string): HTMLElement {
-        const el = document.createElement('div');
-        el.textContent = text;
-        el.style.cssText = 'margin-top:4px;font-size:10.5px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;opacity:0.45;';
-        return el;
-    }
-
     /** A dropdown whose option values differ from their display labels. */
     private selectRowLabeled(label: string, value: string, options: readonly (readonly [string, string])[], onChange: (v: string) => void): HTMLElement {
         const { wrap } = this.row(label);
@@ -1315,30 +1225,13 @@ export class SettingsDialog {
         foot.appendChild(resetBtn);
         return foot;
     }
-
-    private button(label: string, onClick: () => void): HTMLButtonElement {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = label;
-        b.style.cssText = `cursor:pointer;flex:1 1 auto;${this.ctrlStyle()}padding:5px 8px;font-weight:600;`;
-        b.addEventListener('click', onClick);
-        return b;
-    }
-
-    private ctrlStyle(): string {
-        return `background:var(--vela-surface-sunken);border:1px solid ${SETTINGS_BORDER};color:${SETTINGS_TEXT};border-radius:var(--vela-radius-sm);padding:3px 6px;font-size:var(--vela-font-size-md);font-family:inherit;outline:none;`;
-    }
 }
-
-const AUTO_MANUAL_OPTS: readonly (readonly [string, string])[] = [['auto', 'Auto'], ['manual', 'Manual']];
 
 /** Normalize a select descriptor's options to `[value, label]` pairs. */
 function normalizeSelectOptions(options: readonly SettingsSelectOption[]): readonly (readonly [string, string])[] {
     return options.map((o) => (typeof o === 'string' ? [o, o] as const : o));
 }
 
-const FONT_FAMILIES = ['sans-serif', 'serif', 'monospace', 'Arial', 'Helvetica', 'Georgia', 'Courier New', '-apple-system, Segoe UI, sans-serif'];
-const LINE_STYLES = ['solid', 'dashed', 'dotted'];
 /** The shared zone catalog as labeled options, with the current value guaranteed
  *  present (so an externally-set custom zone still shows selected). */
 function timezoneOptions(current: string): readonly (readonly [string, string])[] {
