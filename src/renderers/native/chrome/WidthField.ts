@@ -1,7 +1,8 @@
 // The shared line-width field — the settings dialog's counterpart to the drawings
-// quick bar's width menu: a compact trigger showing the CURRENT weight as a line
-// glyph, opening a floating list of the classic 1–5 px weights (line preview + px
-// label per option). Same popover lifecycle as `ColorField`.
+// quick bar's width menu: a trigger styled like the dialog's standard selects
+// (`.vela-sd-select`) showing the CURRENT weight as a line glyph, opening a floating
+// list of the classic 1–5 px weights (line preview + px label per option). Same
+// popover lifecycle as `ColorField`.
 import type { VelaTheme } from '../../../core/options';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 
@@ -15,7 +16,7 @@ function ensureStyles(): void {
     const st = document.createElement('style');
     st.id = STYLE_ID;
     st.textContent = `
-.vela-width-field{height:24px;padding:0 5px;border:1px solid var(--vela-border);border-radius:0;background:var(--vela-surface-sunken);cursor:pointer;display:inline-flex;align-items:center;gap:3px;flex:none;color:var(--vela-fg);}
+.vela-width-field{height:28px;padding:0 8px;border:1px solid var(--vela-border-strong);border-radius:var(--vela-radius-sm);background:var(--vela-surface-elev);cursor:pointer;display:inline-flex;align-items:center;gap:8px;flex:none;color:var(--vela-fg);font-family:inherit;outline:none;}
 .vela-width-field:hover{border-color:var(--vela-fg-muted);}
 .vela-width-field-pop{position:fixed;z-index:6000;background:var(--vela-surface-overlay);border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:4px;display:flex;flex-direction:column;gap:1px;color:var(--vela-fg);}
 .vela-width-field-item{display:flex;align-items:center;gap:8px;min-width:96px;padding:5px 8px;border:none;border-radius:5px;background:transparent;color:inherit;cursor:pointer;text-align:left;font:inherit;}
@@ -30,7 +31,9 @@ function lineGlyph(width: number): string {
     return `<svg width="22" height="14" viewBox="0 0 22 14" fill="none"><line x1="2" y1="7" x2="20" y2="7" stroke="currentColor" stroke-width="${width}" stroke-linecap="round"/></svg>`;
 }
 
-const CHEVRON = `<svg width="8" height="5" viewBox="0 0 8 5" fill="none"><path d="M1 1l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// Same 8×5 caret as `.vela-sd-select`'s background-image, in the shared muted-gray
+// ink (legible on both themes) — so the trigger reads as one of the dialog's selects.
+const CHEVRON = `<svg width="8" height="5" viewBox="0 0 8 5" fill="none"><path d="M1 1l3 3 3-3" stroke="#868a96" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 let openPopover: { el: HTMLElement; trigger: HTMLElement; onOutside: (e: Event) => void; reflow: () => void } | null = null;
 
@@ -65,7 +68,7 @@ export function widthField(theme: VelaTheme, getVal: () => number, onVal: (v: nu
     trigger.className = 'vela-width-field';
 
     const paint = (): void => {
-        trigger.innerHTML = `<span style="display:flex;">${lineGlyph(getVal())}</span><span style="display:flex;opacity:0.55;">${CHEVRON}</span>`;
+        trigger.innerHTML = `<span style="display:flex;">${lineGlyph(getVal())}</span><span style="display:flex;">${CHEVRON}</span>`;
     };
     paint();
 
