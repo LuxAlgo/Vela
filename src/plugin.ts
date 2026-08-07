@@ -27,6 +27,7 @@ export {
     type SettingsRowDescriptor,
     type SettingsRowSwatch,
     type SettingsRowWidth,
+    type SettingsRowInlineNumber,
     type SettingsSelectOption,
     type SettingsRowCondition,
     type SettingsRowWhen,

@@ -530,7 +530,13 @@ export class SettingsDialog {
             paneHost.appendChild(p.el);
         });
         this.tabs = panes.map((p, i) => ({ title: p.title, show: () => activate(i) }));
-        const wanted = section === undefined ? -1 : panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase());
+        // No section asked for: land on the ACTIVE chart type's own tab when it has one
+        // (the tab a user opening settings under that style is usually after; its
+        // subsections stay rail entries) — Symbol otherwise.
+        const wanted =
+            section !== undefined
+                ? panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase())
+                : panes.findIndex((p) => p.style === config.series.style && !p.tab.classList.contains('vela-sd-tab-sub'));
         activate(wanted >= 0 ? wanted : 0);
         this.syncTypeTabs?.(config.series.style);
 
@@ -618,6 +624,7 @@ export class SettingsDialog {
                 }
                 seedKey(r.key, r.kind === 'toggle' ? 'boolean' : r.kind === 'number' ? 'number' : 'string', r.defval);
                 if (r.kind === 'toggle') {
+                    if (r.number) seedKey(r.number.key, 'number', r.number.defval);
                     for (const c of r.colors ?? []) seedKey(c.key, 'string', c.defval);
                     if (r.width) seedKey(r.width.key, 'number', r.width.defval);
                 }
@@ -689,11 +696,29 @@ export class SettingsDialog {
         put: (key: string, v: unknown) => void,
     ): HTMLElement {
         if (r.kind === 'toggle') {
-            const controls = (r.colors ?? []).map((c) => {
+            const controls: HTMLElement[] = [];
+            if (r.number) {
+                const nr = r.number;
+                const ni = document.createElement('input');
+                ni.type = 'number';
+                ni.className = 'vela-sd-number';
+                ni.style.width = '56px';
+                ni.value = String(typeof bag[nr.key] === 'number' ? bag[nr.key] : nr.defval);
+                if (nr.min !== undefined) ni.min = String(nr.min);
+                if (nr.max !== undefined) ni.max = String(nr.max);
+                ni.step = String(nr.step ?? 1);
+                ni.title = nr.label;
+                ni.addEventListener('input', () => {
+                    const n = Number(ni.value);
+                    if (Number.isFinite(n)) put(nr.key, n);
+                });
+                controls.push(ni);
+            }
+            for (const c of r.colors ?? []) {
                 const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v));
                 sw.title = c.label;
-                return sw;
-            });
+                controls.push(sw);
+            }
             if (r.width) {
                 const w = r.width;
                 let cur = typeof bag[w.key] === 'number' ? (bag[w.key] as number) : w.defval;

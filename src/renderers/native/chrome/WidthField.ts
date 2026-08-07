@@ -33,7 +33,7 @@ function lineGlyph(width: number): string {
 
 // Same 8×5 caret as `.vela-sd-select`'s background-image, in the shared muted-gray
 // ink (legible on both themes) — so the trigger reads as one of the dialog's selects.
-const CHEVRON = `<svg width="8" height="5" viewBox="0 0 8 5" fill="none"><path d="M1 1l3 3 3-3" stroke="#868a96" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const CHEVRON = `<svg width="8" height="5" viewBox="0 0 8 5" fill="none"><path d="M1 1l3 3 3-3" stroke="#868a96" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`; // palette-exempt: mirrors the select caret's fixed data-URI ink
 
 let openPopover: { el: HTMLElement; trigger: HTMLElement; onOutside: (e: Event) => void; reflow: () => void } | null = null;
 

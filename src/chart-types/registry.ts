@@ -123,6 +123,22 @@ export interface SettingsRowWidth {
 }
 
 /**
+ * An inline NUMBER input on a toggle row — sits AHEAD of the row's color swatches
+ * (dimmed with them while the toggle is off) and stores a number under its own bag
+ * key. For the one value the toggle governs (a percent, a count) — the declarative
+ * alternative to a separate `number` row gated on the toggle.
+ */
+export interface SettingsRowInlineNumber {
+    key: string;
+    /** Names the input for its tooltip (`'Value area (%)'`). */
+    label: string;
+    defval: number;
+    min?: number;
+    max?: number;
+    step?: number;
+}
+
+/**
  * One declarative settings row. To add a NEW kind, see docs/architecture/settings-rows.md.
  *
  * `heading` titles a GROUP of rows: the heading plus everything after it up to the next
@@ -151,7 +167,7 @@ export type SettingsSelectOption = string | readonly [value: string, label: stri
 export type SettingsRowDescriptor =
     | { kind: 'heading'; label: string; when?: SettingsRowWhen }
     | { kind: 'header'; label: string; when?: SettingsRowWhen }
-    | { kind: 'toggle'; key: string; label: string; defval: boolean; colors?: readonly SettingsRowSwatch[]; width?: SettingsRowWidth; when?: SettingsRowWhen }
+    | { kind: 'toggle'; key: string; label: string; defval: boolean; number?: SettingsRowInlineNumber; colors?: readonly SettingsRowSwatch[]; width?: SettingsRowWidth; when?: SettingsRowWhen }
     | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number; when?: SettingsRowWhen }
     | { kind: 'color'; key: string; label: string; defval: string; when?: SettingsRowWhen }
     | { kind: 'select'; key: string; label: string; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }
