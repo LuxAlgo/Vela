@@ -13,7 +13,9 @@ All notable changes to Vela, newest first.
   `number: { key, label, defval, min?, max?, step? }`, a compact number input ahead
   of the swatches. Both dim with the swatches while the toggle is off and store
   plain numbers in the type's bag — the declarative replacement for separate
-  `number` rows gated on the toggle.
+  `number` rows gated on the toggle. And a structured section with a single
+  always-present instance no longer renders its one-tab strip — sections that go
+  structured purely for the group TOC keep a clean pane top.
 
 - **Chart settings open on the active style's tab.** When the active price style is a
   chart type with its own settings tab (visibility `'active'`), opening the settings

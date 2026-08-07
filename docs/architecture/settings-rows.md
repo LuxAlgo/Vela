@@ -69,7 +69,8 @@ conditionally revealed row would jump the layout:
 - **`toggle` with `number`** — an inline number input AHEAD of the row's swatches (a
   `{ key, label, defval, min?, max?, step? }`), dimming with them while the toggle is
   off. Prefer this over a separate `number` row whenever the toggle governs one value
-  (a percent, a count). Inline controls render number → colors → width.
+  (a percent, a count — put the unit in the row label). Inline controls render
+  number → colors → width.
 - **`range`** — a min–max pair (`minKey`/`maxKey`, both seeded from the shared
   `defval`). With `placeholder`, an input at the default renders empty showing it, and
   clearing an input stores the default back — the placeholder names the unset state

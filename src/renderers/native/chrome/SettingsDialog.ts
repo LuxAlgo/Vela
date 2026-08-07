@@ -801,7 +801,9 @@ export class SettingsDialog {
         const wrap = document.createElement('div');
         const strip = document.createElement('div');
         strip.className = 'vela-sd-itabs';
-        wrap.append(strip);
+        // A lone always-present instance has nothing to switch or add — sections that
+        // go structured purely for the group TOC get no one-tab strip.
+        if (instances.length > 1 || instances[0]?.enableKey !== undefined) wrap.append(strip);
         const contents = instances.map((inst, i) => {
             const content = this.groupedRows(`${typeId}/#${i}`, inst.rows, bag, put, refreshers);
             wrap.append(content);
