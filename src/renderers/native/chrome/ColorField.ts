@@ -62,6 +62,10 @@ export function colorField(theme: VelaTheme, getVal: () => string, onVal: (v: st
         swatch.style.background = `linear-gradient(${v}, ${v}), ${CHECKER}`;
     };
     paint();
+    // External re-sync: when the value behind `getVal` changes outside this field (a
+    // duplicate-keyed settings row, a reset), the owner dispatches 'vela-sync' on the
+    // trigger and the preview repaints from the getter.
+    trigger.addEventListener('vela-sync', paint);
 
     trigger.addEventListener('click', (e) => {
         e.stopPropagation();

@@ -6,6 +6,13 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Duplicate-keyed settings rows stay in sync.** Several `when`-gated chart-type
+  settings rows may now store under the same bag key(s) — the pattern for per-mode
+  rows over one shared state (each mode gets its own row label while the stored
+  toggle and colors stay one value). The settings dialog re-syncs every keyed
+  control (checkbox, color swatch, select) from the values bag on each edit, so a
+  hidden twin row never shows stale state when its gate brings it back.
+
 - **Inline line-width dropdown and number input on settings toggle rows.** A chart
   type's settings toggle row may now carry `width: { key, label, defval }` next to
   its `colors` swatches — a compact dropdown offering the drawing bar's classic

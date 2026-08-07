@@ -130,6 +130,13 @@ Gated values are **still stored and delivered** — hiding a row never clears it
 consumers decide what a hidden-but-set value means (usually: the gating toggle already
 disables the feature).
 
+**Duplicate keys across gated rows are supported.** Several `when`-gated rows may store
+under the same key(s) — the pattern for per-mode rows over one shared state (each mode
+gets its own row label, e.g. "Volume gradient" / "Delta gradient", while the gradient
+toggle and colors stay one stored value). The dialog re-syncs every keyed control from
+the values bag on each edit, so the hidden twins never show stale state when they come
+back. Keep at most one such row visible at a time (mutually exclusive gates).
+
 ### Structured sections: instances, group TOC, subsections, placement
 
 A big section can go beyond the flat form. The lightest upgrade is **`layout:
