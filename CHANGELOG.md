@@ -26,6 +26,25 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Inline line-width dropdown and number input on settings toggle rows.** A chart
+  type's settings toggle row may now carry `width: { key, label, defval }` next to
+  its `colors` swatches — a compact dropdown offering the drawing bar's classic
+  1–5 px weights, each option previewed as a line at that weight — and
+  `number: { key, label, defval, min?, max?, step? }`, a compact number input ahead
+  of the swatches. Both dim with the swatches while the toggle is off and store
+  plain numbers in the type's bag — the declarative replacement for separate
+  `number` rows gated on the toggle. A swatch may carry its own `when` gate (same
+  shape as a row's), letting one toggle row swap its swatch set live as another value
+  changes — a mode's two colors while it is on, its one alternative while off; a
+  self-gated swatch stays interactive through the toggle-off dim. And a structured
+  section with a single always-present instance no longer renders its one-tab strip —
+  sections that go structured purely for the group TOC keep a clean pane top.
+
+- **Chart settings open on the active style's tab.** When the active price style is a
+  chart type with its own settings tab (visibility `'active'`), opening the settings
+  dialog now lands on that tab instead of Symbol — the pane a user opening settings
+  under that style is usually after. An explicit `showSection` still wins.
+
 - **Candle settings for plugin chart types that draw candles.** A registered chart type
   that keeps the candle series under its own layer (an order-flow style, for example) now
   gets a Candles group in chart settings → Symbol while it is active: body, border, and

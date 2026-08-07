@@ -1,5 +1,5 @@
 import type { LineStyle } from '../../../core/model/series';
-import { chartTypes, type SettingsRowDescriptor } from '../../../chart-types/registry';
+import { chartTypes, settingsRowValueKeys, type SettingsRowDescriptor } from '../../../chart-types/registry';
 import { withAlpha } from '../../../core/color';
 import { BEARISH, BULLISH, CROSSHAIR, SERIES_LINE, SLATE } from '../../../core/palette';
 import type { PriceStyle } from '../../../core/options';
@@ -449,16 +449,11 @@ export function factoryResetConfig(factory: ChartConfig): ChartConfig {
         const section = t.settings;
         if (!section) continue;
         const defaults: Record<string, unknown> = {};
+        // Registry-enumerated: every key a row stores (toggle, inline controls, range
+        // bounds) — no kind-specific walk that can miss a key the dialog seeds.
         const addRows = (rows: readonly SettingsRowDescriptor[] | undefined): void => {
             for (const r of rows ?? []) {
-                if (r.kind === 'heading' || r.kind === 'header') continue;
-                if (r.kind === 'range') {
-                    defaults[r.minKey] = r.defval;
-                    defaults[r.maxKey] = r.defval;
-                    continue;
-                }
-                defaults[r.key] = r.defval;
-                if (r.kind === 'toggle') for (const c of r.colors ?? []) defaults[c.key] = c.defval;
+                for (const k of settingsRowValueKeys(r)) defaults[k.key] = k.defval;
             }
         };
         // An absent enable key means OFF — seed it explicitly so an instance the user
