@@ -3,12 +3,16 @@ import type { ChartConfig } from '../core/chartConfig';
 import {
     chartType,
     chartTypes,
+    normalizeSettingsRow,
+    settingsRowValueKeys,
     settingsRowVisible,
     type ChartTypeSettingsInstance,
     type ChartTypeSettingsSection,
+    type SettingsInlineControl,
     type SettingsRowDescriptor,
     type SettingsRowWhen,
     type SettingsSelectOption,
+    type SettingsValueRow,
 } from '../../../chart-types/registry';
 import { toHex6, withAlpha } from '../../../core/color';
 import { iconAt } from '../../../core/icons';
@@ -610,23 +614,13 @@ export class SettingsDialog {
 
         const values = config.chartTypes[typeId] ?? {};
         const bag: Record<string, unknown> = {};
-        const seedKey = (key: string, want: 'boolean' | 'number' | 'string', defval: unknown): void => {
-            const v = values[key];
-            bag[key] = typeof v === want ? v : defval;
-        };
+        // One generic walk over EVERY key a row stores (registry-enumerated) — no
+        // kind-specific seeding to keep in sync with the descriptor union.
         const seed = (rows: readonly SettingsRowDescriptor[]): void => {
             for (const r of rows) {
-                if (r.kind === 'heading' || r.kind === 'header') continue;
-                if (r.kind === 'range') {
-                    seedKey(r.minKey, 'number', r.defval);
-                    seedKey(r.maxKey, 'number', r.defval);
-                    continue;
-                }
-                seedKey(r.key, r.kind === 'toggle' ? 'boolean' : r.kind === 'number' ? 'number' : 'string', r.defval);
-                if (r.kind === 'toggle') {
-                    if (r.number) seedKey(r.number.key, 'number', r.number.defval);
-                    for (const c of r.colors ?? []) seedKey(c.key, 'string', c.defval);
-                    if (r.width) seedKey(r.width.key, 'number', r.width.defval);
+                for (const k of settingsRowValueKeys(r)) {
+                    const v = values[k.key];
+                    bag[k.key] = typeof v === k.type ? v : k.defval;
                 }
             }
         };
@@ -653,7 +647,10 @@ export class SettingsDialog {
         if (section.instances && section.instances.length > 0) {
             body.append(this.instancesBlock(typeId, section.instances, bag, put, refreshers));
         } else if (section.rows) {
-            this.flatTypeRows(section.rows, bag, put, refreshers, body);
+            // 'grouped' promotes the flat rows to the structured pane's group-TOC
+            // presentation (the TOC column right of the tab rail) — same rows, no strip.
+            if (section.layout === 'grouped') body.append(this.groupedRows(`${typeId}/rows`, section.rows, bag, put, refreshers));
+            else this.flatTypeRows(section.rows, bag, put, refreshers, body);
         }
 
         for (const sub of section.subsections ?? []) {
@@ -689,111 +686,119 @@ export class SettingsDialog {
         });
     }
 
-    /** One value row for a chart-type descriptor, writing through `put`. Swatches
-     *  carrying their own `when` register a visibility refresher — they appear and
-     *  disappear live as the bag changes, independent of the row's gate. */
+    /**
+     * One value row for a chart-type descriptor, writing through `put`. EVERY kind is
+     * first reduced to the canonical composite shape ({@link normalizeSettingsRow}) and
+     * rendered by the ONE path: optional leading toggle, then the ordered inline
+     * controls in the control column. A control carrying its own `when` registers a
+     * visibility refresher — it appears and disappears live as the bag changes,
+     * independent of the row's gate — and is exempt from the toggle-off dim (it may
+     * exist FOR the off state).
+     */
     private typeRow(
-        r: Exclude<SettingsRowDescriptor, { kind: 'heading' | 'header' }>,
+        r: SettingsValueRow,
         bag: Record<string, unknown>,
         put: (key: string, v: unknown) => void,
         refreshers: Array<() => void>,
     ): HTMLElement {
-        if (r.kind === 'toggle') {
-            const controls: HTMLElement[] = [];
-            if (r.number) {
-                const nr = r.number;
-                const ni = document.createElement('input');
-                ni.type = 'number';
-                ni.className = 'vela-sd-number';
-                ni.style.width = '56px';
-                ni.value = String(typeof bag[nr.key] === 'number' ? bag[nr.key] : nr.defval);
-                if (nr.min !== undefined) ni.min = String(nr.min);
-                if (nr.max !== undefined) ni.max = String(nr.max);
-                ni.step = String(nr.step ?? 1);
-                ni.title = nr.label;
-                ni.addEventListener('input', () => {
-                    const n = Number(ni.value);
-                    if (Number.isFinite(n)) put(nr.key, n);
+        const n = normalizeSettingsRow(r);
+        const controls: HTMLElement[] = [];
+        for (const c of n.controls) {
+            const el = this.inlineControl(c, bag, put, n.toggle !== undefined);
+            if (c.kind !== 'hint' && c.when) {
+                el.dataset.sdSelfGated = '1';
+                const when = c.when;
+                refreshers.push(() => {
+                    el.style.display = settingsRowVisible(when, bag) ? '' : 'none';
                 });
-                controls.push(ni);
             }
-            for (const c of r.colors ?? []) {
-                const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v));
-                sw.title = c.label;
-                if (c.when) {
-                    // Self-gated: shows/hides with its own condition, and stays LIVE
-                    // through the toggle-off dim (it may exist FOR the off state).
-                    sw.dataset.sdSelfGated = '1';
-                    const when = c.when;
-                    refreshers.push(() => {
-                        sw.style.display = settingsRowVisible(when, bag) ? '' : 'none';
-                    });
-                }
-                controls.push(sw);
-            }
-            if (r.width) {
-                const w = r.width;
-                let cur = typeof bag[w.key] === 'number' ? (bag[w.key] as number) : w.defval;
-                const wf = widthField(this.theme, () => cur, (v) => {
-                    cur = v;
-                    put(w.key, v);
-                });
-                wf.title = w.label;
-                controls.push(wf);
-            }
-            return this.toggleRow(r.label, bag[r.key] as boolean, (v) => put(r.key, v), controls);
+            controls.push(el);
         }
-        if (r.kind === 'number') return this.numberRow(r.label, bag[r.key] as number, r.min ?? 0, r.max ?? 1_000_000, r.step ?? 1, (v) => put(r.key, v));
-        if (r.kind === 'color') return this.colorRow(r.label, bag[r.key] as string, (v) => put(r.key, v));
-        if (r.kind === 'range') return this.rangeRow(r, bag, put);
-        return this.selectRowLabeled(r.label, bag[r.key] as string, normalizeSelectOptions(r.options), (v) => put(r.key, v));
+        if (n.toggle) {
+            const t = n.toggle;
+            return this.toggleRow(n.label, bag[t.key] as boolean, (v) => put(t.key, v), controls);
+        }
+        return this.rowWith(n.label, controls);
     }
 
     /**
-     * A MIN–MAX row: two number inputs on one row (stored under the descriptor's
-     * `minKey`/`maxKey`). With a `placeholder`, an input at the DEFAULT value renders
-     * empty showing it, and clearing an input stores the default back — the
-     * placeholder names the unset state ('Off' for 0-disables bounds).
+     * Build ONE inline control from its descriptor — the factory behind the composite
+     * row path. `compact` narrows number inputs on toggle rows (the historical inline
+     * width) while standalone rows keep the full-width input.
      */
-    private rangeRow(
-        r: Extract<SettingsRowDescriptor, { kind: 'range' }>,
+    private inlineControl(
+        c: SettingsInlineControl,
         bag: Record<string, unknown>,
         put: (key: string, v: unknown) => void,
+        compact: boolean,
     ): HTMLElement {
-        const { wrap } = this.row(r.label);
-        const input = (key: string, title: string): HTMLInputElement => {
-            const ni = document.createElement('input');
-            ni.type = 'number';
-            ni.className = 'vela-sd-number';
-            ni.min = String(r.min ?? 0);
-            ni.max = String(r.max ?? 1_000_000);
-            ni.step = String(r.step ?? 1);
-            ni.title = title;
-            const current = bag[key] as number;
-            if (r.placeholder !== undefined) {
-                ni.placeholder = r.placeholder;
-                if (current !== r.defval) ni.value = String(current);
-            } else {
-                ni.value = String(current);
+        if (c.kind === 'hint') {
+            const s = document.createElement('span');
+            s.textContent = c.text;
+            s.style.cssText = 'color:var(--vela-fg-muted);';
+            return s;
+        }
+        if (c.kind === 'color') {
+            const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v));
+            sw.title = c.label;
+            return sw;
+        }
+        if (c.kind === 'width') {
+            let cur = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
+            const wf = widthField(this.theme, () => cur, (v) => {
+                cur = v;
+                put(c.key, v);
+            });
+            wf.title = c.label;
+            return wf;
+        }
+        if (c.kind === 'select') {
+            const sel = document.createElement('select');
+            sel.className = 'vela-sd-select';
+            sel.style.cssText = 'max-width:200px;flex:0 0 auto;';
+            sel.title = c.label;
+            const current = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
+            for (const [val, lbl] of normalizeSelectOptions(c.options)) {
+                const o = document.createElement('option');
+                o.value = val;
+                o.textContent = lbl;
+                if (val === current) o.selected = true;
+                sel.appendChild(o);
             }
+            sel.addEventListener('change', () => put(c.key, sel.value));
+            return sel;
+        }
+        // number
+        const ni = document.createElement('input');
+        ni.type = 'number';
+        ni.className = 'vela-sd-number';
+        if (compact) ni.style.width = '56px';
+        if (c.min !== undefined) ni.min = String(c.min);
+        if (c.max !== undefined) ni.max = String(c.max);
+        ni.step = String(c.step ?? 1);
+        ni.title = c.label;
+        const current = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
+        if (c.placeholder !== undefined) {
+            // Placeholder mode: an input at the DEFAULT renders empty showing it, and
+            // clearing stores the default back — the placeholder names the unset state.
             // 'change' (commit), not 'input': an empty field means "default" only once
             // the user is done, never while they are mid-edit.
+            ni.placeholder = c.placeholder;
+            if (current !== c.defval) ni.value = String(current);
             ni.addEventListener('change', () => {
-                const raw = ni.value.trim() === '' ? r.defval : Number(ni.value);
-                const v = Number.isFinite(raw) ? Math.min(r.max ?? Infinity, Math.max(r.min ?? -Infinity, raw)) : r.defval;
-                ni.value = r.placeholder !== undefined && v === r.defval ? '' : String(v);
-                put(key, v);
+                const raw = ni.value.trim() === '' ? c.defval : Number(ni.value);
+                const v = Number.isFinite(raw) ? Math.min(c.max ?? Infinity, Math.max(c.min ?? -Infinity, raw)) : c.defval;
+                ni.value = v === c.defval ? '' : String(v);
+                put(c.key, v);
             });
-            return ni;
-        };
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;flex:0 0 auto;';
-        const dash = document.createElement('span');
-        dash.textContent = '–';
-        dash.style.cssText = 'color:var(--vela-fg-muted);';
-        box.append(input(r.minKey, `${r.label} — min`), dash, input(r.maxKey, `${r.label} — max`));
-        wrap.appendChild(box);
-        return wrap;
+        } else {
+            ni.value = String(current);
+            ni.addEventListener('input', () => {
+                const v = Number(ni.value);
+                if (Number.isFinite(v)) put(c.key, v);
+            });
+        }
+        return ni;
     }
 
     /**
@@ -922,7 +927,9 @@ export class SettingsDialog {
                 continue;
             }
             const el = this.typeRow(r, bag, put, refreshers);
-            const key = r.kind === 'range' ? undefined : r.key;
+            // The key an `enableKey` soft-disable matches: the row's boolean toggle
+            // (composite rows carry it under `toggle`), else the row's own value key.
+            const key = r.kind === 'row' ? r.toggle?.key : r.kind === 'range' ? undefined : r.key;
             entries.push({ el, when: r.when, group: g, key });
             rowsHost.append(el);
         }

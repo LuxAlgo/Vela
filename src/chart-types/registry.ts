@@ -147,39 +147,145 @@ export interface SettingsRowInlineNumber {
 }
 
 /**
- * One declarative settings row. To add a NEW kind, see docs/architecture/settings-rows.md.
- *
- * `heading` titles a GROUP of rows: the heading plus everything after it up to the next
- * heading. In a flat `rows` section headings render as inline group titles; inside
- * `instances`/`subsections` they become entries of the pane's group TOC (see
- * {@link ChartTypeSettingsSection}).
- *
- * `header` is an in-pane subgroup title: same visual as a flat heading, but inside a
- * structured pane it stays in the rows column (does NOT become a TOC entry). Use it to
- * cluster rows inside a TOC group (e.g. Colors / Values under Display).
- *
- * Any row may carry `when` — it is shown only while the condition holds.
- *
- * `range` is a min–max pair on one row (two number inputs storing under `minKey` /
- * `maxKey`, both seeded from the shared `defval`). When `placeholder` is given, an
- * input holding the default value renders EMPTY showing the placeholder, and clearing
- * an input stores the default back — so the placeholder names the "unset" state
- * (`'Off'` for a 0-disables filter bound).
- */
-/**
  * A select option: a bare string (value = label) or a `[value, label]` pair when the
  * stored id differs from the human-readable text (`['bidAskProfile', 'Bid × Ask Profile']`).
  */
 export type SettingsSelectOption = string | readonly [value: string, label: string];
 
+/**
+ * One INLINE CONTROL on a composite `row` — the composable unit every value row is
+ * made of. Each keyed control stores under its own bag key; `label` names it for the
+ * control's tooltip. A control may carry its own `when` gate (same shape as a row's),
+ * evaluated live against the values bag: a gated control appears/disappears as other
+ * values change, and is EXEMPT from the row's toggle-off dim — its gate already says
+ * when it matters, and it may exist specifically for the off state.
+ *
+ * - `number` — a compact number input. With `placeholder`, an input at the default
+ *   value renders EMPTY showing it, and clearing the input stores the default back —
+ *   the placeholder names the "unset" state (`'Off'` for a 0-disables bound).
+ * - `color` — a color swatch opening the shared color picker.
+ * - `width` — a line-width dropdown (the classic drawing-bar 1–5 px weights, each
+ *   option previewed as a line at that weight), storing a px number.
+ * - `select` — a dropdown over {@link SettingsSelectOption}s.
+ * - `hint` — display-only dimmed text between controls (the `–` of a min–max pair,
+ *   a unit); stores nothing.
+ */
+export type SettingsInlineControl =
+    | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number; placeholder?: string; when?: SettingsRowWhen }
+    | { kind: 'color'; key: string; label: string; defval: string; when?: SettingsRowWhen }
+    | { kind: 'width'; key: string; label: string; defval: number; when?: SettingsRowWhen }
+    | { kind: 'select'; key: string; label: string; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }
+    | { kind: 'hint'; text: string };
+
+/**
+ * One declarative settings row. To add a NEW inline control kind, see
+ * docs/architecture/settings-rows.md.
+ *
+ * `heading` titles a GROUP of rows: the heading plus everything after it up to the next
+ * heading. In a flat `rows` section headings render as inline group titles; inside
+ * `instances`/`subsections` (or a `layout: 'grouped'` section) they become entries of
+ * the pane's group TOC (see {@link ChartTypeSettingsSection}).
+ *
+ * `header` is an in-pane subgroup title: same visual as a flat heading, but inside a
+ * structured pane it stays in the rows column (does NOT become a TOC entry). Use it to
+ * cluster rows inside a TOC group (e.g. Colors / Values under Display).
+ *
+ * `row` is the COMPOSITE form every value row reduces to: a label, an optional leading
+ * `toggle` (a checkbox storing a boolean under `toggle.key`; while off, the row's
+ * controls dim and ignore input), and an ordered list of {@link SettingsInlineControl}s
+ * in the control column. Any mix of control kinds in any order — no per-combination
+ * SDK surface.
+ *
+ * The remaining kinds are SUGAR over `row` (see {@link normalizeSettingsRow}):
+ * - `toggle` — a checkbox row; optional inline `number`, color `colors`, and `width`
+ *   attachments render in that order.
+ * - `number` / `color` / `select` — one control on its own row.
+ * - `range` — a min–max pair (two number inputs under `minKey`/`maxKey`, both seeded
+ *   from the shared `defval`, with `placeholder` naming the unset state).
+ *
+ * Any row may carry `when` — it is shown only while the condition holds.
+ */
 export type SettingsRowDescriptor =
     | { kind: 'heading'; label: string; when?: SettingsRowWhen }
     | { kind: 'header'; label: string; when?: SettingsRowWhen }
+    | { kind: 'row'; label: string; toggle?: { key: string; defval: boolean }; controls: readonly SettingsInlineControl[]; when?: SettingsRowWhen }
     | { kind: 'toggle'; key: string; label: string; defval: boolean; number?: SettingsRowInlineNumber; colors?: readonly SettingsRowSwatch[]; width?: SettingsRowWidth; when?: SettingsRowWhen }
     | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number; when?: SettingsRowWhen }
     | { kind: 'color'; key: string; label: string; defval: string; when?: SettingsRowWhen }
     | { kind: 'select'; key: string; label: string; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }
     | { kind: 'range'; label: string; minKey: string; maxKey: string; defval: number; min?: number; max?: number; step?: number; placeholder?: string; when?: SettingsRowWhen };
+
+/** A value-carrying row (everything except the key-less `heading`/`header` titles). */
+export type SettingsValueRow = Exclude<SettingsRowDescriptor, { kind: 'heading' | 'header' }>;
+
+/** The canonical row shape every {@link SettingsValueRow} reduces to (the `row` kind's fields). */
+export interface NormalizedSettingsRow {
+    label: string;
+    toggle?: { key: string; defval: boolean };
+    controls: readonly SettingsInlineControl[];
+    when?: SettingsRowWhen;
+}
+
+/**
+ * Reduce a value row to the canonical composite shape — the ONE contract view layers
+ * render and the persistence layer enumerates. The sugar kinds map exactly onto their
+ * historical rendering: `toggle` attachments in number → colors → width order, `range`
+ * as two number controls around a `–` hint (placeholder semantics preserved).
+ */
+export function normalizeSettingsRow(r: SettingsValueRow): NormalizedSettingsRow {
+    switch (r.kind) {
+        case 'row':
+            return { label: r.label, toggle: r.toggle, controls: r.controls, when: r.when };
+        case 'toggle': {
+            const controls: SettingsInlineControl[] = [];
+            if (r.number) controls.push({ kind: 'number', ...r.number });
+            for (const c of r.colors ?? []) controls.push({ kind: 'color', ...c });
+            if (r.width) controls.push({ kind: 'width', ...r.width });
+            return { label: r.label, toggle: { key: r.key, defval: r.defval }, controls, when: r.when };
+        }
+        case 'number':
+            return { label: r.label, controls: [{ kind: 'number', key: r.key, label: r.label, defval: r.defval, min: r.min, max: r.max, step: r.step }], when: r.when };
+        case 'color':
+            return { label: r.label, controls: [{ kind: 'color', key: r.key, label: r.label, defval: r.defval }], when: r.when };
+        case 'select':
+            return { label: r.label, controls: [{ kind: 'select', key: r.key, label: r.label, options: r.options, defval: r.defval }], when: r.when };
+        case 'range':
+            return {
+                label: r.label,
+                controls: [
+                    { kind: 'number', key: r.minKey, label: `${r.label} — min`, defval: r.defval, min: r.min, max: r.max, step: r.step, placeholder: r.placeholder },
+                    { kind: 'hint', text: '–' },
+                    { kind: 'number', key: r.maxKey, label: `${r.label} — max`, defval: r.defval, min: r.min, max: r.max, step: r.step, placeholder: r.placeholder },
+                ],
+                when: r.when,
+            };
+    }
+}
+
+/** One value a settings row stores: its bag key, runtime type, and registry default. */
+export interface SettingsRowValueKey {
+    key: string;
+    type: 'boolean' | 'number' | 'string';
+    defval: boolean | number | string;
+}
+
+/**
+ * EVERY key a row stores (toggle key + each keyed inline control), with its expected
+ * type and default — the single enumeration the dialog seeds from and the factory
+ * reset restores, so no key can fall through a kind-specific walk.
+ */
+export function settingsRowValueKeys(r: SettingsRowDescriptor): SettingsRowValueKey[] {
+    if (r.kind === 'heading' || r.kind === 'header') return [];
+    const n = normalizeSettingsRow(r);
+    const keys: SettingsRowValueKey[] = [];
+    if (n.toggle) keys.push({ key: n.toggle.key, type: 'boolean', defval: n.toggle.defval });
+    for (const c of n.controls) {
+        if (c.kind === 'hint') continue;
+        if (c.kind === 'color' || c.kind === 'select') keys.push({ key: c.key, type: 'string', defval: c.defval });
+        else keys.push({ key: c.key, type: 'number', defval: c.defval });
+    }
+    return keys;
+}
 
 /** Whether a row's `when` gate passes against the current values bag. */
 export function settingsRowVisible(when: SettingsRowWhen | undefined, bag: Record<string, unknown>): boolean {
@@ -220,14 +326,15 @@ export interface ChartTypeSettingsSubsection {
  * A chart type's settings tab. Two forms:
  *
  * - **Flat**: `rows` only — rendered as one scrollable pane, `heading` rows as inline
- *   group titles (the historical form).
+ *   group titles (the historical form). `layout: 'grouped'` upgrades the same rows to
+ *   the GROUP TOC presentation (below) without declaring an instance strip.
  * - **Structured**: `instances` (and optionally `subsections`) — the pane opens with an
  *   instance TAB STRIP, and each instance's rows are organized by a GROUP TOC on the
- *   left built from its `heading` rows (rows before the first heading always show above
- *   the groups; selecting a TOC entry shows only that group's rows). `subsections` add
- *   indented rail entries under the section's tab, each a pane with the same TOC
- *   treatment. A TOC entry hides itself while every row of its group is hidden by
- *   `when` gates.
+ *   left of the pane (right of the dialog's tab rail) built from its `heading` rows
+ *   (rows before the first heading always show above the groups; selecting a TOC entry
+ *   shows only that group's rows). `subsections` add indented rail entries under the
+ *   section's tab, each a pane with the same TOC treatment. A TOC entry hides itself
+ *   while every row of its group is hidden by `when` gates.
  *
  * All values — every instance and subsection included — live in the ONE per-type bag
  * (`config.chartTypes[<id>]`), so consumers keep receiving a single flat object.
@@ -237,6 +344,10 @@ export interface ChartTypeSettingsSection {
     title: string;
     /** Flat form. Ignored when `instances` is declared. */
     rows?: readonly SettingsRowDescriptor[];
+    /** How `rows` are presented: `'flat'` (default) renders headings as inline group
+     *  titles; `'grouped'` promotes them to a group TOC beside the rows (the structured
+     *  pane's presentation, without an instance strip). Ignored with `instances`. */
+    layout?: 'flat' | 'grouped';
     /** Structured form: the pane's instance tab strip. */
     instances?: readonly ChartTypeSettingsInstance[];
     /** Indented sub-entries under this section's rail tab. */

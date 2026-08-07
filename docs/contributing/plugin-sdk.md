@@ -62,18 +62,20 @@ Two more levers for full-replacement types:
 A chart type may also declare a **settings section** (`settings: { title, rows,
 visibility }`) that the chart-settings dialog renders as its own tab — values persist in
 the renderer config, reach the type's renderer layer as `args.settings`, and its data
-engine via `onSettings(values)`. Rows may carry declarative `when` conditions (shown
-only while another key holds a value), a toggle row may carry inline color swatches
-(`colors`, dimmed while off; a swatch's own `when` swaps it in and out live and exempts
-it from the dim), an inline number input (`number`) and an inline
-line-width dropdown (`width`, the drawing bar's 1–5 px weights), a `range` row edits
-a min–max pair on one line, and a
-section may go structured: an `instances` tab strip (repeated blocks with add/remove
-via an `enableKey` boolean), `subsections` as indented rail entries, a group TOC built
-from `heading` rows (with optional in-group `header` subgroup titles), and a
-`placement: 'after-symbol'` rail position — all pure data, evaluated live by the dialog.
-See [architecture/settings-rows.md](../architecture/settings-rows.md) for the row kinds,
-conditions, the structured form, and how to add new ones.
+engine via `onSettings(values)`. Every value row reduces to ONE composite shape — the
+`row` kind: a label, an optional leading toggle (controls dim while it is off), and an
+ordered list of inline controls (`number`, `color`, `width`, `select`, `hint`) in any
+mix — the classic `toggle`/`number`/`color`/`select`/`range` kinds are sugar over it
+(`normalizeSettingsRow`/`settingsRowValueKeys` expose the canonical view for alternate
+renderers). Rows and individual controls may carry declarative `when` conditions (shown
+only while another key holds a value; a control's own `when` swaps it in and out live
+and exempts it from the toggle-off dim), and a section may go structured: `layout:
+'grouped'` promotes `heading` rows to a group TOC beside the rows, an `instances` tab
+strip repeats blocks with add/remove via an `enableKey` boolean, `subsections` add
+indented rail entries (with optional in-group `header` subgroup titles), and
+`placement: 'after-symbol'` picks the rail position — all pure data, evaluated live by
+the dialog. See [architecture/settings-rows.md](../architecture/settings-rows.md) for
+the control kinds, conditions, the structured form, and how to add new ones.
 
 ## Renderer layers — `registerRendererLayer`
 

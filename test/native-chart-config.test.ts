@@ -344,6 +344,37 @@ describe('factoryResetConfig — "Reset defaults" restores chart-type SDK settin
             flavor: 'a',
         });
     });
+
+    it('covers a toggle row\'s inline number/width keys and composite `row` controls', () => {
+        registerChartType({
+            id: 'sdktype',
+            settings: {
+                title: 'SDK Type',
+                rows: [
+                    { kind: 'toggle', key: 'poc', label: 'POC', defval: true,
+                        number: { key: 'pocPct', label: 'Percent', defval: 70 },
+                        width: { key: 'pocWidth', label: 'Line width', defval: 2 } },
+                    { kind: 'row', label: 'Mixed', toggle: { key: 'mixOn', defval: false },
+                        controls: [
+                            { kind: 'select', key: 'mixMode', label: 'Mode', options: ['a', 'b'], defval: 'a' },
+                            { kind: 'color', key: 'mixInk', label: 'Ink', defval: '#111111' },
+                        ] },
+                ],
+            },
+        });
+        const r = new NativeRenderer();
+        const factory = r.getConfig();
+        r.applyConfig({ chartTypes: { sdktype: { poc: false, pocPct: 40, pocWidth: 5, mixOn: true, mixMode: 'b', mixInk: '#ff0000' } } });
+        r.applyConfig(factoryResetConfig(factory));
+        expect(r.getConfig().chartTypes.sdktype).toEqual({
+            poc: true,
+            pocPct: 70,
+            pocWidth: 2,
+            mixOn: false,
+            mixMode: 'a',
+            mixInk: '#111111',
+        });
+    });
 });
 
 describe('per-price-style colors — each style is independent (item 15)', () => {
