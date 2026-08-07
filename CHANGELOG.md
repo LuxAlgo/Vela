@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.5.1]
 
 ### Added
 
@@ -82,7 +82,7 @@ All notable changes to Vela, newest first.
   drawings are never recolored.
 
 - **Capturing what a script computes, in one subscription: `script:run`.** Reading a running
-  script used to mean assembling it yourself — an event told you *that* something happened
+  script used to mean assembling it yourself — an event told you _that_ something happened
   and handed you an id, so you looked the indicator up, awaited a snapshot, and then decoded
   it: variable names arrived scope-mangled by the transpiler, values arrived as per-bar
   buffers you had to index, nothing said whether the script was a strategy, and the title on
@@ -285,7 +285,7 @@ All notable changes to Vela, newest first.
   was declared. Everything else already spoke names — `ws.cell('btc')`, the active cell,
   the saved document — so the grid was consistent everywhere except this one list, and
   what read it inherited the blank. A plugin asking its widget context which charts the
-  grid holds got nothing; a plugin registered *after* the workspace was built never got
+  grid holds got nothing; a plugin registered _after_ the workspace was built never got
   its legend buttons onto the cells already on screen; and opening the symbol search left
   the other cells' in-chart dialogs open. Cells are now listed the way the rest of the
   workspace identifies them, in slot order, still leaving out the ones a smaller layout
