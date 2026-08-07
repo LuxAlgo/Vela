@@ -14,6 +14,7 @@ import { toHex6, withAlpha } from '../../../core/color';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
 import { colorField, closeColorPopover } from './ColorField';
+import { widthField, closeWidthPopover } from './WidthField';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
@@ -556,6 +557,7 @@ export class SettingsDialog {
 
     close(): void {
         closeColorPopover();
+        closeWidthPopover();
         this.root?.remove();
         this.root = null;
         this.tabs = [];
@@ -615,7 +617,10 @@ export class SettingsDialog {
                     continue;
                 }
                 seedKey(r.key, r.kind === 'toggle' ? 'boolean' : r.kind === 'number' ? 'number' : 'string', r.defval);
-                if (r.kind === 'toggle') for (const c of r.colors ?? []) seedKey(c.key, 'string', c.defval);
+                if (r.kind === 'toggle') {
+                    for (const c of r.colors ?? []) seedKey(c.key, 'string', c.defval);
+                    if (r.width) seedKey(r.width.key, 'number', r.width.defval);
+                }
             }
         };
         if (section.rows) seed(section.rows);
@@ -684,12 +689,22 @@ export class SettingsDialog {
         put: (key: string, v: unknown) => void,
     ): HTMLElement {
         if (r.kind === 'toggle') {
-            const swatches = (r.colors ?? []).map((c) => {
+            const controls = (r.colors ?? []).map((c) => {
                 const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v));
                 sw.title = c.label;
                 return sw;
             });
-            return this.toggleRow(r.label, bag[r.key] as boolean, (v) => put(r.key, v), swatches);
+            if (r.width) {
+                const w = r.width;
+                let cur = typeof bag[w.key] === 'number' ? (bag[w.key] as number) : w.defval;
+                const wf = widthField(this.theme, () => cur, (v) => {
+                    cur = v;
+                    put(w.key, v);
+                });
+                wf.title = w.label;
+                controls.push(wf);
+            }
+            return this.toggleRow(r.label, bag[r.key] as boolean, (v) => put(r.key, v), controls);
         }
         if (r.kind === 'number') return this.numberRow(r.label, bag[r.key] as number, r.min ?? 0, r.max ?? 1_000_000, r.step ?? 1, (v) => put(r.key, v));
         if (r.kind === 'color') return this.colorRow(r.label, bag[r.key] as string, (v) => put(r.key, v));

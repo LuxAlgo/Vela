@@ -110,6 +110,19 @@ export interface SettingsRowSwatch {
 }
 
 /**
+ * An inline LINE-WIDTH dropdown on a toggle row — sits beside the row's color
+ * swatches (dimmed with them while the toggle is off) and stores a px number under
+ * its own bag key. The control offers the classic drawing-bar weights (1–5 px),
+ * each option previewed as a line at that weight.
+ */
+export interface SettingsRowWidth {
+    key: string;
+    /** Names the control for its tooltip (`'Line width'`). */
+    label: string;
+    defval: number;
+}
+
+/**
  * One declarative settings row. To add a NEW kind, see docs/architecture/settings-rows.md.
  *
  * `heading` titles a GROUP of rows: the heading plus everything after it up to the next
@@ -138,7 +151,7 @@ export type SettingsSelectOption = string | readonly [value: string, label: stri
 export type SettingsRowDescriptor =
     | { kind: 'heading'; label: string; when?: SettingsRowWhen }
     | { kind: 'header'; label: string; when?: SettingsRowWhen }
-    | { kind: 'toggle'; key: string; label: string; defval: boolean; colors?: readonly SettingsRowSwatch[]; when?: SettingsRowWhen }
+    | { kind: 'toggle'; key: string; label: string; defval: boolean; colors?: readonly SettingsRowSwatch[]; width?: SettingsRowWidth; when?: SettingsRowWhen }
     | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number; when?: SettingsRowWhen }
     | { kind: 'color'; key: string; label: string; defval: string; when?: SettingsRowWhen }
     | { kind: 'select'; key: string; label: string; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }

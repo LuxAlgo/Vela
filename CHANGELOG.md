@@ -6,6 +6,13 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Inline line-width dropdown on settings toggle rows.** A chart type's settings
+  toggle row may now carry `width: { key, label, defval }` next to its `colors`
+  swatches: a compact dropdown offering the drawing bar's classic 1–5 px weights,
+  each option previewed as a line at that weight. It dims with the swatches while
+  the toggle is off and stores a plain number in the type's bag — the declarative
+  replacement for a separate width `number` row.
+
 - **Candle settings for plugin chart types that draw candles.** A registered chart type
   that keeps the candle series under its own layer (an order-flow style, for example) now
   gets a Candles group in chart settings → Symbol while it is active: body, border, and

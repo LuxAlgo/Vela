@@ -64,7 +64,8 @@ visibility }`) that the chart-settings dialog renders as its own tab — values 
 the renderer config, reach the type's renderer layer as `args.settings`, and its data
 engine via `onSettings(values)`. Rows may carry declarative `when` conditions (shown
 only while another key holds a value), a toggle row may carry inline color swatches
-(`colors`, dimmed while off), a `range` row edits a min–max pair on one line, and a
+(`colors`, dimmed while off) and an inline line-width dropdown (`width`, the drawing
+bar's 1–5 px weights), a `range` row edits a min–max pair on one line, and a
 section may go structured: an `instances` tab strip (repeated blocks with add/remove
 via an `enableKey` boolean), `subsections` as indented rail entries, a group TOC built
 from `heading` rows (with optional in-group `header` subgroup titles), and a

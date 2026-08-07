@@ -26,6 +26,7 @@ export {
     type ChartTypeSettingsSubsection,
     type SettingsRowDescriptor,
     type SettingsRowSwatch,
+    type SettingsRowWidth,
     type SettingsSelectOption,
     type SettingsRowCondition,
     type SettingsRowWhen,

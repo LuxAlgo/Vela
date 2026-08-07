@@ -61,6 +61,11 @@ conditionally revealed row would jump the layout:
   `{ key, label, defval }`, the label its tooltip). The swatches dim and ignore input
   while the toggle is off. Prefer this over a separate `color` row gated on the toggle
   whenever the toggle governs one or two colors.
+- **`toggle` with `width`** — an inline line-width dropdown beside the row's swatches
+  (a `{ key, label, defval }` storing a px number). The control offers the classic
+  drawing-bar weights (1–5 px), each option previewed as a line at that weight, and
+  dims with the swatches while the toggle is off. Prefer this over a separate `number`
+  row whenever the toggle governs one line's weight.
 - **`range`** — a min–max pair (`minKey`/`maxKey`, both seeded from the shared
   `defval`). With `placeholder`, an input at the default renders empty showing it, and
   clearing an input stores the default back — the placeholder names the unset state
