@@ -704,6 +704,10 @@ export class SettingsDialog {
         const controls: HTMLElement[] = [];
         for (const c of n.controls) {
             const el = this.inlineControl(c, bag, put, n.toggle !== undefined);
+            // Keyed controls re-read the bag on every refresh ('vela-sync') — several
+            // `when`-gated rows may share one key (a per-mode row set over one stored
+            // state), and the hidden twins must not go stale when the visible one edits.
+            if (c.kind !== 'hint') refreshers.push(() => el.dispatchEvent(new Event('vela-sync')));
             if (c.kind !== 'hint' && c.when) {
                 el.dataset.sdSelfGated = '1';
                 const when = c.when;
@@ -715,7 +719,9 @@ export class SettingsDialog {
         }
         if (n.toggle) {
             const t = n.toggle;
-            return this.toggleRow(n.label, bag[t.key] as boolean, (v) => put(t.key, v), controls);
+            const el = this.toggleRow(n.label, bag[t.key] as boolean, (v) => put(t.key, v), controls, () => bag[t.key] === true);
+            refreshers.push(() => el.dispatchEvent(new Event('vela-sync')));
+            return el;
         }
         return this.rowWith(n.label, controls);
     }
@@ -738,7 +744,7 @@ export class SettingsDialog {
             return s;
         }
         if (c.kind === 'color') {
-            const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v));
+            const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v), () => bag[c.key] as string);
             sw.title = c.label;
             return sw;
         }
@@ -765,6 +771,9 @@ export class SettingsDialog {
                 sel.appendChild(o);
             }
             sel.addEventListener('change', () => put(c.key, sel.value));
+            sel.addEventListener('vela-sync', () => {
+                sel.value = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
+            });
             return sel;
         }
         // number
@@ -1052,9 +1061,11 @@ export class SettingsDialog {
     }
 
     /** A bare color swatch input (for toggle-row right groups / swatch pairs). */
-    private swatch(value: string, onChange: (v: string) => void): HTMLElement {
+    /** With `get`, the field reads its value live (and repaints on 'vela-sync') —
+     *  duplicate-keyed rows stay honest when another row edits the shared key. */
+    private swatch(value: string, onChange: (v: string) => void, get?: () => string): HTMLElement {
         let current = value;
-        return colorField(this.theme, () => current, (v) => { current = v; onChange(v); });
+        return colorField(this.theme, () => (get ? get() : current), (v) => { current = v; onChange(v); });
     }
 
     /** A label row with arbitrary controls in the shared control column (no toggle). */
@@ -1112,8 +1123,11 @@ export class SettingsDialog {
 
     /** An enable row: checkbox + label in the label column, dependent controls in the
      *  shared control column; the control group dims and ignores input while the toggle
-     *  is off. With no controls it reads like a plain toggle row (full-width in the grid). */
-    private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[]): HTMLElement {
+     *  is off. With no controls it reads like a plain toggle row (full-width in the grid).
+     *  With `get`, the row re-reads its state on a 'vela-sync' event — the seam that
+     *  keeps DUPLICATE-KEYED rows honest (several `when`-gated rows over one bag key,
+     *  only one visible at a time; see `typeRow`). */
+    private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean): HTMLElement {
         const wrap = document.createElement('div');
         // No cursor on the row itself: only the checkbox is clickable, so a row-wide
         // pointer would promise a click target that isn't there.
@@ -1135,6 +1149,12 @@ export class SettingsDialog {
             wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;';
             wrap.append(cb, lbl);
             cb.addEventListener('click', () => onToggle(cbToggle()));
+            if (get) {
+                wrap.addEventListener('vela-sync', () => {
+                    checked = get();
+                    cb.classList.toggle('on', checked);
+                });
+            }
             return wrap;
         }
         wrap.className = 'vela-sd-row';
@@ -1155,6 +1175,13 @@ export class SettingsDialog {
         };
         syncDim(value);
         cb.addEventListener('click', () => { const v = cbToggle(); onToggle(v); syncDim(v); });
+        if (get) {
+            wrap.addEventListener('vela-sync', () => {
+                checked = get();
+                cb.classList.toggle('on', checked);
+                syncDim(checked);
+            });
+        }
         wrap.append(left, box);
         return wrap;
     }
