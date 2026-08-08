@@ -7,7 +7,7 @@ import { iconEl, iconMarkup, registerIcon } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import { chartType } from '../chart-types/registry';
 import { widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
-import { priceStyleIds } from '../renderers/native/core/chartConfig';
+import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
 import { timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
 
@@ -453,12 +453,15 @@ export class Topbar {
 
     private styleItems(): MenuItemDescriptor[] {
         // Live list: built-ins ∪ plugin-registered chart types (a registered type shows
-        // up here automatically — the SDK's style-picker contribution).
-        return priceStyleIds().map((id) => ({
+        // up here automatically — the SDK's style-picker contribution). Registered types
+        // sit BELOW a separator: the built-in price styles and the plugin chart types
+        // read as two distinct families.
+        return priceStyleIds().map((id, i) => ({
             id,
             label: priceStyleLabel(id),
             icon: priceStyleIcon(id),
             checked: id === this.priceStyle,
+            separatorBefore: i === BUILTIN_PRICE_STYLES.length,
         }));
     }
 }
