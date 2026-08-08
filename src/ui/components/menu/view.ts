@@ -134,6 +134,10 @@ class Surface {
     private build(): void {
         const doc = this.doc;
         this.list.replaceChildren();
+        // A list with selectable rows reserves a LEFT check slot on every row (filled
+        // on the active one, empty elsewhere) so labels stay aligned across the list —
+        // toggle rows (switch pill) and branches carry their own state and never one.
+        const hasChecks = this.items.some((i) => i.checked !== undefined && !i.toggle && !(i.submenu && i.submenu.length > 0));
         for (const item of this.items) {
             if (item.separatorBefore) {
                 const sep = doc.createElement('li');
@@ -150,9 +154,16 @@ class Surface {
                 // (Zag owns the item's ARIA props; the pill below is decorative.)
                 li.dataset.toggle = '1';
             } else if (!branch && item.checked) {
-                // Selection reads from the row itself (brighter surface + bright ink) —
-                // no checkmark glyph.
+                // Selection reads from a leading check glyph — the row surface stays
+                // plain (background is the hover language, never the selection one).
                 li.dataset.checked = '1';
+            }
+            if (hasChecks) {
+                const checked = !branch && !item.toggle && item.checked === true;
+                const slot = checked ? iconEl('check', doc) : doc.createElement('span');
+                slot.classList.add('vela-menu-check');
+                slot.setAttribute('aria-hidden', 'true');
+                li.appendChild(slot);
             }
             if (item.icon) li.appendChild(iconEl(item.icon, doc));
             const label = doc.createElement('span');
