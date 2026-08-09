@@ -24,7 +24,13 @@ export type PaneHint = 'price' | 'new';
 export interface IndicatorModel {
     /** Per-instance id (stable). */
     id: string;
+    /** Full display name (settings dialog, object tree, inspect). */
     title: string;
+    /**
+     * Compact legend label when the full {@link title} is too long for the chip.
+     * Absent ⇒ the legend uses {@link title}. Mirrors Pine `indicator(..., shorttitle=)`.
+     */
+    shorttitle?: string;
     overlay: boolean;
     paneHint: PaneHint;
     /**

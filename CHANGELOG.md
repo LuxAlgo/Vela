@@ -150,6 +150,11 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Visible Range Volume Profile is named in full.** The built-in volume profile of
+  the visible range now appears in the indicator picker as "Visible Range Volume
+  Profile", with the short legend label "VRVP" (it was previously titled "VPVR"
+  everywhere). Native indicators may also declare an optional `shortTitle` so the
+  legend stays compact while the picker and settings dialog keep the full name.
 - **An indicator that is fetching shows quiet load dots in its legend.** While an
   indicator's data is in flight, its legend row now ends with three small pulsing
   dots — the same load affordance the chart itself shows while bars load — at the

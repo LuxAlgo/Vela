@@ -1806,7 +1806,11 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.indicators.set(model.id, model);
         this.refreshAnchorOffset(model);
         this.scene.assignIndicatorZ(model.id); // default z = mount order (later ⇒ in front)
-        this.inputsUI.upsert(model.id, model.title, model.inputs, model.inputValues, model.paneId, { native: !!model.native });
+        // Legend chip prefers the compact shorttitle; the settings dialog keeps the full title.
+        this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
+            native: !!model.native,
+            ...(model.shorttitle ? { settingsTitle: model.title } : {}),
+        });
         this.syncTables(model);
         if (model.native?.type === 'volume') {
             this.volumeActive = true; // the volume layer follows the indicator's presence

@@ -76,7 +76,13 @@ export interface NativeIndicator {
  */
 export interface NativeIndicatorDescriptor {
     readonly type: string;
+    /** Full display name (picker, settings header, handle title). */
     readonly title: string;
+    /**
+     * Compact name for the on-chart legend chip. Absent ⇒ {@link title}. The picker and
+     * settings dialog keep the full title either way.
+     */
+    readonly shortTitle?: string;
     readonly paneHint: 'price' | 'new';
     readonly overlay: boolean;
     /** Whether instances react to viewport changes (drives the orchestrator's viewport poke). */

@@ -37,7 +37,10 @@ export interface LegendPlotValue {
 
 interface LegendRow {
     id: string;
+    /** Legend chip text (may be a compact shorttitle). */
     title: string;
+    /** Settings-dialog header; falls back to {@link title} when unset. */
+    settingsTitle: string;
     inputs: InputSchema[];
     values: Record<string, InputValue>;
     el: HTMLElement;
@@ -559,10 +562,12 @@ export class InputsUI {
     }
 
     /** Create or update an indicator's legend row (in the legend for its pane). */
-    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean } = {}): void {
+    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; settingsTitle?: string } = {}): void {
+        const settingsTitle = opts.settingsTitle ?? title;
         const existing = this.rows.get(id);
         if (existing) {
             existing.title = title;
+            existing.settingsTitle = settingsTitle;
             existing.inputs = inputs;
             existing.values = { ...values };
             existing.titleEl.textContent = title;
@@ -708,7 +713,7 @@ export class InputsUI {
         el.appendChild(statusEl); // status sits at the row's right end, after values and controls
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        this.rows.set(id, { id, title, inputs, values: { ...values }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
+        this.rows.set(id, { id, title, settingsTitle, inputs, values: { ...values }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
     }
 
@@ -913,7 +918,7 @@ export class InputsUI {
         const header = document.createElement('div');
         header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 20px 12px;flex:0 0 auto;';
         const hTitle = document.createElement('span');
-        hTitle.textContent = row.title;
+        hTitle.textContent = row.settingsTitle;
         hTitle.style.cssText = 'font-weight:600;font-size:16px;line-height:1.3;';
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
