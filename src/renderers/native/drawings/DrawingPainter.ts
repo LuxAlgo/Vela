@@ -237,7 +237,7 @@ export class DrawingPainter {
             return;
         }
         if (d instanceof FixedRangeVolumeProfile) {
-            this.paintFixedRangeVp(ctx, d, proj);
+            this.paintFixedRangeVp(ctx, d, proj, theme);
             this.paintLabel(ctx, d, proj, theme);
             return;
         }
@@ -755,7 +755,7 @@ export class DrawingPainter {
     /** Paint a fixed-range volume profile: horizontal histogram rows (up/down split) anchored to
      *  the left or right of the time span, optional VAH / VAL / POC levels across the range, and
      *  optional developing POC / VA polylines. Recomputes from the two anchors on every paint. */
-    private paintFixedRangeVp(ctx: CanvasRenderingContext2D, d: FixedRangeVolumeProfile, proj: Projector): void {
+    private paintFixedRangeVp(ctx: CanvasRenderingContext2D, d: FixedRangeVolumeProfile, proj: Projector, theme: VelaTheme): void {
         const L = d.layout(proj);
         if (!L) return;
         const s = d.frvp;
@@ -797,7 +797,9 @@ export class DrawingPainter {
         };
         hLine(s.showVah, s.vahColor, s.vahStyle, L.vahY);
         hLine(s.showVal, s.valColor, s.valStyle, L.valY);
-        hLine(s.showPoc, s.pocColor, s.pocStyle, L.pocY);
+        // No explicit POC ink ⇒ the theme's contrast color, resolved per paint so the line
+        // follows theme switches live (white on dark, black on light).
+        hLine(s.showPoc, s.pocColor ?? contrastColor(theme.background), s.pocStyle, L.pocY);
 
         // Developing levels sit on top of the histogram so they stay readable.
         const devW = Math.max(1, w);

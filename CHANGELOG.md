@@ -186,6 +186,13 @@ All notable changes to Vela, newest first.
   orchestrator now remembers the last-seen per-type values and replays them into
   every newly created engine just before `start()` (a pre-start `onSettings` is
   pure configuration by contract).
+- **The fixed-range volume profile emphasizes its value area.** The default fills were
+  inverted — the value area rendered more transparent than the tails around it. The value
+  area is now the opaque region and the outside rows recede. Its POC line also stops
+  defaulting to the accent blue: until you pick a color for it, the POC draws in the
+  active theme's contrast ink — white on a dark chart, black on a light one — and follows
+  a theme switch immediately. A POC color you picked yourself, and profiles already
+  saved, are left untouched.
 - **Tooltips in the indicator settings dialog no longer hide behind it.** The ⓘ input
   hints and the dialog's own control tips opened underneath the dialog card, where they
   were unreadable; they now stack above it like every other tooltip.
