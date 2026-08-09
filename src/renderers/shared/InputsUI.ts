@@ -29,6 +29,12 @@ export interface InputsUIChange {
     value: InputValue;
 }
 
+/** One plot's current value as shown beside the legend title (pre-formatted, plot-colored). */
+export interface LegendPlotValue {
+    value: string;
+    color: string;
+}
+
 interface LegendRow {
     id: string;
     title: string;
@@ -37,6 +43,16 @@ interface LegendRow {
     el: HTMLElement;
     titleEl: HTMLElement;
     statusEl: HTMLElement;
+    /** The plot-values readout beside the title (one colored span per drawable plot). */
+    valuesEl: HTMLElement;
+    /** Latest plot values pushed by the renderer (kept so visibility toggles re-render). */
+    plotValues: LegendPlotValue[];
+    /** Cheap change key of {@link plotValues} — skips DOM writes on unchanged frames. */
+    plotValuesKey: string;
+    /** Per-row override from the row's context menu; null ⇒ follow the chart-wide setting. */
+    showValues: boolean | null;
+    /** Hovered/selected (outline + controls visible) — the values readout yields to the controls. */
+    highlighted: boolean;
     paneId: string;
     hidden: boolean;
     eyeEl: HTMLButtonElement | null;
@@ -48,9 +64,10 @@ interface LegendRow {
 }
 
 const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'volume'];
-/** Keyframes for the legend-row status affordances (spinner + live pulse), injected once into the document. */
+/** Keyframes for the legend-row live pulse, injected once into the document (the load
+ *  dots animate through the Web Animations API and need no stylesheet). */
 const STATUS_KEYFRAMES =
-    '@keyframes vela-ind-spin{to{transform:rotate(360deg)}}@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}';
+    '@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}';
 
 /** Legend glyph size — the row's own font belongs to the indicator title beside them. */
 const LEGEND_ICON_PX = 13;
@@ -109,6 +126,11 @@ export class InputsUI {
     /** Titles switched off entirely (a settings toggle): every pane's legend container
      *  hides — rows, fold chevron and all — unlike the fold, which leaves its chip. */
     private titlesVisible = true;
+    /** Plot values shown beside the titles chart-wide (a settings toggle); a row's own
+     *  context-menu choice ({@link LegendRow.showValues}) overrides it per indicator. */
+    private valuesVisible = true;
+    /** Open legend-row context menu (kept so it can be torn down). */
+    private rowMenu: HTMLElement | null = null;
     /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
      *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
     private foldToggle: HTMLButtonElement | null = null;
@@ -244,6 +266,58 @@ export class InputsUI {
         this.reposition(); // positionLegend applies the flag per pane
     }
 
+    /**
+     * Show/hide the plot values chart-wide (the settings dialog's Indicators → Values
+     * toggle). "All" is meant literally: per-row context-menu overrides are cleared, so
+     * every legend follows the new state.
+     */
+    setValuesVisible(visible: boolean): void {
+        this.valuesVisible = visible;
+        for (const row of this.rows.values()) {
+            row.showValues = null;
+            this.renderRowValues(row);
+        }
+    }
+
+    /**
+     * Push the current plot values of every indicator at once (the renderer calls this per
+     * paint). Rows absent from the map (e.g. a hidden indicator) show no values. Cheap on
+     * unchanged frames: each row diffs against its last rendered values before touching DOM.
+     */
+    setPlotValues(values: ReadonlyMap<string, LegendPlotValue[]>): void {
+        for (const row of this.rows.values()) {
+            const next = values.get(row.id) ?? [];
+            const key = next.map((v) => `${v.value}|${v.color}`).join('\u0000');
+            if (key === row.plotValuesKey) continue;
+            row.plotValues = next;
+            row.plotValuesKey = key;
+            this.renderRowValues(row);
+        }
+    }
+
+    /** Whether a row currently shows its values: its own override, else the chart-wide flag. */
+    private rowValuesShown(row: LegendRow): boolean {
+        return row.showValues ?? this.valuesVisible;
+    }
+
+    /** (Re)build one row's values readout from its stored plot values + visibility. A
+     *  highlighted (hovered/selected) row shows only the title + controls — no values. */
+    private renderRowValues(row: LegendRow): void {
+        if (!this.rowValuesShown(row) || row.plotValues.length === 0 || row.highlighted) {
+            row.valuesEl.style.display = 'none';
+            row.valuesEl.replaceChildren();
+            return;
+        }
+        row.valuesEl.style.display = 'inline-flex';
+        row.valuesEl.replaceChildren();
+        for (const v of row.plotValues) {
+            const span = document.createElement('span');
+            span.textContent = v.value;
+            span.style.color = v.color;
+            row.valuesEl.appendChild(span);
+        }
+    }
+
     // ── legend move/merge (menu + drag) ─────────────────────────────────────
 
     /** Open the "Move to" menu for a row, anchored under its move button. */
@@ -307,6 +381,58 @@ export class InputsUI {
         if (typeof document !== 'undefined') document.removeEventListener('pointerdown', this.onMoveMenuOutside, true);
         this.moveMenu?.remove();
         this.moveMenu = null;
+    }
+
+    // ── legend row context menu (right-click) ───────────────────────────────
+
+    /** Open the row's action menu at the pointer. One entry today: the values toggle. */
+    private openRowMenu(id: string, x: number, y: number): void {
+        this.closeRowMenu();
+        this.closeMoveMenu();
+        const row = this.rows.get(id);
+        if (!row) return;
+        const menu = document.createElement('div');
+        menu.style.cssText = `position:fixed;z-index:var(--vela-z-tooltip);min-width:170px;padding:4px;border-radius:var(--vela-radius-md);background:var(--vela-surface-elev);color:${this.theme.textColor};border:1px solid var(--vela-border);box-shadow:var(--vela-shadow);font-size:var(--vela-font-size-md);`;
+        applyChromeTokens(menu, this.theme);
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'vela-ind-menuitem';
+        item.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 10px;border:none;border-radius:var(--vela-radius-sm);color:inherit;cursor:pointer;white-space:nowrap;';
+        // A fixed-width check slot keeps the label aligned in both states.
+        const check = document.createElement('span');
+        check.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:14px;flex:none;line-height:0;';
+        check.innerHTML = this.rowValuesShown(row) ? CHECK_SVG : '';
+        const label = document.createElement('span');
+        label.textContent = 'Indicator values';
+        item.append(check, label);
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeRowMenu();
+            row.showValues = !this.rowValuesShown(row);
+            this.renderRowValues(row);
+        });
+        menu.appendChild(item);
+        document.body.appendChild(menu);
+        // Clamp within the viewport so a bottom/right-edge row's menu stays visible.
+        const mw = menu.offsetWidth || 180;
+        const mh = menu.offsetHeight || 40;
+        menu.style.left = `${Math.min(x, window.innerWidth - mw - 6)}px`;
+        menu.style.top = `${Math.min(y, window.innerHeight - mh - 6)}px`;
+        this.rowMenu = menu;
+        // Close on the next outside click (deferred so this same gesture doesn't immediately close it).
+        setTimeout(() => {
+            if (typeof document !== 'undefined') document.addEventListener('pointerdown', this.onRowMenuOutside, true);
+        }, 0);
+    }
+
+    private readonly onRowMenuOutside = (e: Event): void => {
+        if (this.rowMenu && !this.rowMenu.contains(e.target as Node)) this.closeRowMenu();
+    };
+
+    private closeRowMenu(): void {
+        if (typeof document !== 'undefined') document.removeEventListener('pointerdown', this.onRowMenuOutside, true);
+        this.rowMenu?.remove();
+        this.rowMenu = null;
     }
 
     /** Move a legend row to another pane (indicator merged/moved), tidying an emptied container. */
@@ -483,10 +609,17 @@ export class InputsUI {
             e.preventDefault();
             this.onRemove?.(id);
         });
-        // Status indicator (left of the title): a spinner while fetching, a pulse while live, hidden when idle.
+        // Right-click opens the row's own action menu — swallowed here so the host's
+        // chart-body context menu (bound higher up the tree) doesn't open over it.
+        el.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.openRowMenu(id, e.clientX, e.clientY);
+        });
+        // Status indicator (appended at the row's right end, below): pulsing load dots while
+        // fetching, a pulse while live, hidden when idle.
         const statusEl = document.createElement('span');
         statusEl.style.cssText = 'display:none;box-sizing:border-box;flex:none;';
-        el.appendChild(statusEl);
         // Title (+ optional "beta" exponent) wrapped so the superscript stays glued to the label and
         // survives title-text updates (which only touch the inner span).
         const titleWrap = document.createElement('span');
@@ -504,6 +637,11 @@ export class InputsUI {
             titleWrap.appendChild(beta);
         }
         el.appendChild(titleWrap);
+        // Plot values readout, right of the title — filled by setPlotValues, hidden until
+        // values arrive (or while the values toggle is off for this row).
+        const valuesEl = document.createElement('span');
+        valuesEl.style.cssText = 'display:none;align-items:center;gap:5px;white-space:nowrap;font-variant-numeric:tabular-nums;';
+        el.appendChild(valuesEl);
         // Hide/show (eye) — revealed on hover/selection like the other controls, but ALSO kept
         // visible while the indicator is hidden (so its "show" toggle stays reachable without
         // hovering). It sits outside `controlsEl` so it can outlive the collapse. Only present when
@@ -567,9 +705,10 @@ export class InputsUI {
         close.addEventListener('click', () => this.onRemove?.(id));
         controlsEl.appendChild(close);
         el.appendChild(controlsEl);
+        el.appendChild(statusEl); // status sits at the row's right end, after values and controls
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        this.rows.set(id, { id, title, inputs, values: { ...values }, el, titleEl, statusEl, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
+        this.rows.set(id, { id, title, inputs, values: { ...values }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
     }
 
@@ -586,30 +725,35 @@ export class InputsUI {
     }
 
     /**
-     * Reflect an indicator's live status in its legend row: `'loading'` shows a spinner (a fetch is
-     * in flight), `'live'` a pulsing dot (live-updating), `'idle'` nothing. Rendered left of the title.
+     * Reflect an indicator's live status in its legend row: `'loading'` shows three pulsing
+     * dots (a fetch is in flight — the same load affordance as the chart's own bar-load dots,
+     * at legend scale), `'live'` a pulsing dot, `'idle'` nothing. Rendered at the row's right end.
      */
     setStatus(id: string, status: 'idle' | 'loading' | 'live'): void {
         const row = this.rows.get(id);
         if (!row) return;
         const el = row.statusEl;
+        el.replaceChildren(); // the load dots (and their Web Animations) die with the children
         if (status === 'idle') {
-            el.style.display = 'none';
-            el.style.animation = 'none';
+            el.style.cssText = 'display:none;box-sizing:border-box;flex:none;';
             return;
         }
-        this.ensureStatusKeyframes();
         if (status === 'loading') {
-            el.style.cssText =
-                `display:inline-block;box-sizing:border-box;flex:none;width:11px;height:11px;border-radius:50%;` +
-                `border:2px solid var(--vela-border-strong);border-top-color:var(--vela-fg-bright);` +
-                `animation:vela-ind-spin .7s linear infinite;`;
-        } else {
-            // live — a pulsing filled dot
-            el.style.cssText =
-                `display:inline-block;box-sizing:border-box;flex:none;width:8px;height:8px;border-radius:50%;` +
-                `background:${this.theme.upColor};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
+            el.style.cssText = 'display:inline-flex;align-items:center;gap:3px;box-sizing:border-box;flex:none;';
+            for (let i = 0; i < 3; i += 1) {
+                const dot = document.createElement('span');
+                dot.style.cssText = 'width:4px;height:4px;border-radius:50%;background:currentColor;opacity:0.15;flex:none;';
+                // Staggered phases via negative delays — every dot animates from the first frame.
+                dot.animate?.([{ opacity: 0.12 }, { opacity: 0.55 }], { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: -i * 260 });
+                el.appendChild(dot);
+            }
+            return;
         }
+        // live — a pulsing filled dot
+        this.ensureStatusKeyframes();
+        el.style.cssText =
+            `display:inline-block;box-sizing:border-box;flex:none;width:8px;height:8px;border-radius:50%;` +
+            `background:${this.theme.upColor};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
     }
 
     /** Inject the status keyframes once (idempotent). */
@@ -655,6 +799,8 @@ export class InputsUI {
     private setRowHighlighted(id: string, highlighted: boolean): void {
         const row = this.rows.get(id);
         if (!row) return;
+        row.highlighted = highlighted;
+        this.renderRowValues(row); // values step aside while the controls are out
         row.el.style.boxShadow = highlighted ? `inset 0 0 0 1px ${this.neutralBorder()}` : 'none';
         // The solid fill exists only while the row is open — an idle row is a translucent
         // title-sized chip that lets the plot show through while keeping the label legible.
@@ -689,6 +835,7 @@ export class InputsUI {
     destroy(): void {
         this.closeDialog();
         this.closeMoveMenu();
+        this.closeRowMenu();
         for (const id of [...this.rowTips.keys()]) this.disposeTips(this.rowTips, id);
         for (const id of [...this.extrasTips.keys()]) this.disposeTips(this.extrasTips, id);
         for (const lg of this.legends.values()) lg.remove();

@@ -24,6 +24,7 @@ const fullDoc: WorkspaceState = {
             bars: 500,
             watermark: false,
             indicatorTitles: false,
+            indicatorValues: false,
             rendererConfig: { theme: 'dark', nested: { any: ['shape'] } },
             drawings: { version: 1, items: [{ type: 'trendline' }] },
             indicators: { manifest: ['EMA 20'], natives: ['volume'] },

@@ -301,7 +301,12 @@ export class VelaWorkspace {
             onChart: () => this.active.onChartRows(),
             onAdd: (i) => this.active.addFromLibrary(i),
             onRemove: (i) => this.active.removeFromChart(i),
-            onOpenChange: (open) => this.trackDialog(open),
+            onOpenChange: (open) => {
+                // Same rule as the symbol search: the renderer's in-chart dialogs never see
+                // an outside-dismiss from a topbar dialog — close them on every cell.
+                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
         });
         this.tfQuick = new TimeframeQuick({
             host: this.root,

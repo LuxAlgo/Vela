@@ -4,17 +4,18 @@ All notable changes to Vela, newest first.
 
 ## [v0.5.0]
 
-### Fixed
-
-- **Chart-type data engines now receive stored settings on (re)creation.** A type's
-  data engine used to hear about its settings only through live dialog edits — a
-  persisted config restore or a market switch (which recreates engines) left the
-  fresh engine fetching on schema defaults until the user touched the dialog. The
-  orchestrator now remembers the last-seen per-type values and replays them into
-  every newly created engine just before `start()` (a pre-start `onSettings` is
-  pure configuration by contract).
-
 ### Added
+
+- **Indicator legends show their plot values.** Each indicator's legend row now
+  displays the current value of every plot to the right of its title, colored like
+  the plot itself. The values follow the crosshair — hover a bar and they read that
+  bar; move off the chart and they rest on the latest bar, ticking with live data.
+  Hovering the legend row itself sets the values aside while its controls (eye, gear,
+  ✕…) are out, so the row never crowds. Right-clicking a legend row opens a small
+  menu whose "Indicator values" entry shows or hides that indicator's values, and
+  chart settings → Status line → Indicators gains a "Values" toggle that shows or
+  hides them for every indicator at once. The chart-wide choice persists with the
+  rest of the chart state.
 
 - **Duplicate-keyed settings rows stay in sync.** Several `when`-gated chart-type
   settings rows may now store under the same bag key(s) — the pattern for per-mode
@@ -149,6 +150,10 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **An indicator that is fetching shows quiet load dots in its legend.** While an
+  indicator's data is in flight, its legend row now ends with three small pulsing
+  dots — the same load affordance the chart itself shows while bars load — at the
+  row's right end. The old circular spinner to the left of the title is gone.
 - **Scripting engines report a strategy's state in neutral terms.** An engine that simulates
   order execution now describes it with the same vocabulary whatever language it runs, so one
   dashboard reads them all. Engines are also expected to report a script's variables under
@@ -174,6 +179,20 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Chart-type data engines now receive stored settings on (re)creation.** A type's
+  data engine used to hear about its settings only through live dialog edits — a
+  persisted config restore or a market switch (which recreates engines) left the
+  fresh engine fetching on schema defaults until the user touched the dialog. The
+  orchestrator now remembers the last-seen per-type values and replays them into
+  every newly created engine just before `start()` (a pre-start `onSettings` is
+  pure configuration by contract).
+- **Tooltips in the indicator settings dialog no longer hide behind it.** The ⓘ input
+  hints and the dialog's own control tips opened underneath the dialog card, where they
+  were unreadable; they now stack above it like every other tooltip.
+- **Opening the Indicators dialog closes an open indicator-settings dialog.** The two
+  dialogs used to stack — the topbar picker never counted as a click outside the
+  in-chart dialog. It now dismisses it on open, the same way the symbol search already
+  did, in the widget and in every workspace cell.
 - **Undo steps back exactly one action when drawings and indicators mix.** With a drawing
   and an indicator change both in the history, one Ctrl+Z over the chart used to revert
   both at once — the drawing layer and the app history each answered the shortcut. A single

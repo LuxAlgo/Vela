@@ -61,6 +61,8 @@ export interface CellState {
     watermark?: boolean;
     /** Indicator titles (the in-chart legend rows) visibility — a per-chart display pref. */
     indicatorTitles?: boolean;
+    /** Plot values beside the legend titles visibility — a per-chart display pref. */
+    indicatorValues?: boolean;
     /** The renderer's cosmetic config document (`renderer.getConfig()`). */
     rendererConfig?: unknown;
     /** The user-drawings document (`drawings.toJSON()`). */
@@ -171,6 +173,7 @@ function sanitizeCell(raw: unknown): CellState | null {
     if (typeof c.bars === 'number' && Number.isFinite(c.bars) && c.bars > 0) out.bars = c.bars;
     if (typeof c.watermark === 'boolean') out.watermark = c.watermark;
     if (typeof c.indicatorTitles === 'boolean') out.indicatorTitles = c.indicatorTitles;
+    if (typeof c.indicatorValues === 'boolean') out.indicatorValues = c.indicatorValues;
     if (c.rendererConfig != null && typeof c.rendererConfig === 'object') out.rendererConfig = c.rendererConfig;
     if (c.drawings != null && typeof c.drawings === 'object') out.drawings = c.drawings;
     const ind = c.indicators as Record<string, unknown> | undefined;
