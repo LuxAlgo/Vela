@@ -143,6 +143,30 @@ function ensureControlStyles(): void {
    muted and non-interactive. Applied to each row's children so it survives display:contents;
    !important beats the inline opacity on labels. */
 .vela-sd-soft>*{opacity:0.4 !important;pointer-events:none !important;}
+/* ── mobile presentation (.vela-sd-mobile on the scrim; structural sizes are inline in open()) ──
+   The tab rail becomes a burger-opened overlay sidebar; the group TOC becomes a sticky
+   row of horizontally scrollable tabs; the instance strip scrolls instead of wrapping;
+   controls grow to touch size and labels may wrap (the grid gives them a flexible track). */
+.vela-sd-mobile .vela-sd-burger{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg);line-height:0;width:36px;height:36px;border-radius:var(--vela-radius-sm);margin-right:2px;}
+.vela-sd-mobile .vela-sd-burger:active{background:var(--vela-hover);}
+.vela-sd-mobile .vela-sd-railscrim{position:absolute;inset:0;z-index:2;background:var(--vela-backdrop);display:none;}
+.vela-sd-mobile .vela-sd-railscrim.open{display:block;}
+.vela-sd-mobile .vela-sd-rail{position:absolute;left:0;top:0;bottom:0;z-index:3;width:min(240px,80%);box-sizing:border-box;background:var(--vela-surface);border-right:1px solid var(--vela-border);box-shadow:var(--vela-shadow-dialog);transform:translateX(-105%);transition:transform var(--vela-dur-med) var(--vela-ease);}
+.vela-sd-mobile .vela-sd-rail.open{transform:translateX(0);}
+.vela-sd-mobile .vela-sd-tab{padding:12px;}
+.vela-sd-mobile .vela-sd-struct{flex-direction:column;padding-top:8px;}
+.vela-sd-mobile .vela-sd-toc{position:sticky;top:0;z-index:1;background:var(--vela-surface);flex-direction:row;overflow-x:auto;scrollbar-width:none;min-width:0;width:100%;box-sizing:border-box;gap:4px;padding:2px 0 8px;}
+.vela-sd-mobile .vela-sd-toc::-webkit-scrollbar{display:none;}
+.vela-sd-mobile .vela-sd-toc-btn{flex:none;padding:8px 12px;font-size:13px;}
+.vela-sd-mobile .vela-sd-struct>[data-sd-rows-host]{border-left:none;padding-left:0;width:100%;}
+.vela-sd-mobile .vela-sd-itabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+.vela-sd-mobile .vela-sd-itabs::-webkit-scrollbar{display:none;}
+.vela-sd-mobile .vela-sd-itab{height:36px;flex:none;}
+.vela-sd-mobile .vela-sd-check{width:22px;height:22px;}
+.vela-sd-mobile .vela-sd-select,.vela-sd-mobile .vela-sd-number{height:34px;}
+.vela-sd-mobile .vela-sd-close{width:40px;height:40px;}
+.vela-sd-mobile .vela-sd-btn{height:38px;}
+.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span{white-space:normal !important;}
 `;
     document.head.appendChild(st);
 }
@@ -167,6 +191,8 @@ export class SettingsDialog {
     private readonly typeActiveGroup = new Map<string, string>();
     /** The tab currently shown, so a theme change (which rebuilds) lands back on it. */
     private activeSection: string | null = null;
+    /** Mobile chrome: fullscreen card, burger-opened section sidebar, TOC as top tabs. */
+    private mobileLayout = false;
 
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
@@ -194,15 +220,29 @@ export class SettingsDialog {
 
     setTheme(theme: VelaTheme): void {
         this.theme = theme;
-        if (this.root) {
-            const cfg = this.config;
-            const oc = this.onChange;
-            const oi = this.onImport;
-            const orst = this.onReset;
-            const section = this.activeSection;
-            this.close();
-            if (cfg && oc) this.open(cfg, oc, oi ?? undefined, orst ?? undefined, section ?? undefined);
-        }
+        this.reopenIfLive();
+    }
+
+    /** The host shell's chrome size class — mobile presents the dialog fullscreen with
+     *  the tab rail behind a burger sidebar and the TOC as top tabs. An open dialog
+     *  re-presents in place, on the same tab. */
+    setLayoutMode(mode: 'mobile' | 'desktop'): void {
+        const mobile = mode === 'mobile';
+        if (mobile === this.mobileLayout) return;
+        this.mobileLayout = mobile;
+        this.reopenIfLive();
+    }
+
+    /** Rebuild an open dialog in place (theme swap, layout-mode flip) on the same tab. */
+    private reopenIfLive(): void {
+        if (!this.root) return;
+        const cfg = this.config;
+        const oc = this.onChange;
+        const oi = this.onImport;
+        const orst = this.onReset;
+        const section = this.activeSection;
+        this.close();
+        if (cfg && oc) this.open(cfg, oc, oi ?? undefined, orst ?? undefined, section ?? undefined);
     }
 
     isOpen(): boolean {
@@ -234,8 +274,15 @@ export class SettingsDialog {
         // remain fully readable while its settings are edited live; the scrim only exists
         // to catch the click-outside-to-close.
         ensureControlStyles();
+        const mobile = this.mobileLayout;
         const scrim = document.createElement('div');
         scrim.style.cssText = 'position:absolute;inset:0;z-index:21;display:flex;align-items:flex-start;justify-content:center;background:transparent;padding-top:8vh;pointer-events:auto;';
+        if (mobile) {
+            // Fullscreen presentation: the card fills the chart area edge to edge.
+            scrim.classList.add('vela-sd-mobile');
+            scrim.style.paddingTop = '0';
+            scrim.style.alignItems = 'stretch';
+        }
         scrim.addEventListener('mousedown', (e) => {
             if (e.target === scrim) this.close();
         });
@@ -247,12 +294,27 @@ export class SettingsDialog {
         // as wide as the rail + widest visible pane content needs, between a floor that keeps
         // sparse tabs from looking cramped and the old 720px cap.
         dlg.style.cssText = `width:fit-content;min-width:min(560px,94vw);max-width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${SETTINGS_TEXT};font:13px var(--vela-font);overflow:hidden;cursor:default;`;
+        if (mobile) dlg.style.cssText += 'width:100%;min-width:0;max-width:none;max-height:none;flex:1 1 auto;border:none;border-radius:0;';
 
         const header = document.createElement('div');
         header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${SETTINGS_BORDER};flex:0 0 auto;user-select:none;`;
+        if (mobile) header.style.paddingLeft = '8px';
         const hTitle = document.createElement('span');
         hTitle.textContent = 'Chart settings';
         hTitle.style.cssText = 'font-size:17px;font-weight:600;letter-spacing:0.2px;';
+        if (mobile) hTitle.style.cssText += 'flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        // Mobile: the tab rail hides behind a burger-opened sidebar (there is no room for
+        // a permanent 170px column); the button lives left of the title, iOS-nav style.
+        let toggleRail: ((open?: boolean) => void) | null = null;
+        if (mobile) {
+            const burger = document.createElement('button');
+            burger.type = 'button';
+            burger.className = 'vela-sd-burger';
+            burger.innerHTML = iconAt('burger', 16);
+            burger.title = 'Sections';
+            burger.addEventListener('click', () => toggleRail?.());
+            header.append(burger);
+        }
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.innerHTML = iconAt('close', 15);
@@ -260,8 +322,10 @@ export class SettingsDialog {
         closeBtn.className = 'vela-sd-close';
         closeBtn.addEventListener('click', () => this.close());
         header.append(hTitle, closeBtn);
-        header.style.cursor = 'move';
-        {
+        if (!mobile) {
+            // Header dragging is a pointer affordance — a fullscreen mobile card has
+            // nowhere to move.
+            header.style.cursor = 'move';
             let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
             header.addEventListener('pointerdown', (e) => {
                 // ANCESTRY, not identity: the button holds an SVG icon, so a press on the ✕
@@ -483,12 +547,30 @@ export class SettingsDialog {
 
         // ── Split the linear sections into a left tab rail + one pane per section ──
         const shell = document.createElement('div');
-        shell.style.cssText = 'display:flex;min-height:360px;max-height:calc(70vh - 100px);flex:1 1 auto;';
+        shell.style.cssText = mobile
+            ? 'display:flex;min-height:0;flex:1 1 auto;position:relative;overflow:hidden;'
+            : 'display:flex;min-height:360px;max-height:calc(70vh - 100px);flex:1 1 auto;';
         const rail = document.createElement('div');
-        rail.style.cssText = `flex:0 0 170px;display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid ${SETTINGS_BORDER};overflow-y:auto;`;
+        rail.className = 'vela-sd-rail';
+        // Mobile: the class rules turn the rail into the slide-in sidebar; the inline
+        // styles here carry only its inner layout. Desktop keeps the fixed column.
+        rail.style.cssText = mobile
+            ? 'display:flex;flex-direction:column;gap:2px;padding:10px 8px;overflow-y:auto;'
+            : `flex:0 0 170px;display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid ${SETTINGS_BORDER};overflow-y:auto;`;
+        let railScrim: HTMLElement | null = null;
+        if (mobile) {
+            railScrim = document.createElement('div');
+            railScrim.className = 'vela-sd-railscrim';
+            railScrim.addEventListener('click', () => toggleRail?.());
+            toggleRail = (open?: boolean) => {
+                const on = open ?? !rail.classList.contains('open');
+                rail.classList.toggle('open', on);
+                railScrim?.classList.toggle('open', on);
+            };
+        }
         const paneHost = document.createElement('div');
         paneHost.className = 'vela-sd-pane';
-        paneHost.style.cssText = 'flex:1;overflow-y:auto;padding:6px 18px 14px;';
+        paneHost.style.cssText = mobile ? 'flex:1;min-width:0;overflow-y:auto;padding:6px 14px calc(14px + env(safe-area-inset-bottom, 0px));' : 'flex:1;overflow-y:auto;padding:6px 18px 14px;';
 
         const panes: Array<{ title: string; el: HTMLElement; tab: HTMLButtonElement; style?: string; visibility?: string }> = [];
         let current: HTMLElement | null = null;
@@ -526,6 +608,11 @@ export class SettingsDialog {
                 p.tab.classList.toggle('on', i === idx);
             });
             this.activeSection = panes[idx]?.title ?? null;
+            if (mobile) {
+                // The header names the section (the rail is hidden); picking one closes the sidebar.
+                hTitle.textContent = panes[idx]?.title ?? 'Chart settings';
+                toggleRail?.(false);
+            }
         };
         panes.forEach((p, i) => {
             p.tab.addEventListener('click', () => activate(i));
@@ -544,6 +631,7 @@ export class SettingsDialog {
         this.syncTypeTabs?.(config.series.style);
 
         shell.append(rail, paneHost);
+        if (railScrim) shell.append(railScrim);
         dlg.appendChild(shell);
         dlg.appendChild(this.footer(config));
 
@@ -1011,6 +1099,17 @@ export class SettingsDialog {
      */
     private layoutSettingsGrids(pane: HTMLElement, measureHost: HTMLElement): void {
         if (pane.childElementCount === 0) return;
+        // Mobile: no measured label track — a fixed widest-label column would overflow a
+        // phone width. Labels get the flexible track (and may wrap), controls hug the
+        // right edge; no probe pass needed.
+        if (this.mobileLayout) {
+            const grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:center;column-gap:12px;row-gap:16px;';
+            while (pane.firstChild) grid.appendChild(pane.firstChild);
+            pane.appendChild(grid);
+            this.prepareGridItems(grid);
+            return;
+        }
         const rows = [...pane.querySelectorAll('.vela-sd-row')] as HTMLElement[];
 
         // Clone labels into a visible host so hidden price-style groups still contribute

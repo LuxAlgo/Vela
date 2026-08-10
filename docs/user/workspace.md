@@ -256,8 +256,25 @@ silently reorder them).
 | `timeframes` | presets | Topbar timeframe presets. |
 | `timezone` | `'Etc/UTC'` | Display timezone (every cell). |
 | `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
+| `layoutMode` | `'auto'` | Chrome size class — see [the widget's Mobile section](./widget.md#mobile); the workspace behaves the same. |
 | `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
 | `persist` / `storage` | off / localStorage | State persistence (see above). |
+
+**Mobile.** The workspace follows the same mobile rules as the widget (narrow container
+or coarse pointer, or a pinned `layoutMode`): the shared topbar, the desktop bottombar
+and the docked drawing-toolbar column give way to one touch-first bottom bar whose
+sheets and full-screen pickers act on the **active cell**, and every cell's chart gains
+the touch gestures. The one workspace-specific addition sits in the three-dots sheet: a
+**Layout** entry opening the same tap-to-apply grid canvas as the desktop topbar's
+layout dropdown (plus its non-grid preset rows), with the symbol/interval/crosshair
+sync switches below it.
+
+In **multi-cell grids** each cell's status line stays on one row — segments that don't
+fit the cell hide instead of wrapping (bar change first, then venue/timeframe, then the
+market badge; the logo + ticker always stay) — and on mobile the indicator legend's
+count chip opens the **object tree** instead of unfolding rows in place; its
+per-indicator action menu carries an "Indicator settings" entry, so everything the
+legend rows offered stays one tap away.
 
 **Workspace options** (the grid's own):
 
@@ -267,7 +284,6 @@ silently reorder them).
 | `cells` | — | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above). |
 | `sync` | off | Initial sync links (see above). |
 | `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |
-| `maxWebglCells` | `8` | Above this many cells, every cell renders canvas2d (WebGL-context budget). |
 | `maxWebglCells` | `8` | Above this many cells, every cell uses canvas2d (uniform look inside the browser's WebGL budget; `glow` unavailable there). |
 
 Contributed actions/attachments (`vela/plugin`) work unchanged — `ctx.chart` resolves

@@ -4,7 +4,7 @@ import { timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
 
 /** The watermark's largest type size — a lone full-size chart renders at this cap. */
-const MAX_FONT_PX = 72;
+const MAX_FONT_PX = 36;
 /** Floor for tiny cells — the mark is a 5%-opacity background, small is fine. */
 const MIN_FONT_PX = 12;
 /** Share of the chart width the text may occupy (breathing room at both edges). */

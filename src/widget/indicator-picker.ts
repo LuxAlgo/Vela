@@ -33,6 +33,9 @@ const CSS = `
 .vela-ip-searchrow .vela-icon { color: var(--vela-fg-muted); }
 .vela-ip-search { flex: 1; background: transparent; color: var(--vela-fg); border: none; font-size: 14px; outline: none; }
 .vela-ip-list { max-height: 50vh; overflow: auto; min-width: 380px; }
+/* Mobile (fullscreen dialog): no width floor — 380px would overflow a phone —
+   and no height cap; the fullscreen body owns the scrolling. */
+[data-layout='mobile'] .vela-ip-list { min-width: 0; max-height: none; }
 .vela-ip-list::-webkit-scrollbar { width: 8px; }
 .vela-ip-list::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
 .vela-ip-group {

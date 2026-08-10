@@ -123,6 +123,36 @@ const GRID = 4;
 /** The current layout's footprint on the canvas (mirrors the workspace's LayoutShape). */
 export type LayoutPickerShape = { rows: number; cols: number };
 
+/** Build the bare 4×4 canvas (16 squares, row-major). Interaction wiring stays with the
+ *  caller — the desktop popover adds hover previews, the mobile drawer taps to apply. */
+export function layoutGridCanvas(doc: Document): { el: HTMLElement; squares: HTMLButtonElement[] } {
+    injectStyles(STYLE_ID, CSS, doc);
+    const el = doc.createElement('div');
+    el.className = 'vela-lp-grid';
+    const squares: HTMLButtonElement[] = [];
+    for (let r = 0; r < GRID; r += 1) {
+        for (let c = 0; c < GRID; c += 1) {
+            const sq = doc.createElement('button');
+            sq.className = 'vela-lp-sq';
+            sq.dataset.r = String(r);
+            sq.dataset.c = String(c);
+            sq.setAttribute('aria-label', `${c + 1} × ${r + 1}`);
+            squares.push(sq);
+            el.appendChild(sq);
+        }
+    }
+    return { el, squares };
+}
+
+/** Light the `shape` rectangle from the top-left (null = nothing lit). */
+export function paintLayoutGrid(squares: readonly HTMLButtonElement[], shape: LayoutPickerShape | null): void {
+    for (const sq of squares) {
+        const on = shape !== null && Number(sq.dataset.r) < shape.rows && Number(sq.dataset.c) < shape.cols;
+        if (on) sq.dataset.on = '1';
+        else delete sq.dataset.on;
+    }
+}
+
 export interface LayoutPickerOptions {
     /** Topbar button that toggles the panel. */
     trigger: HTMLElement;
@@ -197,19 +227,8 @@ export class LayoutPicker {
             content: () => this.tipNode(),
         });
 
-        const grid = doc.createElement('div');
-        grid.className = 'vela-lp-grid';
-        for (let r = 0; r < GRID; r += 1) {
-            for (let c = 0; c < GRID; c += 1) {
-                const sq = doc.createElement('button');
-                sq.className = 'vela-lp-sq';
-                sq.dataset.r = String(r);
-                sq.dataset.c = String(c);
-                sq.setAttribute('aria-label', `${c + 1} × ${r + 1}`);
-                this.squares.push(sq);
-                grid.appendChild(sq);
-            }
-        }
+        const { el: grid, squares } = layoutGridCanvas(doc);
+        this.squares.push(...squares);
         layoutCol.appendChild(grid);
 
         this.presetsEl = doc.createElement('div');
@@ -325,13 +344,7 @@ export class LayoutPicker {
 
     /** Project the interaction state onto the DOM (the hover/current rectangle). */
     private render(): void {
-        const preview = this.hover ?? this.opts.shape();
-        for (const sq of this.squares) {
-            const { r, c } = this.squarePos(sq);
-            const on = preview !== null && r < preview.rows && c < preview.cols;
-            if (on) sq.dataset.on = '1';
-            else delete sq.dataset.on;
-        }
+        paintLayoutGrid(this.squares, this.hover ?? this.opts.shape());
     }
 
     private renderPresets(): void {

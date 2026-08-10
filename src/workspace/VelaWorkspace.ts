@@ -19,8 +19,8 @@ import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Menu } from '../ui/components/menu';
 import type { Vela } from '../Vela';
-import { Topbar } from '../widget/topbar';
-import { Bottombar } from '../widget/bottombar';
+import { Topbar, priceStyleLabel, priceStyleIcon } from '../widget/topbar';
+import { Bottombar, RANGE_PRESETS } from '../widget/bottombar';
 import { ObjectTree } from '../widget/object-tree';
 import { DataWindow } from '../widget/data-window';
 import type { ScriptRun } from '../core/script-run';
@@ -32,7 +32,16 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { legendActionsProviderFor, widgetAttachments } from '../widget/contributions';
+import { legendActionsProviderFor, widgetActions, widgetAttachments } from '../widget/contributions';
+import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
+import { MobileBar } from '../widget/mobile-bar';
+import { TimeframeDrawer } from '../widget/timeframe-drawer';
+import { DrawingsDrawer } from '../widget/drawings-drawer';
+import { MoreDrawer } from '../widget/more-drawer';
+import { TimezoneDrawer } from '../widget/timezone-drawer';
+import { PriceScaleDrawer } from '../widget/price-scale-drawer';
+import { DrawingPill } from '../widget/drawing-pill';
+import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { applyAttributionMarkTheme, createAttributionMark, createCustomMark } from '../renderers/native/chrome/AttributionMark';
@@ -149,6 +158,9 @@ const CSS = `
 .vela-ws-splitter:hover::after { content: ''; position: absolute; background: var(--vela-separator-hover-line); }
 .vela-ws-splitter[data-axis='cols']:hover::after { left: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
 .vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); left: 0; height: 2px; width: 100%; }
+/* Mobile: the docked drawing-toolbar column would eat a phone-width grid — the shell's
+   drawings drawer + on-chart pill replace it (same policy as the widget's in-chart bar). */
+[data-layout='mobile'] .vela-ws-toolbar { display: none; }
 `;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
@@ -252,6 +264,19 @@ export class VelaWorkspace {
     private openDialogs = 0;
     private alerts: Array<{ cellId: string; symbol: string; title: string; message: string; time: number }> = [];
     private alertsMenu: Menu | null = null;
+    // ── mobile chrome (same components as the widget shell; CSS keys off data-layout
+    // on the root, the drawers build lazily on first open and act on the ACTIVE cell) ──
+    /** Writes `data-layout` on the root and pushes mode flips into every cell's renderer. */
+    private layoutCtl!: LayoutModeController;
+    private readonly mobileBar: MobileBar | null;
+    private readonly drawingPill: DrawingPill;
+    private tfDrawer: TimeframeDrawer | null = null;
+    private drawingsDrawer: DrawingsDrawer | null = null;
+    private moreDrawer: MoreDrawer | null = null;
+    private timezoneDrawer: TimezoneDrawer | null = null;
+    private priceScaleDrawer: PriceScaleDrawer | null = null;
+    /** Plot-local y of the last price-axis long-press (targets the pane under the finger). */
+    private priceScalePressY = 0;
     private readonly attachmentDisposers = new Map<string, () => void>();
     /** The single grid-wide attribution mark — re-inked on a live theme swap. */
     private attributionMark: HTMLElement | null = null;
@@ -481,7 +506,30 @@ export class VelaWorkspace {
                   })
                 : null;
 
+        // The mobile bar is the bottom bar of the mobile size class — the same chrome
+        // toggle governs both; CSS (data-layout) decides which one is visible. Every
+        // route acts on the ACTIVE cell, exactly like the topbar it replaces.
+        this.mobileBar =
+            opts.bottombar !== false
+                ? new MobileBar(this.root, {
+                      symbol: '',
+                      timeframe: '60',
+                      onSymbolClick: () => this.symbolPicker.open(),
+                      onTimeframeClick: () => this.openTimeframeDrawer(),
+                      onIndicatorsClick: () => this.indicatorPicker.open(),
+                      onDrawingsClick: () => this.openDrawingsDrawer(),
+                      onMoreClick: () => this.openMoreDrawer(),
+                      onSettingsClick: () => this.active.chart.renderer.openSettings(),
+                  })
+                : null;
+        // One pill for the whole grid — rebound to the active cell on every projection.
+        this.drawingPill = new DrawingPill(this.gridEl);
+
         hostEl.appendChild(this.root);
+
+        // Measured AFTER the root is in the DOM so the first evaluation sees a real width.
+        this.layoutCtl = new LayoutModeController(this.root, opts.layoutMode ?? 'auto');
+        this.layoutCtl.onChange((mode) => this.onLayoutModeChange(mode));
 
         this.splitters = new SplitterLayer(this.gridEl, {
             tracks: () => this.currentTracks(),
@@ -507,6 +555,7 @@ export class VelaWorkspace {
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
+        this.syncCellPresentation();
         this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.order[0] ?? null));
         // Shortcuts only fire while focus is INSIDE the workspace (the keymap listens
         // on the root) — autofocus makes them work before the first click.
@@ -685,6 +734,7 @@ export class VelaWorkspace {
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
+        this.syncCellPresentation();
         this.topbar.setLayout(this.def.id);
         const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.order[0] ?? null);
         if (nextActive === this.activeId) this.projectActiveCell();
@@ -754,6 +804,7 @@ export class VelaWorkspace {
         this.cellBackend = nextBackend;
         this.applyGrid();
         this.buildCells();
+        this.syncCellPresentation();
         this.topbar.setLayout(next.id);
         const nextActive = activeAfterLayout(this.activeId, this.order.slice(0, next.cells.length));
         if (nextActive === this.activeId) this.projectActiveCell(); // same slot, maybe a rebuilt cell
@@ -792,6 +843,14 @@ export class VelaWorkspace {
         this.drawToolbar?.destroy();
         this.topbar.destroy();
         this.bottombar?.destroy();
+        this.mobileBar?.destroy();
+        this.drawingPill.destroy();
+        this.tfDrawer?.destroy();
+        this.drawingsDrawer?.destroy();
+        this.moreDrawer?.destroy();
+        this.timezoneDrawer?.destroy();
+        this.priceScaleDrawer?.destroy();
+        this.layoutCtl.destroy();
         this.dock.destroy(); // contributed panels; the two built-ins are ours to drop
         this.objectTree.destroy();
         this.dataWindow.destroy();
@@ -818,6 +877,9 @@ export class VelaWorkspace {
         this.topbar.setPriceStyle(cell.priceStyle);
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
+        this.mobileBar?.setSymbol(cell.symbol);
+        this.mobileBar?.setTimeframe(cell.timeframe);
+        this.drawingPill.onChart(cell.chart); // the pill mirrors the ACTIVE cell's tool state
         const pushHistory = (): void => this.topbar.setHistoryState(cell.history.canUndo, cell.history.canRedo);
         this.historyUnsub?.();
         this.historyUnsub = cell.history.onChange(pushHistory);
@@ -965,6 +1027,9 @@ export class VelaWorkspace {
             // re-assert the highlight attribute setActiveCell put on the old one.
             if (id === this.activeId) cell.host.dataset.active = '1';
             this.wireCell(cell);
+            // A fresh renderer starts desktop — push the live mode so touch gestures,
+            // fullscreen dialogs and the scroll-button sizing apply from the first frame.
+            cell.chart.renderer.setLayoutMode(this.layoutCtl.current);
             // The shared star set is a workspace pref — every newborn cell inherits it
             // silently (equal-set idempotence keeps the favorites event from echoing).
             if (this.favs.length > 0) cell.chart.drawings.setFavorites(this.favs as never[]);
@@ -1056,6 +1121,13 @@ export class VelaWorkspace {
         // A theme picked in ONE cell (its settings dialog's Canvas → Theme) re-skins the
         // WHOLE workspace — shared chrome plus every other cell.
         chart.on('theme:changed', (t) => this.setTheme(t));
+        // Mobile: long-press an axis strip → timezone / price-scale sheet (desktop keeps
+        // the right-click menu). The press's own pointerdown already activated the cell.
+        chart.renderer.onAxisLongPress((e) => {
+            if (this.layoutCtl.current !== 'mobile') return;
+            if (e.axis === 'time') this.openTimezoneDrawer();
+            else this.openPriceScaleDrawer(e.y);
+        });
     }
 
     // ── sync links ──────────────────────────────────────────────
@@ -1274,6 +1346,8 @@ export class VelaWorkspace {
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
         this.topbar.setTimeframe(cell.timeframe);
+        this.mobileBar?.setSymbol(cell.symbol);
+        this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
     }
 
@@ -1291,6 +1365,133 @@ export class VelaWorkspace {
     private setActiveTimeframe(tf: string): void {
         this.bottombar?.setActiveRange(null);
         this.active.setTimeframe(tf);
+    }
+
+    /** The mode flipped (container resized across the breakpoint, or a coarse-pointer
+     *  change). Close the open surfaces — a desktop card must not linger over the
+     *  mobile chrome (and vice versa) — and re-present every cell's own chrome. */
+    private onLayoutModeChange(mode: LayoutMode): void {
+        this.symbolPicker.close();
+        this.indicatorPicker.close();
+        this.tfDrawer?.close();
+        this.drawingsDrawer?.close();
+        this.moreDrawer?.close();
+        this.timezoneDrawer?.close();
+        this.priceScaleDrawer?.close();
+        this.alertsMenu?.destroy();
+        this.alertsMenu = null;
+        for (const cell of this.cellsById.values()) {
+            cell.chart.renderer.closeDialogs();
+            cell.chart.renderer.setLayoutMode(mode);
+        }
+        this.syncCellPresentation(); // the legend's overview override is mode-scoped
+    }
+
+    /** Push the layout-shape-dependent chrome onto every cell: multi-cell grids keep
+     *  the status line on one row (segments that don't fit hide), and on MOBILE their
+     *  legends' fold chip routes to the object tree instead of unfolding in place —
+     *  per-indicator controls live there (the legend rows have no room in a grid cell). */
+    private syncCellPresentation(): void {
+        const multi = this.def.cells.length > 1;
+        const overview = multi && this.layoutCtl.current === 'mobile' ? (): void => this.dock.toggle('objects', true) : null;
+        for (const cell of this.cellsById.values()) {
+            cell.setStatuslineFit(multi);
+            cell.chart.renderer.setLegendOverviewAction(overview);
+        }
+    }
+
+    // ── mobile drawers (built on first open; every read is live and hits the ACTIVE cell) ──
+
+    private openTimeframeDrawer(): void {
+        this.tfDrawer ??= new TimeframeDrawer({
+            host: this.root,
+            timeframes: this.opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            ranges: RANGE_PRESETS,
+            currentTimeframe: () => this.active.timeframe,
+            activeRange: () => this.active.activeRangeId,
+            onTimeframe: (tf) => this.setActiveTimeframe(tf),
+            onRange: (preset) => {
+                this.active.applyRange(preset);
+                this.bottombar?.setActiveRange(preset.id); // the desktop bar stays truthful across a mode flip
+            },
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.tfDrawer.open();
+    }
+
+    private openDrawingsDrawer(): void {
+        this.drawingsDrawer ??= new DrawingsDrawer({
+            host: this.root,
+            toolbar: () => defaultToolbar(), // the shared static toolbar's definition (see constructor)
+            currentTool: () => this.active.chart.drawings.getTool(),
+            isFavorite: (type) => this.active.chart.drawings.isFavorite(type),
+            onFavorite: (type, on) => this.active.chart.drawings.setFavorite(type, on),
+            onSelect: (type) => this.active.chart.drawings.setTool(type),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.drawingsDrawer.open();
+    }
+
+    private openMoreDrawer(): void {
+        this.moreDrawer ??= new MoreDrawer({
+            host: this.root,
+            onUndo: () => this.active.history.undo(),
+            onRedo: () => this.active.history.redo(),
+            onScreenshot: () => this.active.downloadScreenshot(),
+            canUndo: () => this.active.history.canUndo,
+            canRedo: () => this.active.history.canRedo,
+            priceStyles: () => priceStyleIds().map((id) => ({ id, label: priceStyleLabel(id), icon: priceStyleIcon(id) })),
+            priceStyle: () => this.active.priceStyle,
+            onPriceStyle: (id) => this.active.setPriceStyle(id),
+            panels: () => [...this.dock.list()],
+            onTogglePanel: (id) => this.dock.toggle(id),
+            alerts: () => this.alerts.map((a) => ({ title: `[${a.cellId} · ${a.symbol}] ${a.title}`, message: a.message, time: a.time })),
+            actions: () => widgetActions('topbar', this.context()).map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) })),
+            // The desktop layout dropdown's whole surface — the grid canvas, the
+            // non-canvas presets and the sync switches — relocated into the kebab
+            // drawer (the topbar is hidden on mobile). Same reads as the topbar block.
+            layout: {
+                shape: () => layoutShape(this.def),
+                presets: () =>
+                    layouts()
+                        .filter((l) => layoutShape(l) === null)
+                        .map((l) => ({ id: l.id, label: l.label, checked: l.id === this.def.id })),
+                onSelectGrid: (rows, cols) => this.setLayout(layoutForGrid(rows, cols)),
+                onSelectPreset: (id) => this.setLayout(id),
+                syncs: () => [
+                    { id: 'symbol', label: 'Symbol', checked: this.syncOpts.symbol === true },
+                    { id: 'timeframe', label: 'Interval', checked: this.syncOpts.timeframe === true },
+                    { id: 'crosshair', label: 'Crosshair', checked: this.syncOpts.crosshair === true },
+                ],
+                onToggleSync: (id) => {
+                    const kind = id as SyncKind;
+                    this.sync.set(kind, this.syncOpts[kind] ? false : true);
+                },
+            },
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.moreDrawer.open();
+    }
+
+    private openTimezoneDrawer(): void {
+        this.timezoneDrawer ??= new TimezoneDrawer({
+            host: this.root,
+            timezone: () => this.timezone,
+            onTimezone: (zone) => this.setTimezone(zone),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.timezoneDrawer.open();
+    }
+
+    private openPriceScaleDrawer(y: number): void {
+        this.priceScalePressY = y;
+        this.priceScaleDrawer ??= new PriceScaleDrawer({
+            host: this.root,
+            chart: () => (this.activeId ? (this.cellsById.get(this.activeId)?.chart ?? null) : null),
+            pressY: () => this.priceScalePressY,
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.priceScaleDrawer.open();
     }
 
     /** The aggregated alerts bell — entries carry their cell; selecting one activates it. */

@@ -99,6 +99,13 @@ const CSS = `
     outline: none;
 }
 .vela-sp-tabs { display: flex; gap: 14px; margin: 12px 2px 6px; border-bottom: 1px solid var(--vela-border); padding-bottom: 8px; }
+/* Mobile (fullscreen dialog): the asset-class strip scrolls sideways instead of
+   overflowing the body, and the result list stops capping itself — the body owns
+   the scrolling in the fullscreen presentation. */
+[data-layout='mobile'] .vela-sp-tabs { overflow-x: auto; scrollbar-width: none; gap: 6px; }
+[data-layout='mobile'] .vela-sp-tabs::-webkit-scrollbar { display: none; }
+[data-layout='mobile'] .vela-sp-tab { flex: none; padding: 7px 10px; }
+[data-layout='mobile'] .vela-sp-list { max-height: none; }
 .vela-sp-tab {
     all: unset;
     padding: 3px 10px;

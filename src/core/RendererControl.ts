@@ -1,4 +1,4 @@
-import type { CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, RendererCapabilities } from './ports/IChartRenderer';
+import type { AxisLongPressEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, RendererCapabilities } from './ports/IChartRenderer';
 import type { Unsubscribe } from './util/types';
 import type { SymbolPickerFn } from './model/inputs';
 
@@ -57,6 +57,31 @@ export class RendererControl {
     }
 
     /**
+     * Replace the indicator legend's fold toggle with a host action (or restore it with
+     * `null`) — multi-chart shells point the chip at their indicator overview instead of
+     * unfolding rows in place. Silent no-op on a renderer without a foldable legend.
+     */
+    setLegendOverviewAction(action: (() => void) | null): this {
+        this.renderer.setLegendOverviewAction?.(action);
+        return this;
+    }
+
+    /** Whether the active renderer can open a per-indicator settings dialog. */
+    get supportsIndicatorSettings(): boolean {
+        return typeof this.renderer.openIndicatorSettings === 'function';
+    }
+
+    /**
+     * Open one indicator's settings dialog — the programmatic twin of the legend gear
+     * (see {@link supportsIndicatorSettings}). Silent no-op without the seam or for an
+     * unknown id.
+     */
+    openIndicatorSettings(indicatorId: string): this {
+        this.renderer.openIndicatorSettings?.(indicatorId);
+        return this;
+    }
+
+    /**
      * Export the current chart as a PNG data URL, or null if the active renderer
      * doesn't support it (warns). DOM overlays (tables, legend) are not included.
      */
@@ -105,6 +130,11 @@ export class RendererControl {
      */
     onCrosshairMove(cb: (e: CrosshairEvent) => void): Unsubscribe {
         return this.renderer.onCrosshairMove(cb);
+    }
+
+    /** Touch long-press on a price or time axis strip — silent no-op without the seam. */
+    onAxisLongPress(cb: (e: AxisLongPressEvent) => void): Unsubscribe {
+        return this.renderer.onAxisLongPress?.(cb) ?? (() => undefined);
     }
 
     /**
@@ -177,6 +207,14 @@ export class RendererControl {
      *  e.g. the widget's Status line toggles. Silent no-op without a dialog. */
     setSettingsSections(sections: ReadonlyArray<{ title: string; rows: readonly unknown[] }>): this {
         this.renderer.setSettingsSections?.(sections);
+        return this;
+    }
+
+    /** Tell the renderer's own chrome which size class the host shell is in —
+     *  `'mobile'` switches its dialogs/toolbars to the touch-first presentation.
+     *  Silent no-op on a renderer without adaptive chrome. */
+    setLayoutMode(mode: 'mobile' | 'desktop'): this {
+        this.renderer.setLayoutMode?.(mode);
         return this;
     }
 }

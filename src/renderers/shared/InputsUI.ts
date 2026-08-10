@@ -80,6 +80,7 @@ const GEAR_SVG = iconAt('gear', LEGEND_ICON_PX);
 const CLOSE_SVG = iconAt('close', 11);
 const FOLD_SVG = iconAt('chevron-up', LEGEND_ICON_PX);
 const UNFOLD_SVG = iconAt('chevron-down', LEGEND_ICON_PX);
+const OVERVIEW_SVG = iconAt('objects', LEGEND_ICON_PX);
 
 /**
  * Chart-style inputs UI built on top of lightweight-charts (which has no
@@ -108,6 +109,8 @@ export class InputsUI {
     private onToggleVisible: ((id: string, visible: boolean) => void) | null = null;
     /** Host symbol picker for `input.symbol`; when set the control opens the host's ticker UI. */
     private symbolPicker: SymbolPickerFn | null = null;
+    /** Mobile chrome: the inputs dialog opens fullscreen and the legends render compact. */
+    private mobileLayout = false;
     /** Pane move/merge hook — when set, rows get a "Move to" menu + become drag-to-pane sources. */
     private moveApi: LegendMoveApi | null = null;
     /** Host-contributed legend actions, resolved PER ROW at render time (see setLegendActions). */
@@ -137,6 +140,10 @@ export class InputsUI {
     /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
      *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
     private foldToggle: HTMLButtonElement | null = null;
+    /** Host-provided replacement for the fold toggle (multi-chart shells route it to
+     *  their indicator overview, e.g. an object tree). While set, the legend stays
+     *  folded and the chip runs this instead of unfolding inline. */
+    private overviewAction: (() => void) | null = null;
     /** Esc-to-close for the settings modal (bound so focus can sit anywhere). */
     private readonly onDialogKey = (e: KeyboardEvent): void => {
         if (e.key === 'Escape') {
@@ -171,6 +178,41 @@ export class InputsUI {
     ) {
         if (!container.style.position) container.style.position = 'relative';
         if (typeof document !== 'undefined') document.addEventListener('click', this.onDocClick);
+    }
+
+    /** The host shell's chrome size class — mobile makes the inputs dialog fullscreen
+     *  (an open dialog re-presents on the flip) and folds the legend behind its chip by
+     *  default (a phone-width plot has no room for the rows). */
+    setLayoutMode(mode: 'mobile' | 'desktop'): void {
+        const mobile = mode === 'mobile';
+        if (mobile === this.mobileLayout) return;
+        this.mobileLayout = mobile;
+        // The fold resets to the mode's presentation default on a flip — it is chrome
+        // presentation, not user state (an overview override keeps it folded either way).
+        if (this.overviewAction === null) this.legendFolded = mobile;
+        this.syncFoldToggle();
+        if (this.openId !== null) {
+            const id = this.openId;
+            this.closeOpenDialog();
+            this.openDialog(id);
+        }
+    }
+
+    /** Replace the fold toggle's behavior with a HOST action (or restore it with null):
+     *  the chip stays — objects icon + indicator count — but a press runs the action
+     *  (a multi-chart shell opens its indicator overview) instead of unfolding the rows,
+     *  which stay hidden while the override is in force. */
+    setLegendOverviewAction(action: (() => void) | null): void {
+        if (action === this.overviewAction) return;
+        this.overviewAction = action;
+        this.legendFolded = action !== null ? true : this.mobileLayout;
+        this.syncFoldToggle();
+    }
+
+    /** Open the settings dialog of one indicator (the legend gear's programmatic twin) —
+     *  no-op for an unknown id. */
+    openSettingsFor(id: string): void {
+        if (this.rows.has(id)) this.openDialog(id);
     }
 
     /** Attach a themed chrome tooltip to a control, recording its disposer under `id`. */
@@ -513,15 +555,21 @@ export class InputsUI {
      */
     private syncFoldToggle(): void {
         const count = this.rows.size;
-        if (count < 2) {
+        // Desktop earns the chevron at 2+ rows; mobile folds even a lone row behind the
+        // chip (the legend is collapsed by default there), and a host overview override
+        // needs the chip from the first row — it is the list's only entry point.
+        const minRows = this.overviewAction !== null || this.mobileLayout ? 1 : 2;
+        if (count < minRows) {
             const wasFolded = this.legendFolded;
-            this.legendFolded = false;
+            // Never strand a surviving row hidden behind a toggle that just disappeared;
+            // with no rows at all the fold keeps its default for the next indicator.
+            if (count > 0) this.legendFolded = false;
             if (this.foldToggle) {
                 this.foldToggle.remove();
                 this.foldToggle = null;
                 this.disposeTips(this.rowTips, 'fold');
             }
-            if (wasFolded) this.reposition(); // unhide the surviving row(s)
+            if (wasFolded && count > 0) this.reposition(); // unhide the surviving row(s)
             return;
         }
         let btn = this.foldToggle;
@@ -529,15 +577,19 @@ export class InputsUI {
             btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'vela-ind-fold';
-            this.tip(this.rowTips, 'fold', btn, () => (this.legendFolded ? 'Show indicator legend' : 'Hide indicator legend'));
+            this.tip(this.rowTips, 'fold', btn, () => (this.overviewAction !== null ? 'Indicators' : this.legendFolded ? 'Show indicator legend' : 'Hide indicator legend'));
             btn.addEventListener('click', () => {
+                if (this.overviewAction !== null) {
+                    this.overviewAction();
+                    return;
+                }
                 this.legendFolded = !this.legendFolded;
                 this.syncFoldToggle();
             });
             this.foldToggle = btn;
         }
         const folded = this.legendFolded;
-        btn.setAttribute('aria-label', folded ? 'Show indicator legend' : 'Hide indicator legend');
+        btn.setAttribute('aria-label', this.overviewAction !== null ? 'Indicators' : folded ? 'Show indicator legend' : 'Hide indicator legend');
         // Bordered chip in both states; folded shows chevron then the count to its right
         // (reference: "˅ 12"), expanded is just the up chevron that folds the list away.
         // Border uses the shared chrome token (same as menus/dialogs) — `--vela-fg-muted`
@@ -547,7 +599,9 @@ export class InputsUI {
         btn.replaceChildren();
         const icon = document.createElement('span');
         icon.style.cssText = 'display:inline-flex;align-items:center;line-height:0;';
-        icon.innerHTML = folded ? UNFOLD_SVG : FOLD_SVG;
+        // The overview override wears the list glyph — the chip opens the host's
+        // indicator overview rather than unfolding rows in place.
+        icon.innerHTML = this.overviewAction !== null ? OVERVIEW_SVG : folded ? UNFOLD_SVG : FOLD_SVG;
         btn.appendChild(icon);
         if (folded) {
             const label = document.createElement('span');
@@ -909,6 +963,8 @@ export class InputsUI {
         // the card is only as wide as the widest input row needs — no fixed width stretching the
         // full-width text area — while the cap + min keep it a sensible size.
         card.style.cssText = `display:flex;flex-direction:column;width:fit-content;min-width:min(360px,90%);max-width:min(640px,94%);max-height:82%;background:${t.background};border:1px solid ${border};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${fg};color-scheme:${scheme};font:13px ${font};overflow:hidden;`;
+        // Mobile: fullscreen, edge to edge — a floating card is unusable at phone widths.
+        if (this.mobileLayout) card.style.cssText += 'width:100%;min-width:0;max-width:none;height:100%;max-height:none;border:none;border-radius:0;';
         applyChromeTokens(card, t);
         // Keystrokes (typing in a field) must not reach the chart; let Esc bubble to the
         // document handler so it closes even when focus sits in an input.
@@ -930,7 +986,8 @@ export class InputsUI {
         closeBtn.addEventListener('click', () => this.closeDialog());
         header.append(hTitle, closeBtn);
         card.appendChild(header);
-        makeDialogDraggable(card, header, { closeSelector: 'button' });
+        // Dragging is a pointer affordance; a fullscreen mobile card has nowhere to go.
+        if (!this.mobileLayout) makeDialogDraggable(card, header, { closeSelector: 'button' });
 
         // ── Tab strip (Inputs) — full-width underline with the active tab underlined. ──
         const tabs = document.createElement('div');
@@ -954,7 +1011,11 @@ export class InputsUI {
                 section.appendChild(gh);
             }
             const grid = document.createElement('div');
-            grid.style.cssText = 'display:grid;grid-template-columns:minmax(140px,auto) auto auto 1fr;align-items:center;column-gap:12px;row-gap:22px;';
+            // Mobile keeps the same four tracks (row builders span across them) but gives
+            // the label the flexible, shrinkable one so nothing overflows a phone width.
+            grid.style.cssText = this.mobileLayout
+                ? 'display:grid;grid-template-columns:minmax(0,1fr) auto auto max-content;align-items:center;column-gap:12px;row-gap:22px;'
+                : 'display:grid;grid-template-columns:minmax(140px,auto) auto auto 1fr;align-items:center;column-gap:12px;row-gap:22px;';
             for (const inputRow of group.rows) this.buildInputRow(grid, inputRow, row);
             section.appendChild(grid);
             body.appendChild(section);
