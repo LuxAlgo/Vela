@@ -8,6 +8,10 @@ export interface DrawerControllerOptions {
     closeOnEscape?: boolean;
     /** Tap outside (on the backdrop) dismisses — default true. */
     closeOnInteractOutside?: boolean;
+    /** Element to focus on open (default: the machine's first-tabbable pick). The view
+     *  points this at the sheet itself so opening never focuses an input — on touch
+     *  devices that would pop the on-screen keyboard over the sheet. */
+    initialFocusEl?: () => HTMLElement | null;
     onOpenChange?: (open: boolean) => void;
 }
 
@@ -28,6 +32,7 @@ export function drawerController(opts: DrawerControllerOptions = {}): DrawerCont
             modal: true,
             closeOnEscape: opts.closeOnEscape ?? true,
             closeOnInteractOutside: opts.closeOnInteractOutside ?? true,
+            initialFocusEl: opts.initialFocusEl,
             onOpenChange: (d: dialog.OpenChangeDetails) => opts.onOpenChange?.(d.open),
         } satisfies Partial<dialog.Props>,
         connect: (service: DrawerService): DrawerApi => dialog.connect(service, normalizeProps),

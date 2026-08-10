@@ -40,6 +40,9 @@ export class Dialog {
         this.positioner.className = 'vela-dialog-positioner vela-ui-layer';
         this.panel = doc.createElement('div');
         this.panel.className = 'vela-dialog';
+        // Programmatically focusable — the mobile chrome routes the machine's initial
+        // focus here (see the controller wiring below).
+        this.panel.tabIndex = -1;
 
         const header = doc.createElement('div');
         header.className = 'vela-dialog-header';
@@ -78,7 +81,18 @@ export class Dialog {
         this.positioner.appendChild(this.panel);
         host.append(this.backdrop, this.positioner);
 
-        this.ctrl = dialogController(opts);
+        this.ctrl = dialogController({
+            ...opts,
+            // Mobile chrome (fullscreen presentation): opening must never land focus on
+            // an input — that pops the on-screen keyboard over the just-opened dialog.
+            // Focus goes to the panel; a caller that WANTS the keyboard focuses its
+            // input explicitly. Desktop keeps the caller's pick, else the machine's
+            // first-tabbable default.
+            initialFocusEl: () => {
+                if (this.positioner.closest('[data-layout="mobile"]')) return this.panel;
+                return opts.initialFocusEl?.() ?? null;
+            },
+        });
         const mid = String(this.ctrl.props.id);
         this.handle = runMachine(this.ctrl.machine, this.ctrl.props, (service) => {
             const api = this.ctrl.connect(service);

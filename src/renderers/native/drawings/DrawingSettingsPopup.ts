@@ -70,7 +70,10 @@ function ensureStyles(): void {
 .vela-dpop-btn[data-active='1']{background:var(--vela-active);color:var(--vela-fg-bright);}
 .vela-dpop-item{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-dpop-item:hover{background:var(--vela-hover-strong);}
-.vela-dpop-item[data-active='1']{background:var(--vela-active);}`;
+.vela-dpop-item[data-active='1']{background:var(--vela-active);}
+/* A finger needs a wider grab zone than a cursor — grow the move handle on touch-first
+   devices (the glyph stays centered; only the hit target widens). */
+@media (pointer: coarse){.vela-dpop-grip{width:${BTN + 14}px !important;}}`;
     document.head.appendChild(s);
 }
 
@@ -895,7 +898,11 @@ export class DrawingSettingsPopup {
     private dragHandle(): HTMLButtonElement {
         const b = document.createElement('button');
         b.type = 'button';
-        b.style.cssText = `width:${BTN}px;height:${BTN}px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;padding:0;cursor:grab;color:var(--vela-fg-faint);`;
+        b.className = 'vela-dpop-grip';
+        // touch-action:none — the handle owns its touches: without it the browser claims
+        // the move for scrolling and CANCELS the pointer stream, which is why the bar
+        // could barely be dragged on a phone.
+        b.style.cssText = `width:${BTN}px;height:${BTN}px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;padding:0;cursor:grab;touch-action:none;color:var(--vela-fg-faint);`;
         b.innerHTML = sized(GRIP_ICON);
         b.addEventListener('pointerdown', (e) => {
             const el = this.el;
@@ -911,6 +918,13 @@ export class DrawingSettingsPopup {
             const origLeft = parseFloat(el.style.left) || 0;
             const origTop = parseFloat(el.style.top) || 0;
             b.style.cursor = 'grabbing';
+            // Capture keeps the move stream on the handle even when a finger (a far
+            // blunter pointer than a cursor) slides off the 30px grip mid-drag.
+            try {
+                b.setPointerCapture((e as PointerEvent).pointerId);
+            } catch {
+                /* detached target or a test double without capture support */
+            }
             const move = (ev: PointerEvent): void => {
                 const w = el.offsetWidth;
                 const h = el.offsetHeight;
@@ -923,9 +937,11 @@ export class DrawingSettingsPopup {
                 b.style.cursor = 'grab';
                 window.removeEventListener('pointermove', move);
                 window.removeEventListener('pointerup', up);
+                window.removeEventListener('pointercancel', up);
             };
             window.addEventListener('pointermove', move);
             window.addEventListener('pointerup', up);
+            window.addEventListener('pointercancel', up);
         });
         return b;
     }

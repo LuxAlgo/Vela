@@ -80,8 +80,9 @@ const LONG_PRESS_MS = 350; // touch hold before a data-area press becomes crossh
 const TOUCH_SLOP = 8;
 // Two clean taps this close together (time and space) are a double-tap — the touch
 // dblclick. The browser never synthesizes dblclick here (the controller owns the touch
-// stream via touch-action:none), so the pairing is detected by hand.
-const DOUBLE_TAP_MS = 300;
+// stream via touch-action:none), so the pairing is detected by hand. 350ms matches the
+// platform double-tap windows; 300 was tight enough to drop casual pairs.
+const DOUBLE_TAP_MS = 350;
 const DOUBLE_TAP_SLOP = 30;
 // Time-axis horizontal-zoom sensitivity: dragging left zooms in (e^(Δpx·k)). Kept low so
 // the zoom takes a deliberate, sizeable drag (~2× over ~170px) rather than a twitch.
@@ -472,32 +473,38 @@ export class InputController {
         }
         // Once a touch travels past the wobble slop it is a pan, not a nascent long-press.
         if (this.lpTimer !== null && Math.hypot(x - this.startX, y - this.startY) > TOUCH_SLOP) this.cancelLongPress();
+        // Click/tap-vs-drag classification: a resting finger wobbles far more than a
+        // mouse, so a touch keeps its tap-hood through TOUCH_SLOP of travel — with the
+        // 2px mouse slop, most real taps read as micro-pans and double-taps almost
+        // never paired. (The view still pans by those few px either way; `moved` only
+        // decides what the RELEASE means.)
+        const slop = e.pointerType === 'touch' ? TOUCH_SLOP : DRAG_SLOP;
         if (this.dragging) {
             if (this.region === 'price') {
-                if (Math.abs(y - this.startY) > DRAG_SLOP) this.moved = true;
+                if (Math.abs(y - this.startY) > slop) this.moved = true;
                 this.deps.priceScaleBy(y - this.startY);
             } else if (this.region === 'separator') {
-                if (Math.abs(y - this.startY) > DRAG_SLOP) this.moved = true;
+                if (Math.abs(y - this.startY) > slop) this.moved = true;
                 this.deps.paneResizeBy(y - this.startY);
             } else if (this.region === 'time') {
-                if (Math.abs(x - this.startX) > DRAG_SLOP) this.moved = true;
+                if (Math.abs(x - this.startX) > slop) this.moved = true;
                 // Pin the right edge (keep rightOffset): logicalToX(rightEdge) == width for
                 // any barSpacing, so only barSpacing changes. Drag left ⇒ zoom in.
                 const barSpacing = clampBarSpacing(this.startBarSpacing * Math.exp((this.startX - x) * TIME_SCALE_K));
                 this.deps.apply({ barSpacing, rightOffset: this.startRightOffset });
             } else if (this.region === 'drawing') {
-                if (Math.abs(x - this.startX) > DRAG_SLOP || Math.abs(y - this.startY) > DRAG_SLOP) this.moved = true;
+                if (Math.abs(x - this.startX) > slop || Math.abs(y - this.startY) > slop) this.moved = true;
                 this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey);
             } else {
                 const coords = this.deps.getCoords();
                 const vp = coords.getViewport();
                 const dx = x - this.startX;
-                if (Math.abs(dx) > DRAG_SLOP) this.moved = true;
+                if (Math.abs(dx) > slop) this.moved = true;
                 // Drag right → reveal earlier bars → rightOffset decreases. Track by the effective
                 // pitch (zoom × spacing multiplier) so the chart follows the cursor 1:1.
                 this.deps.apply({ barSpacing: vp.barSpacing, rightOffset: this.startRightOffset - dx / coords.pxPerBar() });
                 if (this.verticalPan) {
-                    if (Math.abs(y - this.startY) > DRAG_SLOP) this.moved = true;
+                    if (Math.abs(y - this.startY) > slop) this.moved = true;
                     this.deps.pricePanBy(y - this.startY);
                 }
                 // Track a low-passed pointer velocity for the release flick.

@@ -26,7 +26,8 @@ All notable changes to Vela, newest first.
   symbol search, timeframe, indicators, drawings, a three-dots drawer, and chart
   settings. The timeframe entry opens a bottom sheet with the date-range presets and
   the timeframe grid; the drawings entry opens a searchable, tabbed tool sheet with
-  favorite stars, and an armed tool shows a floating pill over the chart with the
+  favorite stars — swipe sideways across the tool list to move between the group
+  tabs — and an armed tool shows a floating pill over the chart with the
   magnet, stay-in-drawing-mode and eraser controls; the three-dots sheet carries
   undo/redo, screenshot, chart type, the side panels (which open full-screen on
   mobile), alerts, and any contributed actions. A long-press on the time axis opens
@@ -64,9 +65,13 @@ All notable changes to Vela, newest first.
   dialog programmatically — the legend gear's twin, surfaced on `chart.renderer` as
   `setLegendOverviewAction` / `openIndicatorSettings` (+ `supportsIndicatorSettings`).
   Both are additive and optional: a renderer without them keeps today's behavior.
-- **`vela/ui` gains a `Drawer`.** A bottom sheet with a grab handle, drag-to-dismiss
-  and a dimmed backdrop — the primitive the mobile chrome's sheets are built on,
-  exported for building your own.
+- **`vela/ui` gains a `Drawer`.** A bottom sheet with a grab handle and a dimmed
+  backdrop — the primitive the mobile chrome's sheets are built on, exported for
+  building your own. Pulling down dismisses from anywhere on the sheet, not just the
+  handle (a scrolled list keeps native scrolling until it is back at the top), an
+  `onSwipe` option turns decidedly horizontal swipes into a callback (the drawings
+  sheet pages its tabs with it), and opening never pops the on-screen keyboard — the
+  sheet itself takes the initial focus, never a search field.
 
 - **Drawings sync across a workspace grid.** A new `drawings` sync kind
   (`ws.sync.set('drawings', true)`, also a toggle on the shared drawing toolbar) links
@@ -83,6 +88,14 @@ All notable changes to Vela, newest first.
   chart event, and `IDrawingsRendererPort` gains an optional `setExternalGhost(doc)` —
   the drawings twin of `setExternalCrosshair`. Both are additive: a renderer that
   implements neither keeps today's behavior (sync at completion, no remote preview).
+
+### Fixed
+
+- **Screenshots capture the whole chart.** The PNG export now includes everything the
+  screen shows: the volume columns, the visible-range volume profile, plugin-drawn
+  layers, the status line, the indicator legends (with their values), and the faded
+  symbol watermark — previously only the candles, axes and drawings made it into the
+  image. Only the crosshair stays out.
 
 ## [v0.5.0]
 

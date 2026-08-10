@@ -99,7 +99,20 @@ function touchHarness() {
         el.fire('pointerdown', { ...base, timeStamp: t });
         el.fire('pointerup', { ...base, timeStamp: t + 40 });
     };
-    return { deps, tap };
+    /** A REAL finger tap: the contact wobbles `w` px between touch-down and lift. */
+    const wobbleTap = (x: number, y: number, t: number, w = 5): void => {
+        const base = { button: 0, pointerId: 1, pointerType: 'touch' };
+        el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
+        el.fire('pointermove', { ...base, clientX: x + w, clientY: y + w, timeStamp: t + 20 });
+        el.fire('pointerup', { ...base, clientX: x + w, clientY: y + w, timeStamp: t + 40 });
+    };
+    const mouseDrag = (x: number, y: number, t: number, d: number): void => {
+        const base = { button: 0, pointerId: 2, pointerType: 'mouse' };
+        el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
+        el.fire('pointermove', { ...base, clientX: x + d, clientY: y, timeStamp: t + 20 });
+        el.fire('pointerup', { ...base, clientX: x + d, clientY: y, timeStamp: t + 40 });
+    };
+    return { deps, tap, wobbleTap, mouseDrag };
 }
 
 describe('touch double-tap (the touch dblclick)', () => {
@@ -142,5 +155,27 @@ describe('touch double-tap (the touch dblclick)', () => {
         tap(400, 100, 100);
         tap(400, 100, 200);
         expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('taps that wobble a few px (a real finger) still tap, click, and pair', () => {
+        const { deps, wobbleTap } = touchHarness();
+        wobbleTap(400, 100, 0);
+        expect(deps.onClick).toHaveBeenCalledTimes(1); // the wobble is not a drag on touch
+        wobbleTap(402, 103, 150);
+        expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('a touch travelling past the touch slop is a pan, not a tap', () => {
+        const { deps, wobbleTap } = touchHarness();
+        wobbleTap(400, 100, 0, 12);
+        wobbleTap(400, 100, 150, 12);
+        expect(deps.onClick).not.toHaveBeenCalled();
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+    });
+
+    it('the mouse keeps its strict 2px click slop', () => {
+        const { deps, mouseDrag } = touchHarness();
+        mouseDrag(400, 100, 0, 5); // 5px is a click on touch but a drag for a mouse
+        expect(deps.onClick).not.toHaveBeenCalled();
     });
 });
