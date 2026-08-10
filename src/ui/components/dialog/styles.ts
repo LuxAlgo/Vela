@@ -68,4 +68,27 @@ export const DIALOG_CSS = `
     border: 2px solid transparent;
     background-clip: padding-box;
 }
+/* ── mobile chrome: dialogs fill the shell ─────────────────────────────────────────
+   Inside a shell in the mobile size class ([data-layout='mobile'] on the widget root,
+   which is position:relative) every kit dialog presents fullscreen: desktop cards are
+   unusable at phone widths, and the shell's bounds — not the viewport — are the honest
+   "screen" for an embedded chart. */
+[data-layout='mobile'] .vela-dialog-backdrop { position: absolute; }
+[data-layout='mobile'] .vela-dialog-positioner {
+    position: absolute;
+    padding: 0;
+    align-items: stretch;
+}
+[data-layout='mobile'] .vela-dialog {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+    flex: 1 1 auto;
+    border: none;
+    border-radius: 0;
+    transform: none !important; /* a desktop drag offset must not survive the flip */
+}
+[data-layout='mobile'] .vela-dialog-close { width: 40px; height: 40px; }
+[data-layout='mobile'] .vela-dialog-body { padding-bottom: calc(var(--vela-space-4) + env(safe-area-inset-bottom, 0px)); }
 `;

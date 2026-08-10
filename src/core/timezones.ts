@@ -92,14 +92,9 @@ export function tzMenuLabel(zone: string, location: string): string {
     return `(${tzOffset(zone)}) ${location}`;
 }
 
-/** A zone's display location: the catalog label, else its IANA city segment. */
-function tzLocation(zone: string): string {
-    const entry = TIMEZONES.find((t) => t.value === normalizeTimezone(zone));
-    return entry?.label ?? (zone.split('/').pop() ?? zone).replace(/_/g, ' ');
-}
-
-/** Compact label for the bottom-bar button ("UTC", "UTC+2 Paris"). */
+/** Compact label for the bottom-bar button — just the offset ("UTC", "UTC+2", "UTC-9:30"). */
 export function tzButtonLabel(zone: string): string {
+    // Some ICU builds format Etc/UTC as "GMT+0" — fold that back to the bare "UTC".
     if (normalizeTimezone(zone) === 'Etc/UTC') return 'UTC';
-    return `${tzOffset(zone)} ${tzLocation(zone)}`;
+    return tzOffset(zone);
 }

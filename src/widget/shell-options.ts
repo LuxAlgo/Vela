@@ -34,6 +34,11 @@ export interface VelaShellOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
+    /** Chrome size class. `'auto'` (default) follows the CONTAINER width plus a
+     *  coarse-pointer heuristic; `'mobile'` / `'desktop'` pin it. Mobile swaps the
+     *  topbar + desktop bottombar for one touch-first bottom bar, presents pickers
+     *  fullscreen and menus as bottom drawers, and enables the touch chart gestures. */
+    layoutMode?: 'auto' | 'mobile' | 'desktop';
     /** Focus the chart when the shell mounts so keyboard shortcuts work from the first
      *  keystroke — no initial click needed. Default false: an embedded shell must never
      *  steal the page's focus from the host's own controls. */

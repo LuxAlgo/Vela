@@ -41,6 +41,9 @@ export interface InputControllerDeps {
     resetPaneSize(y: number): void;
     /** Double-click the time axis → fit the view to content (same as keyboard `0`). */
     resetView(): void;
+    /** Touch long-press on the price or time axis strip (the mobile substitute for a
+     *  right-click menu — host chrome opens a timezone / price-scale sheet). */
+    onAxisLongPress?(axis: 'price' | 'time', x: number, y: number): void;
 
     // ── user drawings (optional) — let the drawings layer claim a gesture before pan ──
     /** True when a press at (x,y) belongs to the drawings layer (armed tool, or over a drawing). */
@@ -70,6 +73,16 @@ export interface InputControllerDeps {
 const FLING_MIN_SPEED = 0.04; // px/ms below which a release is treated as a stop (no fling)
 const FLING_STALE_MS = 60; // if the last move is older than this at release, don't fling
 const DRAG_SLOP = 2; // px of motion before a press counts as a drag (vs a click)
+// ── touch gestures ──
+const LONG_PRESS_MS = 350; // touch hold before a data-area press becomes crosshair-inspect mode
+// A resting finger wobbles far more than a mouse: within this radius a hold still counts
+// as stationary (long-press keeps arming), beyond it the gesture is a pan.
+const TOUCH_SLOP = 8;
+// Two clean taps this close together (time and space) are a double-tap — the touch
+// dblclick. The browser never synthesizes dblclick here (the controller owns the touch
+// stream via touch-action:none), so the pairing is detected by hand.
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_SLOP = 30;
 // Time-axis horizontal-zoom sensitivity: dragging left zooms in (e^(Δpx·k)). Kept low so
 // the zoom takes a deliberate, sizeable drag (~2× over ~170px) rather than a twitch.
 const TIME_SCALE_K = 0.004;
@@ -78,8 +91,10 @@ const TIME_SCALE_K = 0.004;
 const WHEEL_ZOOM_K = 0.0025;
 
 /** Which strip a gesture started over — the data plot, the right price axis, the bottom
- *  time axis, or a sub-pane separator (drag to resize the panes above/below it). */
-type DragRegion = 'data' | 'price' | 'time' | 'separator' | 'drawing';
+ *  time axis, a sub-pane separator (drag to resize the panes above/below it), or one of
+ *  the touch-only modes: a two-finger pinch, long-press crosshair inspection, or a
+ *  long-press that opened an axis sheet (no further drag for that gesture). */
+type DragRegion = 'data' | 'price' | 'time' | 'separator' | 'drawing' | 'pinch' | 'crosshair' | 'axis-sheet';
 
 /**
  * The logical bar + its pixel that a wheel-zoom keeps pinned. `right` (the default)
@@ -132,6 +147,23 @@ export function effectiveSnapMode(momentaryOverride: boolean, sticky: SnapMode):
     return momentaryOverride ? 'strong' : sticky;
 }
 
+/** The barSpacing a pinch has reached: the start spacing scaled by the finger-distance
+ *  ratio, clamped to the viewport's zoom bounds. `startDist` is floored at 1px so a
+ *  degenerate two-fingers-on-one-point start cannot divide by zero. */
+export function pinchBarSpacing(startBarSpacing: number, startDist: number, dist: number): number {
+    return clampBarSpacing(startBarSpacing * (dist / Math.max(1, startDist)));
+}
+
+/**
+ * The rightOffset that pins logical index `anchorLogical` at pixel `x` for a given
+ * effective pitch (barSpacing × spacing multiplier) — inverse of `logicalToX`. Pinning
+ * the pinch's start-midpoint logical at the LIVE midpoint x makes the bars track the
+ * fingers exactly: spread to zoom, drag both to pan, in one gesture.
+ */
+export function pinchPinnedRightOffset(anchorLogical: number, barCount: number, width: number, x: number, pxPerBar: number): number {
+    return anchorLogical - (barCount - 1) + (width - x) / pxPerBar;
+}
+
 /**
  * Translates pointer/wheel gestures into ViewportState + scale changes. A press in
  * the data area pans (`rightOffset`, instant) and — in manual-scale mode — also pans
@@ -169,15 +201,37 @@ export class InputController {
     // press/release re-shape the drawings preview with the pointer stationary.
     private cursorX = NaN;
     private cursorY = NaN;
+    // ── touch state ──
+    /** Live touch contacts (local coords) — two entries drive a pinch; extras are ignored. */
+    private readonly touches = new Map<number, { x: number; y: number }>();
+    private lpTimer: ReturnType<typeof setTimeout> | null = null;
+    private pinchStartDist = 1;
+    private pinchStartBarSpacing = 0;
+    private pinchAnchorLogical = 0;
+    // Last clean touch tap (for double-tap pairing). Time 0 = no pending first tap.
+    private lastTapT = 0;
+    private lastTapX = 0;
+    private lastTapY = 0;
 
     constructor(private readonly deps: InputControllerDeps) {}
 
     attach(el: HTMLElement): void {
         this.el = el;
+        // Own the touch stream: without this the browser converts a drag into page
+        // scroll (and a pinch into page zoom) before the chart sees coherent pointer
+        // events. Selection/callout off — a long-press means crosshair here. Guarded:
+        // headless fakes (unit tests) attach without a style object.
+        if (el.style !== undefined) {
+            el.style.touchAction = 'none';
+            el.style.userSelect = 'none';
+            el.style.setProperty('-webkit-user-select', 'none');
+            el.style.setProperty('-webkit-touch-callout', 'none');
+        }
         el.addEventListener('pointerdown', this.onDown);
         el.addEventListener('pointermove', this.onMove);
         el.addEventListener('pointerup', this.onUp);
         el.addEventListener('pointerleave', this.onLeave);
+        el.addEventListener('pointercancel', this.onCancel);
         el.addEventListener('dblclick', this.onDblClick);
         el.addEventListener('wheel', this.onWheel, { passive: false });
         // Middle-press companions: autoscroll starts on mousedown and Linux paste on
@@ -192,6 +246,10 @@ export class InputController {
         const win = el.ownerDocument?.defaultView;
         win?.addEventListener('keydown', this.onModifier);
         win?.addEventListener('keyup', this.onModifier);
+        // A touch long-press must never open a context menu over the chart (the hold
+        // means crosshair): swallow the synthesized event at the window capture phase,
+        // BEFORE any host/plugin contextmenu listener, while a touch gesture is live.
+        win?.addEventListener('contextmenu', this.onTouchContextMenu, true);
     }
 
     detach(): void {
@@ -200,16 +258,27 @@ export class InputController {
         const win = el.ownerDocument?.defaultView;
         win?.removeEventListener('keydown', this.onModifier);
         win?.removeEventListener('keyup', this.onModifier);
+        win?.removeEventListener('contextmenu', this.onTouchContextMenu, true);
         el.removeEventListener('pointerdown', this.onDown);
         el.removeEventListener('pointermove', this.onMove);
         el.removeEventListener('pointerup', this.onUp);
         el.removeEventListener('pointerleave', this.onLeave);
+        el.removeEventListener('pointercancel', this.onCancel);
         el.removeEventListener('dblclick', this.onDblClick);
         el.removeEventListener('wheel', this.onWheel);
         el.removeEventListener('mousedown', this.onMiddleGuard);
         el.removeEventListener('auxclick', this.onMiddleGuard);
+        this.cancelLongPress();
+        this.touches.clear();
         this.el = null;
     }
+
+    private readonly onTouchContextMenu = (e: MouseEvent): void => {
+        if (this.touches.size === 0) return;
+        if (!(e.target instanceof Node) || !this.el?.contains(e.target)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    };
 
     private readonly onMiddleGuard = (e: MouseEvent): void => {
         if (e.button === 1 && this.middleDeleted) e.preventDefault();
@@ -260,6 +329,18 @@ export class InputController {
         }
         if (e.button !== 0) return;
         const { x, y } = this.local(e);
+        if (e.pointerType === 'touch') {
+            // A second finger during a pan (or long-press crosshair) escalates to a
+            // pinch; during a claimed drawing/axis gesture — and beyond two contacts —
+            // extra fingers are ignored so they can't corrupt the gesture in flight.
+            if (this.touches.size === 1 && this.dragging && (this.region === 'data' || this.region === 'crosshair')) {
+                this.touches.set(e.pointerId, { x, y });
+                this.beginPinch(e);
+                return;
+            }
+            if (this.touches.size >= 1) return;
+            this.touches.set(e.pointerId, { x, y });
+        }
         this.deps.drawingsClearTransient?.(); // a finished ruler vanishes on the next press (pan still proceeds)
         this.dragging = true;
         this.moved = false;
@@ -290,11 +371,78 @@ export class InputController {
         if (this.region === 'price') this.deps.beginPriceScale(x, y);
         else if (this.region === 'separator') this.deps.beginPaneResize(y);
         else if (this.region === 'data') this.verticalPan = this.deps.beginPricePan(y);
+        // A stationary touch hold in the plot becomes crosshair inspection — the touch
+        // substitute for hovering (a finger can't hover, and a pan would move the view).
+        // On an axis strip the same hold opens the host's timezone / price-scale sheet
+        // (the mobile substitute for a right-click), unless the finger moves into a drag.
+        if (e.pointerType === 'touch' && (this.region === 'data' || this.region === 'price' || this.region === 'time')) {
+            this.startLongPress(x, y, this.region);
+        }
         this.lastX = x;
         this.lastT = e.timeStamp;
         this.vx = 0;
         this.capture(e.pointerId);
     };
+
+    /** Arm the long-press timer for a data-area → crosshair or axis → sheet hold;
+     *  movement past TOUCH_SLOP or a second finger cancels it. */
+    private startLongPress(x: number, y: number, region: 'data' | 'price' | 'time'): void {
+        this.cancelLongPress();
+        this.lpTimer = setTimeout(() => {
+            this.lpTimer = null;
+            if (!this.dragging || this.region !== region) return;
+            if (region === 'data') {
+                this.region = 'crosshair';
+                this.deps.onPointerMove(x, y);
+                return;
+            }
+            // Axis sheet: freeze the gesture so a later wobble cannot rescale/zoom.
+            this.region = 'axis-sheet';
+            this.moved = true; // not a click / not a pending drag
+            this.deps.onAxisLongPress?.(region, x, y);
+        }, LONG_PRESS_MS);
+    }
+
+    private cancelLongPress(): void {
+        if (this.lpTimer !== null) clearTimeout(this.lpTimer);
+        this.lpTimer = null;
+    }
+
+    /** Two fingers down: freeze the view and re-base the gesture as an anchored pinch. */
+    private beginPinch(e: PointerEvent): void {
+        this.cancelLongPress();
+        if (this.region === 'crosshair') this.deps.onPointerMove(null, null); // inspection ends; the pinch owns the gesture
+        const coords = this.deps.getCoords();
+        const vp = coords.getViewport();
+        this.deps.apply(vp); // freeze any in-flight fling/zoom before grabbing
+        const [a, b] = [...this.touches.values()] as [{ x: number; y: number }, { x: number; y: number }];
+        this.pinchStartDist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+        this.pinchStartBarSpacing = vp.barSpacing;
+        this.pinchAnchorLogical = coords.xToLogical((a.x + b.x) / 2);
+        this.region = 'pinch';
+        this.dragging = true;
+        this.moved = true; // a pinch is never a click
+        this.vx = 0;
+        this.capture(e.pointerId);
+    }
+
+    /** Track both fingers: distance ratio zooms, the live midpoint pans (anchor pinned under it). */
+    private applyPinch(): void {
+        const coords = this.deps.getCoords();
+        const pts = [...this.touches.values()];
+        if (pts.length < 2) return;
+        const [a, b] = pts as [{ x: number; y: number }, { x: number; y: number }];
+        const barSpacing = pinchBarSpacing(this.pinchStartBarSpacing, this.pinchStartDist, Math.hypot(a.x - b.x, a.y - b.y));
+        // The spacing multiplier is constant through the gesture; derive it from the live
+        // effective pitch so the pin math matches logicalToX exactly.
+        const vp = coords.getViewport();
+        const pitchScale = vp.barSpacing > 0 ? coords.pxPerBar() / vp.barSpacing : 1;
+        const midX = (a.x + b.x) / 2;
+        this.deps.apply({
+            barSpacing,
+            rightOffset: pinchPinnedRightOffset(this.pinchAnchorLogical, coords.barCount, coords.width, midX, barSpacing * pitchScale),
+        });
+    }
 
     /** Capture defensively: a synthetic/already-released pointer can't be captured, and
      *  the move/up pair still routes through the element listeners without it. */
@@ -310,6 +458,20 @@ export class InputController {
         const { x, y } = this.local(e);
         this.cursorX = x;
         this.cursorY = y;
+        if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) this.touches.set(e.pointerId, { x, y });
+        if (this.dragging && this.region === 'pinch') {
+            this.applyPinch();
+            return; // no crosshair while pinching — two fingers name no single point
+        }
+        if (this.dragging && this.region === 'crosshair') {
+            this.deps.onPointerMove(x, y); // inspect: the finger drives the crosshair, the view stays put
+            return;
+        }
+        if (this.dragging && this.region === 'axis-sheet') {
+            return; // sheet already opened — ignore further motion for this gesture
+        }
+        // Once a touch travels past the wobble slop it is a pan, not a nascent long-press.
+        if (this.lpTimer !== null && Math.hypot(x - this.startX, y - this.startY) > TOUCH_SLOP) this.cancelLongPress();
         if (this.dragging) {
             if (this.region === 'price') {
                 if (Math.abs(y - this.startY) > DRAG_SLOP) this.moved = true;
@@ -361,6 +523,37 @@ export class InputController {
     };
 
     private readonly onUp = (e: PointerEvent): void => {
+        if (e.pointerType === 'touch') this.touches.delete(e.pointerId);
+        this.cancelLongPress();
+        if (this.dragging && this.region === 'pinch') {
+            if (this.touches.size === 1) {
+                // One finger lifted: the survivor continues as a plain pan, re-based at
+                // its current position so the view doesn't jump.
+                const rest = [...this.touches.values()][0]!;
+                const vp = this.deps.getCoords().getViewport();
+                this.region = 'data';
+                this.verticalPan = false;
+                this.startX = rest.x;
+                this.startY = rest.y;
+                this.startRightOffset = vp.rightOffset;
+                this.startBarSpacing = vp.barSpacing;
+                this.lastX = rest.x;
+                this.lastT = e.timeStamp;
+                this.vx = 0;
+                return; // still dragging with the remaining finger
+            }
+            this.endGesture(e);
+            return;
+        }
+        if (this.dragging && this.region === 'crosshair') {
+            this.deps.onPointerMove(null, null); // no hover on touch — lifting the finger ends the readout
+            this.endGesture(e);
+            return;
+        }
+        if (this.dragging && this.region === 'axis-sheet') {
+            this.endGesture(e);
+            return;
+        }
         if (this.dragging && this.region === 'drawing') {
             const { x, y } = this.local(e);
             this.deps.drawingsPointerUp?.(x, y);
@@ -374,12 +567,51 @@ export class InputController {
                 this.deps.fling(-this.vx / pitch); // rightOffset velocity (logical/ms)
             }
         }
+        const wasTouch = e.pointerType === 'touch';
+        // A stationary touch release is a tap — feed the double-tap pairing (touch has
+        // no native dblclick here). Checked before endGesture clears the flags.
+        const wasTap = wasTouch && this.dragging && !this.moved;
+        this.endGesture(e);
+        // A finger leaves no resting cursor behind — clear the crosshair a pan/tap drew.
+        if (wasTouch) this.deps.onPointerMove(null, null);
+        if (wasTap) {
+            const { x, y } = this.local(e);
+            this.registerTap(e.timeStamp, x, y);
+        }
+    };
+
+    /** Pair clean taps into a double-tap — the touch equivalent of dblclick (same
+     *  routing: axis taps reset that axis' view, a plot tap toggles pane maximize). */
+    private registerTap(t: number, x: number, y: number): void {
+        const paired = this.lastTapT > 0 && t - this.lastTapT <= DOUBLE_TAP_MS && Math.hypot(x - this.lastTapX, y - this.lastTapY) <= DOUBLE_TAP_SLOP;
+        if (paired) {
+            this.lastTapT = 0; // a triple tap starts a fresh pair, not two doubles
+            this.doubleActivate(x, y);
+            return;
+        }
+        this.lastTapT = t;
+        this.lastTapX = x;
+        this.lastTapY = y;
+    }
+
+    private endGesture(e: PointerEvent): void {
         this.dragging = false;
         try {
             this.el?.releasePointerCapture(e.pointerId);
         } catch {
             // never captured (see capture()) or the pointer vanished — nothing to release
         }
+    }
+
+    /** The browser took the pointer back (system gesture, palm rejection, tab switch):
+     *  drop the gesture where it is — no click, no fling, no stuck `dragging`. */
+    private readonly onCancel = (e: PointerEvent): void => {
+        if (e.pointerType === 'touch') this.touches.delete(e.pointerId);
+        this.cancelLongPress();
+        if (!this.dragging) return;
+        if (this.region === 'drawing' && !Number.isNaN(this.cursorX)) this.deps.drawingsPointerUp?.(this.cursorX, this.cursorY);
+        if (this.region === 'crosshair' || e.pointerType === 'touch') this.deps.onPointerMove(null, null);
+        this.endGesture(e);
     };
 
     private readonly onLeave = (): void => {
@@ -390,6 +622,11 @@ export class InputController {
 
     private readonly onDblClick = (e: MouseEvent): void => {
         const { x, y } = this.local(e);
+        this.doubleActivate(x, y);
+    };
+
+    /** Shared double-click / double-tap routing, by the region under the point. */
+    private doubleActivate(x: number, y: number): void {
         // A drawing double-click opens its settings — suppress the view/scale reset.
         if (this.deps.drawingsDblClick?.(x, y)) return;
         const region = this.regionAt(x, y);
@@ -397,7 +634,7 @@ export class InputController {
         else if (region === 'separator') this.deps.resetPaneSize(y);
         else if (region === 'time') this.deps.resetView(); // fit-to-content on the time axis
         else this.deps.dataDblClick(x, y);
-    };
+    }
 
     private readonly onWheel = (e: WheelEvent): void => {
         e.preventDefault();

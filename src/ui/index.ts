@@ -9,3 +9,4 @@ export { KeymapManager, type KeyBindingDescriptor, type ResolvedBinding, type Ke
 export * from './components/tooltip';
 export * from './components/menu';
 export * from './components/dialog';
+export * from './components/drawer';

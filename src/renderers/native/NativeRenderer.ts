@@ -5,6 +5,7 @@ import type {
     CrosshairEvent,
     CrosshairOHLC,
     ClickEvent,
+    AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,
     IndicatorStatus,
@@ -80,12 +81,13 @@ const TIME_AXIS_H = 22; // px reserved at the bottom for the time axis
 // ── "scroll to most recent bar" affordance (bottom-right, shown only when the latest bar is off-screen and the cursor is nearby) ──
 // Size/border match the playground drawing-toolbar collapse toggle (`.toolbar-toggle`).
 const SCROLL_BTN_SIZE = 26; // px — width & height (`.toolbar-toggle`)
+const SCROLL_BTN_SIZE_TOUCH = 24; // px — the mobile variant; a hair under the desktop affordance
 const SCROLL_BTN_RADIUS = 5; // px — border-radius (`.toolbar-toggle`)
 const SCROLL_BTN_SHADOW = '0 2px 8px rgba(0,0,0,0.4)'; // box-shadow (`.toolbar-toggle`)
 const SCROLL_BTN_ICON_PX = 12; // px — icon box (`.toolbar-toggle` font-size / FA glyph size)
-const SCROLL_BTN_RIGHT_INSET = 25; // px the button sits left of the price-axis gutter's inner edge
+const SCROLL_BTN_RIGHT_INSET = 12; // px the button sits left of the price-axis gutter's inner edge
 const SCROLL_BTN_RIGHT = RIGHT_AXIS_W + SCROLL_BTN_RIGHT_INSET; // initial offset (single-column scale); widened at runtime for merged scales
-const SCROLL_BTN_BOTTOM = TIME_AXIS_H + 30; // px from the plot's bottom edge — a row above the settings gear so they never overlap
+const SCROLL_BTN_BOTTOM = TIME_AXIS_H + 14; // px from the plot's bottom edge — the corner slot also used by the opt-in `settings` gear (off by default)
 const SCROLL_BTN_PROXIMITY_PX = 120; // the button reveals only while the cursor is within this radius of its center
 const MIN_VISIBLE_BARS = 2; // never zoom/pan so far that fewer than this many candles stay on screen (the only pan limit)
 const ZOOM_OUT_MARGIN_BARS = 6; // breathing room at max zoom-out: all bars + this margin fill the width (no thin strip)
@@ -171,6 +173,8 @@ export class NativeRenderer implements IChartRenderer {
     private indicatorValuesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
+    /** Host override of the legend's fold toggle — held here so a remount re-applies it. */
+    private legendOverviewAction: (() => void) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
     private keyboard: KeyboardController | null = null;
     private keyboardEnabled = true;
@@ -263,6 +267,9 @@ export class NativeRenderer implements IChartRenderer {
     // pane carries merged (own-scale) columns; the constant only clears a single-column scale.
     private scrollBtnRightPx = SCROLL_BTN_RIGHT;
 
+    // ── chrome size class (pushed by the host shell; see IChartRenderer.setLayoutMode) ──
+    private layoutMode: 'mobile' | 'desktop' = 'desktop';
+
     private readonly viewportCbs = new Set<(r: VisibleRange) => void>();
     private readonly crosshairCbs = new Set<(e: CrosshairEvent) => void>();
     private readonly chartTypeSettingsCbs = new Set<(typeId: string, values: Record<string, unknown>) => void>();
@@ -273,6 +280,7 @@ export class NativeRenderer implements IChartRenderer {
     private factoryConfig: ChartConfig | null = null;
     private hostSettingsSections: HostSettingsSection[] = [];
     private readonly clickCbs = new Set<(e: ClickEvent) => void>();
+    private readonly axisLongPressCbs = new Set<(e: AxisLongPressEvent) => void>();
     private readonly inputChangeCbs = new Set<(e: InputChangeEvent) => void>();
     private readonly removeIndicatorCbs = new Set<(id: string) => void>();
     private readonly toggleVisibleCbs = new Set<(id: string, visible: boolean) => void>();
@@ -903,7 +911,10 @@ export class NativeRenderer implements IChartRenderer {
     /** Port surface: hosts (bottom-bar / chrome buttons) open the same dialog as the
      *  in-chart gear — created on demand, independent of the gear feature being enabled. */
     openSettingsDialog(section?: string): void {
-        if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
+        if (!this.settingsDialog && this.plot) {
+            this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
+            this.settingsDialog.setLayoutMode(this.layoutMode);
+        }
         this.toggleSettingsDialog(section);
     }
 
@@ -1022,11 +1033,18 @@ export class NativeRenderer implements IChartRenderer {
         this.updateScrollToRealtimeButton();
     };
 
-    /** Show the button only when the latest bar is scrolled off the right edge AND the cursor is nearby. */
+    /** Show the button only when the latest bar is scrolled off the right edge. On desktop the
+     *  cursor must also be nearby (hover reveal); on mobile — no hovering cursor — the button
+     *  appears whenever the latest bars are off-screen and hides again once the view is back
+     *  at the right edge. */
     private updateScrollToRealtimeButton(): void {
         const btn = this.scrollButton;
         if (!btn) return;
         const latestOffScreen = this.coords.barCount > 0 && this.coords.getViewport().rightOffset < 0;
+        if (this.layoutMode === 'mobile') {
+            btn.style.display = latestOffScreen ? 'flex' : 'none';
+            return;
+        }
         btn.style.display = latestOffScreen && this.pointerNearScrollBtn ? 'flex' : 'none';
     }
 
@@ -1267,6 +1285,9 @@ export class NativeRenderer implements IChartRenderer {
             fling: (v) => this.fling(v),
             onPointerMove: (x, y) => this.handlePointerMove(x, y),
             onClick: (x) => this.handleClick(x),
+            onAxisLongPress: (axis, x, y) => {
+                for (const cb of this.axisLongPressCbs) cb({ axis, x, y });
+            },
             beginPriceScale: (x, y) => this.beginPriceScale(x, y),
             priceScaleBy: (dy) => this.priceScaleBy(dy),
             beginPricePan: (y) => this.beginPricePan(y),
@@ -1322,6 +1343,15 @@ export class NativeRenderer implements IChartRenderer {
             setToolbarGutter: (px) => this.setToolbarGutter(px),
         });
         this.userDrawings.historyChords = this.historyChordsEnabled; // may be set before init()
+        // Honor a layout mode pushed before mount (the shell may set it ahead of the chart build).
+        if (this.layoutMode === 'mobile') {
+            this.mountContainer?.setAttribute('data-vela-layout', this.layoutMode);
+            this.userDrawings.setLayoutMode(this.layoutMode);
+            if (this.scrollButton) {
+                this.scrollButton.style.width = `${SCROLL_BTN_SIZE_TOUCH}px`;
+                this.scrollButton.style.height = `${SCROLL_BTN_SIZE_TOUCH}px`;
+            }
+        }
 
         this.keyboard = new KeyboardController({
             panByBars: (bars) => this.panByBars(bars),
@@ -1336,11 +1366,13 @@ export class NativeRenderer implements IChartRenderer {
         this.setKeyboardEnabled(this.keyboardEnabled); // accessible by default; wires focus + ARIA
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
+        this.inputsUI.setLayoutMode(this.layoutMode);
         this.inputsUI.setTitlesVisible(this.indicatorTitlesOn); // a remount keeps the toggle state
         this.inputsUI.setValuesVisible(this.indicatorValuesOn);
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setLegendActions(this.legendActionsProvider);
+        this.inputsUI.setLegendOverviewAction(this.legendOverviewAction);
         this.inputsUI.setOnChange((c) => {
             for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value });
         });
@@ -1888,6 +1920,15 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI?.setLegendActions(provider);
     }
 
+    setLegendOverviewAction(action: (() => void) | null): void {
+        this.legendOverviewAction = action;
+        this.inputsUI?.setLegendOverviewAction(action);
+    }
+
+    openIndicatorSettings(indicatorId: string): void {
+        this.inputsUI?.openSettingsFor(indicatorId);
+    }
+
     /**
      * Hide/show a mounted indicator. Hiding drops its model from the scene (so every paint path —
      * series, fills, drawings, tables, glow, data window — skips it) while keeping its z key and its
@@ -1949,6 +1990,26 @@ export class NativeRenderer implements IChartRenderer {
         return () => this.removeIndicatorCbs.delete(cb);
     }
 
+    /** Port surface: the host shell's chrome size class. Mobile switches the renderer
+     *  chrome to its touch-first presentation — fullscreen dialogs, no docked drawing
+     *  toolbar (the shell provides its own picker), the scroll-to-latest button shown
+     *  whenever the latest bars are off-screen (touch has no cursor proximity). */
+    setLayoutMode(mode: 'mobile' | 'desktop'): void {
+        if (mode === this.layoutMode) return;
+        this.layoutMode = mode;
+        this.mountContainer?.setAttribute('data-vela-layout', mode);
+        this.userDrawings?.setLayoutMode(mode);
+        this.settingsDialog?.setLayoutMode(mode);
+        this.inputsUI?.setLayoutMode(mode);
+        if (this.scrollButton) {
+            // A finger needs a larger target than a cursor.
+            const px = mode === 'mobile' ? SCROLL_BTN_SIZE_TOUCH : SCROLL_BTN_SIZE;
+            this.scrollButton.style.width = `${px}px`;
+            this.scrollButton.style.height = `${px}px`;
+        }
+        this.updateScrollToRealtimeButton();
+    }
+
     setSettingsSections(sections: HostSettingsSection[]): void {
         this.hostSettingsSections = sections;
         this.settingsDialog?.setHostSections(sections);
@@ -1977,6 +2038,11 @@ export class NativeRenderer implements IChartRenderer {
     onClick(cb: (e: ClickEvent) => void): Unsubscribe {
         this.clickCbs.add(cb);
         return () => this.clickCbs.delete(cb);
+    }
+
+    onAxisLongPress(cb: (e: AxisLongPressEvent) => void): Unsubscribe {
+        this.axisLongPressCbs.add(cb);
+        return () => this.axisLongPressCbs.delete(cb);
     }
 
     onViewportChange(cb: (range: VisibleRange) => void): Unsubscribe {

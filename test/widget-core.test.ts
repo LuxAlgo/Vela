@@ -115,7 +115,7 @@ describe('widget chrome pure helpers', () => {
         expect(tzMenuLabel('Etc/UTC', 'UTC')).toBe('UTC');
         expect(tzMenuLabel('Europe/Paris', 'Paris')).toMatch(/^\(UTC\+[12]\) Paris$/); // CET/CEST
         expect(tzButtonLabel('Etc/UTC')).toBe('UTC');
-        expect(tzButtonLabel('Asia/Tokyo')).toBe('UTC+9 Tokyo');
+        expect(tzButtonLabel('Asia/Tokyo')).toBe('UTC+9');
     });
 
     it('price-style labels: built-ins + registry labels + raw id fallback', () => {
@@ -569,23 +569,23 @@ describe('resolveIndicators — async loader form', () => {
 
 describe('watermarkFontPx — the mark fits the chart, not the viewport', () => {
     it('keeps the cap when the text already fits with room to spare', () => {
-        // Text is 500px wide at the 72px cap; a 900px chart holds it (900*0.9 = 810 ≥ 500).
-        expect(watermarkFontPx(900, 500)).toBe(72);
+        // Text is 500px wide at the 36px cap; a 900px chart holds it (900*0.9 = 810 ≥ 500).
+        expect(watermarkFontPx(900, 500)).toBe(36);
     });
 
     it('shrinks proportionally when the chart is narrower than the text', () => {
-        // A 400px multichart cell: 72 * (400*0.9)/500 = 51.84 → floored.
-        expect(watermarkFontPx(400, 500)).toBe(51);
+        // A 400px multichart cell: 36 * (400*0.9)/500 = 25.92 → floored.
+        expect(watermarkFontPx(400, 500)).toBe(25);
         // Half the cell again → half the font.
-        expect(watermarkFontPx(200, 500)).toBe(25);
+        expect(watermarkFontPx(200, 500)).toBe(12); // floors at MIN
     });
 
     it('never drops below the floor nor exceeds the cap', () => {
         expect(watermarkFontPx(30, 500)).toBe(12); // tiny cell → floor
-        expect(watermarkFontPx(100000, 10)).toBe(72); // huge chart → cap
+        expect(watermarkFontPx(100000, 10)).toBe(36); // huge chart → cap
     });
 
     it('an unmeasurable text (0 width) keeps the cap instead of dividing by zero', () => {
-        expect(watermarkFontPx(400, 0)).toBe(72);
+        expect(watermarkFontPx(400, 0)).toBe(36);
     });
 });

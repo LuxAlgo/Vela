@@ -86,6 +86,17 @@ const CSS = `
 }
 .vela-panel-resizer:hover::after,
 .vela-panel-resizer[data-dragging]::after { background: var(--vela-accent); }
+/* Mobile: a 280px column would crush a phone-width chart — the panel overlays the
+   chart area instead (its flex parent is position:relative), full-bleed, closed by
+   the same header ✕. Width dragging is a pointer affordance; off on mobile. */
+[data-layout='mobile'] .vela-panel {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    z-index: 25;
+    border-left: none;
+}
+[data-layout='mobile'] .vela-panel-resizer { display: none; }
 `;
 
 /** Per-panel width policy. Omitted fields fall back to the module defaults. */

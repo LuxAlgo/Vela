@@ -120,6 +120,7 @@ registerIcon(
 
 // ── disclosure, row actions and menu verbs (side panels, nested menus) ──
 registerIcon('chevron-right', S('<path d="m6 3.5 4.5 4.5L6 12.5"/>'));
+registerIcon('chevron-left', S('<path d="M10 3.5 5.5 8l4.5 4.5"/>'));
 registerIcon('chevron-down', S('<path d="M3.5 6 8 10.5 12.5 6"/>'));
 registerIcon('chevron-up', S('<path d="M3.5 10 8 5.5 12.5 10"/>'));
 registerIcon('chevrons-right', S('<path d="m4 3.5 4.5 4.5L4 12.5"/><path d="m8.5 3.5 4.5 4.5-4.5 4.5"/>'));
@@ -150,6 +151,7 @@ registerIcon('star', S('<path d="M8 2.2l1.75 3.55 3.9.55-2.8 2.75.65 3.9L8 11.1l
 registerIcon('star-filled', S('<path d="M8 2.2l1.75 3.55 3.9.55-2.8 2.75.65 3.9L8 11.1l-3.5 1.85.65-3.9-2.8-2.75 3.9-.55z"/>', 'fill="currentColor"'));
 registerIcon('grip', S('<circle cx="6" cy="3.5" r="1"/><circle cx="10" cy="3.5" r="1"/><circle cx="6" cy="8" r="1"/><circle cx="10" cy="8" r="1"/><circle cx="6" cy="12.5" r="1"/><circle cx="10" cy="12.5" r="1"/>', 'fill="currentColor" stroke="none"'));
 registerIcon('kebab', S('<circle cx="8" cy="3.2" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="12.8" r="1.2"/>', 'fill="currentColor" stroke="none"'));
+registerIcon('burger', S('<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>'));
 registerIcon('reset', S('<rect x="6" y="6" width="4" height="4" rx="0.8"/><path d="M2.2 8a5.8 5.8 0 1 0 1.9-4.3L2.2 5.3"/><path d="M2.2 2.2v3.1h3.1"/>'));
 
 // ── pane chrome (stack order, collapse, maximize) ──

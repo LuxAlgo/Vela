@@ -75,6 +75,7 @@ export type {
     IndicatorRenderHandle,
     CrosshairEvent,
     ClickEvent,
+    AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,
     DataWindowReadout,

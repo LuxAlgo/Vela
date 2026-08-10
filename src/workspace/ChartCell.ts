@@ -519,6 +519,12 @@ export class ChartCell {
         this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
     }
 
+    /** Multi-cell grids keep the status line on one row and hide what doesn't fit —
+     *  the workspace flips this with the layout (see Statusline.setFitMode). */
+    setStatuslineFit(on: boolean): void {
+        this.statusline?.setFitMode(on);
+    }
+
     /** The workspace shell keeps the app theme; the cell host's tokens re-derive from
      *  the LIVE plot surface (see {@link applyPlotOverlayTokens}). */
     private syncPlotOverlayTokens(): void {
