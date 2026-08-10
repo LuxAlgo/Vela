@@ -46,8 +46,10 @@ export function attachChromeTooltip(anchor: HTMLElement, opts: ChromeTooltipOpti
         const doc = anchor.ownerDocument;
         tip = doc.createElement('div');
         tip.textContent = text;
+        // The tooltip layer token (60) keeps tips above the in-chart dialogs (40) — the
+        // settings dialog's own control tips used to open BEHIND its card at a fixed 25.
         tip.style.cssText =
-            'position:absolute;z-index:25;pointer-events:none;' +
+            'position:absolute;z-index:var(--vela-z-tooltip);pointer-events:none;' +
             'background:var(--vela-bg);border:1px solid var(--vela-border);color:var(--vela-fg);' +
             'border-radius:var(--vela-radius-md);padding:4px 9px;box-shadow:var(--vela-shadow);' +
             'font:var(--vela-font-size-md) var(--vela-font);' +

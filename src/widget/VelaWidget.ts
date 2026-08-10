@@ -98,6 +98,8 @@ export class VelaWidget {
     private watermarkOn: boolean;
     /** Indicator titles (the in-chart legend rows) shown — reapplied across rebuilds. */
     private indicatorTitlesOn = true;
+    /** Plot values beside the legend titles shown — reapplied across rebuilds. */
+    private indicatorValuesOn = true;
     private pendingRange: RangePreset | null = null;
     /** Symbol already reported as unservable (the core re-reports on every index settle). */
     private unresolvedToasted: string | null = null;
@@ -176,6 +178,7 @@ export class VelaWidget {
         this.bars = Number(fromUrl.bars ?? bootCell?.bars ?? opts.bars ?? 1000);
         this.watermarkOn = bootCell?.watermark !== undefined ? bootCell.watermark : opts.watermark !== false;
         this.indicatorTitlesOn = bootCell?.indicatorTitles ?? true;
+        this.indicatorValuesOn = bootCell?.indicatorValues ?? true;
         this.favs = boot?.favorites ? [...boot.favorites] : [];
         this.savedConfig = bootCell?.rendererConfig ?? null;
         this.savedDrawings = bootCell?.drawings ?? null;
@@ -226,7 +229,12 @@ export class VelaWidget {
                 if (i < present.length) this.removeNative(present[i]!.type);
                 else this.removeInstance(i - present.length);
             },
-            onOpenChange: (open) => this.trackDialog(open),
+            onOpenChange: (open) => {
+                // Same rule as the symbol search: the renderer's in-chart dialogs never see
+                // an outside-dismiss from a topbar dialog — close them explicitly.
+                if (open) this.inner?.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
         });
         this.tfQuick = new TimeframeQuick({
             host: this.root,
@@ -515,6 +523,7 @@ export class VelaWidget {
         if (this.bars > 0) cell.bars = this.bars;
         cell.watermark = this.watermarkOn;
         cell.indicatorTitles = this.indicatorTitlesOn;
+        cell.indicatorValues = this.indicatorValuesOn;
         if (this.inner) {
             cell.rendererConfig = this.inner.renderer.getConfig();
             cell.drawings = this.inner.drawings.toJSON();
@@ -566,6 +575,7 @@ export class VelaWidget {
             if (style && style !== this.priceStyle) this.setPriceStyle(style);
             if (cell.watermark !== undefined && cell.watermark !== this.watermarkOn) this.setWatermarkVisible(cell.watermark);
             if (cell.indicatorTitles !== undefined && cell.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cell.indicatorTitles);
+            if (cell.indicatorValues !== undefined && cell.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(cell.indicatorValues);
             if (cell.rendererConfig != null) {
                 this.savedConfig = cell.rendererConfig;
                 this.inner?.renderer.applyConfig(cell.rendererConfig);
@@ -676,6 +686,13 @@ export class VelaWidget {
     setIndicatorTitlesVisible(visible: boolean): void {
         this.indicatorTitlesOn = visible;
         this.inner?.renderer.set('indicatorTitles', visible);
+        this.markStateDirty();
+    }
+
+    /** Show/hide the plot values beside every indicator's legend title (persisted). */
+    setIndicatorValuesVisible(visible: boolean): void {
+        this.indicatorValuesOn = visible;
+        this.inner?.renderer.set('indicatorValues', visible);
         this.markStateDirty();
     }
 
@@ -962,6 +979,7 @@ export class VelaWidget {
         if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
         if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
         if (!this.indicatorTitlesOn) chart.renderer.set('indicatorTitles', false);
+        if (!this.indicatorValuesOn) chart.renderer.set('indicatorValues', false);
         // The renderer's settings dialog owns a Time zone row too (it commits through
         // applyConfig) — mirror it back so the bottom-bar clock/label and the persisted
         // state never disagree with the axis. `renderer.set` is a feature write, not an
@@ -1023,6 +1041,12 @@ export class VelaWidget {
                             label: 'Titles',
                             get: () => this.indicatorTitlesOn,
                             set: (v: boolean) => this.setIndicatorTitlesVisible(v),
+                        },
+                        {
+                            kind: 'toggle',
+                            label: 'Values',
+                            get: () => this.indicatorValuesOn,
+                            set: (v: boolean) => this.setIndicatorValuesVisible(v),
                         },
                     ],
                 },

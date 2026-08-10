@@ -124,14 +124,16 @@ describe('drawings/FixedRangeVolumeProfile', () => {
         expect(d.frvp.valueAreaPct).toBe(70);
         expect(d.frvp.widthPct).toBe(35);
         expect(d.frvp.anchor).toBe('left');
-        // Defaults come from the shared semantic palette, never from local literals.
-        expect(d.frvp.upColor).toBe(`${BULLISH}BF`);
-        expect(d.frvp.downColor).toBe(`${BEARISH}BF`);
-        expect(d.frvp.vaUpColor).toBe(`${BULLISH}66`);
-        expect(d.frvp.vaDownColor).toBe(`${BEARISH}66`);
+        // Defaults come from the shared semantic palette, never from local literals — and
+        // the value area is the emphasized (more opaque) region, the outside tails recede.
+        expect(d.frvp.upColor).toBe(`${BULLISH}66`);
+        expect(d.frvp.downColor).toBe(`${BEARISH}66`);
+        expect(d.frvp.vaUpColor).toBe(`${BULLISH}BF`);
+        expect(d.frvp.vaDownColor).toBe(`${BEARISH}BF`);
         expect(d.frvp.vahColor).toBe(NEUTRAL);
         expect(d.frvp.valColor).toBe(NEUTRAL);
-        expect(d.frvp.pocColor).toBe(ACCENT);
+        // Unset POC ink ⇒ the painter resolves the theme's contrast color per paint.
+        expect(d.frvp.pocColor).toBeUndefined();
         expect(d.frvp.developingPocStyle).toBe('dotted');
         expect(d.frvp.developingVaStyle).toBe('dotted');
         expect(d.frvp.developingPocColor).toBe(ACCENT);

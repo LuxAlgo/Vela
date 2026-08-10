@@ -17,6 +17,7 @@ import {
 } from '../../../core/drawings';
 import { icon, svg24, svg24Solid } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
+import { contrastColor } from '../../shared/drawing-geometry';
 import { buildColorPicker } from './colorPicker';
 
 /** A `{ path: value }` patch emitted as the user edits a control. */
@@ -690,14 +691,16 @@ export class DrawingSettingsPopup {
             const chk = document.createElement('input');
             chk.type = 'checkbox';
             chk.checked = Boolean(s[showPath]);
-            chk.style.cssText = `accent-color:${s[colorPath] as string};width:15px;height:15px;flex:none;cursor:pointer;`;
+            // An unset color (the POC's themed default) shows as the ink actually painted.
+            const current = (s[colorPath] as string | undefined) ?? contrastColor(t.background);
+            chk.style.cssText = `accent-color:${current};width:15px;height:15px;flex:none;cursor:pointer;`;
             chk.addEventListener('change', () => actions.patch({ [`frvp.${showPath}`]: chk.checked }));
             const lbl = document.createElement('span');
             lbl.textContent = label;
             lbl.style.cssText = 'flex:1;min-width:0;opacity:0.9;';
             const col = document.createElement('button');
             col.type = 'button';
-            let cur = s[colorPath] as string;
+            let cur = current;
             col.style.cssText = `width:18px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:0;cursor:pointer;background:${cur};padding:0;`;
             col.addEventListener('pointerdown', (e) => e.stopPropagation());
             col.addEventListener('click', (e) => {

@@ -26,7 +26,7 @@ import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
 import { isLineLikeSeries } from '../../core/model/series';
-import { InputsUI } from '../shared/InputsUI';
+import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
 import { TableOverlay } from '../shared/TableOverlay';
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
@@ -167,6 +167,8 @@ export class NativeRenderer implements IChartRenderer {
     private symbolPicker: SymbolPickerFn | null = null;
     /** Indicator titles (the legend rows) shown — held here so a remount re-applies it. */
     private indicatorTitlesOn = true;
+    /** Plot values beside the legend titles shown — held here so a remount re-applies it. */
+    private indicatorValuesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
@@ -298,7 +300,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -433,6 +435,12 @@ export class NativeRenderer implements IChartRenderer {
                 this.indicatorTitlesOn = value !== false;
                 this.inputsUI?.setTitlesVisible(this.indicatorTitlesOn);
                 return; // own DOM, no repaint needed
+            case 'indicatorValues':
+                // Show/hide the plot values beside every legend title (the settings dialog's
+                // Indicators → Values toggle); clears any per-row context-menu overrides.
+                this.indicatorValuesOn = value !== false;
+                this.inputsUI?.setValuesVisible(this.indicatorValuesOn);
+                return; // own DOM, no repaint needed
             case 'attribution':
                 // `false` hides it, `true` restores the built-in mark, a non-empty STRING
                 // puts the host's own mark in that corner (see the NOTICE).
@@ -501,6 +509,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'historyChords': return this.historyChordsEnabled;
             case 'settings': return this.settingsEnabled;
             case 'indicatorTitles': return this.indicatorTitlesOn;
+            case 'indicatorValues': return this.indicatorValuesOn;
             case 'attribution': return this.attributionHtml ?? this.attributionEnabled;
             case 'dialogHost': return this.dialogHost ?? undefined;
             default: return undefined;
@@ -1328,6 +1337,7 @@ export class NativeRenderer implements IChartRenderer {
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
         this.inputsUI.setTitlesVisible(this.indicatorTitlesOn); // a remount keeps the toggle state
+        this.inputsUI.setValuesVisible(this.indicatorValuesOn);
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setLegendActions(this.legendActionsProvider);
@@ -1805,7 +1815,11 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.indicators.set(model.id, model);
         this.refreshAnchorOffset(model);
         this.scene.assignIndicatorZ(model.id); // default z = mount order (later ⇒ in front)
-        this.inputsUI.upsert(model.id, model.title, model.inputs, model.inputValues, model.paneId, { native: !!model.native });
+        // Legend chip prefers the compact shorttitle; the settings dialog keeps the full title.
+        this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
+            native: !!model.native,
+            ...(model.shorttitle ? { settingsTitle: model.title } : {}),
+        });
         this.syncTables(model);
         if (model.native?.type === 'volume') {
             this.volumeActive = true; // the volume layer follows the indicator's presence
@@ -2138,6 +2152,7 @@ export class NativeRenderer implements IChartRenderer {
         this.skeletonClockMs += dtMs; // drives the loading-skeleton pulse (harmless when none show)
         this.paintData();
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx());
+        this.updateLegendValues(); // the animator owns the frame — renderFrame won't run
         this.emitViewportChange();
         return active;
     }
@@ -2602,28 +2617,51 @@ export class NativeRenderer implements IChartRenderer {
     private dataWindowGroups(idx: number, pricePane: PaneNode | null): DataWindowGroup[] {
         const groups: DataWindowGroup[] = [];
         for (const model of this.scene.indicators.values()) {
-            const pane = (model.paneId ? this.scene.panes.get(model.paneId) : null) ?? pricePane;
-            const off = this.scene.offsetOf(model.id);
-            const rows: DataWindowRow[] = [];
-            for (const s of model.series) {
-                let value: number | null | undefined;
-                let color: string;
-                if (s.kind === 'candle' || s.kind === 'bar') {
-                    value = s.bars[idx - off]?.close;
-                    color = s.style?.up ?? this.theme.upColor;
-                } else if (isLineLikeSeries(s)) {
-                    if (s.visible === false) continue;
-                    value = s.points[idx - off]?.value;
-                    color = s.points[idx - off]?.color ?? s.style.color;
-                } else {
-                    continue; // markers carry no scalar readout
-                }
-                if (value == null || !Number.isFinite(value)) continue;
-                rows.push({ label: s.title || model.title, value: this.dataWindowFmt(value, pane), color });
-            }
+            const rows = this.dataWindowRowsFor(model, idx, pricePane);
             if (rows.length) groups.push({ name: model.title, rows });
         }
         return groups;
+    }
+
+    /** One indicator's readout at bar `idx`: a row per drawable plot, formatted on its pane's scale. */
+    private dataWindowRowsFor(model: IndicatorModel, idx: number, pricePane: PaneNode | null): DataWindowRow[] {
+        const pane = (model.paneId ? this.scene.panes.get(model.paneId) : null) ?? pricePane;
+        const off = this.scene.offsetOf(model.id);
+        const rows: DataWindowRow[] = [];
+        for (const s of model.series) {
+            let value: number | null | undefined;
+            let color: string;
+            if (s.kind === 'candle' || s.kind === 'bar') {
+                value = s.bars[idx - off]?.close;
+                color = s.style?.up ?? this.theme.upColor;
+            } else if (isLineLikeSeries(s)) {
+                if (s.visible === false) continue;
+                value = s.points[idx - off]?.value;
+                color = s.points[idx - off]?.color ?? s.style.color;
+            } else {
+                continue; // markers carry no scalar readout
+            }
+            if (value == null || !Number.isFinite(value)) continue;
+            rows.push({ label: s.title || model.title, value: this.dataWindowFmt(value, pane), color });
+        }
+        return rows;
+    }
+
+    /** Refresh the plot values beside every legend title — the same readout the data window
+     *  shows (crosshair bar, else the latest bar), pushed per paint. A hidden indicator has
+     *  no scene model, so its row is absent from the map and its readout clears. */
+    private updateLegendValues(): void {
+        if (!this.inputsUI) return;
+        const n = this.bars.length;
+        const values = new Map<string, LegendPlotValue[]>();
+        if (n > 0) {
+            const idx = this.hoverLogical != null ? this.hoverLogical : n - 1;
+            const pricePane = this.dataWindowPricePane();
+            for (const model of this.scene.indicators.values()) {
+                values.set(model.id, this.dataWindowRowsFor(model, idx, pricePane).map((r) => ({ value: r.value, color: r.color })));
+            }
+        }
+        this.inputsUI.setPlotValues(values);
     }
 
     private renderFrame(level: InvalidateLevel): void {
@@ -2651,6 +2689,9 @@ export class NativeRenderer implements IChartRenderer {
         // Hover-testing SDK layers (repaintOnCursor) follow pointer moves too — each owns
         // one transparent canvas, so this stays as cheap as the crosshair tier itself.
         if (!repaintsData(level) && this.paintedData) this.repaintCursorLayers();
+        // Legend values follow the same tiers (hover moves the read bar, data changes the
+        // value); the push diffs per row, so an unchanged frame touches no DOM.
+        this.updateLegendValues();
     }
 
     /** Repaint the SDK layers that opted into cursor tracking (their own canvas only). */

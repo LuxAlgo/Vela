@@ -75,6 +75,18 @@ describe('NativeRenderer.getDataWindowReadout', () => {
     });
 });
 
+describe('indicatorValues feature (legend plot values)', () => {
+    it('is a supported feature, on by default, and round-trips through apply/read', () => {
+        const { r } = makeRenderer();
+        expect(r.features).toContain('indicatorValues');
+        expect(r.readFeature('indicatorValues')).toBe(true);
+        r.applyFeature('indicatorValues', false);
+        expect(r.readFeature('indicatorValues')).toBe(false);
+        r.applyFeature('indicatorValues', true);
+        expect(r.readFeature('indicatorValues')).toBe(true);
+    });
+});
+
 describe('RendererControl.dataWindowReadout', () => {
     const readout: DataWindowReadout = { date: '2023-11-14', time: '22:13', ohlc: null, groups: [] };
 
