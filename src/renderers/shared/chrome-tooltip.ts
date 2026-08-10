@@ -70,18 +70,23 @@ export function attachChromeTooltip(anchor: HTMLElement, opts: ChromeTooltipOpti
         }
     };
 
-    const arm = (): void => {
+    // Mouse only: a tap fires a SYNTHETIC mouseenter/pointerenter with no leave to
+    // follow (the emulated cursor stays put), so a touch-armed tip would open after the
+    // tap and stick around forever. pointerenter carries the pointer type; mouseenter
+    // does not — which is why the mouse events are not used here.
+    const arm = (e: PointerEvent): void => {
+        if (e.pointerType !== 'mouse') return;
         clear();
         timer = window.setTimeout(show, opts.delayMs ?? 700);
     };
 
-    anchor.addEventListener('mouseenter', arm);
-    anchor.addEventListener('mouseleave', clear);
+    anchor.addEventListener('pointerenter', arm);
+    anchor.addEventListener('pointerleave', clear);
     anchor.addEventListener('pointerdown', clear); // a click answers the question the tip poses
 
     return () => {
-        anchor.removeEventListener('mouseenter', arm);
-        anchor.removeEventListener('mouseleave', clear);
+        anchor.removeEventListener('pointerenter', arm);
+        anchor.removeEventListener('pointerleave', clear);
         anchor.removeEventListener('pointerdown', clear);
         clear();
     };

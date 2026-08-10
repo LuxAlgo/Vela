@@ -127,7 +127,13 @@ export class DrawingsDrawer {
     constructor(private readonly opts: DrawingsDrawerOptions) {
         const doc = opts.host.ownerDocument;
         injectStyles(STYLE_ID, CSS, doc);
-        this.drawer = new Drawer({ host: opts.host, title: 'Drawings', onOpenChange: opts.onOpenChange });
+        this.drawer = new Drawer({
+            host: opts.host,
+            title: 'Drawings',
+            onOpenChange: opts.onOpenChange,
+            // Swiping across the tool list pages through the group tabs.
+            onSwipe: (dir) => this.stepGroup(dir === 'left' ? 1 : -1),
+        });
 
         const sticky = doc.createElement('div');
         sticky.className = 'vela-dd-sticky';
@@ -166,6 +172,19 @@ export class DrawingsDrawer {
 
     destroy(): void {
         this.drawer.destroy();
+    }
+
+    /** Move the active group tab by `step` (a horizontal swipe on the list). Search mode
+     *  shows the flattened results — no tabs to page through, so the swipe is inert. */
+    private stepGroup(step: number): void {
+        if (this.input.value.trim()) return;
+        const groups = this.definition.groups;
+        const next = groups[groups.findIndex((g) => g.id === this.activeGroup) + step];
+        if (!next) return;
+        this.activeGroup = next.id;
+        this.renderTabs();
+        this.renderList();
+        this.tabs.querySelector('[data-active="1"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
 
     private renderTabs(): void {

@@ -134,7 +134,9 @@ export class IndicatorPicker {
                 if (open) {
                     this.search.value = '';
                     this.refresh();
-                    setTimeout(() => this.search.focus(), 0);
+                    // Desktop only: focusing the search on a touch device would pop the
+                    // on-screen keyboard over the just-opened fullscreen picker.
+                    if (!this.search.closest('[data-layout="mobile"]')) setTimeout(() => this.search.focus(), 0);
                 }
                 opts.onOpenChange?.(open);
             },

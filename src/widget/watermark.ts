@@ -58,6 +58,9 @@ export class Watermark {
         injectStyles(STYLE_ID, CSS, host.ownerDocument);
         this.el = host.ownerDocument.createElement('div');
         this.el.className = 'vela-watermark';
+        // Opt into the renderer's PNG export, beneath the canvases — on screen the mark
+        // sits behind the candles.
+        this.el.dataset.velaScreenshot = 'under';
         this.text = host.ownerDocument.createElement('span');
         this.el.appendChild(this.text);
         host.appendChild(this.el);

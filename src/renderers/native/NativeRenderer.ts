@@ -59,6 +59,7 @@ import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
+import { rasterizeOverlay } from '../shared/dom-raster';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
 import { DARK_THEME, LIGHT_THEME } from '../../core/theme';
@@ -1069,17 +1070,20 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     /**
-     * Export the current chart as a PNG data URL by compositing the geometry (L0)
-     * + chrome (L1) + user-drawings (L1.5) canvases onto an offscreen canvas. The
-     * background is filled first (the canvas2d data layer is transparent — its bg
-     * lives on the wrapper), and a fresh synchronous paint runs first so the WebGL2
-     * backend's (non-preserved) drawing buffer is populated before it's read back
-     * this tick — the same paint also repaints the drawings layers, so they're
-     * current (interleaved drawings are already inside the data composite). They're
-     * drawn bottom-up in DOM stacking order so the front user drawings (trend lines,
-     * boxes, etc.) sit above the Pine drawings on the chrome layer, matching what's
-     * on screen. The crosshair (L2) and DOM overlays (tables, legend) are
-     * intentionally excluded.
+     * Export the current chart as a PNG data URL by compositing EVERY plot canvas onto
+     * an offscreen canvas, in the same stacking order the DOM shows: plugin layers
+     * below the data, geometry (L0), volume columns (L0.25), the visible-range volume
+     * profile (L0.6), plugin layers above the data, chrome (L1), and user drawings
+     * (L1.5). The background is filled first (the canvas2d data layer is transparent —
+     * its bg lives on the wrapper), and a fresh synchronous paint runs first so the
+     * WebGL2 backend's (non-preserved) drawing buffer is populated before it's read
+     * back this tick — the same paint also repaints the drawings layers, so they're
+     * current. DOM chrome joins as a best-effort text/chip raster (see
+     * `rasterizeOverlay`): the per-pane indicator legends, plus any host overlay that
+     * opts in with a `data-vela-screenshot` attribute on the mount container's
+     * subtree (the widget marks its status line, and its symbol watermark with
+     * `"under"` — drawn beneath the canvases, where it sits on screen). Only the
+     * crosshair (L2) is intentionally excluded.
      */
     screenshot(): string | null {
         if (!this.dataCanvas) return null;
@@ -1092,9 +1096,26 @@ export class NativeRenderer implements IChartRenderer {
         if (!ctx) return null;
         ctx.fillStyle = this.theme.background;
         ctx.fillRect(0, 0, out.width, out.height);
-        ctx.drawImage(this.dataCanvas, 0, 0);
-        ctx.drawImage(this.chromeCanvas, 0, 0);
-        ctx.drawImage(this.drawingsCanvas, 0, 0);
+        // DOM replicas share the plot's coordinate space (the canvases fill it).
+        const plotRect = this.plot?.getBoundingClientRect();
+        const frame = plotRect && plotRect.width > 0 ? { left: plotRect.left, top: plotRect.top, dpr: out.width / plotRect.width } : null;
+        const hostMarked = [...(this.mountContainer?.querySelectorAll('[data-vela-screenshot]') ?? [])];
+        if (frame) {
+            for (const el of hostMarked) {
+                if (el.getAttribute('data-vela-screenshot') === 'under') rasterizeOverlay(ctx, el, frame);
+            }
+        }
+        const below = this.extLayers.filter((l) => l.def.placement === 'below-data').map((l) => l.canvas);
+        const above = this.extLayers.filter((l) => l.def.placement !== 'below-data').map((l) => l.canvas);
+        for (const canvas of [...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas]) {
+            if (canvas && canvas.width > 0 && canvas.height > 0) ctx.drawImage(canvas, 0, 0);
+        }
+        if (frame) {
+            for (const lg of this.plot?.querySelectorAll('[data-vela-pane]') ?? []) rasterizeOverlay(ctx, lg, frame);
+            for (const el of hostMarked) {
+                if (el.getAttribute('data-vela-screenshot') !== 'under') rasterizeOverlay(ctx, el, frame);
+            }
+        }
         return out.toDataURL('image/png');
     }
 

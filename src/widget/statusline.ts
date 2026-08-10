@@ -96,9 +96,15 @@ const CSS = `
  * class here would shift every chart on the page, including statusline-less ones. */
 .vela-has-statusline [data-vela-pane='price'] { transform: translateY(26px); }
 /* Mobile: two-line chip — logo / symbol / meta / market status on one aligned row, the
- * bar change on the next. Full O/H/L/C stays hidden (too dense on a phone-width plot). */
+ * bar change on the next. Full O/H/L/C stays hidden (too dense on a phone-width plot).
+ * GRID, not a wrapping flexbox: an absolutely positioned wrapping flex container sizes
+ * to the one-line sum of ALL segments (max-content), so its background used to stretch
+ * far past the market badge; a grid hugs the widest actual row. The meta column may
+ * shrink (it carries the ellipsis), the others wrap their content. */
 [data-layout='mobile'] .vela-statusline {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, auto) auto;
+    justify-content: start;
     align-items: center;
     row-gap: 1px;
     max-width: calc(100% - var(--vela-toolbar-gutter, 0px) - var(--vela-scale-gutter, 0px) - 24px);
@@ -119,9 +125,8 @@ const CSS = `
 [data-layout='mobile'] .vela-statusline .vela-sl-market { align-self: center; }
 [data-layout='mobile'] .vela-statusline .vela-sl-ohlc { display: none !important; }
 [data-layout='mobile'] .vela-statusline .vela-sl-change {
-    flex-basis: 100%;
-    /* Sit under the text column (past the avatar + its gap), not under the logo. */
-    padding-left: calc(18px + var(--vela-space-2));
+    /* Second row, under the text column — the avatar keeps the first column. */
+    grid-column: 2 / -1;
     font-size: var(--vela-font-size-sm);
     line-height: 1.2;
 }
@@ -131,6 +136,7 @@ const CSS = `
  * overflow:hidden only guards the transient between a resize and the next measure.
  * Placed after the mobile block on purpose: same specificity, later wins. */
 .vela-statusline.vela-sl-fit {
+    display: flex; /* undo the mobile grid — fit mode is one flex row again */
     flex-wrap: nowrap;
     align-items: center;
     max-width: calc(100% - var(--vela-toolbar-gutter, 0px) - var(--vela-scale-gutter, 0px) - 24px);
@@ -257,6 +263,8 @@ export class Statusline {
         host.classList.add('vela-has-statusline'); // scopes the price-legend shift to THIS host
         this.el = doc.createElement('div');
         this.el.className = 'vela-statusline';
+        // Opt into the renderer's PNG export — the status line is part of what's on screen.
+        this.el.dataset.velaScreenshot = '1';
         // Display the bare ticker — the venue prefix is identity, not label; the venue
         // itself shows in the meta segment ("· BINANCE · 1h") beside it.
         const ticker = parseSymbol(symbol).ticker;
