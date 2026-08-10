@@ -2625,6 +2625,9 @@ export class NativeRenderer implements IChartRenderer {
 
     /** One indicator's readout at bar `idx`: a row per drawable plot, formatted on its pane's scale. */
     private dataWindowRowsFor(model: IndicatorModel, idx: number, pricePane: PaneNode | null): DataWindowRow[] {
+        // The volume native draws through its bespoke layer and mounts a series-less model, so
+        // its readout comes straight from the bar's volume instead of iterating `model.series`.
+        if (model.native?.type === 'volume') return this.volumeReadoutRows(model, idx);
         const pane = (model.paneId ? this.scene.panes.get(model.paneId) : null) ?? pricePane;
         const off = this.scene.offsetOf(model.id);
         const rows: DataWindowRow[] = [];
@@ -2645,6 +2648,19 @@ export class NativeRenderer implements IChartRenderer {
             rows.push({ label: s.title || model.title, value: this.dataWindowFmt(value, pane), color });
         }
         return rows;
+    }
+
+    /** The volume indicator's readout: the bar's volume, tinted with the layer's own direction
+     *  colors. Hiding volume keeps its model in the scene (only the layer is suppressed — see
+     *  `setIndicatorVisible`), so the hidden flag is checked here rather than by model absence. */
+    private volumeReadoutRows(model: IndicatorModel, idx: number): DataWindowRow[] {
+        if (this.volumeHidden) return [];
+        const bar = this.bars[idx];
+        const vol = bar?.volume;
+        if (bar == null || vol == null || !Number.isFinite(vol)) return [];
+        const cfg = this.scene.volumeLayer;
+        const color = bar.close >= bar.open ? (cfg?.upColor ?? this.theme.upColor) : (cfg?.downColor ?? this.theme.downColor);
+        return [{ label: model.title, value: formatVolume(vol), color }];
     }
 
     /** Refresh the plot values beside every legend title — the same readout the data window
