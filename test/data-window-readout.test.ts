@@ -73,6 +73,39 @@ describe('NativeRenderer.getDataWindowReadout', () => {
     it('no longer exposes a floating data-window feature — the readout is the only seam', () => {
         expect(new NativeRenderer().features).not.toContain('dataWindow');
     });
+
+    describe('volume indicator readout (series-less native model)', () => {
+        /** Mount a volume-shaped model + layer config straight into the scene (the layer draws
+         *  outside the model, so the readout must synthesize its row from the bar's volume). */
+        function withVolume(withVol = true): { r: NativeRenderer; anyR: any } {
+            const { r, anyR } = makeRenderer();
+            r.setBars(bars([100, 101, 105], withVol));
+            anyR.scene.indicators.set('vol1', { id: 'vol1', title: 'Volume', series: [], native: { type: 'volume' } });
+            anyR.scene.volumeLayer = { upColor: '#11aa11', downColor: '#aa1111', heightFrac: 0.2 };
+            anyR.volumeActive = true;
+            return { r, anyR };
+        }
+
+        it('reads the bar volume, abbreviated, tinted with the layer direction color', () => {
+            const { r } = withVolume();
+            const group = r.getDataWindowReadout().groups.find((g) => g.name === 'Volume');
+            expect(group?.rows).toEqual([{ label: 'Volume', value: '1.23K', color: '#11aa11' }]); // latest bar is up
+        });
+
+        it('uses the down color on a down bar', () => {
+            const { r } = withVolume();
+            r.setBars([...bars([100, 101], true), { time: 1_700_000_000_000 + 2 * HOUR, open: 110, high: 111, low: 98, close: 99, volume: 1234 }]);
+            const group = r.getDataWindowReadout().groups.find((g) => g.name === 'Volume');
+            expect(group?.rows[0]?.color).toBe('#aa1111');
+        });
+
+        it('yields no row without bar volume, and none while the indicator is hidden', () => {
+            expect(withVolume(false).r.getDataWindowReadout().groups).toEqual([]);
+            const hidden = withVolume();
+            hidden.anyR.volumeHidden = true; // hiding suppresses the layer but keeps the model
+            expect(hidden.r.getDataWindowReadout().groups).toEqual([]);
+        });
+    });
 });
 
 describe('indicatorValues feature (legend plot values)', () => {
