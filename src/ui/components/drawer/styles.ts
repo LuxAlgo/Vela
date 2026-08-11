@@ -73,6 +73,12 @@ export const DRAWER_CSS = `
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    /* Vertical pans stay native scrolling; horizontal moves reach the sheet's gesture
+       recognizer as pointer events (tab swipes). Without this the browser claims a
+       sideways touch as a scroll attempt and CANCELS the pointer stream, so swipes
+       never registered on real touch devices. Sideways-scrolling strips inside the
+       body opt back in with their own touch-action: pan-x. */
+    touch-action: pan-y;
     padding: 0 var(--vela-space-3) calc(var(--vela-space-3) + env(safe-area-inset-bottom, 0px));
 }
 .vela-drawer-body::-webkit-scrollbar { width: 8px; }

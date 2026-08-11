@@ -276,7 +276,9 @@ export class SettingsDialog {
         ensureControlStyles();
         const mobile = this.mobileLayout;
         const scrim = document.createElement('div');
-        scrim.style.cssText = 'position:absolute;inset:0;z-index:21;display:flex;align-items:flex-start;justify-content:center;background:transparent;padding-top:8vh;pointer-events:auto;';
+        // Above workspace splitters (z-index 30) and the active-cell ring — those live in
+        // the same stacking context when the dialog mounts on the multi-chart root.
+        scrim.style.cssText = 'position:absolute;inset:0;z-index:var(--vela-z-dialog);display:flex;align-items:flex-start;justify-content:center;background:transparent;padding-top:8vh;pointer-events:auto;';
         if (mobile) {
             // Fullscreen presentation: the card fills the chart area edge to edge.
             scrim.classList.add('vela-sd-mobile');

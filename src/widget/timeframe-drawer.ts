@@ -24,6 +24,8 @@ const CSS = `
     gap: 6px;
     overflow-x: auto;
     scrollbar-width: none;
+    /* Sideways-scrolling strip: keep its touches native scroll (the drawer body is pan-y). */
+    touch-action: pan-x;
     padding: 0 2px 14px;
 }
 .vela-tfd-ranges::-webkit-scrollbar { display: none; }

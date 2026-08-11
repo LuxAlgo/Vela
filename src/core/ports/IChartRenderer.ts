@@ -76,7 +76,14 @@ export interface CrosshairOHLC {
 
 export interface CrosshairEvent {
     time: Millis | null;
+    /** Value at the cursor on ITS pane's scale — a price on the price pane, an
+     *  indicator value on a study pane (which one: see {@link paneKind}). */
     price: number | null;
+    /** The kind of pane the cursor (and thus `price`) is on — how a consumer tells a
+     *  real price from a study-pane value (e.g. crosshair sync only mirrors the
+     *  horizontal level from the price pane). Optional and additive: a renderer that
+     *  doesn't track panes omits it. */
+    paneKind?: 'price' | 'study' | null;
     /** Value at the crosshair per series, keyed by stable series id. */
     values: ReadonlyMap<string, number>;
     /** The hovered price bar's OHLCV (null when the cursor is off any bar). */

@@ -3,7 +3,7 @@ import { DrawingInteraction } from '../src/renderers/native/drawings/DrawingInte
 import { createProjector } from '../src/renderers/native/drawings/Projector';
 import { effectiveSnapMode } from '../src/renderers/native/core/InputController';
 import { CoordinateSystem } from '../src/renderers/native/core/CoordinateSystem';
-import { createDrawing, DEFAULT_DRAWING_COLOR, type Drawing, type DrawingIntent, type DrawingStyle, type DrawingTypeKey, type Projector } from '../src/core/drawings';
+import { createDrawing, DEFAULT_DRAWING_COLOR, MAX_PATH_POINTS, type Drawing, type DrawingIntent, type DrawingStyle, type DrawingTypeKey, type Projector } from '../src/core/drawings';
 
 /** Linear projector: x = time, y = 100 − price, single pane 'price'. */
 function fakeProjector(): Projector {
@@ -362,6 +362,23 @@ describe('DrawingInteraction: variable + freehand placement', () => {
         const create = h.intents.find((i) => i.kind === 'create');
         expect(create?.kind === 'create' && create.doc.type).toBe('freehand');
         expect(create?.kind === 'create' && (create.doc.anchors.length >= 3)).toBe(true);
+    });
+
+    it('freehand: a marathon stroke keeps capturing past the path cap (the trail thins, never freezes)', () => {
+        const h = harness('freehand');
+        h.it.down(0, 50);
+        const samples = MAX_PATH_POINTS + 200; // enough 5px steps to overflow the cap
+        for (let i = 1; i <= samples; i++) h.it.move(i * 5, 50);
+        h.it.up(samples * 5, 50);
+        const create = h.intents.find((i) => i.kind === 'create');
+        expect(create?.kind).toBe('create');
+        if (create?.kind === 'create') {
+            expect(create.doc.anchors.length).toBeLessThanOrEqual(MAX_PATH_POINTS);
+            // The tail of the stroke — drawn AFTER the cap was first hit — made it into
+            // the committed path instead of being silently discarded.
+            const last = create.doc.anchors[create.doc.anchors.length - 1]!;
+            expect(last.time).toBeGreaterThan(MAX_PATH_POINTS * 5);
+        }
     });
 
     it('freehand: a bare click with no drag keeps nothing', () => {

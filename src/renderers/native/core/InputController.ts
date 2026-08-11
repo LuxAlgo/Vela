@@ -78,6 +78,10 @@ const LONG_PRESS_MS = 350; // touch hold before a data-area press becomes crossh
 // A resting finger wobbles far more than a mouse: within this radius a hold still counts
 // as stationary (long-press keeps arming), beyond it the gesture is a pan.
 const TOUCH_SLOP = 8;
+// A touch release still counts as a TAP within this landing-to-lift displacement — a
+// quick tap's contact patch slides further than the hold wobble above, and judging the
+// release (not the latched mid-gesture travel) means an out-and-back wobble stays a tap.
+const TOUCH_TAP_SLOP = 14;
 // Two clean taps this close together (time and space) are a double-tap — the touch
 // dblclick. The browser never synthesizes dblclick here (the controller owns the touch
 // stream via touch-action:none), so the pairing is detected by hand. 350ms matches the
@@ -526,7 +530,10 @@ export class InputController {
             // (placing is click-based, so the cursor follow happens with no button down).
             this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey);
         }
-        this.deps.onPointerMove(x, y);
+        // Hover crosshair is a MOUSE affordance. A touch never hovers: its crosshair
+        // comes only from the long-press inspect path (region 'crosshair' above) —
+        // without this guard every panning finger paints the crosshair under itself.
+        if (e.pointerType !== 'touch') this.deps.onPointerMove(x, y);
     };
 
     private readonly onUp = (e: PointerEvent): void => {
@@ -561,11 +568,17 @@ export class InputController {
             this.endGesture(e);
             return;
         }
+        const { x, y } = this.local(e);
+        const wasTouch = e.pointerType === 'touch';
+        // Click/tap-hood of this release. A mouse uses the latched travel (`moved`)
+        // alone; a touch must ALSO land within TOUCH_TAP_SLOP of where it lifted —
+        // the wider release radius forgives a quick tap's sliding contact patch, but
+        // a gesture that latched `moved` (a one-way 9–14px drag) already panned the
+        // chart and must not double as a click/tap on release.
+        const tapRelease = this.dragging && !this.moved && (!wasTouch || Math.hypot(x - this.startX, y - this.startY) <= TOUCH_TAP_SLOP);
         if (this.dragging && this.region === 'drawing') {
-            const { x, y } = this.local(e);
             this.deps.drawingsPointerUp?.(x, y);
-        } else if (this.dragging && !this.moved && this.region === 'data') {
-            const { x, y } = this.local(e);
+        } else if (tapRelease && this.region === 'data') {
             this.deps.onClick(x, y);
         } else if (this.dragging && this.region === 'data') {
             const stale = e.timeStamp - this.lastT > FLING_STALE_MS;
@@ -574,17 +587,13 @@ export class InputController {
                 this.deps.fling(-this.vx / pitch); // rightOffset velocity (logical/ms)
             }
         }
-        const wasTouch = e.pointerType === 'touch';
-        // A stationary touch release is a tap — feed the double-tap pairing (touch has
-        // no native dblclick here). Checked before endGesture clears the flags.
-        const wasTap = wasTouch && this.dragging && !this.moved;
+        // A clean touch release is a tap — feed the double-tap pairing (touch has no
+        // native dblclick here). Checked before endGesture clears the flags.
+        const wasTap = wasTouch && tapRelease;
         this.endGesture(e);
         // A finger leaves no resting cursor behind — clear the crosshair a pan/tap drew.
         if (wasTouch) this.deps.onPointerMove(null, null);
-        if (wasTap) {
-            const { x, y } = this.local(e);
-            this.registerTap(e.timeStamp, x, y);
-        }
+        if (wasTap) this.registerTap(e.timeStamp, x, y);
     };
 
     /** Pair clean taps into a double-tap — the touch equivalent of dblclick (same
@@ -593,7 +602,10 @@ export class InputController {
         const paired = this.lastTapT > 0 && t - this.lastTapT <= DOUBLE_TAP_MS && Math.hypot(x - this.lastTapX, y - this.lastTapY) <= DOUBLE_TAP_SLOP;
         if (paired) {
             this.lastTapT = 0; // a triple tap starts a fresh pair, not two doubles
-            this.doubleActivate(x, y);
+            // Route by the FIRST tap: that one was aimed; the second is the sloppier
+            // confirmation and can drift onto a neighboring region (a separator band,
+            // an axis strip) and mis-route the pair.
+            this.doubleActivate(this.lastTapX, this.lastTapY);
             return;
         }
         this.lastTapT = t;

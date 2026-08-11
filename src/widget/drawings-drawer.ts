@@ -43,6 +43,9 @@ const CSS = `
     gap: 4px;
     overflow-x: auto;
     scrollbar-width: none;
+    /* The strip scrolls sideways itself — its touches are native scroll, not tab swipes
+       (the drawer body is pan-y so everywhere ELSE a sideways move swipes the tabs). */
+    touch-action: pan-x;
     padding: 0 2px 8px;
     border-bottom: 1px solid var(--vela-border);
     background: var(--vela-surface);
@@ -101,7 +104,7 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-dd-star[data-on='1'] { color: var(--vela-accent); }
+.vela-dd-star[data-on='1'] { color: var(--vela-highlight); }
 .vela-dd-empty { padding: 18px 2px; color: var(--vela-fg-muted); font-size: 13px; }
 `;
 

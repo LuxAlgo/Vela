@@ -283,6 +283,9 @@ export class ChartCell {
         this.inner.on('load:end', () => {
             this.volumeMayBePending = false;
         });
+        // The loading affordance and the watermark never share the canvas.
+        this.inner.on('load:start', () => this.watermark?.setLoading(true));
+        this.inner.on('load:end', () => this.watermark?.setLoading(false));
         const tz = deps.timezone();
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
