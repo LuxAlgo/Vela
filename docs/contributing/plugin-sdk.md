@@ -278,52 +278,6 @@ registerSidePanel({
 - A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
   than taking the shell down.
 
-## Indicator browser — `registerIndicatorBrowser`
-
-The shells ship a built-in indicator picker (the *Indicators* dialog). A plugin can
-replace it wholesale — a richer catalog UI, remote libraries, favorites — by registering
-an **indicator browser**. One slot, not a list: a shell has exactly one indicator
-surface, and every entry point (the topbar button, the mobile bar, the `/` shortcut)
-routes through whichever implementation the shell constructed.
-
-```ts
-import { registerIndicatorBrowser } from 'vela/plugin';
-
-registerIndicatorBrowser((host) => {
-    const dialog = new MyCatalogDialog({
-        host: host.host,                          // the THEMED shell root
-        rows: () => host.library(),               // natives + manifest, index-addressed
-        onPick: (i) => host.add(i),
-        onPickRemote: async (name, url) => {
-            const script = await (await fetch(url)).text();
-            host.addScript({ name, script, language: 'pine' });   // dynamic catalogs
-        },
-        onOpenChange: (open) => host.onOpenChange(open),          // REQUIRED reporting
-    });
-    return {
-        open: () => dialog.show(),
-        close: () => dialog.hide(),
-        sync: () => dialog.refresh(),             // async catalogs land late; active cell switches
-        destroy: () => dialog.destroy(),
-    };
-});
-```
-
-- **The host surface is the built-in picker's own**: `library()` / `onChart()` are the
-  row arrays (supported natives first, then the manifest), `add`/`remove` address them
-  by index at call time — re-read the arrays rather than caching them.
-- **`addScript` is the dynamic-catalog seam.** A script the manifest does not carry
-  joins the shell's library (same-name entries are replaced — the persisted ledger
-  records names, so one name must mean one script) and one instance is added through the
-  ordinary path: history, persistence, and the legend treat it exactly like a manifest
-  entry.
-- **Report every open/close through `host.onOpenChange`.** The shells track open
-  dialogs for key scopes and in-chart dialog dismissal; a browser that skips the report
-  leaves chart shortcuts firing under the open dialog.
-- The factory runs **once per shell at construction** — register before shells are
-  built. With nothing registered, the built-in picker is constructed and nothing
-  changes.
-
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 
 Vela bundles no engine — you install one (`@luxalgo/vela-pinets` for Pine Script) or write

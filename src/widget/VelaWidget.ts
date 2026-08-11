@@ -23,8 +23,8 @@ import { DataWindow } from './data-window';
 import { PanelDock } from './panel-dock';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
-import { widgetAttachments, widgetActions, resolveEngines, legendActionsProviderFor, indicatorBrowserFactory, type WidgetContext, type IndicatorBrowser, type IndicatorBrowserScript } from './contributions';
-import { IndicatorPicker, type IndicatorRow } from './indicator-picker';
+import { widgetAttachments, widgetActions, resolveEngines, legendActionsProviderFor, type WidgetContext } from './contributions';
+import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
 import { parsePersisted, legacyWidgetState, localStorageAdapter, type VelaStorage } from './persist';
 import { LayoutModeController, type LayoutMode } from './layout-mode';
@@ -86,8 +86,7 @@ export class VelaWidget {
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly contextMenu: ChartContextMenu;
     private readonly symbolPicker: SymbolPicker;
-    /** The built-in picker, or a contributed browser (`registerIndicatorBrowser`). */
-    private readonly indicatorPicker: IndicatorBrowser;
+    private readonly indicatorPicker: IndicatorPicker;
     private readonly tfQuick: TimeframeQuick;
     private inner: Vela | null = null;
     /** The manifest library (loaded once). */
@@ -234,54 +233,35 @@ export class VelaWidget {
                 this.trackDialog(open);
             },
         });
-        // One indicator surface, two implementations: the contributed browser when one is
-        // registered (`registerIndicatorBrowser`), the built-in picker otherwise. Both
-        // consume the same callbacks, so every entry point routes through `indicatorPicker`.
-        const pickerLibrary = (): IndicatorRow[] => [
-            ...this.nativeCatalog
-                .filter((n) => n.supported)
-                .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
-            ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
-        ];
-        const pickerOnChart = (): IndicatorRow[] => [
-            ...this.nativeCatalog.filter((n) => n.present).map((n) => ({ name: n.title, native: true, nativeType: n.type })),
-            ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
-        ];
-        const pickerAdd = (i: number): void => {
-            const natives = this.nativeCatalog.filter((n) => n.supported);
-            if (i < natives.length) this.addNative(natives[i]!.type);
-            else this.addInstance(i - natives.length);
-        };
-        const pickerRemove = (i: number): void => {
-            const present = this.nativeCatalog.filter((n) => n.present);
-            if (i < present.length) this.removeNative(present[i]!.type);
-            else this.removeInstance(i - present.length);
-        };
-        const pickerOpenChange = (open: boolean): void => {
-            // Same rule as the symbol search: the renderer's in-chart dialogs never see
-            // an outside-dismiss from a topbar dialog — close them explicitly.
-            if (open) this.inner?.renderer.closeDialogs();
-            this.trackDialog(open);
-        };
-        const browserFactory = indicatorBrowserFactory();
-        this.indicatorPicker = browserFactory
-            ? browserFactory({
-                  host: this.root,
-                  library: pickerLibrary,
-                  onChart: pickerOnChart,
-                  add: pickerAdd,
-                  remove: pickerRemove,
-                  addScript: (entry) => this.addScriptEntry(entry),
-                  onOpenChange: pickerOpenChange,
-              })
-            : new IndicatorPicker({
-                  host: this.root,
-                  library: pickerLibrary,
-                  onChart: pickerOnChart,
-                  onAdd: pickerAdd,
-                  onRemove: pickerRemove,
-                  onOpenChange: pickerOpenChange,
-              });
+        this.indicatorPicker = new IndicatorPicker({
+            host: this.root,
+            library: () => [
+                ...this.nativeCatalog
+                    .filter((n) => n.supported)
+                    .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
+                ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
+            ],
+            onChart: () => [
+                ...this.nativeCatalog.filter((n) => n.present).map((n) => ({ name: n.title, native: true, nativeType: n.type })),
+                ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
+            ],
+            onAdd: (i) => {
+                const natives = this.nativeCatalog.filter((n) => n.supported);
+                if (i < natives.length) this.addNative(natives[i]!.type);
+                else this.addInstance(i - natives.length);
+            },
+            onRemove: (i) => {
+                const present = this.nativeCatalog.filter((n) => n.present);
+                if (i < present.length) this.removeNative(present[i]!.type);
+                else this.removeInstance(i - present.length);
+            },
+            onOpenChange: (open) => {
+                // Same rule as the symbol search: the renderer's in-chart dialogs never see
+                // an outside-dismiss from a topbar dialog — close them explicitly.
+                if (open) this.inner?.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
+        });
         this.tfQuick = new TimeframeQuick({
             host: this.root,
             onApply: (tf) => this.setTimeframe(tf),
@@ -1338,17 +1318,6 @@ export class VelaWidget {
                 this.syncIndicatorCount();
             },
         });
-    }
-
-    /** A browser-contributed script joins the library (same-name entries are replaced —
-     *  the ledger persists by name, so one name must mean one script), then one instance
-     *  is added through the ordinary path (history, persistence, legend). */
-    private addScriptEntry(e: IndicatorBrowserScript): void {
-        const resolved: ResolvedIndicator = { name: e.name, script: e.script, language: e.language, enabled: false, category: e.category };
-        const idx = this.manifest.findIndex((m) => m.name === resolved.name);
-        if (idx >= 0) this.manifest[idx] = resolved;
-        else this.manifest.push(resolved);
-        this.addInstance(idx >= 0 ? idx : this.manifest.length - 1);
     }
 
     /** Remove one live instance (picker trash). */

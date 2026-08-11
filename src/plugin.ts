@@ -78,13 +78,6 @@ export {
     registerDefaultEngine,
     unregisterDefaultEngine,
     resolveEngines,
-    registerIndicatorBrowser,
-    unregisterIndicatorBrowser,
-    indicatorBrowserFactory,
-    type IndicatorBrowser,
-    type IndicatorBrowserHost,
-    type IndicatorBrowserScript,
-    type IndicatorBrowserFactory,
     type EngineFactory,
     type LegendActionDescriptor,
     type LegendIndicatorInfo,
@@ -99,9 +92,6 @@ export {
 } from './widget/contributions';
 // A plugin panel gets the shell's own column; these bounds are what `resizable` clamps to.
 export { clampPanelWidth, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_MIN_WIDTH, DEFAULT_PANEL_MAX_WIDTH, type SidePanelOptions } from './widget/side-panel';
-// The row vocabulary an indicator browser's `library()`/`onChart()` speak (type-only —
-// the built-in picker component itself stays a widget-entry export).
-export type { IndicatorRow } from './widget/indicator-picker';
 export { drawingTypes, getDrawingType, type DrawingTypeMeta } from './core/drawings/registry';
 export type { DrawingTypeKey } from './core/drawings/Drawing';
 export { registerIcon, iconMarkup } from './ui/icons';

@@ -32,7 +32,7 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { legendActionsProviderFor, widgetActions, widgetAttachments, indicatorBrowserFactory, type IndicatorBrowser, type IndicatorBrowserScript } from '../widget/contributions';
+import { legendActionsProviderFor, widgetActions, widgetAttachments } from '../widget/contributions';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { MobileBar } from '../widget/mobile-bar';
 import { TimeframeDrawer } from '../widget/timeframe-drawer';
@@ -221,8 +221,7 @@ export class VelaWorkspace {
     /** The side-panel column, shared by the whole grid. */
     private readonly dock: PanelDock;
     private readonly symbolPicker: SymbolPicker;
-    /** The built-in picker, or a contributed browser (`registerIndicatorBrowser`). */
-    private readonly indicatorPicker: IndicatorBrowser;
+    private readonly indicatorPicker: IndicatorPicker;
     private readonly tfQuick: TimeframeQuick;
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly toast: Toast;
@@ -343,34 +342,19 @@ export class VelaWorkspace {
             },
         });
         this.symbolPicker.setSource(() => this.feed.symbols());
-        // One indicator surface, two implementations: the contributed browser when one is
-        // registered (`registerIndicatorBrowser`), the built-in picker otherwise. Either
-        // way it acts on the ACTIVE cell at call time.
-        const pickerOpenChange = (open: boolean): void => {
-            // Same rule as the symbol search: the renderer's in-chart dialogs never see
-            // an outside-dismiss from a topbar dialog — close them on every cell.
-            if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
-            this.trackDialog(open);
-        };
-        const browserFactory = indicatorBrowserFactory();
-        this.indicatorPicker = browserFactory
-            ? browserFactory({
-                  host: this.root,
-                  library: () => this.active.libraryRows(),
-                  onChart: () => this.active.onChartRows(),
-                  add: (i) => this.active.addFromLibrary(i),
-                  remove: (i) => this.active.removeFromChart(i),
-                  addScript: (entry) => this.addScriptEntry(entry),
-                  onOpenChange: pickerOpenChange,
-              })
-            : new IndicatorPicker({
-                  host: this.root,
-                  library: () => this.active.libraryRows(),
-                  onChart: () => this.active.onChartRows(),
-                  onAdd: (i) => this.active.addFromLibrary(i),
-                  onRemove: (i) => this.active.removeFromChart(i),
-                  onOpenChange: pickerOpenChange,
-              });
+        this.indicatorPicker = new IndicatorPicker({
+            host: this.root,
+            library: () => this.active.libraryRows(),
+            onChart: () => this.active.onChartRows(),
+            onAdd: (i) => this.active.addFromLibrary(i),
+            onRemove: (i) => this.active.removeFromChart(i),
+            onOpenChange: (open) => {
+                // Same rule as the symbol search: the renderer's in-chart dialogs never see
+                // an outside-dismiss from a topbar dialog — close them on every cell.
+                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                this.trackDialog(open);
+            },
+        });
         this.tfQuick = new TimeframeQuick({
             host: this.root,
             onApply: (tf) => this.setActiveTimeframe(tf),
@@ -1365,17 +1349,6 @@ export class VelaWorkspace {
         this.mobileBar?.setSymbol(cell.symbol);
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
-    }
-
-    /** A browser-contributed script joins the SHARED manifest library in place (cells
-     *  hold the same array; same-name entries are replaced — the ledger persists by
-     *  name), then one instance is added on the ACTIVE cell through its ordinary path. */
-    private addScriptEntry(e: IndicatorBrowserScript): void {
-        const resolved: ResolvedIndicator = { name: e.name, script: e.script, language: e.language, enabled: false, category: e.category };
-        const idx = this.manifest.findIndex((m) => m.name === resolved.name);
-        if (idx >= 0) this.manifest[idx] = resolved;
-        else this.manifest.push(resolved);
-        this.active.addManifestInstance(resolved);
     }
 
     /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */
