@@ -11,7 +11,7 @@ import { filterSymbols } from '../src/widget/symbol-picker';
 import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
-import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, registerLegendAction, unregisterLegendAction, legendActions, legendActionsProviderFor, type EngineFactory, type LegendIndicatorInfo } from '../src/widget/contributions';
+import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, registerLegendAction, unregisterLegendAction, legendActions, legendActionsProviderFor, registerIndicatorBrowser, unregisterIndicatorBrowser, indicatorBrowserFactory, type EngineFactory, type LegendIndicatorInfo, type IndicatorBrowserFactory } from '../src/widget/contributions';
 import type { ScriptingEngine } from '../src/core/ports/ScriptingEngine';
 import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
 import { watermarkFontPx } from '../src/widget/watermark';
@@ -424,6 +424,29 @@ describe('widget attachments (per-widget contributed behavior)', () => {
         unregisterWidgetAttachment('a');
         unregisterWidgetAttachment('b');
         expect(widgetAttachments()).toHaveLength(0);
+    });
+});
+
+describe('indicator browser (contributed picker replacement)', () => {
+    const browser = (): IndicatorBrowserFactory => () => ({ open: () => {}, close: () => {}, sync: () => {}, destroy: () => {} });
+
+    it('starts empty, registers ONE slot, and unregisters', () => {
+        expect(indicatorBrowserFactory()).toBeNull();
+        const factory = browser();
+        registerIndicatorBrowser(factory);
+        expect(indicatorBrowserFactory()).toBe(factory);
+        unregisterIndicatorBrowser();
+        expect(indicatorBrowserFactory()).toBeNull();
+    });
+
+    it('replace is last-wins and a stale disposer is inert', () => {
+        const first = browser();
+        const second = browser();
+        const disposeFirst = registerIndicatorBrowser(first);
+        registerIndicatorBrowser(second); // replaces
+        disposeFirst(); // stale handle — must NOT remove the replacement
+        expect(indicatorBrowserFactory()).toBe(second);
+        unregisterIndicatorBrowser();
     });
 });
 

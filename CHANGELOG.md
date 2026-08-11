@@ -20,6 +20,13 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Pluggable indicator browser.** A plugin can now replace the built-in *Indicators*
+  dialog with its own catalog UI via `registerIndicatorBrowser`: every entry point
+  (topbar button, mobile bar, the `/` shortcut) opens the registered browser instead,
+  in the widget and in multi-chart workspaces alike. The browser drives the same
+  library and on-chart lists the built-in picker uses, and can add scripts beyond the
+  configured manifest — such entries join the library and persist like any other
+  indicator instance. With nothing registered, nothing changes.
 - **A mobile chrome for the widget.** In a narrow container — or on a touch-first
   device, or forced with the new `layoutMode` shell option (`'auto' | 'mobile' |
   'desktop'`) — the widget swaps its desktop bars for one touch-sized bottom bar:

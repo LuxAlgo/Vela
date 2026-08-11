@@ -5,6 +5,7 @@
 import type { Vela } from '../Vela';
 import type { LegendActionView } from '../core/ports/IChartRenderer';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
+import type { IndicatorRow } from './indicator-picker';
 
 /** The runtime surface an action's `when`/`run` receives. */
 export interface WidgetContext {
@@ -181,6 +182,89 @@ export function widgetActions(target: WidgetActionTarget, ctx?: WidgetContext): 
     const list = [...registry.values()].filter((d) => d.target === target);
     list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     return ctx ? list.filter((d) => !d.when || d.when(ctx)) : list;
+}
+
+// ── Indicator browser ──────────────────────────────────────────────────────────────
+
+/** A script an indicator browser adds OUTSIDE the shell's manifest (a dynamic catalog a
+ *  static manifest cannot express). It joins the shell's library — same-name entries are
+ *  replaced — so instance tracking, history and the persisted ledger treat it exactly
+ *  like a manifest entry. */
+export interface IndicatorBrowserScript {
+    name: string;
+    /** The script source, ready for the chart (the browser resolves/fetches it itself). */
+    script: string;
+    /** Engine language (default: the chart's default engine). */
+    language?: string;
+    /** Library grouping, as in the manifest. */
+    category?: string;
+}
+
+/**
+ * What the shell hands a contributed indicator browser — the SAME surface the built-in
+ * picker consumes (catalog, live instances, index-addressed add/remove), plus
+ * {@link IndicatorBrowserHost.addScript} for dynamic catalogs. Indexes mirror the
+ * `library()` / `onChart()` arrays at call time; re-read them rather than caching.
+ */
+export interface IndicatorBrowserHost {
+    /** The shell root — pass it as `host` when mounting kit components (Dialog/Menu/
+     *  Tooltip); without an explicit host they portal to the body, OUTSIDE the theme
+     *  variables. */
+    host: HTMLElement;
+    /** The add-able catalog: supported natives first, then the manifest library. */
+    library(): readonly IndicatorRow[];
+    /** The live instances: present natives first, then script instances. */
+    onChart(): readonly IndicatorRow[];
+    /** Add by `library()` index (repeatable for script entries; natives dedupe). */
+    add(libraryIndex: number): void;
+    /** Remove by `onChart()` index. */
+    remove(instanceIndex: number): void;
+    /** Add a script the manifest does not carry (it joins the library, then one
+     *  instance is added — see {@link IndicatorBrowserScript}). */
+    addScript(entry: IndicatorBrowserScript): void;
+    /** Report the browser's open state — the shell tracks open dialogs (key scopes,
+     *  in-chart dialog dismissal), so every open/close MUST be reported. */
+    onOpenChange(open: boolean): void;
+}
+
+/** The runtime handle a browser factory returns — the shell drives it exactly like the
+ *  built-in picker (`open` from its chrome and shortcuts, `sync` on async catalog
+ *  arrivals and active-cell switches, `close` on layout-mode flips). */
+export interface IndicatorBrowser {
+    open(): void;
+    close(): void;
+    /** Re-render if open — catalogs land late, and a workspace's active cell changes. */
+    sync(): void;
+    destroy(): void;
+}
+
+/** Builds ONE browser for ONE shell (widget or workspace cell group) — called at shell
+ *  construction, so register before shells are built. */
+export type IndicatorBrowserFactory = (host: IndicatorBrowserHost) => IndicatorBrowser;
+
+let indicatorBrowser: IndicatorBrowserFactory | null = null;
+
+/**
+ * Register (or replace) THE indicator browser — a contributed replacement for the
+ * shell's built-in indicator picker dialog. Every shell built afterwards constructs the
+ * registered browser instead of the built-in and routes all its entry points (topbar
+ * button, mobile bar, the `/` shortcut) through it. One slot, not a list: a shell has
+ * exactly one indicator surface. Returns an unregister disposer.
+ */
+export function registerIndicatorBrowser(factory: IndicatorBrowserFactory): () => void {
+    indicatorBrowser = factory;
+    return () => {
+        if (indicatorBrowser === factory) indicatorBrowser = null;
+    };
+}
+
+export function unregisterIndicatorBrowser(): void {
+    indicatorBrowser = null;
+}
+
+/** The registered browser factory, if any — shells read it at construction. */
+export function indicatorBrowserFactory(): IndicatorBrowserFactory | null {
+    return indicatorBrowser;
 }
 
 // ── Legend actions ─────────────────────────────────────────────────────────────────
