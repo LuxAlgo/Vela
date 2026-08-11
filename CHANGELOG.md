@@ -110,6 +110,9 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Legend fold count stays readable on a light plot.** The indicator-count chip on a
+  folded legend now paints its number (and chevron) with the plot's own text color, so a
+  white chart no longer shows a near-white digit on a white chip.
 - **Long freehand strokes keep their shape.** Drawing with the brush or highlighter
   for a long stretch no longer degrades into a single straight line chasing the
   cursor: when a stroke reaches its point budget, the older trail thins gracefully

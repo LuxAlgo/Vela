@@ -255,7 +255,7 @@ export class InputsUI {
             row.el.style.background = open ? theme.background : this.idleRowFill();
             row.el.style.color = theme.textColor;
         }
-        if (this.foldToggle) this.foldToggle.style.background = theme.background;
+        if (this.foldToggle) this.syncFoldToggle(); // rebuild so fill + ink follow the new theme
     }
 
     /** Provide (or clear) the host symbol picker that `input.symbol` opens on activation. */
@@ -592,13 +592,16 @@ export class InputsUI {
         btn.setAttribute('aria-label', this.overviewAction !== null ? 'Indicators' : folded ? 'Show indicator legend' : 'Hide indicator legend');
         // Bordered chip in both states; folded shows chevron then the count to its right
         // (reference: "˅ 12"), expanded is just the up chevron that folds the list away.
-        // Border uses the shared chrome token (same as menus/dialogs) — `--vela-fg-muted`
-        // was too bright against the plot. Extra margin-top clears the last indicator
+        // Fill AND ink follow the LIVE plot theme (same as legend rows) — chrome tokens
+        // track the app surface, so a white plot on a dark app would otherwise put a
+        // near-white count on a white chip. Extra margin-top clears the last indicator
         // title; the legend column's own 3px gap is too tight under a bordered chip.
-        btn.style.cssText = `pointer-events:auto;display:inline-flex;align-items:center;gap:4px;background:${this.theme.background};border:1px solid var(--vela-border);border-radius:4px;padding:2px 6px;margin-top:6px;cursor:pointer;font:inherit;line-height:0;`;
+        const ink = this.theme.textColor;
+        btn.style.cssText = `pointer-events:auto;display:inline-flex;align-items:center;gap:4px;background:${this.theme.background};color:${ink};border:1px solid ${this.theme.borderColor};border-radius:4px;padding:2px 6px;margin-top:6px;cursor:pointer;font:inherit;line-height:0;`;
         btn.replaceChildren();
         const icon = document.createElement('span');
-        icon.style.cssText = 'display:inline-flex;align-items:center;line-height:0;';
+        // Slightly muted against the count — currentColor rides the button's ink.
+        icon.style.cssText = 'display:inline-flex;align-items:center;line-height:0;opacity:0.7;';
         // The overview override wears the list glyph — the chip opens the host's
         // indicator overview rather than unfolding rows in place.
         icon.innerHTML = this.overviewAction !== null ? OVERVIEW_SVG : folded ? UNFOLD_SVG : FOLD_SVG;
@@ -606,7 +609,7 @@ export class InputsUI {
         if (folded) {
             const label = document.createElement('span');
             label.textContent = String(count);
-            label.style.cssText = 'font-weight:600;line-height:normal;font-size:12px;color:var(--vela-fg-bright);';
+            label.style.cssText = `font-weight:600;line-height:normal;font-size:12px;color:${ink};`;
             btn.appendChild(label);
         }
         // The toggle lives on the PRICE pane's legend (created on demand — the price pane
@@ -1508,8 +1511,8 @@ function ensureDialogStyles(): void {
 .vela-ind-ctl:hover{color:var(--vela-fg-bright);}
 .vela-ind-close{transition:color var(--vela-dur-fast) ease;}
 .vela-ind-close:hover{color:var(--vela-danger) !important;}
-.vela-ind-fold{color:var(--vela-fg-muted);transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
-.vela-ind-fold:hover{color:var(--vela-fg-bright);border-color:var(--vela-border-strong);}
+.vela-ind-fold{transition:border-color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
+.vela-ind-fold:hover{border-color:var(--vela-border-strong);opacity:0.9;}
 .vela-ind-menuitem{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-ind-menuitem:hover{background:var(--vela-hover-strong);}
 .vela-ind-btn{cursor:pointer;padding:7px 14px;border-radius:var(--vela-radius-md);border:1px solid transparent;background:transparent;color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
