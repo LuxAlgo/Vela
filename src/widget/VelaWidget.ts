@@ -86,7 +86,8 @@ export class VelaWidget {
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly contextMenu: ChartContextMenu;
     private readonly symbolPicker: SymbolPicker;
-    private readonly indicatorPicker: IndicatorPicker;
+    /** Null when the host disabled it (`indicatorPicker: false`). */
+    private readonly indicatorPicker: IndicatorPicker | null;
     private readonly tfQuick: TimeframeQuick;
     private inner: Vela | null = null;
     /** The manifest library (loaded once). */
@@ -233,44 +234,51 @@ export class VelaWidget {
                 this.trackDialog(open);
             },
         });
-        this.indicatorPicker = new IndicatorPicker({
-            host: this.root,
-            library: () => [
-                ...this.nativeCatalog
-                    .filter((n) => n.supported)
-                    .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
-                ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
-            ],
-            onChart: () => [
-                ...this.nativeCatalog.filter((n) => n.present).map((n) => ({ name: n.title, native: true, nativeType: n.type })),
-                ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
-            ],
-            onAdd: (i) => {
-                const natives = this.nativeCatalog.filter((n) => n.supported);
-                if (i < natives.length) this.addNative(natives[i]!.type);
-                else this.addInstance(i - natives.length);
-            },
-            onRemove: (i) => {
-                const present = this.nativeCatalog.filter((n) => n.present);
-                if (i < present.length) this.removeNative(present[i]!.type);
-                else this.removeInstance(i - present.length);
-            },
-            onOpenChange: (open) => {
-                // Same rule as the symbol search: the renderer's in-chart dialogs never see
-                // an outside-dismiss from a topbar dialog — close them explicitly.
-                if (open) this.inner?.renderer.closeDialogs();
-                this.trackDialog(open);
-            },
-        });
+        // The picker exists only while the host keeps it (`indicatorPicker: false` removes
+        // every entry point — topbar button, mobile-bar item, `/` — for hosts that replace
+        // it with their own indicator UI). The manifest still resolves and auto-adds.
+        this.indicatorPicker =
+            opts.indicatorPicker !== false
+                ? new IndicatorPicker({
+                      host: this.root,
+                      library: () => [
+                          ...this.nativeCatalog
+                              .filter((n) => n.supported)
+                              .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
+                          ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
+                      ],
+                      onChart: () => [
+                          ...this.nativeCatalog.filter((n) => n.present).map((n) => ({ name: n.title, native: true, nativeType: n.type })),
+                          ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
+                      ],
+                      onAdd: (i) => {
+                          const natives = this.nativeCatalog.filter((n) => n.supported);
+                          if (i < natives.length) this.addNative(natives[i]!.type);
+                          else this.addInstance(i - natives.length);
+                      },
+                      onRemove: (i) => {
+                          const present = this.nativeCatalog.filter((n) => n.present);
+                          if (i < present.length) this.removeNative(present[i]!.type);
+                          else this.removeInstance(i - present.length);
+                      },
+                      onOpenChange: (open) => {
+                          // Same rule as the symbol search: the renderer's in-chart dialogs never see
+                          // an outside-dismiss from a topbar dialog — close them explicitly.
+                          if (open) this.inner?.renderer.closeDialogs();
+                          this.trackDialog(open);
+                      },
+                  })
+                : null;
         this.tfQuick = new TimeframeQuick({
             host: this.root,
             onApply: (tf) => this.setTimeframe(tf),
             onOpenChange: (open) => this.trackDialog(open),
         });
+        const picker = this.indicatorPicker;
         this.topbar = new Topbar(this.root, {
             symbol: this.symbol,
             onSymbolClick: () => this.symbolPicker.open(),
-            onIndicatorsClick: () => this.indicatorPicker.open(),
+            ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
             onUndoClick: () => this.history.undo(),
             onRedoClick: () => this.history.redo(),
             onScreenshotClick: () => this.downloadScreenshot(),
@@ -335,7 +343,7 @@ export class VelaWidget {
                       timeframe: this.timeframe,
                       onSymbolClick: () => this.symbolPicker.open(),
                       onTimeframeClick: () => this.openTimeframeDrawer(),
-                      onIndicatorsClick: () => this.indicatorPicker.open(),
+                      ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
                       onDrawingsClick: () => this.openDrawingsDrawer(),
                       onMoreClick: () => this.openMoreDrawer(),
                       onSettingsClick: () => this.inner?.renderer.openSettings(),
@@ -398,7 +406,7 @@ export class VelaWidget {
         // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
         this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.inner?.panBy(-PAN_FAST) });
         this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.inner?.panBy(PAN_FAST) });
-        this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
+        if (picker) this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => picker.open() });
         this.keymap.register({
             id: 'help.shortcuts',
             keys: '?',
@@ -426,7 +434,7 @@ export class VelaWidget {
      *  mobile chrome (and vice versa) — and re-present the renderer's own chrome. */
     private onLayoutModeChange(mode: LayoutMode): void {
         this.symbolPicker.close();
-        this.indicatorPicker.close();
+        this.indicatorPicker?.close();
         this.tfDrawer?.close();
         this.drawingsDrawer?.close();
         this.moreDrawer?.close();
@@ -930,7 +938,7 @@ export class VelaWidget {
         this.shortcutsHelp?.destroy();
         this.contextMenu.destroy();
         this.symbolPicker.destroy();
-        this.indicatorPicker.destroy();
+        this.indicatorPicker?.destroy();
         this.tfQuick.destroy();
         this.statusline?.destroy();
         this.watermark?.destroy();
@@ -1267,7 +1275,7 @@ export class VelaWidget {
             if (this.inner !== chart || this.destroyed) return;
             this.nativeCatalog = list.map((n) => ({ type: n.type, title: n.title, supported: n.supported, present: n.present, beta: n.beta }));
             this.syncIndicatorCount();
-            this.indicatorPicker.sync(); // the dialog may be open while the catalog lands
+            this.indicatorPicker?.sync(); // the dialog may be open while the catalog lands
         });
     }
 

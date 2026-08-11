@@ -59,7 +59,9 @@ export interface MobileBarOptions {
     timeframe: string;
     onSymbolClick: () => void;
     onTimeframeClick: () => void;
-    onIndicatorsClick: () => void;
+    /** Omitted ⇒ no indicators stop (the host replaced the picker — see the
+     *  `indicatorPicker` shell option). */
+    onIndicatorsClick?: () => void;
     onDrawingsClick: () => void;
     onMoreClick: () => void;
     onSettingsClick: () => void;
@@ -89,12 +91,13 @@ export class MobileBar {
         this.symbolEl.textContent = parseSymbol(opts.symbol).ticker;
         this.tfEl = item('vela-mb-tf', 'Timeframe', opts.onTimeframeClick);
         this.tfEl.textContent = timeframeLabel(opts.timeframe);
-        const indicators = item('vela-mb-indicators', 'Indicators', opts.onIndicatorsClick, 'indicators');
+        const onIndicators = opts.onIndicatorsClick;
+        const indicators = onIndicators ? item('vela-mb-indicators', 'Indicators', onIndicators, 'indicators') : null;
         const drawings = item('vela-mb-drawings', 'Drawings', opts.onDrawingsClick, 'pen');
         const more = item('vela-mb-more', 'More', opts.onMoreClick, 'kebab');
         const settings = item('vela-mb-settings', 'Chart settings', opts.onSettingsClick, 'gear');
 
-        this.el.append(this.symbolEl, this.tfEl, indicators, drawings, more, settings);
+        this.el.append(this.symbolEl, this.tfEl, ...(indicators ? [indicators] : []), drawings, more, settings);
         host.appendChild(this.el);
     }
 

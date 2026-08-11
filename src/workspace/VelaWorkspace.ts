@@ -221,7 +221,8 @@ export class VelaWorkspace {
     /** The side-panel column, shared by the whole grid. */
     private readonly dock: PanelDock;
     private readonly symbolPicker: SymbolPicker;
-    private readonly indicatorPicker: IndicatorPicker;
+    /** Null when the host disabled it (`indicatorPicker: false`). */
+    private readonly indicatorPicker: IndicatorPicker | null;
     private readonly tfQuick: TimeframeQuick;
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly toast: Toast;
@@ -342,19 +343,26 @@ export class VelaWorkspace {
             },
         });
         this.symbolPicker.setSource(() => this.feed.symbols());
-        this.indicatorPicker = new IndicatorPicker({
-            host: this.root,
-            library: () => this.active.libraryRows(),
-            onChart: () => this.active.onChartRows(),
-            onAdd: (i) => this.active.addFromLibrary(i),
-            onRemove: (i) => this.active.removeFromChart(i),
-            onOpenChange: (open) => {
-                // Same rule as the symbol search: the renderer's in-chart dialogs never see
-                // an outside-dismiss from a topbar dialog — close them on every cell.
-                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
-                this.trackDialog(open);
-            },
-        });
+        // The picker exists only while the host keeps it (`indicatorPicker: false` removes
+        // every entry point — topbar button, mobile-bar item, `/` — for hosts that replace
+        // it with their own indicator UI). The shared manifest still resolves and auto-adds.
+        this.indicatorPicker =
+            opts.indicatorPicker !== false
+                ? new IndicatorPicker({
+                      host: this.root,
+                      library: () => this.active.libraryRows(),
+                      onChart: () => this.active.onChartRows(),
+                      onAdd: (i) => this.active.addFromLibrary(i),
+                      onRemove: (i) => this.active.removeFromChart(i),
+                      onOpenChange: (open) => {
+                          // Same rule as the symbol search: the renderer's in-chart dialogs never see
+                          // an outside-dismiss from a topbar dialog — close them on every cell.
+                          if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                          this.trackDialog(open);
+                      },
+                  })
+                : null;
+        const picker = this.indicatorPicker;
         this.tfQuick = new TimeframeQuick({
             host: this.root,
             onApply: (tf) => this.setActiveTimeframe(tf),
@@ -365,7 +373,7 @@ export class VelaWorkspace {
         this.topbar = new Topbar(this.root, {
             symbol: '',
             onSymbolClick: () => this.symbolPicker.open(),
-            onIndicatorsClick: () => this.indicatorPicker.open(),
+            ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
             onUndoClick: () => this.active.history.undo(),
             onRedoClick: () => this.active.history.redo(),
             onScreenshotClick: () => this.active.downloadScreenshot(),
@@ -516,7 +524,7 @@ export class VelaWorkspace {
                       timeframe: '60',
                       onSymbolClick: () => this.symbolPicker.open(),
                       onTimeframeClick: () => this.openTimeframeDrawer(),
-                      onIndicatorsClick: () => this.indicatorPicker.open(),
+                      ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
                       onDrawingsClick: () => this.openDrawingsDrawer(),
                       onMoreClick: () => this.openMoreDrawer(),
                       onSettingsClick: () => this.active.chart.renderer.openSettings(),
@@ -855,7 +863,7 @@ export class VelaWorkspace {
         this.objectTree.destroy();
         this.dataWindow.destroy();
         this.symbolPicker.destroy();
-        this.indicatorPicker.destroy();
+        this.indicatorPicker?.destroy();
         this.tfQuick.destroy();
         this.shortcutsHelp?.destroy();
         this.toast.destroy();
@@ -887,7 +895,7 @@ export class VelaWorkspace {
         this.objectTree.setSymbol(cell.symbol);
         this.dock.onChart(cell.chart); // every docked panel follows the active cell
         this.bottombar?.setActiveRange(cell.activeRangeId);
-        this.indicatorPicker.sync(); // the dialog may be open while the active cell changes
+        this.indicatorPicker?.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
         // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet + stay
         // to the cell taking focus, and reflect its (fresh) state on the bar.
@@ -1358,7 +1366,7 @@ export class VelaWorkspace {
         const cell = this.cellsById.get(id);
         if (!cell) return;
         this.topbar.setIndicatorCount(cell.indicatorCount);
-        this.indicatorPicker.sync();
+        this.indicatorPicker?.sync();
     }
 
     /** Timeframe changes routed from the topbar menu / quick entry (chip state follows). */
@@ -1372,7 +1380,7 @@ export class VelaWorkspace {
      *  mobile chrome (and vice versa) — and re-present every cell's own chrome. */
     private onLayoutModeChange(mode: LayoutMode): void {
         this.symbolPicker.close();
-        this.indicatorPicker.close();
+        this.indicatorPicker?.close();
         this.tfDrawer?.close();
         this.drawingsDrawer?.close();
         this.moreDrawer?.close();
@@ -1570,7 +1578,9 @@ export class VelaWorkspace {
         // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
         this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.active.chart.panBy(-PAN_FAST) });
         this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.active.chart.panBy(PAN_FAST) });
-        this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
+        if (this.indicatorPicker) {
+            this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker?.open() });
+        }
         this.keymap.register({
             id: 'help.shortcuts',
             keys: '?',

@@ -220,10 +220,15 @@ export class Topbar {
         this.styleButton = doc.createElement('button');
         this.styleButton.className = 'vela-widget-style';
         this.renderStyleButton(doc);
-        const indicatorsBtn = doc.createElement('button');
-        indicatorsBtn.className = 'vela-widget-indicators';
-        indicatorsBtn.append(iconEl('indicators', doc), doc.createTextNode('Indicators'));
-        if (opts.onIndicatorsClick) indicatorsBtn.addEventListener('click', opts.onIndicatorsClick);
+        // No callback ⇒ no button: a host replacing the indicator picker with its own
+        // UI (shell option `indicatorPicker: false`) must not show a dead entry point.
+        let indicatorsBtn: HTMLButtonElement | null = null;
+        if (opts.onIndicatorsClick) {
+            indicatorsBtn = doc.createElement('button');
+            indicatorsBtn.className = 'vela-widget-indicators';
+            indicatorsBtn.append(iconEl('indicators', doc), doc.createTextNode('Indicators'));
+            indicatorsBtn.addEventListener('click', opts.onIndicatorsClick);
+        }
 
         // Right-hand cluster: contributed actions, then icon-only tools — the side-panel
         // toggles (filled by the dock) and screenshot. Labels live in their tooltips.
@@ -261,7 +266,8 @@ export class Topbar {
         };
         const leading: Array<HTMLElement> = [this.symbolEl, sep(), this.tfButton, sep(), this.styleButton, sep()];
         if (this.layoutButton) leading.push(this.layoutButton, sep());
-        this.el.append(...leading, indicatorsBtn, sep(), this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, this.panelsHost, screenshotBtn);
+        if (indicatorsBtn) leading.push(indicatorsBtn, sep());
+        this.el.append(...leading, this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, this.panelsHost, screenshotBtn);
         host.appendChild(this.el);
         // Snap after layout; RO catches later reflows (symbol / timeframe length).
         this.onHairlineSync();
