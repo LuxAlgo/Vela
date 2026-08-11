@@ -59,7 +59,8 @@ interface LegendRow {
     paneId: string;
     hidden: boolean;
     eyeEl: HTMLButtonElement | null;
-    /** Wraps the eye/gear/✕ controls; only shown while the row is selected (outline visible). */
+    /** Wraps the eye/gear/✕ controls; revealed on title hover / selection (eye alone
+     *  also stays out while the indicator is hidden). */
     controlsEl: HTMLElement;
     /** Host-contributed action buttons (inside `controlsEl`, before ✕) — rebuilt on demand. */
     extrasEl: HTMLElement;
@@ -666,7 +667,7 @@ export class InputsUI {
         // min-height matches the action hit targets so revealing them never grows the chip
         // vertically (which would shove the rows below).
         el.style.cssText =
-            `pointer-events:auto;display:flex;align-items:center;gap:0;` +
+            `pointer-events:auto;display:flex;align-items:center;` +
             `background:${this.idleRowFill()};border-radius:4px;` +
             `padding:${LEGEND_ROW_PAD_Y}px ${LEGEND_ROW_PAD_X}px;margin-left:-${LEGEND_ROW_PAD_X}px;` +
             `min-height:${LEGEND_ROW_MIN_H}px;box-sizing:border-box;` +
@@ -761,7 +762,6 @@ export class InputsUI {
             gear.innerHTML = GEAR_SVG;
             gear.className = 'vela-ind-ctl';
             gear.style.cssText = LEGEND_CTL_CSS;
-            gear.dataset.legendBuiltin = 'settings';
             gear.addEventListener('click', () => this.openDialog(id));
             controlsEl.appendChild(gear);
         }
@@ -775,7 +775,6 @@ export class InputsUI {
             mv.innerHTML = iconAt('move', LEGEND_ICON_PX);
             mv.className = 'vela-ind-ctl';
             mv.style.cssText = LEGEND_CTL_CSS;
-            mv.dataset.legendBuiltin = 'move';
             mv.addEventListener('click', (e) => { e.stopPropagation(); this.openMoveMenu(id, mv); });
             controlsEl.appendChild(mv);
         }
@@ -792,7 +791,6 @@ export class InputsUI {
         close.innerHTML = CLOSE_SVG;
         close.className = 'vela-ind-close';
         close.style.cssText = LEGEND_CTL_CSS;
-        close.dataset.legendBuiltin = 'remove';
         close.addEventListener('click', () => this.onRemove?.(id));
         controlsEl.appendChild(close);
         el.appendChild(controlsEl);
@@ -899,25 +897,19 @@ export class InputsUI {
     }
 
     /**
-     * Reveal the action cluster (or just the eye for a hidden indicator). Built-ins other
-     * than the eye only appear while the row is highlighted, so an idle hidden row stays a
-     * single eye toggle without a half-empty button strip.
+     * Reveal the action cluster (or just the eye for a hidden indicator). Non-eye
+     * buttons only appear while highlighted; the eye keeps its inline-flex from
+     * construction and is shown/hidden with the cluster container.
      */
     private syncRowActions(row: LegendRow): void {
         const open = row.highlighted;
-        const showCluster = open || row.hidden;
-        row.controlsEl.style.display = showCluster ? 'inline-flex' : 'none';
+        row.controlsEl.style.display = open || row.hidden ? 'inline-flex' : 'none';
         for (const child of Array.from(row.controlsEl.children)) {
-            if (!(child instanceof HTMLElement)) continue;
+            if (!(child instanceof HTMLElement) || child === row.eyeEl) continue;
             if (child === row.extrasEl) {
                 child.style.display = open ? 'contents' : 'none';
                 continue;
             }
-            if (child === row.eyeEl) {
-                child.style.display = open || row.hidden ? 'inline-flex' : 'none';
-                continue;
-            }
-            // gear / move / remove — hover/selection only
             child.style.display = open ? 'inline-flex' : 'none';
         }
     }

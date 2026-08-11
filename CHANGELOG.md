@@ -6,9 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
-- **Indicator legend action hit targets.** Hovering a legend row reveals equal-sized
-  hide, settings, move-to and remove buttons with a larger clickable area and a muted
-  background wash on each — without growing the chip's height, so rows below stay put.
+- **Indicator legend action hit targets.** Hovering an indicator title reveals
+  equal-sized hide, settings, move-to and remove buttons with a larger clickable area
+  and a background wash on each — without growing the chip's height, so rows below
+  stay put. Plot values beside the title do not open the chip.
 
 - **Mobile chrome polish.** The timeframe sheet labels its date-range chips and
   timeframe grid with matching white section headers (no divider between them), and
