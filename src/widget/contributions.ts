@@ -43,6 +43,11 @@ export interface WidgetActionDescriptor {
     icon?: string;
     /** Sort key within the contributed group (ascending; default 0). */
     order?: number;
+    /** Topbar only: which cluster the button joins. `'right'` (default) is the
+     *  right-hand tools cluster; `'left'` puts it with the PRIMARY chrome buttons —
+     *  right after the style/layout dropdowns, styled like them (the spot and look of
+     *  the built-in Indicators button, for actions that replace it). */
+    align?: 'left' | 'right';
     /** Runtime gate — omitted ⇒ always shown. */
     when?: (ctx: WidgetContext) => boolean;
     run: (ctx: WidgetContext) => void;

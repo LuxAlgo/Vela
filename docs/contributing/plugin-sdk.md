@@ -142,6 +142,9 @@ registerWidgetAction({
     label: 'My tool',
     icon: 'rocket',
     order: 10,                   // sort key within the contributed group
+    align: 'left',               // topbar only: 'left' joins the primary chrome cluster
+                                 //  (after the style/layout dropdowns, styled like them);
+                                 //  'right' (default) the right-hand tools cluster
     when: (ctx) => ctx.priceStyle === 'mytype',   // optional runtime gate
     run: (ctx) => {
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
@@ -153,9 +156,13 @@ registerWidgetAction({
 });
 ```
 
-Topbar actions render as buttons in the right-hand cluster; `context:*` actions are
-appended to the matching right-click menu zone. Register at import time — a widget
-constructed later picks them up; after late registrations call `widget.refreshActions()`.
+Topbar actions render as buttons in the right-hand cluster by default; `align: 'left'`
+moves one into the primary chrome cluster instead — right after the style/layout
+dropdowns, wearing the same height/typography as the built-in buttons there (that is
+the built-in Indicators button's exact spot and look, for actions that replace it).
+`context:*` actions are appended to the matching right-click menu zone. Register at
+import time — a widget constructed later picks them up; after late registrations call
+`widget.refreshActions()`.
 
 Two rules keep actions portable:
 
@@ -248,6 +255,7 @@ registerWidgetAction({
     target: 'topbar',
     label: 'Indicators',
     icon: 'indicators', // the shells' own icon id — reuse it for a familiar button
+    align: 'left',      // the built-in button's exact spot and styling
     run: (ctx) => menus.get(ctx.host)?.show(),
 });
 ```
