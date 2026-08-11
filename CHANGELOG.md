@@ -6,6 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Indicator legend action hit targets.** Hovering an indicator title reveals
+  equal-sized hide, settings, move-to and remove buttons with a larger clickable area
+  and a background wash on each — without growing the chip's height, so rows below
+  stay put. Plot values beside the title do not open the chip.
 - **Selection in menus reads from the row itself.** The timeframe, chart type, and
   every other selectable dropdown now mark the active entry with a stronger row
   background instead of a leading checkmark, and the mobile three-dots sheet does the
