@@ -98,6 +98,9 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Multi-chart borders stay under chart settings.** Hovering a cell seam in a
+  multi-chart workspace no longer draws the splitter highlight through an open chart
+  settings dialog — the dialog now stacks above the grid chrome.
 - **Screenshots capture the whole chart.** The PNG export now includes everything the
   screen shows: the volume columns, the visible-range volume profile, plugin-drawn
   layers, the status line, the indicator legends (with their values), and the faded
