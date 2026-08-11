@@ -34,6 +34,11 @@ export interface VelaShellOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
+    /** The built-in indicator picker's entry points — the topbar button, the mobile-bar
+     *  item, and the `/` shortcut. `false` removes them, for hosts that replace the
+     *  picker with their own indicator UI (e.g. a contributed topbar action opening a
+     *  custom dialog). The `indicators` manifest still resolves and auto-adds. */
+    indicatorPicker?: boolean;
     /** Chrome size class. `'auto'` (default) follows the CONTAINER width plus a
      *  coarse-pointer heuristic; `'mobile'` / `'desktop'` pin it. Mobile swaps the
      *  topbar + desktop bottombar for one touch-first bottom bar, presents pickers

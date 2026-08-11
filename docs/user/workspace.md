@@ -256,6 +256,7 @@ silently reorder them).
 | `timeframes` | presets | Topbar timeframe presets. |
 | `timezone` | `'Etc/UTC'` | Display timezone (every cell). |
 | `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
+| `indicatorPicker` | `true` | The built-in indicator dialog's entry points (topbar button, mobile-bar item, `/`). `false` removes them for hosts shipping their own indicator UI — see [Replacing the indicator menu](../contributing/plugin-sdk.md#replacing-the-indicator-menu). |
 | `layoutMode` | `'auto'` | Chrome size class — see [the widget's Mobile section](./widget.md#mobile); the workspace behaves the same. |
 | `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
 | `persist` / `storage` | off / localStorage | State persistence (see above). |

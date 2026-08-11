@@ -10,7 +10,25 @@ All notable changes to Vela, newest first.
   equal-sized hide, settings, move-to and remove buttons with a larger clickable area
   and a background wash on each — without growing the chip's height, so rows below
   stay put. Plot values beside the title do not open the chip.
-
+- **Selection in menus reads from the row itself.** The timeframe, chart type, and
+  every other selectable dropdown now mark the active entry with a stronger row
+  background instead of a leading checkmark, and the mobile three-dots sheet does the
+  same — the selected item is visible at a glance without scanning for a glyph.
+- **The symbol watermark yields to loading.** While a chart's bars are loading, the
+  faded symbol watermark stays hidden so it never overlaps the loading indicator; it
+  returns as soon as the first bars paint.
+- **Favorite stars are gold everywhere.** The mobile drawings sheet's favorite star
+  now lights up in the same gold as the desktop drawing toolbar's, instead of blue.
+- **The highlighter's width is typed, not picked.** The drawing quick bar shows a
+  numeric width field for the highlighter (honoring its 4–60px range) instead of the
+  1–4px list, which couldn't even express its 14px default.
+- **Crosshair sync mirrors the price level too.** With crosshair sync on in a
+  multi-chart workspace, charts showing the SAME ticker as the hovered one now draw
+  the ghost's horizontal price line alongside the vertical time line, with the price
+  labeled on their own scale (hover the price pane — a study pane's value is not a
+  price). Charts on other markets keep the time-only ghost: a foreign price level
+  would be noise on their scale. For custom consumers, the crosshair event now names
+  the pane kind under the cursor (`paneKind`), so a host can make the same call.
 - **Mobile chrome polish.** The timeframe sheet labels its date-range chips and
   timeframe grid with matching white section headers (no divider between them), and
   highlights the active chip in white. In the drawings sheet the search field and
@@ -25,6 +43,17 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Replaceable indicator menu.** A new `indicatorPicker` shell option (widget and
+  workspace, default `true`) removes the built-in indicator dialog's entry points —
+  the topbar button, the mobile-bar item, and the `/` shortcut — so a host can ship
+  its own indicator UI (for example a contributed topbar action opening a custom
+  dialog) without two competing menus. The `indicators` manifest still resolves and
+  auto-adds its enabled entries. Contributed topbar actions can take the vacated
+  spot for real: `align: 'left'` on a widget action places its button with the
+  primary chrome buttons right after the style dropdown, in the built-in Indicators
+  button's own position and styling, instead of the right-hand tools cluster — and
+  on the mobile chrome it gets its own icon stop in the bottom bar (the built-in
+  indicators slot) rather than a row in the three-dots sheet.
 - **A mobile chrome for the widget.** In a narrow container — or on a touch-first
   device, or forced with the new `layoutMode` shell option (`'auto' | 'mobile' |
   'desktop'`) — the widget swaps its desktop bars for one touch-sized bottom bar:
@@ -96,6 +125,16 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Legend fold count stays readable on a light plot.** The indicator-count chip on a
+  folded legend now paints its number (and chevron) with the plot's own text color, so a
+  white chart no longer shows a near-white digit on a white chip.
+- **Long freehand strokes keep their shape.** Drawing with the brush or highlighter
+  for a long stretch no longer degrades into a single straight line chasing the
+  cursor: when a stroke reaches its point budget, the older trail thins gracefully
+  and the capture keeps going, so the whole gesture lands on the chart.
+- **Multi-chart borders stay under chart settings.** Hovering a cell seam in a
+  multi-chart workspace no longer draws the splitter highlight through an open chart
+  settings dialog — the dialog now stacks above the grid chrome.
 - **Screenshots capture the whole chart.** The PNG export now includes everything the
   screen shows: the volume columns, the visible-range volume profile, plugin-drawn
   layers, the status line, the indicator legends (with their values), and the faded

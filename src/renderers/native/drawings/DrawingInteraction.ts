@@ -316,7 +316,15 @@ export class DrawingInteraction {
         const last = draft.anchors[draft.anchors.length - 1];
         const lx = last ? proj.xOf(last.time) : NaN;
         const ly = last ? proj.yOf(last.price, draft.paneId) ?? NaN : NaN;
-        if (draft.anchors.length < this.state.need && Math.hypot(x - lx, y - ly) > FREEHAND_SAMPLE_PX) {
+        if (Math.hypot(x - lx, y - ly) > FREEHAND_SAMPLE_PX) {
+            // At the path cap a long stroke keeps drawing: halve the sampled points
+            // (keep the endpoints, drop every other interior one) so the older trail
+            // gets progressively coarser instead of the capture dying mid-gesture —
+            // frozen anchors plus a live cursor read as one straight rubber band.
+            if (draft.anchors.length >= this.state.need) {
+                const lastIdx = draft.anchors.length - 1;
+                draft.anchors = draft.anchors.filter((_, i) => i % 2 === 0 || i === lastIdx);
+            }
             draft.anchors.push(proj.pxToPoint(x, y, draft.paneId));
         }
         this.state.cursor = proj.pxToPoint(x, y, draft.paneId);
