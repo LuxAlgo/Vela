@@ -104,7 +104,7 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-dd-star[data-on='1'] { color: var(--vela-accent); }
+.vela-dd-star[data-on='1'] { color: var(--vela-highlight); }
 .vela-dd-empty { padding: 18px 2px; color: var(--vela-fg-muted); font-size: 13px; }
 `;
 

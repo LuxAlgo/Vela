@@ -38,16 +38,11 @@ export const MENU_CSS = `
 .vela-menu-item .vela-icon { width: 16px; height: 16px; font-size: 16px; justify-content: center; color: var(--vela-fg-muted); }
 .vela-menu-item .vela-menu-label { flex: 1 1 auto; }
 .vela-menu-item .vela-menu-hint { color: var(--vela-fg-faint); font-size: var(--vela-font-size-sm); }
-/* Active entry: a LEADING check glyph and bright ink — the row SURFACE stays plain,
-   so background remains the hover language and never marks selection. Every row of a
-   selectable list carries the (mostly empty) slot, keeping labels aligned. Declared
-   after the generic row-icon rule so the glyph's size and color win. */
-.vela-menu-item[data-checked] { color: var(--vela-fg-bright); }
-.vela-menu-item .vela-menu-check {
-    width: 14px;
-    height: 14px;
-    font-size: 14px;
-    flex: none;
+/* Active entry: the row surface carries the selection — a stronger background wash
+   than the hover one, plus bright ink. Declared after the hover rule so a selected
+   row stays visibly selected while highlighted. */
+.vela-menu-item[data-checked] {
+    background: var(--vela-hover-strong);
     color: var(--vela-fg-bright);
 }
 /* Switch rows (boolean settings in a dropdown): a right-aligned toggle pill — the

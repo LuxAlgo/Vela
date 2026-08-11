@@ -48,6 +48,7 @@ const CSS = `
     -webkit-tap-highlight-color: transparent;
 }
 .vela-md-row:active { background: var(--vela-hover); }
+.vela-md-row[data-checked='1'] { background: var(--vela-hover-strong); }
 .vela-md-row .vela-icon { flex: none; font-size: 17px; width: 17px; height: 17px; color: var(--vela-fg-muted); }
 .vela-md-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-md-row-value { flex: none; font-size: 13px; color: var(--vela-fg-muted); }
@@ -185,7 +186,7 @@ export class MoreDrawer {
             value.textContent = opts.value;
             el.appendChild(value);
         }
-        if (opts.checked) el.appendChild(iconEl('check', doc));
+        if (opts.checked) el.dataset.checked = '1';
         if (opts.chevron) el.appendChild(iconEl('chevron-right', doc));
         el.addEventListener('click', opts.onClick);
         return el;

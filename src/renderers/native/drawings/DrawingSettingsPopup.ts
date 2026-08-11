@@ -157,7 +157,17 @@ export class DrawingSettingsPopup {
             bar.appendChild(this.dropdown('Icon size', STAMP_SIZE_OPTIONS, sz, (s) => stampSizeIcon(s), (v) => actions.patch({ size: v }), { label: sizeLabel }));
         }
         if (paths.has('style.lineColor')) bar.appendChild(this.colorButton('Line color', BRUSH_ICON, drawing.style.lineColor || DEFAULT_DRAWING_COLOR, (v) => actions.patch({ 'style.lineColor': v })));
-        if (paths.has('style.lineWidth')) bar.appendChild(this.dropdown('Line width', [1, 2, 3, 4], drawing.style.lineWidth, (w) => lineIcon(w, 'solid'), (v) => actions.patch({ 'style.lineWidth': v }), { label: (v) => `${v}px`, labelInTrigger: true }));
+        if (paths.has('style.lineWidth')) {
+            // A marker-width field (floor above the hairline ladder, e.g. the
+            // highlighter's 4–60) can't live in the 1–4 dropdown — a free numeric
+            // input honoring the schema's declared range replaces it.
+            const wf = schema.fields.find((f) => f.path === 'style.lineWidth');
+            if (wf?.kind === 'number' && (wf.min ?? 1) > 1) {
+                bar.appendChild(this.widthInput('Line width', drawing.style.lineWidth, wf.min ?? 1, wf.max ?? 60, wf.step ?? 1, (v) => actions.patch({ 'style.lineWidth': v })));
+            } else {
+                bar.appendChild(this.dropdown('Line width', [1, 2, 3, 4], drawing.style.lineWidth, (w) => lineIcon(w, 'solid'), (v) => actions.patch({ 'style.lineWidth': v }), { label: (v) => `${v}px`, labelInTrigger: true }));
+            }
+        }
         if (paths.has('style.lineStyle')) bar.appendChild(this.dropdown('Line style', LINE_STYLE_OPTIONS.map((o) => o.value), drawing.style.lineStyle, (s) => lineIcon(2, s), (v) => actions.patch({ 'style.lineStyle': v }), { label: styleLabel }));
         // initialize the Fill swatch to the color actually painted (validity tint / line-color wash /
         // background fallback), not a stale default — same source the renderer fills with.
@@ -1066,6 +1076,40 @@ export class DrawingSettingsPopup {
             onChange(on);
         });
         return b;
+    }
+
+    /** An inline numeric width field for tools whose stroke range outgrows the 1–4px
+     *  ladder — the value is clamped to the schema's declared min/max on commit. */
+    private widthInput(tip: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLInputElement {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.dataset.tip = tip;
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = String(value);
+        input.style.cssText = `width:52px;height:${BTN}px;box-sizing:border-box;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:0 4px;font:12px ${this.theme.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
+        const commit = (): void => {
+            const n = parseFloat(input.value);
+            if (!Number.isFinite(n)) {
+                input.value = String(value);
+                return;
+            }
+            const v = Math.min(max, Math.max(min, n));
+            input.value = String(v);
+            value = v;
+            onChange(v);
+        };
+        input.addEventListener('change', commit);
+        input.addEventListener('keydown', (e) => {
+            e.stopPropagation(); // typing (incl. Delete) must not reach the chart
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+                input.blur();
+            }
+        });
+        return input;
     }
 
     /** A pick-one dropdown: the trigger shows the current value's glyph (plus an optional inline

@@ -53,6 +53,12 @@ export class Watermark {
     readonly el: HTMLElement;
     private readonly text: HTMLElement;
     private readonly resizeObserver: ResizeObserver | null = null;
+    /** The host's visibility preference (the persisted watermark toggle). */
+    private shown = true;
+    /** A bar load is in flight with nothing painted — the loading affordance owns the
+     *  canvas, so the mark stays out of its way. Starts true: the FIRST `load:start`
+     *  fires during chart construction, before any subscriber can see it. */
+    private loading = true;
 
     constructor(host: HTMLElement, symbol: string, timeframe: string) {
         injectStyles(STYLE_ID, CSS, host.ownerDocument);
@@ -71,10 +77,22 @@ export class Watermark {
             this.resizeObserver.observe(this.el);
         }
         this.update(symbol, timeframe);
+        this.sync();
     }
 
     setVisible(visible: boolean): void {
-        this.el.style.display = visible ? '' : 'none';
+        this.shown = visible;
+        this.sync();
+    }
+
+    /** Loading and the watermark never share the canvas — hidden while a load is up. */
+    setLoading(loading: boolean): void {
+        this.loading = loading;
+        this.sync();
+    }
+
+    private sync(): void {
+        this.el.style.display = this.shown && !this.loading ? '' : 'none';
     }
 
     update(symbol: string, timeframe: string): void {

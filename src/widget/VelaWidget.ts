@@ -1070,6 +1070,9 @@ export class VelaWidget {
         chart.on('load:end', () => {
             this.volumeMayBePending = false;
         });
+        // The loading affordance and the watermark never share the canvas.
+        chart.on('load:start', () => this.watermark?.setLoading(true));
+        chart.on('load:end', () => this.watermark?.setLoading(false));
         // Market switches happen IN PLACE (`setMarket`) — the chart instance survives, so
         // reflect them from the event: per-symbol native support may differ, the statusline's
         // resting OHLC belongs to the old market, and an out-of-band switch (host code calling

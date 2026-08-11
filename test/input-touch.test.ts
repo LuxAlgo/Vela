@@ -58,6 +58,7 @@ function fakeElement() {
             listeners.get(type)?.delete(fn);
         },
         getBoundingClientRect: () => ({ left: 0, top: 0 }),
+        style: { setProperty() {} } as unknown as CSSStyleDeclaration,
         setPointerCapture() {},
         releasePointerCapture() {},
         fire(type: string, e: Record<string, unknown>) {
@@ -114,13 +115,20 @@ function touchHarness() {
         el.fire('pointermove', { ...base, clientX: x + 2, clientY: y + 1, timeStamp: t + 30 });
         el.fire('pointerup', { ...base, clientX: x + 2, clientY: y + 1, timeStamp: t + 45 });
     };
+    /** A one-way horizontal touch drag of `d` px, lifted where it stopped. */
+    const touchDrag = (x: number, y: number, t: number, d: number): void => {
+        const base = { button: 0, pointerId: 1, pointerType: 'touch' };
+        el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
+        el.fire('pointermove', { ...base, clientX: x + d, clientY: y, timeStamp: t + 20 });
+        el.fire('pointerup', { ...base, clientX: x + d, clientY: y, timeStamp: t + 40 });
+    };
     const mouseDrag = (x: number, y: number, t: number, d: number): void => {
         const base = { button: 0, pointerId: 2, pointerType: 'mouse' };
         el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
         el.fire('pointermove', { ...base, clientX: x + d, clientY: y, timeStamp: t + 20 });
         el.fire('pointerup', { ...base, clientX: x + d, clientY: y, timeStamp: t + 40 });
     };
-    return { deps, tap, wobbleTap, outAndBackTap, mouseDrag };
+    return { deps, el, tap, wobbleTap, outAndBackTap, touchDrag, mouseDrag };
 }
 
 describe('touch double-tap (the touch dblclick)', () => {
@@ -173,12 +181,22 @@ describe('touch double-tap (the touch dblclick)', () => {
         expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
     });
 
-    it('a contact that wobbles OUT past the slop and settles back is still a tap', () => {
+    it('a contact that slid out past the pan slop already panned — never a tap, even settling back', () => {
         const { deps, outAndBackTap } = touchHarness();
         outAndBackTap(400, 100, 0);
-        expect(deps.onClick).toHaveBeenCalledTimes(1); // release displacement decides, not the latched travel
+        expect(deps.apply).toHaveBeenCalled(); // the excursion panned the chart…
+        expect(deps.onClick).not.toHaveBeenCalled(); // …so the release cannot double as a click
         outAndBackTap(403, 102, 150);
-        expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+    });
+
+    it('a one-way drag between the pan and tap slops (9–14px) is a pan, not a tap', () => {
+        const { deps, touchDrag } = touchHarness();
+        touchDrag(400, 100, 0, 10); // > TOUCH_SLOP (8), ≤ TOUCH_TAP_SLOP (14): the chart shifted
+        expect(deps.apply).toHaveBeenCalled();
+        expect(deps.onClick).not.toHaveBeenCalled();
+        touchDrag(400, 100, 150, 10);
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
     });
 
     it('a touch travelling past the tap slop is a pan, not a tap', () => {
@@ -200,5 +218,37 @@ describe('touch double-tap (the touch dblclick)', () => {
         const { deps, mouseDrag } = touchHarness();
         mouseDrag(400, 100, 0, 5); // 5px is a click on touch but a drag for a mouse
         expect(deps.onClick).not.toHaveBeenCalled();
+    });
+});
+
+// ── touch crosshair: hover is a mouse affordance; a finger earns it by long-pressing ──
+
+describe('touch crosshair', () => {
+    it('a panning finger never paints the hover crosshair; a mouse move still does', () => {
+        const { deps, el, touchDrag } = touchHarness();
+        touchDrag(400, 100, 0, 60);
+        expect(deps.onPointerMove).not.toHaveBeenCalledWith(expect.any(Number), expect.any(Number));
+        el.fire('pointermove', { button: 0, pointerId: 2, pointerType: 'mouse', clientX: 300, clientY: 90, timeStamp: 500 });
+        expect(deps.onPointerMove).toHaveBeenCalledWith(300, 90);
+    });
+
+    it('a long press enters inspect mode: the crosshair follows the finger, the view stays put', () => {
+        vi.useFakeTimers();
+        try {
+            const { deps, el } = touchHarness();
+            const base = { button: 0, pointerId: 1, pointerType: 'touch' };
+            el.fire('pointerdown', { ...base, clientX: 400, clientY: 100, timeStamp: 0 });
+            expect(deps.onPointerMove).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(400); // past LONG_PRESS_MS
+            expect(deps.onPointerMove).toHaveBeenCalledWith(400, 100);
+            deps.apply.mockClear(); // drop the pointerdown's viewport re-apply
+            el.fire('pointermove', { ...base, clientX: 420, clientY: 110, timeStamp: 450 });
+            expect(deps.onPointerMove).toHaveBeenCalledWith(420, 110);
+            expect(deps.apply).not.toHaveBeenCalled();
+            el.fire('pointerup', { ...base, clientX: 420, clientY: 110, timeStamp: 500 });
+            expect(deps.onPointerMove).toHaveBeenLastCalledWith(null, null); // lifting ends the readout
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

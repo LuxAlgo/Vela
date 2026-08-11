@@ -530,7 +530,10 @@ export class InputController {
             // (placing is click-based, so the cursor follow happens with no button down).
             this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey);
         }
-        this.deps.onPointerMove(x, y);
+        // Hover crosshair is a MOUSE affordance. A touch never hovers: its crosshair
+        // comes only from the long-press inspect path (region 'crosshair' above) —
+        // without this guard every panning finger paints the crosshair under itself.
+        if (e.pointerType !== 'touch') this.deps.onPointerMove(x, y);
     };
 
     private readonly onUp = (e: PointerEvent): void => {
@@ -567,11 +570,12 @@ export class InputController {
         }
         const { x, y } = this.local(e);
         const wasTouch = e.pointerType === 'touch';
-        // Click/tap-hood of this release. A mouse uses the latched travel (`moved`); a
-        // touch is judged by the LANDING-to-lift displacement instead — a contact that
-        // wobbles out past the slop and settles back is still a tap on every platform,
-        // and the latch was what made double-taps feel like they hit dead zones.
-        const tapRelease = this.dragging && (wasTouch ? Math.hypot(x - this.startX, y - this.startY) <= TOUCH_TAP_SLOP : !this.moved);
+        // Click/tap-hood of this release. A mouse uses the latched travel (`moved`)
+        // alone; a touch must ALSO land within TOUCH_TAP_SLOP of where it lifted —
+        // the wider release radius forgives a quick tap's sliding contact patch, but
+        // a gesture that latched `moved` (a one-way 9–14px drag) already panned the
+        // chart and must not double as a click/tap on release.
+        const tapRelease = this.dragging && !this.moved && (!wasTouch || Math.hypot(x - this.startX, y - this.startY) <= TOUCH_TAP_SLOP);
         if (this.dragging && this.region === 'drawing') {
             this.deps.drawingsPointerUp?.(x, y);
         } else if (tapRelease && this.region === 'data') {

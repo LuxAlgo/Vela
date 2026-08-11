@@ -6,6 +6,18 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Selection in menus reads from the row itself.** The timeframe, chart type, and
+  every other selectable dropdown now mark the active entry with a stronger row
+  background instead of a leading checkmark, and the mobile three-dots sheet does the
+  same — the selected item is visible at a glance without scanning for a glyph.
+- **The symbol watermark yields to loading.** While a chart's bars are loading, the
+  faded symbol watermark stays hidden so it never overlaps the loading indicator; it
+  returns as soon as the first bars paint.
+- **Favorite stars are gold everywhere.** The mobile drawings sheet's favorite star
+  now lights up in the same gold as the desktop drawing toolbar's, instead of blue.
+- **The highlighter's width is typed, not picked.** The drawing quick bar shows a
+  numeric width field for the highlighter (honoring its 4–60px range) instead of the
+  1–4px list, which couldn't even express its 14px default.
 - **Crosshair sync mirrors the price level too.** With crosshair sync on in a
   multi-chart workspace, charts showing the SAME ticker as the hovered one now draw
   the ghost's horizontal price line alongside the vertical time line, with the price
@@ -98,6 +110,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Long freehand strokes keep their shape.** Drawing with the brush or highlighter
+  for a long stretch no longer degrades into a single straight line chasing the
+  cursor: when a stroke reaches its point budget, the older trail thins gracefully
+  and the capture keeps going, so the whole gesture lands on the chart.
 - **Multi-chart borders stay under chart settings.** Hovering a cell seam in a
   multi-chart workspace no longer draws the splitter highlight through an open chart
   settings dialog — the dialog now stacks above the grid chrome.
