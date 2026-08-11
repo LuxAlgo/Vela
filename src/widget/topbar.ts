@@ -25,7 +25,7 @@ const CSS = `
     font-size: var(--vela-font-size-md);
     flex: none;
 }
-.vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators {
+.vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
     all: unset;
     display: inline-flex;
     align-items: center;
@@ -47,10 +47,10 @@ const CSS = `
     padding: 0 10px;
     gap: 7px;
 }
-.vela-widget-tf, .vela-widget-style, .vela-widget-indicators {
+.vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
     color: var(--vela-fg-bright);
 }
-.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-widget-topbar .vela-icon { color: inherit; font-size: 16px; width: 16px; height: 16px; }
 /* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
    fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
@@ -73,6 +73,8 @@ const CSS = `
     justify-content: center;
 }
 .vela-widget-actions { margin-left: auto; display: inline-flex; gap: var(--vela-space-1); }
+/* Left-aligned contributed actions — the primary-chrome cluster after the dropdowns. */
+.vela-widget-actions-left { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
 /* The side-panel toggles, one per docked panel — a group so the dock can rebuild them
    without disturbing the tools around it. */
 .vela-widget-panels { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
@@ -175,6 +177,10 @@ export class Topbar {
     private readonly styleMenu: Menu;
     private readonly tooltips: Tooltip[] = [];
     private readonly actionsHost: HTMLElement;
+    /** Left-aligned contributed actions (`align: 'left'`) — right after the dropdowns. */
+    private readonly leftActionsHost: HTMLElement;
+    /** The hairline after the left cluster — hidden while the cluster is empty. */
+    private readonly leftActionsSep: HTMLElement;
     /** The side-panel toggle group — filled by the dock through {@link setPanelButtons}. */
     private readonly panelsHost: HTMLElement;
     private undoBtn!: HTMLButtonElement;
@@ -220,15 +226,22 @@ export class Topbar {
         this.styleButton = doc.createElement('button');
         this.styleButton.className = 'vela-widget-style';
         this.renderStyleButton(doc);
-        const indicatorsBtn = doc.createElement('button');
-        indicatorsBtn.className = 'vela-widget-indicators';
-        indicatorsBtn.append(iconEl('indicators', doc), doc.createTextNode('Indicators'));
-        if (opts.onIndicatorsClick) indicatorsBtn.addEventListener('click', opts.onIndicatorsClick);
+        // No callback ⇒ no button: a host replacing the indicator picker with its own
+        // UI (shell option `indicatorPicker: false`) must not show a dead entry point.
+        let indicatorsBtn: HTMLButtonElement | null = null;
+        if (opts.onIndicatorsClick) {
+            indicatorsBtn = doc.createElement('button');
+            indicatorsBtn.className = 'vela-widget-indicators';
+            indicatorsBtn.append(iconEl('indicators', doc), doc.createTextNode('Indicators'));
+            indicatorsBtn.addEventListener('click', opts.onIndicatorsClick);
+        }
 
         // Right-hand cluster: contributed actions, then icon-only tools — the side-panel
         // toggles (filled by the dock) and screenshot. Labels live in their tooltips.
         this.actionsHost = doc.createElement('span');
         this.actionsHost.className = 'vela-widget-actions';
+        this.leftActionsHost = doc.createElement('span');
+        this.leftActionsHost.className = 'vela-widget-actions-left';
         this.panelsHost = doc.createElement('span');
         this.panelsHost.className = 'vela-widget-panels';
         const tool = (cls: string, icon: string, tip: string, onClick?: () => void): HTMLButtonElement =>
@@ -261,7 +274,12 @@ export class Topbar {
         };
         const leading: Array<HTMLElement> = [this.symbolEl, sep(), this.tfButton, sep(), this.styleButton, sep()];
         if (this.layoutButton) leading.push(this.layoutButton, sep());
-        this.el.append(...leading, indicatorsBtn, sep(), this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, this.panelsHost, screenshotBtn);
+        if (indicatorsBtn) leading.push(indicatorsBtn, sep());
+        // The left action cluster sits where the built-in Indicators button lives; its
+        // trailing hairline shows only while the cluster is non-empty (renderActions).
+        this.leftActionsSep = sep();
+        this.leftActionsSep.hidden = true;
+        this.el.append(...leading, this.leftActionsHost, this.leftActionsSep, this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, this.panelsHost, screenshotBtn);
         host.appendChild(this.el);
         // Snap after layout; RO catches later reflows (symbol / timeframe length).
         this.onHairlineSync();
@@ -353,18 +371,24 @@ export class Topbar {
     renderActions(): void {
         const ctx = this.opts.getContext?.();
         this.actionsHost.replaceChildren();
+        this.leftActionsHost.replaceChildren();
         const doc = this.actionsHost.ownerDocument;
         for (const action of widgetActions('topbar', ctx)) {
+            const left = action.align === 'left';
             const b = doc.createElement('button');
-            b.className = 'vela-widget-action';
+            // Left actions wear the primary-chrome styling (the built-in Indicators
+            // button's own class list); right actions keep the compact tool look.
+            b.className = left ? 'vela-widget-action-left' : 'vela-widget-action';
             if (action.icon) b.appendChild(iconEl(action.icon, doc));
             b.appendChild(doc.createTextNode(action.label));
             b.addEventListener('click', () => {
                 const c = this.opts.getContext?.();
                 if (c) action.run(c);
             });
-            this.actionsHost.appendChild(b);
+            (left ? this.leftActionsHost : this.actionsHost).appendChild(b);
         }
+        this.leftActionsSep.hidden = this.leftActionsHost.childElementCount === 0;
+        this.onHairlineSync(); // the visible hairline set may have changed
     }
 
     setIndicatorCount(_n: number): void {
