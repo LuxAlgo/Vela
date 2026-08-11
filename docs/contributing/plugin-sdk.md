@@ -195,6 +195,78 @@ Attachments mount at widget construction (and on `widget.refreshActions()` for l
 registrations), once per id per widget. The same portability rules as actions apply: everything
 comes from `ctx`, never from module state.
 
+## Replacing the indicator menu
+
+The shells ship a built-in indicator dialog (the *Indicators* button). Replacing it
+needs **no dedicated seam** — it is the composition of one shell option and the two
+contributions above:
+
+- **`indicatorPicker: false`** (a shell option on both the widget and the workspace)
+  removes the built-in dialog's entry points — the topbar button, the mobile-bar item,
+  and the `/` shortcut. Nothing else changes: the `indicators` manifest still resolves
+  and auto-adds its enabled entries.
+- **Your menu is an ordinary contribution**: a topbar **action** provides the button, a
+  widget **attachment** owns the per-shell dialog (and any shortcut you want back).
+  Everything a menu needs is public on the context — the native catalog and adds via
+  `ctx.chart.availableNativeIndicators()` / `ctx.chart.addNativeIndicator(type)`, any
+  script source via `ctx.chart.addIndicator(source, { language })`, and `ctx.host` as
+  the mount host for kit components.
+
+```ts
+import { registerWidgetAction, registerWidgetAttachment } from 'vela/plugin';
+import { Dialog } from 'vela/ui';
+
+// One menu per shell: the attachment owns the lifecycle, the action opens it.
+const menus = new WeakMap<HTMLElement, Dialog>();
+
+registerWidgetAttachment({
+    id: 'mytool.indicator-menu',
+    mount: (ctx) => {
+        const dialog = new Dialog({
+            title: 'Indicators',
+            host: ctx.host,
+            closeOnInteractOutside: true,
+            content: (body) => {
+                void ctx.chart.availableNativeIndicators().then((natives) => {
+                    for (const n of natives.filter((n) => n.supported)) {
+                        const row = body.ownerDocument.createElement('button');
+                        row.textContent = n.title;
+                        row.addEventListener('click', () => ctx.chart.addNativeIndicator(n.type));
+                        body.appendChild(row);
+                    }
+                    // …plus any script rows: ctx.chart.addIndicator(source, { language: 'pine' })
+                });
+            },
+        });
+        menus.set(ctx.host, dialog);
+        return () => dialog.destroy();
+    },
+});
+
+registerWidgetAction({
+    id: 'mytool.indicators.open',
+    target: 'topbar',
+    label: 'Indicators',
+    icon: 'indicators', // the shells' own icon id — reuse it for a familiar button
+    run: (ctx) => menus.get(ctx.host)?.show(),
+});
+```
+
+The host page opts out of the built-in dialog when it constructs the shell:
+
+```ts
+new VelaWidget('#chart', { symbol: 'BTCUSDT', indicatorPicker: false });
+```
+
+The two halves stay decoupled on purpose: a host can hide the picker without replacing
+it, run both menus side by side while migrating, and any plugin — not just one blessed
+package — can ship its own menu through the same public surface. Two caveats to design
+for: indicators added straight through `chart.addIndicator` live on the chart (legend,
+inputs, removal all work) but are **not** part of the shell's persisted manifest ledger,
+so your menu owns their persistence if you want them restored; and a shortcut you bind
+yourself must never steal keystrokes from editable targets (the shell's own `/` binding
+is gone with the picker).
+
 ## Legend actions — `registerLegendAction`
 
 An icon button on every indicator's **legend row**, revealed with the built-in controls

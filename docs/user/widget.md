@@ -40,6 +40,7 @@ the surface it shares, name for name and meaning for meaning, with
 | `timeframes` | `string[]` | `['1','5','15','60','240','D','W']` | The topbar timeframe presets. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
 | `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles (`bottombar` governs the mobile bottom bar too). |
+| `indicatorPicker` | boolean | `true` | The built-in indicator dialog's entry points — the topbar *Indicators* button, the mobile-bar item, and the `/` shortcut. `false` removes them, for hosts that ship their own indicator UI (see [Replacing the indicator menu](../contributing/plugin-sdk.md#replacing-the-indicator-menu)). The `indicators` manifest still resolves and auto-adds. |
 | `layoutMode` | `'auto'` \| `'mobile'` \| `'desktop'` | `'auto'` | The chrome size class. `'auto'` follows the **container** width (plus a coarse-pointer heuristic for tablets) and re-evaluates live; the explicit values pin it. See [Mobile](#mobile). |
 | `autofocus` | boolean | `false` | Focus the chart on mount so keyboard shortcuts work from the first keystroke. Off by default: an embedded chart should not steal the page's focus. |
 | `persist` | boolean \| string | `false` | Bring the chart back as you left it — the widget persists its FULL state (the unified `getState()` document: market, prefs, renderer config, user drawings, indicators) and restores it at construction (`true` = key `'vela-widget'`; a string is the key). Old three-key payloads migrate transparently. |
