@@ -42,6 +42,11 @@ export function tickerIconEl(doc: Document, base: string, name: string, classNam
     }
     const img = doc.createElement('img');
     img.alt = '';
+    // CORS-clean (the CDN serves `Access-Control-Allow-Origin: *`): a plain <img> would
+    // TAINT any canvas it is drawn onto, so the PNG export had to leave the logo out.
+    // If a host swaps in a CDN without CORS, the load errors into the initials badge —
+    // which exports fine — instead of silently poisoning screenshots.
+    img.crossOrigin = 'anonymous';
     img.src = cryptoIconUrl(key);
     img.style.cssText = 'width:100%;height:100%;border-radius:50%;display:block;object-fit:cover;';
     img.addEventListener(

@@ -48,6 +48,7 @@ import { applyAttributionMarkTheme, createAttributionMark, createCustomMark } fr
 import { rendererDefaults } from '../core/renderer-defaults';
 import { defaultToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMode } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
+import { parseSymbol } from '../data/ProviderRegistry';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { localStorageAdapter } from '../widget/persist';
@@ -1073,7 +1074,9 @@ export class VelaWorkspace {
         });
         // Crosshair sync: mirror THIS cell's pointer time onto its same-group followers
         // as ghost markers. Leave already emits `time: null` — the clear rides along.
-        chart.renderer.onCrosshairMove((e) => this.propagateCrosshair(cell.id, e.time));
+        // The horizontal level travels only when the cursor is on the PRICE pane — a
+        // study pane's `price` is that pane's indicator value, not a chart price.
+        chart.renderer.onCrosshairMove((e) => this.propagateCrosshair(cell.id, e.time, e.paneKind === 'price' ? e.price : null));
         // Drawing edits are cell state (the per-slot drawings document) — persistable.
         // When the drawings link is on, a CREATED drawing copies onto the same-group
         // cells and the set stays LINKED: edits and removals of any member follow
@@ -1174,17 +1177,24 @@ export class VelaWorkspace {
 
     /**
      * Mirror an origin cell's pointer time onto its same-group followers as GHOST
-     * crosshairs (`renderer.setExternalCrosshair`). Leaving the origin propagates
-     * `null` (the event already carries it) and clears every ghost. No busy guard
-     * needed: an external crosshair never re-emits `onCrosshairMove` — the flow is
-     * one-way by port contract, so no echo loop can exist.
+     * crosshairs (`renderer.setExternalCrosshair`). The horizontal price level rides
+     * along ONLY to followers showing the same ticker — price scales are comparable
+     * there, while an origin's price painted on another market's pane would be noise.
+     * Leaving the origin propagates `null` (the event already carries it) and clears
+     * every ghost. No busy guard needed: an external crosshair never re-emits
+     * `onCrosshairMove` — the flow is one-way by port contract, so no echo loop can
+     * exist.
      */
-    private propagateCrosshair(originId: string, time: number | null): void {
+    private propagateCrosshair(originId: string, time: number | null, price: number | null = null): void {
         if (this.destroyed) return;
         const setting = this.syncOpts.crosshair;
         if (!setting) return;
+        const originTicker = parseSymbol(this.cellsById.get(originId)?.symbol ?? '').ticker;
         for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
-            this.cellsById.get(id)?.chart.renderer.setExternalCrosshair(time);
+            const follower = this.cellsById.get(id);
+            if (!follower) continue;
+            const comparable = originTicker !== '' && parseSymbol(follower.symbol).ticker === originTicker;
+            follower.chart.renderer.setExternalCrosshair(time, comparable ? price : null);
         }
     }
 

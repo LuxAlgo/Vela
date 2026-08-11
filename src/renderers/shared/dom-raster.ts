@@ -7,9 +7,11 @@
 //   - text nodes in their computed font/color, at their measured on-screen rects,
 //   - already-loaded <img>s (clipped by their radius) — but only when drawing them
 //     leaves the canvas untainted: a cross-origin ticker icon must not poison the
-//     whole export (`toDataURL` would throw at the end).
-// Inline SVG glyphs (icons, chevrons) are skipped — sync canvas cannot raster them —
-// which loses decoration, never information.
+//     whole export (`toDataURL` would throw at the end),
+//   - inline SVG icons, through the geometry subset the icon registry actually uses
+//     (path / circle / rect / line / polyline / polygon, fill + stroke from computed
+//     style, so `currentColor` and inheritance resolve for free). Elements carrying a
+//     `transform` are skipped — honest absence beats a wrongly placed glyph.
 
 /** How the overlay's viewport coordinates map onto the export canvas. */
 export interface OverlayRasterFrame {
@@ -100,6 +102,77 @@ export function rasterizeOverlay(ctx: CanvasRenderingContext2D, root: Element, f
         ctx.restore();
     };
 
+    const drawSvgShapes = (parent: Element, alpha: number): void => {
+        for (const el of parent.children) {
+            if (el.hasAttribute('transform')) continue;
+            const tag = el.tagName.toLowerCase();
+            if (tag === 'g') {
+                drawSvgShapes(el, alpha);
+                continue;
+            }
+            const num = (name: string): number => parseFloat(el.getAttribute(name) ?? '0') || 0;
+            let path: Path2D | null = null;
+            if (tag === 'path') {
+                const d = el.getAttribute('d');
+                if (d) path = new Path2D(d);
+            } else if (tag === 'circle') {
+                path = new Path2D();
+                path.arc(num('cx'), num('cy'), num('r'), 0, Math.PI * 2);
+            } else if (tag === 'ellipse') {
+                path = new Path2D();
+                path.ellipse(num('cx'), num('cy'), num('rx'), num('ry'), 0, 0, Math.PI * 2);
+            } else if (tag === 'rect') {
+                path = new Path2D();
+                path.rect(num('x'), num('y'), num('width'), num('height'));
+            } else if (tag === 'line') {
+                path = new Path2D();
+                path.moveTo(num('x1'), num('y1'));
+                path.lineTo(num('x2'), num('y2'));
+            } else if (tag === 'polyline' || tag === 'polygon') {
+                const pts = (el.getAttribute('points') ?? '').trim().split(/[\s,]+/).map(Number);
+                if (pts.length < 4 || pts.some(Number.isNaN)) continue;
+                path = new Path2D();
+                path.moveTo(pts[0]!, pts[1]!);
+                for (let i = 2; i + 1 < pts.length; i += 2) path.lineTo(pts[i]!, pts[i + 1]!);
+                if (tag === 'polygon') path.closePath();
+            }
+            if (!path) continue;
+            const cs = win.getComputedStyle(el);
+            if (cs.fill && cs.fill !== 'none' && hasInk(cs.fill)) {
+                ctx.globalAlpha = alpha * (parseFloat(cs.fillOpacity) || 1);
+                ctx.fillStyle = cs.fill;
+                ctx.fill(path);
+            }
+            const sw = parseFloat(cs.strokeWidth) || 0;
+            if (cs.stroke && cs.stroke !== 'none' && hasInk(cs.stroke) && sw > 0) {
+                ctx.globalAlpha = alpha * (parseFloat(cs.strokeOpacity) || 1);
+                ctx.strokeStyle = cs.stroke;
+                ctx.lineWidth = sw;
+                if (cs.strokeLinecap === 'round' || cs.strokeLinecap === 'square' || cs.strokeLinecap === 'butt') ctx.lineCap = cs.strokeLinecap;
+                if (cs.strokeLinejoin === 'round' || cs.strokeLinejoin === 'bevel' || cs.strokeLinejoin === 'miter') ctx.lineJoin = cs.strokeLinejoin;
+                ctx.stroke(path);
+            }
+        }
+    };
+
+    const drawSvg = (svg: SVGSVGElement, parentAlpha: number): void => {
+        const r = svg.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return;
+        const cs = win.getComputedStyle(svg);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+        const alpha = parentAlpha * (parseFloat(cs.opacity) || 1);
+        if (alpha <= 0.001) return;
+        const vb = svg.viewBox.baseVal;
+        const vw = vb && vb.width > 0 ? vb.width : r.width;
+        const vh = vb && vb.height > 0 ? vb.height : r.height;
+        ctx.save();
+        ctx.translate(r.left - frame.left, r.top - frame.top);
+        ctx.scale(r.width / vw, r.height / vh);
+        if (vb) ctx.translate(-vb.x, -vb.y);
+        drawSvgShapes(svg, alpha);
+        ctx.restore();
+    };
+
     const drawElement = (el: HTMLElement, parentAlpha: number): void => {
         const cs = win.getComputedStyle(el);
         if (cs.display === 'none' || cs.visibility === 'hidden') return;
@@ -128,7 +201,7 @@ export function rasterizeOverlay(ctx: CanvasRenderingContext2D, root: Element, f
         for (const child of el.childNodes) {
             if (child.nodeType === 3) drawText(child as Text, cs, alpha);
             else if (child instanceof win.HTMLImageElement) drawImg(child, win.getComputedStyle(child), alpha);
-            // Non-HTML children (inline SVG icons) are skipped — see the header note.
+            else if (child instanceof win.SVGSVGElement) drawSvg(child, alpha);
             else if (child instanceof win.HTMLElement) drawElement(child, alpha);
         }
     };

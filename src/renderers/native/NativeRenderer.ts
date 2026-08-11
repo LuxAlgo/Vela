@@ -2308,7 +2308,7 @@ export class NativeRenderer implements IChartRenderer {
             this.lastPointer = null;
             this.scheduler.invalidate(InvalidateLevel.Cursor);
             this.hoverLogical = null; // off the plot ⇒ the readout falls back to the latest bar
-            const empty: CrosshairEvent = { time: null, price: null, values: new Map(), ohlc: null };
+            const empty: CrosshairEvent = { time: null, price: null, paneKind: null, values: new Map(), ohlc: null };
             for (const cb of this.crosshairCbs) cb(empty);
             return;
         }
@@ -2326,7 +2326,7 @@ export class NativeRenderer implements IChartRenderer {
         const logical = Math.round(this.coords.xToLogical(x));
         const onBar = logical >= 0 && logical < this.coords.barCount;
         const time = onBar ? this.coords.logicalToTime(logical) : null;
-        const pane = this.paneAtY(y);
+        const pane = this.paneNodeAtY(y); // the full node — the event also names the pane KIND
         const price = inData && pane ? this.coords.yToPrice(y, pane.scale, pane.bounds) : null;
         const values = new Map<string, number>();
         if (onBar) {
@@ -2345,7 +2345,7 @@ export class NativeRenderer implements IChartRenderer {
             ? { time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume }
             : null;
         this.hoverLogical = onBar ? logical : null;
-        const event: CrosshairEvent = { time, price, values, ohlc };
+        const event: CrosshairEvent = { time, price, paneKind: inData && pane ? pane.kind : null, values, ohlc };
         for (const cb of this.crosshairCbs) cb(event);
     }
 
@@ -2366,6 +2366,21 @@ export class NativeRenderer implements IChartRenderer {
             if (y >= pane.bounds.top && y <= pane.bounds.top + pane.bounds.height) return pane;
         }
         return null;
+    }
+
+    /** The pane whose bounds sit closest to `y` — the forgiving fallback for points that
+     *  fall BETWEEN bounds (separator gaps, the strip under the last pane). */
+    private nearestPaneToY(y: number): PaneNode | null {
+        let best: PaneNode | null = null;
+        let bestDist = Infinity;
+        for (const pane of this.scene.panes.values()) {
+            const d = y < pane.bounds.top ? pane.bounds.top - y : y - (pane.bounds.top + pane.bounds.height);
+            if (d < bestDist) {
+                bestDist = d;
+                best = pane;
+            }
+        }
+        return best;
     }
 
     // ── manual vertical scaling (price-axis drag + vertical price pan) ──
@@ -2436,7 +2451,9 @@ export class NativeRenderer implements IChartRenderer {
      * still fits the view.)
      */
     private dataDblClick(_x: number, y: number): void {
-        const pane = this.paneNodeAtY(y);
+        // Snap to the nearest pane when the point falls between bounds (separator gap,
+        // the sliver under the last pane) — a double-tap must never land in a dead zone.
+        const pane = this.paneNodeAtY(y) ?? this.nearestPaneToY(y);
         if (!pane) return;
         // Double-click maximizes the clicked pane so it fills the plot and every other pane is
         // fully hidden (zero height, not a strip): the price pane hides all study indicators, a
@@ -2939,7 +2956,7 @@ export class NativeRenderer implements IChartRenderer {
      *  pointer at 14:00 must light THIS day's daily candle, not tomorrow's (a time past
      *  a bar's midpoint still belongs to that bar). Before the first open or past the
      *  forming bar there is no containing bar — no ghost. */
-    private externalCrossPx(): { x: number; y: number | null; time: Millis } | null {
+    private externalCrossPx(): { x: number; y: number | null; time: Millis; price: number | null } | null {
         const ext = this.externalCross;
         if (!ext || this.coords.barCount === 0) return null;
         const logical = Math.floor(this.coords.timeToLogical(ext.time));
@@ -2954,7 +2971,8 @@ export class NativeRenderer implements IChartRenderer {
                 if (!Number.isFinite(y) || y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) y = null;
             }
         }
-        return { x, y, time: this.coords.logicalToTime(logical) };
+        // The raw price rides along for the axis chip (only meaningful with a resolved y).
+        return { x, y, time: this.coords.logicalToTime(logical), price: y != null ? ext.price : null };
     }
 
     /** Sticky magnet mode for user drawings (off/weak/strong); the drawings toolbar drives it. */

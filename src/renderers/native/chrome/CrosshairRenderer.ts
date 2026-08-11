@@ -29,7 +29,7 @@ export class CrosshairRenderer {
     /** Clear the cursor canvas and (re)draw the crosshair lines + axis chips. The optional
      *  `separatorHoverY` highlights the draggable pane separator under the cursor;
      *  `external` is a SYNCED ghost crosshair (another chart's pointer, pixel-resolved). */
-    render(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, separatorHoverY: number | null = null, external: { x: number; y: number | null; time: number } | null = null): void {
+    render(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, separatorHoverY: number | null = null, external: { x: number; y: number | null; time: number; price?: number | null } | null = null): void {
         const ctx = this.ctx;
         const canvas = this.canvas;
         if (!ctx || !canvas) return;
@@ -98,11 +98,11 @@ export class CrosshairRenderer {
 
     /** The synced ghost: a dimmed vertical line at the bar the renderer resolved as
      *  CONTAINING the foreign time (+ horizontal line when a comparable price came
-     *  along), with that bar's time chip in this chart's own timezone. The snap
-     *  happened upstream (`externalCrossPx`, floor-to-containing-bar) — this method
-     *  only draws. No price chip — the ghost answers "when", the local crosshair
-     *  answers "where". */
-    private drawExternal(ctx: CanvasRenderingContext2D, ext: { x: number; y: number | null; time: number }, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme): void {
+     *  along), with that bar's time chip in this chart's own timezone and — when the
+     *  level resolved — the price chip on the right axis. The snap happened upstream
+     *  (`externalCrossPx`, floor-to-containing-bar) — this method only draws. Chips
+     *  render slightly dimmed so the ghost still reads as foreign. */
+    private drawExternal(ctx: CanvasRenderingContext2D, ext: { x: number; y: number | null; time: number; price?: number | null }, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme): void {
         const cs = scene.style.crosshair;
         const dataW = coords.width;
         const dataH = coords.height;
@@ -124,8 +124,23 @@ export class CrosshairRenderer {
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.8; // the chip stays readable but still reads as foreign
-        this.chip(ctx, x, dataH + 1, formatStamp(ext.time, scene.timezone), cs.labelBackground ?? theme.borderColor, 'center', true, theme.background);
+        ctx.globalAlpha = 0.8; // chips stay readable but still read as foreign
+        const chipBg = cs.labelBackground ?? theme.borderColor;
+        if (ext.y != null && ext.price != null) {
+            // Same chip the local crosshair puts on the axis, at the ghost's level —
+            // formatted on the pane under the line (the price pane, by construction).
+            let pane: PaneNode | undefined;
+            for (const p of scene.panes.values()) {
+                if (ext.y >= p.bounds.top && ext.y <= p.bounds.top + p.bounds.height) {
+                    pane = p;
+                    break;
+                }
+            }
+            if (pane) {
+                this.chip(ctx, dataW + 1, ext.y, formatAxisValue(pane.scale, pane.bounds.height, ext.price, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat), chipBg, 'left', false, theme.background);
+            }
+        }
+        this.chip(ctx, x, dataH + 1, formatStamp(ext.time, scene.timezone), chipBg, 'center', true, theme.background);
         ctx.globalAlpha = 1;
     }
 

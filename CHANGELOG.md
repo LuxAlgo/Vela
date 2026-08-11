@@ -6,6 +6,13 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Crosshair sync mirrors the price level too.** With crosshair sync on in a
+  multi-chart workspace, charts showing the SAME ticker as the hovered one now draw
+  the ghost's horizontal price line alongside the vertical time line, with the price
+  labeled on their own scale (hover the price pane — a study pane's value is not a
+  price). Charts on other markets keep the time-only ghost: a foreign price level
+  would be noise on their scale. For custom consumers, the crosshair event now names
+  the pane kind under the cursor (`paneKind`), so a host can make the same call.
 - **Mobile chrome polish.** The timeframe sheet labels its date-range chips and
   timeframe grid with matching white section headers (no divider between them), and
   highlights the active chip in white. In the drawings sheet the search field and

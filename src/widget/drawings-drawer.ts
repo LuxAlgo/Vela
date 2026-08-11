@@ -43,6 +43,9 @@ const CSS = `
     gap: 4px;
     overflow-x: auto;
     scrollbar-width: none;
+    /* The strip scrolls sideways itself — its touches are native scroll, not tab swipes
+       (the drawer body is pan-y so everywhere ELSE a sideways move swipes the tabs). */
+    touch-action: pan-x;
     padding: 0 2px 8px;
     border-bottom: 1px solid var(--vela-border);
     background: var(--vela-surface);

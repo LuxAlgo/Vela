@@ -106,13 +106,21 @@ function touchHarness() {
         el.fire('pointermove', { ...base, clientX: x + w, clientY: y + w, timeStamp: t + 20 });
         el.fire('pointerup', { ...base, clientX: x + w, clientY: y + w, timeStamp: t + 40 });
     };
+    /** A tap whose contact slides OUT past every slop and settles back near the start. */
+    const outAndBackTap = (x: number, y: number, t: number): void => {
+        const base = { button: 0, pointerId: 1, pointerType: 'touch' };
+        el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
+        el.fire('pointermove', { ...base, clientX: x + 20, clientY: y + 15, timeStamp: t + 15 });
+        el.fire('pointermove', { ...base, clientX: x + 2, clientY: y + 1, timeStamp: t + 30 });
+        el.fire('pointerup', { ...base, clientX: x + 2, clientY: y + 1, timeStamp: t + 45 });
+    };
     const mouseDrag = (x: number, y: number, t: number, d: number): void => {
         const base = { button: 0, pointerId: 2, pointerType: 'mouse' };
         el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
         el.fire('pointermove', { ...base, clientX: x + d, clientY: y, timeStamp: t + 20 });
         el.fire('pointerup', { ...base, clientX: x + d, clientY: y, timeStamp: t + 40 });
     };
-    return { deps, tap, wobbleTap, mouseDrag };
+    return { deps, tap, wobbleTap, outAndBackTap, mouseDrag };
 }
 
 describe('touch double-tap (the touch dblclick)', () => {
@@ -165,12 +173,27 @@ describe('touch double-tap (the touch dblclick)', () => {
         expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
     });
 
-    it('a touch travelling past the touch slop is a pan, not a tap', () => {
+    it('a contact that wobbles OUT past the slop and settles back is still a tap', () => {
+        const { deps, outAndBackTap } = touchHarness();
+        outAndBackTap(400, 100, 0);
+        expect(deps.onClick).toHaveBeenCalledTimes(1); // release displacement decides, not the latched travel
+        outAndBackTap(403, 102, 150);
+        expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('a touch travelling past the tap slop is a pan, not a tap', () => {
         const { deps, wobbleTap } = touchHarness();
-        wobbleTap(400, 100, 0, 12);
-        wobbleTap(400, 100, 150, 12);
+        wobbleTap(400, 100, 0, 20);
+        wobbleTap(400, 100, 150, 20);
         expect(deps.onClick).not.toHaveBeenCalled();
         expect(deps.dataDblClick).not.toHaveBeenCalled();
+    });
+
+    it('the pair routes by the FIRST tap (the aimed one), not the sloppier second', () => {
+        const { deps, tap } = touchHarness();
+        tap(400, 100, 0);
+        tap(420, 120, 150); // drifted, still within the pairing slop
+        expect(deps.dataDblClick).toHaveBeenCalledWith(400, 100);
     });
 
     it('the mouse keeps its strict 2px click slop', () => {

@@ -199,7 +199,7 @@ export class Drawer {
         this.panel.addEventListener(
             'touchmove',
             (e) => {
-                if (mode === 'drag') {
+                if (mode === 'drag' || mode === 'hswipe') {
                     e.preventDefault();
                     return;
                 }
