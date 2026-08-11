@@ -160,9 +160,11 @@ Topbar actions render as buttons in the right-hand cluster by default; `align: '
 moves one into the primary chrome cluster instead — right after the style/layout
 dropdowns, wearing the same height/typography as the built-in buttons there (that is
 the built-in Indicators button's exact spot and look, for actions that replace it).
-`context:*` actions are appended to the matching right-click menu zone. Register at
-import time — a widget constructed later picks them up; after late registrations call
-`widget.refreshActions()`.
+On the mobile chrome the split carries over: left-aligned actions get their own
+icon-only stop in the bottom bar (the built-in indicators slot), while right-aligned
+ones stay in the three-dots sheet. `context:*` actions are appended to the matching
+right-click menu zone. Register at import time — a widget constructed later picks them
+up; after late registrations call `widget.refreshActions()`.
 
 Two rules keep actions portable:
 

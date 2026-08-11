@@ -525,6 +525,7 @@ export class VelaWorkspace {
                       onSymbolClick: () => this.symbolPicker.open(),
                       onTimeframeClick: () => this.openTimeframeDrawer(),
                       ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
+                      getContext: () => this.context(),
                       onDrawingsClick: () => this.openDrawingsDrawer(),
                       onMoreClick: () => this.openMoreDrawer(),
                       onSettingsClick: () => this.active.chart.renderer.openSettings(),
@@ -660,6 +661,7 @@ export class VelaWorkspace {
     refreshActions(): void {
         this.mountAttachments();
         this.topbar.renderActions();
+        this.mobileBar?.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
         // Re-project every cell's legend rows so a late registerLegendAction appears there too.
         for (const cell of this.cells()) cell.chart.renderer.setLegendActions(legendActionsProviderFor(cell.chart, () => this.context()));
@@ -885,6 +887,7 @@ export class VelaWorkspace {
         this.topbar.setPriceStyle(cell.priceStyle);
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
+        this.mobileBar?.renderActions();
         this.mobileBar?.setSymbol(cell.symbol);
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.drawingPill.onChart(cell.chart); // the pill mirrors the ACTIVE cell's tool state
@@ -1454,7 +1457,12 @@ export class VelaWorkspace {
             panels: () => [...this.dock.list()],
             onTogglePanel: (id) => this.dock.toggle(id),
             alerts: () => this.alerts.map((a) => ({ title: `[${a.cellId} · ${a.symbol}] ${a.title}`, message: a.message, time: a.time })),
-            actions: () => widgetActions('topbar', this.context()).map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) })),
+            // Left-aligned actions have their own bottom-bar stop — only the rest
+            // lands in the drawer, or every left action would appear twice.
+            actions: () =>
+                widgetActions('topbar', this.context())
+                    .filter((a) => a.align !== 'left')
+                    .map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) })),
             // The desktop layout dropdown's whole surface — the grid canvas, the
             // non-canvas presets and the sync switches — relocated into the kebab
             // drawer (the topbar is hidden on mobile). Same reads as the topbar block.

@@ -344,6 +344,7 @@ export class VelaWidget {
                       onSymbolClick: () => this.symbolPicker.open(),
                       onTimeframeClick: () => this.openTimeframeDrawer(),
                       ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
+                      getContext: () => this.context(),
                       onDrawingsClick: () => this.openDrawingsDrawer(),
                       onMoreClick: () => this.openMoreDrawer(),
                       onSettingsClick: () => this.inner?.renderer.openSettings(),
@@ -487,7 +488,12 @@ export class VelaWidget {
             panels: () => [...this.dock.list()],
             onTogglePanel: (id) => this.dock.toggle(id),
             alerts: () => this.alerts,
-            actions: () => widgetActions('topbar', this.context()).map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) })),
+            // Left-aligned actions have their own bottom-bar stop — only the rest
+            // lands in the drawer, or every left action would appear twice.
+            actions: () =>
+                widgetActions('topbar', this.context())
+                    .filter((a) => a.align !== 'left')
+                    .map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) })),
             onOpenChange: (open) => this.trackDialog(open),
         });
         this.moreDrawer.open();
@@ -567,6 +573,7 @@ export class VelaWidget {
     refreshActions(): void {
         this.mountAttachments();
         this.topbar.renderActions();
+        this.mobileBar?.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the live chart on their own
         // Re-project legend rows so a late registerLegendAction appears on them too.
         if (this.inner) this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => this.context()));
@@ -1139,6 +1146,7 @@ export class VelaWidget {
             this.lastCrossTime = e.time;
         });
         this.topbar.renderActions(); // when() gates may depend on the new chart/context
+        this.mobileBar?.renderActions();
         if (this.savedConfig != null) chart.renderer.applyConfig(this.savedConfig);
         if (this.savedDrawings != null) chart.drawings.fromJSON(this.savedDrawings);
         // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).

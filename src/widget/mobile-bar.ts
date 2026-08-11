@@ -8,6 +8,7 @@ import { iconEl } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { timeframeLabel } from './timeframe';
+import { widgetActions, type WidgetContext } from './contributions';
 
 const STYLE_ID = 'vela-widget-mobilebar';
 const CSS = `
@@ -41,6 +42,9 @@ const CSS = `
 }
 .vela-mb-item:active { background: var(--vela-hover); }
 .vela-mb-item .vela-icon { font-size: 18px; width: 18px; height: 18px; }
+/* Left-aligned contributed actions get their own stops (the built-in indicators
+   slot) — the wrapper is layout-transparent so each stop flexes like a sibling. */
+.vela-mb-actions { display: contents; }
 .vela-mb-symbol {
     flex: 1.6 1 0;
     font-size: 14px;
@@ -65,14 +69,21 @@ export interface MobileBarOptions {
     onDrawingsClick: () => void;
     onMoreClick: () => void;
     onSettingsClick: () => void;
+    /** Live widget context — left-aligned contributed actions (`align: 'left'`)
+     *  project as icon-only stops in the indicators slot. */
+    getContext?: () => WidgetContext;
 }
 
 export class MobileBar {
     readonly el: HTMLElement;
     private readonly symbolEl: HTMLElement;
     private readonly tfEl: HTMLElement;
+    /** Left-aligned contributed actions — filled by {@link renderActions}. */
+    private readonly actionsHost: HTMLElement;
+    private readonly opts: MobileBarOptions;
 
     constructor(host: HTMLElement, opts: MobileBarOptions) {
+        this.opts = opts;
         const doc = host.ownerDocument;
         injectStyles(STYLE_ID, CSS, doc);
         this.el = doc.createElement('div');
@@ -93,12 +104,37 @@ export class MobileBar {
         this.tfEl.textContent = timeframeLabel(opts.timeframe);
         const onIndicators = opts.onIndicatorsClick;
         const indicators = onIndicators ? item('vela-mb-indicators', 'Indicators', onIndicators, 'indicators') : null;
+        this.actionsHost = doc.createElement('span');
+        this.actionsHost.className = 'vela-mb-actions';
         const drawings = item('vela-mb-drawings', 'Drawings', opts.onDrawingsClick, 'pen');
         const more = item('vela-mb-more', 'More', opts.onMoreClick, 'kebab');
         const settings = item('vela-mb-settings', 'Chart settings', opts.onSettingsClick, 'gear');
 
-        this.el.append(this.symbolEl, this.tfEl, ...(indicators ? [indicators] : []), drawings, more, settings);
+        this.el.append(this.symbolEl, this.tfEl, ...(indicators ? [indicators] : []), this.actionsHost, drawings, more, settings);
         host.appendChild(this.el);
+        this.renderActions();
+    }
+
+    /** Re-project the left-aligned contributed actions as icon-only stops in the
+     *  indicators slot (call after registrations change). Right-aligned actions stay
+     *  in the three-dots drawer — a primary stop is what `align: 'left'` opts into. */
+    renderActions(): void {
+        const ctx = this.opts.getContext?.();
+        if (!ctx) return;
+        const doc = this.el.ownerDocument;
+        this.actionsHost.replaceChildren();
+        for (const action of widgetActions('topbar', ctx).filter((a) => a.align === 'left')) {
+            const b = doc.createElement('button');
+            b.className = 'vela-mb-item';
+            b.setAttribute('aria-label', action.label);
+            if (action.icon) b.appendChild(iconEl(action.icon, doc));
+            else b.appendChild(doc.createTextNode(action.label));
+            b.addEventListener('click', () => {
+                const c = this.opts.getContext?.();
+                if (c) action.run(c);
+            });
+            this.actionsHost.appendChild(b);
+        }
     }
 
     setSymbol(symbol: string): void {

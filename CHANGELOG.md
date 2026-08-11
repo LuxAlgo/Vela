@@ -28,7 +28,9 @@ All notable changes to Vela, newest first.
   auto-adds its enabled entries. Contributed topbar actions can take the vacated
   spot for real: `align: 'left'` on a widget action places its button with the
   primary chrome buttons right after the style dropdown, in the built-in Indicators
-  button's own position and styling, instead of the right-hand tools cluster.
+  button's own position and styling, instead of the right-hand tools cluster — and
+  on the mobile chrome it gets its own icon stop in the bottom bar (the built-in
+  indicators slot) rather than a row in the three-dots sheet.
 - **A mobile chrome for the widget.** In a narrow container — or on a touch-first
   device, or forced with the new `layoutMode` shell option (`'auto' | 'mobile' |
   'desktop'`) — the widget swaps its desktop bars for one touch-sized bottom bar:
