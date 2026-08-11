@@ -109,6 +109,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private readonly measure = new MeasureOverlay(); // transient ruler — not a persistent drawing
     private toolbarVisible = false; // mirrors showToolbar (drives the gutter reservation)
     private toolbarCollapsed = false; // the bar is a slim expand-strip (narrower gutter)
+    /** Mobile chrome: the docked bar is suppressed (the shell provides its own tool
+     *  picker) while `toolbarVisible` keeps the host's INTENT for a later desktop flip. */
+    private mobileLayout = false;
     /** Self-serve Ctrl+Z / Ctrl+Y as drawing undo/redo. A host that owns a UNIFIED
      *  history (drawings + app ops in one timeline) turns this off so the chords
      *  bubble to its keymap instead — see the renderer's `historyChords` feature. */
@@ -177,13 +180,23 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     showToolbar(visible: boolean): void {
         this.toolbarVisible = visible;
-        this.toolbar.setVisible(visible);
+        this.toolbar.setVisible(visible && !this.mobileLayout);
         this.syncToolbarGutter(); // reserve/release the left gutter so the bar never overlaps the plot
+    }
+
+    /** Mobile suppresses the docked toolbar (hover flyouts don't work with touch; the
+     *  shell's own drawer picks tools instead) and releases its gutter; flipping back
+     *  to desktop restores whatever `showToolbar` last asked for. */
+    setLayoutMode(mode: 'mobile' | 'desktop'): void {
+        this.mobileLayout = mode === 'mobile';
+        this.toolbar.setVisible(this.toolbarVisible && !this.mobileLayout);
+        this.syncToolbarGutter();
     }
 
     /** The gutter follows the bar's current footprint: hidden 0, collapsed a slim strip, else full width. */
     private syncToolbarGutter(): void {
-        this.deps.setToolbarGutter(this.toolbarVisible ? (this.toolbarCollapsed ? TOOLBAR_COLLAPSED_WIDTH : TOOLBAR_WIDTH) : 0);
+        const shown = this.toolbarVisible && !this.mobileLayout;
+        this.deps.setToolbarGutter(shown ? (this.toolbarCollapsed ? TOOLBAR_COLLAPSED_WIDTH : TOOLBAR_WIDTH) : 0);
     }
 
     /** Core push: mirror (or clear) another chart's in-progress placement as a ghost. */

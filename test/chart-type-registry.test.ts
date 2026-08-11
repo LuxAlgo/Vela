@@ -2,7 +2,7 @@
 // extended-ticker modifiers, and the dynamic price-style id list the renderer validates
 // against. Heikin Ashi is registered through the SAME public API (builtins.ts).
 import { describe, it, expect, afterEach } from 'vitest';
-import { registerChartType, unregisterChartType, chartType, chartTypes, tickerModifierIds, settingsRowVisible } from '../src/chart-types/registry';
+import { registerChartType, unregisterChartType, chartType, chartTypes, tickerModifierIds, settingsRowVisible, normalizeSettingsRow, settingsRowValueKeys, type SettingsRowDescriptor } from '../src/chart-types/registry';
 import { basePaintingOf } from '../src/renderers/native/core/chartConfig';
 import { registerBuiltinChartTypes } from '../src/chart-types/builtins';
 import { barTransformFor, parseExtendedTicker } from '../src/core/price-styles/BarTransform';
@@ -108,6 +108,82 @@ describe('structured settings sections (instances + subsections)', () => {
         expect(toggle.kind === 'toggle' && toggle.colors?.[1]?.key).toBe('hlBidColor');
         expect(range.kind === 'range' && range.placeholder).toBe('Off');
         unregisterChartType('renko-like');
+    });
+});
+
+describe('composite settings rows (normalizeSettingsRow / settingsRowValueKeys)', () => {
+    it('the sugar kinds reduce to the canonical composite shape', () => {
+        expect(normalizeSettingsRow({ kind: 'number', key: 'n', label: 'N', defval: 3, min: 1, max: 9 })).toEqual({
+            label: 'N',
+            controls: [{ kind: 'number', key: 'n', label: 'N', defval: 3, min: 1, max: 9, step: undefined }],
+            when: undefined,
+        });
+        expect(normalizeSettingsRow({ kind: 'color', key: 'c', label: 'C', defval: '#123456' }).controls)
+            .toEqual([{ kind: 'color', key: 'c', label: 'C', defval: '#123456' }]);
+        expect(normalizeSettingsRow({ kind: 'select', key: 's', label: 'S', options: ['a', 'b'], defval: 'a' }).controls)
+            .toEqual([{ kind: 'select', key: 's', label: 'S', options: ['a', 'b'], defval: 'a' }]);
+    });
+
+    it('a toggle with attachments keeps the historical number → colors → width order', () => {
+        const n = normalizeSettingsRow({
+            kind: 'toggle', key: 'on', label: 'Line', defval: true,
+            number: { key: 'pct', label: 'Percent', defval: 70 },
+            colors: [{ key: 'ink', label: 'Ink', defval: '#fff' }],
+            width: { key: 'w', label: 'Width', defval: 2 },
+        });
+        expect(n.toggle).toEqual({ key: 'on', defval: true });
+        expect(n.controls.map((c) => c.kind)).toEqual(['number', 'color', 'width']);
+    });
+
+    it('a range becomes two placeholder-preserving number controls around a hint', () => {
+        const n = normalizeSettingsRow({ kind: 'range', label: 'Volume', minKey: 'lo', maxKey: 'hi', defval: 0, placeholder: 'Off' });
+        expect(n.controls.map((c) => c.kind)).toEqual(['number', 'hint', 'number']);
+        const lo = n.controls[0]!;
+        expect(lo.kind === 'number' && lo.key).toBe('lo');
+        expect(lo.kind === 'number' && lo.placeholder).toBe('Off');
+    });
+
+    it('the composite `row` kind passes through unchanged', () => {
+        const row: SettingsRowDescriptor = {
+            kind: 'row', label: 'Mixed', toggle: { key: 'on', defval: false },
+            controls: [
+                { kind: 'select', key: 'mode', label: 'Mode', options: ['a', 'b'], defval: 'a' },
+                { kind: 'number', key: 'n', label: 'N', defval: 1 },
+                { kind: 'color', key: 'c', label: 'C', defval: '#000' },
+            ],
+        };
+        const n = normalizeSettingsRow(row);
+        expect(n.toggle?.key).toBe('on');
+        expect(n.controls.map((c) => c.kind)).toEqual(['select', 'number', 'color']);
+    });
+
+    it('settingsRowValueKeys enumerates every stored key with type and default', () => {
+        expect(settingsRowValueKeys({ kind: 'heading', label: 'G' })).toEqual([]);
+        expect(settingsRowValueKeys({
+            kind: 'toggle', key: 'on', label: 'Line', defval: true,
+            number: { key: 'pct', label: 'Percent', defval: 70 },
+            colors: [{ key: 'ink', label: 'Ink', defval: '#fff' }],
+            width: { key: 'w', label: 'Width', defval: 2 },
+        })).toEqual([
+            { key: 'on', type: 'boolean', defval: true },
+            { key: 'pct', type: 'number', defval: 70 },
+            { key: 'ink', type: 'string', defval: '#fff' },
+            { key: 'w', type: 'number', defval: 2 },
+        ]);
+        expect(settingsRowValueKeys({ kind: 'range', label: 'V', minKey: 'lo', maxKey: 'hi', defval: 0 }).map((k) => k.key))
+            .toEqual(['lo', 'hi']);
+        expect(settingsRowValueKeys({
+            kind: 'row', label: 'Mixed', toggle: { key: 'on', defval: false },
+            controls: [
+                { kind: 'select', key: 'mode', label: 'Mode', options: ['a'], defval: 'a' },
+                { kind: 'hint', text: '–' },
+                { kind: 'width', key: 'w', label: 'W', defval: 1 },
+            ],
+        })).toEqual([
+            { key: 'on', type: 'boolean', defval: false },
+            { key: 'mode', type: 'string', defval: 'a' },
+            { key: 'w', type: 'number', defval: 1 },
+        ]);
     });
 });
 

@@ -95,6 +95,59 @@ const CSS = `
  * Statusline constructor) — the stylesheet is document-global, so a bare container
  * class here would shift every chart on the page, including statusline-less ones. */
 .vela-has-statusline [data-vela-pane='price'] { transform: translateY(26px); }
+/* Mobile: two-line chip — logo / symbol / meta / market status on one aligned row, the
+ * bar change on the next. Full O/H/L/C stays hidden (too dense on a phone-width plot).
+ * GRID, not a wrapping flexbox: an absolutely positioned wrapping flex container sizes
+ * to the one-line sum of ALL segments (max-content), so its background used to stretch
+ * far past the market badge; a grid hugs the widest actual row. The meta column may
+ * shrink (it carries the ellipsis), the others wrap their content. */
+[data-layout='mobile'] .vela-statusline {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, auto) auto;
+    justify-content: start;
+    align-items: center;
+    row-gap: 1px;
+    max-width: calc(100% - var(--vela-toolbar-gutter, 0px) - var(--vela-scale-gutter, 0px) - 24px);
+    font-size: var(--vela-font-size-sm);
+}
+[data-layout='mobile'] .vela-statusline .vela-sl-symbol {
+    font-size: var(--vela-font-size-md);
+    line-height: 1;
+}
+[data-layout='mobile'] .vela-statusline .vela-sl-meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1;
+}
+[data-layout='mobile'] .vela-statusline .vela-sl-avatar,
+[data-layout='mobile'] .vela-statusline .vela-sl-market { align-self: center; }
+[data-layout='mobile'] .vela-statusline .vela-sl-ohlc { display: none !important; }
+[data-layout='mobile'] .vela-statusline .vela-sl-change {
+    /* Second row, under the text column — the avatar keeps the first column. */
+    grid-column: 2 / -1;
+    font-size: var(--vela-font-size-sm);
+    line-height: 1.2;
+}
+[data-layout='mobile'] .vela-has-statusline [data-vela-pane='price'] { transform: translateY(40px); }
+/* FIT mode (multi-chart cells — see setFitMode): the line never wraps; segments that
+ * don't fit are HIDDEN by fit() (change first, then meta, then the market badge), so
+ * overflow:hidden only guards the transient between a resize and the next measure.
+ * Placed after the mobile block on purpose: same specificity, later wins. */
+.vela-statusline.vela-sl-fit {
+    display: flex; /* undo the mobile grid — fit mode is one flex row again */
+    flex-wrap: nowrap;
+    align-items: center;
+    max-width: calc(100% - var(--vela-toolbar-gutter, 0px) - var(--vela-scale-gutter, 0px) - 24px);
+    overflow: hidden;
+}
+.vela-statusline.vela-sl-fit .vela-sl-change {
+    flex-basis: auto;
+    padding-left: 0;
+}
+/* One row again — the mobile two-line shift doesn't apply in fit mode. */
+[data-layout='mobile'] .vela-sl-fit-host.vela-has-statusline [data-vela-pane='price'] { transform: translateY(26px); }
 `;
 
 interface BarLike {
@@ -200,6 +253,9 @@ export class Statusline {
     private isUp: ((bar: { open: number; close: number }) => boolean) | null = null;
     /** 'ohlc' for bar-shaped styles; 'value' (the single plotted close) for line styles. */
     private readout: StatuslineReadout = 'ohlc';
+    /** Fit mode (multi-chart cells): one row, overflowing segments hidden — see {@link setFitMode}. */
+    private fitMode = false;
+    private fitRO: ResizeObserver | null = null;
 
     constructor(private readonly host: HTMLElement, symbol: string) {
         const doc = host.ownerDocument;
@@ -207,6 +263,8 @@ export class Statusline {
         host.classList.add('vela-has-statusline'); // scopes the price-legend shift to THIS host
         this.el = doc.createElement('div');
         this.el.className = 'vela-statusline';
+        // Opt into the renderer's PNG export — the status line is part of what's on screen.
+        this.el.dataset.velaScreenshot = '1';
         // Display the bare ticker — the venue prefix is identity, not label; the venue
         // itself shows in the meta segment ("· BINANCE · 1h") beside it.
         const ticker = parseSymbol(symbol).ticker;
@@ -237,6 +295,55 @@ export class Statusline {
         const fresh = tickerIconEl(this.el.ownerDocument, baseOfTicker(ticker), ticker, 'vela-sl-avatar');
         this.avatarEl.replaceWith(fresh);
         this.avatarEl = fresh;
+        this.fit();
+    }
+
+    /**
+     * Multi-chart cells: keep the line on ONE row whatever the cell width — never wrap.
+     * Segments that don't fit are hidden outright rather than clipped mid-glyph, least
+     * important first: OHLC, then the bar change, the venue/timeframe meta, and the
+     * market badge; the logo + ticker always stay. Re-fits live on host resizes.
+     */
+    setFitMode(on: boolean): void {
+        if (on === this.fitMode) return;
+        this.fitMode = on;
+        this.el.classList.toggle('vela-sl-fit', on);
+        this.host.classList.toggle('vela-sl-fit-host', on);
+        if (on) {
+            if (typeof ResizeObserver !== 'undefined' && !this.fitRO) {
+                this.fitRO = new ResizeObserver(() => this.fit());
+                this.fitRO.observe(this.host);
+            }
+            this.fit();
+        } else {
+            this.fitRO?.disconnect();
+            this.fitRO = null;
+            this.syncParts(); // restore whatever fit() had hidden
+        }
+    }
+
+    /** Project the parts config onto the segments (the baseline fit() prunes from). */
+    private syncParts(): void {
+        this.symbolEl.style.display = this.parts.name ? '' : 'none';
+        this.marketEl.style.display = this.parts.market ? '' : 'none';
+        this.ohlcEl.style.display = this.parts.ohlc ? '' : 'none';
+        this.changeEl.style.display = this.parts.change ? '' : 'none';
+    }
+
+    /** Hide overflowing segments until the row fits its max-width (fit mode only). */
+    private fit(): void {
+        if (!this.fitMode) return;
+        this.syncParts(); // start from the full (parts-allowed) row, then prune
+        const order: Array<[HTMLElement, boolean]> = [
+            [this.ohlcEl, this.parts.ohlc],
+            [this.changeEl, this.parts.change],
+            [this.metaEl, true],
+            [this.marketEl, this.parts.market],
+        ];
+        for (const [el, shown] of order) {
+            if (this.el.scrollWidth <= this.el.clientWidth) break;
+            if (shown) el.style.display = 'none';
+        }
     }
 
     /** Shape + color the value readout after the active price style: its own up/down
@@ -258,6 +365,7 @@ export class Statusline {
     /** The "· BINANCE · 1h" segment after the symbol — venue first, then resolution. */
     setMeta(timeframe: string, provider: string): void {
         this.metaEl.textContent = `${provider ? `· ${provider.toUpperCase()} ` : ''}· ${timeframeLabel(timeframe)}`;
+        this.fit();
     }
 
     /** Dress the market badge for a session state: its icon, tinted circle, and the
@@ -271,10 +379,8 @@ export class Statusline {
 
     setPartVisible(part: 'name' | 'market' | 'ohlc' | 'change', visible: boolean): void {
         this.parts[part] = visible;
-        this.symbolEl.style.display = this.parts.name ? '' : 'none';
-        this.marketEl.style.display = this.parts.market ? '' : 'none';
-        this.ohlcEl.style.display = this.parts.ohlc ? '' : 'none';
-        this.changeEl.style.display = this.parts.change ? '' : 'none';
+        this.syncParts();
+        this.fit();
     }
 
     partVisible(part: 'name' | 'market' | 'ohlc' | 'change'): boolean {
@@ -301,8 +407,10 @@ export class Statusline {
 
     destroy(): void {
         this.detach();
+        this.fitRO?.disconnect();
+        this.fitRO = null;
         this.marketTip.destroy();
-        this.host.classList.remove('vela-has-statusline'); // the legend shift leaves with the line
+        this.host.classList.remove('vela-has-statusline', 'vela-sl-fit-host'); // the legend shift leaves with the line
         this.el.remove();
     }
 
@@ -340,5 +448,6 @@ export class Statusline {
         this.changeEl.textContent = fmtChange(bar.open, bar.close);
         this.changeEl.dataset.dir = up ? 'up' : 'down';
         this.changeEl.style.color = ink;
+        this.fit(); // the readout's width just changed — cheap no-op outside fit mode
     }
 }

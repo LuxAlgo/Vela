@@ -56,7 +56,23 @@ const CSS = `
     max-width: 240px;
     opacity: 1;
     transform: translateX(0);
-}`;
+}
+/* Mobile: a hair smaller so the mark doesn't dominate a phone-width plot. Keyed on the
+   renderer's own container attribute (data-vela-layout) AND the shell root's
+   (data-layout): the workspace's single grid-wide mark lives OUTSIDE any renderer
+   container, so only the shell attribute reaches it. */
+[data-vela-layout='mobile'] .vela-attribution .vela-attr-symbol svg,
+[data-layout='mobile'] .vela-attribution .vela-attr-symbol svg { height: 22px; }
+[data-vela-layout='mobile'] .vela-attribution .vela-attr-wordmark,
+[data-layout='mobile'] .vela-attribution .vela-attr-wordmark {
+    top: 2px;
+    transform: translateX(-6px);
+}
+[data-vela-layout='mobile'] .vela-attribution .vela-attr-wordmark svg,
+[data-layout='mobile'] .vela-attribution .vela-attr-wordmark svg { height: 21px; }
+[data-vela-layout='mobile'] .vela-attribution:hover .vela-attr-wordmark,
+[data-layout='mobile'] .vela-attribution:hover .vela-attr-wordmark { transform: translateX(0); }
+`;
 
 function ensureStyles(doc: Document): void {
     let s = doc.getElementById(STYLE_ID) as HTMLStyleElement | null;

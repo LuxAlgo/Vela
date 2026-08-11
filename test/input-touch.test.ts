@@ -1,0 +1,254 @@
+import { describe, it, expect, vi } from 'vitest';
+import { InputController, pinchBarSpacing, pinchPinnedRightOffset, type InputControllerDeps } from '../src/renderers/native/core/InputController';
+import { clampBarSpacing } from '../src/renderers/native/core/ViewportState';
+import { CoordinateSystem } from '../src/renderers/native/core/CoordinateSystem';
+
+describe('pinch zoom math', () => {
+    it('scales barSpacing by the finger-distance ratio', () => {
+        expect(pinchBarSpacing(10, 100, 200)).toBeCloseTo(20); // fingers spread 2× ⇒ zoom in 2×
+        expect(pinchBarSpacing(10, 200, 100)).toBeCloseTo(5); // fingers close 2× ⇒ zoom out 2×
+        expect(pinchBarSpacing(10, 100, 100)).toBeCloseTo(10);
+    });
+
+    it('clamps to the viewport zoom bounds', () => {
+        expect(pinchBarSpacing(10, 100, 1e9)).toBe(clampBarSpacing(Number.MAX_VALUE));
+        expect(pinchBarSpacing(10, 1e9, 1)).toBe(clampBarSpacing(0));
+    });
+
+    it('never divides by a degenerate start distance', () => {
+        expect(Number.isFinite(pinchBarSpacing(10, 0, 50))).toBe(true);
+    });
+
+    it('pinchPinnedRightOffset keeps the anchor logical under the anchor pixel', () => {
+        const cs = new CoordinateSystem();
+        cs.setSize(800, 200, 1);
+        cs.setBars([1000, 2000, 3000, 4000, 5000]);
+        cs.setViewport({ barSpacing: 50, rightOffset: 2 });
+        const midX = 300;
+        const anchor = cs.xToLogical(midX);
+        // Zoom to a new spacing, pinning `anchor` at midX (pitch multiplier is 1 here).
+        const barSpacing = 80;
+        const rightOffset = pinchPinnedRightOffset(anchor, cs.barCount, cs.width, midX, barSpacing);
+        cs.setViewport({ barSpacing, rightOffset });
+        expect(cs.logicalToX(anchor)).toBeCloseTo(midX);
+    });
+
+    it('a pure pan (same spacing, moved midpoint) shifts the view with the fingers', () => {
+        const cs = new CoordinateSystem();
+        cs.setSize(800, 200, 1);
+        cs.setBars([1000, 2000, 3000, 4000, 5000]);
+        cs.setViewport({ barSpacing: 50, rightOffset: 2 });
+        const anchor = cs.xToLogical(300);
+        const rightOffset = pinchPinnedRightOffset(anchor, cs.barCount, cs.width, 400, 50);
+        cs.setViewport({ barSpacing: 50, rightOffset });
+        expect(cs.logicalToX(anchor)).toBeCloseTo(400); // the anchored bar followed the fingers
+    });
+});
+
+// ── touch double-tap: two clean taps route through the dblclick semantics ──
+
+/** Bare-bones event-target stand-in — enough surface for InputController.attach(). */
+function fakeElement() {
+    const listeners = new Map<string, Set<(e: unknown) => void>>();
+    return {
+        addEventListener(type: string, fn: (e: unknown) => void) {
+            (listeners.get(type) ?? listeners.set(type, new Set()).get(type)!).add(fn);
+        },
+        removeEventListener(type: string, fn: (e: unknown) => void) {
+            listeners.get(type)?.delete(fn);
+        },
+        getBoundingClientRect: () => ({ left: 0, top: 0 }),
+        style: { setProperty() {} } as unknown as CSSStyleDeclaration,
+        setPointerCapture() {},
+        releasePointerCapture() {},
+        fire(type: string, e: Record<string, unknown>) {
+            for (const fn of [...(listeners.get(type) ?? [])]) fn(e);
+        },
+    };
+}
+
+function touchHarness() {
+    const cs = new CoordinateSystem();
+    cs.setSize(800, 200, 1); // data area 800×200; price axis right of x=800, time axis below y=200
+    cs.setBars([1000, 2000, 3000, 4000, 5000]);
+    cs.setViewport({ barSpacing: 50, rightOffset: 2 });
+    const deps = {
+        getCoords: () => cs,
+        apply: vi.fn(),
+        zoomTo: vi.fn(),
+        fling: vi.fn(),
+        onPointerMove: vi.fn(),
+        onClick: vi.fn(),
+        beginPriceScale: vi.fn(),
+        priceScaleBy: vi.fn(),
+        beginPricePan: () => false,
+        pricePanBy: vi.fn(),
+        resetPriceScale: vi.fn(),
+        dataDblClick: vi.fn(),
+        paneSeparatorAt: () => false,
+        beginPaneResize: vi.fn(),
+        paneResizeBy: vi.fn(),
+        resetPaneSize: vi.fn(),
+        resetView: vi.fn(),
+    } satisfies InputControllerDeps;
+    const ctl = new InputController(deps);
+    ctl.axisDrag = true; // axis strips classify as 'price'/'time' regions
+    const el = fakeElement();
+    ctl.attach(el as unknown as HTMLElement);
+    const tap = (x: number, y: number, t: number): void => {
+        const base = { button: 0, pointerId: 1, pointerType: 'touch', clientX: x, clientY: y };
+        el.fire('pointerdown', { ...base, timeStamp: t });
+        el.fire('pointerup', { ...base, timeStamp: t + 40 });
+    };
+    /** A REAL finger tap: the contact wobbles `w` px between touch-down and lift. */
+    const wobbleTap = (x: number, y: number, t: number, w = 5): void => {
+        const base = { button: 0, pointerId: 1, pointerType: 'touch' };
+        el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
+        el.fire('pointermove', { ...base, clientX: x + w, clientY: y + w, timeStamp: t + 20 });
+        el.fire('pointerup', { ...base, clientX: x + w, clientY: y + w, timeStamp: t + 40 });
+    };
+    /** A tap whose contact slides OUT past every slop and settles back near the start. */
+    const outAndBackTap = (x: number, y: number, t: number): void => {
+        const base = { button: 0, pointerId: 1, pointerType: 'touch' };
+        el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
+        el.fire('pointermove', { ...base, clientX: x + 20, clientY: y + 15, timeStamp: t + 15 });
+        el.fire('pointermove', { ...base, clientX: x + 2, clientY: y + 1, timeStamp: t + 30 });
+        el.fire('pointerup', { ...base, clientX: x + 2, clientY: y + 1, timeStamp: t + 45 });
+    };
+    /** A one-way horizontal touch drag of `d` px, lifted where it stopped. */
+    const touchDrag = (x: number, y: number, t: number, d: number): void => {
+        const base = { button: 0, pointerId: 1, pointerType: 'touch' };
+        el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
+        el.fire('pointermove', { ...base, clientX: x + d, clientY: y, timeStamp: t + 20 });
+        el.fire('pointerup', { ...base, clientX: x + d, clientY: y, timeStamp: t + 40 });
+    };
+    const mouseDrag = (x: number, y: number, t: number, d: number): void => {
+        const base = { button: 0, pointerId: 2, pointerType: 'mouse' };
+        el.fire('pointerdown', { ...base, clientX: x, clientY: y, timeStamp: t });
+        el.fire('pointermove', { ...base, clientX: x + d, clientY: y, timeStamp: t + 20 });
+        el.fire('pointerup', { ...base, clientX: x + d, clientY: y, timeStamp: t + 40 });
+    };
+    return { deps, el, tap, wobbleTap, outAndBackTap, touchDrag, mouseDrag };
+}
+
+describe('touch double-tap (the touch dblclick)', () => {
+    it('data area: a quick tap pair toggles pane maximize (dataDblClick), one tap does not', () => {
+        const { deps, tap } = touchHarness();
+        tap(400, 100, 0);
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+        tap(405, 104, 150);
+        expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('price axis: a tap pair resets that scale to auto', () => {
+        const { deps, tap } = touchHarness();
+        tap(820, 100, 0);
+        tap(820, 102, 120);
+        expect(deps.resetPriceScale).toHaveBeenCalledTimes(1);
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+    });
+
+    it('time axis: a tap pair fits the view to content', () => {
+        const { deps, tap } = touchHarness();
+        tap(400, 210, 0);
+        tap(398, 211, 200);
+        expect(deps.resetView).toHaveBeenCalledTimes(1);
+    });
+
+    it('taps too far apart in time or space stay two singles', () => {
+        const { deps, tap } = touchHarness();
+        tap(400, 100, 0);
+        tap(400, 100, 500); // beyond the pairing window
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+        tap(200, 100, 600);
+        tap(300, 100, 700); // beyond the position slop
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+    });
+
+    it('a third quick tap starts a fresh pair instead of double-firing', () => {
+        const { deps, tap } = touchHarness();
+        tap(400, 100, 0);
+        tap(400, 100, 100);
+        tap(400, 100, 200);
+        expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('taps that wobble a few px (a real finger) still tap, click, and pair', () => {
+        const { deps, wobbleTap } = touchHarness();
+        wobbleTap(400, 100, 0);
+        expect(deps.onClick).toHaveBeenCalledTimes(1); // the wobble is not a drag on touch
+        wobbleTap(402, 103, 150);
+        expect(deps.dataDblClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('a contact that slid out past the pan slop already panned — never a tap, even settling back', () => {
+        const { deps, outAndBackTap } = touchHarness();
+        outAndBackTap(400, 100, 0);
+        expect(deps.apply).toHaveBeenCalled(); // the excursion panned the chart…
+        expect(deps.onClick).not.toHaveBeenCalled(); // …so the release cannot double as a click
+        outAndBackTap(403, 102, 150);
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+    });
+
+    it('a one-way drag between the pan and tap slops (9–14px) is a pan, not a tap', () => {
+        const { deps, touchDrag } = touchHarness();
+        touchDrag(400, 100, 0, 10); // > TOUCH_SLOP (8), ≤ TOUCH_TAP_SLOP (14): the chart shifted
+        expect(deps.apply).toHaveBeenCalled();
+        expect(deps.onClick).not.toHaveBeenCalled();
+        touchDrag(400, 100, 150, 10);
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+    });
+
+    it('a touch travelling past the tap slop is a pan, not a tap', () => {
+        const { deps, wobbleTap } = touchHarness();
+        wobbleTap(400, 100, 0, 20);
+        wobbleTap(400, 100, 150, 20);
+        expect(deps.onClick).not.toHaveBeenCalled();
+        expect(deps.dataDblClick).not.toHaveBeenCalled();
+    });
+
+    it('the pair routes by the FIRST tap (the aimed one), not the sloppier second', () => {
+        const { deps, tap } = touchHarness();
+        tap(400, 100, 0);
+        tap(420, 120, 150); // drifted, still within the pairing slop
+        expect(deps.dataDblClick).toHaveBeenCalledWith(400, 100);
+    });
+
+    it('the mouse keeps its strict 2px click slop', () => {
+        const { deps, mouseDrag } = touchHarness();
+        mouseDrag(400, 100, 0, 5); // 5px is a click on touch but a drag for a mouse
+        expect(deps.onClick).not.toHaveBeenCalled();
+    });
+});
+
+// ── touch crosshair: hover is a mouse affordance; a finger earns it by long-pressing ──
+
+describe('touch crosshair', () => {
+    it('a panning finger never paints the hover crosshair; a mouse move still does', () => {
+        const { deps, el, touchDrag } = touchHarness();
+        touchDrag(400, 100, 0, 60);
+        expect(deps.onPointerMove).not.toHaveBeenCalledWith(expect.any(Number), expect.any(Number));
+        el.fire('pointermove', { button: 0, pointerId: 2, pointerType: 'mouse', clientX: 300, clientY: 90, timeStamp: 500 });
+        expect(deps.onPointerMove).toHaveBeenCalledWith(300, 90);
+    });
+
+    it('a long press enters inspect mode: the crosshair follows the finger, the view stays put', () => {
+        vi.useFakeTimers();
+        try {
+            const { deps, el } = touchHarness();
+            const base = { button: 0, pointerId: 1, pointerType: 'touch' };
+            el.fire('pointerdown', { ...base, clientX: 400, clientY: 100, timeStamp: 0 });
+            expect(deps.onPointerMove).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(400); // past LONG_PRESS_MS
+            expect(deps.onPointerMove).toHaveBeenCalledWith(400, 100);
+            deps.apply.mockClear(); // drop the pointerdown's viewport re-apply
+            el.fire('pointermove', { ...base, clientX: 420, clientY: 110, timeStamp: 450 });
+            expect(deps.onPointerMove).toHaveBeenCalledWith(420, 110);
+            expect(deps.apply).not.toHaveBeenCalled();
+            el.fire('pointerup', { ...base, clientX: 420, clientY: 110, timeStamp: 500 });
+            expect(deps.onPointerMove).toHaveBeenLastCalledWith(null, null); // lifting ends the readout
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});

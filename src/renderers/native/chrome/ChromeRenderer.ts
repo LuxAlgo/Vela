@@ -397,11 +397,29 @@ export class ChromeRenderer {
         const y = dataH + (fullH - dataH) / 2;
         const tr = coords.visibleTimeRange();
         const offset = tzOffsetMs((tr.from + tr.to) / 2, scene.timezone);
-        for (const tick of timeTicks(tr.from, tr.to, 8, offset)) {
-            const x = coords.timeToX(tick.time);
-            if (x < 20 || x > dataW - 20) continue;
-            ctx.fillText(tick.label, x, y);
-        }
+        // Width-adaptive density so a narrow surface — a phone, a multi-chart cell —
+        // asks for fewer ticks instead of cramming the default eight. The floor of 3
+        // keeps a narrow axis populated (a too-small target snaps the ladder to a huge
+        // step whose few ticks can all miss the frame); the collision pass below is
+        // what actually prevents overlap.
+        const target = Math.max(3, Math.min(8, Math.floor(dataW / 64)));
+        const ticks = timeTicks(tr.from, tr.to, target, offset)
+            .map((tick) => ({ ...tick, x: coords.timeToX(tick.time), half: ctx.measureText(tick.label).width / 2 }))
+            .filter((tick) => tick.x >= 20 && tick.x <= dataW - 20);
+        // Measured collision pass on top: label pitch in PIXELS isn't uniform (bar-index
+        // mapping, session gaps), so overlapping labels are SKIPPED, majors placed first
+        // (a date beats the 12:00 beside it).
+        const GAP = 12; // min px between neighboring labels
+        const placed: Array<{ l: number; r: number }> = [];
+        const put = (tick: { x: number; half: number; label: string }): void => {
+            const l = tick.x - tick.half;
+            const r = tick.x + tick.half;
+            if (!placed.every((p) => r + GAP <= p.l || l - GAP >= p.r)) return;
+            placed.push({ l, r });
+            ctx.fillText(tick.label, tick.x, y);
+        };
+        for (const tick of ticks) if (tick.major) put(tick);
+        for (const tick of ticks) if (!tick.major) put(tick);
         ctx.textAlign = 'start';
     }
 }

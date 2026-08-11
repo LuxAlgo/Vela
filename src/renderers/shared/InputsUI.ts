@@ -29,18 +29,38 @@ export interface InputsUIChange {
     value: InputValue;
 }
 
+/** One plot's current value as shown beside the legend title (pre-formatted, plot-colored). */
+export interface LegendPlotValue {
+    value: string;
+    color: string;
+}
+
 interface LegendRow {
     id: string;
+    /** Legend chip text (may be a compact shorttitle). */
     title: string;
+    /** Settings-dialog header; falls back to {@link title} when unset. */
+    settingsTitle: string;
     inputs: InputSchema[];
     values: Record<string, InputValue>;
     el: HTMLElement;
     titleEl: HTMLElement;
     statusEl: HTMLElement;
+    /** The plot-values readout beside the title (one colored span per drawable plot). */
+    valuesEl: HTMLElement;
+    /** Latest plot values pushed by the renderer (kept so visibility toggles re-render). */
+    plotValues: LegendPlotValue[];
+    /** Cheap change key of {@link plotValues} — skips DOM writes on unchanged frames. */
+    plotValuesKey: string;
+    /** Per-row override from the row's context menu; null ⇒ follow the chart-wide setting. */
+    showValues: boolean | null;
+    /** Hovered/selected (outline + controls visible) — the values readout yields to the controls. */
+    highlighted: boolean;
     paneId: string;
     hidden: boolean;
     eyeEl: HTMLButtonElement | null;
-    /** Wraps the eye/gear/✕ controls; only shown while the row is selected (outline visible). */
+    /** Wraps the eye/gear/✕ controls; revealed on title hover / selection (eye alone
+     *  also stays out while the indicator is hidden). */
     controlsEl: HTMLElement;
     /** Host-contributed action buttons (inside `controlsEl`, before ✕) — rebuilt on demand. */
     extrasEl: HTMLElement;
@@ -48,18 +68,34 @@ interface LegendRow {
 }
 
 const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'volume'];
-/** Keyframes for the legend-row status affordances (spinner + live pulse), injected once into the document. */
+/** Keyframes for the legend-row live pulse, injected once into the document (the load
+ *  dots animate through the Web Animations API and need no stylesheet). */
 const STATUS_KEYFRAMES =
-    '@keyframes vela-ind-spin{to{transform:rotate(360deg)}}@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}';
+    '@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}';
 
 /** Legend glyph size — the row's own font belongs to the indicator title beside them. */
-const LEGEND_ICON_PX = 13;
+const LEGEND_ICON_PX = 16;
+/** Equal hit target for every legend-row action (eye / gear / move / extras / ✕). Compact
+ *  enough to sit on the title's line box so revealing the cluster does not grow the chip. */
+const LEGEND_CTL_PX = 18;
+const LEGEND_ROW_PAD_Y = 2;
+const LEGEND_ROW_PAD_X = 6;
+/** Space between the indicator title and the plot-values readout to its right. */
+const LEGEND_TITLE_VALUES_GAP_PX = 6;
+/** Uniform space: title → first action icon, and between every action icon. */
+const LEGEND_ACTION_GAP_PX = 6;
+const LEGEND_CTL_CSS =
+    `cursor:pointer;display:inline-flex;align-items:center;justify-content:center;` +
+    `border:none;line-height:0;padding:0;` +
+    `width:${LEGEND_CTL_PX}px;height:${LEGEND_CTL_PX}px;border-radius:3px;box-sizing:border-box;flex:none;`;
+const LEGEND_ROW_MIN_H = LEGEND_CTL_PX + LEGEND_ROW_PAD_Y * 2;
 const EYE_SVG = iconAt('eye', LEGEND_ICON_PX);
 const EYE_OFF_SVG = iconAt('eye-off', LEGEND_ICON_PX);
 const GEAR_SVG = iconAt('gear', LEGEND_ICON_PX);
-const CLOSE_SVG = iconAt('close', 11);
+const CLOSE_SVG = iconAt('close', LEGEND_ICON_PX);
 const FOLD_SVG = iconAt('chevron-up', LEGEND_ICON_PX);
 const UNFOLD_SVG = iconAt('chevron-down', LEGEND_ICON_PX);
+const OVERVIEW_SVG = iconAt('objects', LEGEND_ICON_PX);
 
 /**
  * Chart-style inputs UI built on top of lightweight-charts (which has no
@@ -88,6 +124,8 @@ export class InputsUI {
     private onToggleVisible: ((id: string, visible: boolean) => void) | null = null;
     /** Host symbol picker for `input.symbol`; when set the control opens the host's ticker UI. */
     private symbolPicker: SymbolPickerFn | null = null;
+    /** Mobile chrome: the inputs dialog opens fullscreen and the legends render compact. */
+    private mobileLayout = false;
     /** Pane move/merge hook — when set, rows get a "Move to" menu + become drag-to-pane sources. */
     private moveApi: LegendMoveApi | null = null;
     /** Host-contributed legend actions, resolved PER ROW at render time (see setLegendActions). */
@@ -109,9 +147,18 @@ export class InputsUI {
     /** Titles switched off entirely (a settings toggle): every pane's legend container
      *  hides — rows, fold chevron and all — unlike the fold, which leaves its chip. */
     private titlesVisible = true;
+    /** Plot values shown beside the titles chart-wide (a settings toggle); a row's own
+     *  context-menu choice ({@link LegendRow.showValues}) overrides it per indicator. */
+    private valuesVisible = true;
+    /** Open legend-row context menu (kept so it can be torn down). */
+    private rowMenu: HTMLElement | null = null;
     /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
      *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
     private foldToggle: HTMLButtonElement | null = null;
+    /** Host-provided replacement for the fold toggle (multi-chart shells route it to
+     *  their indicator overview, e.g. an object tree). While set, the legend stays
+     *  folded and the chip runs this instead of unfolding inline. */
+    private overviewAction: (() => void) | null = null;
     /** Esc-to-close for the settings modal (bound so focus can sit anywhere). */
     private readonly onDialogKey = (e: KeyboardEvent): void => {
         if (e.key === 'Escape') {
@@ -148,6 +195,41 @@ export class InputsUI {
         if (typeof document !== 'undefined') document.addEventListener('click', this.onDocClick);
     }
 
+    /** The host shell's chrome size class — mobile makes the inputs dialog fullscreen
+     *  (an open dialog re-presents on the flip) and folds the legend behind its chip by
+     *  default (a phone-width plot has no room for the rows). */
+    setLayoutMode(mode: 'mobile' | 'desktop'): void {
+        const mobile = mode === 'mobile';
+        if (mobile === this.mobileLayout) return;
+        this.mobileLayout = mobile;
+        // The fold resets to the mode's presentation default on a flip — it is chrome
+        // presentation, not user state (an overview override keeps it folded either way).
+        if (this.overviewAction === null) this.legendFolded = mobile;
+        this.syncFoldToggle();
+        if (this.openId !== null) {
+            const id = this.openId;
+            this.closeOpenDialog();
+            this.openDialog(id);
+        }
+    }
+
+    /** Replace the fold toggle's behavior with a HOST action (or restore it with null):
+     *  the chip stays — objects icon + indicator count — but a press runs the action
+     *  (a multi-chart shell opens its indicator overview) instead of unfolding the rows,
+     *  which stay hidden while the override is in force. */
+    setLegendOverviewAction(action: (() => void) | null): void {
+        if (action === this.overviewAction) return;
+        this.overviewAction = action;
+        this.legendFolded = action !== null ? true : this.mobileLayout;
+        this.syncFoldToggle();
+    }
+
+    /** Open the settings dialog of one indicator (the legend gear's programmatic twin) —
+     *  no-op for an unknown id. */
+    openSettingsFor(id: string): void {
+        if (this.rows.has(id)) this.openDialog(id);
+    }
+
     /** Attach a themed chrome tooltip to a control, recording its disposer under `id`. */
     private tip(store: Map<string, Array<() => void>>, id: string, anchor: HTMLElement, text: string | (() => string), wrap = false): void {
         const list = store.get(id) ?? [];
@@ -180,15 +262,18 @@ export class InputsUI {
 
     setTheme(theme: VelaTheme): void {
         this.theme = theme;
+        // Legend containers carry the CHART theme tokens (not the wrapper's stable chrome
+        // surface): row fills and action-button hovers sit on the plot background, which can
+        // diverge from the app chrome when the host edits layout.background.
+        for (const lg of this.legends.values()) applyChromeTokens(lg, theme);
         // Rows carry the chart background as an INLINE fill (translucent when idle, solid
         // when open) — repaint them, or a `layout.background` edit leaves stale chips
         // floating over the plot. "Open" is what setRowHighlighted made visible.
         for (const row of this.rows.values()) {
-            const open = row.controlsEl.style.display !== 'none';
-            row.el.style.background = open ? theme.background : this.idleRowFill();
+            row.el.style.background = row.highlighted ? theme.background : this.idleRowFill();
             row.el.style.color = theme.textColor;
         }
-        if (this.foldToggle) this.foldToggle.style.background = theme.background;
+        if (this.foldToggle) this.syncFoldToggle(); // rebuild so fill + ink follow the new theme
     }
 
     /** Provide (or clear) the host symbol picker that `input.symbol` opens on activation. */
@@ -223,7 +308,7 @@ export class InputsUI {
             btn.innerHTML = iconAt(action.icon, LEGEND_ICON_PX);
             btn.className = 'vela-ind-ctl';
             btn.dataset.legendAction = action.id;
-            btn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
+            btn.style.cssText = LEGEND_CTL_CSS;
             btn.addEventListener('click', (e) => {
                 e.stopPropagation(); // selecting the row is not the intent
                 action.run();
@@ -242,6 +327,58 @@ export class InputsUI {
         if (this.titlesVisible === visible) return;
         this.titlesVisible = visible;
         this.reposition(); // positionLegend applies the flag per pane
+    }
+
+    /**
+     * Show/hide the plot values chart-wide (the settings dialog's Indicators → Values
+     * toggle). "All" is meant literally: per-row context-menu overrides are cleared, so
+     * every legend follows the new state.
+     */
+    setValuesVisible(visible: boolean): void {
+        this.valuesVisible = visible;
+        for (const row of this.rows.values()) {
+            row.showValues = null;
+            this.renderRowValues(row);
+        }
+    }
+
+    /**
+     * Push the current plot values of every indicator at once (the renderer calls this per
+     * paint). Rows absent from the map (e.g. a hidden indicator) show no values. Cheap on
+     * unchanged frames: each row diffs against its last rendered values before touching DOM.
+     */
+    setPlotValues(values: ReadonlyMap<string, LegendPlotValue[]>): void {
+        for (const row of this.rows.values()) {
+            const next = values.get(row.id) ?? [];
+            const key = next.map((v) => `${v.value}|${v.color}`).join('\u0000');
+            if (key === row.plotValuesKey) continue;
+            row.plotValues = next;
+            row.plotValuesKey = key;
+            this.renderRowValues(row);
+        }
+    }
+
+    /** Whether a row currently shows its values: its own override, else the chart-wide flag. */
+    private rowValuesShown(row: LegendRow): boolean {
+        return row.showValues ?? this.valuesVisible;
+    }
+
+    /** (Re)build one row's values readout from its stored plot values + visibility. A
+     *  highlighted (hovered/selected) row shows only the title + controls — no values. */
+    private renderRowValues(row: LegendRow): void {
+        if (!this.rowValuesShown(row) || row.plotValues.length === 0 || row.highlighted) {
+            row.valuesEl.style.display = 'none';
+            row.valuesEl.replaceChildren();
+            return;
+        }
+        row.valuesEl.style.display = 'inline-flex';
+        row.valuesEl.replaceChildren();
+        for (const v of row.plotValues) {
+            const span = document.createElement('span');
+            span.textContent = v.value;
+            span.style.color = v.color;
+            row.valuesEl.appendChild(span);
+        }
     }
 
     // ── legend move/merge (menu + drag) ─────────────────────────────────────
@@ -309,6 +446,58 @@ export class InputsUI {
         this.moveMenu = null;
     }
 
+    // ── legend row context menu (right-click) ───────────────────────────────
+
+    /** Open the row's action menu at the pointer. One entry today: the values toggle. */
+    private openRowMenu(id: string, x: number, y: number): void {
+        this.closeRowMenu();
+        this.closeMoveMenu();
+        const row = this.rows.get(id);
+        if (!row) return;
+        const menu = document.createElement('div');
+        menu.style.cssText = `position:fixed;z-index:var(--vela-z-tooltip);min-width:170px;padding:4px;border-radius:var(--vela-radius-md);background:var(--vela-surface-elev);color:${this.theme.textColor};border:1px solid var(--vela-border);box-shadow:var(--vela-shadow);font-size:var(--vela-font-size-md);`;
+        applyChromeTokens(menu, this.theme);
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'vela-ind-menuitem';
+        item.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 10px;border:none;border-radius:var(--vela-radius-sm);color:inherit;cursor:pointer;white-space:nowrap;';
+        // A fixed-width check slot keeps the label aligned in both states.
+        const check = document.createElement('span');
+        check.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:14px;flex:none;line-height:0;';
+        check.innerHTML = this.rowValuesShown(row) ? CHECK_SVG : '';
+        const label = document.createElement('span');
+        label.textContent = 'Indicator values';
+        item.append(check, label);
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeRowMenu();
+            row.showValues = !this.rowValuesShown(row);
+            this.renderRowValues(row);
+        });
+        menu.appendChild(item);
+        document.body.appendChild(menu);
+        // Clamp within the viewport so a bottom/right-edge row's menu stays visible.
+        const mw = menu.offsetWidth || 180;
+        const mh = menu.offsetHeight || 40;
+        menu.style.left = `${Math.min(x, window.innerWidth - mw - 6)}px`;
+        menu.style.top = `${Math.min(y, window.innerHeight - mh - 6)}px`;
+        this.rowMenu = menu;
+        // Close on the next outside click (deferred so this same gesture doesn't immediately close it).
+        setTimeout(() => {
+            if (typeof document !== 'undefined') document.addEventListener('pointerdown', this.onRowMenuOutside, true);
+        }, 0);
+    }
+
+    private readonly onRowMenuOutside = (e: Event): void => {
+        if (this.rowMenu && !this.rowMenu.contains(e.target as Node)) this.closeRowMenu();
+    };
+
+    private closeRowMenu(): void {
+        if (typeof document !== 'undefined') document.removeEventListener('pointerdown', this.onRowMenuOutside, true);
+        this.rowMenu?.remove();
+        this.rowMenu = null;
+    }
+
     /** Move a legend row to another pane (indicator merged/moved), tidying an emptied container. */
     setPane(id: string, paneId: string): void {
         const row = this.rows.get(id);
@@ -331,7 +520,10 @@ export class InputsUI {
             // its on-screen bounds) — e.g. to re-anchor its own per-pane overlays.
             lg.dataset.velaPane = paneId;
             lg.style.cssText =
-                'position:absolute;left:10px;z-index:5;display:flex;flex-direction:column;align-items:flex-start;gap:3px;pointer-events:none;font:12px -apple-system,Segoe UI,sans-serif;';
+                'position:absolute;left:10px;z-index:5;display:flex;flex-direction:column;align-items:flex-start;gap:0;pointer-events:none;font:12px -apple-system,Segoe UI,sans-serif;';
+            // Chart-theme tokens so action-button hovers wash against the plot surface the
+            // rows sit on (the wrapper beneath may carry the host's stable chrome surface).
+            applyChromeTokens(lg, this.theme);
             this.positionLegend(lg, paneId);
             this.container.appendChild(lg);
             this.legends.set(paneId, lg);
@@ -384,15 +576,21 @@ export class InputsUI {
      */
     private syncFoldToggle(): void {
         const count = this.rows.size;
-        if (count < 2) {
+        // Desktop earns the chevron at 2+ rows; mobile folds even a lone row behind the
+        // chip (the legend is collapsed by default there), and a host overview override
+        // needs the chip from the first row — it is the list's only entry point.
+        const minRows = this.overviewAction !== null || this.mobileLayout ? 1 : 2;
+        if (count < minRows) {
             const wasFolded = this.legendFolded;
-            this.legendFolded = false;
+            // Never strand a surviving row hidden behind a toggle that just disappeared;
+            // with no rows at all the fold keeps its default for the next indicator.
+            if (count > 0) this.legendFolded = false;
             if (this.foldToggle) {
                 this.foldToggle.remove();
                 this.foldToggle = null;
                 this.disposeTips(this.rowTips, 'fold');
             }
-            if (wasFolded) this.reposition(); // unhide the surviving row(s)
+            if (wasFolded && count > 0) this.reposition(); // unhide the surviving row(s)
             return;
         }
         let btn = this.foldToggle;
@@ -400,30 +598,39 @@ export class InputsUI {
             btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'vela-ind-fold';
-            this.tip(this.rowTips, 'fold', btn, () => (this.legendFolded ? 'Show indicator legend' : 'Hide indicator legend'));
+            this.tip(this.rowTips, 'fold', btn, () => (this.overviewAction !== null ? 'Indicators' : this.legendFolded ? 'Show indicator legend' : 'Hide indicator legend'));
             btn.addEventListener('click', () => {
+                if (this.overviewAction !== null) {
+                    this.overviewAction();
+                    return;
+                }
                 this.legendFolded = !this.legendFolded;
                 this.syncFoldToggle();
             });
             this.foldToggle = btn;
         }
         const folded = this.legendFolded;
-        btn.setAttribute('aria-label', folded ? 'Show indicator legend' : 'Hide indicator legend');
+        btn.setAttribute('aria-label', this.overviewAction !== null ? 'Indicators' : folded ? 'Show indicator legend' : 'Hide indicator legend');
         // Bordered chip in both states; folded shows chevron then the count to its right
         // (reference: "˅ 12"), expanded is just the up chevron that folds the list away.
-        // Border uses the shared chrome token (same as menus/dialogs) — `--vela-fg-muted`
-        // was too bright against the plot. Extra margin-top clears the last indicator
+        // Fill AND ink follow the LIVE plot theme (same as legend rows) — chrome tokens
+        // track the app surface, so a white plot on a dark app would otherwise put a
+        // near-white count on a white chip. Extra margin-top clears the last indicator
         // title; the legend column's own 3px gap is too tight under a bordered chip.
-        btn.style.cssText = `pointer-events:auto;display:inline-flex;align-items:center;gap:4px;background:${this.theme.background};border:1px solid var(--vela-border);border-radius:4px;padding:2px 6px;margin-top:6px;cursor:pointer;font:inherit;line-height:0;`;
+        const ink = this.theme.textColor;
+        btn.style.cssText = `pointer-events:auto;display:inline-flex;align-items:center;gap:4px;background:${this.theme.background};color:${ink};border:1px solid ${this.theme.borderColor};border-radius:4px;padding:2px 6px;margin-top:6px;cursor:pointer;font:inherit;line-height:0;`;
         btn.replaceChildren();
         const icon = document.createElement('span');
-        icon.style.cssText = 'display:inline-flex;align-items:center;line-height:0;';
-        icon.innerHTML = folded ? UNFOLD_SVG : FOLD_SVG;
+        // Slightly muted against the count — currentColor rides the button's ink.
+        icon.style.cssText = 'display:inline-flex;align-items:center;line-height:0;opacity:0.7;';
+        // The overview override wears the list glyph — the chip opens the host's
+        // indicator overview rather than unfolding rows in place.
+        icon.innerHTML = this.overviewAction !== null ? OVERVIEW_SVG : folded ? UNFOLD_SVG : FOLD_SVG;
         btn.appendChild(icon);
         if (folded) {
             const label = document.createElement('span');
             label.textContent = String(count);
-            label.style.cssText = 'font-weight:600;line-height:normal;font-size:12px;color:var(--vela-fg-bright);';
+            label.style.cssText = `font-weight:600;line-height:normal;font-size:12px;color:${ink};`;
             btn.appendChild(label);
         }
         // The toggle lives on the PRICE pane's legend (created on demand — the price pane
@@ -433,10 +640,12 @@ export class InputsUI {
     }
 
     /** Create or update an indicator's legend row (in the legend for its pane). */
-    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean } = {}): void {
+    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; settingsTitle?: string } = {}): void {
+        const settingsTitle = opts.settingsTitle ?? title;
         const existing = this.rows.get(id);
         if (existing) {
             existing.title = title;
+            existing.settingsTitle = settingsTitle;
             existing.inputs = inputs;
             existing.values = { ...values };
             existing.titleEl.textContent = title;
@@ -455,11 +664,19 @@ export class InputsUI {
         // hidden) — enough wash to keep the label legible when candles reach it, without a
         // solid block over the plot. Hovering/selecting fills the chip with the solid chart
         // background so the revealed outline and controls stay readable (see setRowHighlighted).
-        // Symmetric 7px padding keeps the title clear of the hover outline on BOTH sides; the
+        // Symmetric horizontal padding keeps the title clear of the hover outline; the
         // negative left margin cancels the left padding so the title's left edge still shares
         // the statusline avatar's left edge (both sit at the legend column's left:10px).
-        el.style.cssText = `pointer-events:auto;display:flex;align-items:center;gap:6px;background:${this.idleRowFill()};border-radius:4px;padding:2px 7px;margin-left:-7px;color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
-        el.addEventListener('mouseenter', () => this.setRowHighlighted(id, true));
+        // min-height matches the action hit targets so revealing them never grows the chip
+        // vertically (which would shove the rows below).
+        el.style.cssText =
+            `pointer-events:auto;display:flex;align-items:center;` +
+            `background:${this.idleRowFill()};border-radius:4px;` +
+            `padding:${LEGEND_ROW_PAD_Y}px ${LEGEND_ROW_PAD_X}px;margin-left:-${LEGEND_ROW_PAD_X}px;` +
+            `min-height:${LEGEND_ROW_MIN_H}px;box-sizing:border-box;` +
+            `color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
+        // Reveal actions only from the TITLE (not the plot-values readout). Leave still
+        // closes on the whole row so the pointer can move title → buttons without flicker.
         el.addEventListener('mouseleave', () => { if (this.selectedId !== id) this.setRowHighlighted(id, false); });
         // Left-click the row (but not one of its control buttons) selects the indicator,
         // outlining it with the same neutral border as the settings inputs; a double-click
@@ -483,14 +700,22 @@ export class InputsUI {
             e.preventDefault();
             this.onRemove?.(id);
         });
-        // Status indicator (left of the title): a spinner while fetching, a pulse while live, hidden when idle.
+        // Right-click opens the row's own action menu — swallowed here so the host's
+        // chart-body context menu (bound higher up the tree) doesn't open over it.
+        el.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.openRowMenu(id, e.clientX, e.clientY);
+        });
+        // Status indicator (appended at the row's right end, below): pulsing load dots while
+        // fetching, a pulse while live, hidden when idle.
         const statusEl = document.createElement('span');
         statusEl.style.cssText = 'display:none;box-sizing:border-box;flex:none;';
-        el.appendChild(statusEl);
         // Title (+ optional "beta" exponent) wrapped so the superscript stays glued to the label and
         // survives title-text updates (which only touch the inner span).
         const titleWrap = document.createElement('span');
         titleWrap.style.cssText = 'white-space:nowrap;';
+        titleWrap.addEventListener('mouseenter', () => this.setRowHighlighted(id, true));
         const titleEl = document.createElement('span');
         titleEl.textContent = title;
         // Every indicator title reads in the chrome text color: where a study is computed
@@ -504,10 +729,18 @@ export class InputsUI {
             titleWrap.appendChild(beta);
         }
         el.appendChild(titleWrap);
-        // Hide/show (eye) — revealed on hover/selection like the other controls, but ALSO kept
-        // visible while the indicator is hidden (so its "show" toggle stays reachable without
-        // hovering). It sits outside `controlsEl` so it can outlive the collapse. Only present when
-        // the renderer can actually suspend an indicator (it wired setOnToggleVisible).
+        // Plot values readout, right of the title — filled by setPlotValues, hidden until
+        // values arrive (or while the values toggle is off for this row).
+        const valuesEl = document.createElement('span');
+        valuesEl.style.cssText =
+            `display:none;align-items:center;gap:5px;margin-left:${LEGEND_TITLE_VALUES_GAP_PX}px;` +
+            `white-space:nowrap;font-variant-numeric:tabular-nums;`;
+        el.appendChild(valuesEl);
+        // Action cluster (eye / gear / move / extras / ✕) — one tight row of equal hit targets.
+        // Revealed on hover/selection; a hidden indicator keeps its eye reachable without hover.
+        const controlsEl = document.createElement('span');
+        controlsEl.style.cssText =
+            `display:none;align-items:center;gap:${LEGEND_ACTION_GAP_PX}px;flex:none;margin-left:${LEGEND_ACTION_GAP_PX}px;`;
         let eyeEl: HTMLButtonElement | null = null;
         if (this.onToggleVisible) {
             const eye = document.createElement('button');
@@ -516,17 +749,14 @@ export class InputsUI {
             this.tip(this.rowTips, id, eye, () => (this.rows.get(id)?.hidden ? 'Show' : 'Hide'));
             eye.innerHTML = EYE_SVG;
             eye.className = 'vela-ind-ctl';
-            eye.style.cssText = 'cursor:pointer;display:none;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
+            eye.style.cssText = LEGEND_CTL_CSS;
             eye.addEventListener('click', () => {
                 const row = this.rows.get(id);
                 this.onToggleVisible?.(id, Boolean(row?.hidden)); // currently hidden ⇒ request show, else hide
             });
-            el.appendChild(eye);
+            controlsEl.appendChild(eye);
             eyeEl = eye;
         }
-        // Settings (gear) + remove (✕) live in their own container, revealed on hover or selection.
-        const controlsEl = document.createElement('span');
-        controlsEl.style.cssText = 'display:none;align-items:center;gap:6px;';
         if (inputs.length > 0) {
             const gear = document.createElement('button');
             gear.type = 'button';
@@ -534,7 +764,7 @@ export class InputsUI {
             this.tip(this.rowTips, id, gear, 'Settings');
             gear.innerHTML = GEAR_SVG;
             gear.className = 'vela-ind-ctl';
-            gear.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
+            gear.style.cssText = LEGEND_CTL_CSS;
             gear.addEventListener('click', () => this.openDialog(id));
             controlsEl.appendChild(gear);
         }
@@ -547,7 +777,7 @@ export class InputsUI {
             this.tip(this.rowTips, id, mv, 'Move to pane');
             mv.innerHTML = iconAt('move', LEGEND_ICON_PX);
             mv.className = 'vela-ind-ctl';
-            mv.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:0 1px;';
+            mv.style.cssText = LEGEND_CTL_CSS;
             mv.addEventListener('click', (e) => { e.stopPropagation(); this.openMoveMenu(id, mv); });
             controlsEl.appendChild(mv);
         }
@@ -563,13 +793,14 @@ export class InputsUI {
         this.tip(this.rowTips, id, close, 'Remove indicator');
         close.innerHTML = CLOSE_SVG;
         close.className = 'vela-ind-close';
-        close.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;padding:0 1px;';
+        close.style.cssText = LEGEND_CTL_CSS;
         close.addEventListener('click', () => this.onRemove?.(id));
         controlsEl.appendChild(close);
         el.appendChild(controlsEl);
+        el.appendChild(statusEl); // status sits at the row's right end, after values and controls
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        this.rows.set(id, { id, title, inputs, values: { ...values }, el, titleEl, statusEl, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
+        this.rows.set(id, { id, title, settingsTitle, inputs, values: { ...values }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
     }
 
@@ -586,30 +817,35 @@ export class InputsUI {
     }
 
     /**
-     * Reflect an indicator's live status in its legend row: `'loading'` shows a spinner (a fetch is
-     * in flight), `'live'` a pulsing dot (live-updating), `'idle'` nothing. Rendered left of the title.
+     * Reflect an indicator's live status in its legend row: `'loading'` shows three pulsing
+     * dots (a fetch is in flight — the same load affordance as the chart's own bar-load dots,
+     * at legend scale), `'live'` a pulsing dot, `'idle'` nothing. Rendered at the row's right end.
      */
     setStatus(id: string, status: 'idle' | 'loading' | 'live'): void {
         const row = this.rows.get(id);
         if (!row) return;
         const el = row.statusEl;
+        el.replaceChildren(); // the load dots (and their Web Animations) die with the children
         if (status === 'idle') {
-            el.style.display = 'none';
-            el.style.animation = 'none';
+            el.style.cssText = 'display:none;box-sizing:border-box;flex:none;';
             return;
         }
-        this.ensureStatusKeyframes();
         if (status === 'loading') {
-            el.style.cssText =
-                `display:inline-block;box-sizing:border-box;flex:none;width:11px;height:11px;border-radius:50%;` +
-                `border:2px solid var(--vela-border-strong);border-top-color:var(--vela-fg-bright);` +
-                `animation:vela-ind-spin .7s linear infinite;`;
-        } else {
-            // live — a pulsing filled dot
-            el.style.cssText =
-                `display:inline-block;box-sizing:border-box;flex:none;width:8px;height:8px;border-radius:50%;` +
-                `background:${this.theme.upColor};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
+            el.style.cssText = 'display:inline-flex;align-items:center;gap:3px;box-sizing:border-box;flex:none;';
+            for (let i = 0; i < 3; i += 1) {
+                const dot = document.createElement('span');
+                dot.style.cssText = 'width:4px;height:4px;border-radius:50%;background:currentColor;opacity:0.15;flex:none;';
+                // Staggered phases via negative delays — every dot animates from the first frame.
+                dot.animate?.([{ opacity: 0.12 }, { opacity: 0.55 }], { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: -i * 260 });
+                el.appendChild(dot);
+            }
+            return;
         }
+        // live — a pulsing filled dot
+        this.ensureStatusKeyframes();
+        el.style.cssText =
+            `display:inline-block;box-sizing:border-box;flex:none;width:8px;height:8px;border-radius:50%;` +
+            `background:${this.theme.upColor};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
     }
 
     /** Inject the status keyframes once (idempotent). */
@@ -630,10 +866,8 @@ export class InputsUI {
         if (row.eyeEl) {
             row.eyeEl.innerHTML = visible ? EYE_SVG : EYE_OFF_SVG;
             row.eyeEl.setAttribute('aria-label', visible ? 'Hide' : 'Show'); // the tooltip reads live state itself
-            // A hidden indicator keeps its eye visible even when idle; a shown one follows the
-            // other controls (visible only while hovered/selected — i.e. its container is open).
-            row.eyeEl.style.display = !visible || row.controlsEl.style.display !== 'none' ? 'inline-flex' : 'none';
         }
+        this.syncRowActions(row);
     }
 
     /**
@@ -648,19 +882,39 @@ export class InputsUI {
     }
 
     /**
-     * Show or hide a row's outline and eye/gear/✕ controls together — driven by both hover and
-     * selection, so an idle (unhovered, unselected) row shows just its title. Exception: a hidden
-     * indicator keeps its eye visible even when idle, so it can be un-hidden without hovering.
+     * Show or hide a row's outline and eye/gear/✕ controls together — driven by title
+     * hover and selection (plot values do not open the chip). An idle unselected row
+     * shows just its title (+ values). Exception: a hidden indicator keeps its eye
+     * visible even when idle, so it can be un-hidden without hovering.
      */
     private setRowHighlighted(id: string, highlighted: boolean): void {
         const row = this.rows.get(id);
         if (!row) return;
+        row.highlighted = highlighted;
+        this.renderRowValues(row); // values step aside while the controls are out
         row.el.style.boxShadow = highlighted ? `inset 0 0 0 1px ${this.neutralBorder()}` : 'none';
         // The solid fill exists only while the row is open — an idle row is a translucent
         // title-sized chip that lets the plot show through while keeping the label legible.
         row.el.style.background = highlighted ? this.theme.background : this.idleRowFill();
-        row.controlsEl.style.display = highlighted ? 'inline-flex' : 'none';
-        if (row.eyeEl) row.eyeEl.style.display = highlighted || row.hidden ? 'inline-flex' : 'none';
+        this.syncRowActions(row);
+    }
+
+    /**
+     * Reveal the action cluster (or just the eye for a hidden indicator). Non-eye
+     * buttons only appear while highlighted; the eye keeps its inline-flex from
+     * construction and is shown/hidden with the cluster container.
+     */
+    private syncRowActions(row: LegendRow): void {
+        const open = row.highlighted;
+        row.controlsEl.style.display = open || row.hidden ? 'inline-flex' : 'none';
+        for (const child of Array.from(row.controlsEl.children)) {
+            if (!(child instanceof HTMLElement) || child === row.eyeEl) continue;
+            if (child === row.extrasEl) {
+                child.style.display = open ? 'contents' : 'none';
+                continue;
+            }
+            child.style.display = open ? 'inline-flex' : 'none';
+        }
     }
 
     /** Drop the current selection outline, if any. */
@@ -689,6 +943,7 @@ export class InputsUI {
     destroy(): void {
         this.closeDialog();
         this.closeMoveMenu();
+        this.closeRowMenu();
         for (const id of [...this.rowTips.keys()]) this.disposeTips(this.rowTips, id);
         for (const id of [...this.extrasTips.keys()]) this.disposeTips(this.extrasTips, id);
         for (const lg of this.legends.values()) lg.remove();
@@ -757,6 +1012,8 @@ export class InputsUI {
         // the card is only as wide as the widest input row needs — no fixed width stretching the
         // full-width text area — while the cap + min keep it a sensible size.
         card.style.cssText = `display:flex;flex-direction:column;width:fit-content;min-width:min(360px,90%);max-width:min(640px,94%);max-height:82%;background:${t.background};border:1px solid ${border};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${fg};color-scheme:${scheme};font:13px ${font};overflow:hidden;`;
+        // Mobile: fullscreen, edge to edge — a floating card is unusable at phone widths.
+        if (this.mobileLayout) card.style.cssText += 'width:100%;min-width:0;max-width:none;height:100%;max-height:none;border:none;border-radius:0;';
         applyChromeTokens(card, t);
         // Keystrokes (typing in a field) must not reach the chart; let Esc bubble to the
         // document handler so it closes even when focus sits in an input.
@@ -766,7 +1023,7 @@ export class InputsUI {
         const header = document.createElement('div');
         header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 20px 12px;flex:0 0 auto;';
         const hTitle = document.createElement('span');
-        hTitle.textContent = row.title;
+        hTitle.textContent = row.settingsTitle;
         hTitle.style.cssText = 'font-weight:600;font-size:16px;line-height:1.3;';
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
@@ -778,7 +1035,8 @@ export class InputsUI {
         closeBtn.addEventListener('click', () => this.closeDialog());
         header.append(hTitle, closeBtn);
         card.appendChild(header);
-        makeDialogDraggable(card, header, { closeSelector: 'button' });
+        // Dragging is a pointer affordance; a fullscreen mobile card has nowhere to go.
+        if (!this.mobileLayout) makeDialogDraggable(card, header, { closeSelector: 'button' });
 
         // ── Tab strip (Inputs) — full-width underline with the active tab underlined. ──
         const tabs = document.createElement('div');
@@ -802,7 +1060,11 @@ export class InputsUI {
                 section.appendChild(gh);
             }
             const grid = document.createElement('div');
-            grid.style.cssText = 'display:grid;grid-template-columns:minmax(140px,auto) auto auto 1fr;align-items:center;column-gap:12px;row-gap:22px;';
+            // Mobile keeps the same four tracks (row builders span across them) but gives
+            // the label the flexible, shrinkable one so nothing overflows a phone width.
+            grid.style.cssText = this.mobileLayout
+                ? 'display:grid;grid-template-columns:minmax(0,1fr) auto auto max-content;align-items:center;column-gap:12px;row-gap:22px;'
+                : 'display:grid;grid-template-columns:minmax(140px,auto) auto auto 1fr;align-items:center;column-gap:12px;row-gap:22px;';
             for (const inputRow of group.rows) this.buildInputRow(grid, inputRow, row);
             section.appendChild(grid);
             body.appendChild(section);
@@ -1272,12 +1534,17 @@ const CHECK_SVG = iconAt('check', 12);
 const SELECT_CHEVRON_SVG = iconAt('chevron-down', 16);
 
 const DIALOG_STYLE_ID = 'vela-ind-dialog-styles';
+/** Bump when the injected sheet's rules change so an already-mounted page refreshes them. */
+const DIALOG_STYLE_REV = '10';
 
 /** Inject the scoped styles inline cssText can't reach (color-swatch, focus ring, scrollbar). */
 function ensureDialogStyles(): void {
-    if (typeof document === 'undefined' || document.getElementById(DIALOG_STYLE_ID)) return;
-    const s = document.createElement('style');
+    if (typeof document === 'undefined') return;
+    const existing = document.getElementById(DIALOG_STYLE_ID) as HTMLStyleElement | null;
+    if (existing?.dataset.rev === DIALOG_STYLE_REV) return;
+    const s = existing ?? document.createElement('style');
     s.id = DIALOG_STYLE_ID;
+    s.dataset.rev = DIALOG_STYLE_REV;
     s.textContent = `
 .vela-ind-dialog input[type=color]{-webkit-appearance:none;appearance:none;}
 .vela-ind-dialog input[type=color]::-webkit-color-swatch-wrapper{padding:0;}
@@ -1291,19 +1558,19 @@ function ensureDialogStyles(): void {
 .vela-ind-dialog ::-webkit-scrollbar-track{background:transparent;}
 .vela-ind-hint{background:var(--vela-hover);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-ind-hint:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
-.vela-ind-ctl{color:var(--vela-fg-muted);transition:color var(--vela-dur-fast) ease;}
-.vela-ind-ctl:hover{color:var(--vela-fg-bright);}
-.vela-ind-close{transition:color var(--vela-dur-fast) ease;}
-.vela-ind-close:hover{color:var(--vela-danger) !important;}
-.vela-ind-fold{color:var(--vela-fg-muted);transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
-.vela-ind-fold:hover{color:var(--vela-fg-bright);border-color:var(--vela-border-strong);}
+.vela-ind-ctl,.vela-ind-close{background-color:transparent;color:inherit;transition:color var(--vela-dur-fast) ease,background-color var(--vela-dur-fast) ease;}
+.vela-ind-ctl svg,.vela-ind-close svg{width:${LEGEND_ICON_PX}px;height:${LEGEND_ICON_PX}px;display:block;flex:none;stroke-width:1;}
+.vela-ind-ctl:hover{background-color:var(--vela-hover-strong);}
+.vela-ind-close:hover{color:var(--vela-danger) !important;background-color:var(--vela-hover-strong);}
+.vela-ind-fold{transition:border-color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
+.vela-ind-fold:hover{border-color:var(--vela-border-strong);opacity:0.9;}
 .vela-ind-menuitem{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-ind-menuitem:hover{background:var(--vela-hover-strong);}
 .vela-ind-btn{cursor:pointer;padding:7px 14px;border-radius:var(--vela-radius-md);border:1px solid transparent;background:transparent;color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
 .vela-ind-btn:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
 .vela-ind-btn-primary{padding:7px 16px;border-color:var(--vela-selected-bg);background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
 .vela-ind-btn-primary:hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);opacity:0.85;}`;
-    document.head.appendChild(s);
+    if (!existing) document.head.appendChild(s);
 }
 
 /** `input.timeframe` choices — label shown, Pine resolution string committed (`''` = chart's). */

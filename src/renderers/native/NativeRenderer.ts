@@ -5,6 +5,7 @@ import type {
     CrosshairEvent,
     CrosshairOHLC,
     ClickEvent,
+    AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,
     IndicatorStatus,
@@ -26,7 +27,7 @@ import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
 import { isLineLikeSeries } from '../../core/model/series';
-import { InputsUI } from '../shared/InputsUI';
+import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
 import { TableOverlay } from '../shared/TableOverlay';
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
@@ -58,6 +59,7 @@ import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
+import { rasterizeOverlay } from '../shared/dom-raster';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
 import { DARK_THEME, LIGHT_THEME } from '../../core/theme';
@@ -80,12 +82,13 @@ const TIME_AXIS_H = 22; // px reserved at the bottom for the time axis
 // ── "scroll to most recent bar" affordance (bottom-right, shown only when the latest bar is off-screen and the cursor is nearby) ──
 // Size/border match the playground drawing-toolbar collapse toggle (`.toolbar-toggle`).
 const SCROLL_BTN_SIZE = 26; // px — width & height (`.toolbar-toggle`)
+const SCROLL_BTN_SIZE_TOUCH = 24; // px — the mobile variant; a hair under the desktop affordance
 const SCROLL_BTN_RADIUS = 5; // px — border-radius (`.toolbar-toggle`)
 const SCROLL_BTN_SHADOW = '0 2px 8px rgba(0,0,0,0.4)'; // box-shadow (`.toolbar-toggle`)
 const SCROLL_BTN_ICON_PX = 12; // px — icon box (`.toolbar-toggle` font-size / FA glyph size)
-const SCROLL_BTN_RIGHT_INSET = 25; // px the button sits left of the price-axis gutter's inner edge
+const SCROLL_BTN_RIGHT_INSET = 12; // px the button sits left of the price-axis gutter's inner edge
 const SCROLL_BTN_RIGHT = RIGHT_AXIS_W + SCROLL_BTN_RIGHT_INSET; // initial offset (single-column scale); widened at runtime for merged scales
-const SCROLL_BTN_BOTTOM = TIME_AXIS_H + 30; // px from the plot's bottom edge — a row above the settings gear so they never overlap
+const SCROLL_BTN_BOTTOM = TIME_AXIS_H + 14; // px from the plot's bottom edge — the corner slot also used by the opt-in `settings` gear (off by default)
 const SCROLL_BTN_PROXIMITY_PX = 120; // the button reveals only while the cursor is within this radius of its center
 const MIN_VISIBLE_BARS = 2; // never zoom/pan so far that fewer than this many candles stay on screen (the only pan limit)
 const ZOOM_OUT_MARGIN_BARS = 6; // breathing room at max zoom-out: all bars + this margin fill the width (no thin strip)
@@ -167,8 +170,12 @@ export class NativeRenderer implements IChartRenderer {
     private symbolPicker: SymbolPickerFn | null = null;
     /** Indicator titles (the legend rows) shown — held here so a remount re-applies it. */
     private indicatorTitlesOn = true;
+    /** Plot values beside the legend titles shown — held here so a remount re-applies it. */
+    private indicatorValuesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
+    /** Host override of the legend's fold toggle — held here so a remount re-applies it. */
+    private legendOverviewAction: (() => void) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
     private keyboard: KeyboardController | null = null;
     private keyboardEnabled = true;
@@ -261,6 +268,9 @@ export class NativeRenderer implements IChartRenderer {
     // pane carries merged (own-scale) columns; the constant only clears a single-column scale.
     private scrollBtnRightPx = SCROLL_BTN_RIGHT;
 
+    // ── chrome size class (pushed by the host shell; see IChartRenderer.setLayoutMode) ──
+    private layoutMode: 'mobile' | 'desktop' = 'desktop';
+
     private readonly viewportCbs = new Set<(r: VisibleRange) => void>();
     private readonly crosshairCbs = new Set<(e: CrosshairEvent) => void>();
     private readonly chartTypeSettingsCbs = new Set<(typeId: string, values: Record<string, unknown>) => void>();
@@ -271,6 +281,7 @@ export class NativeRenderer implements IChartRenderer {
     private factoryConfig: ChartConfig | null = null;
     private hostSettingsSections: HostSettingsSection[] = [];
     private readonly clickCbs = new Set<(e: ClickEvent) => void>();
+    private readonly axisLongPressCbs = new Set<(e: AxisLongPressEvent) => void>();
     private readonly inputChangeCbs = new Set<(e: InputChangeEvent) => void>();
     private readonly removeIndicatorCbs = new Set<(id: string) => void>();
     private readonly toggleVisibleCbs = new Set<(id: string, visible: boolean) => void>();
@@ -298,7 +309,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -433,6 +444,12 @@ export class NativeRenderer implements IChartRenderer {
                 this.indicatorTitlesOn = value !== false;
                 this.inputsUI?.setTitlesVisible(this.indicatorTitlesOn);
                 return; // own DOM, no repaint needed
+            case 'indicatorValues':
+                // Show/hide the plot values beside every legend title (the settings dialog's
+                // Indicators → Values toggle); clears any per-row context-menu overrides.
+                this.indicatorValuesOn = value !== false;
+                this.inputsUI?.setValuesVisible(this.indicatorValuesOn);
+                return; // own DOM, no repaint needed
             case 'attribution':
                 // `false` hides it, `true` restores the built-in mark, a non-empty STRING
                 // puts the host's own mark in that corner (see the NOTICE).
@@ -501,6 +518,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'historyChords': return this.historyChordsEnabled;
             case 'settings': return this.settingsEnabled;
             case 'indicatorTitles': return this.indicatorTitlesOn;
+            case 'indicatorValues': return this.indicatorValuesOn;
             case 'attribution': return this.attributionHtml ?? this.attributionEnabled;
             case 'dialogHost': return this.dialogHost ?? undefined;
             default: return undefined;
@@ -894,7 +912,10 @@ export class NativeRenderer implements IChartRenderer {
     /** Port surface: hosts (bottom-bar / chrome buttons) open the same dialog as the
      *  in-chart gear — created on demand, independent of the gear feature being enabled. */
     openSettingsDialog(section?: string): void {
-        if (!this.settingsDialog && this.plot) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
+        if (!this.settingsDialog && this.plot) {
+            this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
+            this.settingsDialog.setLayoutMode(this.layoutMode);
+        }
         this.toggleSettingsDialog(section);
     }
 
@@ -1013,11 +1034,18 @@ export class NativeRenderer implements IChartRenderer {
         this.updateScrollToRealtimeButton();
     };
 
-    /** Show the button only when the latest bar is scrolled off the right edge AND the cursor is nearby. */
+    /** Show the button only when the latest bar is scrolled off the right edge. On desktop the
+     *  cursor must also be nearby (hover reveal); on mobile — no hovering cursor — the button
+     *  appears whenever the latest bars are off-screen and hides again once the view is back
+     *  at the right edge. */
     private updateScrollToRealtimeButton(): void {
         const btn = this.scrollButton;
         if (!btn) return;
         const latestOffScreen = this.coords.barCount > 0 && this.coords.getViewport().rightOffset < 0;
+        if (this.layoutMode === 'mobile') {
+            btn.style.display = latestOffScreen ? 'flex' : 'none';
+            return;
+        }
         btn.style.display = latestOffScreen && this.pointerNearScrollBtn ? 'flex' : 'none';
     }
 
@@ -1042,17 +1070,20 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     /**
-     * Export the current chart as a PNG data URL by compositing the geometry (L0)
-     * + chrome (L1) + user-drawings (L1.5) canvases onto an offscreen canvas. The
-     * background is filled first (the canvas2d data layer is transparent — its bg
-     * lives on the wrapper), and a fresh synchronous paint runs first so the WebGL2
-     * backend's (non-preserved) drawing buffer is populated before it's read back
-     * this tick — the same paint also repaints the drawings layers, so they're
-     * current (interleaved drawings are already inside the data composite). They're
-     * drawn bottom-up in DOM stacking order so the front user drawings (trend lines,
-     * boxes, etc.) sit above the Pine drawings on the chrome layer, matching what's
-     * on screen. The crosshair (L2) and DOM overlays (tables, legend) are
-     * intentionally excluded.
+     * Export the current chart as a PNG data URL by compositing EVERY plot canvas onto
+     * an offscreen canvas, in the same stacking order the DOM shows: plugin layers
+     * below the data, geometry (L0), volume columns (L0.25), the visible-range volume
+     * profile (L0.6), plugin layers above the data, chrome (L1), and user drawings
+     * (L1.5). The background is filled first (the canvas2d data layer is transparent —
+     * its bg lives on the wrapper), and a fresh synchronous paint runs first so the
+     * WebGL2 backend's (non-preserved) drawing buffer is populated before it's read
+     * back this tick — the same paint also repaints the drawings layers, so they're
+     * current. DOM chrome joins as a best-effort text/chip raster (see
+     * `rasterizeOverlay`): the per-pane indicator legends, plus any host overlay that
+     * opts in with a `data-vela-screenshot` attribute on the mount container's
+     * subtree (the widget marks its status line, and its symbol watermark with
+     * `"under"` — drawn beneath the canvases, where it sits on screen). Only the
+     * crosshair (L2) is intentionally excluded.
      */
     screenshot(): string | null {
         if (!this.dataCanvas) return null;
@@ -1065,9 +1096,26 @@ export class NativeRenderer implements IChartRenderer {
         if (!ctx) return null;
         ctx.fillStyle = this.theme.background;
         ctx.fillRect(0, 0, out.width, out.height);
-        ctx.drawImage(this.dataCanvas, 0, 0);
-        ctx.drawImage(this.chromeCanvas, 0, 0);
-        ctx.drawImage(this.drawingsCanvas, 0, 0);
+        // DOM replicas share the plot's coordinate space (the canvases fill it).
+        const plotRect = this.plot?.getBoundingClientRect();
+        const frame = plotRect && plotRect.width > 0 ? { left: plotRect.left, top: plotRect.top, dpr: out.width / plotRect.width } : null;
+        const hostMarked = [...(this.mountContainer?.querySelectorAll('[data-vela-screenshot]') ?? [])];
+        if (frame) {
+            for (const el of hostMarked) {
+                if (el.getAttribute('data-vela-screenshot') === 'under') rasterizeOverlay(ctx, el, frame);
+            }
+        }
+        const below = this.extLayers.filter((l) => l.def.placement === 'below-data').map((l) => l.canvas);
+        const above = this.extLayers.filter((l) => l.def.placement !== 'below-data').map((l) => l.canvas);
+        for (const canvas of [...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas]) {
+            if (canvas && canvas.width > 0 && canvas.height > 0) ctx.drawImage(canvas, 0, 0);
+        }
+        if (frame) {
+            for (const lg of this.plot?.querySelectorAll('[data-vela-pane]') ?? []) rasterizeOverlay(ctx, lg, frame);
+            for (const el of hostMarked) {
+                if (el.getAttribute('data-vela-screenshot') !== 'under') rasterizeOverlay(ctx, el, frame);
+            }
+        }
         return out.toDataURL('image/png');
     }
 
@@ -1258,6 +1306,9 @@ export class NativeRenderer implements IChartRenderer {
             fling: (v) => this.fling(v),
             onPointerMove: (x, y) => this.handlePointerMove(x, y),
             onClick: (x) => this.handleClick(x),
+            onAxisLongPress: (axis, x, y) => {
+                for (const cb of this.axisLongPressCbs) cb({ axis, x, y });
+            },
             beginPriceScale: (x, y) => this.beginPriceScale(x, y),
             priceScaleBy: (dy) => this.priceScaleBy(dy),
             beginPricePan: (y) => this.beginPricePan(y),
@@ -1313,6 +1364,15 @@ export class NativeRenderer implements IChartRenderer {
             setToolbarGutter: (px) => this.setToolbarGutter(px),
         });
         this.userDrawings.historyChords = this.historyChordsEnabled; // may be set before init()
+        // Honor a layout mode pushed before mount (the shell may set it ahead of the chart build).
+        if (this.layoutMode === 'mobile') {
+            this.mountContainer?.setAttribute('data-vela-layout', this.layoutMode);
+            this.userDrawings.setLayoutMode(this.layoutMode);
+            if (this.scrollButton) {
+                this.scrollButton.style.width = `${SCROLL_BTN_SIZE_TOUCH}px`;
+                this.scrollButton.style.height = `${SCROLL_BTN_SIZE_TOUCH}px`;
+            }
+        }
 
         this.keyboard = new KeyboardController({
             panByBars: (bars) => this.panByBars(bars),
@@ -1327,10 +1387,13 @@ export class NativeRenderer implements IChartRenderer {
         this.setKeyboardEnabled(this.keyboardEnabled); // accessible by default; wires focus + ARIA
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
+        this.inputsUI.setLayoutMode(this.layoutMode);
         this.inputsUI.setTitlesVisible(this.indicatorTitlesOn); // a remount keeps the toggle state
+        this.inputsUI.setValuesVisible(this.indicatorValuesOn);
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setLegendActions(this.legendActionsProvider);
+        this.inputsUI.setLegendOverviewAction(this.legendOverviewAction);
         this.inputsUI.setOnChange((c) => {
             for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value });
         });
@@ -1805,7 +1868,11 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.indicators.set(model.id, model);
         this.refreshAnchorOffset(model);
         this.scene.assignIndicatorZ(model.id); // default z = mount order (later ⇒ in front)
-        this.inputsUI.upsert(model.id, model.title, model.inputs, model.inputValues, model.paneId, { native: !!model.native });
+        // Legend chip prefers the compact shorttitle; the settings dialog keeps the full title.
+        this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
+            native: !!model.native,
+            ...(model.shorttitle ? { settingsTitle: model.title } : {}),
+        });
         this.syncTables(model);
         if (model.native?.type === 'volume') {
             this.volumeActive = true; // the volume layer follows the indicator's presence
@@ -1874,6 +1941,15 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI?.setLegendActions(provider);
     }
 
+    setLegendOverviewAction(action: (() => void) | null): void {
+        this.legendOverviewAction = action;
+        this.inputsUI?.setLegendOverviewAction(action);
+    }
+
+    openIndicatorSettings(indicatorId: string): void {
+        this.inputsUI?.openSettingsFor(indicatorId);
+    }
+
     /**
      * Hide/show a mounted indicator. Hiding drops its model from the scene (so every paint path —
      * series, fills, drawings, tables, glow, data window — skips it) while keeping its z key and its
@@ -1935,6 +2011,26 @@ export class NativeRenderer implements IChartRenderer {
         return () => this.removeIndicatorCbs.delete(cb);
     }
 
+    /** Port surface: the host shell's chrome size class. Mobile switches the renderer
+     *  chrome to its touch-first presentation — fullscreen dialogs, no docked drawing
+     *  toolbar (the shell provides its own picker), the scroll-to-latest button shown
+     *  whenever the latest bars are off-screen (touch has no cursor proximity). */
+    setLayoutMode(mode: 'mobile' | 'desktop'): void {
+        if (mode === this.layoutMode) return;
+        this.layoutMode = mode;
+        this.mountContainer?.setAttribute('data-vela-layout', mode);
+        this.userDrawings?.setLayoutMode(mode);
+        this.settingsDialog?.setLayoutMode(mode);
+        this.inputsUI?.setLayoutMode(mode);
+        if (this.scrollButton) {
+            // A finger needs a larger target than a cursor.
+            const px = mode === 'mobile' ? SCROLL_BTN_SIZE_TOUCH : SCROLL_BTN_SIZE;
+            this.scrollButton.style.width = `${px}px`;
+            this.scrollButton.style.height = `${px}px`;
+        }
+        this.updateScrollToRealtimeButton();
+    }
+
     setSettingsSections(sections: HostSettingsSection[]): void {
         this.hostSettingsSections = sections;
         this.settingsDialog?.setHostSections(sections);
@@ -1963,6 +2059,11 @@ export class NativeRenderer implements IChartRenderer {
     onClick(cb: (e: ClickEvent) => void): Unsubscribe {
         this.clickCbs.add(cb);
         return () => this.clickCbs.delete(cb);
+    }
+
+    onAxisLongPress(cb: (e: AxisLongPressEvent) => void): Unsubscribe {
+        this.axisLongPressCbs.add(cb);
+        return () => this.axisLongPressCbs.delete(cb);
     }
 
     onViewportChange(cb: (range: VisibleRange) => void): Unsubscribe {
@@ -2138,6 +2239,7 @@ export class NativeRenderer implements IChartRenderer {
         this.skeletonClockMs += dtMs; // drives the loading-skeleton pulse (harmless when none show)
         this.paintData();
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx());
+        this.updateLegendValues(); // the animator owns the frame — renderFrame won't run
         this.emitViewportChange();
         return active;
     }
@@ -2206,7 +2308,7 @@ export class NativeRenderer implements IChartRenderer {
             this.lastPointer = null;
             this.scheduler.invalidate(InvalidateLevel.Cursor);
             this.hoverLogical = null; // off the plot ⇒ the readout falls back to the latest bar
-            const empty: CrosshairEvent = { time: null, price: null, values: new Map(), ohlc: null };
+            const empty: CrosshairEvent = { time: null, price: null, paneKind: null, values: new Map(), ohlc: null };
             for (const cb of this.crosshairCbs) cb(empty);
             return;
         }
@@ -2224,7 +2326,7 @@ export class NativeRenderer implements IChartRenderer {
         const logical = Math.round(this.coords.xToLogical(x));
         const onBar = logical >= 0 && logical < this.coords.barCount;
         const time = onBar ? this.coords.logicalToTime(logical) : null;
-        const pane = this.paneAtY(y);
+        const pane = this.paneNodeAtY(y); // the full node — the event also names the pane KIND
         const price = inData && pane ? this.coords.yToPrice(y, pane.scale, pane.bounds) : null;
         const values = new Map<string, number>();
         if (onBar) {
@@ -2243,7 +2345,7 @@ export class NativeRenderer implements IChartRenderer {
             ? { time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume }
             : null;
         this.hoverLogical = onBar ? logical : null;
-        const event: CrosshairEvent = { time, price, values, ohlc };
+        const event: CrosshairEvent = { time, price, paneKind: inData && pane ? pane.kind : null, values, ohlc };
         for (const cb of this.crosshairCbs) cb(event);
     }
 
@@ -2264,6 +2366,21 @@ export class NativeRenderer implements IChartRenderer {
             if (y >= pane.bounds.top && y <= pane.bounds.top + pane.bounds.height) return pane;
         }
         return null;
+    }
+
+    /** The pane whose bounds sit closest to `y` — the forgiving fallback for points that
+     *  fall BETWEEN bounds (separator gaps, the strip under the last pane). */
+    private nearestPaneToY(y: number): PaneNode | null {
+        let best: PaneNode | null = null;
+        let bestDist = Infinity;
+        for (const pane of this.scene.panes.values()) {
+            const d = y < pane.bounds.top ? pane.bounds.top - y : y - (pane.bounds.top + pane.bounds.height);
+            if (d < bestDist) {
+                bestDist = d;
+                best = pane;
+            }
+        }
+        return best;
     }
 
     // ── manual vertical scaling (price-axis drag + vertical price pan) ──
@@ -2334,7 +2451,9 @@ export class NativeRenderer implements IChartRenderer {
      * still fits the view.)
      */
     private dataDblClick(_x: number, y: number): void {
-        const pane = this.paneNodeAtY(y);
+        // Snap to the nearest pane when the point falls between bounds (separator gap,
+        // the sliver under the last pane) — a double-tap must never land in a dead zone.
+        const pane = this.paneNodeAtY(y) ?? this.nearestPaneToY(y);
         if (!pane) return;
         // Double-click maximizes the clicked pane so it fills the plot and every other pane is
         // fully hidden (zero height, not a strip): the price pane hides all study indicators, a
@@ -2602,28 +2721,67 @@ export class NativeRenderer implements IChartRenderer {
     private dataWindowGroups(idx: number, pricePane: PaneNode | null): DataWindowGroup[] {
         const groups: DataWindowGroup[] = [];
         for (const model of this.scene.indicators.values()) {
-            const pane = (model.paneId ? this.scene.panes.get(model.paneId) : null) ?? pricePane;
-            const off = this.scene.offsetOf(model.id);
-            const rows: DataWindowRow[] = [];
-            for (const s of model.series) {
-                let value: number | null | undefined;
-                let color: string;
-                if (s.kind === 'candle' || s.kind === 'bar') {
-                    value = s.bars[idx - off]?.close;
-                    color = s.style?.up ?? this.theme.upColor;
-                } else if (isLineLikeSeries(s)) {
-                    if (s.visible === false) continue;
-                    value = s.points[idx - off]?.value;
-                    color = s.points[idx - off]?.color ?? s.style.color;
-                } else {
-                    continue; // markers carry no scalar readout
-                }
-                if (value == null || !Number.isFinite(value)) continue;
-                rows.push({ label: s.title || model.title, value: this.dataWindowFmt(value, pane), color });
-            }
+            const rows = this.dataWindowRowsFor(model, idx, pricePane);
             if (rows.length) groups.push({ name: model.title, rows });
         }
         return groups;
+    }
+
+    /** One indicator's readout at bar `idx`: a row per drawable plot, formatted on its pane's scale. */
+    private dataWindowRowsFor(model: IndicatorModel, idx: number, pricePane: PaneNode | null): DataWindowRow[] {
+        // The volume native draws through its bespoke layer and mounts a series-less model, so
+        // its readout comes straight from the bar's volume instead of iterating `model.series`.
+        if (model.native?.type === 'volume') return this.volumeReadoutRows(model, idx);
+        const pane = (model.paneId ? this.scene.panes.get(model.paneId) : null) ?? pricePane;
+        const off = this.scene.offsetOf(model.id);
+        const rows: DataWindowRow[] = [];
+        for (const s of model.series) {
+            let value: number | null | undefined;
+            let color: string;
+            if (s.kind === 'candle' || s.kind === 'bar') {
+                value = s.bars[idx - off]?.close;
+                color = s.style?.up ?? this.theme.upColor;
+            } else if (isLineLikeSeries(s)) {
+                if (s.visible === false) continue;
+                value = s.points[idx - off]?.value;
+                color = s.points[idx - off]?.color ?? s.style.color;
+            } else {
+                continue; // markers carry no scalar readout
+            }
+            if (value == null || !Number.isFinite(value)) continue;
+            rows.push({ label: s.title || model.title, value: this.dataWindowFmt(value, pane), color });
+        }
+        return rows;
+    }
+
+    /** The volume indicator's readout: the bar's volume, tinted with the layer's own direction
+     *  colors. Hiding volume keeps its model in the scene (only the layer is suppressed — see
+     *  `setIndicatorVisible`), so the hidden flag is checked here rather than by model absence. */
+    private volumeReadoutRows(model: IndicatorModel, idx: number): DataWindowRow[] {
+        if (this.volumeHidden) return [];
+        const bar = this.bars[idx];
+        const vol = bar?.volume;
+        if (bar == null || vol == null || !Number.isFinite(vol)) return [];
+        const cfg = this.scene.volumeLayer;
+        const color = bar.close >= bar.open ? (cfg?.upColor ?? this.theme.upColor) : (cfg?.downColor ?? this.theme.downColor);
+        return [{ label: model.title, value: formatVolume(vol), color }];
+    }
+
+    /** Refresh the plot values beside every legend title — the same readout the data window
+     *  shows (crosshair bar, else the latest bar), pushed per paint. A hidden indicator has
+     *  no scene model, so its row is absent from the map and its readout clears. */
+    private updateLegendValues(): void {
+        if (!this.inputsUI) return;
+        const n = this.bars.length;
+        const values = new Map<string, LegendPlotValue[]>();
+        if (n > 0) {
+            const idx = this.hoverLogical != null ? this.hoverLogical : n - 1;
+            const pricePane = this.dataWindowPricePane();
+            for (const model of this.scene.indicators.values()) {
+                values.set(model.id, this.dataWindowRowsFor(model, idx, pricePane).map((r) => ({ value: r.value, color: r.color })));
+            }
+        }
+        this.inputsUI.setPlotValues(values);
     }
 
     private renderFrame(level: InvalidateLevel): void {
@@ -2651,6 +2809,9 @@ export class NativeRenderer implements IChartRenderer {
         // Hover-testing SDK layers (repaintOnCursor) follow pointer moves too — each owns
         // one transparent canvas, so this stays as cheap as the crosshair tier itself.
         if (!repaintsData(level) && this.paintedData) this.repaintCursorLayers();
+        // Legend values follow the same tiers (hover moves the read bar, data changes the
+        // value); the push diffs per row, so an unchanged frame touches no DOM.
+        this.updateLegendValues();
     }
 
     /** Repaint the SDK layers that opted into cursor tracking (their own canvas only). */
@@ -2811,7 +2972,7 @@ export class NativeRenderer implements IChartRenderer {
      *  pointer at 14:00 must light THIS day's daily candle, not tomorrow's (a time past
      *  a bar's midpoint still belongs to that bar). Before the first open or past the
      *  forming bar there is no containing bar — no ghost. */
-    private externalCrossPx(): { x: number; y: number | null; time: Millis } | null {
+    private externalCrossPx(): { x: number; y: number | null; time: Millis; price: number | null } | null {
         const ext = this.externalCross;
         if (!ext || this.coords.barCount === 0) return null;
         const logical = Math.floor(this.coords.timeToLogical(ext.time));
@@ -2826,7 +2987,8 @@ export class NativeRenderer implements IChartRenderer {
                 if (!Number.isFinite(y) || y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) y = null;
             }
         }
-        return { x, y, time: this.coords.logicalToTime(logical) };
+        // The raw price rides along for the axis chip (only meaningful with a resolved y).
+        return { x, y, time: this.coords.logicalToTime(logical), price: y != null ? ext.price : null };
     }
 
     /** Sticky magnet mode for user drawings (off/weak/strong); the drawings toolbar drives it. */

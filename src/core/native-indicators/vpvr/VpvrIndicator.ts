@@ -72,10 +72,11 @@ class VpvrIndicator implements NativeIndicator {
     stop(): void {}
 }
 
-/** Descriptor for the built-in VPVR indicator. Bar volume needs no capability probe. */
+/** Descriptor for the built-in visible-range volume profile. Bar volume needs no capability probe. */
 export const vpvrDescriptor: NativeIndicatorDescriptor = {
     type: 'vpvr',
-    title: 'VPVR',
+    title: 'Visible Range Volume Profile',
+    shortTitle: 'VRVP',
     paneHint: 'price',
     overlay: true,
     inputsSchema: (): InputSchema[] => [

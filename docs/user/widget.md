@@ -39,7 +39,9 @@ the surface it shares, name for name and meaning for meaning, with
 | `indicators` | manifest \| URL string | — | The indicator manifest — inline JSON or a URL returning it (see below). |
 | `timeframes` | `string[]` | `['1','5','15','60','240','D','W']` | The topbar timeframe presets. |
 | `timezone` | IANA string | `'Etc/UTC'` | Initial display timezone; changed live from the bottom bar. |
-| `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles. |
+| `statusline` / `watermark` / `bottombar` | boolean | `true` | Chrome toggles (`bottombar` governs the mobile bottom bar too). |
+| `indicatorPicker` | boolean | `true` | The built-in indicator dialog's entry points — the topbar *Indicators* button, the mobile-bar item, and the `/` shortcut. `false` removes them, for hosts that ship their own indicator UI (see [Replacing the indicator menu](../contributing/plugin-sdk.md#replacing-the-indicator-menu)). The `indicators` manifest still resolves and auto-adds. |
+| `layoutMode` | `'auto'` \| `'mobile'` \| `'desktop'` | `'auto'` | The chrome size class. `'auto'` follows the **container** width (plus a coarse-pointer heuristic for tablets) and re-evaluates live; the explicit values pin it. See [Mobile](#mobile). |
 | `autofocus` | boolean | `false` | Focus the chart on mount so keyboard shortcuts work from the first keystroke. Off by default: an embedded chart should not steal the page's focus. |
 | `persist` | boolean \| string | `false` | Bring the chart back as you left it — the widget persists its FULL state (the unified `getState()` document: market, prefs, renderer config, user drawings, indicators) and restores it at construction (`true` = key `'vela-widget'`; a string is the key). Old three-key payloads migrate transparently. |
 | `storage` | `VelaStorage` | localStorage | The persistence backend — inject a custom adapter (see below); one contract for both shells. |
@@ -132,6 +134,48 @@ work from the very first keystroke, before any click.
   for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
   is independent of the main one. Each menu's settings entry opens the settings dialog on the
   tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
+
+## Mobile
+
+In a container narrower than ~640px (or up to ~920px with a coarse pointer — a
+tablet), the widget switches to its **mobile chrome**; `layoutMode: 'mobile'` or
+`'desktop'` pins the choice. The mode is container-driven and live: resizing across
+the breakpoint swaps the chrome in place, closing whatever was open in the other
+presentation.
+
+What changes on mobile:
+
+- **One bottom bar replaces both desktop bars**, left to right: the symbol button
+  (full-screen symbol search), the timeframe button (a bottom sheet with the date-range
+  presets on top and the timeframe grid below), indicators (the full-screen picker),
+  drawings (a bottom sheet with a search bar, the tool groups as scrollable tabs, and
+  favorite stars), a three-dots sheet (undo/redo, screenshot, chart type, the side
+  panels, time zone, alerts, and contributed topbar actions), and chart settings.
+- **The docked drawing toolbar hides.** Picking a tool from the drawings sheet arms it
+  and shows a floating pill over the chart — the armed tool's icon, the magnet cycle,
+  stay-in-drawing-mode, the eraser, and ✕ to disarm. Favorites keep working (stars in
+  the sheet), so a radial-wheel-style picker built on them keeps its data.
+- **Dialogs go full-screen** — symbol search, the indicator picker, indicator settings,
+  and chart settings, where the section rail sits behind a burger button, a section's
+  group list becomes scrollable tabs at the top, and instance strips scroll sideways.
+- **Side panels** (data window, object tree, contributed) open over the chart instead
+  of docking a column beside it.
+- **The indicator legend starts collapsed** behind its count chip (tap to unfold) — a
+  phone-width plot has no room for the rows. The object tree's per-indicator action
+  menu carries an "Indicator settings" entry, so settings stay reachable without the
+  legend gear.
+- **Touch gestures**: one-finger pan (with the usual fling), two-finger pinch zoom
+  anchored between the fingers, and a **long-press** that inspects with the crosshair —
+  the view stays put while the finger drives the readout; lifting clears it. A
+  **double-tap** mirrors the desktop double-click: on the price axis it resets that
+  pane's scale to auto, on the time axis it fits the view to content, and inside the
+  plot it maximizes the tapped pane (price or indicator) — a second double-tap
+  restores the split. The price/time axis strips still drag-rescale, and the button
+  that jumps back to the most recent bar stays visible whenever the chart has data.
+
+Embedders need nothing special: the mode also reaches the renderer's own chrome, and a
+chart in a phone-sized *container on a desktop page* gets the same treatment — the
+widget's own bounds, not the viewport, are what count.
 
 ## Widget state — the same surface as the workspace
 
@@ -236,5 +280,5 @@ Three levels, shallow to deep:
 3. **Contributed actions** — plugins and hosts add topbar buttons and context-menu items
    as data descriptors via
    [`registerWidgetAction`](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction);
-   the kit's primitives (`Dialog`, `Menu`, `Tooltip`, `KeymapManager`) are exported from
-   `vela/ui` for building your own panels against the headless core.
+   the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `KeymapManager`) are
+   exported from `vela/ui` for building your own panels against the headless core.

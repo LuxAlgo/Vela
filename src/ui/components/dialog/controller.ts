@@ -7,6 +7,8 @@ export interface DialogControllerOptions {
     modal?: boolean;
     closeOnEscape?: boolean;
     closeOnInteractOutside?: boolean;
+    /** Element to focus on open (default: the machine's first-tabbable pick). */
+    initialFocusEl?: () => HTMLElement | null;
     onOpenChange?: (open: boolean) => void;
 }
 
@@ -27,6 +29,7 @@ export function dialogController(opts: DialogControllerOptions = {}): DialogCont
             modal: opts.modal ?? true,
             closeOnEscape: opts.closeOnEscape ?? true,
             closeOnInteractOutside: opts.closeOnInteractOutside ?? false,
+            initialFocusEl: opts.initialFocusEl,
             onOpenChange: (d: dialog.OpenChangeDetails) => opts.onOpenChange?.(d.open),
         } satisfies Partial<dialog.Props>,
         connect: (service: DialogService): DialogApi => dialog.connect(service, normalizeProps),

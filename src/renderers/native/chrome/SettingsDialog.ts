@@ -3,17 +3,21 @@ import type { ChartConfig } from '../core/chartConfig';
 import {
     chartType,
     chartTypes,
+    normalizeSettingsRow,
+    settingsRowValueKeys,
     settingsRowVisible,
     type ChartTypeSettingsInstance,
     type ChartTypeSettingsSection,
+    type SettingsInlineControl,
     type SettingsRowDescriptor,
     type SettingsRowWhen,
     type SettingsSelectOption,
+    type SettingsValueRow,
 } from '../../../chart-types/registry';
-import { toHex6, withAlpha } from '../../../core/color';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
 import { colorField, closeColorPopover } from './ColorField';
+import { widthField, closeWidthPopover } from './WidthField';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
@@ -139,6 +143,30 @@ function ensureControlStyles(): void {
    muted and non-interactive. Applied to each row's children so it survives display:contents;
    !important beats the inline opacity on labels. */
 .vela-sd-soft>*{opacity:0.4 !important;pointer-events:none !important;}
+/* ── mobile presentation (.vela-sd-mobile on the scrim; structural sizes are inline in open()) ──
+   The tab rail becomes a burger-opened overlay sidebar; the group TOC becomes a sticky
+   row of horizontally scrollable tabs; the instance strip scrolls instead of wrapping;
+   controls grow to touch size and labels may wrap (the grid gives them a flexible track). */
+.vela-sd-mobile .vela-sd-burger{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg);line-height:0;width:36px;height:36px;border-radius:var(--vela-radius-sm);margin-right:2px;}
+.vela-sd-mobile .vela-sd-burger:active{background:var(--vela-hover);}
+.vela-sd-mobile .vela-sd-railscrim{position:absolute;inset:0;z-index:2;background:var(--vela-backdrop);display:none;}
+.vela-sd-mobile .vela-sd-railscrim.open{display:block;}
+.vela-sd-mobile .vela-sd-rail{position:absolute;left:0;top:0;bottom:0;z-index:3;width:min(240px,80%);box-sizing:border-box;background:var(--vela-surface);border-right:1px solid var(--vela-border);box-shadow:var(--vela-shadow-dialog);transform:translateX(-105%);transition:transform var(--vela-dur-med) var(--vela-ease);}
+.vela-sd-mobile .vela-sd-rail.open{transform:translateX(0);}
+.vela-sd-mobile .vela-sd-tab{padding:12px;}
+.vela-sd-mobile .vela-sd-struct{flex-direction:column;padding-top:8px;}
+.vela-sd-mobile .vela-sd-toc{position:sticky;top:0;z-index:1;background:var(--vela-surface);flex-direction:row;overflow-x:auto;scrollbar-width:none;min-width:0;width:100%;box-sizing:border-box;gap:4px;padding:2px 0 8px;}
+.vela-sd-mobile .vela-sd-toc::-webkit-scrollbar{display:none;}
+.vela-sd-mobile .vela-sd-toc-btn{flex:none;padding:8px 12px;font-size:13px;}
+.vela-sd-mobile .vela-sd-struct>[data-sd-rows-host]{border-left:none;padding-left:0;width:100%;}
+.vela-sd-mobile .vela-sd-itabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+.vela-sd-mobile .vela-sd-itabs::-webkit-scrollbar{display:none;}
+.vela-sd-mobile .vela-sd-itab{height:36px;flex:none;}
+.vela-sd-mobile .vela-sd-check{width:22px;height:22px;}
+.vela-sd-mobile .vela-sd-select,.vela-sd-mobile .vela-sd-number{height:34px;}
+.vela-sd-mobile .vela-sd-close{width:40px;height:40px;}
+.vela-sd-mobile .vela-sd-btn{height:38px;}
+.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span{white-space:normal !important;}
 `;
     document.head.appendChild(st);
 }
@@ -163,6 +191,8 @@ export class SettingsDialog {
     private readonly typeActiveGroup = new Map<string, string>();
     /** The tab currently shown, so a theme change (which rebuilds) lands back on it. */
     private activeSection: string | null = null;
+    /** Mobile chrome: fullscreen card, burger-opened section sidebar, TOC as top tabs. */
+    private mobileLayout = false;
 
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
@@ -190,15 +220,29 @@ export class SettingsDialog {
 
     setTheme(theme: VelaTheme): void {
         this.theme = theme;
-        if (this.root) {
-            const cfg = this.config;
-            const oc = this.onChange;
-            const oi = this.onImport;
-            const orst = this.onReset;
-            const section = this.activeSection;
-            this.close();
-            if (cfg && oc) this.open(cfg, oc, oi ?? undefined, orst ?? undefined, section ?? undefined);
-        }
+        this.reopenIfLive();
+    }
+
+    /** The host shell's chrome size class — mobile presents the dialog fullscreen with
+     *  the tab rail behind a burger sidebar and the TOC as top tabs. An open dialog
+     *  re-presents in place, on the same tab. */
+    setLayoutMode(mode: 'mobile' | 'desktop'): void {
+        const mobile = mode === 'mobile';
+        if (mobile === this.mobileLayout) return;
+        this.mobileLayout = mobile;
+        this.reopenIfLive();
+    }
+
+    /** Rebuild an open dialog in place (theme swap, layout-mode flip) on the same tab. */
+    private reopenIfLive(): void {
+        if (!this.root) return;
+        const cfg = this.config;
+        const oc = this.onChange;
+        const oi = this.onImport;
+        const orst = this.onReset;
+        const section = this.activeSection;
+        this.close();
+        if (cfg && oc) this.open(cfg, oc, oi ?? undefined, orst ?? undefined, section ?? undefined);
     }
 
     isOpen(): boolean {
@@ -230,8 +274,17 @@ export class SettingsDialog {
         // remain fully readable while its settings are edited live; the scrim only exists
         // to catch the click-outside-to-close.
         ensureControlStyles();
+        const mobile = this.mobileLayout;
         const scrim = document.createElement('div');
-        scrim.style.cssText = 'position:absolute;inset:0;z-index:21;display:flex;align-items:flex-start;justify-content:center;background:transparent;padding-top:8vh;pointer-events:auto;';
+        // Above workspace splitters (z-index 30) and the active-cell ring — those live in
+        // the same stacking context when the dialog mounts on the multi-chart root.
+        scrim.style.cssText = 'position:absolute;inset:0;z-index:var(--vela-z-dialog);display:flex;align-items:flex-start;justify-content:center;background:transparent;padding-top:8vh;pointer-events:auto;';
+        if (mobile) {
+            // Fullscreen presentation: the card fills the chart area edge to edge.
+            scrim.classList.add('vela-sd-mobile');
+            scrim.style.paddingTop = '0';
+            scrim.style.alignItems = 'stretch';
+        }
         scrim.addEventListener('mousedown', (e) => {
             if (e.target === scrim) this.close();
         });
@@ -243,12 +296,27 @@ export class SettingsDialog {
         // as wide as the rail + widest visible pane content needs, between a floor that keeps
         // sparse tabs from looking cramped and the old 720px cap.
         dlg.style.cssText = `width:fit-content;min-width:min(560px,94vw);max-width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${SETTINGS_TEXT};font:13px var(--vela-font);overflow:hidden;cursor:default;`;
+        if (mobile) dlg.style.cssText += 'width:100%;min-width:0;max-width:none;max-height:none;flex:1 1 auto;border:none;border-radius:0;';
 
         const header = document.createElement('div');
         header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${SETTINGS_BORDER};flex:0 0 auto;user-select:none;`;
+        if (mobile) header.style.paddingLeft = '8px';
         const hTitle = document.createElement('span');
         hTitle.textContent = 'Chart settings';
         hTitle.style.cssText = 'font-size:17px;font-weight:600;letter-spacing:0.2px;';
+        if (mobile) hTitle.style.cssText += 'flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        // Mobile: the tab rail hides behind a burger-opened sidebar (there is no room for
+        // a permanent 170px column); the button lives left of the title, iOS-nav style.
+        let toggleRail: ((open?: boolean) => void) | null = null;
+        if (mobile) {
+            const burger = document.createElement('button');
+            burger.type = 'button';
+            burger.className = 'vela-sd-burger';
+            burger.innerHTML = iconAt('burger', 16);
+            burger.title = 'Sections';
+            burger.addEventListener('click', () => toggleRail?.());
+            header.append(burger);
+        }
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.innerHTML = iconAt('close', 15);
@@ -256,8 +324,10 @@ export class SettingsDialog {
         closeBtn.className = 'vela-sd-close';
         closeBtn.addEventListener('click', () => this.close());
         header.append(hTitle, closeBtn);
-        header.style.cursor = 'move';
-        {
+        if (!mobile) {
+            // Header dragging is a pointer affordance — a fullscreen mobile card has
+            // nowhere to move.
+            header.style.cursor = 'move';
             let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
             header.addEventListener('pointerdown', (e) => {
                 // ANCESTRY, not identity: the button holds an SVG icon, so a press on the ✕
@@ -479,12 +549,30 @@ export class SettingsDialog {
 
         // ── Split the linear sections into a left tab rail + one pane per section ──
         const shell = document.createElement('div');
-        shell.style.cssText = 'display:flex;min-height:360px;max-height:calc(70vh - 100px);flex:1 1 auto;';
+        shell.style.cssText = mobile
+            ? 'display:flex;min-height:0;flex:1 1 auto;position:relative;overflow:hidden;'
+            : 'display:flex;min-height:360px;max-height:calc(70vh - 100px);flex:1 1 auto;';
         const rail = document.createElement('div');
-        rail.style.cssText = `flex:0 0 170px;display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid ${SETTINGS_BORDER};overflow-y:auto;`;
+        rail.className = 'vela-sd-rail';
+        // Mobile: the class rules turn the rail into the slide-in sidebar; the inline
+        // styles here carry only its inner layout. Desktop keeps the fixed column.
+        rail.style.cssText = mobile
+            ? 'display:flex;flex-direction:column;gap:2px;padding:10px 8px;overflow-y:auto;'
+            : `flex:0 0 170px;display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid ${SETTINGS_BORDER};overflow-y:auto;`;
+        let railScrim: HTMLElement | null = null;
+        if (mobile) {
+            railScrim = document.createElement('div');
+            railScrim.className = 'vela-sd-railscrim';
+            railScrim.addEventListener('click', () => toggleRail?.());
+            toggleRail = (open?: boolean) => {
+                const on = open ?? !rail.classList.contains('open');
+                rail.classList.toggle('open', on);
+                railScrim?.classList.toggle('open', on);
+            };
+        }
         const paneHost = document.createElement('div');
         paneHost.className = 'vela-sd-pane';
-        paneHost.style.cssText = 'flex:1;overflow-y:auto;padding:6px 18px 14px;';
+        paneHost.style.cssText = mobile ? 'flex:1;min-width:0;overflow-y:auto;padding:6px 14px calc(14px + env(safe-area-inset-bottom, 0px));' : 'flex:1;overflow-y:auto;padding:6px 18px 14px;';
 
         const panes: Array<{ title: string; el: HTMLElement; tab: HTMLButtonElement; style?: string; visibility?: string }> = [];
         let current: HTMLElement | null = null;
@@ -522,6 +610,11 @@ export class SettingsDialog {
                 p.tab.classList.toggle('on', i === idx);
             });
             this.activeSection = panes[idx]?.title ?? null;
+            if (mobile) {
+                // The header names the section (the rail is hidden); picking one closes the sidebar.
+                hTitle.textContent = panes[idx]?.title ?? 'Chart settings';
+                toggleRail?.(false);
+            }
         };
         panes.forEach((p, i) => {
             p.tab.addEventListener('click', () => activate(i));
@@ -529,11 +622,18 @@ export class SettingsDialog {
             paneHost.appendChild(p.el);
         });
         this.tabs = panes.map((p, i) => ({ title: p.title, show: () => activate(i) }));
-        const wanted = section === undefined ? -1 : panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase());
+        // No section asked for: land on the ACTIVE chart type's own tab when it has one
+        // (the tab a user opening settings under that style is usually after; its
+        // subsections stay rail entries) — Symbol otherwise.
+        const wanted =
+            section !== undefined
+                ? panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase())
+                : panes.findIndex((p) => p.style === config.series.style && !p.tab.classList.contains('vela-sd-tab-sub'));
         activate(wanted >= 0 ? wanted : 0);
         this.syncTypeTabs?.(config.series.style);
 
         shell.append(rail, paneHost);
+        if (railScrim) shell.append(railScrim);
         dlg.appendChild(shell);
         dlg.appendChild(this.footer(config));
 
@@ -556,6 +656,7 @@ export class SettingsDialog {
 
     close(): void {
         closeColorPopover();
+        closeWidthPopover();
         this.root?.remove();
         this.root = null;
         this.tabs = [];
@@ -602,20 +703,14 @@ export class SettingsDialog {
 
         const values = config.chartTypes[typeId] ?? {};
         const bag: Record<string, unknown> = {};
-        const seedKey = (key: string, want: 'boolean' | 'number' | 'string', defval: unknown): void => {
-            const v = values[key];
-            bag[key] = typeof v === want ? v : defval;
-        };
+        // One generic walk over EVERY key a row stores (registry-enumerated) — no
+        // kind-specific seeding to keep in sync with the descriptor union.
         const seed = (rows: readonly SettingsRowDescriptor[]): void => {
             for (const r of rows) {
-                if (r.kind === 'heading' || r.kind === 'header') continue;
-                if (r.kind === 'range') {
-                    seedKey(r.minKey, 'number', r.defval);
-                    seedKey(r.maxKey, 'number', r.defval);
-                    continue;
+                for (const k of settingsRowValueKeys(r)) {
+                    const v = values[k.key];
+                    bag[k.key] = typeof v === k.type ? v : k.defval;
                 }
-                seedKey(r.key, r.kind === 'toggle' ? 'boolean' : r.kind === 'number' ? 'number' : 'string', r.defval);
-                if (r.kind === 'toggle') for (const c of r.colors ?? []) seedKey(c.key, 'string', c.defval);
             }
         };
         if (section.rows) seed(section.rows);
@@ -641,7 +736,10 @@ export class SettingsDialog {
         if (section.instances && section.instances.length > 0) {
             body.append(this.instancesBlock(typeId, section.instances, bag, put, refreshers));
         } else if (section.rows) {
-            this.flatTypeRows(section.rows, bag, put, refreshers, body);
+            // 'grouped' promotes the flat rows to the structured pane's group-TOC
+            // presentation (the TOC column right of the tab rail) — same rows, no strip.
+            if (section.layout === 'grouped') body.append(this.groupedRows(`${typeId}/rows`, section.rows, bag, put, refreshers));
+            else this.flatTypeRows(section.rows, bag, put, refreshers, body);
         }
 
         for (const sub of section.subsections ?? []) {
@@ -666,7 +764,7 @@ export class SettingsDialog {
     ): void {
         const entries: Array<{ el: HTMLElement; when?: SettingsRowWhen }> = [];
         for (const r of rows) {
-            const el = r.kind === 'heading' || r.kind === 'header' ? this.sectionTitle(r.label) : this.typeRow(r, bag, put);
+            const el = r.kind === 'heading' || r.kind === 'header' ? this.sectionTitle(r.label) : this.typeRow(r, bag, put, refreshers);
             entries.push({ el, when: r.when });
             body.append(el);
         }
@@ -677,71 +775,128 @@ export class SettingsDialog {
         });
     }
 
-    /** One value row for a chart-type descriptor, writing through `put`. */
+    /**
+     * One value row for a chart-type descriptor, writing through `put`. EVERY kind is
+     * first reduced to the canonical composite shape ({@link normalizeSettingsRow}) and
+     * rendered by the ONE path: optional leading toggle, then the ordered inline
+     * controls in the control column. A control carrying its own `when` registers a
+     * visibility refresher — it appears and disappears live as the bag changes,
+     * independent of the row's gate — and is exempt from the toggle-off dim (it may
+     * exist FOR the off state).
+     */
     private typeRow(
-        r: Exclude<SettingsRowDescriptor, { kind: 'heading' | 'header' }>,
+        r: SettingsValueRow,
         bag: Record<string, unknown>,
         put: (key: string, v: unknown) => void,
+        refreshers: Array<() => void>,
     ): HTMLElement {
-        if (r.kind === 'toggle') {
-            const swatches = (r.colors ?? []).map((c) => {
-                const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v));
-                sw.title = c.label;
-                return sw;
-            });
-            return this.toggleRow(r.label, bag[r.key] as boolean, (v) => put(r.key, v), swatches);
+        const n = normalizeSettingsRow(r);
+        const controls: HTMLElement[] = [];
+        for (const c of n.controls) {
+            const el = this.inlineControl(c, bag, put, n.toggle !== undefined);
+            // Keyed controls re-read the bag on every refresh ('vela-sync') — several
+            // `when`-gated rows may share one key (a per-mode row set over one stored
+            // state), and the hidden twins must not go stale when the visible one edits.
+            if (c.kind !== 'hint') refreshers.push(() => el.dispatchEvent(new Event('vela-sync')));
+            if (c.kind !== 'hint' && c.when) {
+                el.dataset.sdSelfGated = '1';
+                const when = c.when;
+                refreshers.push(() => {
+                    el.style.display = settingsRowVisible(when, bag) ? '' : 'none';
+                });
+            }
+            controls.push(el);
         }
-        if (r.kind === 'number') return this.numberRow(r.label, bag[r.key] as number, r.min ?? 0, r.max ?? 1_000_000, r.step ?? 1, (v) => put(r.key, v));
-        if (r.kind === 'color') return this.colorRow(r.label, bag[r.key] as string, (v) => put(r.key, v));
-        if (r.kind === 'range') return this.rangeRow(r, bag, put);
-        return this.selectRowLabeled(r.label, bag[r.key] as string, normalizeSelectOptions(r.options), (v) => put(r.key, v));
+        if (n.toggle) {
+            const t = n.toggle;
+            const el = this.toggleRow(n.label, bag[t.key] as boolean, (v) => put(t.key, v), controls, () => bag[t.key] === true);
+            refreshers.push(() => el.dispatchEvent(new Event('vela-sync')));
+            return el;
+        }
+        return this.rowWith(n.label, controls);
     }
 
     /**
-     * A MIN–MAX row: two number inputs on one row (stored under the descriptor's
-     * `minKey`/`maxKey`). With a `placeholder`, an input at the DEFAULT value renders
-     * empty showing it, and clearing an input stores the default back — the
-     * placeholder names the unset state ('Off' for 0-disables bounds).
+     * Build ONE inline control from its descriptor — the factory behind the composite
+     * row path. `compact` narrows number inputs on toggle rows (the historical inline
+     * width) while standalone rows keep the full-width input.
      */
-    private rangeRow(
-        r: Extract<SettingsRowDescriptor, { kind: 'range' }>,
+    private inlineControl(
+        c: SettingsInlineControl,
         bag: Record<string, unknown>,
         put: (key: string, v: unknown) => void,
+        compact: boolean,
     ): HTMLElement {
-        const { wrap } = this.row(r.label);
-        const input = (key: string, title: string): HTMLInputElement => {
-            const ni = document.createElement('input');
-            ni.type = 'number';
-            ni.className = 'vela-sd-number';
-            ni.min = String(r.min ?? 0);
-            ni.max = String(r.max ?? 1_000_000);
-            ni.step = String(r.step ?? 1);
-            ni.title = title;
-            const current = bag[key] as number;
-            if (r.placeholder !== undefined) {
-                ni.placeholder = r.placeholder;
-                if (current !== r.defval) ni.value = String(current);
-            } else {
-                ni.value = String(current);
+        if (c.kind === 'hint') {
+            const s = document.createElement('span');
+            s.textContent = c.text;
+            s.style.cssText = 'color:var(--vela-fg-muted);';
+            return s;
+        }
+        if (c.kind === 'color') {
+            const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v), () => bag[c.key] as string);
+            sw.title = c.label;
+            return sw;
+        }
+        if (c.kind === 'width') {
+            let cur = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
+            const wf = widthField(this.theme, () => cur, (v) => {
+                cur = v;
+                put(c.key, v);
+            });
+            wf.title = c.label;
+            return wf;
+        }
+        if (c.kind === 'select') {
+            const sel = document.createElement('select');
+            sel.className = 'vela-sd-select';
+            sel.style.cssText = 'max-width:200px;flex:0 0 auto;';
+            sel.title = c.label;
+            const current = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
+            for (const [val, lbl] of normalizeSelectOptions(c.options)) {
+                const o = document.createElement('option');
+                o.value = val;
+                o.textContent = lbl;
+                if (val === current) o.selected = true;
+                sel.appendChild(o);
             }
+            sel.addEventListener('change', () => put(c.key, sel.value));
+            sel.addEventListener('vela-sync', () => {
+                sel.value = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
+            });
+            return sel;
+        }
+        // number
+        const ni = document.createElement('input');
+        ni.type = 'number';
+        ni.className = 'vela-sd-number';
+        if (compact) ni.style.width = '56px';
+        if (c.min !== undefined) ni.min = String(c.min);
+        if (c.max !== undefined) ni.max = String(c.max);
+        ni.step = String(c.step ?? 1);
+        ni.title = c.label;
+        const current = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
+        if (c.placeholder !== undefined) {
+            // Placeholder mode: an input at the DEFAULT renders empty showing it, and
+            // clearing stores the default back — the placeholder names the unset state.
             // 'change' (commit), not 'input': an empty field means "default" only once
             // the user is done, never while they are mid-edit.
+            ni.placeholder = c.placeholder;
+            if (current !== c.defval) ni.value = String(current);
             ni.addEventListener('change', () => {
-                const raw = ni.value.trim() === '' ? r.defval : Number(ni.value);
-                const v = Number.isFinite(raw) ? Math.min(r.max ?? Infinity, Math.max(r.min ?? -Infinity, raw)) : r.defval;
-                ni.value = r.placeholder !== undefined && v === r.defval ? '' : String(v);
-                put(key, v);
+                const raw = ni.value.trim() === '' ? c.defval : Number(ni.value);
+                const v = Number.isFinite(raw) ? Math.min(c.max ?? Infinity, Math.max(c.min ?? -Infinity, raw)) : c.defval;
+                ni.value = v === c.defval ? '' : String(v);
+                put(c.key, v);
             });
-            return ni;
-        };
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;flex:0 0 auto;';
-        const dash = document.createElement('span');
-        dash.textContent = '–';
-        dash.style.cssText = 'color:var(--vela-fg-muted);';
-        box.append(input(r.minKey, `${r.label} — min`), dash, input(r.maxKey, `${r.label} — max`));
-        wrap.appendChild(box);
-        return wrap;
+        } else {
+            ni.value = String(current);
+            ni.addEventListener('input', () => {
+                const v = Number(ni.value);
+                if (Number.isFinite(v)) put(c.key, v);
+            });
+        }
+        return ni;
     }
 
     /**
@@ -761,7 +916,9 @@ export class SettingsDialog {
         const wrap = document.createElement('div');
         const strip = document.createElement('div');
         strip.className = 'vela-sd-itabs';
-        wrap.append(strip);
+        // A lone always-present instance has nothing to switch or add — sections that
+        // go structured purely for the group TOC get no one-tab strip.
+        if (instances.length > 1 || instances[0]?.enableKey !== undefined) wrap.append(strip);
         const contents = instances.map((inst, i) => {
             const content = this.groupedRows(`${typeId}/#${i}`, inst.rows, bag, put, refreshers);
             wrap.append(content);
@@ -867,8 +1024,10 @@ export class SettingsDialog {
                 rowsHost.append(entries[entries.length - 1]!.el);
                 continue;
             }
-            const el = this.typeRow(r, bag, put);
-            const key = r.kind === 'range' ? undefined : r.key;
+            const el = this.typeRow(r, bag, put, refreshers);
+            // The key an `enableKey` soft-disable matches: the row's boolean toggle
+            // (composite rows carry it under `toggle`), else the row's own value key.
+            const key = r.kind === 'row' ? r.toggle?.key : r.kind === 'range' ? undefined : r.key;
             entries.push({ el, when: r.when, group: g, key });
             rowsHost.append(el);
         }
@@ -942,6 +1101,17 @@ export class SettingsDialog {
      */
     private layoutSettingsGrids(pane: HTMLElement, measureHost: HTMLElement): void {
         if (pane.childElementCount === 0) return;
+        // Mobile: no measured label track — a fixed widest-label column would overflow a
+        // phone width. Labels get the flexible track (and may wrap), controls hug the
+        // right edge; no probe pass needed.
+        if (this.mobileLayout) {
+            const grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:center;column-gap:12px;row-gap:16px;';
+            while (pane.firstChild) grid.appendChild(pane.firstChild);
+            pane.appendChild(grid);
+            this.prepareGridItems(grid);
+            return;
+        }
         const rows = [...pane.querySelectorAll('.vela-sd-row')] as HTMLElement[];
 
         // Clone labels into a visible host so hidden price-style groups still contribute
@@ -992,9 +1162,11 @@ export class SettingsDialog {
     }
 
     /** A bare color swatch input (for toggle-row right groups / swatch pairs). */
-    private swatch(value: string, onChange: (v: string) => void): HTMLElement {
+    /** With `get`, the field reads its value live (and repaints on 'vela-sync') —
+     *  duplicate-keyed rows stay honest when another row edits the shared key. */
+    private swatch(value: string, onChange: (v: string) => void, get?: () => string): HTMLElement {
         let current = value;
-        return colorField(this.theme, () => current, (v) => { current = v; onChange(v); });
+        return colorField(this.theme, () => (get ? get() : current), (v) => { current = v; onChange(v); });
     }
 
     /** A label row with arbitrary controls in the shared control column (no toggle). */
@@ -1052,8 +1224,11 @@ export class SettingsDialog {
 
     /** An enable row: checkbox + label in the label column, dependent controls in the
      *  shared control column; the control group dims and ignores input while the toggle
-     *  is off. With no controls it reads like a plain toggle row (full-width in the grid). */
-    private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[]): HTMLElement {
+     *  is off. With no controls it reads like a plain toggle row (full-width in the grid).
+     *  With `get`, the row re-reads its state on a 'vela-sync' event — the seam that
+     *  keeps DUPLICATE-KEYED rows honest (several `when`-gated rows over one bag key,
+     *  only one visible at a time; see `typeRow`). */
+    private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean): HTMLElement {
         const wrap = document.createElement('div');
         // No cursor on the row itself: only the checkbox is clickable, so a row-wide
         // pointer would promise a click target that isn't there.
@@ -1075,6 +1250,12 @@ export class SettingsDialog {
             wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;';
             wrap.append(cb, lbl);
             cb.addEventListener('click', () => onToggle(cbToggle()));
+            if (get) {
+                wrap.addEventListener('vela-sync', () => {
+                    checked = get();
+                    cb.classList.toggle('on', checked);
+                });
+            }
             return wrap;
         }
         wrap.className = 'vela-sd-row';
@@ -1084,12 +1265,24 @@ export class SettingsDialog {
         const box = document.createElement('div');
         box.style.cssText = 'display:flex;align-items:center;gap:6px;';
         for (const c of controls) box.appendChild(c);
+        // Dim per CONTROL, not the box: a self-gated swatch (its own `when`) stays
+        // live through the off state — it may exist specifically for it.
         const syncDim = (on: boolean): void => {
-            box.style.opacity = on ? '1' : '0.4';
-            box.style.pointerEvents = on ? '' : 'none';
+            for (const c of controls) {
+                if (c.dataset.sdSelfGated === '1') continue;
+                c.style.opacity = on ? '1' : '0.4';
+                c.style.pointerEvents = on ? '' : 'none';
+            }
         };
         syncDim(value);
         cb.addEventListener('click', () => { const v = cbToggle(); onToggle(v); syncDim(v); });
+        if (get) {
+            wrap.addEventListener('vela-sync', () => {
+                checked = get();
+                cb.classList.toggle('on', checked);
+                syncDim(checked);
+            });
+        }
         wrap.append(left, box);
         return wrap;
     }
@@ -1109,95 +1302,6 @@ export class SettingsDialog {
         });
         wrap.appendChild(ni);
         return wrap;
-    }
-
-    /** Inline Auto/Manual row (Resolution, Text size): a mode dropdown + a value input greyed out in Auto. */
-    private autoManualRow(label: string, isAuto: boolean, value: number, min: number, max: number, unit: string, onMode: (auto: boolean) => void, onValue: (v: number) => void): HTMLElement {
-        const { wrap } = this.row(label);
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;flex:0 0 auto;';
-        const sel = document.createElement('select');
-        sel.className = 'vela-sd-select';
-        for (const [val, lbl] of AUTO_MANUAL_OPTS) {
-            const o = document.createElement('option');
-            o.value = val;
-            o.textContent = lbl;
-            if ((val === 'auto') === isAuto) o.selected = true;
-            sel.appendChild(o);
-        }
-        const ni = document.createElement('input');
-        ni.type = 'number';
-        ni.min = String(min);
-        ni.max = String(max);
-        ni.step = '1';
-        ni.value = String(value);
-        ni.className = 'vela-sd-number';
-        const unitLbl = document.createElement('span');
-        unitLbl.textContent = unit;
-        unitLbl.style.cssText = 'opacity:0.6;';
-        const syncDisabled = (auto: boolean): void => {
-            ni.disabled = auto;
-            ni.style.opacity = auto ? '0.4' : '1';
-        };
-        syncDisabled(isAuto);
-        sel.addEventListener('change', () => { const auto = sel.value === 'auto'; onMode(auto); syncDisabled(auto); });
-        ni.addEventListener('input', () => { const n = Number(ni.value); if (Number.isFinite(n)) onValue(n); });
-        box.append(sel, ni, unitLbl);
-        wrap.appendChild(box);
-        return wrap;
-    }
-
-    /** A row whose control area holds several inline controls (e.g. show + color + width). */
-    private inlineRow(label: string, controls: HTMLElement[]): HTMLElement {
-        const { wrap } = this.row(label);
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;flex:0 0 auto;';
-        for (const c of controls) box.appendChild(c);
-        wrap.appendChild(box);
-        return wrap;
-    }
-
-    /** A small dimmed hint span (e.g. the ≥ / ≤ between filter inputs). */
-    private hint(text: string): HTMLElement {
-        const s = document.createElement('span');
-        s.textContent = text;
-        s.style.cssText = 'opacity:0.5;font-size:12px;';
-        return s;
-    }
-
-    /** A bare color input (for inline groups). */
-    private colorInput(value: string, onChange: (v: string) => void): HTMLElement {
-        const ci = document.createElement('input');
-        ci.type = 'color';
-        ci.value = toHex6(value);
-        ci.style.cssText = 'cursor:pointer;width:34px;height:22px;border:none;background:transparent;padding:0;flex:0 0 auto;';
-        ci.addEventListener('input', () => onChange(ci.value));
-        return ci;
-    }
-
-    /** A bare compact number input (for inline groups). */
-    private numberInput(value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
-        const ni = document.createElement('input');
-        ni.type = 'number';
-        ni.value = String(value);
-        ni.min = String(min);
-        ni.max = String(max);
-        ni.step = String(step);
-        ni.className = 'vela-sd-number';
-        ni.style.flex = '0 0 auto';
-        ni.addEventListener('input', () => {
-            const n = Number(ni.value);
-            if (Number.isFinite(n)) onChange(n);
-        });
-        return ni;
-    }
-
-    /** A small in-group heading (lighter than a top-level section divider). */
-    private subheading(text: string): HTMLElement {
-        const el = document.createElement('div');
-        el.textContent = text;
-        el.style.cssText = 'margin-top:4px;font-size:10.5px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;opacity:0.45;';
-        return el;
     }
 
     /** A dropdown whose option values differ from their display labels. */
@@ -1249,30 +1353,13 @@ export class SettingsDialog {
         foot.appendChild(resetBtn);
         return foot;
     }
-
-    private button(label: string, onClick: () => void): HTMLButtonElement {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = label;
-        b.style.cssText = `cursor:pointer;flex:1 1 auto;${this.ctrlStyle()}padding:5px 8px;font-weight:600;`;
-        b.addEventListener('click', onClick);
-        return b;
-    }
-
-    private ctrlStyle(): string {
-        return `background:var(--vela-surface-sunken);border:1px solid ${SETTINGS_BORDER};color:${SETTINGS_TEXT};border-radius:var(--vela-radius-sm);padding:3px 6px;font-size:var(--vela-font-size-md);font-family:inherit;outline:none;`;
-    }
 }
-
-const AUTO_MANUAL_OPTS: readonly (readonly [string, string])[] = [['auto', 'Auto'], ['manual', 'Manual']];
 
 /** Normalize a select descriptor's options to `[value, label]` pairs. */
 function normalizeSelectOptions(options: readonly SettingsSelectOption[]): readonly (readonly [string, string])[] {
     return options.map((o) => (typeof o === 'string' ? [o, o] as const : o));
 }
 
-const FONT_FAMILIES = ['sans-serif', 'serif', 'monospace', 'Arial', 'Helvetica', 'Georgia', 'Courier New', '-apple-system, Segoe UI, sans-serif'];
-const LINE_STYLES = ['solid', 'dashed', 'dotted'];
 /** The shared zone catalog as labeled options, with the current value guaranteed
  *  present (so an externally-set custom zone still shows selected). */
 function timezoneOptions(current: string): readonly (readonly [string, string])[] {

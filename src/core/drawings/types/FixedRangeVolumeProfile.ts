@@ -66,7 +66,9 @@ export interface FrvpStyle {
     valColor: string;
     valStyle: LineStyle;
     showPoc: boolean;
-    pocColor: string;
+    /** `undefined` ⇒ the theme's contrast ink (white on dark, black on light), resolved at
+     *  paint time so it follows theme switches live; a set color always wins. */
+    pocColor?: string;
     pocStyle: LineStyle;
     showDevelopingPoc: boolean;
     developingPocColor: string;
@@ -76,11 +78,12 @@ export interface FrvpStyle {
     developingVaStyle: LineStyle;
 }
 
-/** Outside-VA fills at 25% transparency; value-area fills at 60% transparency. */
-const OUTSIDE_UP = `${BULLISH}BF`;
-const OUTSIDE_DOWN = `${BEARISH}BF`;
-const VA_UP = `${BULLISH}66`;
-const VA_DOWN = `${BEARISH}66`;
+/** Value-area fills at 25% transparency; outside-VA fills at 60% transparency — the value
+ *  area is the profile's emphasized region, the tails around it recede. */
+const OUTSIDE_UP = `${BULLISH}66`;
+const OUTSIDE_DOWN = `${BEARISH}66`;
+const VA_UP = `${BULLISH}BF`;
+const VA_DOWN = `${BEARISH}BF`;
 
 function defaultFrvpStyle(): FrvpStyle {
     return {
@@ -99,7 +102,7 @@ function defaultFrvpStyle(): FrvpStyle {
         valColor: NEUTRAL,
         valStyle: 'solid',
         showPoc: true,
-        pocColor: ACCENT,
+        pocColor: undefined, // theme contrast ink until the user picks a color
         pocStyle: 'solid',
         showDevelopingPoc: false,
         developingPocColor: ACCENT,

@@ -16,17 +16,28 @@ import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
 import { Statusline, statuslineInkOf } from './statusline';
 import { Watermark } from './watermark';
-import { Bottombar, type RangePreset } from './bottombar';
+import { Bottombar, RANGE_PRESETS, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
 import { ObjectTree } from './object-tree';
 import { DataWindow } from './data-window';
 import { PanelDock } from './panel-dock';
 import { ShortcutsHelp } from './shortcuts-help';
 import { ChartContextMenu } from './context-menu';
-import { widgetAttachments, resolveEngines, legendActionsProviderFor, type WidgetContext } from './contributions';
+import { widgetAttachments, widgetActions, resolveEngines, legendActionsProviderFor, type WidgetContext } from './contributions';
 import { IndicatorPicker } from './indicator-picker';
 import { TimeframeQuick } from './timeframe-quick';
 import { parsePersisted, legacyWidgetState, localStorageAdapter, type VelaStorage } from './persist';
+import { LayoutModeController, type LayoutMode } from './layout-mode';
+import { MobileBar } from './mobile-bar';
+import { TimeframeDrawer } from './timeframe-drawer';
+import { DrawingsDrawer } from './drawings-drawer';
+import { MoreDrawer } from './more-drawer';
+import { TimezoneDrawer } from './timezone-drawer';
+import { PriceScaleDrawer } from './price-scale-drawer';
+import { DrawingPill } from './drawing-pill';
+import { buildToolbar } from '../core/drawings/toolbar';
+import { priceStyleLabel, priceStyleIcon } from './topbar';
+import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import type { VelaShellOptions } from './shell-options';
 import { encodeState, decodeState, sanitizeState, prefixedSymbol, type WorkspaceState, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
@@ -52,8 +63,8 @@ const DEFAULT_TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
 // workspace reusing the component gets them too); only the widget SHELL layout stays here.
 const WIDGET_STYLE_ID = 'vela-widget';
 const WIDGET_CSS = `
-.vela-widget { display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--vela-bg); }
-.vela-widget-main { display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
+.vela-widget { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--vela-bg); }
+.vela-widget-main { position: relative; display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-widget-chart { position: relative; flex: 1 1 auto; min-width: 0; }
 `;
 
@@ -75,7 +86,8 @@ export class VelaWidget {
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly contextMenu: ChartContextMenu;
     private readonly symbolPicker: SymbolPicker;
-    private readonly indicatorPicker: IndicatorPicker;
+    /** Null when the host disabled it (`indicatorPicker: false`). */
+    private readonly indicatorPicker: IndicatorPicker | null;
     private readonly tfQuick: TimeframeQuick;
     private inner: Vela | null = null;
     /** The manifest library (loaded once). */
@@ -98,6 +110,8 @@ export class VelaWidget {
     private watermarkOn: boolean;
     /** Indicator titles (the in-chart legend rows) shown — reapplied across rebuilds. */
     private indicatorTitlesOn = true;
+    /** Plot values beside the legend titles shown — reapplied across rebuilds. */
+    private indicatorValuesOn = true;
     private pendingRange: RangePreset | null = null;
     /** Symbol already reported as unservable (the core re-reports on every index settle). */
     private unresolvedToasted: string | null = null;
@@ -141,6 +155,21 @@ export class VelaWidget {
     private indicatorsPromise: Promise<ResolvedIndicator[]> | null = null;
     private destroyed = false;
     private buildSeq = 0;
+    /** The chrome size class — writes `data-layout` on the root (all mobile CSS keys
+     *  off it) and pushes the mode into the renderer chrome on every change/rebuild. */
+    private layoutCtl!: LayoutModeController;
+    // ── mobile chrome (CSS-gated on data-layout; the drawers build lazily on first open) ──
+    private readonly mobileBar: MobileBar | null;
+    private readonly drawingPill: DrawingPill;
+    private tfDrawer: TimeframeDrawer | null = null;
+    private drawingsDrawer: DrawingsDrawer | null = null;
+    private moreDrawer: MoreDrawer | null = null;
+    private timezoneDrawer: TimezoneDrawer | null = null;
+    private priceScaleDrawer: PriceScaleDrawer | null = null;
+    /** Plot-local y of the last price-axis long-press (targets the pane under the finger). */
+    private priceScalePressY = 0;
+    /** The active range chip id (both bottom bars + the timeframe drawer mirror it). */
+    private activeRangeId: string | null = null;
 
     constructor(container: HTMLElement | string, opts: VelaWidgetOptions) {
         const hostEl = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container;
@@ -176,6 +205,7 @@ export class VelaWidget {
         this.bars = Number(fromUrl.bars ?? bootCell?.bars ?? opts.bars ?? 1000);
         this.watermarkOn = bootCell?.watermark !== undefined ? bootCell.watermark : opts.watermark !== false;
         this.indicatorTitlesOn = bootCell?.indicatorTitles ?? true;
+        this.indicatorValuesOn = bootCell?.indicatorValues ?? true;
         this.favs = boot?.favorites ? [...boot.favorites] : [];
         this.savedConfig = bootCell?.rendererConfig ?? null;
         this.savedDrawings = bootCell?.drawings ?? null;
@@ -204,39 +234,51 @@ export class VelaWidget {
                 this.trackDialog(open);
             },
         });
-        this.indicatorPicker = new IndicatorPicker({
-            host: this.root,
-            library: () => [
-                ...this.nativeCatalog
-                    .filter((n) => n.supported)
-                    .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
-                ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
-            ],
-            onChart: () => [
-                ...this.nativeCatalog.filter((n) => n.present).map((n) => ({ name: n.title, native: true, nativeType: n.type })),
-                ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
-            ],
-            onAdd: (i) => {
-                const natives = this.nativeCatalog.filter((n) => n.supported);
-                if (i < natives.length) this.addNative(natives[i]!.type);
-                else this.addInstance(i - natives.length);
-            },
-            onRemove: (i) => {
-                const present = this.nativeCatalog.filter((n) => n.present);
-                if (i < present.length) this.removeNative(present[i]!.type);
-                else this.removeInstance(i - present.length);
-            },
-            onOpenChange: (open) => this.trackDialog(open),
-        });
+        // The picker exists only while the host keeps it (`indicatorPicker: false` removes
+        // every entry point — topbar button, mobile-bar item, `/` — for hosts that replace
+        // it with their own indicator UI). The manifest still resolves and auto-adds.
+        this.indicatorPicker =
+            opts.indicatorPicker !== false
+                ? new IndicatorPicker({
+                      host: this.root,
+                      library: () => [
+                          ...this.nativeCatalog
+                              .filter((n) => n.supported)
+                              .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
+                          ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
+                      ],
+                      onChart: () => [
+                          ...this.nativeCatalog.filter((n) => n.present).map((n) => ({ name: n.title, native: true, nativeType: n.type })),
+                          ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
+                      ],
+                      onAdd: (i) => {
+                          const natives = this.nativeCatalog.filter((n) => n.supported);
+                          if (i < natives.length) this.addNative(natives[i]!.type);
+                          else this.addInstance(i - natives.length);
+                      },
+                      onRemove: (i) => {
+                          const present = this.nativeCatalog.filter((n) => n.present);
+                          if (i < present.length) this.removeNative(present[i]!.type);
+                          else this.removeInstance(i - present.length);
+                      },
+                      onOpenChange: (open) => {
+                          // Same rule as the symbol search: the renderer's in-chart dialogs never see
+                          // an outside-dismiss from a topbar dialog — close them explicitly.
+                          if (open) this.inner?.renderer.closeDialogs();
+                          this.trackDialog(open);
+                      },
+                  })
+                : null;
         this.tfQuick = new TimeframeQuick({
             host: this.root,
             onApply: (tf) => this.setTimeframe(tf),
             onOpenChange: (open) => this.trackDialog(open),
         });
+        const picker = this.indicatorPicker;
         this.topbar = new Topbar(this.root, {
             symbol: this.symbol,
             onSymbolClick: () => this.symbolPicker.open(),
-            onIndicatorsClick: () => this.indicatorPicker.open(),
+            ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
             onUndoClick: () => this.history.undo(),
             onRedoClick: () => this.history.redo(),
             onScreenshotClick: () => this.downloadScreenshot(),
@@ -292,8 +334,29 @@ export class VelaWidget {
                       onSettingsClick: () => this.inner?.renderer.openSettings(),
                   })
                 : null;
+        // The mobile bar is the bottom bar of the mobile size class — the same chrome
+        // toggle governs both; CSS (data-layout) decides which one is visible.
+        this.mobileBar =
+            opts.bottombar !== false
+                ? new MobileBar(this.root, {
+                      symbol: this.symbol,
+                      timeframe: this.timeframe,
+                      onSymbolClick: () => this.symbolPicker.open(),
+                      onTimeframeClick: () => this.openTimeframeDrawer(),
+                      ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
+                      getContext: () => this.context(),
+                      onDrawingsClick: () => this.openDrawingsDrawer(),
+                      onMoreClick: () => this.openMoreDrawer(),
+                      onSettingsClick: () => this.inner?.renderer.openSettings(),
+                  })
+                : null;
+        this.drawingPill = new DrawingPill(this.chartHost);
 
         hostEl.appendChild(this.root);
+
+        // Measured AFTER the root is in the DOM so the first evaluation sees a real width.
+        this.layoutCtl = new LayoutModeController(this.root, opts.layoutMode ?? 'auto');
+        this.layoutCtl.onChange((mode) => this.onLayoutModeChange(mode));
 
         this.keymap = new KeymapManager();
         this.keymap.attach(this.root);
@@ -344,7 +407,7 @@ export class VelaWidget {
         // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
         this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.inner?.panBy(-PAN_FAST) });
         this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.inner?.panBy(PAN_FAST) });
-        this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker.open() });
+        if (picker) this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => picker.open() });
         this.keymap.register({
             id: 'help.shortcuts',
             keys: '?',
@@ -365,6 +428,96 @@ export class VelaWidget {
         // Shortcuts only fire while focus is INSIDE the widget (the keymap listens on
         // the root) — autofocus makes them work before the first click.
         if (opts.autofocus) this.inner?.renderer.focus();
+    }
+
+    /** The mode flipped (container resized across the breakpoint, or a coarse-pointer
+     *  change). Close the open surfaces — a desktop card must not linger over the
+     *  mobile chrome (and vice versa) — and re-present the renderer's own chrome. */
+    private onLayoutModeChange(mode: LayoutMode): void {
+        this.symbolPicker.close();
+        this.indicatorPicker?.close();
+        this.tfDrawer?.close();
+        this.drawingsDrawer?.close();
+        this.moreDrawer?.close();
+        this.timezoneDrawer?.close();
+        this.priceScaleDrawer?.close();
+        this.inner?.renderer.closeDialogs();
+        this.inner?.renderer.setLayoutMode(mode);
+    }
+
+    // ── mobile drawers (built on first open; every list is read live at open time) ──
+
+    private openTimeframeDrawer(): void {
+        this.tfDrawer ??= new TimeframeDrawer({
+            host: this.root,
+            timeframes: this.opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            ranges: RANGE_PRESETS,
+            currentTimeframe: () => this.timeframe,
+            activeRange: () => this.activeRangeId,
+            onTimeframe: (tf) => this.setTimeframe(tf),
+            onRange: (preset) => this.applyRange(preset),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.tfDrawer.open();
+    }
+
+    private openDrawingsDrawer(): void {
+        this.drawingsDrawer ??= new DrawingsDrawer({
+            host: this.root,
+            toolbar: () => buildToolbar(this.opts.drawings).definition,
+            currentTool: () => this.inner?.drawings.getTool() ?? null,
+            isFavorite: (type) => this.inner?.drawings.isFavorite(type) ?? false,
+            onFavorite: (type, on) => this.inner?.drawings.setFavorite(type, on),
+            onSelect: (type) => this.inner?.drawings.setTool(type),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.drawingsDrawer.open();
+    }
+
+    private openMoreDrawer(): void {
+        this.moreDrawer ??= new MoreDrawer({
+            host: this.root,
+            onUndo: () => this.history.undo(),
+            onRedo: () => this.history.redo(),
+            onScreenshot: () => this.downloadScreenshot(),
+            canUndo: () => this.history.canUndo,
+            canRedo: () => this.history.canRedo,
+            priceStyles: () => priceStyleIds().map((id) => ({ id, label: priceStyleLabel(id), icon: priceStyleIcon(id) })),
+            priceStyle: () => this.priceStyle,
+            onPriceStyle: (id) => this.setPriceStyle(id),
+            panels: () => [...this.dock.list()],
+            onTogglePanel: (id) => this.dock.toggle(id),
+            alerts: () => this.alerts,
+            // Left-aligned actions have their own bottom-bar stop — only the rest
+            // lands in the drawer, or every left action would appear twice.
+            actions: () =>
+                widgetActions('topbar', this.context())
+                    .filter((a) => a.align !== 'left')
+                    .map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) })),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.moreDrawer.open();
+    }
+
+    private openTimezoneDrawer(): void {
+        this.timezoneDrawer ??= new TimezoneDrawer({
+            host: this.root,
+            timezone: () => this.timezone,
+            onTimezone: (zone) => this.setTimezone(zone),
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.timezoneDrawer.open();
+    }
+
+    private openPriceScaleDrawer(y: number): void {
+        this.priceScalePressY = y;
+        this.priceScaleDrawer ??= new PriceScaleDrawer({
+            host: this.root,
+            chart: () => this.inner,
+            pressY: () => this.priceScalePressY,
+            onOpenChange: (open) => this.trackDialog(open),
+        });
+        this.priceScaleDrawer.open();
     }
 
     /** Mount registered attachments not yet mounted on this widget (idempotent per id). */
@@ -420,6 +573,7 @@ export class VelaWidget {
     refreshActions(): void {
         this.mountAttachments();
         this.topbar.renderActions();
+        this.mobileBar?.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the live chart on their own
         // Re-project legend rows so a late registerLegendAction appears on them too.
         if (this.inner) this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => this.context()));
@@ -438,6 +592,7 @@ export class VelaWidget {
     private syncTimeframeChrome(tf: string): void {
         this.timeframe = tf;
         this.topbar.setTimeframe(tf);
+        this.mobileBar?.setTimeframe(tf);
         this.watermark?.update(this.symbol, tf);
         this.statusline?.setMeta(tf, this.providerLabel());
     }
@@ -457,6 +612,7 @@ export class VelaWidget {
         // Leaving range mode: drop the chip highlight AND its fetch budget (back to the
         // user's own `bars`). Done HERE so every path — menu, quick entry, keyboard,
         // public API, plugins — behaves the same.
+        this.activeRangeId = null;
         this.bottombar?.setActiveRange(null);
         this.rangeBars = 0;
         this.syncTimeframeChrome(tf);
@@ -479,6 +635,7 @@ export class VelaWidget {
         this.unresolvedToasted = null; // a new symbol gets a fresh verdict
         this.symbol = symbol;
         this.topbar.setSymbol(symbol);
+        this.mobileBar?.setSymbol(symbol);
         this.statusline?.setSymbol(symbol);
         this.objectTree.setSymbol(symbol);
         this.watermark?.update(symbol, this.timeframe);
@@ -515,6 +672,7 @@ export class VelaWidget {
         if (this.bars > 0) cell.bars = this.bars;
         cell.watermark = this.watermarkOn;
         cell.indicatorTitles = this.indicatorTitlesOn;
+        cell.indicatorValues = this.indicatorValuesOn;
         if (this.inner) {
             cell.rendererConfig = this.inner.renderer.getConfig();
             cell.drawings = this.inner.drawings.toJSON();
@@ -566,6 +724,7 @@ export class VelaWidget {
             if (style && style !== this.priceStyle) this.setPriceStyle(style);
             if (cell.watermark !== undefined && cell.watermark !== this.watermarkOn) this.setWatermarkVisible(cell.watermark);
             if (cell.indicatorTitles !== undefined && cell.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cell.indicatorTitles);
+            if (cell.indicatorValues !== undefined && cell.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(cell.indicatorValues);
             if (cell.rendererConfig != null) {
                 this.savedConfig = cell.rendererConfig;
                 this.inner?.renderer.applyConfig(cell.rendererConfig);
@@ -679,6 +838,13 @@ export class VelaWidget {
         this.markStateDirty();
     }
 
+    /** Show/hide the plot values beside every indicator's legend title (persisted). */
+    setIndicatorValuesVisible(visible: boolean): void {
+        this.indicatorValuesOn = visible;
+        this.inner?.renderer.set('indicatorValues', visible);
+        this.markStateDirty();
+    }
+
     /** Applied LIVE (renderer feature) — no rebuild; persists across rebuilds. */
     setPriceStyle(style: string): void {
         this.priceStyle = style;
@@ -730,6 +896,10 @@ export class VelaWidget {
      */
     applyRange(preset: RangePreset): void {
         if (this.destroyed) return;
+        // Every entry path (desktop chips, the timeframe drawer, host code) records the
+        // active chip here, so both bars and the drawer highlight the same one.
+        this.activeRangeId = preset.id;
+        this.bottombar?.setActiveRange(preset.id);
         this.pendingRange = preset;
         const tfChanged = preset.tf !== this.timeframe;
         const deeper = preset.bars > Math.max(this.bars, this.rangeBars);
@@ -775,16 +945,24 @@ export class VelaWidget {
         this.shortcutsHelp?.destroy();
         this.contextMenu.destroy();
         this.symbolPicker.destroy();
-        this.indicatorPicker.destroy();
+        this.indicatorPicker?.destroy();
         this.tfQuick.destroy();
         this.statusline?.destroy();
         this.watermark?.destroy();
         this.bottombar?.destroy();
+        this.mobileBar?.destroy();
+        this.drawingPill.destroy();
+        this.tfDrawer?.destroy();
+        this.drawingsDrawer?.destroy();
+        this.moreDrawer?.destroy();
+        this.timezoneDrawer?.destroy();
+        this.priceScaleDrawer?.destroy();
         this.toast?.destroy();
         this.alertsMenu?.destroy();
         this.glider.stop();
         this.history.destroy();
         this.keymap.destroy();
+        this.layoutCtl.destroy();
         this.root.remove();
     }
 
@@ -808,6 +986,7 @@ export class VelaWidget {
             statusline: _statusline,
             watermark: _watermark,
             bottombar: _bottombar,
+            layoutMode: _layoutMode,
             ...chartOpts
         } = this.opts;
         const chart = new Vela(this.chartHost, {
@@ -824,6 +1003,9 @@ export class VelaWidget {
         this.inner = chart;
 
         this.symbolPicker.setSource(() => chart.data.symbols());
+        // A fresh renderer starts desktop — push the live mode (constructor-time builds
+        // run before layoutCtl exists; the controller's first evaluation covers them).
+        if (this.layoutCtl !== undefined) chart.renderer.setLayoutMode(this.layoutCtl.current);
         this.objectTree.setSymbol(this.symbol);
         // Contributed legend-row actions (registerLegendAction) — resolved per row, per click.
         chart.renderer.setLegendActions(legendActionsProviderFor(chart, () => this.context()));
@@ -835,6 +1017,13 @@ export class VelaWidget {
         if (chart.renderer.supports('historyChords')) chart.renderer.set('historyChords', false);
         this.dock.onChart(chart); // every docked panel rebinds, contributed ones included
         this.contextMenu.onChart(chart);
+        // Mobile: long-press an axis strip → timezone / price-scale sheet (desktop keeps
+        // the right-click menu; the gesture is touch-only inside the renderer).
+        chart.renderer.onAxisLongPress((e) => {
+            if (this.layoutCtl.current !== 'mobile') return;
+            if (e.axis === 'time') this.openTimezoneDrawer();
+            else this.openPriceScaleDrawer(e.y);
+        });
         this.refreshNativeCatalog();
         chart.on('indicator:added', () => {
             this.syncPresentNatives();
@@ -896,6 +1085,9 @@ export class VelaWidget {
         chart.on('load:end', () => {
             this.volumeMayBePending = false;
         });
+        // The loading affordance and the watermark never share the canvas.
+        chart.on('load:start', () => this.watermark?.setLoading(true));
+        chart.on('load:end', () => this.watermark?.setLoading(false));
         // Market switches happen IN PLACE (`setMarket`) — the chart instance survives, so
         // reflect them from the event: per-symbol native support may differ, the statusline's
         // resting OHLC belongs to the old market, and an out-of-band switch (host code calling
@@ -916,6 +1108,7 @@ export class VelaWidget {
             if (symbol !== this.symbol) {
                 this.symbol = symbol;
                 this.topbar.setSymbol(symbol);
+                this.mobileBar?.setSymbol(symbol);
                 this.statusline?.setSymbol(symbol);
                 this.objectTree.setSymbol(symbol);
                 this.watermark?.update(symbol, this.timeframe);
@@ -956,12 +1149,14 @@ export class VelaWidget {
             this.lastCrossTime = e.time;
         });
         this.topbar.renderActions(); // when() gates may depend on the new chart/context
+        this.mobileBar?.renderActions();
         if (this.savedConfig != null) chart.renderer.applyConfig(this.savedConfig);
         if (this.savedDrawings != null) chart.drawings.fromJSON(this.savedDrawings);
         // Cosmetic state carried across rebuilds (renderer defaults are candles/UTC).
         if (this.priceStyle !== 'candles') chart.renderer.set('priceStyle', this.priceStyle);
         if (this.timezone !== 'Etc/UTC') chart.renderer.set('timezone', this.timezone);
         if (!this.indicatorTitlesOn) chart.renderer.set('indicatorTitles', false);
+        if (!this.indicatorValuesOn) chart.renderer.set('indicatorValues', false);
         // The renderer's settings dialog owns a Time zone row too (it commits through
         // applyConfig) — mirror it back so the bottom-bar clock/label and the persisted
         // state never disagree with the axis. `renderer.set` is a feature write, not an
@@ -976,6 +1171,7 @@ export class VelaWidget {
         });
         this.syncPlotOverlayTokens();
         this.statusline?.onChart(chart);
+        this.drawingPill.onChart(chart);
         this.syncStatuslineColors();
         const advanced = {
             title: 'Advanced',
@@ -1023,6 +1219,12 @@ export class VelaWidget {
                             label: 'Titles',
                             get: () => this.indicatorTitlesOn,
                             set: (v: boolean) => this.setIndicatorTitlesVisible(v),
+                        },
+                        {
+                            kind: 'toggle',
+                            label: 'Values',
+                            get: () => this.indicatorValuesOn,
+                            set: (v: boolean) => this.setIndicatorValuesVisible(v),
                         },
                     ],
                 },
@@ -1084,7 +1286,7 @@ export class VelaWidget {
             if (this.inner !== chart || this.destroyed) return;
             this.nativeCatalog = list.map((n) => ({ type: n.type, title: n.title, supported: n.supported, present: n.present, beta: n.beta }));
             this.syncIndicatorCount();
-            this.indicatorPicker.sync(); // the dialog may be open while the catalog lands
+            this.indicatorPicker?.sync(); // the dialog may be open while the catalog lands
         });
     }
 

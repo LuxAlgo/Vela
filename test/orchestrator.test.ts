@@ -1331,6 +1331,8 @@ describe('EngineOrchestrator — built-in volume native indicators', () => {
         await flush();
         const model = renderer.mountedModels.find((m) => m.native?.type === 'vpvr');
         expect(model).toBeDefined();
+        expect(model!.title).toBe('Visible Range Volume Profile');
+        expect(model!.shorttitle).toBe('VRVP');
         expect(model!.series).toHaveLength(0);
         expect(model!.paneId).toBe('price');
         expect(renderer.vpvrPushes).toEqual([

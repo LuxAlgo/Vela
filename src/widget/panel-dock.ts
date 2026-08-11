@@ -127,6 +127,12 @@ export class PanelDock {
         return this.entries.find((e) => e.panel.open)?.id ?? null;
     }
 
+    /** The docked panels in dock order — what a non-topbar chrome (the mobile
+     *  three-dots drawer) lists so every panel stays reachable there too. */
+    list(): ReadonlyArray<SidePanelButton> {
+        return this.entries.map((e) => ({ id: e.id, title: e.title, icon: e.icon }));
+    }
+
     /** The dock's persistable state, or null when there is nothing worth saving. */
     getState(): PanelsState | null {
         const out: PanelsState = {};

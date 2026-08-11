@@ -1318,6 +1318,11 @@ export class ObjectTree extends SidePanel {
                 this.refresh();
             }),
         ];
+        // The legend gear's twin — reachable here even where the legend is folded away
+        // (mobile) or replaced by the overview chip (multi-chart grids).
+        if (chart.renderer.supportsIndicatorSettings) {
+            items.push(b.entry('Indicator settings', 'gear', () => chart.renderer.openIndicatorSettings(row.id)));
+        }
         if (chart.panes.supported) {
             const moves = this.moveItems(b, pass, row.id, paneId);
             if (moves.length > 0) items.push(b.submenu('Move to', 'move-vertical', moves));

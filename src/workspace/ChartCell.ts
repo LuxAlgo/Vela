@@ -181,6 +181,8 @@ export class ChartCell {
     private watermarkOn: boolean;
     /** Indicator titles (this cell's in-chart legend rows) shown. */
     private indicatorTitlesOn = true;
+    /** Plot values beside this cell's legend titles shown. */
+    private indicatorValuesOn = true;
     private destroyed = false;
 
     constructor(
@@ -281,11 +283,16 @@ export class ChartCell {
         this.inner.on('load:end', () => {
             this.volumeMayBePending = false;
         });
+        // The loading affordance and the watermark never share the canvas.
+        this.inner.on('load:start', () => this.watermark?.setLoading(true));
+        this.inner.on('load:end', () => this.watermark?.setLoading(false));
         const tz = deps.timezone();
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
         this.indicatorTitlesOn = seed.indicatorTitles ?? true;
         if (!this.indicatorTitlesOn) this.inner.renderer.set('indicatorTitles', false);
+        this.indicatorValuesOn = seed.indicatorValues ?? true;
+        if (!this.indicatorValuesOn) this.inner.renderer.set('indicatorValues', false);
         this.watermarkOn = seed.watermark ?? deps.watermark;
         this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60') : null;
         if (!this.watermarkOn) this.watermark?.setVisible(false);
@@ -409,6 +416,12 @@ export class ChartCell {
                             get: () => this.indicatorTitlesOn,
                             set: (v: boolean) => this.setIndicatorTitlesVisible(v),
                         },
+                        {
+                            kind: 'toggle',
+                            label: 'Values',
+                            get: () => this.indicatorValuesOn,
+                            set: (v: boolean) => this.setIndicatorValuesVisible(v),
+                        },
                     ],
                 },
                 advanced,
@@ -445,6 +458,13 @@ export class ChartCell {
     setIndicatorTitlesVisible(visible: boolean): void {
         this.indicatorTitlesOn = visible;
         this.inner?.renderer.set('indicatorTitles', visible);
+        this.deps.onStateDirty();
+    }
+
+    /** Show/hide the plot values beside this cell's legend titles (persisted per cell). */
+    setIndicatorValuesVisible(visible: boolean): void {
+        this.indicatorValuesOn = visible;
+        this.inner?.renderer.set('indicatorValues', visible);
         this.deps.onStateDirty();
     }
 
@@ -500,6 +520,12 @@ export class ChartCell {
     private syncStatuslineColors(): void {
         if (!this.statusline || !this.inner) return;
         this.statusline.setDirectionColors(...statuslineInkOf(this.inner.renderer, this.priceStyle));
+    }
+
+    /** Multi-cell grids keep the status line on one row and hide what doesn't fit —
+     *  the workspace flips this with the layout (see Statusline.setFitMode). */
+    setStatuslineFit(on: boolean): void {
+        this.statusline?.setFitMode(on);
     }
 
     /** The workspace shell keeps the app theme; the cell host's tokens re-derive from
@@ -715,6 +741,7 @@ export class ChartCell {
             priceStyle: this.priceStyle,
             watermark: this.watermarkOn,
             indicatorTitles: this.indicatorTitlesOn,
+            indicatorValues: this.indicatorValuesOn,
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
             // Natives from the chart's SYNC registry read — an async catalog mirror here

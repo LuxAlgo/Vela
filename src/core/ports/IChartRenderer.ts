@@ -76,7 +76,14 @@ export interface CrosshairOHLC {
 
 export interface CrosshairEvent {
     time: Millis | null;
+    /** Value at the cursor on ITS pane's scale — a price on the price pane, an
+     *  indicator value on a study pane (which one: see {@link paneKind}). */
     price: number | null;
+    /** The kind of pane the cursor (and thus `price`) is on — how a consumer tells a
+     *  real price from a study-pane value (e.g. crosshair sync only mirrors the
+     *  horizontal level from the price pane). Optional and additive: a renderer that
+     *  doesn't track panes omits it. */
+    paneKind?: 'price' | 'study' | null;
     /** Value at the crosshair per series, keyed by stable series id. */
     values: ReadonlyMap<string, number>;
     /** The hovered price bar's OHLCV (null when the cursor is off any bar). */
@@ -86,6 +93,14 @@ export interface CrosshairEvent {
 export interface ClickEvent {
     time: Millis | null;
     price: number | null;
+}
+
+/** A touch long-press on an axis strip — the mobile substitute for a right-click menu. */
+export interface AxisLongPressEvent {
+    axis: 'price' | 'time';
+    /** Plot-local pixel of the press (y maps a multi-pane price scale to its pane). */
+    x: number;
+    y: number;
 }
 
 /** One indicator plot's readout line in the data window. */
@@ -265,6 +280,24 @@ export interface IChartRenderer {
     setLegendActions?(provider: ((indicatorId: string) => LegendActionView[]) | null): void;
 
     /**
+     * Replace the indicator legend's fold toggle with a HOST action (or restore it with
+     * null): the chip stays — a list glyph plus the indicator count — but pressing it
+     * runs the action instead of unfolding the rows, which stay hidden while the
+     * override is in force. Multi-chart shells route it to their indicator overview
+     * (e.g. an object-tree panel), where per-indicator controls live instead. Optional —
+     * a renderer without a foldable legend omits it.
+     */
+    setLegendOverviewAction?(action: (() => void) | null): void;
+
+    /**
+     * Open the settings dialog of one mounted indicator — the programmatic twin of the
+     * legend row's gear button, for host chrome that reaches indicators outside the
+     * legend (an object tree's action menu). Silent no-op for an unknown id. Optional —
+     * a renderer without per-indicator settings UI omits it.
+     */
+    openIndicatorSettings?(indicatorId: string): void;
+
+    /**
      * Hide (`false`) or show (`true`) a mounted indicator's visuals while keeping its legend row
      * (marked hidden). Optional — a renderer that can't suppress an indicator omits it (and the
      * core's hide still works for resource suspension; only the in-chart legend eye is unavailable).
@@ -289,6 +322,9 @@ export interface IChartRenderer {
     onToggleIndicatorVisible?(cb: (id: string, visible: boolean) => void): Unsubscribe;
     onCrosshairMove(cb: (e: CrosshairEvent) => void): Unsubscribe;
     onClick(cb: (e: ClickEvent) => void): Unsubscribe;
+    /** Touch long-press on a price or time axis strip. Optional — a renderer without
+     *  touch axis gestures omits it; host chrome (timezone / price-scale sheets) keys off it. */
+    onAxisLongPress?(cb: (e: AxisLongPressEvent) => void): Unsubscribe;
 
     /**
      * Display an EXTERNAL crosshair at a data-space position — a ghost marker driven by
@@ -381,6 +417,14 @@ export interface IChartRenderer {
     onChartTypeSettingsChange?(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe;
     /** Host-app settings tabs (callback rows) shown by the renderer's settings dialog. */
     setSettingsSections?(sections: ReadonlyArray<{ title: string; rows: readonly unknown[] }>): void;
+
+    /**
+     * The host shell's chrome size class. `'mobile'` asks the renderer's own chrome
+     * (dialogs, toolbars, buttons) for its touch-first presentation — fullscreen
+     * dialogs, no hover-gated affordances; `'desktop'` (the default) keeps the
+     * pointer-first one. Optional — a renderer without adaptive chrome omits it.
+     */
+    setLayoutMode?(mode: 'mobile' | 'desktop'): void;
 
     /**
      * Interactive user-drawings surface. Present iff `capabilities.userDrawings`.

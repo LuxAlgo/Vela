@@ -17,6 +17,7 @@ import {
 } from '../../../core/drawings';
 import { icon, svg24, svg24Solid } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
+import { contrastColor } from '../../shared/drawing-geometry';
 import { buildColorPicker } from './colorPicker';
 
 /** A `{ path: value }` patch emitted as the user edits a control. */
@@ -69,7 +70,10 @@ function ensureStyles(): void {
 .vela-dpop-btn[data-active='1']{background:var(--vela-active);color:var(--vela-fg-bright);}
 .vela-dpop-item{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-dpop-item:hover{background:var(--vela-hover-strong);}
-.vela-dpop-item[data-active='1']{background:var(--vela-active);}`;
+.vela-dpop-item[data-active='1']{background:var(--vela-active);}
+/* A finger needs a wider grab zone than a cursor — grow the move handle on touch-first
+   devices (the glyph stays centered; only the hit target widens). */
+@media (pointer: coarse){.vela-dpop-grip{width:${BTN + 14}px !important;}}`;
     document.head.appendChild(s);
 }
 
@@ -153,7 +157,17 @@ export class DrawingSettingsPopup {
             bar.appendChild(this.dropdown('Icon size', STAMP_SIZE_OPTIONS, sz, (s) => stampSizeIcon(s), (v) => actions.patch({ size: v }), { label: sizeLabel }));
         }
         if (paths.has('style.lineColor')) bar.appendChild(this.colorButton('Line color', BRUSH_ICON, drawing.style.lineColor || DEFAULT_DRAWING_COLOR, (v) => actions.patch({ 'style.lineColor': v })));
-        if (paths.has('style.lineWidth')) bar.appendChild(this.dropdown('Line width', [1, 2, 3, 4], drawing.style.lineWidth, (w) => lineIcon(w, 'solid'), (v) => actions.patch({ 'style.lineWidth': v }), { label: (v) => `${v}px`, labelInTrigger: true }));
+        if (paths.has('style.lineWidth')) {
+            // A marker-width field (floor above the hairline ladder, e.g. the
+            // highlighter's 4–60) can't live in the 1–4 dropdown — a free numeric
+            // input honoring the schema's declared range replaces it.
+            const wf = schema.fields.find((f) => f.path === 'style.lineWidth');
+            if (wf?.kind === 'number' && (wf.min ?? 1) > 1) {
+                bar.appendChild(this.widthInput('Line width', drawing.style.lineWidth, wf.min ?? 1, wf.max ?? 60, wf.step ?? 1, (v) => actions.patch({ 'style.lineWidth': v })));
+            } else {
+                bar.appendChild(this.dropdown('Line width', [1, 2, 3, 4], drawing.style.lineWidth, (w) => lineIcon(w, 'solid'), (v) => actions.patch({ 'style.lineWidth': v }), { label: (v) => `${v}px`, labelInTrigger: true }));
+            }
+        }
         if (paths.has('style.lineStyle')) bar.appendChild(this.dropdown('Line style', LINE_STYLE_OPTIONS.map((o) => o.value), drawing.style.lineStyle, (s) => lineIcon(2, s), (v) => actions.patch({ 'style.lineStyle': v }), { label: styleLabel }));
         // initialize the Fill swatch to the color actually painted (validity tint / line-color wash /
         // background fallback), not a stale default — same source the renderer fills with.
@@ -690,14 +704,16 @@ export class DrawingSettingsPopup {
             const chk = document.createElement('input');
             chk.type = 'checkbox';
             chk.checked = Boolean(s[showPath]);
-            chk.style.cssText = `accent-color:${s[colorPath] as string};width:15px;height:15px;flex:none;cursor:pointer;`;
+            // An unset color (the POC's themed default) shows as the ink actually painted.
+            const current = (s[colorPath] as string | undefined) ?? contrastColor(t.background);
+            chk.style.cssText = `accent-color:${current};width:15px;height:15px;flex:none;cursor:pointer;`;
             chk.addEventListener('change', () => actions.patch({ [`frvp.${showPath}`]: chk.checked }));
             const lbl = document.createElement('span');
             lbl.textContent = label;
             lbl.style.cssText = 'flex:1;min-width:0;opacity:0.9;';
             const col = document.createElement('button');
             col.type = 'button';
-            let cur = s[colorPath] as string;
+            let cur = current;
             col.style.cssText = `width:18px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:0;cursor:pointer;background:${cur};padding:0;`;
             col.addEventListener('pointerdown', (e) => e.stopPropagation());
             col.addEventListener('click', (e) => {
@@ -892,7 +908,11 @@ export class DrawingSettingsPopup {
     private dragHandle(): HTMLButtonElement {
         const b = document.createElement('button');
         b.type = 'button';
-        b.style.cssText = `width:${BTN}px;height:${BTN}px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;padding:0;cursor:grab;color:var(--vela-fg-faint);`;
+        b.className = 'vela-dpop-grip';
+        // touch-action:none — the handle owns its touches: without it the browser claims
+        // the move for scrolling and CANCELS the pointer stream, which is why the bar
+        // could barely be dragged on a phone.
+        b.style.cssText = `width:${BTN}px;height:${BTN}px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;padding:0;cursor:grab;touch-action:none;color:var(--vela-fg-faint);`;
         b.innerHTML = sized(GRIP_ICON);
         b.addEventListener('pointerdown', (e) => {
             const el = this.el;
@@ -908,6 +928,13 @@ export class DrawingSettingsPopup {
             const origLeft = parseFloat(el.style.left) || 0;
             const origTop = parseFloat(el.style.top) || 0;
             b.style.cursor = 'grabbing';
+            // Capture keeps the move stream on the handle even when a finger (a far
+            // blunter pointer than a cursor) slides off the 30px grip mid-drag.
+            try {
+                b.setPointerCapture((e as PointerEvent).pointerId);
+            } catch {
+                /* detached target or a test double without capture support */
+            }
             const move = (ev: PointerEvent): void => {
                 const w = el.offsetWidth;
                 const h = el.offsetHeight;
@@ -920,9 +947,11 @@ export class DrawingSettingsPopup {
                 b.style.cursor = 'grab';
                 window.removeEventListener('pointermove', move);
                 window.removeEventListener('pointerup', up);
+                window.removeEventListener('pointercancel', up);
             };
             window.addEventListener('pointermove', move);
             window.addEventListener('pointerup', up);
+            window.addEventListener('pointercancel', up);
         });
         return b;
     }
@@ -1047,6 +1076,40 @@ export class DrawingSettingsPopup {
             onChange(on);
         });
         return b;
+    }
+
+    /** An inline numeric width field for tools whose stroke range outgrows the 1–4px
+     *  ladder — the value is clamped to the schema's declared min/max on commit. */
+    private widthInput(tip: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLInputElement {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.dataset.tip = tip;
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = String(value);
+        input.style.cssText = `width:52px;height:${BTN}px;box-sizing:border-box;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:0 4px;font:12px ${this.theme.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
+        const commit = (): void => {
+            const n = parseFloat(input.value);
+            if (!Number.isFinite(n)) {
+                input.value = String(value);
+                return;
+            }
+            const v = Math.min(max, Math.max(min, n));
+            input.value = String(v);
+            value = v;
+            onChange(v);
+        };
+        input.addEventListener('change', commit);
+        input.addEventListener('keydown', (e) => {
+            e.stopPropagation(); // typing (incl. Delete) must not reach the chart
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+                input.blur();
+            }
+        });
+        return input;
     }
 
     /** A pick-one dropdown: the trigger shows the current value's glyph (plus an optional inline

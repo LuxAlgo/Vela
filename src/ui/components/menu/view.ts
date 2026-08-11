@@ -150,8 +150,8 @@ class Surface {
                 // (Zag owns the item's ARIA props; the pill below is decorative.)
                 li.dataset.toggle = '1';
             } else if (!branch && item.checked) {
-                // Selection reads from the row itself (brighter surface + bright ink) —
-                // no checkmark glyph.
+                // Selection reads from the row surface: a stronger background wash
+                // marks the active entry (hover stays the lighter wash).
                 li.dataset.checked = '1';
             }
             if (item.icon) li.appendChild(iconEl(item.icon, doc));

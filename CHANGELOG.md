@@ -2,6 +2,129 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.5.2]
+
+### Changed
+
+- **Indicator legend action hit targets.** Hovering an indicator title reveals
+  equal-sized hide, settings, move-to and remove buttons with a larger clickable area
+  and a background wash on each — without growing the chip's height, so rows below
+  stay put. Plot values beside the title do not open the chip.
+- **Selection in menus reads from the row itself.** The timeframe, chart type, and
+  every other selectable dropdown now mark the active entry with a stronger row
+  background instead of a leading checkmark, and the mobile three-dots sheet does the
+  same — the selected item is visible at a glance without scanning for a glyph.
+- **The symbol watermark yields to loading.** While a chart's bars are loading, the
+  faded symbol watermark stays hidden so it never overlaps the loading indicator; it
+  returns as soon as the first bars paint.
+- **Favorite stars are gold everywhere.** The mobile drawings sheet's favorite star
+  now lights up in the same gold as the desktop drawing toolbar's, instead of blue.
+- **The highlighter's width is typed, not picked.** The drawing quick bar shows a
+  numeric width field for the highlighter (honoring its 4–60px range) instead of the
+  1–4px list, which couldn't even express its 14px default.
+- **Crosshair sync mirrors the price level too.** With crosshair sync on in a
+  multi-chart workspace, charts showing the SAME ticker as the hovered one now draw
+  the ghost's horizontal price line alongside the vertical time line, with the price
+  labeled on their own scale (hover the price pane — a study pane's value is not a
+  price). Charts on other markets keep the time-only ghost: a foreign price level
+  would be noise on their scale. For custom consumers, the crosshair event now names
+  the pane kind under the cursor (`paneKind`), so a host can make the same call.
+- **Mobile chrome polish.** The timeframe sheet labels its date-range chips and
+  timeframe grid with matching white section headers (no divider between them), and
+  highlights the active chip in white. In the drawings sheet the search field and
+  group tabs stay pinned while the tool list scrolls. The in-chart status line drops
+  the O/H/L/C block on mobile and stacks the bar change under an aligned
+  logo / symbol / timeframe / market-status row. The scroll-to-latest control is
+  smaller and only appears when the latest bars are off-screen. Time zone moved out
+  of the three-dots sheet onto a long-press of the time axis; a long-press on the
+  price scale opens a price-scale sheet. The LuxAlgo attribution mark keeps its
+  desktop size and is only slightly smaller on mobile; the faded symbol watermark
+  caps at a quieter size.
+
+### Added
+
+- **Replaceable indicator menu.** A new `indicatorPicker` shell option (widget and
+  workspace, default `true`) removes the built-in indicator dialog's entry points —
+  the topbar button, the mobile-bar item, and the `/` shortcut — so a host can ship
+  its own indicator UI (for example a contributed topbar action opening a custom
+  dialog) without two competing menus. The `indicators` manifest still resolves and
+  auto-adds its enabled entries. Contributed topbar actions can take the vacated
+  spot for real: `align: 'left'` on a widget action places its button with the
+  primary chrome buttons right after the style dropdown, in the built-in Indicators
+  button's own position and styling, instead of the right-hand tools cluster — and
+  on the mobile chrome it gets its own icon stop in the bottom bar (the built-in
+  indicators slot) rather than a row in the three-dots sheet.
+- **A mobile chrome for the widget.** In a narrow container — or on a touch-first
+  device, or forced with the new `layoutMode` shell option (`'auto' | 'mobile' |
+  'desktop'`) — the widget swaps its desktop bars for one touch-sized bottom bar:
+  symbol search, timeframe, indicators, drawings, a three-dots drawer, and chart
+  settings. The timeframe entry opens a bottom sheet with the date-range presets and
+  the timeframe grid; the drawings entry opens a searchable, tabbed tool sheet with
+  favorite stars — swipe sideways across the tool list to move between the group
+  tabs — and an armed tool shows a floating pill over the chart with the
+  magnet, stay-in-drawing-mode and eraser controls; the three-dots sheet carries
+  undo/redo, screenshot, chart type, the side panels (which open full-screen on
+  mobile), alerts, and any contributed actions. A long-press on the time axis opens
+  the time-zone sheet; a long-press on the price scale opens scale settings. Symbol
+  search, the indicator picker, chart settings and indicator settings all present
+  full-screen; in chart settings the section list sits behind a burger button, a
+  section's groups become scrollable tabs, and multi-instance strips (like a
+  footprint's) scroll sideways. The chart itself gains the touch gestures the chrome
+  assumes: one-finger pan with inertia, two-finger pinch zoom, a long-press that
+  inspects with the crosshair without moving the view, and a double-tap that mirrors
+  the desktop double-click — on the price or time axis it resets that scale's view,
+  and inside the plot it maximizes/restores the tapped pane. The button that jumps
+  back to the most recent bar appears when those bars are off-screen. Desktop
+  behavior is unchanged, and the mode follows the container live — resizing across
+  the breakpoint swaps the chrome in place.
+- **The workspace shares the mobile chrome.** `VelaWorkspace` honors the same
+  `layoutMode` option and auto-detection: on mobile the shared topbar, desktop
+  bottombar and the docked drawing-toolbar column give way to the same touch-first
+  bottom bar, sheets and full-screen pickers, all acting on the active cell. The
+  three-dots sheet additionally carries the multi-chart **Layout** picker — the same
+  tap-to-apply grid canvas as the desktop topbar's layout dropdown, its non-grid
+  preset rows, and the symbol/interval/crosshair sync switches. The grid-wide
+  attribution mark also picks up the smaller mobile lockup the widget uses.
+  Multi-cell grids keep each cell's status line on ONE row — segments that don't fit
+  the cell hide instead of wrapping (bar change first, then the venue/timeframe, then
+  the market badge; the logo + ticker always stay). On mobile the indicator legend is
+  **collapsed by default** behind its count chip, and in a multi-cell grid the chip
+  routes to the **object tree** instead of unfolding in place — whose indicator action
+  menu gains an **"Indicator settings"** entry (the legend gear's twin).
+- **Plugin SDK: two per-indicator chrome seams on the renderer port.**
+  `IChartRenderer.setLegendOverviewAction?(action)` lets a host shell replace the
+  indicator legend's fold toggle with its own overview entry point (the workspace
+  routes it to the object tree on mobile grids), and
+  `IChartRenderer.openIndicatorSettings?(indicatorId)` opens one indicator's settings
+  dialog programmatically — the legend gear's twin, surfaced on `chart.renderer` as
+  `setLegendOverviewAction` / `openIndicatorSettings` (+ `supportsIndicatorSettings`).
+  Both are additive and optional: a renderer without them keeps today's behavior.
+- **`vela/ui` gains a `Drawer`.** A bottom sheet with a grab handle and a dimmed
+  backdrop — the primitive the mobile chrome's sheets are built on, exported for
+  building your own. Pulling down dismisses from anywhere on the sheet, not just the
+  handle (a scrolled list keeps native scrolling until it is back at the top), an
+  `onSwipe` option turns decidedly horizontal swipes into a callback (the drawings
+  sheet pages its tabs with it), and opening never pops the on-screen keyboard — the
+  sheet itself takes the initial focus, never a search field.
+
+### Fixed
+
+- **Legend fold count stays readable on a light plot.** The indicator-count chip on a
+  folded legend now paints its number (and chevron) with the plot's own text color, so a
+  white chart no longer shows a near-white digit on a white chip.
+- **Long freehand strokes keep their shape.** Drawing with the brush or highlighter
+  for a long stretch no longer degrades into a single straight line chasing the
+  cursor: when a stroke reaches its point budget, the older trail thins gracefully
+  and the capture keeps going, so the whole gesture lands on the chart.
+- **Multi-chart borders stay under chart settings.** Hovering a cell seam in a
+  multi-chart workspace no longer draws the splitter highlight through an open chart
+  settings dialog — the dialog now stacks above the grid chrome.
+- **Screenshots capture the whole chart.** The PNG export now includes everything the
+  screen shows: the volume columns, the visible-range volume profile, plugin-drawn
+  layers, the status line, the indicator legends (with their values), and the faded
+  symbol watermark — previously only the candles, axes and drawings made it into the
+  image. Only the crosshair stays out.
+
 ## [v0.5.1]
 
 ### Added
@@ -25,6 +148,43 @@ All notable changes to Vela, newest first.
 ## [v0.5.0]
 
 ### Added
+
+- **Indicator legends show their plot values.** Each indicator's legend row now
+  displays the current value of every plot to the right of its title, colored like
+  the plot itself. The values follow the crosshair — hover a bar and they read that
+  bar; move off the chart and they rest on the latest bar, ticking with live data.
+  Hovering the legend row itself sets the values aside while its controls (eye, gear,
+  ✕…) are out, so the row never crowds. Right-clicking a legend row opens a small
+  menu whose "Indicator values" entry shows or hides that indicator's values, and
+  chart settings → Status line → Indicators gains a "Values" toggle that shows or
+  hides them for every indicator at once. The chart-wide choice persists with the
+  rest of the chart state.
+
+- **Duplicate-keyed settings rows stay in sync.** Several `when`-gated chart-type
+  settings rows may now store under the same bag key(s) — the pattern for per-mode
+  rows over one shared state (each mode gets its own row label while the stored
+  toggle and colors stay one value). The settings dialog re-syncs every keyed
+  control (checkbox, color swatch, select) from the values bag on each edit, so a
+  hidden twin row never shows stale state when its gate brings it back.
+
+- **Inline line-width dropdown and number input on settings toggle rows.** A chart
+  type's settings toggle row may now carry `width: { key, label, defval }` next to
+  its `colors` swatches — a compact dropdown offering the drawing bar's classic
+  1–5 px weights, each option previewed as a line at that weight — and
+  `number: { key, label, defval, min?, max?, step? }`, a compact number input ahead
+  of the swatches. Both dim with the swatches while the toggle is off and store
+  plain numbers in the type's bag — the declarative replacement for separate
+  `number` rows gated on the toggle. A swatch may carry its own `when` gate (same
+  shape as a row's), letting one toggle row swap its swatch set live as another value
+  changes — a mode's two colors while it is on, its one alternative while off; a
+  self-gated swatch stays interactive through the toggle-off dim. And a structured
+  section with a single always-present instance no longer renders its one-tab strip —
+  sections that go structured purely for the group TOC keep a clean pane top.
+
+- **Chart settings open on the active style's tab.** When the active price style is a
+  chart type with its own settings tab (visibility `'active'`), opening the settings
+  dialog now lands on that tab instead of Symbol — the pane a user opening settings
+  under that style is usually after. An explicit `showSection` still wins.
 
 - **Candle settings for plugin chart types that draw candles.** A registered chart type
   that keeps the candle series under its own layer (an order-flow style, for example) now
@@ -138,6 +298,15 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Visible Range Volume Profile is named in full.** The built-in volume profile of
+  the visible range now appears in the indicator picker as "Visible Range Volume
+  Profile", with the short legend label "VRVP" (it was previously titled "VPVR"
+  everywhere). Native indicators may also declare an optional `shortTitle` so the
+  legend stays compact while the picker and settings dialog keep the full name.
+- **An indicator that is fetching shows quiet load dots in its legend.** While an
+  indicator's data is in flight, its legend row now ends with three small pulsing
+  dots — the same load affordance the chart itself shows while bars load — at the
+  row's right end. The old circular spinner to the left of the title is gone.
 - **Scripting engines report a strategy's state in neutral terms.** An engine that simulates
   order execution now describes it with the same vocabulary whatever language it runs, so one
   dashboard reads them all. Engines are also expected to report a script's variables under
@@ -167,6 +336,27 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Chart-type data engines now receive stored settings on (re)creation.** A type's
+  data engine used to hear about its settings only through live dialog edits — a
+  persisted config restore or a market switch (which recreates engines) left the
+  fresh engine fetching on schema defaults until the user touched the dialog. The
+  orchestrator now remembers the last-seen per-type values and replays them into
+  every newly created engine just before `start()` (a pre-start `onSettings` is
+  pure configuration by contract).
+- **The fixed-range volume profile emphasizes its value area.** The default fills were
+  inverted — the value area rendered more transparent than the tails around it. The value
+  area is now the opaque region and the outside rows recede. Its POC line also stops
+  defaulting to the accent blue: until you pick a color for it, the POC draws in the
+  active theme's contrast ink — white on a dark chart, black on a light one — and follows
+  a theme switch immediately. A POC color you picked yourself, and profiles already
+  saved, are left untouched.
+- **Tooltips in the indicator settings dialog no longer hide behind it.** The ⓘ input
+  hints and the dialog's own control tips opened underneath the dialog card, where they
+  were unreadable; they now stack above it like every other tooltip.
+- **Opening the Indicators dialog closes an open indicator-settings dialog.** The two
+  dialogs used to stack — the topbar picker never counted as a click outside the
+  in-chart dialog. It now dismisses it on open, the same way the symbol search already
+  did, in the widget and in every workspace cell.
 - **Undo steps back exactly one action when drawings and indicators mix.** With a drawing
   and an indicator change both in the history, one Ctrl+Z over the chart used to revert
   both at once — the drawing layer and the app history each answered the shortcut. A single
