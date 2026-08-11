@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [v0.5.1]
+## [v0.5.2]
 
 ### Changed
 
@@ -107,22 +107,6 @@ All notable changes to Vela, newest first.
   sheet pages its tabs with it), and opening never pops the on-screen keyboard — the
   sheet itself takes the initial focus, never a search field.
 
-- **Drawings sync across a workspace grid.** A new `drawings` sync kind
-  (`ws.sync.set('drawings', true)`, also a toggle on the shared drawing toolbar) links
-  drawings across same-group cells: a newly created drawing is copied onto the others
-  (anchors are time+price, so it lands at the same spot whatever each cell shows), and
-  the set stays linked — moving, restyling or deleting any member follows on its peers.
-  Placement mirrors **live**: while anchors are still being clicked, linked charts show
-  the in-progress shape as a reduced-opacity ghost. Link membership is session-scoped
-  and survives a toggle-off (re-enabling resumes edit/delete for drawings paired
-  earlier; drawings created while off stay independent), and a reload leaves every
-  drawing unpaired again. The on/off setting persists like the other sync kinds.
-- **Plugin SDK: a draft seam on the drawings port.** `DrawingIntent` gains an optional
-  `draft` arm (placement progress, `null` at the end) surfaced as the `drawing:draft`
-  chart event, and `IDrawingsRendererPort` gains an optional `setExternalGhost(doc)` —
-  the drawings twin of `setExternalCrosshair`. Both are additive: a renderer that
-  implements neither keeps today's behavior (sync at completion, no remote preview).
-
 ### Fixed
 
 - **Legend fold count stays readable on a light plot.** The indicator-count chip on a
@@ -140,6 +124,26 @@ All notable changes to Vela, newest first.
   layers, the status line, the indicator legends (with their values), and the faded
   symbol watermark — previously only the candles, axes and drawings made it into the
   image. Only the crosshair stays out.
+
+## [v0.5.1]
+
+### Added
+
+- **Drawings sync across a workspace grid.** A new `drawings` sync kind
+  (`ws.sync.set('drawings', true)`, also a toggle on the shared drawing toolbar) links
+  drawings across same-group cells: a newly created drawing is copied onto the others
+  (anchors are time+price, so it lands at the same spot whatever each cell shows), and
+  the set stays linked — moving, restyling or deleting any member follows on its peers.
+  Placement mirrors **live**: while anchors are still being clicked, linked charts show
+  the in-progress shape as a reduced-opacity ghost. Link membership is session-scoped
+  and survives a toggle-off (re-enabling resumes edit/delete for drawings paired
+  earlier; drawings created while off stay independent), and a reload leaves every
+  drawing unpaired again. The on/off setting persists like the other sync kinds.
+- **Plugin SDK: a draft seam on the drawings port.** `DrawingIntent` gains an optional
+  `draft` arm (placement progress, `null` at the end) surfaced as the `drawing:draft`
+  chart event, and `IDrawingsRendererPort` gains an optional `setExternalGhost(doc)` —
+  the drawings twin of `setExternalCrosshair`. Both are additive: a renderer that
+  implements neither keeps today's behavior (sync at completion, no remote preview).
 
 ## [v0.5.0]
 
