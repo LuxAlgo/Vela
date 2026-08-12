@@ -17,6 +17,11 @@ All notable changes to Vela, newest first.
 - **The symbol watermark yields to loading.** While a chart's bars are loading, the
   faded symbol watermark stays hidden so it never overlaps the loading indicator; it
   returns as soon as the first bars paint.
+- **The symbol watermark sits on the price pane only.** The faded "SYMBOL · TF" mark
+  used to center on the whole plot, so a study pane (RSI, MACD, …) carried the same
+  ghost text as the candles. It now clips to the price pane's bounds — including
+  when that pane is resized, collapsed, or a study is maximized (the mark hides
+  rather than landing on the study).
 - **Favorite stars are gold everywhere.** The mobile drawings sheet's favorite star
   now lights up in the same gold as the desktop drawing toolbar's, instead of blue.
 - **The highlighter's width is typed, not picked.** The drawing quick bar shows a
@@ -113,6 +118,11 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Pane separators stay visible while a market switch loads.** Changing the timeframe
+  or the symbol clears the chart while the new bars load; the dividers between stacked
+  panes used to vanish for that whole window (and slightly beyond it), leaving the
+  price pane and the study panes reading as one undivided plot. The separators now
+  stay in place through the load.
 - **Legend fold count stays readable on a light plot.** The indicator-count chip on a
   folded legend now paints its number (and chevron) with the plot's own text color, so a
   white chart no longer shows a near-white digit on a white chip.
