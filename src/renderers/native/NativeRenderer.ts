@@ -1324,6 +1324,7 @@ export class NativeRenderer implements IChartRenderer {
             drawingsClaim: (x, y) => this.userDrawings?.claim(x, y) ?? false,
             drawingsMeasureStart: (x, y) => this.userDrawings?.beginMeasureAt(x, y) ?? false,
             drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
+            drawingsCancelPlacement: () => this.userDrawings?.cancelPlacement() ?? false,
             drawingsSnapMode: () => this.snapMode,
             drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
             drawingsPointerMove: (x, y, snap, shift) => this.userDrawings?.pointerMove(x, y, snap, shift),

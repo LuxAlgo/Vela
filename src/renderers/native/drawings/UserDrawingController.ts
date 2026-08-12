@@ -643,6 +643,17 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return this.interaction.cursorAt(x, y);
     }
 
+    /** Right-click while placing: cancel the in-progress drawing and revert to the
+     *  pointer — the gesture is an explicit escape, so it disarms even in
+     *  stay-in-drawing-mode (where Escape would leave the tool armed). Returns whether
+     *  the press was consumed; false lets the host's context menu open normally. */
+    cancelPlacement(): boolean {
+        if (!this.interaction.isPlacing()) return false;
+        this.interaction.cancel(); // emits tool-finished → the core disarms (stay-mode/brush excepted)
+        if (this.activeTool != null) this.emit({ kind: 'arm', type: null });
+        return true;
+    }
+
     /** Double-click over a drawing → suppress the chart's view reset (single-click already
      *  opens settings). Returns true only when a drawing is under the cursor. */
     dblClick(x: number, y: number): boolean {

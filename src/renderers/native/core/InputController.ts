@@ -53,6 +53,9 @@ export interface InputControllerDeps {
     drawingsMeasureStart?(x: number, y: number): boolean;
     /** Middle-click: delete the drawing under the cursor. True when one was removed. */
     drawingsDeleteAt?(x: number, y: number): boolean;
+    /** Right-click: cancel an in-progress drawing placement (and revert to the pointer).
+     *  True when consumed — the companion contextmenu is then suppressed. */
+    drawingsCancelPlacement?(): boolean;
     /** A claimed press began. `snap` = effective magnet mode; `shift` = additive (multi-) select. */
     drawingsPointerDown?(x: number, y: number, snap: SnapMode, shift: boolean): void;
     /** Pointer moved (forwarded for the placing ghost / drag preview). `snap` = effective magnet
@@ -202,6 +205,7 @@ export class InputController {
     private lastT = 0;
     private vx = 0; // smoothed pointer velocity, px/ms
     private middleDeleted = false; // the last middle press deleted a drawing (suppress autoscroll/paste)
+    private rightCancelled = false; // the last right press cancelled a placement (suppress the context menu)
     // Last cursor position over the element (NaN once it leaves) — lets a modifier
     // press/release re-shape the drawings preview with the pointer stationary.
     private cursorX = NaN;
@@ -244,6 +248,9 @@ export class InputController {
         // drawing (see onDown) can veto them here.
         el.addEventListener('mousedown', this.onMiddleGuard);
         el.addEventListener('auxclick', this.onMiddleGuard);
+        // Right-press companion: contextmenu also fires AFTER pointerdown, so a right
+        // press that cancelled a placement (see onDown) vetoes the host's menu here.
+        el.addEventListener('contextmenu', this.onContextGuard);
         // Modifiers change the drawings preview (Shift = angle lock, Ctrl/Cmd = magnet
         // override) and must take effect the moment they are pressed/released, not on the
         // next mouse move — window-level so no chart focus is required. Optional chaining
@@ -273,6 +280,7 @@ export class InputController {
         el.removeEventListener('wheel', this.onWheel);
         el.removeEventListener('mousedown', this.onMiddleGuard);
         el.removeEventListener('auxclick', this.onMiddleGuard);
+        el.removeEventListener('contextmenu', this.onContextGuard);
         this.cancelLongPress();
         this.touches.clear();
         this.el = null;
@@ -287,6 +295,15 @@ export class InputController {
 
     private readonly onMiddleGuard = (e: MouseEvent): void => {
         if (e.button === 1 && this.middleDeleted) e.preventDefault();
+    };
+
+    /** A right press that cancelled a placement must not ALSO open the host's chart
+     *  context menu — swallow its companion event before it bubbles to the host. */
+    private readonly onContextGuard = (e: MouseEvent): void => {
+        if (!this.rightCancelled) return;
+        this.rightCancelled = false;
+        e.preventDefault();
+        e.stopPropagation();
     };
 
     /** A modifier press/release with the pointer stationary: re-issue the last cursor
@@ -330,6 +347,14 @@ export class InputController {
             const { x, y } = this.local(e);
             this.middleDeleted = this.deps.drawingsDeleteAt?.(x, y) ?? false;
             if (this.middleDeleted) e.preventDefault();
+            return;
+        }
+        if (e.button === 2) {
+            // Right-click cancels an in-progress placement (reverting to the pointer).
+            // The flag lets the contextmenu companion suppress the host's chart menu
+            // for THIS press only — a plain right-click still opens it.
+            this.rightCancelled = this.deps.drawingsCancelPlacement?.() ?? false;
+            if (this.rightCancelled) e.preventDefault();
             return;
         }
         if (e.button !== 0) return;

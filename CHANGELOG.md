@@ -43,6 +43,10 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Right-click cancels an in-progress drawing.** While placing a drawing, a
+  right-click discards the unfinished shape and returns to the pointer — even in
+  stay-in-drawing-mode — without opening the chart's context menu. A right-click with
+  nothing being placed keeps opening the context menu as before.
 - **Replaceable indicator menu.** A new `indicatorPicker` shell option (widget and
   workspace, default `true`) removes the built-in indicator dialog's entry points —
   the topbar button, the mobile-bar item, and the `/` shortcut — so a host can ship
