@@ -91,9 +91,9 @@ const DOUBLE_TAP_SLOP = 30;
 // Time-axis horizontal-zoom sensitivity: dragging left zooms in (e^(Δpx·k)). Kept low so
 // the zoom takes a deliberate, sizeable drag (~2× over ~170px) rather than a twitch.
 const TIME_SCALE_K = 0.004;
-// Wheel-zoom sensitivity: barSpacing scales by e^(-deltaY·k) per notch. Tuned higher than
-// the axis-drag feel so a single scroll notch makes a clearly visible zoom step.
-const WHEEL_ZOOM_K = 0.0025;
+// Wheel-zoom sensitivity: barSpacing scales by e^(-deltaY·k) per notch. A typical
+// mouse-wheel notch (deltaY ≈ 100) is a clearly visible step.
+const WHEEL_ZOOM_K = 0.004;
 
 /** Which strip a gesture started over — the data plot, the right price axis, the bottom
  *  time axis, a sub-pane separator (drag to resize the panes above/below it), or one of

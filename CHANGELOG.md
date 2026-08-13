@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Wheel zoom steps further per notch.** Scrolling the chart in or out now
+  covers more of the time axis per turn of the wheel, so reaching a target zoom
+  takes fewer notches.
+
 ## [v0.5.2]
 
 ### Changed
