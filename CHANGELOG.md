@@ -17,6 +17,9 @@ All notable changes to Vela, newest first.
 - **The symbol watermark yields to loading.** While a chart's bars are loading, the
   faded symbol watermark stays hidden so it never overlaps the loading indicator; it
   returns as soon as the first bars paint.
+- **Open menus stay put if their trigger moves.** Starring a timeframe (which adds a
+  chip and shifts the caret) no longer drags the open dropdown with it — the list
+  keeps the position it had when it opened.
 - **Favorite stars are gold everywhere.** The mobile drawings sheet's favorite star
   now lights up in the same gold as the desktop drawing toolbar's, instead of blue.
 - **The highlighter's width is typed, not picked.** The drawing quick bar shows a
@@ -43,6 +46,12 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Favorite timeframes.** Hover a row in the topbar's timeframe dropdown and a star
+  appears — click it to pin that timeframe (starred rows keep their gold star). Pinned
+  timeframes sit as duration-sorted chips with the current value highlighted in place;
+  an unstarred current sits next to the caret, which opens the full list (or the
+  combined label+caret when nothing is starred). The set persists with the rest of the
+  chart state, and a workspace shares one set across all charts.
 - **Replaceable indicator menu.** A new `indicatorPicker` shell option (widget and
   workspace, default `true`) removes the built-in indicator dialog's entry points —
   the topbar button, the mobile-bar item, and the `/` shortcut — so a host can ship
