@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Legend load dots sit beside the title, not glued to it.** While an indicator is
+  fetching, the three pulsing dots now keep an 8px gap to the right of the title
+  (they used to sit flush against the last letter) and drop 1px so they optically
+  match the title's midline.
+
 ## [v0.5.2]
 
 ### Changed
