@@ -57,7 +57,7 @@ import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
-import { rendererLayers, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance } from './layers';
+import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
 import { rasterizeOverlay } from '../shared/dom-raster';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
@@ -2876,22 +2876,20 @@ export class NativeRenderer implements IChartRenderer {
             });
             // SDK renderer layers: shared paint cycle, own channel data, own canvas.
             const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            let folded: BasePaintingModulation | null = null;
             for (const l of this.extLayers) {
                 const args = this.extLayerArgs(l.def.id, pane.scale, pane.bounds, nowMs);
                 l.instance.render(args);
-                // The active style's layer may dim/slim the base painting under it (a
-                // gradual counterpart of basePainting 'none') — applied this same frame,
-                // before the backend paints.
-                if (l.def.id === this.scene.priceStyle && l.instance.modulateBase) {
-                    const mod = l.instance.modulateBase(args);
-                    if (mod) {
-                        if (mod.candleBodyScale != null) this.backend.candleBodyScale = clamp01(mod.candleBodyScale) || 0.01;
-                        if (mod.candleBodyAlpha != null) this.backend.candleBodyAlpha = clamp01(mod.candleBodyAlpha) * this.candleBodyAlpha;
-                        if (mod.gridAlpha != null) this.backend.gridAlpha = clamp01(mod.gridAlpha);
-                    }
-                }
+                // Any mounted layer may dim/slim the base painting (chart type or overlay)
+                // — folded this same frame, applied below before the backend paints.
+                folded = foldBaseModulation(folded, l.instance.modulateBase?.(args) ?? null);
                 // A pulsing/fading layer keeps the animator alive; it stops itself when done.
                 if (this.animZoom && l.instance.animating?.()) this.animator.start();
+            }
+            if (folded) {
+                if (folded.candleBodyScale != null) this.backend.candleBodyScale = clamp01(folded.candleBodyScale) || 0.01;
+                if (folded.candleBodyAlpha != null) this.backend.candleBodyAlpha = clamp01(folded.candleBodyAlpha) * this.candleBodyAlpha;
+                if (folded.gridAlpha != null) this.backend.gridAlpha = clamp01(folded.gridAlpha);
             }
         }
         // Live-bar easing: render the eased (gliding) OHLC for the forming bar, then restore the true
