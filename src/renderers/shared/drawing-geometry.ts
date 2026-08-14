@@ -94,6 +94,17 @@ export function extendEndpoints(
     return [lx, yAt(lx), rx, yAt(rx)];
 }
 
+/**
+ * Canvas angle of the segment `(x1,y1)→(x2,y2)`, flipped 180° when needed so
+ * a label along the line stays upright (never upside-down). Canvas Y grows down.
+ */
+export function uprightLineAngle(x1: number, y1: number, x2: number, y2: number): number {
+    let a = Math.atan2(y2 - y1, x2 - x1);
+    if (a > Math.PI / 2) a -= Math.PI;
+    if (a < -Math.PI / 2) a += Math.PI;
+    return a;
+}
+
 export interface Rgba {
     r: number;
     g: number;
