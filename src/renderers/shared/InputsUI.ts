@@ -82,6 +82,8 @@ const LEGEND_ROW_PAD_Y = 2;
 const LEGEND_ROW_PAD_X = 6;
 /** Space between the indicator title and the plot-values readout to its right. */
 const LEGEND_TITLE_VALUES_GAP_PX = 6;
+/** Space between the title (or values/controls, when shown) and the load/live status. */
+const LEGEND_TITLE_STATUS_GAP_PX = 12;
 /** Uniform space: title → first action icon, and between every action icon. */
 const LEGEND_ACTION_GAP_PX = 6;
 const LEGEND_CTL_CSS =
@@ -831,7 +833,9 @@ export class InputsUI {
             return;
         }
         if (status === 'loading') {
-            el.style.cssText = 'display:inline-flex;align-items:center;gap:3px;box-sizing:border-box;flex:none;';
+            el.style.cssText =
+                `display:inline-flex;align-items:center;gap:3px;box-sizing:border-box;flex:none;` +
+                `margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;`;
             for (let i = 0; i < 3; i += 1) {
                 const dot = document.createElement('span');
                 dot.style.cssText = 'width:4px;height:4px;border-radius:50%;background:currentColor;opacity:0.15;flex:none;';
@@ -845,6 +849,7 @@ export class InputsUI {
         this.ensureStatusKeyframes();
         el.style.cssText =
             `display:inline-block;box-sizing:border-box;flex:none;width:8px;height:8px;border-radius:50%;` +
+            `margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;` +
             `background:${this.theme.upColor};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
     }
 
