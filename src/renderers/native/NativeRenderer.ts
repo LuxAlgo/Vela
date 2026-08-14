@@ -3049,7 +3049,6 @@ export class NativeRenderer implements IChartRenderer {
         const n = this.coords.barCount;
         if (n === 0) return;
         const vr = this.coords.visibleLogicalRange();
-        const vtr = this.coords.visibleTimeRange(); // for time-culling user drawings into autoscale
         const i0 = Math.max(0, Math.floor(vr.from));
         const i1 = Math.min(n - 1, Math.ceil(vr.to));
         if (i1 < i0) return;
@@ -3071,11 +3070,9 @@ export class NativeRenderer implements IChartRenderer {
             const models = this.scene.indicatorsForPane(pane.id);
             // A merged (own-scale) indicator does NOT contribute to the pane master scale.
             const masterModels = models.filter((m) => m.ownScale !== true);
-            let dr = this.chrome.paneDrawingsRange(masterModels, this.scene, pane === pricePane, vr);
-            // Fold visible USER drawings on this pane into the price range, exactly like
-            // Pine drawings — so an off-series line/box still expands the scale.
-            const udr = this.userDrawings?.priceRangeForPane(pane.id, vtr.from, vtr.to) ?? null;
-            if (udr) dr = dr ? { min: Math.min(dr.min, udr.min), max: Math.max(dr.max, udr.max) } : udr;
+            // User drawings do not expand the scale (placing one in the empty margin
+            // must not yank the window to follow the cursor). Pine drawings still fold in.
+            const dr = this.chrome.paneDrawingsRange(masterModels, this.scene, pane === pricePane, vr);
             // Hidden candles drop out of the price pane's autoscale, so overlay indicators fill the pane.
             const includeCandles = pane.kind === 'price' && !this.scene.candlesHidden;
             // Each pane logs (or not) on its OWN flag — the price pane from the scene setting,

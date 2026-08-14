@@ -45,7 +45,7 @@ export interface UserDrawingDeps {
     projector(): Projector;
     dpr(): number;
     theme(): VelaTheme;
-    /** Ask the renderer to recompute per-pane autoscale (so a drawing folds into the price range). */
+    /** Ask the renderer to recompute per-pane autoscale (series + Pine drawings; user drawings do not fold in). */
     requestScaleUpdate(): void;
     /** The pane's series z keys (candles + indicators), ascending — the boundaries a drawing's
      *  z is slotted against to decide which interleave layer (if any) it paints on. */
@@ -212,7 +212,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         if (this.textEditor && !this.editedDrawing(this.textEditor.id)) this.closeTextEditor();
         this.invalidateSlices();
         this.render();
-        this.deps.requestScaleUpdate(); // fold drawing price ranges into autoscale
+        this.deps.requestScaleUpdate();
     }
 
     /** The pane's series stack in z terms — how the core places a new drawing (just under
@@ -224,9 +224,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     /**
      * Union of the visible drawings' price ranges on `paneId` whose time extent
-     * intersects [fromTime, toTime] — folded into the pane's autoscale so an
-     * off-series drawing still expands the scale (mirrors Pine drawings). Hidden
-     * drawings and full-width references (hline → null extent) are handled too.
+     * intersects [fromTime, toTime]. Hidden drawings and full-width references
+     * (hline → null extent) are handled too. Kept as the seam for a future
+     * per-drawing autoscale opt-in — the renderer does not fold this in today.
      */
     priceRangeForPane(paneId: string, fromTime: number, toTime: number): { min: number; max: number } | null {
         let lo = Infinity;
