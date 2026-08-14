@@ -2,7 +2,7 @@
 // generic native-data channel routing on the renderer (unmounted — mounted painting is
 // exercised in the browser playground; the channel/scene plumbing is the unit-testable part).
 import { describe, it, expect, afterEach } from 'vitest';
-import { registerRendererLayer, unregisterRendererLayer, rendererLayers, type RendererLayerArgs, type RendererLayerInstance } from '../src/renderers/native/layers';
+import { registerRendererLayer, unregisterRendererLayer, rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerInstance } from '../src/renderers/native/layers';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
 import { SceneGraph } from '../src/renderers/native/core/SceneGraph';
 
@@ -26,8 +26,9 @@ describe('renderer-layer registry', () => {
 
     it('accepts a base-painting-modulating, cursor-reading instance (contract shape)', () => {
         // Compile-time + shape check for the modulation seam: a layer may read args.cursor
-        // and return partial modulation values; the mounted paint path (clamping + backend
-        // application) is exercised in the browser/oracle suites.
+        // and return partial modulation values. The renderer consults EVERY mounted layer
+        // that implements modulateBase (not only the active price style) and folds them
+        // with foldBaseModulation; clamping + backend application stay on the paint path.
         const instance: RendererLayerInstance = {
             mount() {},
             render(args: RendererLayerArgs) {
@@ -40,6 +41,20 @@ describe('renderer-layer registry', () => {
         registerRendererLayer({ id: 'demo', create: () => instance });
         const mod = rendererLayers().find((d) => d.id === 'demo')!.create().modulateBase?.({ priceStyle: 'demo' } as RendererLayerArgs);
         expect(mod).toEqual({ candleBodyScale: 0.07, gridAlpha: 0 });
+    });
+});
+
+describe('foldBaseModulation', () => {
+    it('null is no opinion; the first speaker wins the field, later speakers keep the stronger (smaller) value', () => {
+        expect(foldBaseModulation(null, null)).toBeNull();
+        expect(foldBaseModulation(null, { candleBodyScale: 0.07 })).toEqual({ candleBodyScale: 0.07 });
+        expect(foldBaseModulation({ candleBodyScale: 0.07, candleBodyAlpha: 1 }, { candleBodyScale: 0.5, gridAlpha: 0 })).toEqual({
+            candleBodyScale: 0.07,
+            candleBodyAlpha: 1,
+            gridAlpha: 0,
+        });
+        // A later null does not wipe the running request (overlay idle, chart type still speaking).
+        expect(foldBaseModulation({ candleBodyScale: 0.07 }, null)).toEqual({ candleBodyScale: 0.07 });
     });
 });
 
