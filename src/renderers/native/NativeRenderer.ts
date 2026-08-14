@@ -262,7 +262,7 @@ export class NativeRenderer implements IChartRenderer {
     private pointerNearScrollBtn = false; // cursor is within the reveal radius of the button
     private scrollTargetRO: number | null = null; // eased rightOffset target while gliding back to the latest bars
     // Distance (px) from the plot's bottom edge to the button — tracks the bottom-most EXPANDED
-    // pane like the watermark: when the lower sub-panes collapse it rides up into the open pane.
+    // pane: when the lower sub-panes collapse it rides up into the open pane.
     private scrollBtnBottomPx = SCROLL_BTN_BOTTOM;
     // Distance (px) from the plot's right edge — clears the FULL scale gutter, which widens when a
     // pane carries merged (own-scale) columns; the constant only clears a single-column scale.
@@ -1324,6 +1324,7 @@ export class NativeRenderer implements IChartRenderer {
             drawingsClaim: (x, y) => this.userDrawings?.claim(x, y) ?? false,
             drawingsMeasureStart: (x, y) => this.userDrawings?.beginMeasureAt(x, y) ?? false,
             drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
+            drawingsCancelPlacement: () => this.userDrawings?.cancelPlacement() ?? false,
             drawingsSnapMode: () => this.snapMode,
             drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
             drawingsPointerMove: (x, y, snap, shift) => this.userDrawings?.pointerMove(x, y, snap, shift),
@@ -1603,6 +1604,8 @@ export class NativeRenderer implements IChartRenderer {
         this.attributionEl = null;
         this.mountContainer?.style.removeProperty('--vela-toolbar-gutter');
         this.mountContainer?.style.removeProperty('--vela-scale-gutter');
+        this.mountContainer?.style.removeProperty('--vela-price-pane-top');
+        this.mountContainer?.style.removeProperty('--vela-price-pane-bottom');
         this.mountContainer = null;
         this.wrapper?.remove();
     }
@@ -3356,6 +3359,7 @@ export class NativeRenderer implements IChartRenderer {
             this.paneControls?.reposition();
             this.repositionScrollButton();
             this.positionAttribution();
+            this.publishPricePaneBounds();
             return;
         }
         // Collapsed panes take a fixed strip; the rest share the remaining height by weight.
@@ -3374,10 +3378,11 @@ export class NativeRenderer implements IChartRenderer {
         this.paneControls?.reposition();
         this.repositionScrollButton();
         this.positionAttribution(); // the mark follows the lowest open pane's bottom edge
+        this.publishPricePaneBounds();
     }
 
-    /** Pin the scroll-to-realtime button above the bottom-most EXPANDED pane's data area (like the
-     *  watermark): with all lower sub-panes collapsed it settles into the lowest open pane. */
+    /** Pin the scroll-to-realtime button above the bottom-most EXPANDED pane's data area:
+     *  with all lower sub-panes collapsed it settles into the lowest open pane. */
     private repositionScrollButton(): void {
         const dataHeight = this.coords.height;
         if (dataHeight <= 0) return;
@@ -3429,6 +3434,22 @@ export class NativeRenderer implements IChartRenderer {
     private publishGutters(): void {
         this.mountContainer?.style.setProperty('--vela-toolbar-gutter', `${this.toolbarGutter}px`);
         this.mountContainer?.style.setProperty('--vela-scale-gutter', `${this.rightAxisW}px`);
+    }
+
+    /** Publish the price pane's vertical insets as `--vela-price-pane-top` /
+     *  `--vela-price-pane-bottom` on the mount container, so the symbol watermark
+     *  (and any other host overlay) can clip to the price pane instead of spanning
+     *  study panes and the time axis. A maximized study pane collapses the box to
+     *  zero height — the mark does not appear on a study. */
+    private publishPricePaneBounds(): void {
+        if (!this.mountContainer) return;
+        const plotH = this.coords.height + TIME_AXIS_H;
+        const price = this.scene.panes.get(PRICE_PANE_ID);
+        const top = price ? price.bounds.top : 0;
+        const height = price ? price.bounds.height : this.coords.height;
+        const bottom = Math.max(0, plotH - (top + height));
+        this.mountContainer.style.setProperty('--vela-price-pane-top', `${top}px`);
+        this.mountContainer.style.setProperty('--vela-price-pane-bottom', `${bottom}px`);
     }
 
     /** The built-in mark, or the host's own when one is set. */
