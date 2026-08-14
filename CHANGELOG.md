@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.5.3]
 
 ### Changed
 
@@ -73,7 +73,7 @@ All notable changes to Vela, newest first.
   indicators slot) rather than a row in the three-dots sheet.
 - **A mobile chrome for the widget.** In a narrow container — or on a touch-first
   device, or forced with the new `layoutMode` shell option (`'auto' | 'mobile' |
-  'desktop'`) — the widget swaps its desktop bars for one touch-sized bottom bar:
+'desktop'`) — the widget swaps its desktop bars for one touch-sized bottom bar:
   symbol search, timeframe, indicators, drawings, a three-dots drawer, and chart
   settings. The timeframe entry opens a bottom sheet with the date-range presets and
   the timeframe grid; the drawings entry opens a searchable, tabbed tool sheet with
