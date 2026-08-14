@@ -1,7 +1,7 @@
 // The widget's pure modules: the timeframe grammar (src/widget/timeframe.ts) and the
 // indicator-manifest resolution (src/widget/indicators.ts). DOM-free — node env.
 import { describe, it, expect, vi } from 'vitest';
-import { parseTimeframe, timeframeMs, timeframeLabel } from '../src/widget/timeframe';
+import { parseTimeframe, timeframeMs, timeframeLabel, favoriteTimeframeChips } from '../src/widget/timeframe';
 import { indicatorLedger, resolveIndicators } from '../src/widget/indicators';
 import { fmtPrice, fmtChange, decimalsFor } from '../src/widget/format';
 import { tzMenuLabel, tzButtonLabel } from '../src/widget/timezones';
@@ -49,6 +49,15 @@ describe('parseTimeframe', () => {
         expect(timeframeLabel('15')).toBe('15m');
         expect(timeframeLabel('D')).toBe('1D');
         expect(timeframeLabel('W')).toBe('1W');
+    });
+
+    it('favoriteTimeframeChips sorts by duration and keeps the current value when favorited', () => {
+        expect(favoriteTimeframeChips(['D', '60'])).toEqual(['60', 'D']);
+        expect(favoriteTimeframeChips(['D', '60', '15'])).toEqual(['15', '60', 'D']);
+        expect(favoriteTimeframeChips(['60', '5', '60'])).toEqual(['5', '60']);
+        expect(favoriteTimeframeChips([])).toEqual([]);
+        expect(favoriteTimeframeChips(['15'])).toEqual(['15']);
+        expect(favoriteTimeframeChips(['nope', '60', 'also'])).toEqual(['60', 'nope', 'also']);
     });
 });
 

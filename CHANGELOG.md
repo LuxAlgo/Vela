@@ -2,6 +2,30 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Favorite timeframes.** Hover a row in the topbar's timeframe dropdown and a star
+  appears — click it to pin that timeframe (starred rows keep their gold star). Pinned
+  timeframes sit as duration-sorted chips with the current value highlighted in place;
+  an unstarred current sits next to the caret, which opens the full list (or the
+  combined label+caret when nothing is starred). The set persists with the rest of the
+  chart state, and a workspace shares one set across all charts.
+
+### Changed
+
+- **Open menus stay put if their trigger moves.** Starring a timeframe (which adds a
+  chip and shifts the caret) no longer drags the open dropdown with it — the list
+  keeps the position it had when it opened.
+
+### Fixed
+
+- **Legend load dots sit beside the title, not glued to it.** While an indicator is
+  fetching, the three pulsing dots now keep an 8px gap to the right of the title
+  (they used to sit flush against the last letter) and drop 1px so they optically
+  match the title's midline.
+
 ## [v0.5.3]
 
 ### Changed

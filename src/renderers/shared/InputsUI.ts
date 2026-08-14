@@ -82,8 +82,9 @@ const LEGEND_ROW_PAD_Y = 2;
 const LEGEND_ROW_PAD_X = 6;
 /** Space between the indicator title and the plot-values readout to its right. */
 const LEGEND_TITLE_VALUES_GAP_PX = 6;
-/** Space between the title (or values/controls, when shown) and the load/live status. */
-const LEGEND_TITLE_STATUS_GAP_PX = 12;
+/** Space between the title and the loading/live status (the values gap plus a little
+ *  air — 4px dots flush against 12px type read as glued on). */
+const LEGEND_TITLE_STATUS_GAP_PX = 8;
 /** Uniform space: title → first action icon, and between every action icon. */
 const LEGEND_ACTION_GAP_PX = 6;
 const LEGEND_CTL_CSS =
@@ -709,8 +710,9 @@ export class InputsUI {
             e.stopPropagation();
             this.openRowMenu(id, e.clientX, e.clientY);
         });
-        // Status indicator (appended at the row's right end, below): pulsing load dots while
-        // fetching, a pulse while live, hidden when idle.
+        // Status indicator (right of the title): pulsing load dots while fetching, a
+        // pulse while live, hidden when idle. Lives next to the title — not the row's
+        // far end — so the dots stay a title companion even before values arrive.
         const statusEl = document.createElement('span');
         statusEl.style.cssText = 'display:none;box-sizing:border-box;flex:none;';
         // Title (+ optional "beta" exponent) wrapped so the superscript stays glued to the label and
@@ -731,6 +733,7 @@ export class InputsUI {
             titleWrap.appendChild(beta);
         }
         el.appendChild(titleWrap);
+        el.appendChild(statusEl);
         // Plot values readout, right of the title — filled by setPlotValues, hidden until
         // values arrive (or while the values toggle is off for this row).
         const valuesEl = document.createElement('span');
@@ -799,7 +802,6 @@ export class InputsUI {
         close.addEventListener('click', () => this.onRemove?.(id));
         controlsEl.appendChild(close);
         el.appendChild(controlsEl);
-        el.appendChild(statusEl); // status sits at the row's right end, after values and controls
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
         this.rows.set(id, { id, title, settingsTitle, inputs, values: { ...values }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
@@ -821,7 +823,7 @@ export class InputsUI {
     /**
      * Reflect an indicator's live status in its legend row: `'loading'` shows three pulsing
      * dots (a fetch is in flight — the same load affordance as the chart's own bar-load dots,
-     * at legend scale), `'live'` a pulsing dot, `'idle'` nothing. Rendered at the row's right end.
+     * at legend scale), `'live'` a pulsing dot, `'idle'` nothing. Rendered just right of the title.
      */
     setStatus(id: string, status: 'idle' | 'loading' | 'live'): void {
         const row = this.rows.get(id);
@@ -833,9 +835,12 @@ export class InputsUI {
             return;
         }
         if (status === 'loading') {
+            // line-height:0 kills the font strut so the 4px dots are the box; translateY is
+            // optical — the dots already share the title's geometric midline, but 4px discs
+            // next to 12px type read a hair high without the nudge.
             el.style.cssText =
                 `display:inline-flex;align-items:center;gap:3px;box-sizing:border-box;flex:none;` +
-                `margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;`;
+                `margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;line-height:0;transform:translateY(1px);`;
             for (let i = 0; i < 3; i += 1) {
                 const dot = document.createElement('span');
                 dot.style.cssText = 'width:4px;height:4px;border-radius:50%;background:currentColor;opacity:0.15;flex:none;';
@@ -849,7 +854,7 @@ export class InputsUI {
         this.ensureStatusKeyframes();
         el.style.cssText =
             `display:inline-block;box-sizing:border-box;flex:none;width:8px;height:8px;border-radius:50%;` +
-            `margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;` +
+            `margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;transform:translateY(1px);` +
             `background:${this.theme.upColor};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
     }
 

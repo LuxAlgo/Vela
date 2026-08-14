@@ -72,6 +72,22 @@ export const MENU_CSS = `
 }
 .vela-menu-switch.on { background: var(--vela-accent-bright, var(--vela-accent)); border-color: var(--vela-accent-bright, var(--vela-accent)); }
 .vela-menu-switch.on::after { transform: translateX(16px); background: var(--vela-bg); }
+/* Favorite star (rows carrying \`favorite\`): reserved space always — it fades in on row
+   hover instead of shifting the layout — and a starred row keeps its filled star visible.
+   Same control language as the drawing toolbar's flyout stars. */
+.vela-menu-item .vela-menu-star {
+    order: 98;
+    /* Pad the 16px icon slot into a bigger hit target without moving the row's layout. */
+    margin: -3px -5px -3px 0;
+    padding: 3px 5px;
+    box-sizing: content-box;
+    border-radius: var(--vela-radius-sm);
+    opacity: 0;
+    transition: opacity 0.1s ease, background 0.1s ease;
+}
+.vela-menu-item[data-highlighted] .vela-menu-star { opacity: 0.55; }
+.vela-menu-item .vela-menu-star:hover { opacity: 1; background: var(--vela-hover-strong); }
+.vela-menu-item .vela-menu-star.vela-fav { opacity: 0.95; color: var(--vela-highlight); }
 .vela-menu-sep { height: 1px; margin: 4px 6px; background: var(--vela-border); }
 /* Submenu trigger row: a right-aligned chevron, and it stays highlighted while its own
    list is open so the path you came down remains readable. */

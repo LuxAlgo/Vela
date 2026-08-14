@@ -153,7 +153,8 @@ The state SURFACE is the product; persistence is an adapter on top of it.
 
 ```ts
 const state = ws.getState();
-// → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?, charts: […] }
+// → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?,
+//     timeframeFavorites?, charts: […] }
 // One ORDERED `charts` entry per cell, live AND dormant — array position i restores
 // into slot i, `id` is the cell's durable name: { id: 'btc', symbol, provider?, timeframe,
 //   priceStyle, bars?, watermark?, indicatorTitles?, rendererConfig (renderer.getConfig() document),

@@ -95,7 +95,10 @@ work from the very first keystroke, before any click.
 
 ## The chrome
 
-- **Topbar** — symbol button (opens the search), timeframe dropdown, chart-style dropdown
+- **Topbar** — symbol button (opens the search), timeframe dropdown (hover a row to
+  star a favorite: starred timeframes sit as duration-sorted chips, the current one
+  highlighted in place; an unstarred current sits next to the caret, and the caret
+  opens the full list — or the combined label+caret when nothing is starred), chart-style dropdown
   (built-ins ∪ [plugin chart types](../contributing/plugin-sdk.md), with their icons and
   labels), Indicators picker, undo/redo (same history as Ctrl+Z / Ctrl+Y), data-window and
   object-tree panel toggles, then any
@@ -186,7 +189,7 @@ the SAME document format — a widget is the single-chart case (`layout: '1'`, o
 ```ts
 const state = widget.getState();
 // → { version: 1, layout: '1', activeCellId: 'c1', timezone, favorites?,
-//     panels?: { open?, widths? },
+//     timeframeFavorites?, panels?: { open?, widths? },
 //     charts: [{ id: 'c1', symbol, provider?, timeframe, priceStyle, bars?, watermark?,
 //                indicatorTitles?, rendererConfig, drawings, indicators }] }
 
