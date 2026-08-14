@@ -15,6 +15,12 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Trend-line labels follow the line.** A label on a trend line, ray, extended
+  line, info line, or trend angle sits along the segment instead of staying
+  horizontal, and flips so the text never reads upside-down.
+- **User drawings no longer expand the price scale.** Placing or dragging a drawing
+  into the empty margin leaves the pane fitted to the series — the window does not
+  jump to follow the cursor. Pine drawings still fold into autoscale as before.
 - **Open menus stay put if their trigger moves.** Starring a timeframe (which adds a
   chip and shifts the caret) no longer drags the open dropdown with it — the list
   keeps the position it had when it opened.

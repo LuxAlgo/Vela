@@ -156,15 +156,15 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 
 | Tool | Type key | What it does |
 |---|---|---|
-| Trend Line | `trendline` | A segment between two points. |
+| Trend Line | `trendline` | A segment between two points. An optional label follows the line's slope. |
 | Horizontal Line | `hline` | A full-width line at one price. |
-| Ray | `ray` | A line from a point, extended one way. |
-| Extended Line | `extendedline` | A line through two points, extended both ways. |
+| Ray | `ray` | A line from a point, extended one way. An optional label follows the line's slope. |
+| Extended Line | `extendedline` | A line through two points, extended both ways. An optional label follows the line's slope. |
 | Vertical Line | `vline` | A full-height line at one time. |
 | Horizontal Ray | `hray` | A horizontal line from a point, extended right. |
 | Cross Line | `crossline` | A full-width + full-height cross through one point. |
-| Info Line | `infoline` | A segment with a readout of its price/%/bar delta. |
-| Trend Angle | `trendangle` | A ray with its angle (°) labelled off the horizontal. |
+| Info Line | `infoline` | A segment with a readout of its price/%/bar delta. An optional label follows the line's slope. |
+| Trend Angle | `trendangle` | A ray with its angle (°) labelled off the horizontal. An optional label follows the line's slope. |
 
 ### Channels
 

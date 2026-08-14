@@ -42,6 +42,8 @@ function recordingCtx() {
         strokeRect() {},
         save() {},
         restore() {},
+        translate() {},
+        rotate() {},
         fillText() {},
         measureText: () => ({ width: 0 }),
     };
@@ -213,5 +215,44 @@ describe('DrawingPainter.paintAll pane separation', () => {
         new DrawingPainter().paintAll(ctx, drawings, fakeProjector(), theme);
         expect(clips()).toBe(0);
         expect(strokes()).toBeGreaterThan(0);
+    });
+});
+
+describe('DrawingPainter trendline label follows the line', () => {
+    it('rotates the label to the upright segment angle', () => {
+        const d = createDrawing('trendline', {
+            id: 't',
+            paneId: 'price',
+            anchors: [
+                { time: 0, price: 0 },
+                { time: 50, price: 50 },
+            ],
+            text: { value: 'zone', size: 'normal', hAlign: 'center', vAlign: 'top' },
+        })!;
+        const { ctx } = recordingCtx();
+        const angles: number[] = [];
+        (ctx as unknown as Record<string, unknown>).rotate = (a: number) => {
+            angles.push(a);
+        };
+        new DrawingPainter().paintAll(ctx, [d], fakeProjector(), theme);
+        expect(angles).toHaveLength(1);
+        // projector y = 100 − price: (0,100) → (50,50) is up-right → −π/4
+        expect(angles[0]).toBeCloseTo(-Math.PI / 4);
+    });
+
+    it('does not rotate a flat text annotation', () => {
+        const d = createDrawing('text', {
+            id: 'a',
+            paneId: 'price',
+            anchors: [{ time: 10, price: 50 }],
+            text: { value: 'note', size: 'normal', hAlign: 'left', vAlign: 'top' },
+        })!;
+        const { ctx } = recordingCtx();
+        let rotated = 0;
+        (ctx as unknown as Record<string, unknown>).rotate = () => {
+            rotated += 1;
+        };
+        new DrawingPainter().paintAll(ctx, [d], fakeProjector(), theme);
+        expect(rotated).toBe(0);
     });
 });

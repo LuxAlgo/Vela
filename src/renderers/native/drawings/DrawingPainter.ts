@@ -1,7 +1,7 @@
 import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
 import { SegmentDrawing, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
-import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
+import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE, uprightLineAngle } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
 import { withAlpha } from '../../../core/color';
 import { valueDecimals } from '../chrome/ticks';
@@ -416,13 +416,19 @@ export class DrawingPainter {
         this.paintLabel(ctx, d, proj, theme); // every drawing can carry an optional label
     }
 
-    /** Draw a drawing's optional text label at a type-appropriate anchor (multi-line aware). */
+    /** Draw a drawing's optional text label at a type-appropriate anchor (multi-line aware).
+     *  Two-point line tools rotate the glyphs to follow the segment, kept upright. */
     private paintLabel(ctx: CanvasRenderingContext2D, d: Drawing, proj: Projector, theme: VelaTheme): void {
         const text = d.text;
         if (!text || !text.value || d.id === this.targets.mutedLabel) return;
         const layout = labelLayout(d, proj);
         if (!layout) return;
         const fs = namedFontSize(text.size);
+        ctx.save();
+        if (layout.rotate) {
+            ctx.translate(layout.rotate.cx, layout.rotate.cy);
+            ctx.rotate(layout.rotate.angle);
+        }
         ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${fs}px ${theme.fontFamily}`;
         ctx.textBaseline = 'top';
         ctx.textAlign = layout.align;
@@ -430,8 +436,8 @@ export class DrawingPainter {
         const lh = labelLineHeight(fs);
         const lines = text.value.split('\n');
         lines.forEach((line, i) => ctx.fillText(line, layout.x, layout.top + i * lh));
-        ctx.textAlign = 'left';
         if (d.type === 'text') this.paintTextFrame(ctx, d.id, layout.x, layout.top, lines, fs, theme);
+        ctx.restore();
     }
 
     /** Frame a plain text label while it is the target, so the text reads as a clickable object even
@@ -1445,7 +1451,14 @@ function formatMachRatio(ratio: number): string {
     return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
-function labelLayout(d: Drawing, proj: Projector): { x: number; top: number; align: CanvasTextAlign } | null {
+/** Where a drawing's label paints. With `rotate`, the canvas is rotated by `angle`
+ *  around `(cx, cy)` first, and `x`/`top` are in that rotated frame. */
+function labelLayout(d: Drawing, proj: Projector): {
+    x: number;
+    top: number;
+    align: CanvasTextAlign;
+    rotate?: { angle: number; cx: number; cy: number };
+} | null {
     const text = d.text;
     if (!text) return null;
     const pts = d.handlePoints(proj);
@@ -1462,7 +1475,14 @@ function labelLayout(d: Drawing, proj: Projector): { x: number; top: number; ali
         case 'infoline':
         case 'trendangle': {
             if (pts.length < 2) return null;
-            return { x: (pts[0]![0] + pts[1]![0]) / 2, top: (pts[0]![1] + pts[1]![1]) / 2 - 6 - lh * lines, align: 'center' };
+            const [x1, y1] = pts[0]!;
+            const [x2, y2] = pts[1]!;
+            return {
+                x: 0,
+                top: -6 - lh * lines,
+                align: 'center',
+                rotate: { angle: uprightLineAngle(x1, y1, x2, y2), cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 },
+            };
         }
         case 'box': {
             if (pts.length < 2) return null;
