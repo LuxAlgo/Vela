@@ -4,12 +4,41 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Favorite timeframes.** Hover a row in the topbar's timeframe dropdown and a star
+  appears — click it to pin that timeframe (starred rows keep their gold star). Pinned
+  timeframes sit as duration-sorted chips with the current value highlighted in place;
+  an unstarred current sits next to the caret, which opens the full list (or the
+  combined label+caret when nothing is starred). The set persists with the rest of the
+  chart state, and a workspace shares one set across all charts.
+
+### Changed
+
+- **Open menus stay put if their trigger moves.** Starring a timeframe (which adds a
+  chip and shifts the caret) no longer drags the open dropdown with it — the list
+  keeps the position it had when it opened.
+
 ### Fixed
 
 - **Legend load dots sit beside the title, not glued to it.** While an indicator is
   fetching, the three pulsing dots now keep an 8px gap to the right of the title
   (they used to sit flush against the last letter) and drop 1px so they optically
   match the title's midline.
+
+## [v0.5.3]
+
+### Changed
+
+- **Wheel zoom steps further per notch.** Scrolling the chart in or out now
+  covers more of the time axis per turn of the wheel, so reaching a target zoom
+  takes fewer notches.
+- **`modulateBase` is consulted on every mounted renderer layer.** The hook is no
+  longer limited to the layer whose id matches the active price style — any layer
+  that implements it (a chart type or an overlay) can slim or fade the base
+  candles for the current frame. When several layers speak, each field keeps the
+  strongest (smallest) request; `null` remains no opinion. Overlay indicators that
+  need a gap beside the candles use the same seam the chart types already did.
 
 ## [v0.5.2]
 
@@ -26,9 +55,11 @@ All notable changes to Vela, newest first.
 - **The symbol watermark yields to loading.** While a chart's bars are loading, the
   faded symbol watermark stays hidden so it never overlaps the loading indicator; it
   returns as soon as the first bars paint.
-- **Open menus stay put if their trigger moves.** Starring a timeframe (which adds a
-  chip and shifts the caret) no longer drags the open dropdown with it — the list
-  keeps the position it had when it opened.
+- **The symbol watermark sits on the price pane only.** The faded "SYMBOL · TF" mark
+  used to center on the whole plot, so a study pane (RSI, MACD, …) carried the same
+  ghost text as the candles. It now clips to the price pane's bounds — including
+  when that pane is resized, collapsed, or a study is maximized (the mark hides
+  rather than landing on the study).
 - **Favorite stars are gold everywhere.** The mobile drawings sheet's favorite star
   now lights up in the same gold as the desktop drawing toolbar's, instead of blue.
 - **The highlighter's width is typed, not picked.** The drawing quick bar shows a
@@ -55,12 +86,10 @@ All notable changes to Vela, newest first.
 
 ### Added
 
-- **Favorite timeframes.** Hover a row in the topbar's timeframe dropdown and a star
-  appears — click it to pin that timeframe (starred rows keep their gold star). Pinned
-  timeframes sit as duration-sorted chips with the current value highlighted in place;
-  an unstarred current sits next to the caret, which opens the full list (or the
-  combined label+caret when nothing is starred). The set persists with the rest of the
-  chart state, and a workspace shares one set across all charts.
+- **Right-click cancels an in-progress drawing.** While placing a drawing, a
+  right-click discards the unfinished shape and returns to the pointer — even in
+  stay-in-drawing-mode — without opening the chart's context menu. A right-click with
+  nothing being placed keeps opening the context menu as before.
 - **Replaceable indicator menu.** A new `indicatorPicker` shell option (widget and
   workspace, default `true`) removes the built-in indicator dialog's entry points —
   the topbar button, the mobile-bar item, and the `/` shortcut — so a host can ship
@@ -74,7 +103,7 @@ All notable changes to Vela, newest first.
   indicators slot) rather than a row in the three-dots sheet.
 - **A mobile chrome for the widget.** In a narrow container — or on a touch-first
   device, or forced with the new `layoutMode` shell option (`'auto' | 'mobile' |
-  'desktop'`) — the widget swaps its desktop bars for one touch-sized bottom bar:
+'desktop'`) — the widget swaps its desktop bars for one touch-sized bottom bar:
   symbol search, timeframe, indicators, drawings, a three-dots drawer, and chart
   settings. The timeframe entry opens a bottom sheet with the date-range presets and
   the timeframe grid; the drawings entry opens a searchable, tabbed tool sheet with
@@ -127,6 +156,11 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Pane separators stay visible while a market switch loads.** Changing the timeframe
+  or the symbol clears the chart while the new bars load; the dividers between stacked
+  panes used to vanish for that whole window (and slightly beyond it), leaving the
+  price pane and the study panes reading as one undivided plot. The separators now
+  stay in place through the load.
 - **Legend fold count stays readable on a light plot.** The indicator-count chip on a
   folded legend now paints its number (and chevron) with the plot's own text color, so a
   white chart no longer shows a near-white digit on a white chip.

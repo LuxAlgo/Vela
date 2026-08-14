@@ -3,7 +3,7 @@
 `vela/widget` is the batteries-included chart app: a headless `Vela` core wrapped in a
 complete, keyboard-first UI. One constructor gives you the topbar (symbol search,
 timeframe and chart-style dropdowns, indicator picker, object tree), an in-chart status
-line and watermark, and a bottom bar with range presets, a live clock, and a timezone
+line and a symbol watermark on the price pane, and a bottom bar with range presets, a live clock, and a timezone
 picker.
 
 ```ts

@@ -95,8 +95,16 @@ export class ChromeRenderer {
         ctx.font = `${scene.style.fontSize}px ${theme.fontFamily}`;
         ctx.textBaseline = 'middle';
 
-        if (coords.barCount === 0) return;
         const panes = scene.orderedPanes();
+        if (coords.barCount === 0) {
+            // A market switch (timeframe/symbol) clears the series while the new bars
+            // load, and any chrome frame in that window (crosshair move, resize) lands
+            // here. The pane SEPARATORS are structural — they depend on pane bounds
+            // alone, not bars — so they must survive the empty frame, or the stacked
+            // panes read as one undivided plot until the load completes.
+            this.drawPaneSeparators(ctx, scene, theme, fullW, panes);
+            return;
+        }
         const pricePane = panes.find((p) => p.kind === 'price') ?? null;
 
         // ── Pine drawings — above series. Own drawings on each model's pane;
