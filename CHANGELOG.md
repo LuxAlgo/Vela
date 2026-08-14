@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **`modulateBase` is consulted on every mounted renderer layer.** The hook is no
+  longer limited to the layer whose id matches the active price style — any layer
+  that implements it (a chart type or an overlay) can slim or fade the base
+  candles for the current frame. When several layers speak, each field keeps the
+  strongest (smallest) request; `null` remains no opinion. Overlay indicators that
+  need a gap beside the candles use the same seam the chart types already did.
+
 ## [v0.5.2]
 
 ### Changed

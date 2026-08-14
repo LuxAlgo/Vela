@@ -37,7 +37,7 @@ export interface RendererLayerArgs {
     cursor: { x: number; y: number } | null;
 }
 
-/** How the active style's layer dims/slims the BASE painting under it (see
+/** How a layer dims/slims the BASE painting under it (see
  *  {@link RendererLayerInstance.modulateBase}). Omitted fields keep their defaults. */
 export interface BasePaintingModulation {
     /** Candle body width multiplier, (0..1] (1 = full width). */
@@ -46,6 +46,27 @@ export interface BasePaintingModulation {
     candleBodyAlpha?: number;
     /** Gridline opacity, [0..1] (fade the grid as a reveal-under layer opens). */
     gridAlpha?: number;
+}
+
+/** Fold one layer's modulation into the running request. Each field keeps the
+ *  stronger (smaller) of the two; omitted stays omitted. `null` is no opinion. */
+export function foldBaseModulation(
+    acc: BasePaintingModulation | null,
+    next: BasePaintingModulation | null,
+): BasePaintingModulation | null {
+    if (next == null) return acc;
+    if (acc == null) return { ...next };
+    return {
+        candleBodyScale: minOpt(acc.candleBodyScale, next.candleBodyScale),
+        candleBodyAlpha: minOpt(acc.candleBodyAlpha, next.candleBodyAlpha),
+        gridAlpha: minOpt(acc.gridAlpha, next.gridAlpha),
+    };
+}
+
+function minOpt(a: number | undefined, b: number | undefined): number | undefined {
+    if (a == null) return b;
+    if (b == null) return a;
+    return Math.min(a, b);
 }
 
 /** One live layer instance (per mounted renderer). */
@@ -59,9 +80,10 @@ export interface RendererLayerInstance {
     /**
      * How the base painting (candles, grid) should be dimmed/slimmed under this layer for
      * the CURRENT frame — a gradual counterpart of the chart type's all-or-nothing
-     * `basePainting: 'none'`. Called after `render`, only for the layer whose id matches
-     * the active price style; returning null (or omitting the method) leaves the base
-     * painting untouched. Values are clamped by the renderer.
+     * `basePainting: 'none'`. Called after `render` on every mounted layer that implements
+     * it (chart-type and overlay alike); returning null (or omitting the method) is no
+     * opinion. When several layers speak, each field keeps the strongest (smallest)
+     * request. Values are clamped by the renderer.
      */
     modulateBase?(args: RendererLayerArgs): BasePaintingModulation | null;
     /** The renderer unmounted — release everything (the canvas itself is removed by the renderer). */
