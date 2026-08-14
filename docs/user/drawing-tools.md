@@ -107,9 +107,10 @@ When a drawing is selected (or hovered), with focus on the chart:
 Shortcuts stand down while a text field (e.g. a label editor) is focused, so typing is never
 hijacked.
 
-Two mouse shortcuts complement these, and need no selection first: **middle-click** a drawing to
-delete it, and **Shift+click** an empty spot to start the [measure ruler](#the-toolbar) at that
-exact point.
+Three mouse shortcuts complement these, and need no selection first: **middle-click** a drawing
+to delete it, **right-click** while placing a drawing to cancel it and return to the pointer —
+even in stay-in-drawing-mode, and without opening the chart's context menu for that click — and
+**Shift+click** an empty spot to start the [measure ruler](#the-toolbar) at that exact point.
 ## Depth: anywhere in the stack
 
 A new drawing starts **just under the price** — the candles read on top of it, the way they read

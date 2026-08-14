@@ -1,4 +1,4 @@
-// Symbol watermark — large faded "SYMBOL · TF" centered behind the chart chrome.
+// Symbol watermark — large faded "SYMBOL · TF" centered on the price pane.
 import { injectStyles } from '../ui/styles';
 import { timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
@@ -14,17 +14,17 @@ const STYLE_ID = 'vela-widget-watermark';
 const CSS = `
 .vela-watermark {
     position: absolute;
-    /* Insets follow the renderer-published gutters (mount container), so the mark
-     * centers and fits within the PLOT — never bleeding into the drawings toolbar
-     * on the left or the price scale on the right (visible in small multi-chart
-     * cells, where the scale is a large share of the width). */
-    top: 0;
-    bottom: 0;
+    /* Insets follow the renderer-published gutters AND the price-pane vertical
+     * bounds (mount container), so the mark centers on the PRICE PANE — never
+     * the study panes below, the drawings toolbar, or the price scale. */
+    top: var(--vela-price-pane-top, 0px);
+    bottom: var(--vela-price-pane-bottom, 0px);
     left: var(--vela-toolbar-gutter, 0px);
     right: var(--vela-scale-gutter, 0px);
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
     pointer-events: none;
     z-index: 1;
     color: var(--vela-fg);
@@ -70,8 +70,8 @@ export class Watermark {
         this.text = host.ownerDocument.createElement('span');
         this.el.appendChild(this.text);
         host.appendChild(this.el);
-        // The el is inset:0, so observing it tracks the chart's size (splitter drags,
-        // layout changes) — refit whenever the space changes.
+        // The el tracks the price pane (CSS insets on the host), so observing it
+        // refits on splitter drags and pane-layout changes.
         if (typeof ResizeObserver !== 'undefined') {
             this.resizeObserver = new ResizeObserver(() => this.fit());
             this.resizeObserver.observe(this.el);
@@ -101,7 +101,7 @@ export class Watermark {
         this.fit();
     }
 
-    /** Measure the text at the cap and shrink it to the chart's own width. */
+    /** Measure the text at the cap and shrink it to the price pane's width. */
     private fit(): void {
         if (this.el.clientWidth <= 0 || !this.text.textContent) return;
         this.el.style.fontSize = `${MAX_FONT_PX}px`;
