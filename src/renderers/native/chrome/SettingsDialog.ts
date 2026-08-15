@@ -16,7 +16,11 @@ import {
 } from '../../../chart-types/registry';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
-import { colorField, closeColorPopover } from './ColorField';
+import { Switch } from '../../../ui/components/switch';
+import { Select } from '../../../ui/components/select';
+import { NumberInput } from '../../../ui/components/number-input';
+import { colorField } from '../../../ui/components/color-picker';
+import { closeOpenPopovers } from '../../../ui/components/popover';
 import { widthField, closeWidthPopover } from './WidthField';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 
@@ -65,6 +69,7 @@ function styleLabel(id: string): string {
 }
 
 const SD_STYLE_ID = 'vela-settings-controls';
+const SD_STYLE_REV = '2';
 
 /**
  * The dialog's surface palette. It follows the STABLE chrome surface (the tokens written on
@@ -77,33 +82,19 @@ export const SETTINGS_TEXT = 'var(--vela-fg)';
 
 /** The reference control styles (checkbox, selects/inputs, swatches, scrollbars). */
 function ensureControlStyles(): void {
-    if (typeof document === 'undefined' || document.getElementById(SD_STYLE_ID)) return;
-    const st = document.createElement('style');
+    if (typeof document === 'undefined') return;
+    const existing = document.getElementById(SD_STYLE_ID) as HTMLStyleElement | null;
+    if (existing?.dataset.rev === SD_STYLE_REV) return;
+    const st = existing ?? document.createElement('style');
     st.id = SD_STYLE_ID;
+    st.dataset.rev = SD_STYLE_REV;
     st.textContent = `
-.vela-sd-check{width:18px;height:18px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--vela-border-strong);border-radius:5px;background:transparent;color:transparent;cursor:pointer;}
-.vela-sd-check:hover{border-color:var(--vela-fg-muted);}
-.vela-sd-check.on{background:var(--vela-selected-bg);border-color:var(--vela-selected-bg);color:var(--vela-selected-fg);}
-.vela-sd-check svg{display:block;}
-.vela-sd-select,.vela-sd-number{height:28px;background:var(--vela-surface-elev);border:1px solid var(--vela-border-strong);border-radius:var(--vela-radius-sm);color:var(--vela-fg);padding:0 8px;font-size:13px;outline:none;font-family:inherit;}
-.vela-sd-select:hover,.vela-sd-number:hover{border-color:var(--vela-fg-muted);}
-/* Custom caret: the native one hugs the right border; ours gets 8px of air. (A data URI
-   can't read currentColor, so it uses the shared muted-gray ink, legible on both themes.) */
-.vela-sd-select{-webkit-appearance:none;appearance:none;padding-right:26px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23868a96' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;}
-.vela-sd-number{width:64px;}
-.vela-sd-color{width:32px;height:26px;padding:0;border:1px solid var(--vela-border);border-radius:var(--vela-radius-sm);background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none;}
-.vela-sd-color::-webkit-color-swatch-wrapper{padding:2px;}
-.vela-sd-color::-webkit-color-swatch{border:none;border-radius:2px;}
 .vela-sd-pane::-webkit-scrollbar{width:8px;}
 .vela-sd-pane::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:var(--vela-radius-sm);border:2px solid transparent;background-clip:padding-box;}
 .vela-sd-pane::-webkit-scrollbar-track{background:transparent;}
-.vela-sd-toggle{position:relative;width:38px;height:22px;border-radius:11px;background:var(--vela-surface-sunken);border:1px solid var(--vela-border);cursor:pointer;flex:none;padding:0;}
-.vela-sd-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--vela-fg-muted);transition:transform var(--vela-dur-med) ease,background var(--vela-dur-med) ease;}
-.vela-sd-toggle.on{background:var(--vela-active);border-color:var(--vela-selected-bg);}
-.vela-sd-toggle.on::after{transform:translateX(16px);background:var(--vela-selected-bg);}
 /* Tab rail / footer button / header close: base styles live HERE, not inline on the
    elements — inline declarations always beat stylesheet :hover rules, which is exactly
-   what killed these hovers before. Active tab state is the .on class (like .vela-sd-check),
+   what killed these hovers before. Active tab state is the .on class,
    hover fills follow the app convention (--vela-hover + --vela-fg-bright, fast transition). */
 .vela-sd-tab{text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-sd-tab:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
@@ -162,13 +153,13 @@ function ensureControlStyles(): void {
 .vela-sd-mobile .vela-sd-itabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
 .vela-sd-mobile .vela-sd-itabs::-webkit-scrollbar{display:none;}
 .vela-sd-mobile .vela-sd-itab{height:36px;flex:none;}
-.vela-sd-mobile .vela-sd-check{width:22px;height:22px;}
-.vela-sd-mobile .vela-sd-select,.vela-sd-mobile .vela-sd-number{height:34px;}
+.vela-sd-mobile .vela-switch{width:22px;height:22px;}
+.vela-sd-mobile .vela-select[data-size='sm'] .vela-select-trigger,.vela-sd-mobile .vela-num[data-size='sm'] input{height:34px;}
 .vela-sd-mobile .vela-sd-close{width:40px;height:40px;}
 .vela-sd-mobile .vela-sd-btn{height:38px;}
 .vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span{white-space:normal !important;}
 `;
-    document.head.appendChild(st);
+    if (!existing) document.head.appendChild(st);
 }
 
 export class SettingsDialog {
@@ -655,7 +646,7 @@ export class SettingsDialog {
     }
 
     close(): void {
-        closeColorPopover();
+        closeOpenPopovers();
         closeWidthPopover();
         this.root?.remove();
         this.root = null;
@@ -848,55 +839,42 @@ export class SettingsDialog {
             return wf;
         }
         if (c.kind === 'select') {
-            const sel = document.createElement('select');
-            sel.className = 'vela-sd-select';
-            sel.style.cssText = 'max-width:200px;flex:0 0 auto;';
-            sel.title = c.label;
             const current = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
-            for (const [val, lbl] of normalizeSelectOptions(c.options)) {
-                const o = document.createElement('option');
-                o.value = val;
-                o.textContent = lbl;
-                if (val === current) o.selected = true;
-                sel.appendChild(o);
-            }
-            sel.addEventListener('change', () => put(c.key, sel.value));
-            sel.addEventListener('vela-sync', () => {
-                sel.value = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
+            const sel = new Select({
+                options: normalizeSelectOptions(c.options).map(([value, label]) => ({ value, label })),
+                value: current,
+                size: 'sm',
+                theme: this.theme,
+                onChange: (v) => put(c.key, v),
             });
-            return sel;
+            sel.el.title = c.label;
+            sel.el.addEventListener('vela-sync', () => {
+                sel.setValue(typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval);
+            });
+            return sel.el;
         }
         // number
-        const ni = document.createElement('input');
-        ni.type = 'number';
-        ni.className = 'vela-sd-number';
-        if (compact) ni.style.width = '56px';
-        if (c.min !== undefined) ni.min = String(c.min);
-        if (c.max !== undefined) ni.max = String(c.max);
-        ni.step = String(c.step ?? 1);
-        ni.title = c.label;
         const current = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
-        if (c.placeholder !== undefined) {
-            // Placeholder mode: an input at the DEFAULT renders empty showing it, and
-            // clearing stores the default back — the placeholder names the unset state.
-            // 'change' (commit), not 'input': an empty field means "default" only once
-            // the user is done, never while they are mid-edit.
-            ni.placeholder = c.placeholder;
-            if (current !== c.defval) ni.value = String(current);
-            ni.addEventListener('change', () => {
-                const raw = ni.value.trim() === '' ? c.defval : Number(ni.value);
-                const v = Number.isFinite(raw) ? Math.min(c.max ?? Infinity, Math.max(c.min ?? -Infinity, raw)) : c.defval;
-                ni.value = v === c.defval ? '' : String(v);
-                put(c.key, v);
-            });
-        } else {
-            ni.value = String(current);
-            ni.addEventListener('input', () => {
-                const v = Number(ni.value);
-                if (Number.isFinite(v)) put(c.key, v);
-            });
-        }
-        return ni;
+        const ni = new NumberInput({
+            value: current,
+            min: c.min,
+            max: c.max,
+            step: c.step ?? 1,
+            size: 'sm',
+            commit: 'live',
+            clamp: c.placeholder !== undefined,
+            steppers: false,
+            compact,
+            title: c.label,
+            placeholder: c.placeholder,
+            emptyValue: c.placeholder !== undefined ? c.defval : undefined,
+            onChange: (v) => put(c.key, v),
+        });
+        ni.el.addEventListener('vela-sync', () => {
+            const next = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
+            ni.setValue(next);
+        });
+        return ni.el;
     }
 
     /**
@@ -1230,43 +1208,13 @@ export class SettingsDialog {
      *  only one visible at a time; see `typeRow`). */
     private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean): HTMLElement {
         const wrap = document.createElement('div');
-        // No cursor on the row itself: only the checkbox is clickable, so a row-wide
-        // pointer would promise a click target that isn't there.
-        const cb = document.createElement('button');
-        cb.type = 'button';
-        cb.className = 'vela-sd-check' + (value ? ' on' : '');
-        cb.innerHTML = iconAt('check', 11);
-        let checked = value;
-        const cbToggle = (): boolean => {
-            checked = !checked;
-            cb.classList.toggle('on', checked);
-            return checked;
-        };
+        const sw = new Switch({ checked: value, size: 'sm', onChange: (v) => {
+            onToggle(v);
+            if (controls.length > 0) syncDim(v);
+        } });
         const lbl = document.createElement('span');
         lbl.textContent = label;
         lbl.style.cssText = 'opacity:0.85;white-space:nowrap;';
-        if (controls.length === 0) {
-            wrap.className = 'vela-sd-bool';
-            wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;';
-            wrap.append(cb, lbl);
-            cb.addEventListener('click', () => onToggle(cbToggle()));
-            if (get) {
-                wrap.addEventListener('vela-sync', () => {
-                    checked = get();
-                    cb.classList.toggle('on', checked);
-                });
-            }
-            return wrap;
-        }
-        wrap.className = 'vela-sd-row';
-        const left = document.createElement('div');
-        left.style.cssText = 'display:flex;align-items:center;gap:8px;';
-        left.append(cb, lbl);
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;';
-        for (const c of controls) box.appendChild(c);
-        // Dim per CONTROL, not the box: a self-gated swatch (its own `when`) stays
-        // live through the off state — it may exist specifically for it.
         const syncDim = (on: boolean): void => {
             for (const c of controls) {
                 if (c.dataset.sdSelfGated === '1') continue;
@@ -1274,13 +1222,28 @@ export class SettingsDialog {
                 c.style.pointerEvents = on ? '' : 'none';
             }
         };
+        if (controls.length === 0) {
+            wrap.className = 'vela-sd-bool';
+            wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;';
+            wrap.append(sw.el, lbl);
+            if (get) {
+                wrap.addEventListener('vela-sync', () => { sw.setChecked(get()); });
+            }
+            return wrap;
+        }
+        wrap.className = 'vela-sd-row';
+        const left = document.createElement('div');
+        left.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        left.append(sw.el, lbl);
+        const box = document.createElement('div');
+        box.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        for (const c of controls) box.appendChild(c);
         syncDim(value);
-        cb.addEventListener('click', () => { const v = cbToggle(); onToggle(v); syncDim(v); });
         if (get) {
             wrap.addEventListener('vela-sync', () => {
-                checked = get();
-                cb.classList.toggle('on', checked);
-                syncDim(checked);
+                const v = get();
+                sw.setChecked(v);
+                syncDim(v);
             });
         }
         wrap.append(left, box);
@@ -1289,54 +1252,25 @@ export class SettingsDialog {
 
     private numberRow(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
         const { wrap } = this.row(label);
-        const ni = document.createElement('input');
-        ni.type = 'number';
-        ni.value = String(value);
-        ni.min = String(min);
-        ni.max = String(max);
-        ni.step = String(step);
-        ni.className = 'vela-sd-number';
-        ni.addEventListener('input', () => {
-            const n = Number(ni.value);
-            if (Number.isFinite(n)) onChange(n);
-        });
-        wrap.appendChild(ni);
+        wrap.appendChild(new NumberInput({ value, min, max, step, size: 'sm', commit: 'live', onChange }).el);
         return wrap;
     }
 
     /** A dropdown whose option values differ from their display labels. */
     private selectRowLabeled(label: string, value: string, options: readonly (readonly [string, string])[], onChange: (v: string) => void): HTMLElement {
         const { wrap } = this.row(label);
-        const sel = document.createElement('select');
-        sel.className = 'vela-sd-select';
-        sel.style.cssText = 'max-width:200px;flex:0 0 auto;';
-        for (const [val, lbl] of options) {
-            const o = document.createElement('option');
-            o.value = val;
-            o.textContent = lbl;
-            if (val === value) o.selected = true;
-            sel.appendChild(o);
-        }
-        sel.addEventListener('change', () => onChange(sel.value));
-        wrap.appendChild(sel);
+        wrap.appendChild(new Select({
+            options: options.map(([v, l]) => ({ value: v, label: l })),
+            value,
+            size: 'sm',
+            theme: this.theme,
+            onChange,
+        }).el);
         return wrap;
     }
 
     private selectRow(label: string, value: string, options: string[], onChange: (v: string) => void): HTMLElement {
-        const { wrap } = this.row(label);
-        const sel = document.createElement('select');
-        sel.className = 'vela-sd-select';
-        sel.style.cssText = 'max-width:200px;flex:0 0 auto;';
-        for (const opt of options) {
-            const o = document.createElement('option');
-            o.value = opt;
-            o.textContent = opt;
-            if (opt === value) o.selected = true;
-            sel.appendChild(o);
-        }
-        sel.addEventListener('change', () => onChange(sel.value));
-        wrap.appendChild(sel);
-        return wrap;
+        return this.selectRowLabeled(label, value, options.map((o) => [o, o] as const), onChange);
     }
 
     /** Footer with the full config as JSON — the export/import (templating) surface. */

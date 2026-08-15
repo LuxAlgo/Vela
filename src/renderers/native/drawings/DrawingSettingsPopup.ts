@@ -18,7 +18,8 @@ import {
 import { icon, svg24, svg24Solid } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { contrastColor } from '../../shared/drawing-geometry';
-import { buildColorPicker } from './colorPicker';
+import { buildColorPicker } from '../../../ui/components/color-picker';
+import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
 
 /** A `{ path: value }` patch emitted as the user edits a control. */
 export type SettingsPatch = Record<string, unknown>;
@@ -91,10 +92,10 @@ export class DrawingSettingsPopup {
     private tipEl: HTMLDivElement | null = null; // floating hover-label (above/below the toolbar)
     private textPanel: HTMLDivElement | null = null;
     private levelsPanel: HTMLDivElement | null = null;
-    private colorPop: HTMLDivElement | null = null; // floating RGB + opacity picker for a color swatch
-    private colorOwner: HTMLElement | null = null; // the swatch the open color popover belongs to (for toggle)
-    private menuEl: HTMLDivElement | null = null; // floating option list for a dropdown control
-    private menuOwner: HTMLElement | null = null; // the trigger the open menu belongs to (for toggle)
+    private colorPop: Popover | null = null;
+    private colorOwner: HTMLElement | null = null;
+    private menuPop: Popover | null = null;
+    private menuOwner: HTMLElement | null = null;
     private theme: VelaTheme;
     private onClose: (() => void) | null = null;
 
@@ -114,7 +115,7 @@ export class DrawingSettingsPopup {
      *  picker / dropdown menu), which live outside `el`. */
     contains(node: Node | null): boolean {
         if (!node) return false;
-        return this.el?.contains(node) === true || this.colorPop?.contains(node) === true || this.menuEl?.contains(node) === true;
+        return this.el?.contains(node) === true || this.colorPop?.el.contains(node) === true || this.menuPop?.el.contains(node) === true;
     }
 
     /** Open the quick toolbar for `drawing`, floating clear of its `anchor` box.
@@ -138,8 +139,7 @@ export class DrawingSettingsPopup {
         // outside `el` and stop their own pointerdowns, so this only fires for the OTHER controls —
         // and a dropdown trigger stops its own pointerdown so it can toggle its menu on click).
         el.addEventListener('pointerdown', () => {
-            this.closeColorPopover();
-            this.closeMenu();
+            closeOpenPopovers();
         });
 
         const bar = document.createElement('div');
@@ -306,8 +306,8 @@ export class DrawingSettingsPopup {
 
     private readonly onOutside = (e: Event): void => {
         const target = e.target as Node;
-        if (this.colorPop?.contains(target)) return; // the floating color picker is part of this popup
-        if (this.menuEl?.contains(target)) return; // as is a floating dropdown menu
+        if (this.colorPop?.el.contains(target)) return; // the floating color picker is part of this popup
+        if (this.menuPop?.el.contains(target)) return; // as is a floating dropdown menu
         if (this.el && !this.el.contains(target)) {
             const cb = this.onClose;
             this.close();
@@ -978,50 +978,71 @@ export class DrawingSettingsPopup {
         return b;
     }
 
+    /** Host-anchored floating shell (stays inside the chart). Content is filled after
+     *  construction so `fill` can close over the live `Popover` without hitting TDZ. */
+    private hostFloat(anchor: HTMLElement, opts: { align?: 'start' | 'end'; zIndex: number; padding: string; fill: (el: HTMLElement, pop: Popover) => void }): Popover {
+        const t = this.theme;
+        const pop = new Popover({
+            trigger: anchor,
+            host: this.host,
+            theme: t,
+            position: 'absolute',
+            boundary: this.host,
+            boundaryInset: 4,
+            viewportInset: 0,
+            gap: 6,
+            align: opts.align ?? 'start',
+            zIndex: opts.zIndex,
+            onClose: () => {
+                if (this.menuPop === pop) { this.menuPop = null; this.menuOwner = null; }
+                if (this.colorPop === pop) { this.colorPop = null; this.colorOwner = null; }
+            },
+        });
+        const el = pop.el;
+        el.style.background = t.background;
+        el.style.border = '1px solid var(--vela-border)';
+        el.style.borderRadius = 'var(--vela-radius-lg)';
+        el.style.boxShadow = 'var(--vela-shadow)';
+        el.style.padding = opts.padding;
+        el.style.display = 'flex';
+        el.style.flexDirection = 'column';
+        el.style.gap = '1px';
+        el.style.color = t.textColor;
+        el.style.font = `var(--vela-font-size-md) ${t.fontFamily}`;
+        el.style.pointerEvents = 'auto';
+        opts.fill(el, pop);
+        pop.show();
+        return pop;
+    }
+
     /** A floating list of one-shot actions (icon + label rows) opened by the kebab. */
     private openActionMenu(anchor: HTMLElement, rows: readonly { icon: string; label: string; onClick: () => void }[]): void {
-        this.closeMenu();
-        this.closeColorPopover();
-        const t = this.theme;
-        const menu = document.createElement('div');
-        menu.className = 'vela-dpop';
-        menu.style.cssText = `position:absolute;z-index:26;background:${t.background};border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:4px;pointer-events:auto;display:flex;flex-direction:column;gap:1px;color:${t.textColor};font:var(--vela-font-size-md) ${t.fontFamily};`;
-        applyChromeTokens(menu, t);
-        menu.addEventListener('pointerdown', (e) => e.stopPropagation()); // keep clicks from dismissing the popup
-        for (const row of rows) {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'vela-dpop-item';
-            item.style.cssText = 'display:flex;align-items:center;gap:9px;min-width:150px;padding:6px 9px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;';
-            const ic = document.createElement('span');
-            ic.style.cssText = 'display:flex;flex:none;width:20px;justify-content:center;';
-            ic.innerHTML = sized(row.icon, 18);
-            const tx = document.createElement('span');
-            tx.textContent = row.label;
-            tx.style.cssText = 'flex:1;';
-            item.append(ic, tx);
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.closeMenu();
-                row.onClick();
-            });
-            menu.appendChild(item);
-        }
-        this.host.appendChild(menu);
-        // Right-align under the kebab, flipping above / clamping so it stays inside the chart.
-        const ar = anchor.getBoundingClientRect();
-        const hr = this.host.getBoundingClientRect();
-        const w = menu.offsetWidth;
-        const h = menu.offsetHeight;
-        let left = ar.right - hr.left - w;
-        let top = ar.bottom - hr.top + 6;
-        if (left + w > hr.width - 4) left = hr.width - w - 4;
-        if (left < 4) left = 4;
-        if (top + h > hr.height - 4) top = ar.top - hr.top - h - 6;
-        if (top < 4) top = 4;
-        menu.style.left = `${Math.round(left)}px`;
-        menu.style.top = `${Math.round(top)}px`;
-        this.menuEl = menu;
+        this.menuPop = this.hostFloat(anchor, {
+            align: 'end',
+            zIndex: 26,
+            padding: '4px',
+            fill: (menu, pop) => {
+                for (const row of rows) {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'vela-dpop-item';
+                    item.style.cssText = 'display:flex;align-items:center;gap:9px;min-width:150px;padding:6px 9px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;';
+                    const ic = document.createElement('span');
+                    ic.style.cssText = 'display:flex;flex:none;width:20px;justify-content:center;';
+                    ic.innerHTML = sized(row.icon, 18);
+                    const tx = document.createElement('span');
+                    tx.textContent = row.label;
+                    tx.style.cssText = 'flex:1;';
+                    item.append(ic, tx);
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        pop.hide();
+                        row.onClick();
+                    });
+                    menu.appendChild(item);
+                }
+            },
+        });
         this.menuOwner = anchor;
     }
 
@@ -1175,62 +1196,41 @@ export class DrawingSettingsPopup {
         label: ((v: string | number) => string) | undefined,
         onPick: (v: string | number) => void,
     ): void {
-        this.closeMenu();
-        this.closeColorPopover();
-        const t = this.theme;
-        const menu = document.createElement('div');
-        menu.className = 'vela-dpop';
-        menu.style.cssText = `position:absolute;z-index:26;background:${t.background};border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:4px;pointer-events:auto;display:flex;flex-direction:column;gap:1px;color:${t.textColor};font:var(--vela-font-size-md) ${t.fontFamily};`;
-        applyChromeTokens(menu, t);
-        menu.addEventListener('pointerdown', (e) => e.stopPropagation()); // keep clicks from dismissing the popup
-        for (const v of values) {
-            const active = v === current;
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'vela-dpop-item';
-            item.dataset.active = active ? '1' : '0';
-            item.style.cssText = `display:flex;align-items:center;gap:8px;${label ? 'min-width:118px;' : ''}padding:5px 8px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;`;
-            const ic = document.createElement('span');
-            ic.style.cssText = 'display:flex;flex:none;width:22px;justify-content:center;';
-            ic.innerHTML = sized(render(v), 18);
-            item.appendChild(ic);
-            if (label) {
-                const tx = document.createElement('span');
-                tx.textContent = label(v);
-                tx.style.cssText = 'flex:1;font-variant-numeric:tabular-nums;';
-                item.appendChild(tx);
-            }
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.closeMenu();
-                onPick(v);
-            });
-            menu.appendChild(item);
-        }
-        this.host.appendChild(menu);
-        // Anchor below the trigger, flipping above / clamping so it stays inside the chart.
-        const ar = anchor.getBoundingClientRect();
-        const hr = this.host.getBoundingClientRect();
-        const w = menu.offsetWidth;
-        const h = menu.offsetHeight;
-        let left = ar.left - hr.left;
-        let top = ar.bottom - hr.top + 6;
-        if (left + w > hr.width - 4) left = hr.width - w - 4;
-        if (left < 4) left = 4;
-        if (top + h > hr.height - 4) top = ar.top - hr.top - h - 6;
-        if (top < 4) top = 4;
-        menu.style.left = `${Math.round(left)}px`;
-        menu.style.top = `${Math.round(top)}px`;
-        this.menuEl = menu;
+        this.menuPop = this.hostFloat(anchor, {
+            zIndex: 26,
+            padding: '4px',
+            fill: (menu, pop) => {
+                for (const v of values) {
+                    const active = v === current;
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'vela-dpop-item';
+                    item.dataset.active = active ? '1' : '0';
+                    item.style.cssText = `display:flex;align-items:center;gap:8px;${label ? 'min-width:118px;' : ''}padding:5px 8px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;`;
+                    const ic = document.createElement('span');
+                    ic.style.cssText = 'display:flex;flex:none;width:22px;justify-content:center;';
+                    ic.innerHTML = sized(render(v), 18);
+                    item.appendChild(ic);
+                    if (label) {
+                        const tx = document.createElement('span');
+                        tx.textContent = label(v);
+                        tx.style.cssText = 'flex:1;font-variant-numeric:tabular-nums;';
+                        item.appendChild(tx);
+                    }
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        pop.hide();
+                        onPick(v);
+                    });
+                    menu.appendChild(item);
+                }
+            },
+        });
         this.menuOwner = anchor;
     }
 
     private closeMenu(): void {
-        if (this.menuEl) {
-            this.menuEl.remove();
-            this.menuEl = null;
-        }
-        this.menuOwner = null;
+        this.menuPop?.hide();
     }
 
     /** A color control: an `icon` over a thin **colored underline** showing the current
@@ -1274,38 +1274,17 @@ export class DrawingSettingsPopup {
 
     /** A floating RGB picker + opacity slider anchored to a color swatch — emits `#RRGGBB(AA)`. */
     private openColorPopover(anchor: HTMLElement, color: string, onChange: (v: string) => void): void {
-        this.closeColorPopover();
-        this.closeMenu();
         const t = this.theme;
-        const pop = document.createElement('div');
-        pop.style.cssText = `position:absolute;z-index:25;background:${t.background};border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:10px;pointer-events:auto;`;
-        applyChromeTokens(pop, t);
-        pop.addEventListener('pointerdown', (e) => e.stopPropagation()); // keep clicks from dismissing the popup
-        pop.appendChild(buildColorPicker(color, t, onChange));
-        this.host.appendChild(pop);
-        // Anchor below the swatch, flipping above / clamping so it stays inside the chart.
-        const ar = anchor.getBoundingClientRect();
-        const hr = this.host.getBoundingClientRect();
-        const w = pop.offsetWidth;
-        const h = pop.offsetHeight;
-        let left = ar.left - hr.left;
-        let top = ar.bottom - hr.top + 6;
-        if (left + w > hr.width - 4) left = hr.width - w - 4;
-        if (left < 4) left = 4;
-        if (top + h > hr.height - 4) top = ar.top - hr.top - h - 6;
-        if (top < 4) top = 4;
-        pop.style.left = `${Math.round(left)}px`;
-        pop.style.top = `${Math.round(top)}px`;
-        this.colorPop = pop;
+        this.colorPop = this.hostFloat(anchor, {
+            zIndex: 25,
+            padding: '10px',
+            fill: (el) => { el.appendChild(buildColorPicker(color, t, onChange)); },
+        });
         this.colorOwner = anchor;
     }
 
     private closeColorPopover(): void {
-        if (this.colorPop) {
-            this.colorPop.remove();
-            this.colorPop = null;
-        }
-        this.colorOwner = null;
+        this.colorPop?.hide();
     }
 
     private divider(): HTMLElement {
