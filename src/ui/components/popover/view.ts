@@ -119,6 +119,9 @@ export class Popover {
         setTimeout(() => document.addEventListener('pointerdown', onOutside, true), 0);
         document.addEventListener('keydown', onKey, true);
         window.addEventListener('resize', onReflow, true);
+        // A scroll anywhere (dialog body, chart container) moves the trigger while the
+        // popover is fixed — re-place so the shell tracks it instead of detaching.
+        document.addEventListener('scroll', onReflow, true);
         this.onOutside = onOutside;
         this.onKey = onKey;
         this.onReflow = onReflow;
@@ -128,7 +131,10 @@ export class Popover {
         if (!this.shown) return;
         if (this.onOutside) document.removeEventListener('pointerdown', this.onOutside, true);
         if (this.onKey) document.removeEventListener('keydown', this.onKey, true);
-        if (this.onReflow) window.removeEventListener('resize', this.onReflow, true);
+        if (this.onReflow) {
+            window.removeEventListener('resize', this.onReflow, true);
+            document.removeEventListener('scroll', this.onReflow, true);
+        }
         this.onOutside = null;
         this.onKey = null;
         this.onReflow = null;

@@ -26,6 +26,12 @@ export class Switch {
         b.appendChild(iconEl('check', b.ownerDocument));
         this.el = b;
         this.paint();
+        // Suppress the default mousedown focus: when this press outside-dismisses an open
+        // popover, Chrome's focus action can scroll the dialog body under the pointer.
+        b.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            b.focus({ preventScroll: true });
+        });
         b.addEventListener('click', () => {
             this.ctrl.toggle();
             this.paint();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampNumber, numberInputController } from '../src/ui/components/number-input/controller';
+import { clampNumber, numberInputController, snapToStep } from '../src/ui/components/number-input/controller';
 import { placePopover, viewportRect, insetRect, intersectRects } from '../src/ui/components/popover/controller';
 import { switchController } from '../src/ui/components/switch/controller';
 import { selectController } from '../src/ui/components/select/controller';
@@ -137,6 +137,24 @@ describe('numberInputController', () => {
         expect(c.sync(8)).toBe(8);
         expect(c.value).toBe(8);
         expect(n).toBe(0);
+    });
+
+    it('nudge on a float step never accumulates binary noise', () => {
+        const c = numberInputController({ value: 1.7, min: 0, max: 10, step: 0.1 });
+        expect(c.nudge(1)).toBe(1.8);
+        expect(c.nudge(1)).toBe(1.9);
+        expect(c.nudge(1)).toBe(2);
+        expect(c.nudge(-1)).toBe(1.9);
+    });
+});
+
+describe('snapToStep', () => {
+    it('rounds stepper arithmetic to the implied decimals', () => {
+        expect(snapToStep(1.7 + 0.1, 1.7, 0.1)).toBe(1.8);
+        expect(snapToStep(0.3 - 0.1, 0.3, 0.1)).toBe(0.2);
+        expect(snapToStep(1.75 + 0.1, 1.75, 0.1)).toBe(1.85);
+        expect(snapToStep(5 + 1, 5, 1)).toBe(6);
+        expect(snapToStep(1e-7 + 1e-7, 1e-7, 1e-7)).toBeCloseTo(2e-7, 10);
     });
 });
 

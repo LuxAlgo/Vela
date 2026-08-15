@@ -23,7 +23,10 @@ export const SELECT_CSS = `
 }
 .vela-select-trigger:hover { border-color: var(--vela-fg-muted); }
 .vela-select-trigger:focus { border-color: var(--vela-focus); box-shadow: 0 0 0 3px var(--vela-focus-soft); }
-.vela-select[data-size='sm'] { max-width: 200px; flex: 0 0 auto; }
+/* As a grid item (chart-settings rows dissolve via display:contents into a shared
+   max-content column) the wrap must NOT stretch to the column: it sizes to its own
+   widest option, like the native select it replaces. */
+.vela-select[data-size='sm'] { max-width: 200px; flex: 0 0 auto; justify-self: start; }
 .vela-select[data-size='sm'] .vela-select-trigger {
     height: 28px;
     background: var(--vela-surface-elev);
@@ -34,6 +37,12 @@ export const SELECT_CSS = `
 }
 .vela-select[data-size='sm'] .vela-select-trigger:focus { box-shadow: none; border-color: var(--vela-fg-muted); }
 .vela-select-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Invisible option-label stack: gives the shrink-to-fit wrap the WIDEST option's
+   intrinsic width (like a native select), so picking a shorter/longer label never
+   resizes the trigger and shifts the row around it. */
+.vela-select-sizer { visibility: hidden; height: 0; overflow: hidden; font-size: 14px; }
+.vela-select[data-size='sm'] .vela-select-sizer { font-size: 13px; }
+.vela-select-sizer span { display: block; height: 0; white-space: nowrap; padding: 0 26px 0 8px; border-inline: 1px solid transparent; }
 .vela-select-chevron {
     position: absolute;
     right: 8px;

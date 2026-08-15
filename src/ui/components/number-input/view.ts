@@ -1,7 +1,7 @@
 // Number-input VIEW — typed field with optional hover steppers (press-repeat).
 import { injectStyles } from '../../styles';
 import { iconEl } from '../../icons';
-import { numberInputController, type NumberInputControllerOptions } from './controller';
+import { numberInputController, snapToStep, type NumberInputControllerOptions } from './controller';
 import { NUMBER_CSS, NUMBER_STYLE_ID } from './styles';
 
 export interface NumberInputOptions extends NumberInputControllerOptions {
@@ -84,7 +84,7 @@ export class NumberInput {
             wrap.appendChild(this.buildSteppers(doc, (dir) => {
                 const cur = Number(ni.value);
                 const base = Number.isFinite(cur) ? cur : this.ctrl.value;
-                commitRaw(base + dir * this.ctrl.step);
+                commitRaw(snapToStep(base + dir * this.ctrl.step, base, this.ctrl.step));
             }));
         }
 

@@ -1,2 +1,2 @@
 export { NumberInput, type NumberInputOptions } from './view';
-export { numberInputController, clampNumber, type NumberInputController, type NumberInputControllerOptions, type NumberSize, type NumberCommit } from './controller';
+export { numberInputController, clampNumber, snapToStep, type NumberInputController, type NumberInputControllerOptions, type NumberSize, type NumberCommit } from './controller';

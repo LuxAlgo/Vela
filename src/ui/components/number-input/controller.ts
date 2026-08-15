@@ -26,6 +26,23 @@ export function clampNumber(n: number, opts: { min?: number; max?: number; integ
     return v;
 }
 
+function decimalsOf(n: number): number {
+    const s = String(n);
+    const e = s.search(/[eE]/);
+    if (e >= 0) {
+        const frac = s.slice(0, e).split('.')[1]?.length ?? 0;
+        return Math.max(0, Math.min(20, frac - Number(s.slice(e + 1))));
+    }
+    return s.split('.')[1]?.length ?? 0;
+}
+
+/** Trim binary-float noise after stepper arithmetic (`1.7 + 0.1` → `1.8`, not
+ *  `1.7999999999999998`): round to the decimals the base value and step imply. */
+export function snapToStep(n: number, base: number, step: number): number {
+    const d = Math.min(20, Math.max(decimalsOf(base), decimalsOf(step)));
+    return Number(n.toFixed(d));
+}
+
 export interface NumberInputController {
     value: number;
     min?: number;
@@ -77,6 +94,6 @@ export function numberInputController(opts: NumberInputControllerOptions): Numbe
             value = n;
             return n;
         },
-        nudge(dir) { return apply(value + dir * step); },
+        nudge(dir) { return apply(snapToStep(value + dir * step, value, step)); },
     };
 }

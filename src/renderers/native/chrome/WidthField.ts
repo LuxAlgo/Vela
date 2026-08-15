@@ -40,6 +40,12 @@ export function widthField(theme: VelaTheme, getVal: () => number, onVal: (v: nu
     };
     paint();
 
+    // Suppress the default mousedown focus: when this press outside-dismisses an open
+    // popover, Chrome's focus action can scroll the dialog body under the pointer.
+    trigger.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        trigger.focus({ preventScroll: true });
+    });
     trigger.addEventListener('click', (e) => {
         e.stopPropagation();
         if (openPopoverTrigger() === trigger) {

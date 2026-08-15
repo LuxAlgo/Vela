@@ -1117,9 +1117,12 @@ export class InputsUI {
         // to auto too, and a transient sliver of horizontal overflow (layout settling, the
         // vertical scrollbar stealing width from the fit-content card) then flashes a
         // horizontal scrollbar across the bottom of the dialog.
+        // overflow-anchor is OFF: Chrome's scroll anchoring miscompensates when a body-portaled
+        // popover (color picker, select list) is swapped in one gesture, jumping this scroller
+        // to its max — content here only scrolls when the user scrolls it.
         body.style.cssText = this.mobileLayout
-            ? 'padding:16px 20px;overflow-y:auto;overflow-x:hidden;flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:16px;row-gap:16px;'
-            : 'padding:16px 20px;overflow-y:auto;overflow-x:hidden;flex:1 1 auto;display:grid;grid-template-columns:max-content 1fr;align-items:center;column-gap:16px;row-gap:16px;';
+            ? 'padding:16px 20px;overflow-y:auto;overflow-x:hidden;overflow-anchor:none;flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:16px;row-gap:16px;'
+            : 'padding:16px 20px;overflow-y:auto;overflow-x:hidden;overflow-anchor:none;flex:1 1 auto;display:grid;grid-template-columns:max-content 1fr;align-items:center;column-gap:16px;row-gap:16px;';
         for (const group of groupInputs(inputs)) {
             const section = document.createElement('div');
             section.style.cssText = 'display:contents;';

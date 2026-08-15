@@ -5,6 +5,9 @@ export const POPOVER_CSS = `
     position: fixed;
     z-index: var(--vela-z-popover);
     box-sizing: border-box;
+    /* Never serve as a scroll anchor: the shell is portaled and re-placed between
+       gestures, and anchoring against it jumps the scroller underneath. */
+    overflow-anchor: none;
 }
 .vela-popover[data-position='absolute'] { position: absolute; }
 .vela-popover[hidden] { display: none !important; }

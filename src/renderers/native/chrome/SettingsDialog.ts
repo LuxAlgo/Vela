@@ -563,7 +563,9 @@ export class SettingsDialog {
         }
         const paneHost = document.createElement('div');
         paneHost.className = 'vela-sd-pane';
-        paneHost.style.cssText = mobile ? 'flex:1;min-width:0;overflow-y:auto;padding:6px 14px calc(14px + env(safe-area-inset-bottom, 0px));' : 'flex:1;overflow-y:auto;padding:6px 18px 14px;';
+        // overflow-anchor off: Chrome's scroll anchoring can jump this scroller when a
+        // body-portaled popover (select list, color picker) is swapped in one gesture.
+        paneHost.style.cssText = mobile ? 'flex:1;min-width:0;overflow-y:auto;overflow-anchor:none;padding:6px 14px calc(14px + env(safe-area-inset-bottom, 0px));' : 'flex:1;overflow-y:auto;overflow-anchor:none;padding:6px 18px 14px;';
 
         const panes: Array<{ title: string; el: HTMLElement; tab: HTMLButtonElement; style?: string; visibility?: string }> = [];
         let current: HTMLElement | null = null;
