@@ -6,6 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Tabs in the indicator settings dialog.** An indicator input can name the tab it
+  lives on, and the settings dialog grows one tab per name next to the default
+  "Inputs" tab — click a tab to switch between its controls. Inputs that name no tab
+  stay on "Inputs", so existing indicators look exactly as before.
 - **Favorite timeframes.** Hover a row in the topbar's timeframe dropdown and a star
   appears — click it to pin that timeframe (starred rows keep their gold star). Pinned
   timeframes sit as duration-sorted chips with the current value highlighted in place;

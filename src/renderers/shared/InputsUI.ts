@@ -981,7 +981,8 @@ export class InputsUI {
     /**
      * Open the indicator's settings as a centered modal over the chart — a themed,
      * dependency-free port of the app's tabbed script-settings dialog: a header with the
-     * indicator title, an "Inputs" tab, a scrollable body that groups inputs by `group=`
+     * indicator title, a tab strip (the default "Inputs" tab plus any tab the inputs
+     * declare via `tab=`), a scrollable body per tab that groups inputs by `group=`
      * (section headers) and packs `inline=` inputs onto one row, and a sticky footer.
      *
      * Edits commit LIVE (each change re-runs the indicator), matching the current
@@ -1048,19 +1049,61 @@ export class InputsUI {
         // Dragging is a pointer affordance; a fullscreen mobile card has nowhere to go.
         if (!this.mobileLayout) makeDialogDraggable(card, header, { closeSelector: 'button' });
 
-        // ── Tab strip (Inputs) — full-width underline with the active tab underlined. ──
+        // ── Tab strip — one underlined tab per `tab=` declared by the inputs (default
+        // "Inputs"), full-width underline with the ACTIVE tab's label underlined. Each
+        // tab owns its own scrollable body; switching toggles which body is shown. ──
+        const tabDefs = tabInputs(row.inputs);
         const tabs = document.createElement('div');
         tabs.style.cssText = `display:flex;gap:16px;padding:0 20px;border-bottom:1px solid ${border};flex:0 0 auto;`;
-        const tab = document.createElement('div');
-        tab.textContent = 'Inputs';
-        tab.style.cssText = `padding:8px 2px;margin-bottom:-1px;border-bottom:2px solid ${fg};font-weight:600;font-size:13px;`;
-        tabs.appendChild(tab);
+        const tabEls: HTMLElement[] = [];
+        const bodies: HTMLElement[] = [];
+        const activate = (idx: number): void => {
+            for (let i = 0; i < tabEls.length; i += 1) {
+                const active = i === idx;
+                const el = tabEls[i]!;
+                el.style.borderBottomColor = active ? fg : 'transparent';
+                el.style.color = active ? 'inherit' : 'var(--vela-fg-muted)';
+                el.classList.toggle('vela-ind-tab-active', active);
+                bodies[i]!.style.display = active ? 'flex' : 'none';
+            }
+        };
+        for (const [idx, def] of tabDefs.entries()) {
+            const tab = document.createElement('div');
+            tab.textContent = def.name;
+            tab.className = 'vela-ind-tab';
+            // The transparent underline reserves the active tab's 2px so switching never
+            // shifts the strip; a lone tab keeps today's static look (no pointer).
+            tab.style.cssText = `padding:8px 2px;margin-bottom:-1px;border-bottom:2px solid transparent;font-weight:600;font-size:13px;${tabDefs.length > 1 ? 'cursor:pointer;' : ''}`;
+            tab.addEventListener('click', () => activate(idx));
+            tabs.appendChild(tab);
+            tabEls.push(tab);
+            bodies.push(this.buildTabBody(def.inputs, row));
+        }
         card.appendChild(tabs);
+        for (const body of bodies) card.appendChild(body);
+        activate(0);
 
-        // ── Body (scrollable) — one grid per `group=` section. ──
+        // ── Footer — Cancel reverts live edits, Ok keeps them. ──
+        const footer = document.createElement('div');
+        footer.style.cssText = `display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid ${border};flex:0 0 auto;`;
+        footer.append(
+            this.dialogButton('Cancel', false, () => this.revertAndClose()),
+            this.dialogButton('Ok', true, () => this.closeDialog()),
+        );
+        card.appendChild(footer);
+
+        backdrop.appendChild(card);
+        (this.dialogHost ?? this.container).appendChild(backdrop);
+        this.dialog = card;
+        this.backdrop = backdrop;
+        document.addEventListener('keydown', this.onDialogKey);
+    }
+
+    /** One tab's scrollable body — one grid per `group=` section of that tab's inputs. */
+    private buildTabBody(inputs: InputSchema[], row: LegendRow): HTMLElement {
         const body = document.createElement('div');
         body.style.cssText = 'padding:14px 20px 6px;overflow-y:auto;flex:1 1 auto;display:flex;flex-direction:column;gap:24px;';
-        for (const group of groupInputs(row.inputs)) {
+        for (const group of groupInputs(inputs)) {
             const section = document.createElement('div');
             section.style.cssText = 'display:flex;flex-direction:column;gap:14px;';
             if (group.name) {
@@ -1079,22 +1122,7 @@ export class InputsUI {
             section.appendChild(grid);
             body.appendChild(section);
         }
-        card.appendChild(body);
-
-        // ── Footer — Cancel reverts live edits, Ok keeps them. ──
-        const footer = document.createElement('div');
-        footer.style.cssText = `display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid ${border};flex:0 0 auto;`;
-        footer.append(
-            this.dialogButton('Cancel', false, () => this.revertAndClose()),
-            this.dialogButton('Ok', true, () => this.closeDialog()),
-        );
-        card.appendChild(footer);
-
-        backdrop.appendChild(card);
-        (this.dialogHost ?? this.container).appendChild(backdrop);
-        this.dialog = card;
-        this.backdrop = backdrop;
-        document.addEventListener('keydown', this.onDialogKey);
+        return body;
     }
 
     private closeDialog(): void {
@@ -1502,6 +1530,36 @@ export function nameOf(inp: InputSchema): string {
     return t.length > 0 ? t.charAt(0).toUpperCase() + t.slice(1) : '';
 }
 
+/** The settings-dialog tab hosting inputs that declare no `tab=`. */
+export const DEFAULT_INPUT_TAB = 'Inputs';
+
+/** One settings-dialog tab: its strip label and the inputs it hosts (declaration order). */
+export interface InputTab {
+    name: string;
+    inputs: InputSchema[];
+}
+
+/**
+ * Partition inputs into settings-dialog tabs. Inputs without a `tab=` land on the
+ * default "Inputs" tab (an explicit `tab='Inputs'` merges with it), which leads the
+ * strip whenever it has members; declared tabs follow in first-seen order. Within a
+ * tab, declaration order is kept — `group=`/`inline=` layout happens per tab.
+ */
+export function tabInputs(inputs: InputSchema[]): InputTab[] {
+    const byTab = new Map<string, InputSchema[]>();
+    for (const inp of inputs) {
+        const name = inp.tab && inp.tab.length > 0 ? inp.tab : DEFAULT_INPUT_TAB;
+        if (!byTab.has(name)) byTab.set(name, []);
+        byTab.get(name)!.push(inp);
+    }
+    const names = [...byTab.keys()];
+    if (names.includes(DEFAULT_INPUT_TAB)) {
+        names.splice(names.indexOf(DEFAULT_INPUT_TAB), 1);
+        names.unshift(DEFAULT_INPUT_TAB);
+    }
+    return names.map((name) => ({ name, inputs: byTab.get(name)! }));
+}
+
 interface InputGroup {
     name: string | null;
     rows: InputSchema[][];
@@ -1545,7 +1603,7 @@ const SELECT_CHEVRON_SVG = iconAt('chevron-down', 16);
 
 const DIALOG_STYLE_ID = 'vela-ind-dialog-styles';
 /** Bump when the injected sheet's rules change so an already-mounted page refreshes them. */
-const DIALOG_STYLE_REV = '10';
+const DIALOG_STYLE_REV = '11';
 
 /** Inject the scoped styles inline cssText can't reach (color-swatch, focus ring, scrollbar). */
 function ensureDialogStyles(): void {
@@ -1566,6 +1624,8 @@ function ensureDialogStyles(): void {
 .vela-ind-dialog ::-webkit-scrollbar{width:9px;}
 .vela-ind-dialog ::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
 .vela-ind-dialog ::-webkit-scrollbar-track{background:transparent;}
+.vela-ind-tab{transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
+.vela-ind-tab:not(.vela-ind-tab-active):hover{color:var(--vela-fg-bright);}
 .vela-ind-hint{background:var(--vela-hover);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-ind-hint:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
 .vela-ind-ctl,.vela-ind-close{background-color:transparent;color:inherit;transition:color var(--vela-dur-fast) ease,background-color var(--vela-dur-fast) ease;}

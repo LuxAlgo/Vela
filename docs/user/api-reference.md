@@ -89,7 +89,7 @@ What `addIndicator` returns. Usable immediately.
 |---|---|
 | `id` | Stable, content-addressed identity for this indicator. |
 | `title` | Display title (overridable via the `title` option). |
-| `inputs` | The inputs parsed from the script source — each with a `key`, `title`, `type`, `defval`, and optional `min`/`max`/`step`/`options`/`group`/`inline`/`tooltip`. Populated once the script is prepared. |
+| `inputs` | The inputs parsed from the script source — each with a `key`, `title`, `type`, `defval`, and optional `min`/`max`/`step`/`options`/`group`/`inline`/`tab`/`tooltip`. Populated once the script is prepared. |
 | `visible` | Whether the indicator is currently shown. |
 | `setInput(key, value)` | Change one input by its key. Triggers a re-run (an input edit can restructure output, so this may remount the indicator). |
 | `setInputs(values)` | Change several inputs at once, keyed by input key or title. |
