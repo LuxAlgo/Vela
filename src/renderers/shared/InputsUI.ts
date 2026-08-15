@@ -1049,8 +1049,7 @@ export class InputsUI {
         closeBtn.setAttribute('aria-label', 'Close');
         this.dialogTips.push(attachChromeTooltip(closeBtn, { host: this.container, theme: () => this.theme, text: () => 'Close' }));
         closeBtn.innerHTML = iconAt('close', 15);
-        closeBtn.className = 'vela-ind-ctl';
-        closeBtn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;background:transparent;border:none;line-height:0;padding:2px;flex:0 0 auto;';
+        closeBtn.className = 'vela-ind-dlg-close';
         closeBtn.addEventListener('click', () => this.closeDialog());
         header.append(hTitle, closeBtn);
         card.appendChild(header);
@@ -1964,7 +1963,7 @@ const CLOCK_SVG = iconAt('clock', 14);
 
 const DIALOG_STYLE_ID = 'vela-ind-dialog-styles';
 /** Bump when the injected sheet's rules change so an already-mounted page refreshes them. */
-const DIALOG_STYLE_REV = '22';
+const DIALOG_STYLE_REV = '23';
 
 /** Inject the scoped styles inline cssText can't reach (color-swatch, focus ring, scrollbar). */
 function ensureDialogStyles(): void {
@@ -2027,6 +2026,9 @@ function ensureDialogStyles(): void {
 .vela-ind-ctl svg,.vela-ind-close svg{width:${LEGEND_ICON_PX}px;height:${LEGEND_ICON_PX}px;display:block;flex:none;stroke-width:1;}
 .vela-ind-ctl:hover{background-color:var(--vela-hover-strong);}
 .vela-ind-close:hover{color:var(--vela-danger) !important;background-color:var(--vela-hover-strong);}
+.vela-ind-dlg-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;flex:0 0 auto;border-radius:var(--vela-radius-sm);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-ind-dlg-close:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-ind-dlg-close svg{width:15px;height:15px;display:block;flex:none;}
 .vela-ind-fold{transition:border-color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
 .vela-ind-fold:hover{border-color:var(--vela-border-strong);opacity:0.9;}
 .vela-ind-menuitem{background:transparent;transition:background var(--vela-dur-fast) ease;}
