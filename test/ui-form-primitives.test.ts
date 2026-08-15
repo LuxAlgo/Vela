@@ -115,9 +115,10 @@ describe('selectController', () => {
         expect(seen).toEqual(['a']);
     });
 
-    it('sm does not fill; md does', () => {
+    it('sm does not fill; md does unless fill is false', () => {
         expect(selectController({ options, size: 'sm' }).fill).toBe(false);
         expect(selectController({ options, size: 'md' }).fill).toBe(true);
+        expect(selectController({ options, size: 'md', fill: false }).fill).toBe(false);
     });
 });
 
@@ -129,6 +130,9 @@ describe('numberInputController', () => {
         expect(live.apply(99)).toBe(99);
         const forced = numberInputController({ value: 5, min: 0, max: 10, commit: 'live', clamp: true });
         expect(forced.apply(99)).toBe(10);
+        const liveSteppers = numberInputController({ value: 5, commit: 'live', steppers: true });
+        expect(liveSteppers.steppers).toBe(true);
+        expect(numberInputController({ value: 5, commit: 'live' }).steppers).toBe(false);
     });
 
     it('sync writes without emitting', () => {

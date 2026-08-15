@@ -1,8 +1,10 @@
-export const NUMBER_STYLE_ID = 'vela-ui-number';
+export const NUMBER_STYLE_ID = 'vela-ui-number-2';
 
 export const NUMBER_CSS = `
 .vela-num { position: relative; display: inline-block; min-width: 0; }
 .vela-num[data-fill] { width: 100%; }
+.vela-num:not([data-fill]) { width: 100px; flex: none; justify-self: start; }
+.vela-num:not([data-fill])[data-compact] { width: 80px; }
 .vela-num input {
     width: 100%;
     box-sizing: border-box;

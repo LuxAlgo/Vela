@@ -1,4 +1,4 @@
-export const SELECT_STYLE_ID = 'vela-ui-select';
+export const SELECT_STYLE_ID = 'vela-ui-select-2';
 
 export const SELECT_CSS = `
 .vela-select { position: relative; display: inline-block; min-width: 0; }
@@ -24,9 +24,9 @@ export const SELECT_CSS = `
 .vela-select-trigger:hover { border-color: var(--vela-fg-muted); }
 .vela-select-trigger:focus { border-color: var(--vela-focus); box-shadow: 0 0 0 3px var(--vela-focus-soft); }
 /* As a grid item (chart-settings rows dissolve via display:contents into a shared
-   max-content column) the wrap must NOT stretch to the column: it sizes to its own
-   widest option, like the native select it replaces. */
-.vela-select[data-size='sm'] { max-width: 200px; flex: 0 0 auto; justify-self: start; }
+   max-content column) a hugging wrap must NOT stretch to the column: it sizes to
+   its own widest option, like the native select it replaces. */
+.vela-select:not([data-fill]) { max-width: 200px; flex: 0 0 auto; justify-self: start; }
 .vela-select[data-size='sm'] .vela-select-trigger {
     height: 28px;
     background: var(--vela-surface-elev);

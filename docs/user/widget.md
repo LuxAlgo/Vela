@@ -286,5 +286,6 @@ Three levels, shallow to deep:
    the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `Popover`, `Switch`,
    `Select`, `NumberInput`, `TextField`, `ColorField` / `buildColorPicker`,
    `KeymapManager`) are exported from `vela/ui` for building your own panels against
-   the headless core. Form controls share `sm` (chart settings) and `md` (indicator
-   dialog) sizes so a host panel can match either surface.
+   the headless core. Form controls share `md` (settings dialogs: 34px fields, hover
+   steppers, chip colors) and a compact `sm` size so a host panel can match either
+   surface.

@@ -11,6 +11,9 @@ export interface NumberInputOptions extends NumberInputControllerOptions {
     placeholder?: string;
     emptyValue?: number;
     compact?: boolean;
+    /** Stretch to the parent. Defaults to on for `md`, off for `sm`. Chart settings
+     *  passes `false` so the field stays a 100px kit column instead of filling the pane. */
+    fill?: boolean;
 }
 
 export class NumberInput {
@@ -32,7 +35,7 @@ export class NumberInput {
         const wrap = doc.createElement('div');
         wrap.className = 'vela-num';
         wrap.dataset.size = this.ctrl.size;
-        if (this.ctrl.size !== 'sm') wrap.dataset.fill = '';
+        if (opts.fill ?? this.ctrl.size !== 'sm') wrap.dataset.fill = '';
         if (opts.compact) wrap.dataset.compact = '';
         if (this.ctrl.steppers) wrap.dataset.steppers = '';
 

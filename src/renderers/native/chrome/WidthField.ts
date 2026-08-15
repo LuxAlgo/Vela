@@ -9,16 +9,17 @@ import { Popover, closeOpenPopovers, openPopoverTrigger } from '../../../ui/comp
 /** The selectable weights — the same ladder the drawings' width menu offers. */
 export const WIDTH_FIELD_OPTIONS: readonly number[] = [1, 2, 3, 4, 5];
 
-const STYLE_ID = 'vela-width-field';
+const STYLE_ID = 'vela-width-field-2';
 
 const WIDTH_CSS = `
-.vela-width-field{height:28px;padding:0 8px;border:1px solid var(--vela-border-strong);border-radius:var(--vela-radius-sm);background:var(--vela-surface-elev);cursor:pointer;display:inline-flex;align-items:center;gap:8px;flex:none;color:var(--vela-fg);font-family:inherit;outline:none;}
+.vela-width-field{height:34px;padding:0 26px 0 8px;border:1px solid var(--vela-border-strong);border-radius:6px;background:transparent;cursor:pointer;display:inline-flex;align-items:center;gap:8px;flex:none;justify-self:start;color:var(--vela-fg-bright);font-size:14px;font-family:inherit;outline:none;position:relative;transition:border-color 0.12s ease,box-shadow 0.12s ease;}
 .vela-width-field:hover{border-color:var(--vela-fg-muted);}
-.vela-width-field-caret{display:flex;color:var(--vela-fg-muted);}
-.vela-width-field-pop{background:var(--vela-surface-overlay);border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:4px;display:flex;flex-direction:column;gap:1px;color:var(--vela-fg);}
-.vela-width-field-item{display:flex;align-items:center;gap:8px;min-width:96px;padding:5px 8px;border:none;border-radius:5px;background:transparent;color:inherit;cursor:pointer;text-align:left;font:inherit;}
-.vela-width-field-item:hover{background:var(--vela-hover-strong);}
-.vela-width-field-item[data-active='1']{background:var(--vela-active);}
+.vela-width-field:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
+.vela-width-field-caret{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;opacity:0.55;color:inherit;line-height:0;pointer-events:none;}
+.vela-width-field-pop{background:var(--vela-bg);border:none;border-radius:6px;box-shadow:var(--vela-shadow);padding:4px;display:flex;flex-direction:column;gap:1px;color:var(--vela-fg);font:14px var(--vela-font);}
+.vela-width-field-item{display:flex;align-items:center;gap:8px;min-width:96px;padding:7px 10px;border:none;border-radius:4px;background:transparent;color:inherit;cursor:pointer;text-align:left;font:inherit;}
+.vela-width-field-item:hover{background:var(--vela-hover);}
+.vela-width-field-item[data-active='1']{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
 `;
 
 /** A horizontal line glyph whose stroke IS the previewed weight. */

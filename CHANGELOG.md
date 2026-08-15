@@ -27,6 +27,10 @@ All notable changes to Vela, newest first.
 - **Chart settings dropdowns use the themed list.** Selecting a value in Chart
   settings opens the same overlay list the indicator dialog already used, instead
   of the operating system's native popup.
+- **Chart settings uses the same kit chrome as indicator settings.** Number fields
+  are 34px with a focus ring and hover steppers, color inputs are the inset chip,
+  and toggles / dropdowns / line-width pickers match that 14px field instead of
+  the older 28px compact chrome. Values still commit live as you type.
 - **Indicator settings sit closer together.** The dialog follows the same rhythm as
   the rest of the settings chrome: a 20px title with more air above the tab strip,
   16px between a label and its control, 34×100px fields, 16px between rows, and a

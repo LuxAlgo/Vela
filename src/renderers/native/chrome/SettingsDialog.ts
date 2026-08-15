@@ -69,7 +69,7 @@ function styleLabel(id: string): string {
 }
 
 const SD_STYLE_ID = 'vela-settings-controls';
-const SD_STYLE_REV = '2';
+const SD_STYLE_REV = '3';
 
 /**
  * The dialog's surface palette. It follows the STABLE chrome surface (the tokens written on
@@ -154,7 +154,7 @@ function ensureControlStyles(): void {
 .vela-sd-mobile .vela-sd-itabs::-webkit-scrollbar{display:none;}
 .vela-sd-mobile .vela-sd-itab{height:36px;flex:none;}
 .vela-sd-mobile .vela-switch{width:22px;height:22px;}
-.vela-sd-mobile .vela-select[data-size='sm'] .vela-select-trigger,.vela-sd-mobile .vela-num[data-size='sm'] input{height:34px;}
+.vela-sd-mobile .vela-select-trigger,.vela-sd-mobile .vela-num input,.vela-sd-mobile .vela-width-field{height:34px;}
 .vela-sd-mobile .vela-sd-close{width:40px;height:40px;}
 .vela-sd-mobile .vela-sd-btn{height:38px;}
 .vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span{white-space:normal !important;}
@@ -811,8 +811,8 @@ export class SettingsDialog {
 
     /**
      * Build ONE inline control from its descriptor — the factory behind the composite
-     * row path. `compact` narrows number inputs on toggle rows (the historical inline
-     * width) while standalone rows keep the full-width input.
+     * row path. `compact` narrows number inputs on toggle rows (80px) while standalone
+     * rows keep the 100px kit column.
      */
     private inlineControl(
         c: SettingsInlineControl,
@@ -845,7 +845,8 @@ export class SettingsDialog {
             const sel = new Select({
                 options: normalizeSelectOptions(c.options).map(([value, label]) => ({ value, label })),
                 value: current,
-                size: 'sm',
+                size: 'md',
+                fill: false,
                 theme: this.theme,
                 onChange: (v) => put(c.key, v),
             });
@@ -862,10 +863,11 @@ export class SettingsDialog {
             min: c.min,
             max: c.max,
             step: c.step ?? 1,
-            size: 'sm',
+            size: 'md',
+            fill: false,
             commit: 'live',
             clamp: c.placeholder !== undefined,
-            steppers: false,
+            steppers: true,
             compact,
             title: c.label,
             placeholder: c.placeholder,
@@ -1146,7 +1148,7 @@ export class SettingsDialog {
      *  duplicate-keyed rows stay honest when another row edits the shared key. */
     private swatch(value: string, onChange: (v: string) => void, get?: () => string): HTMLElement {
         let current = value;
-        return colorField(this.theme, () => (get ? get() : current), (v) => { current = v; onChange(v); });
+        return colorField(this.theme, () => (get ? get() : current), (v) => { current = v; onChange(v); }, { shape: 'circle' });
     }
 
     /** A label row with arbitrary controls in the shared control column (no toggle). */
@@ -1193,7 +1195,7 @@ export class SettingsDialog {
     private colorRow(label: string, value: string, onChange: (v: string) => void): HTMLElement {
         const { wrap } = this.row(label);
         let current = value;
-        wrap.appendChild(colorField(this.theme, () => current, (v) => { current = v; onChange(v); }));
+        wrap.appendChild(colorField(this.theme, () => current, (v) => { current = v; onChange(v); }, { shape: 'circle' }));
         return wrap;
     }
 
@@ -1210,7 +1212,7 @@ export class SettingsDialog {
      *  only one visible at a time; see `typeRow`). */
     private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean): HTMLElement {
         const wrap = document.createElement('div');
-        const sw = new Switch({ checked: value, size: 'sm', onChange: (v) => {
+        const sw = new Switch({ checked: value, size: 'md', tone: 'bright', onChange: (v) => {
             onToggle(v);
             if (controls.length > 0) syncDim(v);
         } });
@@ -1254,7 +1256,7 @@ export class SettingsDialog {
 
     private numberRow(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
         const { wrap } = this.row(label);
-        wrap.appendChild(new NumberInput({ value, min, max, step, size: 'sm', commit: 'live', onChange }).el);
+        wrap.appendChild(new NumberInput({ value, min, max, step, size: 'md', fill: false, commit: 'live', steppers: true, onChange }).el);
         return wrap;
     }
 
@@ -1264,7 +1266,8 @@ export class SettingsDialog {
         wrap.appendChild(new Select({
             options: options.map(([v, l]) => ({ value: v, label: l })),
             value,
-            size: 'sm',
+            size: 'md',
+            fill: false,
             theme: this.theme,
             onChange,
         }).el);

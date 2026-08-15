@@ -119,17 +119,19 @@ indicator dialog, chart settings, and drawing toolbar.
   `matchWidth`) + clamp boundary (viewport, an element, or a rect getter) + capture-phase
   outside-dismiss + a process-wide single-open registry (`closeOpenPopovers`).
 - **`Switch`** — square check-toggle. `size: 'md'` is 20px with `--vela-fg-bright` on-fill
-  (indicator dialog); `size: 'sm'` is 18px with `--vela-selected-bg` (chart settings).
+  (settings dialogs); `size: 'sm'` is 18px with `--vela-selected-bg` (compact chrome).
   `role="switch"`. `setChecked` does not emit.
 - **`Select`** — trigger + portaled themed list (not the OS popup) with a hand-rolled
-  overlay scrollbar. `md` is 34px/14px and fills its parent; `sm` is 28px/13px with
-  max-width 200px. `setValue` does not emit.
+  overlay scrollbar. `md` is 34px/14px and fills its parent unless `fill: false`
+  (chart settings hugs content, max-width 200px). `sm` is 28px/13px. `setValue` does
+  not emit.
 - **`NumberInput`** — `commit: 'blur'` clamps and shows hover steppers (press-repeat
-  400ms then 60ms); `commit: 'live'` does not clamp and has no steppers. `sync` /
+  400ms then 60ms); `commit: 'live'` emits per keystroke. Chart settings uses live
+  commit with steppers on, at the same 34px field as the indicator dialog. `sync` /
   `setValue` do not emit.
 - **`TextField`** — blur/Enter commit. `setValue` does not emit.
-- **`ColorField`** / **`buildColorPicker`** — square trigger (chart settings) or circle
-  chip (indicator dialog); shared palette + recents + opacity slider. `splitColor` /
+- **`ColorField`** / **`buildColorPicker`** — `circle` chip (settings dialogs: square
+  swatch inset from a matching field border) or compact `square` trigger. `splitColor` /
   `combineColor` stay available from the drawings compat re-export in `browser.ts`.
 
 The primitive's **root is one element**. Chart-settings rows use `display:contents`, so a

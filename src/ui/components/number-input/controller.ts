@@ -10,7 +10,9 @@ export interface NumberInputControllerOptions {
     step?: number;
     integer?: boolean;
     size?: NumberSize;
-    /** `blur` (indicator dialog: clamp + steppers) vs `live` (chart settings: no clamp). */
+    /** `blur` clamps on commit (indicator dialog). `live` emits on every keystroke
+     *  (chart settings). Steppers default on for `blur`; pass `steppers: true` to
+     *  keep them with live commit. */
     commit?: NumberCommit;
     steppers?: boolean;
     clamp?: boolean;
