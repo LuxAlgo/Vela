@@ -1112,9 +1112,13 @@ export class InputsUI {
         const body = document.createElement('div');
         // `display:contents` on each group lets headers + rows participate in this
         // one grid; per-section grids would each pick their own control-column width.
+        // overflow-x is pinned to hidden: `overflow-y:auto` alone would compute overflow-x
+        // to auto too, and a transient sliver of horizontal overflow (layout settling, the
+        // vertical scrollbar stealing width from the fit-content card) then flashes a
+        // horizontal scrollbar across the bottom of the dialog.
         body.style.cssText = this.mobileLayout
-            ? 'padding:16px 20px;overflow-y:auto;flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:16px;row-gap:16px;'
-            : 'padding:16px 20px;overflow-y:auto;flex:1 1 auto;display:grid;grid-template-columns:max-content 1fr;align-items:center;column-gap:16px;row-gap:16px;';
+            ? 'padding:16px 20px;overflow-y:auto;overflow-x:hidden;flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:16px;row-gap:16px;'
+            : 'padding:16px 20px;overflow-y:auto;overflow-x:hidden;flex:1 1 auto;display:grid;grid-template-columns:max-content 1fr;align-items:center;column-gap:16px;row-gap:16px;';
         for (const group of groupInputs(inputs)) {
             const section = document.createElement('div');
             section.style.cssText = 'display:contents;';
@@ -1963,7 +1967,7 @@ const CLOCK_SVG = iconAt('clock', 14);
 
 const DIALOG_STYLE_ID = 'vela-ind-dialog-styles';
 /** Bump when the injected sheet's rules change so an already-mounted page refreshes them. */
-const DIALOG_STYLE_REV = '23';
+const DIALOG_STYLE_REV = '24';
 
 /** Inject the scoped styles inline cssText can't reach (color-swatch, focus ring, scrollbar). */
 function ensureDialogStyles(): void {
@@ -2014,7 +2018,7 @@ function ensureDialogStyles(): void {
 .vela-ind-cal-day:hover{background:var(--vela-hover);}
 .vela-ind-cal-day[data-checked]{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
 .vela-ind-cal-day[data-today]:not([data-checked]){box-shadow:inset 0 0 0 1px var(--vela-border-strong);}
-.vela-ind-dialog ::-webkit-scrollbar{width:9px;}
+.vela-ind-dialog ::-webkit-scrollbar{width:9px;height:9px;}
 .vela-ind-dialog ::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
 .vela-ind-dialog ::-webkit-scrollbar-track{background:transparent;}
 .vela-ind-dialog ::-webkit-scrollbar-button{display:none;width:0;height:0;}
