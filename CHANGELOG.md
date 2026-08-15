@@ -19,6 +19,15 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Indicator settings sit closer together.** The dialog follows the same rhythm as
+  the rest of the settings chrome: a 20px title with more air above the tab strip,
+  16px between a label and its control, 34×100px fields, 16px between rows, and a
+  16px footer around 34px Cancel/Ok. A color input shows a square chip with the
+  same field border as the other controls and opens the shared swatch picker.
+  Dropdowns and the date calendar use the dialog surface plus an outer shadow,
+  the same 14px type, and a thin overlay scrollbar. Number fields grow small
+  right-side steppers on hover, session times are typeable comboboxes, and group
+  headers keep more space above and below the title.
 - **Trend-line labels follow the line.** A label on a trend line, ray, extended
   line, info line, or trend angle sits along the segment instead of staying
   horizontal, and flips so the text never reads upside-down.

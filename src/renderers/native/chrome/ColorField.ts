@@ -8,18 +8,25 @@ import { buildColorPicker, transparencyChecker } from '../drawings/colorPicker';
 
 const CHECKER = transparencyChecker(8);
 const STYLE_ID = 'vela-color-field';
+/** Bump when the injected sheet's rules change so an already-mounted page refreshes them. */
+const STYLE_REV = '6';
 
 function ensureStyles(): void {
-    if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
-    const st = document.createElement('style');
+    if (typeof document === 'undefined') return;
+    const existing = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+    if (existing?.dataset.rev === STYLE_REV) return;
+    const st = existing ?? document.createElement('style');
     st.id = STYLE_ID;
+    st.dataset.rev = STYLE_REV;
     st.textContent = `
 .vela-color-field{width:24px;height:24px;padding:2px;border:1px solid var(--vela-border);border-radius:0;background:var(--vela-surface-sunken);cursor:pointer;display:inline-flex;flex:none;}
 .vela-color-field:hover{border-color:var(--vela-fg-muted);}
 .vela-color-field-swatch{display:block;width:100%;height:100%;border-radius:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.25);}
+.vela-color-field-circle{width:26px;height:26px;padding:3px;border:1px solid var(--vela-border-strong);border-radius:4px;background:transparent;overflow:hidden;}
+.vela-color-field-circle .vela-color-field-swatch{border-radius:2px;box-shadow:none;}
 .vela-color-field-pop{position:fixed;z-index:6000;background:var(--vela-surface-overlay);border:1px solid var(--vela-border);border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow);padding:10px;}
 `;
-    document.head.appendChild(st);
+    if (!existing) document.head.appendChild(st);
 }
 
 let openPopover: { el: HTMLElement; trigger: HTMLElement; onOutside: (e: Event) => void; reflow: () => void } | null = null;
@@ -47,12 +54,18 @@ function place(pop: HTMLElement, trigger: HTMLElement): void {
     pop.style.top = `${Math.round(top)}px`;
 }
 
+/** Closed-state swatch shape. `square` is the chart-settings field; `circle` is the
+ *  indicator-dialog preview — a square chip inset from a matching square field border. */
+export interface ColorFieldOpts {
+    shape?: 'square' | 'circle';
+}
+
 /** Build a color field bound to `getVal()`/`onVal(v)` — returns the trigger swatch. */
-export function colorField(theme: VelaTheme, getVal: () => string, onVal: (v: string) => void): HTMLElement {
+export function colorField(theme: VelaTheme, getVal: () => string, onVal: (v: string) => void, opts?: ColorFieldOpts): HTMLElement {
     ensureStyles();
     const trigger = document.createElement('button');
     trigger.type = 'button';
-    trigger.className = 'vela-color-field';
+    trigger.className = opts?.shape === 'circle' ? 'vela-color-field vela-color-field-circle' : 'vela-color-field';
     const swatch = document.createElement('span');
     swatch.className = 'vela-color-field-swatch';
     trigger.appendChild(swatch);

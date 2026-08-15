@@ -1,11 +1,12 @@
 import type { InputSchema, InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { LegendActionView } from '../../core/ports/IChartRenderer';
 import type { VelaTheme, MoveTarget } from '../../core/options';
-import { isDarkColor, toHex6, withAlpha } from '../../core/color';
+import { isDarkColor, withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip } from './chrome-tooltip';
 import { makeDialogDraggable } from './dialogDragging';
+import { colorField, closeColorPopover } from '../native/chrome/ColorField';
 
 /** A pane as the legend move UI sees it (id + label + vertical bounds, top-to-bottom order). */
 export interface LegendPaneView {
@@ -141,6 +142,14 @@ export class InputsUI {
     private dialogTips: Array<() => void> = [];
     /** Open "Move to" menu (kept so it can be torn down). */
     private moveMenu: HTMLElement | null = null;
+    /** Open settings-dialog choice menu (custom dropdown — torn down with the dialog). */
+    private choiceMenu: HTMLElement | null = null;
+    private choiceMenuAnchor: HTMLElement | null = null;
+    private choiceMenuOnOutside: ((e: Event) => void) | null = null;
+    /** Open settings-dialog calendar popover (torn down with the dialog). */
+    private calendarPop: HTMLElement | null = null;
+    private calendarAnchor: HTMLElement | null = null;
+    private calendarOnOutside: ((e: Event) => void) | null = null;
     /** Collapsed panes → the master indicator id to keep visible (others hidden in the strip). */
     private paneCollapse = new Map<string, string | null>();
     /** The user folded the indicator legend away behind the chevron — CHART-WIDE: every
@@ -166,6 +175,8 @@ export class InputsUI {
     private readonly onDialogKey = (e: KeyboardEvent): void => {
         if (e.key === 'Escape') {
             e.preventDefault();
+            if (this.choiceMenu) { this.closeChoiceMenu(); return; }
+            if (this.calendarPop) { this.closeCalendar(); return; }
             this.closeDialog();
         }
     };
@@ -1000,9 +1011,6 @@ export class InputsUI {
         const font = t.fontFamily || '-apple-system,Segoe UI,sans-serif';
         const border = this.neutralBorder();
         const fg = this.strongText();
-        // Drives native-control rendering (the date field's calendar icon + the <select> dropdown
-        // popup) so they match the dialog: on dark themes the icon is light and the option list is
-        // dark with light text, instead of a white popup with invisible white text.
         const scheme = this.isDarkTheme() ? 'dark' : 'light';
 
         // Backdrop — centers the card and captures outside clicks. Transparent (no scrim): the
@@ -1022,7 +1030,7 @@ export class InputsUI {
         // Shrink-to-fit width (capped), mirroring the reference dialog's `w-fit sm:max-w-2xl`:
         // the card is only as wide as the widest input row needs — no fixed width stretching the
         // full-width text area — while the cap + min keep it a sensible size.
-        card.style.cssText = `display:flex;flex-direction:column;width:fit-content;min-width:min(360px,90%);max-width:min(640px,94%);max-height:82%;background:${t.background};border:1px solid ${border};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${fg};color-scheme:${scheme};font:13px ${font};overflow:hidden;`;
+        card.style.cssText = `display:flex;flex-direction:column;width:fit-content;min-width:min(380px,90%);max-width:min(640px,94%);max-height:82%;background:${t.background};border:1px solid ${border};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${fg};color-scheme:${scheme};font:14px ${font};overflow:hidden;`;
         // Mobile: fullscreen, edge to edge — a floating card is unusable at phone widths.
         if (this.mobileLayout) card.style.cssText += 'width:100%;min-width:0;max-width:none;height:100%;max-height:none;border:none;border-radius:0;';
         applyChromeTokens(card, t);
@@ -1032,10 +1040,10 @@ export class InputsUI {
 
         // ── Header ──
         const header = document.createElement('div');
-        header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 20px 12px;flex:0 0 auto;';
+        header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 20px 20px;flex:0 0 auto;';
         const hTitle = document.createElement('span');
         hTitle.textContent = row.settingsTitle;
-        hTitle.style.cssText = 'font-weight:600;font-size:16px;line-height:1.3;';
+        hTitle.style.cssText = 'font-weight:600;font-size:20px;line-height:28px;';
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.setAttribute('aria-label', 'Close');
@@ -1054,7 +1062,7 @@ export class InputsUI {
         // tab owns its own scrollable body; switching toggles which body is shown. ──
         const tabDefs = tabInputs(row.inputs);
         const tabs = document.createElement('div');
-        tabs.style.cssText = `display:flex;gap:16px;padding:0 20px;border-bottom:1px solid ${border};flex:0 0 auto;`;
+        tabs.style.cssText = `display:flex;gap:12px;padding:0 20px;border-bottom:1px solid ${border};flex:0 0 auto;`;
         const tabEls: HTMLElement[] = [];
         const bodies: HTMLElement[] = [];
         const activate = (idx: number): void => {
@@ -1064,7 +1072,7 @@ export class InputsUI {
                 el.style.borderBottomColor = active ? fg : 'transparent';
                 el.style.color = active ? 'inherit' : 'var(--vela-fg-muted)';
                 el.classList.toggle('vela-ind-tab-active', active);
-                bodies[i]!.style.display = active ? 'flex' : 'none';
+                bodies[i]!.style.display = active ? 'grid' : 'none';
             }
         };
         for (const [idx, def] of tabDefs.entries()) {
@@ -1073,7 +1081,7 @@ export class InputsUI {
             tab.className = 'vela-ind-tab';
             // The transparent underline reserves the active tab's 2px so switching never
             // shifts the strip; a lone tab keeps today's static look (no pointer).
-            tab.style.cssText = `padding:8px 2px;margin-bottom:-1px;border-bottom:2px solid transparent;font-weight:600;font-size:13px;${tabDefs.length > 1 ? 'cursor:pointer;' : ''}`;
+            tab.style.cssText = `padding:0 0 8px;margin-bottom:-1px;border-bottom:2px solid transparent;font-weight:600;font-size:16px;line-height:24px;${tabDefs.length > 1 ? 'cursor:pointer;' : ''}`;
             tab.addEventListener('click', () => activate(idx));
             tabs.appendChild(tab);
             tabEls.push(tab);
@@ -1085,7 +1093,7 @@ export class InputsUI {
 
         // ── Footer — Cancel reverts live edits, Ok keeps them. ──
         const footer = document.createElement('div');
-        footer.style.cssText = `display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid ${border};flex:0 0 auto;`;
+        footer.style.cssText = `display:flex;justify-content:flex-end;gap:12px;padding:16px 20px;border-top:1px solid ${border};flex:0 0 auto;`;
         footer.append(
             this.dialogButton('Cancel', false, () => this.revertAndClose()),
             this.dialogButton('Ok', true, () => this.closeDialog()),
@@ -1099,27 +1107,30 @@ export class InputsUI {
         document.addEventListener('keydown', this.onDialogKey);
     }
 
-    /** One tab's scrollable body — one grid per `group=` section of that tab's inputs. */
+    /** One tab's scrollable body — one shared grid so every group's controls share a
+     *  left edge (a 100px number field lines up with a wider session/time pair). */
     private buildTabBody(inputs: InputSchema[], row: LegendRow): HTMLElement {
         const body = document.createElement('div');
-        body.style.cssText = 'padding:14px 20px 6px;overflow-y:auto;flex:1 1 auto;display:flex;flex-direction:column;gap:24px;';
+        // `display:contents` on each group lets headers + rows participate in this
+        // one grid; per-section grids would each pick their own control-column width.
+        body.style.cssText = this.mobileLayout
+            ? 'padding:16px 20px;overflow-y:auto;flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:16px;row-gap:16px;'
+            : 'padding:16px 20px;overflow-y:auto;flex:1 1 auto;display:grid;grid-template-columns:max-content 1fr;align-items:center;column-gap:16px;row-gap:16px;';
         for (const group of groupInputs(inputs)) {
             const section = document.createElement('div');
-            section.style.cssText = 'display:flex;flex-direction:column;gap:14px;';
+            section.style.cssText = 'display:contents;';
             if (group.name) {
                 const gh = document.createElement('div');
                 gh.textContent = group.name;
-                gh.style.cssText = 'font-size:var(--vela-font-size-sm);font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);';
+                // First named section sits on the body's 16px pad; later ones keep a
+                // wide gap above the title so a group doesn't glue to the setting
+                // above, and a smaller gap below before the first row. Row-gap is
+                // 16px, so the padding here is the remainder of the old 24/36 rhythm.
+                const first = body.childElementCount === 0;
+                gh.style.cssText = `grid-column:1 / -1;font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);padding:${first ? '4px' : '20px'} 0 8px;`;
                 section.appendChild(gh);
             }
-            const grid = document.createElement('div');
-            // Mobile keeps the same four tracks (row builders span across them) but gives
-            // the label the flexible, shrinkable one so nothing overflows a phone width.
-            grid.style.cssText = this.mobileLayout
-                ? 'display:grid;grid-template-columns:minmax(0,1fr) auto auto max-content;align-items:center;column-gap:12px;row-gap:22px;'
-                : 'display:grid;grid-template-columns:minmax(140px,auto) auto auto 1fr;align-items:center;column-gap:12px;row-gap:22px;';
-            for (const inputRow of group.rows) this.buildInputRow(grid, inputRow, row);
-            section.appendChild(grid);
+            for (const inputRow of group.rows) this.buildInputRow(section, inputRow, row);
             body.appendChild(section);
         }
         return body;
@@ -1127,6 +1138,9 @@ export class InputsUI {
 
     private closeDialog(): void {
         document.removeEventListener('keydown', this.onDialogKey);
+        closeColorPopover();
+        this.closeChoiceMenu();
+        this.closeCalendar();
         for (const dispose of this.dialogTips.splice(0)) dispose(); // a tip open right now dies with its dialog
         this.backdrop?.remove();
         this.backdrop = null;
@@ -1165,17 +1179,17 @@ export class InputsUI {
                 const toggleFirst = d.type === 'bool';
                 const id = idOf(d);
                 const item = document.createElement('div');
-                item.style.cssText = `display:flex;align-items:center;gap:6px;${toggleFirst ? 'flex-direction:row-reverse;' : ''}`;
+                item.style.cssText = `display:flex;align-items:center;gap:8px;${toggleFirst ? 'flex-direction:row-reverse;' : ''}`;
                 const name = nameOf(d);
                 if (name) {
                     const lbl = document.createElement('label');
                     lbl.htmlFor = id;
                     lbl.textContent = name;
-                    lbl.style.cssText = `font-size:13px;opacity:0.9;${toggleFirst ? 'cursor:pointer;' : ''}`;
+                    lbl.style.cssText = `font-size:14px;opacity:0.9;${toggleFirst ? 'cursor:pointer;' : ''}`;
                     item.appendChild(lbl);
                 }
                 const cw = document.createElement('div');
-                cw.style.cssText = fit ? '' : 'width:110px;';
+                cw.style.cssText = fit ? '' : 'width:100px;';
                 cw.appendChild(this.buildControl(row, d, id));
                 item.appendChild(cw);
                 cell.appendChild(item);
@@ -1192,15 +1206,14 @@ export class InputsUI {
         // BOOL — toggle sits to the LEFT of its title (the label wraps it so the whole label toggles).
         if (lead.type === 'bool') {
             const cell = document.createElement('div');
-            cell.style.cssText = 'grid-column:1 / 4;display:flex;align-items:center;gap:8px;';
+            cell.style.cssText = 'grid-column:1 / -1;display:flex;align-items:center;gap:8px;';
             const lbl = document.createElement('label');
-            lbl.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;';
+            lbl.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;';
             lbl.appendChild(this.buildControl(row, lead, id));
             lbl.appendChild(document.createTextNode(nameOf(lead)));
             cell.appendChild(lbl);
             if (lead.tooltip) cell.appendChild(this.infoButton(lead.tooltip));
             grid.appendChild(cell);
-            grid.appendChild(document.createElement('div')); // col-4 slack
             return;
         }
 
@@ -1213,7 +1226,7 @@ export class InputsUI {
             const lbl = document.createElement('label');
             lbl.htmlFor = id;
             lbl.textContent = nameOf(lead);
-            lbl.style.cssText = 'font-size:13px;';
+            lbl.style.cssText = 'font-size:14px;';
             head.appendChild(lbl);
             if (lead.tooltip) head.appendChild(this.infoButton(lead.tooltip));
             cell.appendChild(head);
@@ -1222,23 +1235,23 @@ export class InputsUI {
             return;
         }
 
-        // DEFAULT — [ label | control (+ info) | slack ].
+        // DEFAULT — [ label | control + info ]. The pair sits at the start of the
+        // shared track so every field shares a left edge and its tooltip stays
+        // 8px after that field (not parked in a far-right column).
         const label = document.createElement('label');
         label.htmlFor = id;
         label.textContent = nameOf(lead);
-        label.style.cssText = 'font-size:13px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        const controlCell = document.createElement('div');
-        controlCell.style.cssText = 'grid-column:span 2;display:flex;align-items:center;gap:8px;';
-        // Multi-widget controls (session/time) and the color swatch size to content rather than the 140px field width.
+        label.style.cssText = 'font-size:14px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
         const fit = lead.type === 'color' || lead.type === 'session' || lead.type === 'time';
+        const cell = document.createElement('div');
+        cell.style.cssText = 'display:flex;align-items:center;gap:8px;justify-self:start;';
         const cw = document.createElement('div');
-        cw.style.cssText = fit ? '' : 'width:140px;';
+        cw.style.cssText = fit ? '' : 'width:100px;';
         cw.appendChild(this.buildControl(row, lead, id));
-        controlCell.appendChild(cw);
-        if (lead.tooltip) controlCell.appendChild(this.infoButton(lead.tooltip));
+        cell.appendChild(cw);
+        if (lead.tooltip) cell.appendChild(this.infoButton(lead.tooltip));
         grid.appendChild(label);
-        grid.appendChild(controlCell);
-        grid.appendChild(document.createElement('div')); // col-4 slack
+        grid.appendChild(cell);
     }
 
     /** Build the typed control for one input, committing edits live via `onChange`. */
@@ -1254,42 +1267,18 @@ export class InputsUI {
         if (inp.options && inp.options.length > 0) return this.select(id, inp.options.map(String), String(current), `${ctrl}cursor:pointer;`, emit);
         if (inp.type === 'source') return this.select(id, SOURCES, String(current), `${ctrl}cursor:pointer;`, emit);
         if (inp.type === 'color') {
-            const ci = document.createElement('input');
-            ci.type = 'color';
-            ci.id = id;
-            ci.value = toHex6(String(current));
-            ci.style.cssText = `flex:0 0 auto;box-sizing:border-box;width:32px;height:32px;padding:2px;border:1px solid ${this.neutralBorder()};border-radius:0;background:transparent;cursor:pointer;`;
-            ci.addEventListener('input', () => emit(ci.value));
-            return ci;
+            const field = colorField(this.theme, () => String(row.values[inp.key] ?? inp.defval), (v) => emit(v), { shape: 'circle' });
+            field.id = id;
+            return field;
         }
         if (inp.type === 'symbol') return this.buildSymbol(id, String(current), emit);
         if (inp.type === 'timeframe') return this.selectPairs(id, TIMEFRAME_OPTIONS, String(current), `${ctrl}cursor:pointer;`, emit);
         if (inp.type === 'session') return this.buildSession(id, String(current), emit);
         if (inp.type === 'time') return this.buildTime(id, Number(current) || 0, emit);
         if (inp.type === 'text_area') return this.buildTextArea(id, String(current), emit);
-        // int / float / price → numeric spinner (price behaves like a free float).
+        // int / float / price → numeric field with hover steppers (price behaves like a free float).
         if (inp.type === 'int' || inp.type === 'float' || inp.type === 'price') {
-            const ni = document.createElement('input');
-            ni.type = 'number';
-            ni.id = id;
-            ni.value = String(current);
-            if (inp.min !== undefined) ni.min = String(inp.min);
-            if (inp.max !== undefined) ni.max = String(inp.max);
-            ni.step = String(inp.step ?? (inp.type === 'int' ? 1 : 0.1));
-            ni.style.cssText = ctrl;
-            let last = String(current);
-            const commit = (): void => {
-                let n = Number(ni.value);
-                if (!Number.isFinite(n)) { ni.value = last; return; }
-                if (inp.min !== undefined) n = Math.max(inp.min, n);
-                if (inp.max !== undefined) n = Math.min(inp.max, n);
-                if (inp.type === 'int') n = Math.round(n);
-                ni.value = String(n);
-                if (String(n) !== last) { last = String(n); emit(n); }
-            };
-            ni.addEventListener('blur', commit);
-            ni.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ni.blur(); } });
-            return ni;
+            return this.buildNumber(id, Number(current), inp, emit);
         }
         // string / other → free text, commit on blur / Enter.
         return this.buildTextField(id, String(current), emit);
@@ -1348,43 +1337,35 @@ export class InputsUI {
 
     /** A dropdown whose visible labels differ from the committed values (label ≠ value pairs). */
     private selectPairs(id: string, pairs: readonly { value: string; label: string }[], current: string, style: string, onChange: (v: string) => void): HTMLElement {
-        const sel = document.createElement('select');
-        sel.id = id;
-        sel.style.cssText = style;
-        // Surface an unknown committed value as a disabled entry so the trigger reflects what's set.
-        if (current !== '' && !pairs.some((p) => p.value === current)) {
-            const o = document.createElement('option');
-            o.value = current;
-            o.textContent = current;
-            o.selected = true;
-            o.disabled = true;
-            sel.appendChild(o);
-        }
-        for (const p of pairs) {
-            const o = document.createElement('option');
-            o.value = p.value;
-            o.textContent = p.label;
-            if (p.value === current) o.selected = true;
-            sel.appendChild(o);
-        }
-        this.styleSelect(sel);
-        sel.addEventListener('change', () => onChange(sel.value));
-        return this.wrapSelectChevron(sel);
-    }
-
-    /** Wrap a `<select>` with an inset chevron — native arrows can't be repositioned reliably. */
-    private wrapSelectChevron(sel: HTMLSelectElement): HTMLElement {
         const wrap = document.createElement('div');
+        wrap.className = 'vela-ind-select';
         wrap.style.cssText = 'position:relative;width:100%;';
-        sel.style.paddingRight = '28px';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = id;
+        btn.style.cssText = `${style}display:flex;align-items:center;cursor:pointer;text-align:left;padding-right:26px;`;
+        const label = document.createElement('span');
+        const named = pairs.find((p) => p.value === current);
+        label.textContent = named?.label ?? current;
+        label.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         const chevron = document.createElement('span');
         chevron.innerHTML = SELECT_CHEVRON_SVG;
-        chevron.style.cssText = `position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;display:flex;align-items:center;color:${this.strongText()};opacity:0.85;line-height:0;`;
-        wrap.append(sel, chevron);
+        chevron.className = 'vela-ind-select-chevron';
+        btn.append(label, chevron);
+        let value = current;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleChoiceMenu(btn, pairs, value, (v, lab) => {
+                value = v;
+                label.textContent = lab;
+                onChange(v);
+            });
+        });
+        wrap.appendChild(btn);
         return wrap;
     }
 
-    /** `input.session` → two HH:MM dropdowns committing a `HHMM-HHMM` session string. */
+    /** `input.session` → two typeable HH:MM comboboxes committing a `HHMM-HHMM` session string. */
     private buildSession(id: string, current: string, emit: (v: InputValue) => void): HTMLElement {
         const [start, end] = sessionToTimes(current);
         const wrap = document.createElement('div');
@@ -1392,9 +1373,10 @@ export class InputsUI {
         let from = start;
         let to = end;
         const commit = (): void => emit(timesToSession(from, to));
-        const startSel = this.timeSelect(id, from, 86, (v) => { from = v; commit(); });
-        const endSel = this.timeSelect(`${id}-end`, to, 86, (v) => { to = v; commit(); });
-        wrap.append(startSel, endSel);
+        wrap.append(
+            this.timeCombobox(id, from, 86, (v) => { from = v; commit(); }),
+            this.timeCombobox(`${id}-end`, to, 86, (v) => { to = v; commit(); }),
+        );
         return wrap;
     }
 
@@ -1410,14 +1392,9 @@ export class InputsUI {
             const ms = Date.parse(`${date}T${time}:00`);
             if (Number.isFinite(ms)) emit(ms);
         };
-        const dateInput = document.createElement('input');
-        dateInput.type = 'date';
-        dateInput.id = id;
-        dateInput.value = date;
-        dateInput.style.cssText = `${this.ctrlStyle()}width:auto;cursor:pointer;`;
-        dateInput.addEventListener('change', () => { date = dateInput.value; commit(); });
-        const timeSel = this.timeSelect(`${id}-time`, time, 86, (v) => { time = v; commit(); });
-        wrap.append(dateInput, timeSel);
+        const dateField = this.dateField(id, date, (v) => { date = v; commit(); });
+        const timeSel = this.timeCombobox(`${id}-time`, time, 86, (v) => { time = v; commit(); });
+        wrap.append(dateField, timeSel);
         return wrap;
     }
 
@@ -1433,9 +1410,377 @@ export class InputsUI {
         return ta;
     }
 
-    /** A fixed-width HH:MM dropdown (30-minute steps) used by the session + time controls. */
-    private timeSelect(id: string, current: string, width: number, onChange: (v: string) => void): HTMLElement {
-        return this.selectPairs(id, TIME_OPTIONS, current, `${this.ctrlStyle()}width:${width}px;cursor:pointer;`, onChange);
+    /** A fixed-width HH:MM combobox (typeable, plus a 30-minute-step dropdown) used by session + time. */
+    private timeCombobox(id: string, current: string, width: number, onChange: (v: string) => void): HTMLElement {
+        const wrap = document.createElement('div');
+        wrap.className = 'vela-ind-combo';
+        wrap.style.cssText = `position:relative;width:${width}px;`;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = id;
+        input.value = current;
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.style.cssText = `${this.ctrlStyle()}padding-right:26px;`;
+        const chevron = document.createElement('button');
+        chevron.type = 'button';
+        chevron.tabIndex = -1;
+        chevron.className = 'vela-ind-combo-chevron';
+        chevron.setAttribute('aria-label', 'Open time list');
+        chevron.innerHTML = CLOCK_SVG;
+        let value = current;
+        const commitTyped = (): void => {
+            const next = normalizeTimeInput(input.value);
+            if (!next) { input.value = value; return; }
+            input.value = next;
+            if (next !== value) { value = next; onChange(next); }
+        };
+        input.addEventListener('blur', () => {
+            // A click on the open list focuses the item, not the input — don't revert yet.
+            if (this.choiceMenu || this.calendarPop) return;
+            commitTyped();
+        });
+        const pick = (v: string): void => {
+            value = v;
+            input.value = v;
+            onChange(v);
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commitTyped(); input.blur(); }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                this.openChoiceMenu(wrap, TIME_OPTIONS, value, pick);
+            }
+        });
+        const open = (e: Event): void => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleChoiceMenu(wrap, TIME_OPTIONS, value, pick);
+        };
+        // The field itself is the dropdown trigger — typing still works while the list is open.
+        input.addEventListener('click', open);
+        chevron.addEventListener('mousedown', (e) => e.preventDefault()); // keep input focused
+        chevron.addEventListener('click', open);
+        wrap.append(input, chevron);
+        return wrap;
+    }
+
+    /** A typeable YYYY-MM-DD field that also opens a themed month calendar. */
+    private dateField(id: string, current: string, onChange: (v: string) => void): HTMLElement {
+        const wrap = document.createElement('div');
+        wrap.className = 'vela-ind-combo';
+        wrap.style.cssText = 'position:relative;width:128px;';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = id;
+        input.value = current;
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.style.cssText = `${this.ctrlStyle()}padding-right:26px;`;
+        const chevron = document.createElement('button');
+        chevron.type = 'button';
+        chevron.tabIndex = -1;
+        chevron.className = 'vela-ind-combo-chevron';
+        chevron.setAttribute('aria-label', 'Open calendar');
+        chevron.innerHTML = CALENDAR_SVG;
+        let value = current;
+        const commitTyped = (): void => {
+            const next = normalizeDateInput(input.value);
+            if (!next) { input.value = value; return; }
+            input.value = next;
+            if (next !== value) { value = next; onChange(next); }
+        };
+        input.addEventListener('blur', () => {
+            if (this.calendarPop || this.choiceMenu) return;
+            commitTyped();
+        });
+        const pick = (v: string): void => {
+            value = v;
+            input.value = v;
+            onChange(v);
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commitTyped(); input.blur(); }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                this.openCalendar(wrap, value, pick);
+            }
+        });
+        const open = (e: Event): void => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.calendarPop && this.calendarAnchor === wrap) {
+                this.closeCalendar();
+                return;
+            }
+            this.openCalendar(wrap, value, pick);
+        };
+        input.addEventListener('click', open);
+        chevron.addEventListener('mousedown', (e) => e.preventDefault());
+        chevron.addEventListener('click', open);
+        wrap.append(input, chevron);
+        return wrap;
+    }
+
+    /** Numeric field with hover steppers on the right (no fill until a triangle is hovered). */
+    private buildNumber(id: string, current: number, inp: InputSchema, emit: (v: InputValue) => void): HTMLElement {
+        const wrap = document.createElement('div');
+        wrap.className = 'vela-ind-num';
+        const ni = document.createElement('input');
+        ni.type = 'number';
+        ni.id = id;
+        ni.value = String(current);
+        if (inp.min !== undefined) ni.min = String(inp.min);
+        if (inp.max !== undefined) ni.max = String(inp.max);
+        const step = inp.step ?? (inp.type === 'int' ? 1 : 0.1);
+        ni.step = String(step);
+        ni.style.cssText = this.ctrlStyle();
+        // Reserve the right stepper column so the digits don't sit under the triangles.
+        // The stylesheet can't win this — `ctrlStyle` sets an inline `padding` shorthand.
+        ni.style.paddingRight = '26px';
+        let last = String(current);
+        const clamp = (n: number): number => {
+            if (inp.min !== undefined) n = Math.max(inp.min, n);
+            if (inp.max !== undefined) n = Math.min(inp.max, n);
+            if (inp.type === 'int') n = Math.round(n);
+            return n;
+        };
+        const commit = (raw: number): void => {
+            if (!Number.isFinite(raw)) { ni.value = last; return; }
+            const n = clamp(raw);
+            ni.value = String(n);
+            if (String(n) !== last) { last = String(n); emit(n); }
+        };
+        ni.addEventListener('blur', () => commit(Number(ni.value)));
+        ni.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ni.blur(); } });
+        const steps = document.createElement('div');
+        steps.className = 'vela-ind-step';
+        const mk = (dir: 1 | -1, icon: string, label: string): HTMLButtonElement => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.tabIndex = -1;
+            b.setAttribute('aria-label', label);
+            b.innerHTML = icon;
+            let timer = 0;
+            const apply = (): void => {
+                const cur = Number(ni.value);
+                commit(Number.isFinite(cur) ? cur + dir * step : Number(inp.defval) || 0);
+            };
+            const stop = (): void => { if (timer) { window.clearTimeout(timer); timer = 0; } };
+            b.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                apply();
+                timer = window.setTimeout(function tick() {
+                    apply();
+                    timer = window.setTimeout(tick, 60);
+                }, 400);
+            });
+            b.addEventListener('pointerup', stop);
+            b.addEventListener('pointerleave', stop);
+            b.addEventListener('pointercancel', stop);
+            return b;
+        };
+        steps.append(
+            mk(1, STEP_UP_SVG, 'Increase'),
+            mk(-1, STEP_DOWN_SVG, 'Decrease'),
+        );
+        wrap.append(ni, steps);
+        return wrap;
+    }
+
+    /** Toggle the floating choice list under `anchor` (re-click closes). */
+    private toggleChoiceMenu(
+        anchor: HTMLElement,
+        pairs: readonly { value: string; label: string }[],
+        current: string,
+        onPick: (value: string, label: string) => void,
+    ): void {
+        if (this.choiceMenu && this.choiceMenuAnchor === anchor) {
+            this.closeChoiceMenu();
+            return;
+        }
+        this.openChoiceMenu(anchor, pairs, current, onPick);
+    }
+
+    /** Open a themed choice list under `anchor` — hover/selected wash matches the app menus. */
+    private openChoiceMenu(
+        anchor: HTMLElement,
+        pairs: readonly { value: string; label: string }[],
+        current: string,
+        onPick: (value: string, label: string) => void,
+    ): void {
+        this.closeChoiceMenu();
+        this.closeCalendar();
+        const menu = document.createElement('div');
+        menu.className = 'vela-ind-choice';
+        menu.dataset.for = anchor.id;
+        applyChromeTokens(menu, this.theme);
+        menu.addEventListener('pointerdown', (e) => e.stopPropagation());
+        const list = document.createElement('div');
+        list.className = 'vela-ind-choice-list';
+        let selected: HTMLElement | null = null;
+        for (const p of pairs) {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'vela-ind-choice-item';
+            item.textContent = p.label;
+            if (p.value === current) {
+                item.dataset.checked = '1';
+                selected = item;
+            }
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.closeChoiceMenu();
+                onPick(p.value, p.label);
+            });
+            list.appendChild(item);
+        }
+        menu.appendChild(list);
+        document.body.appendChild(menu);
+        if (list.scrollHeight > 240) {
+            menu.classList.add('is-scroll');
+            const rail = document.createElement('div');
+            rail.className = 'vela-ind-choice-rail';
+            const thumb = document.createElement('div');
+            thumb.className = 'vela-ind-choice-thumb';
+            rail.appendChild(thumb);
+            menu.appendChild(rail);
+            const syncThumb = (): void => {
+                const view = list.clientHeight;
+                const total = list.scrollHeight;
+                if (total <= view) { thumb.style.height = '0'; return; }
+                const thumbH = Math.max(20, (view / total) * view);
+                const top = (list.scrollTop / (total - view)) * (view - thumbH);
+                thumb.style.height = `${Math.round(thumbH)}px`;
+                thumb.style.transform = `translateY(${Math.round(top)}px)`;
+            };
+            list.addEventListener('scroll', syncThumb);
+            syncThumb();
+        }
+        this.placeFloating(menu, anchor, { matchWidth: true });
+        selected?.scrollIntoView({ block: 'nearest' });
+        list.dispatchEvent(new Event('scroll'));
+        const onOutside = (ev: Event): void => {
+            const t = ev.target as Node;
+            if (menu.contains(t) || anchor.contains(t)) return;
+            this.closeChoiceMenu();
+        };
+        setTimeout(() => document.addEventListener('pointerdown', onOutside, true), 0);
+        this.choiceMenu = menu;
+        this.choiceMenuAnchor = anchor;
+        this.choiceMenuOnOutside = onOutside;
+    }
+
+    private closeChoiceMenu(): void {
+        if (this.choiceMenuOnOutside) document.removeEventListener('pointerdown', this.choiceMenuOnOutside, true);
+        this.choiceMenu?.remove();
+        this.choiceMenu = null;
+        this.choiceMenuAnchor = null;
+        this.choiceMenuOnOutside = null;
+    }
+
+    /** Open a themed month calendar under `anchor` — same surface + shadow as the choice list. */
+    private openCalendar(anchor: HTMLElement, current: string, onPick: (iso: string) => void): void {
+        this.closeChoiceMenu();
+        this.closeCalendar();
+        const parsed = parseIsoDate(current);
+        let year = parsed?.getFullYear() ?? new Date().getFullYear();
+        let month = parsed?.getMonth() ?? new Date().getMonth();
+        const selected = parsed ? isoDate(parsed) : current;
+
+        const pop = document.createElement('div');
+        pop.className = 'vela-ind-cal';
+        applyChromeTokens(pop, this.theme);
+        pop.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+        const title = document.createElement('div');
+        title.className = 'vela-ind-cal-title';
+        const prev = document.createElement('button');
+        prev.type = 'button';
+        prev.className = 'vela-ind-cal-nav';
+        prev.setAttribute('aria-label', 'Previous month');
+        prev.innerHTML = iconAt('chevron-left', 14);
+        const next = document.createElement('button');
+        next.type = 'button';
+        next.className = 'vela-ind-cal-nav';
+        next.setAttribute('aria-label', 'Next month');
+        next.innerHTML = iconAt('chevron-right', 14);
+        const head = document.createElement('div');
+        head.className = 'vela-ind-cal-head';
+        head.append(prev, title, next);
+
+        const week = document.createElement('div');
+        week.className = 'vela-ind-cal-week';
+        for (const d of WEEKDAY_LABELS) {
+            const cell = document.createElement('span');
+            cell.textContent = d;
+            week.appendChild(cell);
+        }
+        const grid = document.createElement('div');
+        grid.className = 'vela-ind-cal-grid';
+
+        const paint = (): void => {
+            title.textContent = `${MONTH_LABELS[month]} ${year}`;
+            grid.replaceChildren();
+            const first = new Date(year, month, 1);
+            const startPad = first.getDay();
+            const days = new Date(year, month + 1, 0).getDate();
+            const today = isoDate(new Date());
+            for (let i = 0; i < startPad; i++) {
+                const blank = document.createElement('span');
+                blank.className = 'vela-ind-cal-blank';
+                grid.appendChild(blank);
+            }
+            for (let day = 1; day <= days; day++) {
+                const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'vela-ind-cal-day';
+                b.textContent = String(day);
+                if (iso === selected) b.dataset.checked = '1';
+                if (iso === today) b.dataset.today = '1';
+                b.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.closeCalendar();
+                    onPick(iso);
+                });
+                grid.appendChild(b);
+            }
+        };
+        prev.addEventListener('click', (e) => {
+            e.stopPropagation();
+            month -= 1;
+            if (month < 0) { month = 11; year -= 1; }
+            paint();
+        });
+        next.addEventListener('click', (e) => {
+            e.stopPropagation();
+            month += 1;
+            if (month > 11) { month = 0; year += 1; }
+            paint();
+        });
+        paint();
+        pop.append(head, week, grid);
+        document.body.appendChild(pop);
+        this.placeFloating(pop, anchor);
+        const onOutside = (ev: Event): void => {
+            const t = ev.target as Node;
+            if (pop.contains(t) || anchor.contains(t)) return;
+            this.closeCalendar();
+        };
+        setTimeout(() => document.addEventListener('pointerdown', onOutside, true), 0);
+        this.calendarPop = pop;
+        this.calendarAnchor = anchor;
+        this.calendarOnOutside = onOutside;
+    }
+
+    private closeCalendar(): void {
+        if (this.calendarOnOutside) document.removeEventListener('pointerdown', this.calendarOnOutside, true);
+        this.calendarPop?.remove();
+        this.calendarPop = null;
+        this.calendarAnchor = null;
+        this.calendarOnOutside = null;
     }
 
     /**
@@ -1465,9 +1810,37 @@ export class InputsUI {
         return btn;
     }
 
+    /**
+     * Place a portaled popover under `anchor`, flipping above when it would leave the
+     * settings dialog (or the viewport). `matchWidth` stretches short lists to the field.
+     */
+    private placeFloating(el: HTMLElement, anchor: HTMLElement, opts?: { matchWidth?: boolean }): void {
+        const ar = anchor.getBoundingClientRect();
+        if (opts?.matchWidth) el.style.minWidth = `${Math.round(Math.max(el.offsetWidth, ar.width))}px`;
+        const mw = el.offsetWidth;
+        const mh = el.offsetHeight;
+        const gap = 4;
+        const dialog = this.dialog?.getBoundingClientRect();
+        const floor = Math.min(window.innerHeight - 6, dialog ? dialog.bottom - 8 : Infinity);
+        const ceil = Math.max(6, dialog ? dialog.top + 8 : 0);
+        let left = ar.left;
+        if (left + mw > window.innerWidth - 6) left = window.innerWidth - mw - 6;
+        if (left < 6) left = 6;
+        const below = ar.bottom + gap;
+        const above = ar.top - mh - gap;
+        const fitsBelow = below + mh <= floor;
+        const fitsAbove = above >= ceil;
+        let top = below;
+        if (!fitsBelow && (fitsAbove || ar.top - ceil > floor - ar.bottom)) {
+            top = Math.max(ceil, above);
+        }
+        el.style.left = `${Math.round(left)}px`;
+        el.style.top = `${Math.round(top)}px`;
+    }
+
     /** Shared field chrome for text / number / select controls (fills its wrapper's width). */
     private ctrlStyle(): string {
-        return `width:100%;box-sizing:border-box;height:32px;background:transparent;border:1px solid ${this.neutralBorder()};color:${this.strongText()};border-radius:6px;padding:0 8px;font-size:13px;font-family:inherit;outline:none;`;
+        return `width:100%;box-sizing:border-box;height:34px;background:transparent;border:1px solid var(--vela-border-strong);color:${this.strongText()};border-radius:6px;padding:0 8px;font-size:14px;font-family:inherit;outline:none;`;
     }
 
     /** Whether the active theme is dark (drives the dialog's `color-scheme`). */
@@ -1491,28 +1864,12 @@ export class InputsUI {
         return 'var(--vela-fg-bright)';
     }
 
-    /**
-     * Paint a `<select>` + its `<option>`s so the native dropdown popup matches the dialog: the
-     * option list's background is the dialog color and its text is the strong foreground. `color-scheme`
-     * alone doesn't theme the popup in every embedded browser (some render it white with white text —
-     * invisible), so the colors are set explicitly here.
-     */
-    private styleSelect(sel: HTMLSelectElement): void {
-        const bg = this.theme.background;
-        const fg = this.strongText();
-        sel.style.backgroundColor = bg;
-        for (const o of Array.from(sel.options)) {
-            o.style.backgroundColor = bg;
-            o.style.color = fg;
-        }
-    }
-
     private dialogButton(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = label;
-        // Primary = filled inverse chip; Cancel = ghost (no border, muted text, subtle hover
-        // fill). Both hover states are in the scoped stylesheet.
+        // Primary = filled inverse chip; Cancel = outlined. Both hover states are in the
+        // scoped stylesheet.
         b.className = primary ? 'vela-ind-btn vela-ind-btn-primary' : 'vela-ind-btn';
         b.addEventListener('click', onClick);
         return b;
@@ -1599,11 +1956,15 @@ function groupInputs(inputs: InputSchema[]): InputGroup[] {
 }
 
 const CHECK_SVG = iconAt('check', 12);
-const SELECT_CHEVRON_SVG = iconAt('chevron-down', 16);
+const SELECT_CHEVRON_SVG = iconAt('chevron-down', 12);
+const STEP_UP_SVG = iconAt('chevron-up', 12);
+const STEP_DOWN_SVG = iconAt('chevron-down', 12);
+const CALENDAR_SVG = iconAt('calendar', 14);
+const CLOCK_SVG = iconAt('clock', 14);
 
 const DIALOG_STYLE_ID = 'vela-ind-dialog-styles';
 /** Bump when the injected sheet's rules change so an already-mounted page refreshes them. */
-const DIALOG_STYLE_REV = '11';
+const DIALOG_STYLE_REV = '22';
 
 /** Inject the scoped styles inline cssText can't reach (color-swatch, focus ring, scrollbar). */
 function ensureDialogStyles(): void {
@@ -1614,16 +1975,50 @@ function ensureDialogStyles(): void {
     s.id = DIALOG_STYLE_ID;
     s.dataset.rev = DIALOG_STYLE_REV;
     s.textContent = `
-.vela-ind-dialog input[type=color]{-webkit-appearance:none;appearance:none;}
-.vela-ind-dialog input[type=color]::-webkit-color-swatch-wrapper{padding:0;}
-.vela-ind-dialog input[type=color]::-webkit-color-swatch{border:none;border-radius:4px;}
-.vela-ind-dialog input[type=color]::-moz-color-swatch{border:none;border-radius:4px;}
-.vela-ind-dialog input[type=text],.vela-ind-dialog input[type=number],.vela-ind-dialog select{transition:border-color .12s ease,box-shadow .12s ease;}
-.vela-ind-dialog select{-webkit-appearance:none;appearance:none;}
-.vela-ind-dialog input[type=text]:focus,.vela-ind-dialog input[type=number]:focus,.vela-ind-dialog select:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
+.vela-ind-dialog input[type=text],.vela-ind-dialog input[type=number],.vela-ind-dialog input[type=date],.vela-ind-dialog .vela-ind-select button{transition:border-color .12s ease,box-shadow .12s ease;}
+.vela-ind-dialog input[type=number]{-moz-appearance:textfield;appearance:textfield;}
+.vela-ind-dialog input[type=number]::-webkit-inner-spin-button,.vela-ind-dialog input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.vela-ind-dialog input[type=text]:hover,.vela-ind-dialog input[type=number]:hover,.vela-ind-dialog input[type=date]:hover,.vela-ind-dialog .vela-ind-select button:hover{border-color:var(--vela-fg-muted);}
+.vela-ind-dialog input[type=text]:focus,.vela-ind-dialog input[type=number]:focus,.vela-ind-dialog input[type=date]:focus,.vela-ind-dialog .vela-ind-select button:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
+.vela-ind-select button{position:relative;}
+.vela-ind-select-chevron{position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;display:flex;opacity:0.55;line-height:0;}
+.vela-ind-combo-chevron{position:absolute;right:0;top:0;bottom:0;width:26px;border:none;background:transparent;color:inherit;opacity:0.55;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+.vela-ind-combo-chevron:hover{opacity:0.9;}
+.vela-ind-num{position:relative;width:100%;}
+.vela-ind-step{position:absolute;right:0;top:0;bottom:0;width:22px;display:none;flex-direction:column;justify-content:center;box-sizing:border-box;padding:2px 6px 2px 0;line-height:0;}
+.vela-ind-num:hover .vela-ind-step{display:flex;}
+.vela-ind-step button{flex:1;width:100%;min-height:0;border:none;background:transparent;color:var(--vela-fg-muted);border-radius:3px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.vela-ind-step button:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-ind-step svg{width:12px;height:12px;display:block;}
+.vela-ind-choice,.vela-ind-cal{position:fixed;z-index:6000;background:var(--vela-bg);color:var(--vela-fg);border:none;border-radius:6px;box-shadow:var(--vela-shadow);font:14px var(--vela-font);}
+.vela-ind-choice{padding:4px;overflow:hidden;}
+.vela-ind-choice-list{max-height:none;overflow:hidden;}
+.vela-ind-choice.is-scroll{display:flex;align-items:stretch;gap:2px;}
+.vela-ind-choice.is-scroll .vela-ind-choice-list{flex:1 1 auto;min-width:0;max-height:240px;overflow-y:auto;scrollbar-width:none;}
+.vela-ind-choice.is-scroll .vela-ind-choice-list::-webkit-scrollbar{display:none;width:0;height:0;}
+.vela-ind-choice-rail{position:relative;flex:none;width:3px;margin:2px 1px 2px 0;pointer-events:none;}
+.vela-ind-choice-thumb{width:3px;border-radius:2px;background:var(--vela-scroll);}
+.vela-ind-choice-item{display:block;width:100%;text-align:left;padding:7px 10px;border:none;border-radius:4px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:14px;font-weight:400;}
+.vela-ind-choice-item:hover{background:var(--vela-hover);}
+.vela-ind-choice-item[data-checked]{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
+.vela-ind-choice-item[data-checked]:hover{background:var(--vela-hover-strong);}
+.vela-ind-cal{padding:10px 12px;user-select:none;}
+.vela-ind-cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+.vela-ind-cal-title{flex:1;text-align:center;font-weight:600;font-size:14px;color:var(--vela-fg-bright);}
+.vela-ind-cal-nav{width:24px;height:24px;border:none;background:transparent;color:var(--vela-fg-muted);border-radius:4px;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+.vela-ind-cal-nav:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-ind-cal-week,.vela-ind-cal-grid{display:grid;grid-template-columns:repeat(7,28px);gap:2px;}
+.vela-ind-cal-week{margin-bottom:4px;color:var(--vela-fg-muted);font-size:11px;text-align:center;}
+.vela-ind-cal-week span{line-height:20px;}
+.vela-ind-cal-blank{width:28px;height:28px;}
+.vela-ind-cal-day{width:28px;height:28px;border:none;background:transparent;color:inherit;border-radius:4px;padding:0;cursor:pointer;font:inherit;font-size:14px;}
+.vela-ind-cal-day:hover{background:var(--vela-hover);}
+.vela-ind-cal-day[data-checked]{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
+.vela-ind-cal-day[data-today]:not([data-checked]){box-shadow:inset 0 0 0 1px var(--vela-border-strong);}
 .vela-ind-dialog ::-webkit-scrollbar{width:9px;}
 .vela-ind-dialog ::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
 .vela-ind-dialog ::-webkit-scrollbar-track{background:transparent;}
+.vela-ind-dialog ::-webkit-scrollbar-button{display:none;width:0;height:0;}
 .vela-ind-tab{transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
 .vela-ind-tab:not(.vela-ind-tab-active):hover{color:var(--vela-fg-bright);}
 .vela-ind-hint{background:var(--vela-hover);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
@@ -1636,10 +2031,10 @@ function ensureDialogStyles(): void {
 .vela-ind-fold:hover{border-color:var(--vela-border-strong);opacity:0.9;}
 .vela-ind-menuitem{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-ind-menuitem:hover{background:var(--vela-hover-strong);}
-.vela-ind-btn{cursor:pointer;padding:7px 14px;border-radius:var(--vela-radius-md);border:1px solid transparent;background:transparent;color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
-.vela-ind-btn:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-ind-btn-primary{padding:7px 16px;border-color:var(--vela-selected-bg);background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
-.vela-ind-btn-primary:hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);opacity:0.85;}`;
+.vela-ind-btn{cursor:pointer;height:34px;padding:0 11px;border-radius:6px;border:1px solid var(--vela-border-strong);background:transparent;color:var(--vela-fg);font-weight:400;font-size:14px;font-family:inherit;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
+.vela-ind-btn:hover{background:var(--vela-hover);color:var(--vela-fg-bright);border-color:var(--vela-fg-muted);}
+.vela-ind-btn-primary{border-color:var(--vela-selected-bg);background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
+.vela-ind-btn-primary:hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);opacity:0.85;border-color:var(--vela-selected-bg);}`;
     if (!existing) document.head.appendChild(s);
 }
 
@@ -1668,6 +2063,44 @@ const TIME_OPTIONS: readonly { value: string; label: string }[] = Array.from({ l
     const v = `${hh}:${mm}`;
     return { value: v, label: v };
 });
+
+const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
+const WEEKDAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const;
+
+/** Accept `YYYY-MM-DD` or `YYYY-M-D` and return a padded ISO date, or null if unusable. */
+export function normalizeDateInput(raw: string): string | null {
+    const t = raw.trim();
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const dt = new Date(y, mo - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+    return isoDate(dt);
+}
+
+function parseIsoDate(raw: string): Date | null {
+    const iso = normalizeDateInput(raw);
+    if (!iso) return null;
+    const [y, mo, d] = iso.split('-').map(Number);
+    return new Date(y!, mo! - 1, d!);
+}
+
+function isoDate(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Accept `HH:MM`, `H:MM`, or `HHMM` and return a padded `HH:MM`, or null if unusable. */
+export function normalizeTimeInput(raw: string): string | null {
+    const t = raw.trim();
+    const m = /^(\d{1,2}):(\d{2})$/.exec(t) ?? /^(\d{2})(\d{2})$/.exec(t);
+    if (!m) return null;
+    const hh = Number(m[1]);
+    const mm = Number(m[2]);
+    if (hh > 23 || mm > 59) return null;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
 
 /** Split a Pine `HHMM-HHMM` session into two `HH:MM` strings (defaults `09:00`–`16:00`). */
 function sessionToTimes(session: string): [string, string] {
