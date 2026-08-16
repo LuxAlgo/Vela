@@ -209,6 +209,20 @@ describe('filterSymbols', () => {
             expect(filterSymbols(mixed, 'binance').map((s) => s.ticker)).toEqual(['BTCUSDT', 'ETHUSDT', 'BTCUSD']);
             expect(filterSymbols(mixed, 'off').map((s) => s.ticker)).toEqual(['OFFLINE']);
         });
+
+        it('a declared LISTING prefix is the venue label: it scopes, and the provider id still scopes too', () => {
+            const equities = [
+                { ticker: 'AAPL', type: 'stock', prefix: 'NASDAQ', provider: 'edgx' },
+                { ticker: 'IBM', type: 'stock', prefix: 'NYSE', provider: 'edgx' },
+                { ticker: 'SPY', type: 'stock', prefix: 'AMEX', provider: 'edgx' },
+                ...venues,
+            ];
+            const label = (q: string): string[] => filterSymbols(equities, q).map((s) => `${s.prefix ?? s.provider}:${s.ticker}`);
+            expect(label('nasdaq AAP')).toEqual(['NASDAQ:AAPL']); //  the listing venue scopes
+            expect(label('NYSE:AAPL')).toEqual([]); //               wrong venue matches nothing (TV-strict)
+            expect(label('edgx:')).toEqual(['NASDAQ:AAPL', 'NYSE:IBM', 'AMEX:SPY']); // provider id still browses its pool
+            expect(label('nasdaq')).toEqual(['NASDAQ:AAPL']); //     venue-substring tier reads the label
+        });
     });
 });
 
