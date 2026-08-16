@@ -283,5 +283,8 @@ Three levels, shallow to deep:
 3. **Contributed actions** — plugins and hosts add topbar buttons and context-menu items
    as data descriptors via
    [`registerWidgetAction`](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction);
-   the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `KeymapManager`) are
-   exported from `vela/ui` for building your own panels against the headless core.
+   the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `Popover`, `Switch`,
+   `Select`, `NumberInput`, `TextField`, `ColorField` / `buildColorPicker`,
+   `KeymapManager`) are exported from `vela/ui` for building your own panels against
+   the headless core. Form controls share `sm` (chart settings) and `md` (indicator
+   dialog) sizes so a host panel can match either surface.

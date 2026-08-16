@@ -6,6 +6,15 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Form controls on the UI kit.** Toggles, dropdowns, number and text fields, the
+  color picker, and a shared popover shell are available from `@luxalgo/vela/ui`,
+  so a host can build settings panels that match the chart's own chrome. The
+  indicator dialog, chart settings, and drawing toolbar now share those controls
+  instead of each drawing its own.
+- **Tabs in the indicator settings dialog.** An indicator input can name the tab it
+  lives on, and the settings dialog grows one tab per name next to the default
+  "Inputs" tab — click a tab to switch between its controls. Inputs that name no tab
+  stay on "Inputs", so existing indicators look exactly as before.
 - **Favorite timeframes.** Hover a row in the topbar's timeframe dropdown and a star
   appears — click it to pin that timeframe (starred rows keep their gold star). Pinned
   timeframes sit as duration-sorted chips with the current value highlighted in place;
@@ -15,6 +24,18 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Chart settings dropdowns use the themed list.** Selecting a value in Chart
+  settings opens the same overlay list the indicator dialog already used, instead
+  of the operating system's native popup.
+- **Indicator settings sit closer together.** The dialog follows the same rhythm as
+  the rest of the settings chrome: a 20px title with more air above the tab strip,
+  16px between a label and its control, 34×100px fields, 16px between rows, and a
+  16px footer around 34px Cancel/Ok. A color input shows a square chip with the
+  same field border as the other controls and opens the shared swatch picker.
+  Dropdowns and the date calendar use the dialog surface plus an outer shadow,
+  the same 14px type, and a thin overlay scrollbar. Number fields grow small
+  right-side steppers on hover, session times are typeable comboboxes, and group
+  headers keep more space above and below the title.
 - **Trend-line labels follow the line.** A label on a trend line, ray, extended
   line, info line, or trend angle sits along the segment instead of staying
   horizontal, and flips so the text never reads upside-down.

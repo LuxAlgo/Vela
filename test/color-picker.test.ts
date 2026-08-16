@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitColor, combineColor } from '../src/renderers/native/drawings/colorPicker';
+import { splitColor, combineColor } from '../src/ui/components/color-picker';
 
 describe('color picker color math', () => {
     it('splitColor parses #RRGGBB, #RRGGBBAA, #RGB and rgba()', () => {

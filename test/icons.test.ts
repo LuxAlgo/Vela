@@ -10,10 +10,12 @@ const attr = (svg: string, name: string) => new RegExp(`${name}="([^"]*)"`).exec
 
 /** The ids the chrome looks up by name; a rename here silently blanks an affordance. */
 const CHROME_ICONS = [
+    'calendar',
     'check',
     'chevron-down',
     'chevron-up',
     'chevrons-right',
+    'clock',
     'eye',
     'eye-off',
     'gear',

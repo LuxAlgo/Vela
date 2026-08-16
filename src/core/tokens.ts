@@ -22,6 +22,9 @@ export const STATIC_TOKENS: Record<string, string> = {
     '--vela-z-tooltip': '60',
     '--vela-z-menu': '50',
     '--vela-z-dialog': '40',
+    // Form popovers portal to <body> (or a chart host) and must sit above a dialog
+    // whose own stacking context may be nested inside the chart container.
+    '--vela-z-popover': '6000',
     '--vela-ease': 'cubic-bezier(0.22, 1, 0.36, 1)',
     '--vela-dur-fast': '90ms',
     '--vela-dur-med': '160ms',

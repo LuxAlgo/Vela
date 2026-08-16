@@ -7,8 +7,9 @@ renderer layers.
 - **`vela`** — the headless chart: data model, engines, drawings, providers, native renderer.
 - **`vela/widget`** — the full chart app: topbar (symbol / timeframe / style / indicators),
   status line, watermark, bottom bar (ranges, clock, timezone), object tree, keyboard-first UX.
-- **`vela/ui`** — the component kit the widget is built on (design tokens + headless
-  [Zag.js](https://zagjs.com) machines + vanilla views) and the `KeymapManager`.
+- **`vela/ui`** — the component kit the widget is built on: design tokens, overlay chrome
+  ([Zag.js](https://zagjs.com) menu/dialog/drawer/tooltip), form primitives (switch, select,
+  number, text, color, popover), and the `KeymapManager`.
 - **`vela/plugin`** — the extension SDK: chart types, renderer layers, native indicators.
 - **`vela/workspace`** — the multi-chart shell: a grid of full charts under one shared
   topbar, with named cells, sync groups and one persisted state document.
