@@ -2,12 +2,12 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.6.0]
 
 ### Added
 
 - **Per-symbol listing prefixes (TradingView parity).** A provider's symbol
-  descriptors may declare `prefix: 'NASDAQ'` — the venue the instrument is *listed*
+  descriptors may declare `prefix: 'NASDAQ'` — the venue the instrument is _listed_
   on, a property of the symbol rather than of the provider. When declared,
   `NASDAQ:AAPL` resolves through it (strictly: `NYSE:AAPL` matches nothing, no
   auto-correction), every label displays it — legend venue chip, symbol-search
