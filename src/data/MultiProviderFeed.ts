@@ -261,14 +261,14 @@ class RegistryFetchFeed implements MarketDataFeed {
         const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
         const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500 });
+        return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session });
     }
 
     loadRange(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]> {
         const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
         const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, ticker, cfg.timeframe ?? '60', range);
+        return safeBars(provider, ticker, cfg.timeframe ?? '60', { ...range, session: cfg.session });
     }
 
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe {
@@ -276,7 +276,7 @@ class RegistryFetchFeed implements MarketDataFeed {
         const provider = this.registry.get(name ?? '');
         if (!provider) return () => {};
         const tf = cfg.timeframe ?? '60';
-        if (provider.subscribe) return provider.subscribe(ticker, tf, onBar);
+        if (provider.subscribe) return provider.subscribe(ticker, tf, onBar, cfg.session ? { session: cfg.session } : undefined);
 
         let stopped = false;
         let timer: ReturnType<typeof setTimeout> | null = null;
@@ -285,7 +285,7 @@ class RegistryFetchFeed implements MarketDataFeed {
             try {
                 // Last two bars: the (possibly just-closed) previous bar and the forming
                 // one. onBar dedupes by time, so the older one is harmless.
-                const bars = await provider.getBars(ticker, tf, { limit: 2 });
+                const bars = await provider.getBars(ticker, tf, { limit: 2, session: cfg.session });
                 // Re-check AFTER the await: an unsubscribe during the fetch (a market
                 // switch) must not push the OLD market's bars into the new series — on the
                 // same timeframe the forming bar shares its open time, so a stale bar would

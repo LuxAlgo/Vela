@@ -384,3 +384,23 @@ describe('BarStore', () => {
         expect(store.get(seriesKey('binance', 'ETHUSDT', '240'))).toBeUndefined();
     });
 });
+
+describe('session-keyed series (RTH vs ETH are different bars)', () => {
+    it('seriesKey keys extended apart and leaves regular/absent on the legacy key', () => {
+        expect(seriesKey('edgx', 'AAPL', '60')).toBe('edgx|AAPL|60');
+        expect(seriesKey('edgx', 'AAPL', '60', 'regular')).toBe('edgx|AAPL|60'); // default = keyless
+        expect(seriesKey('edgx', 'AAPL', '60', 'extended')).toBe('edgx|AAPL|60|extended');
+    });
+
+    it('the two sessions never share cached bars, and the flag reaches the inner feed', async () => {
+        const { feed, store, cf } = setup(600);
+        const regular = await cf.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500 });
+        // Extended is a COLD series of its own — a fresh full load, not the cached regular bars.
+        const callsAfterRegular = feed.loadCalls;
+        const extended = await cf.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500, session: 'extended' });
+        expect(feed.loadCalls).toBe(callsAfterRegular + 1);
+        expect(times(extended)).toEqual(times(regular)); // same fake universe...
+        expect(store.get(seriesKey('binance', 'BTCUSDT', '60'))).toBeDefined();
+        expect(store.get(seriesKey('binance', 'BTCUSDT', '60', 'extended'))).toBeDefined(); // ...two series
+    });
+});

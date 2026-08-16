@@ -106,6 +106,7 @@ export class Vela {
                 symbol: options.symbol,
                 timeframe: options.timeframe,
                 bars: options.bars,
+                session: options.session,
                 visibleRange: options.visibleRange,
                 data: options.data,
             },

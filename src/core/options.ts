@@ -8,6 +8,17 @@ import type { DrawingsOption } from './drawings/toolbar';
 /** A registered data-provider name (any string; matched case-insensitively). */
 export type ProviderName = string;
 
+/**
+ * Which trading session the chart shows, on markets that have one: `regular` = RTH
+ * (09:30–16:00 for US equities), `extended` = ETH (pre/post-market included). The
+ * provider owns the actual filtering — the flag rides every data request. Meaningless
+ * (and ignored end-to-end) on continuous markets like crypto.
+ */
+export type MarketSession = 'regular' | 'extended';
+
+/** Narrow an untrusted string (persisted document, URL param) to a {@link MarketSession}. */
+export const normalizeSession = (v: unknown): MarketSession | undefined => (v === 'regular' || v === 'extended' ? v : undefined);
+
 /** How the chart obtains its candles. */
 export interface MarketConfig {
     /** The market's symbol. A bare ticker (`'BTCUSDT'`) resolves against the registered
@@ -16,6 +27,9 @@ export interface MarketConfig {
     symbol?: string;
     timeframe?: string;
     bars?: number;
+    /** Trading session to show ({@link MarketSession}). Absent = the provider's default
+     *  (`regular` on session markets); continuous markets ignore it entirely. */
+    session?: MarketSession;
     /**
      * The window to frame on the FIRST paint — a preset name (`'1D'`, `'YTD'`, …) or an
      * explicit `{from, to}`. Set it when the initial view is known up front (a range
@@ -40,6 +54,8 @@ export interface MarketSwitch {
     symbol?: string;
     timeframe?: string;
     bars?: number;
+    /** Switch the shown trading session (reloads like a timeframe change). */
+    session?: MarketSession;
     data?: OHLCV[];
     visibleRange?: VisibleRangePreset | VisibleRange;
 }
@@ -58,6 +74,8 @@ export interface MarketSnapshot {
     provider?: ProviderName;
     timeframe?: string;
     bars?: number;
+    /** The shown trading session — undefined = the provider's default (regular). */
+    session?: MarketSession;
     offline: boolean;
 }
 

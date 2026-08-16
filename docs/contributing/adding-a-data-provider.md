@@ -19,7 +19,7 @@ One method is **required**; the rest are **progressive** — present them when y
 
 #### Required
 
-- **`getBars(ticker, timeframe, range)`** — return bars for the requested window. `ticker` is what the user typed minus any `provider:` prefix (any `.ext` suffix is **kept** — you own its meaning). `range` is `{ from?, to?, limit? }` (epoch ms; `to` omitted = now). The newest bar is treated as the forming candle.
+- **`getBars(ticker, timeframe, range)`** — return bars for the requested window. `ticker` is what the user typed minus any `provider:` prefix (any `.ext` suffix is **kept** — you own its meaning). `range` is `{ from?, to?, limit?, session? }` (epoch ms; `to` omitted = now). The newest bar is treated as the forming candle. `session` (`'regular'` | `'extended'`) names the trading session the chart shows on markets that have one — honor it if your source can filter (regular vs extended bars are cached as separate series), ignore it otherwise. The same flag reaches `subscribe` as `opts.session` (4th argument).
 
 #### Optional
 

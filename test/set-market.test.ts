@@ -286,6 +286,28 @@ describe('setMarket — in-place market switch', () => {
         expect(chart.market.symbol).toBe('BBB');
     });
 
+    it('a SESSION switch reloads like a timeframe change, and the flag rides the load config', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        const events: unknown[] = [];
+        chart.on('market:changed', (e) => events.push(e));
+
+        await chart.setMarket({ session: 'extended' });
+
+        // The reload happened (same symbol — the SESSION is the changed identity),
+        // and the feed saw the flag on the load config (providers read it off BarRange).
+        expect(feed.loads[feed.loads.length - 1]).toMatchObject({ symbol: 'AAA', session: 'extended' });
+        expect(chart.market.session).toBe('extended');
+        expect(events).toHaveLength(1); // an identity change — the chrome must re-sync
+
+        // Same session again: a no-op, no reload.
+        const loadsBefore = feed.loads.length;
+        await chart.setMarket({ session: 'extended' });
+        expect(feed.loads.length).toBe(loadsBefore);
+    });
+
     it('frames a requested visibleRange on the first paint of the new market', async () => {
         const feed = new SwitchFeed();
         const renderer = new FakeRenderer();

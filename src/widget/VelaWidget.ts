@@ -7,7 +7,7 @@
 // Cosmetic state (price style, timezone) survives rebuilds via renderer features.
 import { Vela } from '../Vela';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
-import type { VelaOptions } from '../core/options';
+import { normalizeSession, type MarketSession, type VelaOptions } from '../core/options';
 import { resolveTheme } from '../core/theme';
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
@@ -107,6 +107,8 @@ export class VelaWidget {
     private priceStyle: string;
     private timezone: string;
     private bars: number;
+    /** The shown trading session — undefined = the provider default (regular). */
+    private session: MarketSession | undefined;
     private watermarkOn: boolean;
     /** Indicator titles (the in-chart legend rows) shown — reapplied across rebuilds. */
     private indicatorTitlesOn = true;
@@ -205,6 +207,7 @@ export class VelaWidget {
         this.priceStyle = fromUrl.priceStyle ?? bootCell?.priceStyle ?? opts.priceStyle ?? 'candles';
         this.timezone = fromUrl.timezone ?? boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         this.bars = Number(fromUrl.bars ?? bootCell?.bars ?? opts.bars ?? 1000);
+        this.session = normalizeSession(fromUrl.session ?? bootCell?.session ?? opts.session);
         this.watermarkOn = bootCell?.watermark !== undefined ? bootCell.watermark : opts.watermark !== false;
         this.indicatorTitlesOn = bootCell?.indicatorTitles ?? true;
         this.indicatorValuesOn = bootCell?.indicatorValues ?? true;
@@ -336,6 +339,7 @@ export class VelaWidget {
                       timezone: this.timezone,
                       onRange: (preset) => this.applyRange(preset),
                       onTimezone: (zone) => this.setTimezone(zone),
+                      onSession: (session) => this.setSession(session),
                       onSettingsClick: () => this.inner?.renderer.openSettings(),
                   })
                 : null;
@@ -629,6 +633,32 @@ export class VelaWidget {
         void this.inner?.setMarket({ timeframe: tf, bars: this.bars });
     }
 
+    /**
+     * Switch the shown trading session (RTH/ETH) in place — a full reload, like a
+     * timeframe change (the two sessions are different bar series). No-op on a chart
+     * already showing that session; meaningless on continuous markets (the toggle is
+     * disabled there, but the API tolerates the call — the provider ignores the flag).
+     */
+    setSession(session: MarketSession): void {
+        if (session === this.session || (session === 'regular' && this.session === undefined) || this.destroyed) return;
+        this.session = session;
+        this.refreshSessionToggle();
+        this.markStateDirty();
+        void this.inner?.setMarket({ session });
+    }
+
+    /** Re-derive the RTH/ETH toggle's posture from the ACTIVE symbol's metadata: enabled
+     *  iff the resolved symbol declares a real session vocabulary (not `24x7`). */
+    private refreshSessionToggle(): void {
+        const chart = this.inner;
+        if (!chart || !this.bottombar) return;
+        void chart.data.symbolInfo(this.symbol).then((si) => {
+            if (this.destroyed || this.inner !== chart) return;
+            const enabled = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
+            this.bottombar?.setSession({ session: this.session ?? 'regular', enabled });
+        });
+    }
+
     /** Star/unstar a timeframe — the topbar chips and dropdown stars follow, and the
      *  set persists with the rest of the shell state. */
     private setTimeframeFavorite(tf: string, on: boolean): void {
@@ -686,6 +716,10 @@ export class VelaWidget {
         cell.timeframe = live?.timeframe ?? this.timeframe;
         cell.priceStyle = this.priceStyle;
         if (this.bars > 0) cell.bars = this.bars;
+        // Only the non-default persists: absent = regular, so toggling back to RTH
+        // leaves the document as lean as before the feature existed.
+        const session = normalizeSession(live?.session ?? this.session);
+        if (session === 'extended') cell.session = session;
         cell.watermark = this.watermarkOn;
         cell.indicatorTitles = this.indicatorTitlesOn;
         cell.indicatorValues = this.indicatorValuesOn;
@@ -759,9 +793,15 @@ export class VelaWidget {
             const symbol = fromUrl.symbol ?? prefixedSymbol(cell);
             const timeframe = fromUrl.timeframe ?? cell.timeframe;
             const bars = Number(fromUrl.bars ?? cell.bars ?? 0);
-            const next: { symbol?: string; timeframe?: string; bars?: number } = {};
+            const session = normalizeSession(fromUrl.session ?? cell.session);
+            const next: { symbol?: string; timeframe?: string; bars?: number; session?: MarketSession } = {};
             if (symbol && symbol !== this.symbol) next.symbol = symbol;
             if (timeframe && timeframe !== this.timeframe) next.timeframe = timeframe;
+            if (session && session !== (this.session ?? 'regular')) {
+                this.session = session;
+                next.session = session;
+                this.refreshSessionToggle();
+            }
             if (bars > 0 && bars !== this.bars) {
                 this.bars = bars;
                 next.bars = Math.max(bars, this.rangeBars);
@@ -1015,6 +1055,7 @@ export class VelaWidget {
             symbol: this.symbol,
             timeframe: this.timeframe,
             bars: Math.max(this.bars, this.rangeBars),
+            session: this.session,
             volume: this.ledgerVolume ?? chartOpts.volume,
             // A pending range chip frames the FIRST paint (no preview flash, no re-frame).
             ...(this.pendingRange ? { visibleRange: this.pendingRange.preset } : {}),
@@ -1027,7 +1068,9 @@ export class VelaWidget {
         // The venue chip painted from the typed/persisted prefix is provisional: once the
         // indexes settle, re-derive it from the DATA (listing prefix beats registration name).
         void chart.data.ready().then(() => {
-            if (this.inner === chart) this.statusline?.setMeta(this.timeframe, this.providerLabel());
+            if (this.inner !== chart) return;
+            this.statusline?.setMeta(this.timeframe, this.providerLabel());
+            this.refreshSessionToggle(); // symbol metadata can now answer "has sessions?"
         });
         // A fresh renderer starts desktop — push the live mode (constructor-time builds
         // run before layoutCtl exists; the controller's first evaluation covers them).
@@ -1138,6 +1181,7 @@ export class VelaWidget {
                 this.statusline?.setSymbol(symbol);
                 this.objectTree.setSymbol(symbol);
                 this.watermark?.update(symbol, this.timeframe);
+                this.refreshSessionToggle(); // the new symbol may (not) have sessions
             }
             if (timeframe !== this.timeframe) this.syncTimeframeChrome(timeframe);
         });
@@ -1480,6 +1524,8 @@ export class VelaWidget {
                 priceStyle: this.priceStyle,
                 timezone: this.timezone,
                 bars: String(this.bars),
+                // Empty clears the param — the default (regular) keeps links lean.
+                session: this.session === 'extended' ? 'extended' : '',
                 watermark: this.watermarkOn ? '1' : '0',
                 favorites: this.favs.join(','),
             });
