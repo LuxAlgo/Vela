@@ -149,6 +149,8 @@ export class VelaWidget {
     private readonly stateListeners = new Set<() => void>();
     /** Favorite drawing-tool types — mirrored from chart events, reapplied on rebuilds. */
     private favs: string[] = [];
+    /** Favorite timeframes — the topbar's quick-switch chips, persisted with the shell. */
+    private tfFavs: string[] = [];
     /** Mounted attachment disposers (by id), torn down at destroy. */
     private readonly attachmentDisposers = new Map<string, () => void>();
     private readonly onUnload = (): void => this.persistNow();
@@ -207,6 +209,7 @@ export class VelaWidget {
         this.indicatorTitlesOn = bootCell?.indicatorTitles ?? true;
         this.indicatorValuesOn = bootCell?.indicatorValues ?? true;
         this.favs = boot?.favorites ? [...boot.favorites] : [];
+        this.tfFavs = boot?.timeframeFavorites ? [...boot.timeframeFavorites] : [];
         this.savedConfig = bootCell?.rendererConfig ?? null;
         this.savedDrawings = bootCell?.drawings ?? null;
         this.pendingIndicators = bootCell?.indicators ?? null;
@@ -285,8 +288,10 @@ export class VelaWidget {
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             timeframe: this.timeframe,
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            timeframeFavorites: this.tfFavs,
             priceStyle: this.priceStyle,
             onTimeframe: (tf) => this.setTimeframe(tf),
+            onTimeframeFavorite: (tf, on) => this.setTimeframeFavorite(tf, on),
             onPriceStyle: (style) => this.setPriceStyle(style),
             getContext: () => this.context(),
         });
@@ -622,6 +627,15 @@ export class VelaWidget {
         void this.inner?.setMarket({ timeframe: tf, bars: this.bars });
     }
 
+    /** Star/unstar a timeframe — the topbar chips and dropdown stars follow, and the
+     *  set persists with the rest of the shell state. */
+    private setTimeframeFavorite(tf: string, on: boolean): void {
+        if (on === this.tfFavs.includes(tf)) return;
+        this.tfFavs = on ? [tf, ...this.tfFavs] : this.tfFavs.filter((f) => f !== tf);
+        this.topbar.setTimeframeFavorites(this.tfFavs);
+        this.markStateDirty();
+    }
+
     /**
      * Switch the chart symbol in place. An `EXCHANGE:` prefix pins the venue (the
      * symbol picker composes one from the row the user pointed at) — a bare ticker
@@ -693,6 +707,7 @@ export class VelaWidget {
         });
         const state: WorkspaceState = { version: 1, layout: '1', activeCellId: 'c1', timezone: this.timezone, charts: [{ id: 'c1', ...cell }] };
         if (this.favs.length > 0) state.favorites = [...this.favs];
+        if (this.tfFavs.length > 0) state.timeframeFavorites = [...this.tfFavs];
         const panels = this.dock.getState();
         if (panels) state.panels = panels;
         return state;
@@ -716,6 +731,10 @@ export class VelaWidget {
         if (st.favorites) {
             this.favs = [...st.favorites];
             this.inner?.drawings.setFavorites(this.favs as never[]);
+        }
+        if (st.timeframeFavorites) {
+            this.tfFavs = [...st.timeframeFavorites];
+            this.topbar.setTimeframeFavorites(this.tfFavs);
         }
         // Absent in documents written before the dock existed — those leave the column closed.
         this.dock.applyState(st.panels);

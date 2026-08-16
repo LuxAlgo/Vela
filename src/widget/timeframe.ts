@@ -115,6 +115,28 @@ export function timeframeMs(value: string): number {
     return count * UNIT_MS[key];
 }
 
+/** Favorite chips in duration order (shortest first). First-seen wins on duplicates;
+ *  values that do not parse sort last, keeping their relative order. The current
+ *  timeframe is included when it is a favorite so the highlight can sit in place. */
+export function favoriteTimeframeChips(favorites: readonly string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const tf of favorites) {
+        if (seen.has(tf)) continue;
+        seen.add(tf);
+        out.push(tf);
+    }
+    return out.sort((a, b) => {
+        const ma = timeframeMs(a);
+        const mb = timeframeMs(b);
+        const aOk = Number.isFinite(ma);
+        const bOk = Number.isFinite(mb);
+        if (aOk && bOk && ma !== mb) return ma - mb;
+        if (aOk !== bOk) return aOk ? -1 : 1;
+        return 0;
+    });
+}
+
 /** Compact display label for any timeframe value ("60" → "1h", "D" → "1D"). */
 export function timeframeLabel(value: string): string {
     const parsed = parseTimeframe(value);

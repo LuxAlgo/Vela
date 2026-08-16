@@ -206,7 +206,7 @@ export abstract class Drawing {
     abstract handlePoints(proj: Projector): Array<[number, number]>;
     /** Tight pixel bounds (selection box), or null when unresolvable. */
     abstract bounds(proj: Projector): { x: number; y: number; w: number; h: number } | null;
-    /** Visible price span on its pane — folded into autoscale. */
+    /** Visible price span on its pane. Reserved for a future per-drawing autoscale opt-in. */
     abstract priceRange(): { min: number; max: number } | null;
 
     /**

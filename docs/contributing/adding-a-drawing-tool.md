@@ -8,7 +8,7 @@ in the core, see [ADR 0005](../architecture/adr/0005-core-owns-user-drawings.md)
 
 The key fact: a drawing type is a **renderer-agnostic, data-driven** class. You describe its
 anchors, geometry, and settings as pure functions of *(anchors, projector)*; interaction,
-persistence, undo, the settings popup, autoscale, and the toolbar entry then all work
+persistence, undo, the settings popup, and the toolbar entry then all work
 **automatically**. Most tools are tiny because shared base classes absorb the geometry — a full
 harmonic pattern leaf is around a dozen lines.
 
@@ -84,8 +84,9 @@ rather than asking the type for behavior:
 - **Persistence, undo, clipboard.** The type serializes to plain JSON automatically; any per-instance
   extras go in `props` via `writeProps()` / `readProps()` so the base stays closed. Undo, copy/paste,
   and `toJSON`/`fromJSON` then work unchanged.
-- **Autoscale + culling.** `priceRange()` folds the drawing into the pane's autoscale; `timeExtent()`
-  gates off-screen culling.
+- **Culling.** `timeExtent()` gates off-screen culling. `priceRange()` reports the drawing's
+  visible span (kept for a future per-drawing autoscale opt-in); user drawings do not expand
+  the pane's scale today.
 - **The toolbar.** The registry entry's `group` places it; nothing else.
 
 Keep the class **renderer-agnostic** — it must not import anything from `renderers/` (the import ACL

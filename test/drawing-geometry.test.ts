@@ -6,6 +6,7 @@ import {
     extendEndpoints,
     parseColor,
     contrastColor,
+    uprightLineAngle,
 } from '../src/renderers/shared/drawing-geometry';
 
 const TIMES = [0, 100, 200, 300, 400];
@@ -106,5 +107,19 @@ describe('drawing-geometry / colour', () => {
         expect(contrastColor('#ffffff')).toBe('#000000');
         expect(contrastColor('#000000')).toBe('#ffffff');
         expect(contrastColor(undefined)).toBe('#000000');
+    });
+});
+
+describe('drawing-geometry / uprightLineAngle', () => {
+    it('a rightward horizontal is 0, a leftward one flips to 0 so the text stays upright', () => {
+        expect(uprightLineAngle(0, 0, 10, 0)).toBeCloseTo(0);
+        expect(uprightLineAngle(10, 0, 0, 0)).toBeCloseTo(0);
+    });
+
+    it('follows a diagonal and flips past vertical so the glyphs never read upside-down', () => {
+        expect(uprightLineAngle(0, 10, 10, 0)).toBeCloseTo(-Math.PI / 4); // up-right (canvas Y down)
+        expect(uprightLineAngle(0, 0, 10, 10)).toBeCloseTo(Math.PI / 4); // down-right
+        expect(uprightLineAngle(10, 0, 0, 10)).toBeCloseTo(-Math.PI / 4); // down-left → flipped
+        expect(uprightLineAngle(10, 10, 0, 0)).toBeCloseTo(Math.PI / 4); // up-left → flipped
     });
 });

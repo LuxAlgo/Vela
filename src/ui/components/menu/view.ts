@@ -18,6 +18,9 @@ export interface MenuOptions extends MenuControllerOptions {
      *  compact lists like the timeframe dropdown pass something snug). Submenus keep the
      *  default. */
     minWidth?: string;
+    /** Star-toggle reports from items carrying `favorite` (the menu stays open — starring
+     *  is a side action on a row, never a selection). */
+    onFavorite?: (id: string, on: boolean) => void;
 }
 
 interface SurfaceOptions {
@@ -29,6 +32,7 @@ interface SurfaceOptions {
     triggerId?: string;
     id?: string;
     minWidth?: string;
+    onFavorite?: (id: string, on: boolean) => void;
 }
 
 /**
@@ -45,14 +49,19 @@ class Surface {
     private readonly doc: Document;
     private readonly host: HTMLElement;
     private readonly onSelect: (id: string) => void;
+    private readonly onFavorite?: (id: string, on: boolean) => void;
     private items: readonly MenuItemDescriptor[] = [];
     /** Branch item id → the surface it opens. */
     private readonly subs = new Map<string, Surface>();
+    /** Trigger rect captured when this level opened — the list stays put if the
+     *  trigger then moves (favorite chips shifting the caret). */
+    private pinnedAnchor: { x: number; y: number; width: number; height: number } | null = null;
 
     constructor(doc: Document, opts: SurfaceOptions) {
         this.doc = doc;
         this.host = opts.host;
         this.onSelect = opts.onSelect;
+        this.onFavorite = opts.onFavorite;
 
         this.positioner = doc.createElement('div');
         this.positioner.className = 'vela-ui-layer';
@@ -62,16 +71,25 @@ class Surface {
         this.positioner.appendChild(this.list);
         this.host.appendChild(this.positioner);
 
+        const trigger = opts.trigger;
         this.ctrl = menuController({
             items: [],
             id: opts.id,
             placement: opts.placement,
             onSelect: (id) => this.onSelect(id),
-            onOpenChange: opts.onOpenChange,
+            getAnchorRect: () => this.pinnedAnchor,
+            onOpenChange: (open) => {
+                if (open && trigger) {
+                    const r = trigger.getBoundingClientRect();
+                    this.pinnedAnchor = { x: r.x, y: r.y, width: r.width, height: r.height };
+                } else {
+                    this.pinnedAnchor = null;
+                }
+                opts.onOpenChange?.(open);
+            },
             triggerId: opts.triggerId,
         });
         this.mid = String(this.ctrl.props.id);
-        const trigger = opts.trigger;
         if (opts.triggerId && trigger) trigger.id = opts.triggerId;
         this.handle = runMachine(this.ctrl.machine, this.ctrl.props, (service) => {
             const api = this.ctrl.connect(service);
@@ -165,6 +183,27 @@ class Surface {
                 hint.textContent = item.hint;
                 li.appendChild(hint);
             }
+            if (item.favorite !== undefined && this.onFavorite) {
+                const on = item.favorite;
+                const star = iconEl(on ? 'star-filled' : 'star', doc);
+                star.classList.add('vela-menu-star');
+                if (on) star.classList.add('vela-fav');
+                star.removeAttribute('aria-hidden'); // iconEl hides decorative icons; this one is a control
+                star.setAttribute('role', 'button');
+                star.setAttribute('aria-label', on ? 'Remove from favorites' : 'Add to favorites');
+                star.setAttribute('aria-pressed', on ? 'true' : 'false');
+                // Swallow the whole pointer sequence: the machine selects rows on click,
+                // and a press that starts on the star must never reach the row.
+                for (const ev of ['pointerdown', 'pointerup', 'mousedown', 'mouseup'] as const) {
+                    star.addEventListener(ev, (e) => e.stopPropagation());
+                }
+                star.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this.onFavorite?.(item.id, !on);
+                });
+                li.appendChild(star);
+            }
             if (item.toggle) {
                 const sw = doc.createElement('span');
                 sw.className = 'vela-menu-switch' + (item.checked ? ' on' : '');
@@ -180,6 +219,7 @@ class Surface {
                     host: this.host,
                     placement: 'right-start',
                     onSelect: this.onSelect,
+                    onFavorite: this.onFavorite,
                     id: `${this.mid}--${item.id}`,
                 });
                 sub.setItems(item.submenu ?? []);
@@ -207,6 +247,7 @@ export class Menu {
             triggerId: opts.triggerId,
             id: opts.id,
             minWidth: opts.minWidth,
+            onFavorite: opts.onFavorite,
         });
         this.root.setItems(opts.items);
     }

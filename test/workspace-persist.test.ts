@@ -13,6 +13,7 @@ const fullDoc: WorkspaceState = {
     activeCellId: 'c2',
     timezone: 'Europe/Paris',
     favorites: ['trendline', 'hline'],
+    timeframeFavorites: ['15', '60', 'D'],
     sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true, drawings: true },
     trackSizes: { '4': { cols: [1.4, 0.6], rows: [1, 1] } },
     charts: [
@@ -85,6 +86,20 @@ describe('sanitizeState (the applyState gate)', () => {
                 { id: 'c3', indicators: { manifest: ['EMA'], natives: [] } },
             ],
         });
+    });
+
+    it('filters non-string favorite entries, dropping empty sets entirely', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            favorites: ['trendline', 7],
+            timeframeFavorites: ['60', null, 'D'],
+            charts: [],
+        });
+        expect(doc!.favorites).toEqual(['trendline']);
+        expect(doc!.timeframeFavorites).toEqual(['60', 'D']);
+        const empty = sanitizeState({ version: 1, layout: '1', timeframeFavorites: [42], charts: [] });
+        expect(empty!.timeframeFavorites).toBeUndefined();
     });
 
     it('dedupes chart entries by id — the LAST duplicate wins', () => {

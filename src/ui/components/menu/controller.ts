@@ -21,6 +21,11 @@ export interface MenuItemDescriptor {
     toggle?: boolean;
     /** Icon id (see the `vela/ui` icon registry) rendered before the label. */
     icon?: string;
+    /** Favorite-star affordance at the row's right edge: `false` renders an outline
+     *  star revealed on row hover, `true` a filled star that stays visible. Clicking
+     *  it reports through the menu's `onFavorite` WITHOUT selecting (or closing) the
+     *  row — undefined rows carry no star at all. */
+    favorite?: boolean;
     /** Nested entries — the row becomes a submenu trigger opening its own list to the side.
      *  A branch is not selectable itself: `onSelect` only ever reports leaf ids. */
     submenu?: readonly MenuItemDescriptor[];
@@ -35,6 +40,11 @@ export interface MenuControllerOptions {
             : never
         : never;
     onOpenChange?: (open: boolean) => void;
+    /** Pin the floating list to this rect (viewport coords). Used to keep an open
+     *  menu still when its trigger moves — starring a timeframe adds a chip and
+     *  would otherwise drag the list with the caret. `null` falls through to the
+     *  live trigger. */
+    getAnchorRect?: () => { x: number; y: number; width: number; height: number } | null;
     /** Share the trigger's DOM id with other machines composed on the same element. */
     triggerId?: string;
     /** Pin the machine's own id instead of taking a fresh one. A parent registers its
@@ -58,7 +68,10 @@ export function menuController(opts: MenuControllerOptions): MenuController {
         props: {
             id: opts.id ?? nextUid('vela-menu'),
             ids: opts.triggerId ? { trigger: opts.triggerId } : undefined,
-            positioning: { placement: opts.placement ?? 'bottom-start' },
+            positioning: {
+                placement: opts.placement ?? 'bottom-start',
+                ...(opts.getAnchorRect ? { getAnchorRect: () => opts.getAnchorRect!() } : {}),
+            },
             onSelect: (d: menu.SelectionDetails) => opts.onSelect?.(d.value),
             onOpenChange: (d: menu.OpenChangeDetails) => opts.onOpenChange?.(d.open),
         } satisfies Partial<menu.Props>,

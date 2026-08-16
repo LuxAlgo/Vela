@@ -44,5 +44,7 @@ export interface InputSchema {
     group?: string;
     /** Inline grouping label (controls placed on one row). */
     inline?: string;
+    /** Settings-dialog tab hosting this input; unset ⇒ the default "Inputs" tab. */
+    tab?: string;
     tooltip?: string;
 }

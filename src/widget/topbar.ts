@@ -8,7 +8,7 @@ import { injectStyles } from '../ui/styles';
 import { chartType } from '../chart-types/registry';
 import { widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
-import { timeframeLabel } from './timeframe';
+import { favoriteTimeframeChips, timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
 
 // The component owns its stylesheet (id-guarded, injected at construction) so EVERY
@@ -51,6 +51,36 @@ const CSS = `
     color: var(--vela-fg-bright);
 }
 .vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+/* Timeframe cluster: duration-sorted favorite chips, highlight in place, caret
+   opening the full dropdown. With no favorites the caret is the merged trigger
+   (label + chevron). An unstarred current value sits as an extra chip by the caret. */
+.vela-widget-tf-group { display: inline-flex; align-items: center; gap: 2px; }
+.vela-widget-tf-chips { display: inline-flex; align-items: center; gap: 2px; }
+.vela-widget-tf-chips:empty { display: none; }
+.vela-widget-tf[data-current='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
+.vela-widget-tf-caret {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--vela-fg-muted);
+}
+.vela-widget-tf-caret:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tf-caret[data-solo='1'] {
+    width: auto;
+    padding: 0 6px 0 9px;
+    gap: 4px;
+    color: var(--vela-fg-bright);
+    background: var(--vela-hover-strong);
+    font-size: 13px;
+    font-weight: 550;
+    white-space: nowrap;
+}
+.vela-widget-topbar .vela-widget-tf-caret .vela-icon { font-size: 14px; width: 14px; height: 14px; }
 .vela-widget-topbar .vela-icon { color: inherit; font-size: 16px; width: 16px; height: 16px; }
 /* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
    fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
@@ -135,8 +165,14 @@ export interface TopbarOptions {
     onSymbolClick?: () => void;
     timeframe: string;
     timeframes: readonly string[];
+    /** Favorite timeframes — duration-sorted quick-switch chips, stars in the
+     *  dropdown rows. Push later changes with {@link Topbar.setTimeframeFavorites}. */
+    timeframeFavorites?: readonly string[];
     priceStyle: string;
     onTimeframe: (tf: string) => void;
+    /** A dropdown star was toggled. Omitted, the dropdown carries no stars and the
+     *  chips never render — the host owns (and persists) the favorite set. */
+    onTimeframeFavorite?: (tf: string, on: boolean) => void;
     onPriceStyle: (style: string) => void;
     /** Optional workspace LAYOUT dropdown (rendered after the style dropdown when
      *  given) — the grid-canvas picker composing uniform grids, with the workspace
@@ -168,7 +204,10 @@ export interface TopbarOptions {
 export class Topbar {
     readonly el: HTMLElement;
     private readonly symbolEl: HTMLElement;
-    private readonly tfButton: HTMLElement;
+    /** Duration-sorted favorite chips (plus an unstarred current, when needed). */
+    private readonly tfChipsHost: HTMLElement;
+    private readonly tfCaret: HTMLButtonElement;
+    private tfFavs: string[];
     private readonly styleButton: HTMLElement;
     private layoutButton: HTMLElement | null = null;
     private layoutPicker: LayoutPicker | null = null;
@@ -220,9 +259,18 @@ export class Topbar {
         // shell's state (the statusline meta and the picker badges name the venue).
         this.symbolEl.textContent = parseSymbol(opts.symbol).ticker;
         if (opts.onSymbolClick) this.symbolEl.addEventListener('click', opts.onSymbolClick);
-        this.tfButton = doc.createElement('button');
-        this.tfButton.className = 'vela-widget-tf';
-        this.tfButton.textContent = timeframeLabel(this.timeframe);
+        // Duration-sorted chips with highlight in place; the caret is the dropdown
+        // trigger (merged with the current label when there are no favorites).
+        this.tfFavs = [...(opts.timeframeFavorites ?? [])];
+        this.tfChipsHost = doc.createElement('span');
+        this.tfChipsHost.className = 'vela-widget-tf-chips';
+        this.tfCaret = doc.createElement('button');
+        this.tfCaret.className = 'vela-widget-tf-caret';
+        this.tfCaret.appendChild(iconEl('chevron-down', doc));
+        this.tfCaret.setAttribute('aria-label', 'Timeframes');
+        const tfGroup = doc.createElement('span');
+        tfGroup.className = 'vela-widget-tf-group';
+        tfGroup.append(this.tfChipsHost, this.tfCaret);
         this.styleButton = doc.createElement('button');
         this.styleButton.className = 'vela-widget-style';
         this.renderStyleButton(doc);
@@ -272,7 +320,7 @@ export class Topbar {
             d.className = 'vela-sep';
             return d;
         };
-        const leading: Array<HTMLElement> = [this.symbolEl, sep(), this.tfButton, sep(), this.styleButton, sep()];
+        const leading: Array<HTMLElement> = [this.symbolEl, sep(), tfGroup, sep(), this.styleButton, sep()];
         if (this.layoutButton) leading.push(this.layoutButton, sep());
         if (indicatorsBtn) leading.push(indicatorsBtn, sep());
         // The left action cluster sits where the built-in Indicators button lives; its
@@ -281,6 +329,7 @@ export class Topbar {
         this.leftActionsSep.hidden = true;
         this.el.append(...leading, this.leftActionsHost, this.leftActionsSep, this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, this.panelsHost, screenshotBtn);
         host.appendChild(this.el);
+        this.renderTfChips();
         // Snap after layout; RO catches later reflows (symbol / timeframe length).
         this.onHairlineSync();
         this.hairlineRo = new ResizeObserver(this.onHairlineSync);
@@ -288,7 +337,7 @@ export class Topbar {
         doc.defaultView?.addEventListener('resize', this.onHairlineSync);
         this.renderActions();
 
-        this.tooltips.push(new Tooltip(this.tfButton, { content: 'Timeframe', triggerId: 'vela-topbar-tf', host }));
+        this.tooltips.push(new Tooltip(this.tfCaret, { content: 'Timeframe', triggerId: 'vela-topbar-tf', host }));
         this.tooltips.push(new Tooltip(this.styleButton, { content: 'Chart style', triggerId: 'vela-topbar-style', host }));
         if (this.layoutButton && opts.layout) {
             this.tooltips.push(new Tooltip(this.layoutButton, { content: 'Layout', triggerId: 'vela-topbar-layout', host }));
@@ -305,11 +354,12 @@ export class Topbar {
             });
         }
         this.tfMenu = new Menu({
-            trigger: this.tfButton,
+            trigger: this.tfCaret,
             triggerId: 'vela-topbar-tf',
             host,
             items: this.tfItems(),
             onSelect: (id) => opts.onTimeframe(id),
+            onFavorite: (id, on) => opts.onTimeframeFavorite?.(id, on),
             // Timeframe labels are two-or-three characters ("1m", "4h", "1D") — the
             // stylesheet's default min-width would leave the list mostly empty.
             minWidth: '84px',
@@ -329,8 +379,51 @@ export class Topbar {
 
     setTimeframe(tf: string): void {
         this.timeframe = tf;
-        this.tfButton.textContent = timeframeLabel(tf);
         this.tfMenu.setItems(this.tfItems());
+        this.renderTfChips();
+    }
+
+    /** Reflect the favorite-timeframe set — the quick-switch chips and the dropdown stars. */
+    setTimeframeFavorites(favs: readonly string[]): void {
+        this.tfFavs = [...favs];
+        this.renderTfChips();
+        this.tfMenu.setItems(this.tfItems());
+    }
+
+    /** Rebuild the quick-switch chips (current value changed, or the favorite set did). */
+    private renderTfChips(): void {
+        const doc = this.el.ownerDocument;
+        this.tfChipsHost.replaceChildren();
+        const stars = this.opts.onTimeframeFavorite !== undefined;
+        const chips = stars ? favoriteTimeframeChips(this.tfFavs) : [];
+        const currentIsFav = chips.includes(this.timeframe);
+        // Unstarred current sits next to the caret so the favorite row never jumps.
+        const shown = currentIsFav || chips.length === 0 ? chips : [...chips, this.timeframe];
+        for (const tf of shown) {
+            const b = doc.createElement('button');
+            b.className = 'vela-widget-tf';
+            const label = timeframeLabel(tf);
+            b.textContent = label;
+            if (tf === this.timeframe) {
+                b.dataset.current = '1';
+                b.setAttribute('aria-current', 'true');
+            } else {
+                b.setAttribute('aria-label', `Switch timeframe to ${label}`);
+                b.addEventListener('click', () => this.opts.onTimeframe(tf));
+            }
+            this.tfChipsHost.appendChild(b);
+        }
+        this.tfCaret.replaceChildren();
+        if (chips.length === 0) {
+            this.tfCaret.dataset.solo = '1';
+            this.tfCaret.append(doc.createTextNode(timeframeLabel(this.timeframe)), iconEl('chevron-down', doc));
+            this.tfCaret.setAttribute('aria-label', `Timeframe — ${timeframeLabel(this.timeframe)}`);
+        } else {
+            delete this.tfCaret.dataset.solo;
+            this.tfCaret.appendChild(iconEl('chevron-down', doc));
+            this.tfCaret.setAttribute('aria-label', 'Timeframes');
+        }
+        this.onHairlineSync(); // the cluster width changed
     }
 
     setPriceStyle(style: string): void {
@@ -472,7 +565,14 @@ export class Topbar {
     }
 
     private tfItems(): MenuItemDescriptor[] {
-        return this.opts.timeframes.map((tf) => ({ id: tf, label: timeframeLabel(tf), checked: tf === this.timeframe }));
+        // Stars only when the host handles the toggle — a starless dropdown otherwise.
+        const stars = this.opts.onTimeframeFavorite !== undefined;
+        return this.opts.timeframes.map((tf) => ({
+            id: tf,
+            label: timeframeLabel(tf),
+            checked: tf === this.timeframe,
+            ...(stars ? { favorite: this.tfFavs.includes(tf) } : {}),
+        }));
     }
 
     private styleItems(): MenuItemDescriptor[] {
