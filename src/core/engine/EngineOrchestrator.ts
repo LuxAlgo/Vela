@@ -530,6 +530,25 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             return;
         }
         const prev = { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60' };
+        // A SESSION-ONLY flip (RTH↔ETH) changes WHICH bars exist but not the time axis:
+        // the user's zoom/position carries over to the reload — captured here, before the
+        // quiesce below discards it — unless the caller framed a window of its own. Any
+        // other identity change keeps today's re-frame (a new symbol's clock is new).
+        // What carries is the VIEW, not the wall clock: the sessions' bar densities
+        // differ ~2.5×, so preserving the raw time window would fatten/thin every candle
+        // (a perceived zoom change) — instead the BAR COUNT on screen and the time of
+        // the newest visible bar anchor the reframe against the INCOMING series (see
+        // the post-load refinement below). The time window still frames the first
+        // paint provisionally.
+        const sessionOnly =
+            identityChanged &&
+            next.session !== undefined &&
+            next.data === undefined &&
+            (next.symbol === undefined || next.symbol === m.symbol) &&
+            (next.timeframe === undefined || next.timeframe === m.timeframe);
+        const carried = sessionOnly && next.visibleRange === undefined ? this.currentVisibleRange() : undefined;
+        // How many bars the user is LOOKING at — the pixel zoom, in series-neutral form.
+        const carriedCount = carried ? this.rawBars.filter((b) => b.time >= carried.left && b.time <= carried.right).length : 0;
 
         const gen = this.bumpGeneration();
         this.switchingMarket = true;
@@ -548,9 +567,22 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (next.timeframe !== undefined) m.timeframe = next.timeframe;
             if (next.bars !== undefined) m.bars = next.bars;
             if (next.session !== undefined) m.session = next.session;
+            // Carrying the window is not enough — the incoming series must REACH it, or
+            // the viewport clamp throws the user somewhere else (sessions cover very
+            // different wall-clock spans for the same bar count: an RTH tape reaches
+            // ~2.5× further back than ETH). Bar density is at most one per interval, so
+            // this count always covers the window's left edge; capped so a view parked
+            // years back never triggers a mega-load (the clamp is the honest fallback
+            // there). Deepening only — the user's own depth is never shrunk.
+            if (carried) {
+                const needed = Math.min(Math.ceil((Date.now() - carried.left) / this.barIntervalMs()) + 50, 5000);
+                if (needed > (m.bars ?? 500)) m.bars = needed;
+            }
             if (next.data !== undefined) m.data = next.data;
             else if (next.symbol !== undefined) delete m.data; // offline → provider switch
-            m.visibleRange = next.visibleRange; // consumed by THIS load only (overwritten every switch)
+            // Consumed by THIS load only (overwritten every switch); a session-only flip
+            // re-frames the window the user was looking at.
+            m.visibleRange = next.visibleRange ?? (carried ? { from: carried.left, to: carried.right } : undefined);
 
             // An identity switch blanks the chart NOW: the old market's candles must not sit
             // under the new market's name while its bars load — the loading affordance owns
@@ -591,6 +623,20 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         } finally {
             // A superseding call set its own flag — only the owning generation clears it.
             if (this.generation === gen) this.switchingMarket = false;
+        }
+
+        // The carried view's REFINEMENT: the provisional time window framed the first
+        // paint, but sessions differ in bar density (~2.5×), so the same wall clock
+        // would fatten/thin every candle — a perceived zoom change. Re-derive the
+        // window from the bars that actually LOADED: same BAR COUNT on screen (the
+        // pixel zoom), the newest visible time as the anchor. Skipped when the old
+        // view held no bars (whitespace) — the time window is the only truth there.
+        if (carried && carriedCount >= 2 && this.rawBars.length > 0) {
+            const bars = this.rawBars;
+            let idx = bars.length - 1;
+            while (idx > 0 && bars[idx]!.time > carried.right) idx -= 1;
+            const from = bars[Math.max(0, idx - (carriedCount - 1))]!.time;
+            this.renderer.setVisibleRange({ from, to: Math.max(carried.right, bars[idx]!.time + 1) });
         }
 
         // Restart every consumer over the new market (records/panes/drawings survive). A
@@ -839,6 +885,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             symbol: this.config.market.symbol ?? 'TEST',
             timeframe: this.config.market.timeframe ?? '60',
             live: this.config.live ?? false,
+            session: this.config.market.session,
             bars: () => this.bars,
             data: this.dataControl,
             pushData: (data) => this.renderer.setNativeData?.(id, data),
@@ -1385,6 +1432,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 symbol: this.config.market.symbol ?? 'TEST',
                 timeframe: this.config.market.timeframe ?? '60',
                 live: this.config.live,
+                session: this.config.market.session,
                 bars: () => this.bars,
                 data: this.dataControl,
                 emit: (out) => this.applyModel(id, this.buildNativeModel(record, out)),
