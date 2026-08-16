@@ -24,6 +24,10 @@ interface Entry {
     provider: DataProvider;
     /** Normalized tickers this provider serves; null = not (yet) enumerated. */
     index: Set<string> | null;
+    /** `PREFIX:TICKER` (normalized) → descriptor, for symbols declaring a listing prefix. */
+    prefixIndex: Map<string, SymbolDescriptor> | null;
+    /** Normalized ticker → descriptor (canonical display lookups). */
+    byTicker: Map<string, SymbolDescriptor> | null;
     descriptors: SymbolDescriptor[];
     /** The index build finished (success OR failure). */
     settled: boolean;
@@ -56,11 +60,14 @@ export function parseSymbol(raw: string): ParsedSymbol {
  * registration (eager), and resolves a symbol string to `{ provider, ticker }`.
  *
  * Resolution: an explicit `name:SYMBOL` prefix routes to that provider (no index
- * needed); a bare `SYMBOL` routes to the first provider — in **registration
- * order**, the chart's default tried first — whose index contains it. `lenient`
- * mode (used for the primary chart load) lets a *sole* registered provider serve
- * a bare symbol optimistically before its index is built, so first paint isn't
- * gated on enumerating thousands of symbols.
+ * needed); a prefix that is no provider name routes through the descriptors'
+ * declared LISTING prefix (`NASDAQ:AAPL` → the provider indexing Nasdaq-listed
+ * AAPL — strict, so a wrong venue resolves to nothing); a bare `SYMBOL` routes to
+ * the first provider — in **registration order**, the chart's default tried
+ * first — whose index contains it. `lenient` mode (used for the primary chart
+ * load) lets a *sole* registered provider serve a bare symbol optimistically
+ * before its index is built, so first paint isn't gated on enumerating thousands
+ * of symbols.
  */
 export class ProviderRegistry {
     /** Insertion order = registration order (relied on by bare resolution). */
@@ -75,7 +82,7 @@ export class ProviderRegistry {
     /** Register (or replace) a provider; returns a promise that settles when its index is built. */
     register(rawName: string, provider: DataProvider): Promise<void> {
         const name = normName(rawName);
-        const entry: Entry = { name, provider, index: null, descriptors: [], settled: false, settle: Promise.resolve() };
+        const entry: Entry = { name, provider, index: null, prefixIndex: null, byTicker: null, descriptors: [], settled: false, settle: Promise.resolve() };
         this.entries.set(name, entry);
         entry.settle = this.buildIndex(entry);
         // Re-check parked loads on the next microtask — batches a synchronous burst of
@@ -94,6 +101,9 @@ export class ProviderRegistry {
                 const symbols = await entry.provider.listSymbols();
                 entry.descriptors = symbols;
                 entry.index = new Set(symbols.map((s) => normTicker(s.ticker)));
+                entry.byTicker = new Map(symbols.map((s) => [normTicker(s.ticker), s]));
+                entry.prefixIndex = new Map();
+                for (const s of symbols) if (s.prefix) entry.prefixIndex.set(`${normName(s.prefix)}:${normTicker(s.ticker)}`, s);
             }
         } catch {
             // Enumeration failed — non-fatal. Explicit-prefix routing still works;
@@ -141,14 +151,28 @@ export class ProviderRegistry {
 
     /**
      * Resolve a symbol to `{ provider, ticker }`, or null when nothing can serve it
-     * yet. Explicit prefix → that provider (must be registered). Bare → first
-     * indexed provider (registration order, `opts.default` first) that contains the
-     * ticker; `opts.lenient` additionally allows a sole registered provider before
-     * its index exists.
+     * yet. Explicit prefix → that provider (must be registered), else a provider whose
+     * index declares that LISTING prefix for that ticker (`NASDAQ:AAPL` routes to the
+     * provider serving Nasdaq-listed AAPL — TradingView-strict, so `NYSE:AAPL` resolves
+     * to nothing rather than auto-correcting). Bare → first indexed provider
+     * (registration order, `opts.default` first) that contains the ticker;
+     * `opts.lenient` additionally allows a sole registered provider before its index
+     * exists.
      */
     resolve(raw: string, opts: { default?: string | null; lenient?: boolean } = {}): Resolved | null {
         const { provider, ticker } = this.parse(raw);
-        if (provider) return this.entries.has(provider) ? { provider, ticker } : null;
+        if (provider) {
+            if (this.entries.has(provider)) return { provider, ticker };
+            // Listing-prefix routing: matched against the DESCRIPTOR's declared prefix, so
+            // the verdict comes from the data, never from string similarity. The resolved
+            // ticker is the descriptor's spelling (canonical casing for `nyse:ibm` → `IBM`).
+            const key = `${provider}:${normTicker(ticker)}`;
+            for (const name of this.candidateOrder(opts.default)) {
+                const d = this.entries.get(name)!.prefixIndex?.get(key);
+                if (d) return { provider: name, ticker: d.ticker };
+            }
+            return null;
+        }
 
         const norm = normTicker(ticker);
         for (const name of this.candidateOrder(opts.default)) {
@@ -234,6 +258,24 @@ export class ProviderRegistry {
             if (this.entries.has(d)) return [d, ...names.filter((n) => n !== d)];
         }
         return names;
+    }
+
+    /**
+     * The DISPLAY prefix for a resolved symbol — the descriptor's LISTING prefix when the
+     * data declares one, else the provider name. This is the single seam every label
+     * (legend chip, committed/persisted `PREFIX:TICKER` strings) derives from, which is
+     * what makes a non-canonical spelling impossible to display: the form always comes
+     * from the data, never from what was typed.
+     */
+    displayPrefixOf(resolved: Resolved): string {
+        const d = this.entries.get(resolved.provider)?.byTicker?.get(normTicker(resolved.ticker));
+        return d?.prefix ?? resolved.provider;
+    }
+
+    /** The canonical `PREFIX:TICKER` string for a resolved symbol (descriptor spellings). */
+    canonicalSymbol(resolved: Resolved): string {
+        const d = this.entries.get(resolved.provider)?.byTicker?.get(normTicker(resolved.ticker));
+        return `${d?.prefix ?? resolved.provider}:${d?.ticker ?? resolved.ticker}`;
     }
 
     /** Indexed symbols for one provider (or all, concatenated) — for autocomplete. */

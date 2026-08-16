@@ -603,13 +603,15 @@ export class VelaWidget {
     }
 
     /**
-     * The provider name to show: the one that RESOLVED the symbol, not the one configured.
-     * They differ whenever the `provider` option is just a default (or names something that
-     * isn't registered) — the status line must not claim a venue that served nothing.
+     * The venue label to show: the LISTING prefix the resolved symbol's data declares
+     * (`NASDAQ` for AAPL), else the provider that RESOLVED the symbol — never the one
+     * configured or typed. They differ whenever the `provider` option is just a default,
+     * the prefix was a listing venue, or the spelling isn't registered — the status line
+     * must not claim a venue that served nothing.
      */
     private providerLabel(): string {
-        const resolved = this.inner?.data.resolve(this.symbol)?.provider;
-        return resolved ?? parseSymbol(this.symbol).provider ?? '';
+        const display = this.inner?.data.displayPrefix(this.symbol);
+        return display ?? parseSymbol(this.symbol).provider ?? '';
     }
 
     setTimeframe(tf: string): void {
@@ -1022,6 +1024,11 @@ export class VelaWidget {
         this.inner = chart;
 
         this.symbolPicker.setSource(() => chart.data.symbols());
+        // The venue chip painted from the typed/persisted prefix is provisional: once the
+        // indexes settle, re-derive it from the DATA (listing prefix beats registration name).
+        void chart.data.ready().then(() => {
+            if (this.inner === chart) this.statusline?.setMeta(this.timeframe, this.providerLabel());
+        });
         // A fresh renderer starts desktop — push the live mode (constructor-time builds
         // run before layoutCtl exists; the controller's first evaluation covers them).
         if (this.layoutCtl !== undefined) chart.renderer.setLayoutMode(this.layoutCtl.current);

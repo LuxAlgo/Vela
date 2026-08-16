@@ -27,16 +27,25 @@ A symbol can name its provider with a prefix, or stay bare:
 |---|---|---|
 | `SYMBOL` | `BTCUSDT` | the first registered provider that serves it (see resolution) |
 | `PROVIDER:SYMBOL` | `BINANCE:BTCUSDT` | the named provider (case-insensitive) |
+| `PREFIX:SYMBOL` | `NASDAQ:AAPL` | the provider whose index **declares that listing prefix** for that ticker (see below) |
 | `SYMBOL.EXT` | `BTCUSDT.P` | resolved like `SYMBOL`; the `.EXT` is passed through to the provider |
 | `PROVIDER:SYMBOL.EXT` | `BINANCE:BTCUSDT.P` | the named provider, ticker `BTCUSDT.P` |
 
 The `.EXT` suffix is **opaque to Vela** — the provider owns its meaning (Binance reads `.P` as a perpetual future). Vela only uses it for the cache key and display.
 
+## Listing prefixes (`NASDAQ:AAPL`)
+
+A provider's symbol descriptors may declare a **listing prefix** (`prefix: 'NASDAQ'`) — the venue the instrument is *listed* on, which is a property of the **symbol**, not of the provider: one equities provider serves both Nasdaq-listed `AAPL` and NYSE-listed `IBM`. When declared:
+
+- **Resolution.** `NASDAQ:AAPL` routes to the provider whose descriptor declares that prefix for that ticker. Matching is **strict** (TradingView parity): `NYSE:AAPL` resolves to **nothing** — no auto-correction — and the load parks with the usual console warning. The prefix is case-insensitive, and the resolved ticker takes the descriptor's spelling (`nyse:ibm` → `IBM`).
+- **Display.** Every label derives from the data, never from what was typed: the legend venue chip reads `NASDAQ`, picker rows badge the listing venue, and the picker commits (and the workspace persists) the canonical `NASDAQ:AAPL` form.
+- **Compatibility.** An explicit provider name always keeps routing (`myequities:AAPL` still resolves — persisted documents don't break); it simply re-displays canonically. Symbols without a declared prefix behave exactly as before — the provider name is their prefix.
+
 ## How a bare symbol resolves
 
 When you don't name a provider, Vela picks one:
 
-1. An explicit `PROVIDER:` prefix always wins, immediately.
+1. An explicit prefix always wins: a registered **provider name** immediately, else a declared **listing prefix** once the provider's index is built.
 2. A bare symbol routes to the **first provider, in registration order, whose index contains it.** Each provider is indexed (via its symbol list) when it registers.
 
 This means a symbol can be served by several providers, and the order you register them sets the priority. A provider that does **not** serve the symbol is skipped — never fetched against.
@@ -71,6 +80,8 @@ Because registration is explicit and the symbol index builds asynchronously, the
 | `unregisterProvider(name)` | `this` | Remove a provider. |
 | `providers()` | `ProviderInfo[]` | Metadata for every registered provider. |
 | `resolve(symbol)` | `{ provider, ticker } \| null` | How a symbol routes right now (null if nothing serves it). |
+| `displayPrefix(symbol)` | `string \| null` | The venue label to display: the descriptor's **listing prefix** when declared (`NASDAQ` for AAPL), else the resolved provider name. Null while unresolvable. |
+| `canonicalSymbol(symbol)` | `string \| null` | The canonical `PREFIX:TICKER` form (`edgx:aapl` → `NASDAQ:AAPL`). Null while unresolvable. |
 | `symbols(provider?)` | `SymbolDescriptor[]` | Indexed symbols (for autocomplete) — for one provider, or all. |
 | `symbolInfo(symbol)` | `Promise<SymbolInfo \| undefined>` | Per-symbol metadata (Pine `syminfo.*`), via the owning provider. |
 | `capabilities(symbol)` | `ProviderCapabilities \| null` | The full resolved per-symbol capability record (behavior flags). Null while nothing resolves the symbol yet. |

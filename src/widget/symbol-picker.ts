@@ -43,12 +43,16 @@ function onlyOne<T>(matches: readonly T[]): T | null {
  * (see {@link parseQuery}) scopes the pool first — venue alone browses it whole, alphabetically.
  * Pure — unit-tested.
  */
+/** The row's venue label — the LISTING prefix the data declares, else the provider name. */
+const venueOf = (s: SymbolDescriptor): string | undefined => s.prefix ?? s.provider;
+
 export function filterSymbols(list: readonly SymbolDescriptor[], query: string, limit = 100): SymbolDescriptor[] {
     // The venues are the list's own — the picker's pool is already tab-filtered, and a scope
-    // token must never resolve to a venue that has nothing to show.
-    const venues = [...new Set(list.map((s) => s.provider?.toLowerCase()).filter((p): p is string => !!p))];
+    // token must never resolve to a venue that has nothing to show. Both spellings scope:
+    // the displayed listing venue (`nasdaq AAP`) and the provider id (`edgx AAP`).
+    const venues = [...new Set(list.flatMap((s) => [venueOf(s)?.toLowerCase(), s.provider?.toLowerCase()]).filter((p): p is string => !!p))];
     const { scope, term } = parseQuery(query, venues);
-    const pool = scope ? list.filter((s) => s.provider?.toLowerCase() === scope) : list;
+    const pool = scope ? list.filter((s) => venueOf(s)?.toLowerCase() === scope || s.provider?.toLowerCase() === scope) : list;
     const q = term.toUpperCase();
     if (!q) {
         // Venue alone: browse the whole venue, alphabetically. Empty query: pin the majors
@@ -70,7 +74,7 @@ export function filterSymbols(list: readonly SymbolDescriptor[], query: string, 
         else if (t.includes(q)) substr.push(s);
         else if ((s.description ?? '').toUpperCase().includes(q)) desc.push(s);
         // Inside a scope the venue is fixed — the tier would swallow the whole pool.
-        else if (!scope && s.provider?.toLowerCase().includes(qLower)) venue.push(s);
+        else if (!scope && (venueOf(s)?.toLowerCase().includes(qLower) || s.provider?.toLowerCase().includes(qLower))) venue.push(s);
         if (prefix.length >= limit) break;
     }
     return [...prefix, ...substr, ...desc, ...venue].slice(0, limit);
@@ -242,14 +246,14 @@ export class SymbolPicker {
             else if (e.key === 'ArrowUp') this.moveHighlight(-1);
             else if (e.key === 'Enter') {
                 const pick = this.rows[this.highlighted];
-                if (pick) this.select(pick.ticker, pick.provider, opts.onSelect);
+                if (pick) this.select(pick.ticker, pick.prefix ?? pick.provider, opts.onSelect);
                 return;
             } else return;
             e.preventDefault();
         });
         this.list.addEventListener('click', (e) => {
             const row = (e.target as HTMLElement).closest<HTMLElement>('.vela-sp-row');
-            if (row?.dataset.ticker) this.select(row.dataset.ticker, row.dataset.provider, opts.onSelect);
+            if (row?.dataset.ticker) this.select(row.dataset.ticker, row.dataset.venue, opts.onSelect);
         });
     }
 
@@ -271,11 +275,13 @@ export class SymbolPicker {
         this.dialog.destroy();
     }
 
-    private select(ticker: string, provider: string | undefined, onSelect: (symbol: string) => void): void {
+    private select(ticker: string, venue: string | undefined, onSelect: (symbol: string) => void): void {
         this.close();
         // The prefix IS the disambiguation: several venues may list this ticker, and the
         // user picked a specific row — a bare ticker would re-resolve by declaration order.
-        onSelect(provider ? `${provider.toLowerCase()}:${ticker}` : ticker);
+        // The committed form is the CANONICAL one: the listing prefix when the data
+        // declares it (`NASDAQ:AAPL`), the provider name otherwise (`binance:BTCUSDT`).
+        onSelect(venue ? `${venue}:${ticker}` : ticker);
     }
 
     private moveHighlight(delta: number): void {
@@ -316,7 +322,9 @@ export class SymbolPicker {
             row.dataset.ticker = s.ticker;
             // The venue the user is pointing at travels with the pick — the same ticker can be
             // listed by several providers, and dropping it would silently route to another one.
-            if (s.provider) row.dataset.provider = s.provider;
+            // The LISTING prefix wins over the provider id: it is the canonical spelling.
+            const venue = s.prefix ?? s.provider;
+            if (venue) row.dataset.venue = venue;
             const av = tickerIconEl(doc, baseOf(s), s.ticker, 'vela-sp-avatar');
             const main = doc.createElement('span');
             main.className = 'vela-sp-main';
@@ -328,11 +336,12 @@ export class SymbolPicker {
             d.textContent = s.description ?? (s.type ?? '');
             main.append(t, d);
             row.append(av, main);
-            if (s.provider) {
+            if (venue) {
                 const badge = doc.createElement('span');
                 badge.className = 'vela-sp-badge';
-                badge.dataset.p = s.provider;
-                badge.textContent = s.provider;
+                // Brand colors key on the PROVIDER id; the visible text is the venue label.
+                badge.dataset.p = s.provider ?? venue;
+                badge.textContent = venue;
                 row.appendChild(badge);
             }
             this.list.appendChild(row);

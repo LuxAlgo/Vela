@@ -23,7 +23,7 @@ One method is **required**; the rest are **progressive** — present them when y
 
 #### Optional
 
-- **`listSymbols()`** — enumerate the symbols you serve, as `{ ticker, description?, type? }[]`. This builds the **eager index** at registration that lets a **bare** symbol (no `provider:` prefix) resolve to you, and powers autocomplete. Without it, your provider is reachable **only** by an explicit `name:SYMBOL` prefix.
+- **`listSymbols()`** — enumerate the symbols you serve, as `{ ticker, description?, type?, prefix? }[]`. This builds the **eager index** at registration that lets a **bare** symbol (no `provider:` prefix) resolve to you, and powers autocomplete. Without it, your provider is reachable **only** by an explicit `name:SYMBOL` prefix. Declare `prefix` when the symbol's **listing venue** is its identity (`NASDAQ` for AAPL, `NYSE` for IBM — a property of the symbol, not of your provider): it is what `NASDAQ:AAPL` strings resolve against and what every label displays, TradingView-style. Leave it out where the provider *is* the identity (crypto, fx).
 - **`getSymbolInfo(ticker)`** — per-symbol metadata an engine may read (Pine `syminfo.*`). Absent ⇒ the engine synthesizes a fallback.
 - **`subscribe(ticker, timeframe, onBar)`** — open a true live candle stream and return an unsubscribe fn. Absent ⇒ the feed **polls `getBars`** for live ticks instead.
 - **`info()`** — provider metadata (display name, supported timeframes, capabilities). Absent ⇒ the registry synthesizes one from the methods you implement.

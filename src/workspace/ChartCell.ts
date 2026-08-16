@@ -299,6 +299,12 @@ export class ChartCell {
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '') : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
+        // The venue chip above is provisional (persisted/typed prefix): once the shared
+        // feed's indexes settle, re-derive it from the DATA — a cell restored as
+        // `edgx:AAPL` must come back up reading NASDAQ.
+        void this.inner.data.ready().then(() => {
+            if (this.inner && this.state.symbol) this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
+        });
         this.syncStatuslineColors();
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => {
@@ -440,7 +446,7 @@ export class ChartCell {
             this.state.timeframe = timeframe;
             this.watermark?.update(symbol, timeframe);
             this.statusline?.setSymbol(symbol);
-            this.statusline?.setMeta(timeframe, this.inner?.data.resolve(symbol)?.provider ?? this.state.provider ?? '');
+            this.statusline?.setMeta(timeframe, this.inner?.data.displayPrefix(symbol) ?? this.state.provider ?? '');
             if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
             this.refreshNativeCatalog(); // per-symbol support flags may differ
             this.deps.onMarketChanged(this.id);
