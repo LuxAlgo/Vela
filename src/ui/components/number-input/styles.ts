@@ -1,4 +1,4 @@
-export const NUMBER_STYLE_ID = 'vela-ui-number-2';
+export const NUMBER_STYLE_ID = 'vela-ui-number-3';
 
 export const NUMBER_CSS = `
 .vela-num { position: relative; display: inline-block; min-width: 0; }
@@ -24,7 +24,9 @@ export const NUMBER_CSS = `
 .vela-num input::-webkit-inner-spin-button, .vela-num input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .vela-num input:hover { border-color: var(--vela-fg-muted); }
 .vela-num input:focus { border-color: var(--vela-focus); box-shadow: 0 0 0 3px var(--vela-focus-soft); }
-.vela-num[data-steppers] input { padding-right: 26px; }
+/* The stepper gutter exists only while the steppers do (hover) — an idle field keeps
+   its full width so long values aren't cut under an invisible arrow column. */
+.vela-num[data-steppers]:hover input { padding-right: 26px; }
 .vela-num[data-size='sm'] { width: 64px; flex: none; }
 .vela-num[data-size='sm'][data-compact] { width: 56px; }
 .vela-num[data-size='sm'] input {

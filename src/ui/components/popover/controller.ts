@@ -43,7 +43,7 @@ export function insetRect(r: Rect, inset: number): Rect {
     };
 }
 
-/** Viewport rect with a uniform inset (the 6px air ColorField/WidthField used). */
+/** Viewport rect with a uniform inset (the 6px air ColorField / glyph-select used). */
 export function viewportRect(width: number, height: number, inset: number): Rect {
     return {
         left: inset,

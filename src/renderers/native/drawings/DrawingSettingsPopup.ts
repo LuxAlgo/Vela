@@ -1,5 +1,5 @@
 import type { VelaTheme } from '../../../core/options';
-import type { Drawing, RegressionStyle, VwapStyle, FrvpStyle, PositionLevelMode } from '../../../core/drawings';
+import type { Drawing, RegressionStyle, VwapStyle, SerializedDrawing } from '../../../core/drawings';
 import {
     DEFAULT_DRAWING_COLOR,
     TEXT_SIZE_OPTIONS,
@@ -12,14 +12,16 @@ import {
     MachFigure,
     FixedRangeVolumeProfile,
     PositionTool,
-    DIRECTION_OPTIONS,
     effectiveFillColor,
 } from '../../../core/drawings';
 import { icon, svg24, svg24Solid } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { contrastColor } from '../../shared/drawing-geometry';
+import { NumberInput } from '../../../ui/components/number-input';
+import { TextArea } from '../../../ui/components/text-area';
 import { buildColorPicker } from '../../../ui/components/color-picker';
 import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
+import { DrawingSettingsDialog } from './DrawingSettingsDialog';
 
 /** A `{ path: value }` patch emitted as the user edits a control. */
 export type SettingsPatch = Record<string, unknown>;
@@ -33,6 +35,8 @@ export interface SettingsActions {
     reorder(to: 'front' | 'back'): void;
     resetSettings(): void;
     remove(): void;
+    /** Restore a serialized snapshot (Cancel in the settings dialog). */
+    restore?(doc: SerializedDrawing): void;
 }
 
 /** The drawing's pixel bounding box, so the toolbar floats clear of it (not over it). */
@@ -46,26 +50,18 @@ export interface PopupAnchor {
 const BTN = 30; // icon-button side (px)
 const ICON = 21; // icon glyph side (px)
 const STYLE_ID = 'vela-drawing-popup-styles';
+const STYLE_REV = '3';
 
-/** Inject the scoped styles that inline cssText can't reach (`:focus`, color-swatch +
- *  scrollbar pseudo-elements). Idempotent — one shared sheet for all popups. */
+/** Inject the scoped styles that inline cssText can't reach (`:focus`, scrollbar
+ *  pseudo-elements). Idempotent — one shared sheet for all popups. */
 function ensureStyles(): void {
-    if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
-    const s = document.createElement('style');
+    if (typeof document === 'undefined') return;
+    const existing = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+    if (existing?.dataset.rev === STYLE_REV) return;
+    const s = existing ?? document.createElement('style');
     s.id = STYLE_ID;
+    s.dataset.rev = STYLE_REV;
     s.textContent = `
-.vela-dpop input[type=color]{-webkit-appearance:none;appearance:none;border:none;padding:0;background:none;cursor:pointer;border-radius:0;}
-.vela-dpop input[type=color]::-webkit-color-swatch-wrapper{padding:0;}
-.vela-dpop input[type=color]::-webkit-color-swatch{border:none;border-radius:0;}
-.vela-dpop input[type=color]::-moz-color-swatch{border:none;border-radius:0;}
-.vela-dpop textarea{outline:none;transition:border-color .12s ease,box-shadow .12s ease;}
-.vela-dpop textarea:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
-.vela-dpop textarea::placeholder{color:currentColor;opacity:0.4;}
-.vela-dpop textarea::-webkit-scrollbar,.vela-dpop .vela-fiblevels::-webkit-scrollbar,.vela-dpop .vela-frvp::-webkit-scrollbar{width:8px;}
-.vela-dpop textarea::-webkit-scrollbar-thumb,.vela-dpop .vela-fiblevels::-webkit-scrollbar-thumb,.vela-dpop .vela-frvp::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
-.vela-dpop textarea::-webkit-scrollbar-track,.vela-dpop .vela-fiblevels::-webkit-scrollbar-track,.vela-dpop .vela-frvp::-webkit-scrollbar-track{background:transparent;}
-.vela-dpop .vela-fiblevels input[type=text],.vela-dpop .vela-fiblevels input[type=number],.vela-dpop .vela-frvp input[type=text],.vela-dpop .vela-frvp input[type=number],.vela-dpop .vela-frvp select{transition:border-color .12s ease,box-shadow .12s ease;}
-.vela-dpop .vela-fiblevels input[type=text]:focus,.vela-dpop .vela-fiblevels input[type=number]:focus,.vela-dpop .vela-frvp input[type=text]:focus,.vela-dpop .vela-frvp input[type=number]:focus,.vela-dpop .vela-frvp select:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
 .vela-dpop-btn{background:transparent;color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dpop-btn:hover{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
 .vela-dpop-btn[data-active='1']{background:var(--vela-active);color:var(--vela-fg-bright);}
@@ -75,7 +71,7 @@ function ensureStyles(): void {
 /* A finger needs a wider grab zone than a cursor — grow the move handle on touch-first
    devices (the glyph stays centered; only the hit target widens). */
 @media (pointer: coarse){.vela-dpop-grip{width:${BTN + 14}px !important;}}`;
-    document.head.appendChild(s);
+    if (!existing) document.head.appendChild(s);
 }
 
 /**
@@ -91,7 +87,7 @@ export class DrawingSettingsPopup {
     private el: HTMLDivElement | null = null;
     private tipEl: HTMLDivElement | null = null; // floating hover-label (above/below the toolbar)
     private textPanel: HTMLDivElement | null = null;
-    private levelsPanel: HTMLDivElement | null = null;
+    private readonly settingsDialog: DrawingSettingsDialog;
     private colorPop: Popover | null = null;
     private colorOwner: HTMLElement | null = null;
     private menuPop: Popover | null = null;
@@ -101,21 +97,22 @@ export class DrawingSettingsPopup {
 
     constructor(private readonly host: HTMLElement, theme: VelaTheme) {
         this.theme = theme;
+        this.settingsDialog = new DrawingSettingsDialog(host, theme);
     }
 
     setTheme(theme: VelaTheme): void {
         this.theme = theme;
+        this.settingsDialog.setTheme(theme);
     }
 
     isOpen(): boolean {
         return this.el != null;
     }
 
-    /** Whether `node` belongs to this popup — the bar or either of its floating children (color
-     *  picker / dropdown menu), which live outside `el`. */
+    /** Whether `node` belongs to this popup — the bar, its host-floated color/menu shells,
+     *  or a kit popover (select list / color chip) portaled into the chart host. */
     contains(node: Node | null): boolean {
-        if (!node) return false;
-        return this.el?.contains(node) === true || this.colorPop?.el.contains(node) === true || this.menuPop?.el.contains(node) === true;
+        return node != null && (this.isOwnChrome(node) || this.settingsDialog.contains(node));
     }
 
     /** Open the quick toolbar for `drawing`, floating clear of its `anchor` box.
@@ -138,7 +135,10 @@ export class DrawingSettingsPopup {
         // Engaging any control in the bar dismisses an open color popover / dropdown menu (they live
         // outside `el` and stop their own pointerdowns, so this only fires for the OTHER controls —
         // and a dropdown trigger stops its own pointerdown so it can toggle its menu on click).
-        el.addEventListener('pointerdown', () => {
+        // Kit Select / ColorField do not stop pointerdown — skip them so a re-click can toggle.
+        el.addEventListener('pointerdown', (e) => {
+            const t = e.target as HTMLElement | null;
+            if (t?.closest('.vela-select-trigger, .vela-color-field')) return;
             closeOpenPopovers();
         });
 
@@ -263,9 +263,9 @@ export class DrawingSettingsPopup {
         // Trailing group: settings wheel (when the tool has one) sits just left of the lock,
         // and a kebab overflow (z-order + reset) sits just right of delete.
         bar.appendChild(this.divider());
-        if (isFrvp) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.toggleFrvpPanel(drawing as FixedRangeVolumeProfile, actions)));
-        if (isPosition) bar.appendChild(this.iconBtn('Position size', GEAR_ICON, () => this.togglePositionPanel(drawing as PositionTool, actions)));
-        if (editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.toggleLevelsPanel(drawing, actions)));
+        if (isFrvp) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'frvp')));
+        if (isPosition) bar.appendChild(this.iconBtn('Position size', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'position')));
+        if (editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'levels')));
         bar.appendChild(this.toggle('Lock', LOCK_ICON, drawing.locked, (v) => actions.setLocked(v)));
         const del = this.iconBtn('Delete', TRASH_ICON, () => actions.remove());
         del.style.color = 'var(--vela-danger)';
@@ -293,10 +293,10 @@ export class DrawingSettingsPopup {
         this.closeColorPopover();
         this.closeMenu();
         this.hideTip();
+        this.settingsDialog.close();
         this.el?.remove();
         this.el = null;
         this.textPanel = null;
-        this.levelsPanel = null;
         this.onClose = null;
     }
 
@@ -305,15 +305,26 @@ export class DrawingSettingsPopup {
     }
 
     private readonly onOutside = (e: Event): void => {
-        const target = e.target as Node;
-        if (this.colorPop?.el.contains(target)) return; // the floating color picker is part of this popup
-        if (this.menuPop?.el.contains(target)) return; // as is a floating dropdown menu
-        if (this.el && !this.el.contains(target)) {
-            const cb = this.onClose;
-            this.close();
-            cb?.();
+        const node = e.target as Node;
+        if (this.settingsDialog.isOpen()) {
+            if (this.settingsDialog.contains(node) || this.isOwnChrome(node)) return;
+            this.settingsDialog.close();
+            return;
         }
+        if (this.isOwnChrome(node)) return;
+        const cb = this.onClose;
+        this.close();
+        cb?.();
     };
+
+    /** Bar, host-floated shells, and kit popovers (select list / color chip) portaled into `host`. */
+    private isOwnChrome(node: Node): boolean {
+        if (this.el?.contains(node) || this.colorPop?.el.contains(node) || this.menuPop?.el.contains(node)) return true;
+        const el = node instanceof Element ? node : node.parentElement;
+        if (!el) return false;
+        const pop = el.closest('.vela-popover');
+        return pop != null && this.host.contains(pop);
+    }
 
     /** The expandable text editor (toggled by the Text button): the field itself, with bold/italic
      *  under it, plus color and size when those aren't already on the bar. */
@@ -324,23 +335,29 @@ export class DrawingSettingsPopup {
             this.reposition();
             return;
         }
-        const t = this.theme;
         const text = drawing.text;
         // Textarea on top; format controls sit in a footer row so they never cover typed text.
         const panel = document.createElement('div');
         panel.style.cssText = `padding:6px;border-top:1px solid var(--vela-border);display:flex;flex-direction:column;gap:4px;`;
-        const input = document.createElement('textarea');
-        input.placeholder = 'Label…';
-        input.value = text?.value ?? '';
-        input.rows = 1;
-        input.style.cssText = `display:block;width:100%;box-sizing:border-box;min-width:220px;min-height:46px;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:6px;padding:6px 9px;font:13px/18px ${t.fontFamily};resize:none;overflow-y:hidden;`;
-        input.addEventListener('input', () => {
-            actions.patch({ 'text.value': input.value });
-            autoGrow(input);
+        const ta = new TextArea({
+            value: text?.value ?? '',
+            rows: 1,
+            size: 'sm',
+            autoGrow: true,
+            maxLines: 4,
+            placeholder: 'Label…',
+            onChange: (v) => {
+                actions.patch({ 'text.value': v });
+                this.reposition();
+            },
+        });
+        ta.el.style.minWidth = '220px';
+        ta.input.addEventListener('input', () => {
+            actions.patch({ 'text.value': ta.input.value });
             this.reposition();
         });
-        input.addEventListener('keydown', (e) => {
-            e.stopPropagation(); // typing (incl. Enter for newlines, Delete) must not reach the chart
+        ta.input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
             if (e.key === 'Escape') {
                 e.preventDefault();
                 const cb = this.onClose;
@@ -363,494 +380,11 @@ export class DrawingSettingsPopup {
             this.toggle('Italic', ITALIC_ICON, !!text?.italic, (v) => actions.patch({ 'text.italic': v })),
         );
 
-        panel.append(input, tools);
+        panel.append(ta.el, tools);
         this.el?.appendChild(panel);
         this.textPanel = panel;
-        autoGrow(input); // size to initial content (multi-line aware)
         this.reposition();
-        input.focus();
-    }
-
-    /** Gear panel for the position tool: account fields (risk %, balance, position size — size
-     *  back-solves the risk %), the trade levels (direction switch, entry price, stop/target with
-     *  Price / Points units), per-label display toggles, and a live loss/size summary. Every commit
-     *  re-reads the live drawing — editing one field can move another (a flipped level, a
-     *  back-solved risk %), so all fields refresh together. */
-    private togglePositionPanel(drawing: PositionTool, actions: SettingsActions): void {
-        if (this.levelsPanel) {
-            this.levelsPanel.remove();
-            this.levelsPanel = null;
-            this.reposition();
-            return;
-        }
-        const t = this.theme;
-        const panel = document.createElement('div');
-        panel.style.cssText = `padding:8px 10px;border-top:1px solid var(--vela-border);display:flex;flex-direction:column;gap:6px;min-width:280px;`;
-
-        const live = (): PositionTool => {
-            const d = actions.resolve();
-            return d instanceof PositionTool ? d : drawing;
-        };
-        const refreshers: Array<() => void> = [];
-        const refreshAll = (): void => refreshers.forEach((f) => f());
-
-        /** Trim binary float noise so back-solved values (risk % from a typed size) stay readable. */
-        const fmt = (n: number): string => String(Math.round(n * 1e8) / 1e8);
-
-        const numberInput = (): HTMLInputElement => {
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.style.cssText = `width:96px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
-            return input;
-        };
-        const rowShell = (label: string): HTMLDivElement => {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:10px;';
-            const lbl = document.createElement('span');
-            lbl.textContent = label;
-            lbl.style.cssText = 'flex:1;opacity:0.9;';
-            row.appendChild(lbl);
-            panel.appendChild(row);
-            return row;
-        };
-        const onEnterCommit = (input: HTMLInputElement, commit: () => void): void => {
-            input.addEventListener('change', commit);
-            input.addEventListener('keydown', (e) => {
-                e.stopPropagation();
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commit();
-                    input.blur();
-                }
-            });
-        };
-
-        type NumField = 'riskPercent' | 'accountBalance' | 'quantity' | 'entryPrice';
-        const numberRow = (label: string, path: NumField, clamp?: { min: number; max: number; step: number }): void => {
-            const row = rowShell(label);
-            const input = numberInput();
-            if (clamp) {
-                input.min = String(clamp.min);
-                input.max = String(clamp.max);
-                input.step = String(clamp.step);
-            } else {
-                input.step = 'any';
-            }
-            input.value = fmt(live()[path]);
-            const commit = (): void => {
-                const n = parseFloat(input.value);
-                if (!Number.isFinite(n)) {
-                    input.value = fmt(live()[path]);
-                    return;
-                }
-                const v = clamp ? Math.min(clamp.max, Math.max(clamp.min, n)) : n;
-                actions.patch({ [path]: v });
-                refreshAll();
-            };
-            onEnterCommit(input, commit);
-            refreshers.push(() => {
-                if (document.activeElement !== input) input.value = fmt(live()[path]);
-            });
-            row.appendChild(input);
-        };
-
-        const unitSelect = (): HTMLSelectElement => {
-            const sel = document.createElement('select');
-            sel.style.cssText = `width:76px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:4px 4px;font:12px ${t.fontFamily};outline:none;cursor:pointer;`;
-            sel.addEventListener('keydown', (e) => e.stopPropagation());
-            return sel;
-        };
-
-        /** Stop/target row: the value input plus a Price / Points unit dropdown. Switching the
-         *  unit re-expresses the CURRENT level in the new unit (the level itself doesn't move);
-         *  typing commits in the selected unit. */
-        const levelRow = (label: string, path: 'stopPrice' | 'targetPrice', level: 'stop' | 'target'): void => {
-            let mode: PositionLevelMode = 'price';
-            const row = rowShell(label);
-            const input = numberInput();
-            input.step = 'any';
-            input.style.width = '84px';
-            const display = (): string => fmt(live().levelDisplayValue(level, mode));
-            input.value = display();
-            const commit = (): void => {
-                const n = parseFloat(input.value);
-                if (!Number.isFinite(n)) {
-                    input.value = display();
-                    return;
-                }
-                actions.patch({ [path]: live().levelPriceFromDisplay(level, mode, n) });
-                refreshAll();
-            };
-            onEnterCommit(input, commit);
-            const sel = unitSelect();
-            for (const opt of [
-                { value: 'price', label: 'Price' },
-                { value: 'points', label: 'Points' },
-            ]) {
-                const o = document.createElement('option');
-                o.value = opt.value;
-                o.textContent = opt.label;
-                sel.appendChild(o);
-            }
-            sel.addEventListener('change', () => {
-                mode = sel.value as PositionLevelMode;
-                input.value = display();
-            });
-            refreshers.push(() => {
-                if (document.activeElement !== input) input.value = display();
-            });
-            row.append(input, sel);
-        };
-
-        const directionRow = (): void => {
-            const row = rowShell('Direction');
-            const sel = unitSelect();
-            sel.style.width = '96px';
-            for (const opt of DIRECTION_OPTIONS) {
-                const o = document.createElement('option');
-                o.value = opt.value;
-                o.textContent = opt.label;
-                sel.appendChild(o);
-            }
-            sel.value = live().direction;
-            sel.addEventListener('change', () => {
-                actions.patch({ direction: sel.value });
-                refreshAll();
-            });
-            refreshers.push(() => {
-                sel.value = live().direction;
-            });
-            row.appendChild(sel);
-        };
-
-        type BoolField = 'showText' | 'showHeader' | 'showPrices' | 'showLossSize' | 'showTargetLabel' | 'showStopLabel';
-        const toggleRow = (label: string, path: BoolField): void => {
-            const row = document.createElement('label');
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;';
-            const chk = document.createElement('input');
-            chk.type = 'checkbox';
-            chk.checked = live()[path];
-            chk.style.cssText = `accent-color:${t.textColor};width:15px;height:15px;flex:none;cursor:pointer;`;
-            chk.addEventListener('change', () => {
-                actions.patch({ [path]: chk.checked });
-                refreshAll();
-            });
-            const lbl = document.createElement('span');
-            lbl.textContent = label;
-            lbl.style.cssText = 'flex:1;opacity:0.9;';
-            refreshers.push(() => {
-                chk.checked = live()[path];
-            });
-            row.append(chk, lbl);
-            panel.appendChild(row);
-        };
-
-        const section = (label: string): void => {
-            const el = document.createElement('div');
-            el.style.cssText = `opacity:0.5;font-size:10px;letter-spacing:0.6px;text-transform:uppercase;padding-top:4px;`;
-            el.textContent = label;
-            panel.appendChild(el);
-        };
-
-        section('Account');
-        numberRow('Risk %', 'riskPercent', { min: 0, max: 100, step: 0.1 });
-        numberRow('Account balance', 'accountBalance', { min: 0, max: 1e12, step: 1 });
-        numberRow('Position size', 'quantity');
-
-        section('Levels');
-        directionRow();
-        numberRow('Entry price', 'entryPrice');
-        levelRow('Stop', 'stopPrice', 'stop');
-        levelRow('Target', 'targetPrice', 'target');
-
-        section('Display');
-        toggleRow('Show text', 'showText');
-        toggleRow('Show direction & ratio', 'showHeader');
-        toggleRow('Show loss & size', 'showLossSize');
-        toggleRow('Show target label', 'showTargetLabel');
-        toggleRow('Show stop label', 'showStopLabel');
-        toggleRow('Show level prices', 'showPrices');
-
-        const summary = document.createElement('div');
-        summary.style.cssText = `opacity:0.7;font-size:11px;line-height:1.4;border-top:1px solid var(--vela-border);padding-top:6px;font-variant-numeric:tabular-nums;`;
-        refreshers.push(() => {
-            const d = live();
-            summary.textContent = `${d.headerLabel()}  —  ${d.lossSizeLabel()}`;
-        });
-        panel.appendChild(summary);
-        refreshAll();
-
-        this.el?.appendChild(panel);
-        this.levelsPanel = panel;
-        this.reposition();
-    }
-
-    /** Gear panel for Fixed Range Volume Profile: rows / VA / width / anchor, volume colors,
-     *  and the VAH / VAL / POC / developing level toggles (color + line style). */
-    private toggleFrvpPanel(drawing: FixedRangeVolumeProfile, actions: SettingsActions): void {
-        if (this.levelsPanel) {
-            this.levelsPanel.remove();
-            this.levelsPanel = null;
-            this.reposition();
-            return;
-        }
-        const t = this.theme;
-        const s = drawing.frvp;
-        const panel = document.createElement('div');
-        panel.className = 'vela-frvp';
-        panel.style.cssText = `padding:8px 10px;border-top:1px solid var(--vela-border);max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-width:280px;`;
-
-        const numberRow = (label: string, path: keyof FrvpStyle, min: number, max: number, step: number): void => {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:10px;';
-            const lbl = document.createElement('span');
-            lbl.textContent = label;
-            lbl.style.cssText = 'flex:1;opacity:0.9;';
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.min = String(min);
-            input.max = String(max);
-            input.step = String(step);
-            input.value = String(s[path] as number);
-            input.style.cssText = `width:72px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
-            const commit = (): void => {
-                const n = parseFloat(input.value);
-                if (!Number.isFinite(n)) {
-                    input.value = String(s[path] as number);
-                    return;
-                }
-                const clamped = Math.min(max, Math.max(min, n));
-                input.value = String(clamped);
-                actions.patch({ [`frvp.${path}`]: clamped });
-            };
-            input.addEventListener('change', commit);
-            input.addEventListener('keydown', (e) => {
-                e.stopPropagation();
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commit();
-                    input.blur();
-                }
-            });
-            row.append(lbl, input);
-            panel.appendChild(row);
-        };
-
-        numberRow('Rows', 'rows', 1, 500, 1);
-        numberRow('Value Area', 'valueAreaPct', 0, 100, 1);
-        numberRow('Width %', 'widthPct', 0, 100, 1);
-
-        {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:10px;';
-            const lbl = document.createElement('span');
-            lbl.textContent = 'Anchor';
-            lbl.style.cssText = 'flex:1;opacity:0.9;';
-            const sel = document.createElement('select');
-            sel.style.cssText = `width:96px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:4px 6px;font:12px ${t.fontFamily};outline:none;cursor:pointer;`;
-            for (const opt of [
-                { value: 'right', label: 'Right' },
-                { value: 'left', label: 'Left' },
-            ]) {
-                const o = document.createElement('option');
-                o.value = opt.value;
-                o.textContent = opt.label;
-                o.selected = s.anchor === opt.value;
-                sel.appendChild(o);
-            }
-            sel.addEventListener('change', () => actions.patch({ 'frvp.anchor': sel.value }));
-            sel.addEventListener('keydown', (e) => e.stopPropagation());
-            row.append(lbl, sel);
-            panel.appendChild(row);
-        }
-
-        const colorRow = (label: string, path: keyof FrvpStyle): void => {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:10px;';
-            const lbl = document.createElement('span');
-            lbl.textContent = label;
-            lbl.style.cssText = 'flex:1;opacity:0.9;';
-            const col = document.createElement('button');
-            col.type = 'button';
-            let cur = s[path] as string;
-            col.style.cssText = `width:18px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:0;cursor:pointer;background:${cur};padding:0;`;
-            col.addEventListener('pointerdown', (e) => e.stopPropagation());
-            col.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleColorPopover(col, cur, (v) => {
-                    cur = v;
-                    col.style.background = v;
-                    actions.patch({ [`frvp.${path}`]: v });
-                });
-            });
-            row.append(lbl, col);
-            panel.appendChild(row);
-        };
-
-        colorRow('Up Volume', 'upColor');
-        colorRow('Down Volume', 'downColor');
-        colorRow('Value Area Up', 'vaUpColor');
-        colorRow('Value Area Down', 'vaDownColor');
-
-        const styles = LINE_STYLE_OPTIONS.map((o) => o.value);
-        const levelRow = (
-            label: string,
-            showPath: keyof FrvpStyle,
-            colorPath: keyof FrvpStyle,
-            stylePath: keyof FrvpStyle,
-        ): void => {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;';
-            const chk = document.createElement('input');
-            chk.type = 'checkbox';
-            chk.checked = Boolean(s[showPath]);
-            // An unset color (the POC's themed default) shows as the ink actually painted.
-            const current = (s[colorPath] as string | undefined) ?? contrastColor(t.background);
-            chk.style.cssText = `accent-color:${current};width:15px;height:15px;flex:none;cursor:pointer;`;
-            chk.addEventListener('change', () => actions.patch({ [`frvp.${showPath}`]: chk.checked }));
-            const lbl = document.createElement('span');
-            lbl.textContent = label;
-            lbl.style.cssText = 'flex:1;min-width:0;opacity:0.9;';
-            const col = document.createElement('button');
-            col.type = 'button';
-            let cur = current;
-            col.style.cssText = `width:18px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:0;cursor:pointer;background:${cur};padding:0;`;
-            col.addEventListener('pointerdown', (e) => e.stopPropagation());
-            col.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleColorPopover(col, cur, (v) => {
-                    cur = v;
-                    col.style.background = v;
-                    chk.style.accentColor = v;
-                    actions.patch({ [`frvp.${colorPath}`]: v });
-                });
-            });
-            const styleBtn = this.dropdown(
-                `${label} style`,
-                styles,
-                s[stylePath] as string,
-                (st) => lineIcon(2, st),
-                (v) => actions.patch({ [`frvp.${stylePath}`]: v }),
-                { label: styleLabel },
-            );
-            styleBtn.style.width = 'auto';
-            row.append(chk, lbl, col, styleBtn);
-            panel.appendChild(row);
-        };
-
-        levelRow('VAH', 'showVah', 'vahColor', 'vahStyle');
-        levelRow('VAL', 'showVal', 'valColor', 'valStyle');
-        levelRow('POC', 'showPoc', 'pocColor', 'pocStyle');
-        levelRow('Developing POC', 'showDevelopingPoc', 'developingPocColor', 'developingPocStyle');
-        levelRow('Developing VA', 'showDevelopingVa', 'developingVaColor', 'developingVaStyle');
-
-        this.el?.appendChild(panel);
-        this.levelsPanel = panel;
-        this.reposition();
-    }
-
-    /** The expandable per-level editor (gear) for Fibonacci tools: enable, recolor, and label
-     *  each level. Edits emit `levels.<i>.<field>` patches that round-trip through `props`. */
-    private toggleLevelsPanel(drawing: Drawing, actions: SettingsActions): void {
-        if (this.levelsPanel) {
-            this.levelsPanel.remove();
-            this.levelsPanel = null;
-            this.reposition();
-            return;
-        }
-        const levels = drawing.editableLevels();
-        if (!levels) return;
-        const t = this.theme;
-        const isMach = drawing instanceof MachFigure;
-        const panel = document.createElement('div');
-        panel.className = 'vela-fiblevels';
-        panel.style.cssText = `padding:6px;border-top:1px solid var(--vela-border);max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;min-width:${isMach ? 200 : 248}px;`;
-        // Mach: show/hide all on-chart ratio labels from inside this panel (not the toolbar).
-        if (isMach) {
-            const mach = drawing as MachFigure;
-            const showRow = document.createElement('label');
-            showRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 2px 8px;margin-bottom:2px;border-bottom:1px solid var(--vela-border);cursor:pointer;user-select:none;';
-            const showChk = document.createElement('input');
-            showChk.type = 'checkbox';
-            showChk.checked = mach.showRatios !== false;
-            showChk.style.cssText = `accent-color:${t.textColor};width:15px;height:15px;flex:none;cursor:pointer;`;
-            showChk.addEventListener('change', () => actions.patch({ showRatios: showChk.checked }));
-            const showLbl = document.createElement('span');
-            showLbl.textContent = 'Show ratio labels';
-            showLbl.style.cssText = 'opacity:0.9;';
-            showRow.append(showChk, showLbl);
-            panel.appendChild(showRow);
-        }
-        levels.forEach((lv, i) => {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;';
-            const chk = document.createElement('input');
-            chk.type = 'checkbox';
-            chk.checked = lv.enabled;
-            chk.style.cssText = `accent-color:${lv.color};width:15px;height:15px;flex:none;cursor:pointer;`;
-            chk.addEventListener('change', () => actions.patch({ [`levels.${i}.enabled`]: chk.checked }));
-            const col = document.createElement('button');
-            col.type = 'button';
-            col.style.cssText = `width:18px;height:18px;flex:none;border:1px solid var(--vela-border);border-radius:0;cursor:pointer;background:${lv.color};padding:0;`;
-            let curC = lv.color;
-            col.addEventListener('pointerdown', (e) => e.stopPropagation());
-            col.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleColorPopover(col, curC, (v) => {
-                    curC = v;
-                    col.style.background = v;
-                    chk.style.accentColor = v;
-                    actions.patch({ [`levels.${i}.color`]: v });
-                });
-            });
-            // Ratio is editable — for Mach tools it is the circle radius / R; changing it
-            // must update geometry (a read-only span was why edits looked like a no-op).
-            const ratio = document.createElement('input');
-            ratio.type = 'number';
-            ratio.step = 'any';
-            ratio.min = '0';
-            let curRatio = lv.ratio;
-            ratio.value = String(curRatio);
-            ratio.title = 'Ratio';
-            // Mach ratios need a wider field (fib values like 11.09 / typed edits); Fib rows keep a compact field beside the label.
-            ratio.style.cssText = isMach
-                ? `width:88px;flex:1;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:5px 8px;font:13px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`
-                : `width:52px;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:3px 4px;font:12px ${t.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
-            const commitRatio = (): void => {
-                const n = parseFloat(ratio.value);
-                if (!Number.isFinite(n) || n <= 0) {
-                    ratio.value = String(curRatio);
-                    return;
-                }
-                curRatio = n;
-                actions.patch({ [`levels.${i}.ratio`]: n });
-            };
-            ratio.addEventListener('change', commitRatio);
-            ratio.addEventListener('keydown', (e) => {
-                e.stopPropagation(); // typing must not reach the chart
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commitRatio();
-                    ratio.blur();
-                }
-            });
-            row.append(chk, col, ratio);
-            // Fib tools keep a custom label field; Mach levels are ratio-only (on-chart text is the ratio).
-            if (!isMach) {
-                const label = document.createElement('input');
-                label.type = 'text';
-                label.placeholder = 'label…';
-                label.value = lv.label ?? '';
-                label.style.cssText = `flex:1;min-width:60px;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:3px 7px;font:12px ${t.fontFamily};outline:none;`;
-                label.addEventListener('input', () => actions.patch({ [`levels.${i}.label`]: label.value }));
-                label.addEventListener('keydown', (e) => e.stopPropagation()); // typing must not reach the chart
-                row.appendChild(label);
-            }
-            panel.appendChild(row);
-        });
-        this.el?.appendChild(panel);
-        this.levelsPanel = panel;
-        this.reposition();
+        ta.input.focus();
     }
 
     // ── positioning ──
@@ -886,7 +420,7 @@ export class DrawingSettingsPopup {
         el.style.top = `${Math.max(4, Math.min(top, host.height - h - 4))}px`;
     }
 
-    // ── control factories ──
+
     private base(tip: string): HTMLButtonElement {
         const b = document.createElement('button');
         b.type = 'button';
@@ -1101,36 +635,23 @@ export class DrawingSettingsPopup {
 
     /** An inline numeric width field for tools whose stroke range outgrows the 1–4px
      *  ladder — the value is clamped to the schema's declared min/max on commit. */
-    private widthInput(tip: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLInputElement {
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.dataset.tip = tip;
-        input.min = String(min);
-        input.max = String(max);
-        input.step = String(step);
-        input.value = String(value);
-        input.style.cssText = `width:52px;height:${BTN}px;box-sizing:border-box;flex:none;background:transparent;color:inherit;border:1px solid var(--vela-border);border-radius:5px;padding:0 4px;font:12px ${this.theme.fontFamily};font-variant-numeric:tabular-nums;outline:none;`;
-        const commit = (): void => {
-            const n = parseFloat(input.value);
-            if (!Number.isFinite(n)) {
-                input.value = String(value);
-                return;
-            }
-            const v = Math.min(max, Math.max(min, n));
-            input.value = String(v);
-            value = v;
-            onChange(v);
-        };
-        input.addEventListener('change', commit);
-        input.addEventListener('keydown', (e) => {
-            e.stopPropagation(); // typing (incl. Delete) must not reach the chart
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                commit();
-                input.blur();
-            }
+    private widthInput(tip: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
+        const ni = new NumberInput({
+            value,
+            min,
+            max,
+            step,
+            integer: step >= 1,
+            size: 'sm',
+            fill: false,
+            compact: true,
+            commit: 'blur',
+            title: tip,
+            onChange,
         });
-        return input;
+        ni.el.dataset.tip = tip;
+        trapChartKeys(ni.el);
+        return ni.el;
     }
 
     /** A pick-one dropdown: the trigger shows the current value's glyph (plus an optional inline
@@ -1326,13 +847,9 @@ function lineIcon(width: number | string, style: string | number): string {
     return svg24(`<line x1="3.5" y1="12" x2="20.5" y2="12" stroke-width="${Number(width) || 2}" stroke-dasharray="${dash}"/>`);
 }
 
-const MAX_TEXT_LINES = 4;
-/** Grow a label textarea to fit its content, up to 4 lines, then scroll (styled). */
-function autoGrow(ta: HTMLTextAreaElement): void {
-    ta.style.height = 'auto';
-    const max = 18 * MAX_TEXT_LINES + 10 + 2; // line-height·lines + vertical padding + border
-    ta.style.height = `${Math.min(ta.scrollHeight, max)}px`;
-    ta.style.overflowY = ta.scrollHeight > max ? 'auto' : 'hidden';
+/** Typing in a bar field must not reach the chart (Delete would remove the drawing). */
+function trapChartKeys(el: HTMLElement): void {
+    el.addEventListener('keydown', (e) => e.stopPropagation());
 }
 
 /** A centered text glyph on the tier-B grid — the base of every generated preview below. */

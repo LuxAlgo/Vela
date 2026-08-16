@@ -15,7 +15,7 @@ import { deserializeDrawing, resetDrawingSettings, Callout, TextLabel } from '..
 import type { Unsubscribe } from '../../../core/util/types';
 import { contrastColor, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { withAlpha } from '../core/chartConfig';
-import { blendOver, splitColor } from './colorPicker';
+import { blendOver, splitColor } from '../../../ui/components/color-picker';
 import { DrawingPainter, handleIdsFor, type PaintTargets } from './DrawingPainter';
 import { DrawingInteraction } from './DrawingInteraction';
 import { DrawingSettingsPopup } from './DrawingSettingsPopup';
@@ -915,6 +915,15 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.emit({ kind: 'edit', doc: d.serialize() });
                 // Rebuild the toolbar so controls reflect the restored defaults.
                 this.openSettingsById(id, 0, 0);
+            },
+            restore: (doc) => {
+                const d = live();
+                if (!d) return;
+                if (doc.style) d.style = { ...doc.style };
+                if (doc.text !== undefined) d.text = doc.text ? { ...doc.text } : undefined;
+                if (doc.props !== undefined) d.applyProps(doc.props);
+                this.render();
+                this.emit({ kind: 'edit', doc });
             },
             remove: () => {
                 this.closeTextEditor(); // else the editor floats over the deleted label until it loses focus

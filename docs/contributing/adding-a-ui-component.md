@@ -4,8 +4,9 @@
 framework-agnostic **controller** (behavior, no DOM) and a thin vanilla **view**
 (DOM projection over the design tokens). Overlay chrome — menu, dialog, drawer,
 tooltip — wraps a [Zag.js](https://zagjs.com) state machine. Form primitives
-(switch, select, number-input, text-field, color-picker, popover) use vanilla
-controllers so they can match existing settings chrome without a behavior drift;
+(switch, select, number-input, text-field, text-area, color-picker, popover,
+field, glyph-select) use vanilla controllers so they can match existing settings
+chrome without a behavior drift;
 a later Zag adoption per component stays a controller-only swap.
 
 A future React build reuses the controllers unchanged and swaps only the views —
@@ -111,9 +112,13 @@ expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
 
 ## Form primitives
 
-`Switch`, `Select`, `NumberInput`, `TextField`, `ColorField` / `buildColorPicker`, and
-`Popover` are public (`@luxalgo/vela/ui`). They are the shared controls behind the
-indicator dialog, chart settings, and drawing toolbar.
+`Switch`, `Select`, `NumberInput`, `TextField`, `TextArea`, `ColorField` /
+`buildColorPicker`, `Popover`, the field layer (`fieldRow` / `fieldSection` /
+`buildFieldControl`), and `GlyphSelect` / `widthField` are public
+(`@luxalgo/vela/ui`). They are the shared controls behind the indicator dialog,
+chart settings, and the drawing settings dialog. The drawing toolbar's compact
+icon chrome (glyph dropdowns, color underline) stays purpose-built. Overlay
+chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
 
 - **`Popover`** — portal + placement (below, flip above, `align` start/end, optional
   `matchWidth`) + clamp boundary (viewport, an element, or a rect getter) + capture-phase
@@ -123,16 +128,26 @@ indicator dialog, chart settings, and drawing toolbar.
   `role="switch"`. `setChecked` does not emit.
 - **`Select`** — trigger + portaled themed list (not the OS popup) with a hand-rolled
   overlay scrollbar. `md` is 34px/14px and fills its parent unless `fill: false`
-  (chart settings hugs content, max-width 200px). `sm` is 28px/13px. `setValue` does
-  not emit.
+  (the shared 100px settings column: a long current label ellipsizes, the open list
+  still sizes to its longest item). `sm` is 28px/13px and hugs the widest option
+  (max-width 200px). `setValue` does not emit.
 - **`NumberInput`** — `commit: 'blur'` clamps and shows hover steppers (press-repeat
   400ms then 60ms); `commit: 'live'` emits per keystroke. Chart settings uses live
-  commit with steppers on, at the same 34px field as the indicator dialog. `sync` /
-  `setValue` do not emit.
-- **`TextField`** — blur/Enter commit. `setValue` does not emit.
+  commit with steppers on, at the same 34×100px field as the indicator dialog.
+  `sync` / `setValue` do not emit.
+- **`TextField`** — blur/Enter commit; `fill: false` is the same 100px column with
+  ellipsized overflow. `setValue` does not emit.
+- **`TextArea`** — blur commit, optional `autoGrow` / `maxLines`. Used by indicator
+  `text_area` inputs and the drawing bar's label editor.
 - **`ColorField`** / **`buildColorPicker`** — `circle` chip (settings dialogs: square
   swatch inset from a matching field border) or compact `square` trigger. `splitColor` /
-  `combineColor` stay available from the drawings compat re-export in `browser.ts`.
+  `combineColor` stay available from `@luxalgo/vela/ui` and the browser bundle.
+- **Field layer** — `fieldGrid` / `fieldRow` / `fieldSection` / `buildFieldControl`
+  turn a label + a control descriptor into the shared settings row. Chart settings,
+  indicator inputs, and the drawing settings dialog all map their schemas through it.
+  Rows use `display:contents` so a pane shares one label column (`max-content 1fr`).
+- **`GlyphSelect`** / **`widthField`** — icon-rendered options in a popover. Chart
+  settings' line-width field is the width preset.
 
 The primitive's **root is one element**. Chart-settings rows use `display:contents`, so a
 fragment of sibling nodes would fall onto the pane grid as extra tracks.
