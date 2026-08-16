@@ -66,6 +66,22 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.registry.resolve(raw, { default: this.primaryProvider });
     }
 
+    /**
+     * The DISPLAY prefix for `raw` — the descriptor's LISTING prefix when the data
+     * declares one (`NASDAQ` for AAPL), else the resolved provider name. Null while
+     * nothing resolves the symbol.
+     */
+    displayPrefix(raw: string): string | null {
+        const resolved = this.resolveSymbol(raw);
+        return resolved ? this.registry.displayPrefixOf(resolved) : null;
+    }
+
+    /** The canonical `PREFIX:TICKER` form of `raw`, or null while unresolvable. */
+    canonicalSymbol(raw: string): string | null {
+        const resolved = this.resolveSymbol(raw);
+        return resolved ? this.registry.canonicalSymbol(resolved) : null;
+    }
+
     /** The registered provider INSTANCE under `name` (undefined if unknown). */
     providerInstance(name: string): DataProvider | undefined {
         return this.registry.get(name);

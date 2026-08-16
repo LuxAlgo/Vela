@@ -56,6 +56,19 @@ export class DataControl {
     }
 
     /**
+     * The DISPLAY prefix for `symbol` — the listing venue its descriptor declares
+     * (`NASDAQ` for AAPL) or the resolved provider name. Null while unresolvable.
+     */
+    displayPrefix(symbol: string): string | null {
+        return this.registry?.displayPrefix(symbol) ?? null;
+    }
+
+    /** The canonical `PREFIX:TICKER` form of `symbol`, or null while unresolvable. */
+    canonicalSymbol(symbol: string): string | null {
+        return this.registry?.canonicalSymbol(symbol) ?? null;
+    }
+
+    /**
      * The registered provider INSTANCE under `name` — the seam for EXTENDED provider
      * surfaces: a provider may implement interfaces beyond the `DataProvider` port
      * (extra data kinds, venue-specific APIs); consumers retrieve the instance and

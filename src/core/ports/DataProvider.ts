@@ -13,6 +13,15 @@ export interface SymbolDescriptor {
     description?: string;
     /** Instrument class, free-form (e.g. `crypto`, `futures`, `stock`). */
     type?: string;
+    /**
+     * The instrument's LISTING-venue prefix (`NASDAQ`, `NYSE`, `AMEX`) — a property of the
+     * SYMBOL, not of the provider: AAPL is Nasdaq-listed and IBM NYSE-listed even when one
+     * provider supplies both tapes. When declared, it is what pickers/legends display, what
+     * `PREFIX:TICKER` strings resolve against (TradingView parity: `NYSE:AAPL` is NOT
+     * found), and what the canonical committed/persisted form carries. Absent on venues
+     * where the provider IS the identity (crypto, fx) — the provider name prefixes those.
+     */
+    prefix?: string;
     /** Owning provider name — annotated by the registry aggregation (badges in pickers). */
     provider?: string;
 }

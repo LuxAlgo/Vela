@@ -2,6 +2,22 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.0]
+
+### Added
+
+- **Per-symbol listing prefixes (TradingView parity).** A provider's symbol
+  descriptors may declare `prefix: 'NASDAQ'` — the venue the instrument is _listed_
+  on, a property of the symbol rather than of the provider. When declared,
+  `NASDAQ:AAPL` resolves through it (strictly: `NYSE:AAPL` matches nothing, no
+  auto-correction), every label displays it — legend venue chip, symbol-search
+  badges — and the picker commits and the workspace persists the canonical
+  `NASDAQ:AAPL` form. Typing the listing venue in the symbol search scopes it
+  (`nasdaq AAP`), like provider names always have. Explicit provider-name prefixes
+  keep routing (persisted `edgx:AAPL` documents re-display canonically), and
+  symbols without a declared prefix behave exactly as before. New `chart.data`
+  members: `displayPrefix(symbol)` and `canonicalSymbol(symbol)`.
+
 ## [v0.5.4]
 
 ### Added
