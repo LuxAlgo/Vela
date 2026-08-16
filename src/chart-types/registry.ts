@@ -20,6 +20,10 @@ export interface SeriesDataEngineHost {
     timeframe: string;
     /** Whether the chart runs live (streaming forming bar) or static history. */
     live: boolean;
+    /** The chart's trading session (`'regular'` | `'extended'`); undefined = regular /
+     *  no session model. A session switch reloads the market and REBUILDS the engine,
+     *  so this never changes within one host's lifetime. */
+    session?: string;
     /** The chart's CURRENT view bars (post-transform) — read fresh, never cache. */
     bars: () => readonly OHLCV[];
     /** The chart's data control surface (`chart.data`) — providers, capabilities, resolution. */

@@ -25,6 +25,7 @@ One method is **required**; the rest are **progressive** — present them when y
 
 - **`listSymbols()`** — enumerate the symbols you serve, as `{ ticker, description?, type?, prefix? }[]`. This builds the **eager index** at registration that lets a **bare** symbol (no `provider:` prefix) resolve to you, and powers autocomplete. Without it, your provider is reachable **only** by an explicit `name:SYMBOL` prefix. Declare `prefix` when the symbol's **listing venue** is its identity (`NASDAQ` for AAPL, `NYSE` for IBM — a property of the symbol, not of your provider): it is what `NASDAQ:AAPL` strings resolve against and what every label displays, TradingView-style. Leave it out where the provider *is* the identity (crypto, fx).
 - **`getSymbolInfo(ticker)`** — per-symbol metadata an engine may read (Pine `syminfo.*`). Absent ⇒ the engine synthesizes a fallback.
+- **`getCalendar(ticker, range)`** — the RESOLVED market calendar over `[from, to)`: ascending epoch-ms `[start, end)` pairs of open market time, **holidays and DST already applied by your source**. `range.session` selects the window set (`'regular'` default, `'extended'` = the full tape). This is the single market-time truth: the widget's market-status badge (open / pre / post / closed / holiday) and session-anchored consumers read these windows and never recompute a holiday themselves. Absent ⇒ no calendar (the right answer for continuous markets — crypto, most fx): the badge stays "Market Open" and consumers fall back to their own anchoring.
 - **`subscribe(ticker, timeframe, onBar)`** — open a true live candle stream and return an unsubscribe fn. Absent ⇒ the feed **polls `getBars`** for live ticks instead.
 - **`info()`** — provider metadata (display name, supported timeframes, capabilities). Absent ⇒ the registry synthesizes one from the methods you implement.
 - **`configure(config)`** — apply runtime config (e.g. API keys).
@@ -103,7 +104,7 @@ A feed injected this way is used as-is: `chart.data.registerProvider(...)` becom
 - `getBars` implemented; reads ticker/timeframe from arguments, returns open-time-in-ms bars, sorted + de-duplicated.
 - Newest bar treated as the forming candle; roll forward by emitting a larger open-time (no separate close event).
 - Ranged `getBars` tolerates an overlapping `from` and honors "`to` omitted = now"; no timeframe aggregation across requests unless your venue needs it internally.
-- (Optional) `listSymbols` so bare symbols resolve to you; `getSymbolInfo` for real syminfo; `subscribe` for a true candle stream (else polling is used).
+- (Optional) `listSymbols` so bare symbols resolve to you; `getSymbolInfo` for real syminfo; `subscribe` for a true candle stream (else polling is used); `getCalendar` for resolved market-time windows on venues with trading sessions.
 - Registered via `chart.data.registerProvider(name, provider)`.
 
 ## See also

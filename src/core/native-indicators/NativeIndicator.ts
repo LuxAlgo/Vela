@@ -31,6 +31,10 @@ export interface NativeIndicatorContext {
     readonly symbol: string;
     readonly timeframe: string;
     readonly live: boolean;
+    /** The chart's trading session (`'regular'` | `'extended'`); undefined = regular /
+     *  no session model. A session switch reloads the market and RESTARTS the
+     *  indicator, so this never changes within one context's lifetime. */
+    readonly session?: string;
     /** The canonical bar array (a live accessor — always current). */
     bars(): readonly OHLCV[];
     /** Market-data access (trades / capabilities) for data-driven natives. */

@@ -2,6 +2,35 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Market calendars (`DataProvider.getCalendar`).** A provider may now serve the
+  RESOLVED market calendar — ascending epoch-ms `[start, end)` open windows with
+  holidays and DST already applied by the source, `session` selecting the regular
+  or extended set. It is the single market-time truth for session-anchored
+  consumers; nothing in Vela recomputes a holiday. Continuous venues simply omit
+  the method.
+- **A real market-status badge.** The statusline's session badge (widget and
+  workspace cells) now derives its state from the provider calendar — Market
+  Open / Pre-Market / Post-Market / Market Closed / Market Holiday — and
+  re-derives itself at every session boundary. Symbols without a calendar keep
+  the permanent "Market Open" exactly as before.
+- **The chart session reaches data engines.** `SeriesDataEngineHost.session` and
+  `NativeIndicatorContext.session` expose the chart's trading session
+  (`'regular'` | `'extended'`) to chart-type data engines and native indicators,
+  so session-anchored fetchers can request the tape the chart is actually
+  showing. A session switch rebuilds engines/indicators, so the value is stable
+  within one host's lifetime.
+
+### Fixed
+
+- **RTH↔ETH no longer resets the viewport.** A session-only `setMarket` flip
+  carries the current zoom/position over the reload (the time axis is the same
+  clock — only which bars exist changes); an explicit `visibleRange` from the
+  caller still wins, and symbol/timeframe switches keep the usual re-frame.
+
 ## [v0.6.1]
 
 ### Added
