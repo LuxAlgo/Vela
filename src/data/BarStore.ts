@@ -1,8 +1,11 @@
 import type { OHLCV } from '../core/model/ohlcv';
 
-/** Cache key for one series. Symbols/timeframes never contain `|`. */
-export function seriesKey(provider: string, symbol: string, timeframe: string): string {
-    return `${provider}|${symbol}|${timeframe}`;
+/** Cache key for one series. Symbols/timeframes never contain `|`. The session is a
+ *  KEY dimension when non-default: regular and extended bars of one symbol genuinely
+ *  differ (extended has more bars, and session dailies differ in OHLC), so they must
+ *  never share a series. Absent/`regular` stays keyless — existing keys don't move. */
+export function seriesKey(provider: string, symbol: string, timeframe: string, session?: string): string {
+    return `${provider}|${symbol}|${timeframe}${session && session !== 'regular' ? `|${session}` : ''}`;
 }
 
 function symbolOf(key: string): string {

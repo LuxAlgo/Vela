@@ -60,6 +60,8 @@ export interface PersistedState {
     priceStyle?: string;
     timezone?: string;
     bars?: string;
+    /** Trading session (`regular` | `extended`) — URL param `session`. */
+    session?: string;
     watermark?: string;
     /** Comma-joined favorite drawing-tool types. */
     favorites?: string;

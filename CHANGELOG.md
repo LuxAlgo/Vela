@@ -2,6 +2,22 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.1]
+
+### Added
+
+- **Trading sessions (RTH/ETH).** Charts gain a `session` dimension
+  (`'regular'` | `'extended'`) on markets that have one: pass it as a chart option,
+  switch it with `chart.setMarket({ session })`, or click the bottombar's RTH/ETH
+  toggle — previously a disabled stub, now live and enabled automatically when the
+  active symbol's metadata declares real sessions (crypto keeps the disabled chips).
+  A session switch reloads like a timeframe change; the two sessions cache as
+  separate series (their bars genuinely differ), the flag rides every provider
+  request (`BarRange.session`, `subscribe` `opts.session`), persists per cell
+  (`extended` only — documents stay lean), and travels in shareable URLs
+  (`?session=extended`). In a workspace the toggle acts on the ACTIVE cell, like
+  the range chips.
+
 ## [v0.6.0]
 
 ### Added

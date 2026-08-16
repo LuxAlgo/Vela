@@ -261,6 +261,7 @@ describe('readUrlState', () => {
         expect(readUrlState('?interval=240')).toEqual({ timeframe: '240' });
         expect(readUrlState('')).toEqual({});
         expect(readUrlState('?symbol=')).toEqual({});
+        expect(readUrlState('?session=extended')).toEqual({ session: 'extended' }); // shareable ETH links
     });
 });
 
