@@ -17,6 +17,7 @@ How the chart obtains its candles.
 |---|---|---|
 | `symbol` | string | Symbol to load — the string is the WHOLE market identity. A **bare** ticker (`'BTCUSDT'`) resolves against the registered providers in **declaration order** (first one whose index lists it); an `EXCHANGE:` prefix (`'coinbase:BTC-USD'`, case-insensitive) **pins** the venue — a registered provider name, or a [listing prefix](./data-providers.md#listing-prefixes-nasdaqaapl) a provider's index declares (`'NASDAQ:AAPL'`, strict: a wrong venue resolves to nothing). |
 | `timeframe` | string | Bar interval, e.g. `'1h'`. |
+| `session` | `'regular' \| 'extended'` | Trading session to show, on markets that have one (`regular` = RTH, the default; `extended` = pre/post-market included). The flag rides every data request — providers without a session concept ignore it. Switch at runtime with `chart.setMarket({ session })` or the bottombar's RTH/ETH toggle. |
 | `bars` | number | How many bars of history to load. Depths beyond one ~10k-bar chunk paint the recent window first, then backfill older bars in the background — watch `history:progress` / await `chart.historyComplete()` for the full depth. |
 | `visibleRange` | `VisibleRangePreset \| {from,to}` | — | The window to frame on the **first paint** (`'1D'`, `'YTD'`, an explicit range…). The chart then loads its depth in one pass and paints that window straight away, instead of flashing a recent-bars preview and re-framing a moment later. |
 | `data` | `OHLCV[]` | **Offline bars.** When set, no network fetch happens. |

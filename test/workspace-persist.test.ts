@@ -88,6 +88,21 @@ describe('sanitizeState (the applyState gate)', () => {
         });
     });
 
+    it('keeps a valid session value and drops anything else', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            charts: [
+                { id: 'c1', symbol: 'NASDAQ:AAPL', session: 'extended' },
+                { id: 'c2', symbol: 'BTCUSDT', session: 'after-hours' }, // not a session → dropped
+            ],
+        });
+        expect(doc?.charts).toEqual([
+            { id: 'c1', symbol: 'NASDAQ:AAPL', session: 'extended' },
+            { id: 'c2', symbol: 'BTCUSDT' },
+        ]);
+    });
+
     it('filters non-string favorite entries, dropping empty sets entirely', () => {
         const doc = sanitizeState({
             version: 1,

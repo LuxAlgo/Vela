@@ -484,7 +484,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      *  an in-flight `setMarket` immediately (the config mutates before the load). */
     marketSnapshot(): MarketSnapshot {
         const m = this.config.market;
-        return { symbol: m.symbol, provider: parseSymbol(m.symbol ?? '').provider ?? undefined, timeframe: m.timeframe, bars: m.bars, offline: m.data !== undefined };
+        return { symbol: m.symbol, provider: parseSymbol(m.symbol ?? '').provider ?? undefined, timeframe: m.timeframe, bars: m.bars, session: m.session, offline: m.data !== undefined };
     }
 
     /**
@@ -507,6 +507,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const identityChanged =
             (next.symbol !== undefined && next.symbol !== m.symbol) ||
             (next.timeframe !== undefined && next.timeframe !== m.timeframe) ||
+            // A session switch changes WHICH bars exist (RTH vs ETH) — a full reload,
+            // exactly like a timeframe change; the cache keys the sessions apart.
+            (next.session !== undefined && next.session !== m.session) ||
             next.data !== undefined;
         const depthChanged = next.bars !== undefined && next.bars !== m.bars;
         // Same market, only deeper/shallower, with bars already on screen: handled by moving
@@ -544,6 +547,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (next.symbol !== undefined) m.symbol = next.symbol;
             if (next.timeframe !== undefined) m.timeframe = next.timeframe;
             if (next.bars !== undefined) m.bars = next.bars;
+            if (next.session !== undefined) m.session = next.session;
             if (next.data !== undefined) m.data = next.data;
             else if (next.symbol !== undefined) delete m.data; // offline → provider switch
             m.visibleRange = next.visibleRange; // consumed by THIS load only (overwritten every switch)

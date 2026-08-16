@@ -84,9 +84,11 @@ export interface DataProvider {
     /**
      * Open a true live stream for `ticker`/`timeframe`. Each call to `onBar` delivers
      * the forming candle (or a freshly-closed one). Returns an unsubscribe fn. Absent
-     * ⇒ the feed polls `getBars` for ticks instead.
+     * ⇒ the feed polls `getBars` for ticks instead. `opts.session` names the trading
+     * session the chart is showing (see {@link BarRange.session}) — a provider whose
+     * live source cannot filter by session may fall back to polling internally.
      */
-    subscribe?(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void): Unsubscribe;
+    subscribe?(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void, opts?: { session?: string }): Unsubscribe;
 
     /** Apply runtime config (e.g. API keys). Absent ⇒ no configuration needed. */
     configure?(config: unknown): void;

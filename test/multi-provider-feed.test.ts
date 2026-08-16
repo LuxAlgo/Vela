@@ -595,3 +595,41 @@ describe('listing-prefix resolution (TradingView parity)', () => {
         expect(feed.displayPrefix('NOPE:NOPE')).toBeNull();
     });
 });
+
+describe('session flag propagation (provider seam)', () => {
+    it('rides getBars ranges (load, loadRange, poll) and the subscribe opts', async () => {
+        const ranges: Array<Record<string, unknown>> = [];
+        const subOpts: unknown[] = [];
+        const provider: DataProvider = {
+            getBars(_t, _tf, range) {
+                ranges.push({ ...range });
+                return Promise.resolve(makeBars(range.limit ?? 10));
+            },
+            listSymbols: () => Promise.resolve([{ ticker: 'AAPL', prefix: 'NASDAQ' }]),
+            subscribe(_t, _tf, _onBar, opts) {
+                subOpts.push(opts);
+                return () => {};
+            },
+        };
+        const feed = new MultiProviderFeed(new BarStore());
+        feed.registerProvider('edgx', provider);
+        await feed.ready();
+
+        await feed.load({ symbol: 'NASDAQ:AAPL', timeframe: '60', bars: 5, session: 'extended' });
+        expect(ranges[ranges.length - 1]!.session).toBe('extended');
+
+        await feed.loadRange!({ symbol: 'NASDAQ:AAPL', timeframe: '60', session: 'extended' }, { from: 0, limit: 5 });
+        expect(ranges[ranges.length - 1]).toMatchObject({ from: 0, session: 'extended' });
+
+        const off = feed.subscribe({ symbol: 'NASDAQ:AAPL', timeframe: '60', session: 'extended' }, () => {});
+        off();
+        expect(subOpts).toEqual([{ session: 'extended' }]);
+
+        // No session set -> nothing invented: the flag is simply absent.
+        await feed.load({ symbol: 'NASDAQ:AAPL', timeframe: '60', bars: 5 });
+        expect(ranges[ranges.length - 1]!.session).toBeUndefined();
+        const off2 = feed.subscribe({ symbol: 'NASDAQ:AAPL', timeframe: '60' }, () => {});
+        off2();
+        expect(subOpts[1]).toBeUndefined();
+    });
+});

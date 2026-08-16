@@ -8,10 +8,11 @@ import { timeframeToMs } from './timeframe';
 
 /** Series cache key — the symbol's own grammar carries the venue: a `provider:` prefix
  *  keys per venue (the multi-provider feed hands canonical prefixed symbols down); a
- *  bare symbol keys venue-less, whatever serves it (single-feed setups). */
-function cacheKey(symbol: string, timeframe: string): string {
+ *  bare symbol keys venue-less, whatever serves it (single-feed setups). A non-default
+ *  session keys its own series (regular and extended bars genuinely differ). */
+function cacheKey(symbol: string, timeframe: string, session?: string): string {
     const { provider, ticker } = parseSymbol(symbol);
-    return seriesKey(provider ?? '', ticker, timeframe);
+    return seriesKey(provider ?? '', ticker, timeframe, session);
 }
 
 /** Page size for big ranged fetches (mirrors the orchestrator's history chunks). */
@@ -45,7 +46,7 @@ export class CachingDataFeed implements MarketDataFeed {
         if (cfg.data && cfg.data.length > 0) return this.inner.load(cfg);
 
         const symbol = cfg.symbol ?? 'TEST';
-        const key = cacheKey(symbol, cfg.timeframe ?? '60');
+        const key = cacheKey(symbol, cfg.timeframe ?? '60', cfg.session);
         this.store.retainSymbol(symbol); // current-symbol-only purge
         const cached = this.store.get(key);
         const n = cfg.bars ?? 500;
@@ -81,7 +82,7 @@ export class CachingDataFeed implements MarketDataFeed {
      */
     async loadRange(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]> {
         if (!this.inner.loadRange) return this.inner.load(cfg);
-        const key = cacheKey(cfg.symbol ?? 'TEST', cfg.timeframe ?? '60');
+        const key = cacheKey(cfg.symbol ?? 'TEST', cfg.timeframe ?? '60', cfg.session);
         let cached = this.store.get(key);
         let newest = cached?.[cached.length - 1];
 

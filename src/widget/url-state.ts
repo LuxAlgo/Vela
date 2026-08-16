@@ -10,6 +10,7 @@ const PARAMS: ReadonlyArray<[key: keyof PersistedState, param: string]> = [
     ['priceStyle', 'style'],
     ['timezone', 'tz'],
     ['bars', 'bars'],
+    ['session', 'session'],
 ];
 
 export function readUrlState(search: string): PersistedState {

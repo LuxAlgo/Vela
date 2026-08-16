@@ -62,6 +62,8 @@ export interface CellState {
     timeframe?: string;
     priceStyle?: string;
     bars?: number;
+    /** Trading session shown (`'extended'` persisted; absent = regular, the default). */
+    session?: string;
     /** Symbol watermark visibility — a per-chart display pref. */
     watermark?: boolean;
     /** Indicator titles (the in-chart legend rows) visibility — a per-chart display pref. */
@@ -182,6 +184,7 @@ function sanitizeCell(raw: unknown): CellState | null {
     if (typeof c.timeframe === 'string') out.timeframe = c.timeframe;
     if (typeof c.priceStyle === 'string') out.priceStyle = c.priceStyle;
     if (typeof c.bars === 'number' && Number.isFinite(c.bars) && c.bars > 0) out.bars = c.bars;
+    if (c.session === 'regular' || c.session === 'extended') out.session = c.session;
     if (typeof c.watermark === 'boolean') out.watermark = c.watermark;
     if (typeof c.indicatorTitles === 'boolean') out.indicatorTitles = c.indicatorTitles;
     if (typeof c.indicatorValues === 'boolean') out.indicatorValues = c.indicatorValues;
