@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.5.4]
 
 ### Added
 
