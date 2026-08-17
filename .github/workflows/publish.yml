@@ -1,0 +1,58 @@
+# Mirrors @luxalgo/vela to GitHub Packages when a version tag is pushed.
+#
+# npmjs stays the package's PUBLIC home, published as today (npm publish, by hand,
+# before tagging). This mirror exists for the org's PRIVATE consumers: npm maps
+# registries per SCOPE, not per package, and @luxalgo/vela-pro lives on GitHub
+# Packages — so any project consuming vela-pro must resolve the WHOLE @luxalgo
+# scope there, vela included. Flow: publish to npmjs → push the vX.Y.Z tag → this
+# run mirrors the same version to GitHub Packages.
+#
+# GITHUB_TOKEN publishes — no secret to configure; the package is created on the
+# first run and inherits the repository's visibility and access.
+name: publish
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror-github-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # NO registry-url here: installs come from the default npmjs registry, exactly
+      # as the lockfile pins them. Only the publish below targets GitHub Packages.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # A tag that does not match package.json would mirror a version under the
+      # wrong name — refuse it.
+      - name: Tag must match package.json version
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          [ "$pkg" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != $pkg"; exit 1; }
+
+      - run: npm ci
+
+      - name: Gate
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      # Explicit build: the tarball must ship a dist built from this exact tag,
+      # whatever the local publish flow did.
+      - run: npm run build
+
+      - name: Auth npm.pkg.github.com (publish only — installs never touch it)
+        run: echo "//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
+
+      - run: npm publish --registry=https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
