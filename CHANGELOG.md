@@ -2,6 +2,46 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.2]
+
+### Added
+
+- **Settings field layer on the UI kit.** Labeled rows, section headings, and a
+  control factory (`fieldRow` / `fieldSection` / `buildFieldControl`) live in
+  `@luxalgo/vela/ui`, so chart settings, indicator inputs, and drawing settings
+  share one row language. Kit `Dialog` gained top/center alignment, a footer
+  slot, and a contained (chart-hosted) mode; those three surfaces use it. New
+  `TextArea` and `GlyphSelect` (`widthField`) primitives replace the last
+  hand-rolled textarea and line-width pickers.
+- **Drawing settings dialog.** The gear on a position tool, fixed-range volume
+  profile, or Fibonacci/Mach levels opens a real settings dialog (same shell as
+  indicator inputs) instead of an inline panel. Cancel restores the open-time
+  snapshot; Ok keeps the live edits. The compact drawing toolbar is unchanged.
+- **Market calendars (`DataProvider.getCalendar`).** A provider may now serve the
+  RESOLVED market calendar — ascending epoch-ms `[start, end)` open windows with
+  holidays and DST already applied by the source, `session` selecting the regular
+  or extended set. It is the single market-time truth for session-anchored
+  consumers; nothing in Vela recomputes a holiday. Continuous venues simply omit
+  the method.
+- **A real market-status badge.** The statusline's session badge (widget and
+  workspace cells) now derives its state from the provider calendar — Market
+  Open / Pre-Market / Post-Market / Market Closed / Market Holiday — and
+  re-derives itself at every session boundary. Symbols without a calendar keep
+  the permanent "Market Open" exactly as before.
+- **The chart session reaches data engines.** `SeriesDataEngineHost.session` and
+  `NativeIndicatorContext.session` expose the chart's trading session
+  (`'regular'` | `'extended'`) to chart-type data engines and native indicators,
+  so session-anchored fetchers can request the tape the chart is actually
+  showing. A session switch rebuilds engines/indicators, so the value is stable
+  within one host's lifetime.
+
+### Fixed
+
+- **RTH↔ETH no longer resets the viewport.** A session-only `setMarket` flip
+  carries the current zoom/position over the reload (the time axis is the same
+  clock — only which bars exist changes); an explicit `visibleRange` from the
+  caller still wins, and symbol/timeframe switches keep the usual re-frame.
+
 ## [v0.6.1]
 
 ### Added
@@ -56,9 +96,23 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Settings fields share one closed size.** Number, text, and dropdown triggers
+  are a 100px column; a long string ellipsizes instead of stretching the control.
+  The open dropdown list still sizes to the longest item. The position tool's
+  Stop/Target rows use that same column (no narrower field next to the unit
+  dropdown), and indicator-dialog tabs use 13px type.
 - **Chart settings dropdowns use the themed list.** Selecting a value in Chart
   settings opens the same overlay list the indicator dialog already used, instead
   of the operating system's native popup.
+- **Chart settings uses the same kit chrome as indicator settings.** Number fields
+  are 34px with a focus ring and hover steppers, color inputs are the inset chip,
+  and toggles / dropdowns / line-width pickers match that 14px field instead of
+  the older 28px compact chrome. Values still commit live as you type.
+- **Drawing gear panels use the same kit chrome as settings.** Position, fixed-range
+  volume profile, and Fibonacci/Mach level editors (plus the highlighter's free-width
+  field) are the shared number, select, switch, text, and color controls instead of
+  native inputs and checkboxes. Those editors now open as a settings dialog from
+  the gear; the compact icon toolbar (glyph dropdowns, color underline) is unchanged.
 - **Indicator settings sit closer together.** The dialog follows the same rhythm as
   the rest of the settings chrome: a 20px title with more air above the tab strip,
   16px between a label and its control, 34×100px fields, 16px between rows, and a

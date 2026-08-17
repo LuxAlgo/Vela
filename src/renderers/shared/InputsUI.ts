@@ -1,17 +1,27 @@
 import type { InputSchema, InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { LegendActionView } from '../../core/ports/IChartRenderer';
 import type { VelaTheme, MoveTarget } from '../../core/options';
-import { isDarkColor, withAlpha } from '../../core/color';
+import { withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip } from './chrome-tooltip';
-import { makeDialogDraggable } from './dialogDragging';
-import { Switch } from '../../ui/components/switch';
-import { Select, toggleSelectList, type SelectOption } from '../../ui/components/select';
-import { NumberInput } from '../../ui/components/number-input';
-import { TextField } from '../../ui/components/text-field';
-import { colorField } from '../../ui/components/color-picker';
-import { Popover, closeOpenPopovers, isPopoverOpen, openPopoverTrigger } from '../../ui/components/popover';
+import { Menu, type MenuItemDescriptor } from '../../ui/components/menu';
+import {
+    IndicatorInputsDialog,
+    ensureDialogStyles,
+    type InputsUIChange,
+} from './IndicatorInputsDialog';
+export type { InputsUIChange } from './IndicatorInputsDialog';
+export {
+    nameOf,
+    INPUT_DIALOG_GAP_PX,
+    inputDialogBodyStyle,
+    DEFAULT_INPUT_TAB,
+    tabInputs,
+    normalizeDateInput,
+    normalizeTimeInput,
+    type InputTab,
+} from './IndicatorInputsDialog';
 
 /** A pane as the legend move UI sees it (id + label + vertical bounds, top-to-bottom order). */
 export interface LegendPaneView {
@@ -26,13 +36,6 @@ export interface LegendPaneView {
 export interface LegendMoveApi {
     panes(): LegendPaneView[];
     move(id: string, target: MoveTarget): void;
-}
-
-/** Emitted when the user edits an input in the in-chart settings dialog. */
-export interface InputsUIChange {
-    indicatorId: string;
-    key: string;
-    value: InputValue;
 }
 
 /** One plot's current value as shown beside the legend title (pre-formatted, plot-colored). */
@@ -73,7 +76,6 @@ interface LegendRow {
     native: boolean;
 }
 
-const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'volume'];
 /** Keyframes for the legend-row live pulse, injected once into the document (the load
  *  dots animate through the Web Animations API and need no stylesheet). */
 const STATUS_KEYFRAMES =
@@ -107,11 +109,9 @@ const UNFOLD_SVG = iconAt('chevron-down', LEGEND_ICON_PX);
 const OVERVIEW_SVG = iconAt('objects', LEGEND_ICON_PX);
 
 /**
- * Chart-style inputs UI built on top of lightweight-charts (which has no
- * legend/settings chrome). Renders a per-indicator legend (title + gear + remove)
- * as a DOM overlay on the chart container, and an auto-generated settings dialog
- * from each indicator's `InputSchema[]`. Edits are reported via `setOnChange` and
- * the ✕ remove via `setOnRemove`; the core re-runs / tears down the indicator.
+ * Per-indicator legend chrome (title + gear + remove) as a DOM overlay on the
+ * chart container. The settings dialog lives in {@link IndicatorInputsDialog}.
+ * Edits are reported via `setOnChange` and the ✕ remove via `setOnRemove`.
  *
  * Legends are grouped by pane: when a `paneBoundsOf` resolver is supplied, each
  * pane gets its own legend container positioned at the top of that pane (so a
@@ -121,13 +121,9 @@ const OVERVIEW_SVG = iconAt('objects', LEGEND_ICON_PX);
 export class InputsUI {
     private readonly legends = new Map<string, HTMLElement>(); // paneId → legend container
     private readonly rows = new Map<string, LegendRow>();
-    private dialog: HTMLElement | null = null;
-    private backdrop: HTMLElement | null = null;
-    private openId: string | null = null;
+    private readonly inputsDialog: IndicatorInputsDialog;
     /** The legend row the user has clicked to select (gets a neutral outline); null when none. */
     private selectedId: string | null = null;
-    /** Values captured when the dialog opened, so Cancel can revert live edits. */
-    private snapshot: Record<string, InputValue> | null = null;
     private onChange: ((c: InputsUIChange) => void) | null = null;
     private onRemove: ((id: string) => void) | null = null;
     private onToggleVisible: ((id: string, visible: boolean) => void) | null = null;
@@ -143,15 +139,10 @@ export class InputsUI {
     private readonly rowTips = new Map<string, Array<() => void>>();
     /** Same, for the contributed extras only (rebuilt independently by setLegendActions). */
     private readonly extrasTips = new Map<string, Array<() => void>>();
-    /** Same, for the open settings dialog (torn down with it). */
-    private dialogTips: Array<() => void> = [];
     /** Open "Move to" menu (kept so it can be torn down). */
-    private moveMenu: HTMLElement | null = null;
-    /** Open settings-dialog choice menu (custom dropdown — torn down with the dialog). */
-    private choicePop: Popover | null = null;
-    /** Open settings-dialog calendar popover (torn down with the dialog). */
-    private calendarPop: Popover | null = null;
-    private calendarAnchor: HTMLElement | null = null;
+    private moveMenu: Menu | null = null;
+    private moveTargets: MoveTarget[] = [];
+    private moveMenuId: string | null = null;
     /** Collapsed panes → the master indicator id to keep visible (others hidden in the strip). */
     private paneCollapse = new Map<string, string | null>();
     /** The user folded the indicator legend away behind the chevron — CHART-WIDE: every
@@ -165,7 +156,8 @@ export class InputsUI {
      *  context-menu choice ({@link LegendRow.showValues}) overrides it per indicator. */
     private valuesVisible = true;
     /** Open legend-row context menu (kept so it can be torn down). */
-    private rowMenu: HTMLElement | null = null;
+    private rowMenu: Menu | null = null;
+    private rowMenuId: string | null = null;
     /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
      *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
     private foldToggle: HTMLButtonElement | null = null;
@@ -173,14 +165,6 @@ export class InputsUI {
      *  their indicator overview, e.g. an object tree). While set, the legend stays
      *  folded and the chip runs this instead of unfolding inline. */
     private overviewAction: (() => void) | null = null;
-    /** Esc-to-close for the settings modal (bound so focus can sit anywhere). */
-    private readonly onDialogKey = (e: KeyboardEvent): void => {
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            if (isPopoverOpen()) { closeOpenPopovers(); return; }
-            this.closeDialog();
-        }
-    };
     /** Clear the selection outline when the user clicks anywhere that isn't one of our legend rows. */
     private readonly onDocClick = (e: MouseEvent): void => {
         if (!this.selectedId) return;
@@ -208,6 +192,16 @@ export class InputsUI {
     ) {
         if (!container.style.position) container.style.position = 'relative';
         if (typeof document !== 'undefined') document.addEventListener('click', this.onDocClick);
+        ensureDialogStyles();
+        this.inputsDialog = new IndicatorInputsDialog({
+            container,
+            theme: () => this.theme,
+            mobile: () => this.mobileLayout,
+            dialogHost: () => this.dialogHost,
+            symbolPicker: () => this.symbolPicker,
+            onChange: (c) => this.onChange?.(c),
+            onBackdropClose: () => this.clearSelection(),
+        });
     }
 
     /** The host shell's chrome size class — mobile makes the inputs dialog fullscreen
@@ -221,8 +215,8 @@ export class InputsUI {
         // presentation, not user state (an overview override keeps it folded either way).
         if (this.overviewAction === null) this.legendFolded = mobile;
         this.syncFoldToggle();
-        if (this.openId !== null) {
-            const id = this.openId;
+        if (this.inputsDialog.openId !== null) {
+            const id = this.inputsDialog.openId;
             this.closeOpenDialog();
             this.openDialog(id);
         }
@@ -406,9 +400,6 @@ export class InputsUI {
         const row = this.rows.get(id);
         const currentPane = row?.paneId ?? 'price';
         const panes = api.panes();
-        const menu = document.createElement('div');
-        menu.style.cssText = `position:fixed;z-index:var(--vela-z-tooltip);min-width:150px;padding:4px;border-radius:var(--vela-radius-md);background:var(--vela-surface-elev);color:${this.theme.textColor};border:1px solid var(--vela-border);box-shadow:var(--vela-shadow);font-size:var(--vela-font-size-md);`;
-        applyChromeTokens(menu, this.theme);
         const items: Array<{ label: string; target: MoveTarget }> = [];
         for (const p of panes) {
             if (p.id === currentPane) continue;
@@ -424,41 +415,29 @@ export class InputsUI {
             if (currentPane !== 'price') items.push({ label: 'New pane above', target: { newPane: { before: currentPane } } });
             items.push({ label: 'New pane below', target: { newPane: { after: currentPane } } });
         }
-        for (const it of items) {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.textContent = it.label;
-            b.className = 'vela-ind-menuitem';
-            b.style.cssText = 'display:block;width:100%;text-align:left;padding:6px 10px;border:none;border-radius:var(--vela-radius-sm);color:inherit;cursor:pointer;white-space:nowrap;';
-            b.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.closeMoveMenu();
-                api.move(id, it.target);
+        this.moveTargets = items.map((it) => it.target);
+        this.moveMenuId = id;
+        const descriptors: MenuItemDescriptor[] = items.map((it, i) => ({ id: String(i), label: it.label }));
+        if (!this.moveMenu) {
+            this.moveMenu = new Menu({
+                host: this.container,
+                items: descriptors,
+                placement: 'bottom-start',
+                onSelect: (itemId) => {
+                    const target = this.moveTargets[Number(itemId)];
+                    const rowId = this.moveMenuId;
+                    if (target && rowId) api.move(rowId, target);
+                },
             });
-            menu.appendChild(b);
+        } else {
+            this.moveMenu.setItems(descriptors);
         }
-        document.body.appendChild(menu);
         const r = anchor.getBoundingClientRect();
-        // Clamp within the viewport so a bottom/right-edge row's menu stays visible.
-        const mw = menu.offsetWidth || 160;
-        const mh = menu.offsetHeight || 80;
-        menu.style.left = `${Math.min(r.left, window.innerWidth - mw - 6)}px`;
-        menu.style.top = `${Math.min(r.bottom + 4, window.innerHeight - mh - 6)}px`;
-        this.moveMenu = menu;
-        // Close on the next outside click (deferred so this same click doesn't immediately close it).
-        setTimeout(() => {
-            if (typeof document !== 'undefined') document.addEventListener('pointerdown', this.onMoveMenuOutside, true);
-        }, 0);
+        this.moveMenu.openAt(r.left, r.bottom + 4);
     }
 
-    private readonly onMoveMenuOutside = (e: Event): void => {
-        if (this.moveMenu && !this.moveMenu.contains(e.target as Node)) this.closeMoveMenu();
-    };
-
     private closeMoveMenu(): void {
-        if (typeof document !== 'undefined') document.removeEventListener('pointerdown', this.onMoveMenuOutside, true);
-        this.moveMenu?.remove();
-        this.moveMenu = null;
+        this.moveMenu?.close();
     }
 
     // ── legend row context menu (right-click) ───────────────────────────────
@@ -469,48 +448,33 @@ export class InputsUI {
         this.closeMoveMenu();
         const row = this.rows.get(id);
         if (!row) return;
-        const menu = document.createElement('div');
-        menu.style.cssText = `position:fixed;z-index:var(--vela-z-tooltip);min-width:170px;padding:4px;border-radius:var(--vela-radius-md);background:var(--vela-surface-elev);color:${this.theme.textColor};border:1px solid var(--vela-border);box-shadow:var(--vela-shadow);font-size:var(--vela-font-size-md);`;
-        applyChromeTokens(menu, this.theme);
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'vela-ind-menuitem';
-        item.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 10px;border:none;border-radius:var(--vela-radius-sm);color:inherit;cursor:pointer;white-space:nowrap;';
-        // A fixed-width check slot keeps the label aligned in both states.
-        const check = document.createElement('span');
-        check.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:14px;flex:none;line-height:0;';
-        check.innerHTML = this.rowValuesShown(row) ? CHECK_SVG : '';
-        const label = document.createElement('span');
-        label.textContent = 'Indicator values';
-        item.append(check, label);
-        item.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.closeRowMenu();
-            row.showValues = !this.rowValuesShown(row);
-            this.renderRowValues(row);
-        });
-        menu.appendChild(item);
-        document.body.appendChild(menu);
-        // Clamp within the viewport so a bottom/right-edge row's menu stays visible.
-        const mw = menu.offsetWidth || 180;
-        const mh = menu.offsetHeight || 40;
-        menu.style.left = `${Math.min(x, window.innerWidth - mw - 6)}px`;
-        menu.style.top = `${Math.min(y, window.innerHeight - mh - 6)}px`;
-        this.rowMenu = menu;
-        // Close on the next outside click (deferred so this same gesture doesn't immediately close it).
-        setTimeout(() => {
-            if (typeof document !== 'undefined') document.addEventListener('pointerdown', this.onRowMenuOutside, true);
-        }, 0);
+        this.rowMenuId = id;
+        const items: MenuItemDescriptor[] = [{
+            id: 'values',
+            label: 'Indicator values',
+            checked: this.rowValuesShown(row),
+        }];
+        if (!this.rowMenu) {
+            this.rowMenu = new Menu({
+                host: this.container,
+                items,
+                placement: 'bottom-start',
+                onSelect: (itemId) => {
+                    if (itemId !== 'values' || !this.rowMenuId) return;
+                    const target = this.rows.get(this.rowMenuId);
+                    if (!target) return;
+                    target.showValues = !this.rowValuesShown(target);
+                    this.renderRowValues(target);
+                },
+            });
+        } else {
+            this.rowMenu.setItems(items);
+        }
+        this.rowMenu.openAt(x, y);
     }
 
-    private readonly onRowMenuOutside = (e: Event): void => {
-        if (this.rowMenu && !this.rowMenu.contains(e.target as Node)) this.closeRowMenu();
-    };
-
     private closeRowMenu(): void {
-        if (typeof document !== 'undefined') document.removeEventListener('pointerdown', this.onRowMenuOutside, true);
-        this.rowMenu?.remove();
-        this.rowMenu = null;
+        this.rowMenu?.close();
     }
 
     /** Move a legend row to another pane (indicator merged/moved), tidying an emptied container. */
@@ -953,7 +917,7 @@ export class InputsUI {
         this.disposeTips(this.rowTips, id);
         this.disposeTips(this.extrasTips, id);
         if (this.selectedId === id) this.selectedId = null;
-        if (this.openId === id) this.closeDialog();
+        if (this.inputsDialog.openId === id) this.inputsDialog.close();
         this.syncFoldToggle(); // below 2 indicators the chevron goes (and a fold in force lifts)
         // Drop an emptied non-price pane legend container (the pane itself is gone too).
         if (row && row.paneId !== 'price') {
@@ -963,9 +927,11 @@ export class InputsUI {
     }
 
     destroy(): void {
-        this.closeDialog();
-        this.closeMoveMenu();
-        this.closeRowMenu();
+        this.inputsDialog.close();
+        this.moveMenu?.destroy();
+        this.moveMenu = null;
+        this.rowMenu?.destroy();
+        this.rowMenu = null;
         for (const id of [...this.rowTips.keys()]) this.disposeTips(this.rowTips, id);
         for (const id of [...this.extrasTips.keys()]) this.disposeTips(this.extrasTips, id);
         for (const lg of this.legends.values()) lg.remove();
@@ -979,7 +945,7 @@ export class InputsUI {
 
     /** True when an indicator's settings dialog is currently open. */
     isDialogOpen(): boolean {
-        return this.dialog !== null;
+        return this.inputsDialog.isOpen();
     }
 
     /**
@@ -987,665 +953,13 @@ export class InputsUI {
      * Public so the host can dismiss it when it opens a competing dialog of its own.
      */
     closeOpenDialog(): void {
-        this.closeDialog();
+        this.inputsDialog.close();
     }
 
-    /**
-     * Open the indicator's settings as a centered modal over the chart — a themed,
-     * dependency-free port of the app's tabbed script-settings dialog: a header with the
-     * indicator title, a tab strip (the default "Inputs" tab plus any tab the inputs
-     * declare via `tab=`), a scrollable body per tab that groups inputs by `group=`
-     * (section headers) and packs `inline=` inputs onto one row, and a sticky footer.
-     *
-     * Edits commit LIVE (each change re-runs the indicator), matching the current
-     * behavior; the footer's **Cancel** reverts to the values captured on open, while
-     * **Ok** / × / click-outside / Esc keep them.
-     */
+
     private openDialog(id: string): void {
-        this.closeDialog();
         const row = this.rows.get(id);
-        if (!row || row.inputs.length === 0) return;
-        this.openId = id;
-        this.snapshot = { ...row.values };
-        ensureDialogStyles();
-        const t = this.theme;
-        const font = t.fontFamily || '-apple-system,Segoe UI,sans-serif';
-        const border = this.neutralBorder();
-        const fg = this.strongText();
-        const scheme = this.isDarkTheme() ? 'dark' : 'light';
-
-        // Backdrop — centers the card and captures outside clicks. Transparent (no scrim): the
-        // settings dialog leaves the chart visible for live editing; the symbol-search modal is
-        // the one that dims behind it.
-        const backdrop = document.createElement('div');
-        backdrop.className = 'vela-ind-dialog-backdrop';
-        backdrop.style.cssText = 'position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:transparent;pointer-events:auto;';
-        // Clicking the backdrop (outside the card) is a click "off the legend": close the dialog and
-        // drop the selection outline. The document click handler can't do this itself because this
-        // pointerdown removes the backdrop before the click event resolves.
-        backdrop.addEventListener('pointerdown', (e) => { if (e.target === backdrop) { this.closeDialog(); this.clearSelection(); } });
-
-        // Card.
-        const card = document.createElement('div');
-        card.className = 'vela-ind-dialog';
-        // Shrink-to-fit width (capped), mirroring the reference dialog's `w-fit sm:max-w-2xl`:
-        // the card is only as wide as the widest input row needs — no fixed width stretching the
-        // full-width text area — while the cap + min keep it a sensible size.
-        card.style.cssText = `display:flex;flex-direction:column;width:fit-content;min-width:min(380px,90%);max-width:min(640px,94%);max-height:82%;background:${t.background};border:1px solid ${border};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${fg};color-scheme:${scheme};font:14px ${font};overflow:hidden;`;
-        // Mobile: fullscreen, edge to edge — a floating card is unusable at phone widths.
-        if (this.mobileLayout) card.style.cssText += 'width:100%;min-width:0;max-width:none;height:100%;max-height:none;border:none;border-radius:0;';
-        applyChromeTokens(card, t);
-        // Keystrokes (typing in a field) must not reach the chart; let Esc bubble to the
-        // document handler so it closes even when focus sits in an input.
-        card.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
-
-        // ── Header ──
-        const header = document.createElement('div');
-        header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 20px 20px;flex:0 0 auto;';
-        const hTitle = document.createElement('span');
-        hTitle.textContent = row.settingsTitle;
-        hTitle.style.cssText = 'font-weight:600;font-size:20px;line-height:28px;';
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.setAttribute('aria-label', 'Close');
-        this.dialogTips.push(attachChromeTooltip(closeBtn, { host: this.container, theme: () => this.theme, text: () => 'Close' }));
-        closeBtn.innerHTML = iconAt('close', 15);
-        closeBtn.className = 'vela-ind-dlg-close';
-        closeBtn.addEventListener('click', () => this.closeDialog());
-        header.append(hTitle, closeBtn);
-        card.appendChild(header);
-        // Dragging is a pointer affordance; a fullscreen mobile card has nowhere to go.
-        if (!this.mobileLayout) makeDialogDraggable(card, header, { closeSelector: 'button' });
-
-        // ── Tab strip — one underlined tab per `tab=` declared by the inputs (default
-        // "Inputs"), full-width underline with the ACTIVE tab's label underlined. Each
-        // tab owns its own scrollable body; switching toggles which body is shown. ──
-        const tabDefs = tabInputs(row.inputs);
-        const tabs = document.createElement('div');
-        tabs.style.cssText = `display:flex;gap:12px;padding:0 20px;border-bottom:1px solid ${border};flex:0 0 auto;`;
-        const tabEls: HTMLElement[] = [];
-        const bodies: HTMLElement[] = [];
-        const activate = (idx: number): void => {
-            for (let i = 0; i < tabEls.length; i += 1) {
-                const active = i === idx;
-                const el = tabEls[i]!;
-                el.style.borderBottomColor = active ? fg : 'transparent';
-                el.style.color = active ? 'inherit' : 'var(--vela-fg-muted)';
-                el.classList.toggle('vela-ind-tab-active', active);
-                bodies[i]!.style.display = active ? 'grid' : 'none';
-            }
-        };
-        for (const [idx, def] of tabDefs.entries()) {
-            const tab = document.createElement('div');
-            tab.textContent = def.name;
-            tab.className = 'vela-ind-tab';
-            // The transparent underline reserves the active tab's 2px so switching never
-            // shifts the strip; a lone tab keeps today's static look (no pointer).
-            tab.style.cssText = `padding:0 0 8px;margin-bottom:-1px;border-bottom:2px solid transparent;font-weight:600;font-size:16px;line-height:24px;${tabDefs.length > 1 ? 'cursor:pointer;' : ''}`;
-            tab.addEventListener('click', () => activate(idx));
-            tabs.appendChild(tab);
-            tabEls.push(tab);
-            bodies.push(this.buildTabBody(def.inputs, row));
-        }
-        card.appendChild(tabs);
-        for (const body of bodies) card.appendChild(body);
-        activate(0);
-
-        // ── Footer — Cancel reverts live edits, Ok keeps them. ──
-        const footer = document.createElement('div');
-        footer.style.cssText = `display:flex;justify-content:flex-end;gap:12px;padding:16px 20px;border-top:1px solid ${border};flex:0 0 auto;`;
-        footer.append(
-            this.dialogButton('Cancel', false, () => this.revertAndClose()),
-            this.dialogButton('Ok', true, () => this.closeDialog()),
-        );
-        card.appendChild(footer);
-
-        backdrop.appendChild(card);
-        (this.dialogHost ?? this.container).appendChild(backdrop);
-        this.dialog = card;
-        this.backdrop = backdrop;
-        document.addEventListener('keydown', this.onDialogKey);
-    }
-
-    /** One tab's scrollable body — one shared grid so every group's controls share a
-     *  left edge (a 100px number field lines up with a wider session/time pair). */
-    private buildTabBody(inputs: InputSchema[], row: LegendRow): HTMLElement {
-        const body = document.createElement('div');
-        // `display:contents` on each group lets headers + rows participate in this
-        // one grid; per-section grids would each pick their own control-column width.
-        // overflow-x is pinned to hidden: `overflow-y:auto` alone would compute overflow-x
-        // to auto too, and a transient sliver of horizontal overflow (layout settling, the
-        // vertical scrollbar stealing width from the fit-content card) then flashes a
-        // horizontal scrollbar across the bottom of the dialog.
-        // overflow-anchor is OFF: Chrome's scroll anchoring miscompensates when a body-portaled
-        // popover (color picker, select list) is swapped in one gesture, jumping this scroller
-        // to its max — content here only scrolls when the user scrolls it.
-        body.style.cssText = this.mobileLayout
-            ? 'padding:16px 20px;overflow-y:auto;overflow-x:hidden;overflow-anchor:none;flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:16px;row-gap:16px;'
-            : 'padding:16px 20px;overflow-y:auto;overflow-x:hidden;overflow-anchor:none;flex:1 1 auto;display:grid;grid-template-columns:max-content 1fr;align-items:center;column-gap:16px;row-gap:16px;';
-        for (const group of groupInputs(inputs)) {
-            const section = document.createElement('div');
-            section.style.cssText = 'display:contents;';
-            if (group.name) {
-                const gh = document.createElement('div');
-                gh.textContent = group.name;
-                // First named section sits on the body's 16px pad; later ones keep a
-                // wide gap above the title so a group doesn't glue to the setting
-                // above, and a smaller gap below before the first row. Row-gap is
-                // 16px, so the padding here is the remainder of the old 24/36 rhythm.
-                const first = body.childElementCount === 0;
-                gh.style.cssText = `grid-column:1 / -1;font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);padding:${first ? '4px' : '20px'} 0 8px;`;
-                section.appendChild(gh);
-            }
-            for (const inputRow of group.rows) this.buildInputRow(section, inputRow, row);
-            body.appendChild(section);
-        }
-        return body;
-    }
-
-    private closeDialog(): void {
-        document.removeEventListener('keydown', this.onDialogKey);
-        closeOpenPopovers();
-        this.choicePop = null;
-        this.calendarPop = null;
-        this.calendarAnchor = null;
-        for (const dispose of this.dialogTips.splice(0)) dispose(); // a tip open right now dies with its dialog
-        this.backdrop?.remove();
-        this.backdrop = null;
-        this.dialog = null;
-        this.openId = null;
-        this.snapshot = null;
-    }
-
-    /** Restore every input to its open-time value (re-running the indicator), then close. */
-    private revertAndClose(): void {
-        const row = this.openId ? this.rows.get(this.openId) : null;
-        const snap = this.snapshot;
-        if (row && snap) {
-            for (const inp of row.inputs) {
-                const snapped = snap[inp.key];
-                const before: InputValue = snapped !== undefined ? snapped : inp.defval;
-                if (row.values[inp.key] !== before) {
-                    row.values[inp.key] = before;
-                    this.onChange?.({ indicatorId: row.id, key: inp.key, value: before });
-                }
-            }
-        }
-        this.closeDialog();
-    }
-
-    /** One settings row (or several `inline=` inputs) placed into a section's grid. */
-    private buildInputRow(grid: HTMLElement, decls: InputSchema[], row: LegendRow): void {
-        const idOf = (inp: InputSchema): string => `vela-inp-${row.id}-${inp.key}`;
-
-        // INLINE — multiple inputs on one line, each with its own title (bool toggles left).
-        if (decls.length > 1) {
-            const cell = document.createElement('div');
-            cell.style.cssText = 'grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px;';
-            for (const d of decls) {
-                const fit = d.type === 'color' || d.type === 'bool';
-                const toggleFirst = d.type === 'bool';
-                const id = idOf(d);
-                const item = document.createElement('div');
-                item.style.cssText = `display:flex;align-items:center;gap:8px;${toggleFirst ? 'flex-direction:row-reverse;' : ''}`;
-                const name = nameOf(d);
-                if (name) {
-                    const lbl = document.createElement('label');
-                    lbl.htmlFor = id;
-                    lbl.textContent = name;
-                    lbl.style.cssText = `font-size:14px;opacity:0.9;${toggleFirst ? 'cursor:pointer;' : ''}`;
-                    item.appendChild(lbl);
-                }
-                const cw = document.createElement('div');
-                cw.style.cssText = fit ? '' : 'width:100px;';
-                cw.appendChild(this.buildControl(row, d, id));
-                item.appendChild(cw);
-                cell.appendChild(item);
-            }
-            const lastTip = [...decls].reverse().find((d) => d.tooltip)?.tooltip;
-            if (lastTip) cell.appendChild(this.infoButton(lastTip));
-            grid.appendChild(cell);
-            return;
-        }
-
-        const lead = decls[0]!;
-        const id = idOf(lead);
-
-        // BOOL — toggle sits to the LEFT of its title (the label wraps it so the whole label toggles).
-        if (lead.type === 'bool') {
-            const cell = document.createElement('div');
-            cell.style.cssText = 'grid-column:1 / -1;display:flex;align-items:center;gap:8px;';
-            const lbl = document.createElement('label');
-            lbl.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;';
-            lbl.appendChild(this.buildControl(row, lead, id));
-            lbl.appendChild(document.createTextNode(nameOf(lead)));
-            cell.appendChild(lbl);
-            if (lead.tooltip) cell.appendChild(this.infoButton(lead.tooltip));
-            grid.appendChild(cell);
-            return;
-        }
-
-        // TEXT AREA — centered title (+ info) on its own line, full-width textarea below.
-        if (lead.type === 'text_area') {
-            const cell = document.createElement('div');
-            cell.style.cssText = 'grid-column:1 / -1;display:flex;flex-direction:column;gap:8px;';
-            const head = document.createElement('div');
-            head.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;';
-            const lbl = document.createElement('label');
-            lbl.htmlFor = id;
-            lbl.textContent = nameOf(lead);
-            lbl.style.cssText = 'font-size:14px;';
-            head.appendChild(lbl);
-            if (lead.tooltip) head.appendChild(this.infoButton(lead.tooltip));
-            cell.appendChild(head);
-            cell.appendChild(this.buildControl(row, lead, id));
-            grid.appendChild(cell);
-            return;
-        }
-
-        // DEFAULT — [ label | control + info ]. The pair sits at the start of the
-        // shared track so every field shares a left edge and its tooltip stays
-        // 8px after that field (not parked in a far-right column).
-        const label = document.createElement('label');
-        label.htmlFor = id;
-        label.textContent = nameOf(lead);
-        label.style.cssText = 'font-size:14px;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        const fit = lead.type === 'color' || lead.type === 'session' || lead.type === 'time';
-        const cell = document.createElement('div');
-        cell.style.cssText = 'display:flex;align-items:center;gap:8px;justify-self:start;';
-        const cw = document.createElement('div');
-        cw.style.cssText = fit ? '' : 'width:100px;';
-        cw.appendChild(this.buildControl(row, lead, id));
-        cell.appendChild(cw);
-        if (lead.tooltip) cell.appendChild(this.infoButton(lead.tooltip));
-        grid.appendChild(label);
-        grid.appendChild(cell);
-    }
-
-    /** Build the typed control for one input, committing edits live via `onChange`. */
-    private buildControl(row: LegendRow, inp: InputSchema, id: string): HTMLElement {
-        const current = row.values[inp.key] ?? inp.defval;
-        const emit = (value: InputValue): void => {
-            row.values[inp.key] = value;
-            this.onChange?.({ indicatorId: row.id, key: inp.key, value });
-        };
-
-        if (inp.type === 'bool') return this.buildToggle(id, Boolean(current), emit);
-        if (inp.options && inp.options.length > 0) return this.select(id, inp.options.map(String), String(current), emit);
-        if (inp.type === 'source') return this.select(id, SOURCES, String(current), emit);
-        if (inp.type === 'color') {
-            const field = colorField(this.theme, () => String(row.values[inp.key] ?? inp.defval), (v) => emit(v), { shape: 'circle', id });
-            return field;
-        }
-        if (inp.type === 'symbol') return this.buildSymbol(id, String(current), emit);
-        if (inp.type === 'timeframe') return this.selectPairs(id, TIMEFRAME_OPTIONS, String(current), emit);
-        if (inp.type === 'session') return this.buildSession(id, String(current), emit);
-        if (inp.type === 'time') return this.buildTime(id, Number(current) || 0, emit);
-        if (inp.type === 'text_area') return this.buildTextArea(id, String(current), emit);
-        // int / float / price → numeric field with hover steppers (price behaves like a free float).
-        if (inp.type === 'int' || inp.type === 'float' || inp.type === 'price') {
-            return this.buildNumber(id, Number(current), inp, emit);
-        }
-        // string / other → free text, commit on blur / Enter.
-        return this.buildTextField(id, String(current), emit);
-    }
-
-    /** A plain text field that commits on blur / Enter (shared by string inputs and the pickerless symbol field). */
-    private buildTextField(id: string, current: string, emit: (v: InputValue) => void): HTMLElement {
-        return new TextField({ id, value: current, size: 'md', onChange: emit }).el;
-    }
-
-    /** A square check-toggle (filled + check when on) — replaces the raw checkbox. */
-    private buildToggle(id: string, checked: boolean, onChange: (v: boolean) => void): HTMLElement {
-        return new Switch({ id, checked, size: 'md', tone: 'bright', onChange }).el;
-    }
-
-    /** A hoverable ⓘ affordance carrying an input's `tooltip` (themed chrome tip; wraps). */
-    private infoButton(tooltip: string): HTMLElement {
-        const b = document.createElement('span');
-        b.textContent = 'i';
-        this.dialogTips.push(attachChromeTooltip(b, { host: this.container, theme: () => this.theme, text: () => tooltip, wrap: true, delayMs: 250 }));
-        b.className = 'vela-ind-hint';
-        b.style.cssText = 'flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-weight:600;font-size:11px;font-family:inherit;line-height:1;cursor:help;user-select:none;';
-        return b;
-    }
-
-    /** A dropdown over plain string options (value === label) — a thin case of {@link selectPairs}. */
-    private select(id: string, options: string[], current: string, emit: (v: InputValue) => void): HTMLElement {
-        return this.selectPairs(id, options.map((o) => ({ value: o, label: o })), current, emit);
-    }
-
-    /** A dropdown whose visible labels differ from the committed values (label ≠ value pairs). */
-    private selectPairs(id: string, pairs: readonly SelectOption[], current: string, onChange: (v: string) => void): HTMLElement {
-        return new Select({
-            id,
-            options: pairs,
-            value: current,
-            size: 'md',
-            theme: this.theme,
-            list: this.listPopover(),
-            onChange,
-        }).el;
-    }
-
-    /** `input.session` → two typeable HH:MM comboboxes committing a `HHMM-HHMM` session string. */
-    private buildSession(id: string, current: string, emit: (v: InputValue) => void): HTMLElement {
-        const [start, end] = sessionToTimes(current);
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
-        let from = start;
-        let to = end;
-        const commit = (): void => emit(timesToSession(from, to));
-        wrap.append(
-            this.timeCombobox(id, from, 86, (v) => { from = v; commit(); }),
-            this.timeCombobox(`${id}-end`, to, 86, (v) => { to = v; commit(); }),
-        );
-        return wrap;
-    }
-
-    /** `input.time` → a date picker + an HH:MM dropdown, committing an epoch-ms timestamp. */
-    private buildTime(id: string, current: number, emit: (v: InputValue) => void): HTMLElement {
-        const parts = timeParts(current);
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
-        let date = parts.date;
-        let time = parts.time;
-        const commit = (): void => {
-            if (!date) return; // no date chosen yet → nothing to commit
-            const ms = Date.parse(`${date}T${time}:00`);
-            if (Number.isFinite(ms)) emit(ms);
-        };
-        const dateField = this.dateField(id, date, (v) => { date = v; commit(); });
-        const timeSel = this.timeCombobox(`${id}-time`, time, 86, (v) => { time = v; commit(); });
-        wrap.append(dateField, timeSel);
-        return wrap;
-    }
-
-    /** `input.text_area` → a multi-line textarea, committed on blur. */
-    private buildTextArea(id: string, current: string, emit: (v: InputValue) => void): HTMLTextAreaElement {
-        const ta = document.createElement('textarea');
-        ta.id = id;
-        ta.value = current;
-        ta.rows = 3;
-        ta.style.cssText = `${this.ctrlStyle()}width:100%;height:auto;min-height:64px;padding:8px;resize:vertical;font-family:inherit;line-height:1.4;`;
-        let last = current;
-        ta.addEventListener('blur', () => { if (ta.value !== last) { last = ta.value; emit(ta.value); } });
-        return ta;
-    }
-
-    /** A fixed-width HH:MM combobox (typeable, plus a 30-minute-step dropdown) used by session + time. */
-    private timeCombobox(id: string, current: string, width: number, onChange: (v: string) => void): HTMLElement {
-        const wrap = document.createElement('div');
-        wrap.className = 'vela-ind-combo';
-        wrap.style.cssText = `position:relative;width:${width}px;`;
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.id = id;
-        input.value = current;
-        input.autocomplete = 'off';
-        input.spellcheck = false;
-        input.style.cssText = `${this.ctrlStyle()}padding-right:26px;`;
-        const chevron = document.createElement('button');
-        chevron.type = 'button';
-        chevron.tabIndex = -1;
-        chevron.className = 'vela-ind-combo-chevron';
-        chevron.setAttribute('aria-label', 'Open time list');
-        chevron.innerHTML = CLOCK_SVG;
-        let value = current;
-        const commitTyped = (): void => {
-            const next = normalizeTimeInput(input.value);
-            if (!next) { input.value = value; return; }
-            input.value = next;
-            if (next !== value) { value = next; onChange(next); }
-        };
-        input.addEventListener('blur', () => {
-            // A click on the open list focuses the item, not the input — don't revert yet.
-            if (isPopoverOpen()) return;
-            commitTyped();
-        });
-        const pick = (v: string): void => {
-            value = v;
-            input.value = v;
-            onChange(v);
-        };
-        const openList = (): void => {
-            this.choicePop = toggleSelectList(wrap, TIME_OPTIONS, value, pick, {
-                ...this.listPopover(),
-                onClose: () => { this.choicePop = null; },
-            });
-        };
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); commitTyped(); input.blur(); }
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                openList();
-            }
-        });
-        const open = (e: Event): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            openList();
-        };
-        // The field itself is the dropdown trigger — typing still works while the list is open.
-        input.addEventListener('click', open);
-        chevron.addEventListener('mousedown', (e) => e.preventDefault()); // keep input focused
-        chevron.addEventListener('click', open);
-        wrap.append(input, chevron);
-        return wrap;
-    }
-
-    /** A typeable YYYY-MM-DD field that also opens a themed month calendar. */
-    private dateField(id: string, current: string, onChange: (v: string) => void): HTMLElement {
-        const wrap = document.createElement('div');
-        wrap.className = 'vela-ind-combo';
-        wrap.style.cssText = 'position:relative;width:128px;';
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.id = id;
-        input.value = current;
-        input.autocomplete = 'off';
-        input.spellcheck = false;
-        input.style.cssText = `${this.ctrlStyle()}padding-right:26px;`;
-        const chevron = document.createElement('button');
-        chevron.type = 'button';
-        chevron.tabIndex = -1;
-        chevron.className = 'vela-ind-combo-chevron';
-        chevron.setAttribute('aria-label', 'Open calendar');
-        chevron.innerHTML = CALENDAR_SVG;
-        let value = current;
-        const commitTyped = (): void => {
-            const next = normalizeDateInput(input.value);
-            if (!next) { input.value = value; return; }
-            input.value = next;
-            if (next !== value) { value = next; onChange(next); }
-        };
-        input.addEventListener('blur', () => {
-            if (isPopoverOpen()) return;
-            commitTyped();
-        });
-        const pick = (v: string): void => {
-            value = v;
-            input.value = v;
-            onChange(v);
-        };
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); commitTyped(); input.blur(); }
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                this.openCalendar(wrap, value, pick);
-            }
-        });
-        const open = (e: Event): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (openPopoverTrigger() === wrap) {
-                closeOpenPopovers();
-                return;
-            }
-            this.openCalendar(wrap, value, pick);
-        };
-        input.addEventListener('click', open);
-        chevron.addEventListener('mousedown', (e) => e.preventDefault());
-        chevron.addEventListener('click', open);
-        wrap.append(input, chevron);
-        return wrap;
-    }
-
-    /** Numeric field with hover steppers on the right (no fill until a triangle is hovered). */
-    private buildNumber(id: string, current: number, inp: InputSchema, emit: (v: InputValue) => void): HTMLElement {
-        return new NumberInput({
-            id,
-            value: current,
-            min: inp.min,
-            max: inp.max,
-            step: inp.step ?? (inp.type === 'int' ? 1 : 0.1),
-            integer: inp.type === 'int',
-            size: 'md',
-            commit: 'blur',
-            onChange: emit,
-        }).el;
-    }
-
-    /** Placement shared by the indicator dialog's dropdowns and the time combobox. */
-    private listPopover(): { theme: VelaTheme; matchWidth: boolean; boundary: HTMLElement | 'viewport'; boundaryInset: number; gap: number } {
-        return {
-            theme: this.theme,
-            matchWidth: true,
-            boundary: this.dialog ?? 'viewport',
-            boundaryInset: 8,
-            gap: 4,
-        };
-    }
-
-    /** Open a themed month calendar under `anchor` — same surface + shadow as the choice list. */
-    private openCalendar(anchor: HTMLElement, current: string, onPick: (iso: string) => void): void {
-        const parsed = parseIsoDate(current);
-        let year = parsed?.getFullYear() ?? new Date().getFullYear();
-        let month = parsed?.getMonth() ?? new Date().getMonth();
-        const selected = parsed ? isoDate(parsed) : current;
-
-        const pop = new Popover({
-            trigger: anchor,
-            theme: this.theme,
-            className: 'vela-ind-cal',
-            boundary: this.dialog ?? 'viewport',
-            boundaryInset: 8,
-            gap: 4,
-            onClose: () => {
-                this.calendarPop = null;
-                this.calendarAnchor = null;
-            },
-            content: (el) => {
-                const title = document.createElement('div');
-                title.className = 'vela-ind-cal-title';
-                const prev = document.createElement('button');
-                prev.type = 'button';
-                prev.className = 'vela-ind-cal-nav';
-                prev.setAttribute('aria-label', 'Previous month');
-                prev.innerHTML = iconAt('chevron-left', 14);
-                const next = document.createElement('button');
-                next.type = 'button';
-                next.className = 'vela-ind-cal-nav';
-                next.setAttribute('aria-label', 'Next month');
-                next.innerHTML = iconAt('chevron-right', 14);
-                const head = document.createElement('div');
-                head.className = 'vela-ind-cal-head';
-                head.append(prev, title, next);
-
-                const week = document.createElement('div');
-                week.className = 'vela-ind-cal-week';
-                for (const d of WEEKDAY_LABELS) {
-                    const cell = document.createElement('span');
-                    cell.textContent = d;
-                    week.appendChild(cell);
-                }
-                const grid = document.createElement('div');
-                grid.className = 'vela-ind-cal-grid';
-
-                const paint = (): void => {
-                    title.textContent = `${MONTH_LABELS[month]} ${year}`;
-                    grid.replaceChildren();
-                    const first = new Date(year, month, 1);
-                    const startPad = first.getDay();
-                    const days = new Date(year, month + 1, 0).getDate();
-                    const today = isoDate(new Date());
-                    for (let i = 0; i < startPad; i++) {
-                        const blank = document.createElement('span');
-                        blank.className = 'vela-ind-cal-blank';
-                        grid.appendChild(blank);
-                    }
-                    for (let day = 1; day <= days; day++) {
-                        const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                        const b = document.createElement('button');
-                        b.type = 'button';
-                        b.className = 'vela-ind-cal-day';
-                        b.textContent = String(day);
-                        if (iso === selected) b.dataset.checked = '1';
-                        if (iso === today) b.dataset.today = '1';
-                        b.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            pop.hide();
-                            onPick(iso);
-                        });
-                        grid.appendChild(b);
-                    }
-                };
-                prev.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    month -= 1;
-                    if (month < 0) { month = 11; year -= 1; }
-                    paint();
-                });
-                next.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    month += 1;
-                    if (month > 11) { month = 0; year += 1; }
-                    paint();
-                });
-                paint();
-                el.append(head, week, grid);
-            },
-        });
-        this.calendarPop = pop;
-        this.calendarAnchor = anchor;
-        pop.show();
-    }
-
-    /**
-     * `input.symbol` → a field that opens the host's ticker-selection UI when a picker is wired
-     * (the chosen symbol is written back), else a plain text field (type the ticker).
-     */
-    private buildSymbol(id: string, current: string, emit: (v: InputValue) => void): HTMLElement {
-        const picker = this.symbolPicker;
-        if (!picker) return this.buildTextField(id, current, emit);
-        // Track the stored symbol so the picker is seeded with the actual value (not the
-        // placeholder), and stays in sync after each pick for subsequent openings.
-        let value = current;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.id = id;
-        btn.style.cssText = `${this.ctrlStyle()}display:flex;align-items:center;cursor:pointer;text-align:left;`;
-        const label = document.createElement('span');
-        label.textContent = value || 'Select symbol…';
-        label.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-        btn.append(label);
-        btn.addEventListener('click', () => picker(value, (picked) => {
-            if (!picked) return;
-            value = picked;
-            label.textContent = picked;
-            emit(picked);
-        }));
-        return btn;
-    }
-
-    /** Shared field chrome for text / number / select controls (fills its wrapper's width). */
-    private ctrlStyle(): string {
-        return `width:100%;box-sizing:border-box;height:34px;background:transparent;border:1px solid var(--vela-border-strong);color:${this.strongText()};border-radius:6px;padding:0 8px;font-size:14px;font-family:inherit;outline:none;`;
-    }
-
-    /** Whether the active theme is dark (drives the dialog's `color-scheme`). */
-    private isDarkTheme(): boolean {
-        return isDarkColor(this.theme.background);
+        if (row) this.inputsDialog.open(row);
     }
 
     /** Idle legend-row fill — a translucent wash of the chart background, so the title keeps
@@ -1658,249 +972,4 @@ export class InputsUI {
     private neutralBorder(): string {
         return 'var(--vela-border)';
     }
-
-    /** Strong foreground for field text, labels and the primary button. */
-    private strongText(): string {
-        return 'var(--vela-fg-bright)';
-    }
-
-    private dialogButton(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = label;
-        // Primary = filled inverse chip; Cancel = outlined. Both hover states are in the
-        // scoped stylesheet.
-        b.className = primary ? 'vela-ind-btn vela-ind-btn-primary' : 'vela-ind-btn';
-        b.addEventListener('click', onClick);
-        return b;
-    }
-}
-
-/**
- * Display name for an input: its `title`, first letter capitalized. A blank title yields no label
- * (empty string) — the Pine idiom for a companion `inline=` control (e.g. `input.timeframe('1', '')`).
- * An omitted title is already substituted with the input's key upstream in `mapInputs`, so a blank
- * title reaching here is an explicit "no label" rather than a missing one.
- */
-export function nameOf(inp: InputSchema): string {
-    const t = inp.title;
-    return t.length > 0 ? t.charAt(0).toUpperCase() + t.slice(1) : '';
-}
-
-/** The settings-dialog tab hosting inputs that declare no `tab=`. */
-export const DEFAULT_INPUT_TAB = 'Inputs';
-
-/** One settings-dialog tab: its strip label and the inputs it hosts (declaration order). */
-export interface InputTab {
-    name: string;
-    inputs: InputSchema[];
-}
-
-/**
- * Partition inputs into settings-dialog tabs. Inputs without a `tab=` land on the
- * default "Inputs" tab (an explicit `tab='Inputs'` merges with it), which leads the
- * strip whenever it has members; declared tabs follow in first-seen order. Within a
- * tab, declaration order is kept — `group=`/`inline=` layout happens per tab.
- */
-export function tabInputs(inputs: InputSchema[]): InputTab[] {
-    const byTab = new Map<string, InputSchema[]>();
-    for (const inp of inputs) {
-        const name = inp.tab && inp.tab.length > 0 ? inp.tab : DEFAULT_INPUT_TAB;
-        if (!byTab.has(name)) byTab.set(name, []);
-        byTab.get(name)!.push(inp);
-    }
-    const names = [...byTab.keys()];
-    if (names.includes(DEFAULT_INPUT_TAB)) {
-        names.splice(names.indexOf(DEFAULT_INPUT_TAB), 1);
-        names.unshift(DEFAULT_INPUT_TAB);
-    }
-    return names.map((name) => ({ name, inputs: byTab.get(name)! }));
-}
-
-interface InputGroup {
-    name: string | null;
-    rows: InputSchema[][];
-}
-
-/**
- * Bucket inputs into `group=` sections (first-seen order — a section appears at its first
- * member's position, ungrouped inputs stay where declared) and, within each, collapse
- * inputs that share an `inline=` id onto one row (Pine convention).
- */
-function groupInputs(inputs: InputSchema[]): InputGroup[] {
-    const order: (string | null)[] = [];
-    const byGroup = new Map<string | null, InputSchema[]>();
-    for (const inp of inputs) {
-        const g = inp.group && inp.group.length > 0 ? inp.group : null;
-        if (!byGroup.has(g)) {
-            byGroup.set(g, []);
-            order.push(g);
-        }
-        byGroup.get(g)!.push(inp);
-    }
-    return order.map((name) => {
-        const members = byGroup.get(name)!;
-        const rows: InputSchema[][] = [];
-        const inlineRowIndex = new Map<string, number>();
-        for (const inp of members) {
-            const inline = inp.inline && inp.inline.length > 0 ? inp.inline : null;
-            if (inline && inlineRowIndex.has(inline)) {
-                rows[inlineRowIndex.get(inline)!]!.push(inp);
-            } else {
-                if (inline) inlineRowIndex.set(inline, rows.length);
-                rows.push([inp]);
-            }
-        }
-        return { name, rows };
-    });
-}
-
-const CHECK_SVG = iconAt('check', 12);
-const CALENDAR_SVG = iconAt('calendar', 14);
-const CLOCK_SVG = iconAt('clock', 14);
-
-const DIALOG_STYLE_ID = 'vela-ind-dialog-styles';
-/** Bump when the injected sheet's rules change so an already-mounted page refreshes them. */
-const DIALOG_STYLE_REV = '25';
-
-/** Inject the scoped styles inline cssText can't reach (color-swatch, focus ring, scrollbar). */
-function ensureDialogStyles(): void {
-    if (typeof document === 'undefined') return;
-    const existing = document.getElementById(DIALOG_STYLE_ID) as HTMLStyleElement | null;
-    if (existing?.dataset.rev === DIALOG_STYLE_REV) return;
-    const s = existing ?? document.createElement('style');
-    s.id = DIALOG_STYLE_ID;
-    s.dataset.rev = DIALOG_STYLE_REV;
-    s.textContent = `
-.vela-ind-dialog input[type=text],.vela-ind-dialog input[type=number],.vela-ind-dialog input[type=date]{transition:border-color .12s ease,box-shadow .12s ease;}
-.vela-ind-dialog input[type=text]:hover,.vela-ind-dialog input[type=number]:hover,.vela-ind-dialog input[type=date]:hover{border-color:var(--vela-fg-muted);}
-.vela-ind-dialog input[type=text]:focus,.vela-ind-dialog input[type=number]:focus,.vela-ind-dialog input[type=date]:focus{border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);}
-.vela-ind-combo-chevron{position:absolute;right:0;top:0;bottom:0;width:26px;border:none;background:transparent;color:inherit;opacity:0.55;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
-.vela-ind-combo-chevron:hover{opacity:0.9;}
-.vela-ind-cal{background:var(--vela-bg);color:var(--vela-fg);border:none;border-radius:6px;box-shadow:var(--vela-shadow);font:14px var(--vela-font);padding:10px 12px;user-select:none;}
-.vela-ind-cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
-.vela-ind-cal-title{flex:1;text-align:center;font-weight:600;font-size:14px;color:var(--vela-fg-bright);}
-.vela-ind-cal-nav{width:24px;height:24px;border:none;background:transparent;color:var(--vela-fg-muted);border-radius:4px;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
-.vela-ind-cal-nav:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-ind-cal-week,.vela-ind-cal-grid{display:grid;grid-template-columns:repeat(7,28px);gap:2px;}
-.vela-ind-cal-week{margin-bottom:4px;color:var(--vela-fg-muted);font-size:11px;text-align:center;}
-.vela-ind-cal-week span{line-height:20px;}
-.vela-ind-cal-blank{width:28px;height:28px;}
-.vela-ind-cal-day{width:28px;height:28px;border:none;background:transparent;color:inherit;border-radius:4px;padding:0;cursor:pointer;font:inherit;font-size:14px;}
-.vela-ind-cal-day:hover{background:var(--vela-hover);}
-.vela-ind-cal-day[data-checked]{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
-.vela-ind-cal-day[data-today]:not([data-checked]){box-shadow:inset 0 0 0 1px var(--vela-border-strong);}
-.vela-ind-dialog ::-webkit-scrollbar{width:9px;height:9px;}
-.vela-ind-dialog ::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
-.vela-ind-dialog ::-webkit-scrollbar-track{background:transparent;}
-.vela-ind-dialog ::-webkit-scrollbar-button{display:none;width:0;height:0;}
-.vela-ind-tab{transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
-.vela-ind-tab:not(.vela-ind-tab-active):hover{color:var(--vela-fg-bright);}
-.vela-ind-hint{background:var(--vela-hover);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-ind-hint:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
-.vela-ind-ctl,.vela-ind-close{background-color:transparent;color:inherit;transition:color var(--vela-dur-fast) ease,background-color var(--vela-dur-fast) ease;}
-.vela-ind-ctl svg,.vela-ind-close svg{width:${LEGEND_ICON_PX}px;height:${LEGEND_ICON_PX}px;display:block;flex:none;stroke-width:1;}
-.vela-ind-ctl:hover{background-color:var(--vela-hover-strong);}
-.vela-ind-close:hover{color:var(--vela-danger) !important;background-color:var(--vela-hover-strong);}
-.vela-ind-dlg-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;flex:0 0 auto;border-radius:var(--vela-radius-sm);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-ind-dlg-close:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-ind-dlg-close svg{width:15px;height:15px;display:block;flex:none;}
-.vela-ind-fold{transition:border-color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
-.vela-ind-fold:hover{border-color:var(--vela-border-strong);opacity:0.9;}
-.vela-ind-menuitem{background:transparent;transition:background var(--vela-dur-fast) ease;}
-.vela-ind-menuitem:hover{background:var(--vela-hover-strong);}
-.vela-ind-btn{cursor:pointer;height:34px;padding:0 11px;border-radius:6px;border:1px solid var(--vela-border-strong);background:transparent;color:var(--vela-fg);font-weight:400;font-size:14px;font-family:inherit;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
-.vela-ind-btn:hover{background:var(--vela-hover);color:var(--vela-fg-bright);border-color:var(--vela-fg-muted);}
-.vela-ind-btn-primary{border-color:var(--vela-selected-bg);background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
-.vela-ind-btn-primary:hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);opacity:0.85;border-color:var(--vela-selected-bg);}`;
-    if (!existing) document.head.appendChild(s);
-}
-
-/** `input.timeframe` choices — label shown, Pine resolution string committed (`''` = chart's). */
-const TIMEFRAME_OPTIONS: readonly { value: string; label: string }[] = [
-    { value: '', label: 'Chart' },
-    { value: '1', label: '1 minute' },
-    { value: '3', label: '3 minutes' },
-    { value: '5', label: '5 minutes' },
-    { value: '15', label: '15 minutes' },
-    { value: '30', label: '30 minutes' },
-    { value: '45', label: '45 minutes' },
-    { value: '60', label: '1 hour' },
-    { value: '120', label: '2 hours' },
-    { value: '180', label: '3 hours' },
-    { value: '240', label: '4 hours' },
-    { value: 'D', label: '1 day' },
-    { value: 'W', label: '1 week' },
-    { value: 'M', label: '1 month' },
-];
-
-/** HH:MM options at 30-minute steps (`00:00` … `23:30`) for the session + time dropdowns. */
-const TIME_OPTIONS: readonly { value: string; label: string }[] = Array.from({ length: 48 }, (_, i) => {
-    const hh = String(Math.floor(i / 2)).padStart(2, '0');
-    const mm = i % 2 === 0 ? '00' : '30';
-    const v = `${hh}:${mm}`;
-    return { value: v, label: v };
-});
-
-const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
-const WEEKDAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const;
-
-/** Accept `YYYY-MM-DD` or `YYYY-M-D` and return a padded ISO date, or null if unusable. */
-export function normalizeDateInput(raw: string): string | null {
-    const t = raw.trim();
-    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
-    if (!m) return null;
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-    const dt = new Date(y, mo - 1, d);
-    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
-    return isoDate(dt);
-}
-
-function parseIsoDate(raw: string): Date | null {
-    const iso = normalizeDateInput(raw);
-    if (!iso) return null;
-    const [y, mo, d] = iso.split('-').map(Number);
-    return new Date(y!, mo! - 1, d!);
-}
-
-function isoDate(d: Date): string {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/** Accept `HH:MM`, `H:MM`, or `HHMM` and return a padded `HH:MM`, or null if unusable. */
-export function normalizeTimeInput(raw: string): string | null {
-    const t = raw.trim();
-    const m = /^(\d{1,2}):(\d{2})$/.exec(t) ?? /^(\d{2})(\d{2})$/.exec(t);
-    if (!m) return null;
-    const hh = Number(m[1]);
-    const mm = Number(m[2]);
-    if (hh > 23 || mm > 59) return null;
-    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-}
-
-/** Split a Pine `HHMM-HHMM` session into two `HH:MM` strings (defaults `09:00`–`16:00`). */
-function sessionToTimes(session: string): [string, string] {
-    const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(session.trim());
-    if (!m) return ['09:00', '16:00'];
-    return [`${m[1]}:${m[2]}`, `${m[3]}:${m[4]}`];
-}
-
-/** Recombine two `HH:MM` strings into a Pine `HHMM-HHMM` session string. */
-function timesToSession(start: string, end: string): string {
-    return `${start.replace(':', '')}-${end.replace(':', '')}`;
-}
-
-/** Split an epoch timestamp (s or ms) into a `YYYY-MM-DD` date + a 30-min-snapped `HH:MM`. */
-function timeParts(ts: number): { date: string; time: string } {
-    if (!ts) return { date: '', time: '09:30' };
-    const ms = ts < 1e12 ? ts * 1000 : ts; // Pine epochs may arrive in seconds
-    const d = new Date(ms);
-    if (Number.isNaN(d.getTime())) return { date: '', time: '09:30' };
-    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const snapped = Math.round((d.getHours() * 60 + d.getMinutes()) / 30) * 30;
-    const hh = String(Math.floor(snapped / 60) % 24).padStart(2, '0');
-    const mm = String(snapped % 60).padStart(2, '0');
-    return { date, time: `${hh}:${mm}` };
 }

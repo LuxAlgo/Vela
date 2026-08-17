@@ -15,6 +15,7 @@ import { applyPlotOverlayTokens, ensureUIHost, injectStyles } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
 import { Statusline, statuslineInkOf } from './statusline';
+import { MarketStatusTracker } from './market-status';
 import { Watermark } from './watermark';
 import { Bottombar, RANGE_PRESETS, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
@@ -77,6 +78,8 @@ export class VelaWidget {
     private readonly chartHost: HTMLElement;
     private readonly topbar: Topbar;
     private readonly statusline: Statusline | null;
+    /** Keeps the statusline's market badge on the symbol's real calendar (see {@link MarketStatusTracker}). */
+    private readonly marketStatus: MarketStatusTracker | null;
     private readonly watermark: Watermark | null;
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
@@ -333,6 +336,7 @@ export class VelaWidget {
         this.watermark?.setVisible(this.watermarkOn);
         this.statusline = opts.statusline !== false ? new Statusline(this.chartHost, this.symbol) : null;
         this.statusline?.setMeta(this.timeframe, parseSymbol(this.symbol).provider ?? '');
+        this.marketStatus = this.statusline ? new MarketStatusTracker((s) => this.statusline?.setMarketStatus(s)) : null;
         this.bottombar =
             opts.bottombar !== false
                 ? new Bottombar(this.root, {
@@ -1008,6 +1012,7 @@ export class VelaWidget {
         this.symbolPicker.destroy();
         this.indicatorPicker?.destroy();
         this.tfQuick.destroy();
+        this.marketStatus?.stop();
         this.statusline?.destroy();
         this.watermark?.destroy();
         this.bottombar?.destroy();
@@ -1071,6 +1076,7 @@ export class VelaWidget {
             if (this.inner !== chart) return;
             this.statusline?.setMeta(this.timeframe, this.providerLabel());
             this.refreshSessionToggle(); // symbol metadata can now answer "has sessions?"
+            this.marketStatus?.track(chart.data, this.symbol); // calendar can now answer "open?"
         });
         // A fresh renderer starts desktop — push the live mode (constructor-time builds
         // run before layoutCtl exists; the controller's first evaluation covers them).
@@ -1182,6 +1188,7 @@ export class VelaWidget {
                 this.objectTree.setSymbol(symbol);
                 this.watermark?.update(symbol, this.timeframe);
                 this.refreshSessionToggle(); // the new symbol may (not) have sessions
+                this.marketStatus?.track(chart.data, symbol); // …and its own market clock
             }
             if (timeframe !== this.timeframe) this.syncTimeframeChrome(timeframe);
         });

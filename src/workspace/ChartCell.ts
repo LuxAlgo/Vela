@@ -16,6 +16,7 @@ import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import { Statusline, statuslineInkOf } from '../widget/statusline';
+import { MarketStatusTracker } from '../widget/market-status';
 import { Watermark } from '../widget/watermark';
 import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
@@ -163,6 +164,8 @@ export class ChartCell {
      *  plot-overlay tokens re-derive from). */
     private appTheme: VelaTheme;
     private readonly statusline: Statusline | null;
+    /** Keeps this cell's market badge on the symbol's real calendar (see {@link MarketStatusTracker}). */
+    private readonly marketStatus: MarketStatusTracker | null;
     private readonly watermark: Watermark | null;
     private readonly contextMenu: ChartContextMenu;
     private readonly offMarket: () => void;
@@ -305,12 +308,14 @@ export class ChartCell {
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '') : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
+        this.marketStatus = this.statusline ? new MarketStatusTracker((s) => this.statusline?.setMarketStatus(s)) : null;
         // The venue chip above is provisional (persisted/typed prefix): once the shared
         // feed's indexes settle, re-derive it from the DATA — a cell restored as
         // `edgx:AAPL` must come back up reading NASDAQ.
         void this.inner.data.ready().then(() => {
             if (this.inner && this.state.symbol) this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
             this.refreshSessionAvailable();
+            if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
         });
         this.syncStatuslineColors();
         this.contextMenu = new ChartContextMenu(this.host, {
@@ -458,6 +463,7 @@ export class ChartCell {
             if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
             this.refreshNativeCatalog(); // per-symbol support flags may differ
             this.refreshSessionAvailable(); // the new symbol may (not) have sessions
+            if (this.inner) this.marketStatus?.track(this.inner.data, symbol); // …and its own market clock
             this.deps.onMarketChanged(this.id);
         });
     }
@@ -814,6 +820,7 @@ export class ChartCell {
         this.offMarket();
         this.contextMenu.destroy();
         this.history.destroy();
+        this.marketStatus?.stop();
         this.statusline?.destroy();
         this.watermark?.destroy();
         this.inner?.destroy();

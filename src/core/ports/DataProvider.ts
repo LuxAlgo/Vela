@@ -90,6 +90,17 @@ export interface DataProvider {
      */
     subscribe?(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void, opts?: { session?: string }): Unsubscribe;
 
+    /**
+     * Resolved market-calendar windows over `[range.from, range.to)`: ascending epoch-ms
+     * `[start, end)` pairs of OPEN market time, holidays and DST already applied by the
+     * source — the single market-time truth for session-anchored consumers (market-status
+     * badges, session profiles), which must never recompute a holiday themselves.
+     * `range.session` selects the window set (`'regular'` default; `'extended'` = the
+     * full tape). Absent ⇒ the venue offers no calendar (continuous markets) and
+     * consumers fall back to their own anchoring (e.g. UTC days).
+     */
+    getCalendar?(ticker: string, range: { from: number; to: number; session?: string }): Promise<ReadonlyArray<readonly [number, number]>>;
+
     /** Apply runtime config (e.g. API keys). Absent ⇒ no configuration needed. */
     configure?(config: unknown): void;
 

@@ -1,7 +1,7 @@
 // Switch CONTROLLER — checked state + option mapping. No DOM.
 
 export type SwitchSize = 'sm' | 'md';
-/** `bright` = indicator-dialog fill (`--vela-fg-bright`); `selected` = chart-settings fill. */
+/** `bright` = settings-dialog fill (`--vela-fg-bright`); `selected` = `--vela-selected-bg`. */
 export type SwitchTone = 'bright' | 'selected';
 
 export interface SwitchControllerOptions {

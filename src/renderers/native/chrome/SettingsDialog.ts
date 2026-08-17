@@ -16,12 +16,17 @@ import {
 } from '../../../chart-types/registry';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
-import { Switch } from '../../../ui/components/switch';
-import { Select } from '../../../ui/components/select';
-import { NumberInput } from '../../../ui/components/number-input';
-import { colorField } from '../../../ui/components/color-picker';
 import { closeOpenPopovers } from '../../../ui/components/popover';
-import { widthField, closeWidthPopover } from './WidthField';
+import { closeWidthPopover } from '../../../ui/components/glyph-select';
+import { Dialog } from '../../../ui/components/dialog';
+import { overlayScrollbarCss } from '../../../ui/styles';
+import {
+    fieldGrid,
+    fieldRow,
+    fieldSection,
+    fieldSeparator,
+    buildFieldControl,
+} from '../../../ui/components/field';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
@@ -69,7 +74,7 @@ function styleLabel(id: string): string {
 }
 
 const SD_STYLE_ID = 'vela-settings-controls';
-const SD_STYLE_REV = '2';
+const SD_STYLE_REV = '5';
 
 /**
  * The dialog's surface palette. It follows the STABLE chrome surface (the tokens written on
@@ -89,9 +94,7 @@ function ensureControlStyles(): void {
     st.id = SD_STYLE_ID;
     st.dataset.rev = SD_STYLE_REV;
     st.textContent = `
-.vela-sd-pane::-webkit-scrollbar{width:8px;}
-.vela-sd-pane::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:var(--vela-radius-sm);border:2px solid transparent;background-clip:padding-box;}
-.vela-sd-pane::-webkit-scrollbar-track{background:transparent;}
+${overlayScrollbarCss('.vela-sd-pane')}
 /* Tab rail / footer button / header close: base styles live HERE, not inline on the
    elements — inline declarations always beat stylesheet :hover rules, which is exactly
    what killed these hovers before. Active tab state is the .on class,
@@ -154,16 +157,17 @@ function ensureControlStyles(): void {
 .vela-sd-mobile .vela-sd-itabs::-webkit-scrollbar{display:none;}
 .vela-sd-mobile .vela-sd-itab{height:36px;flex:none;}
 .vela-sd-mobile .vela-switch{width:22px;height:22px;}
-.vela-sd-mobile .vela-select[data-size='sm'] .vela-select-trigger,.vela-sd-mobile .vela-num[data-size='sm'] input{height:34px;}
+.vela-sd-mobile .vela-select-trigger,.vela-sd-mobile .vela-num input,.vela-sd-mobile .vela-width-field{height:34px;}
 .vela-sd-mobile .vela-sd-close{width:40px;height:40px;}
 .vela-sd-mobile .vela-sd-btn{height:38px;}
-.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span{white-space:normal !important;}
+.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span,.vela-sd-mobile .vela-field-label{white-space:normal !important;}
 `;
     if (!existing) document.head.appendChild(st);
 }
 
 export class SettingsDialog {
-    private root: HTMLDivElement | null = null;
+    private root: HTMLElement | null = null;
+    private ui: Dialog | null = null;
     private onChange: ((patch: ConfigPatch) => void) | null = null;
     private onImport: ((json: unknown) => void) | null = null;
     private onReset: (() => void) | null = null;
@@ -266,80 +270,16 @@ export class SettingsDialog {
         // to catch the click-outside-to-close.
         ensureControlStyles();
         const mobile = this.mobileLayout;
-        const scrim = document.createElement('div');
-        // Above workspace splitters (z-index 30) and the active-cell ring — those live in
-        // the same stacking context when the dialog mounts on the multi-chart root.
-        scrim.style.cssText = 'position:absolute;inset:0;z-index:var(--vela-z-dialog);display:flex;align-items:flex-start;justify-content:center;background:transparent;padding-top:8vh;pointer-events:auto;';
-        if (mobile) {
-            // Fullscreen presentation: the card fills the chart area edge to edge.
-            scrim.classList.add('vela-sd-mobile');
-            scrim.style.paddingTop = '0';
-            scrim.style.alignItems = 'stretch';
-        }
-        scrim.addEventListener('mousedown', (e) => {
-            if (e.target === scrim) this.close();
-        });
-
-        const dlg = document.createElement('div');
-        // `cursor:default` shields the dialog from the plot's crosshair cursor; interactive
-        // controls re-declare their own.
-        // Shrink-to-fit width (mirrors the indicator dialog's `w-fit` card): the box is only
-        // as wide as the rail + widest visible pane content needs, between a floor that keeps
-        // sparse tabs from looking cramped and the old 720px cap.
-        dlg.style.cssText = `width:fit-content;min-width:min(560px,94vw);max-width:min(720px,94vw);max-height:70vh;display:flex;flex-direction:column;background:${SETTINGS_SURFACE};border:1px solid ${SETTINGS_BORDER};border-radius:var(--vela-radius-lg);box-shadow:var(--vela-shadow-dialog);color:${SETTINGS_TEXT};font:13px var(--vela-font);overflow:hidden;cursor:default;`;
-        if (mobile) dlg.style.cssText += 'width:100%;min-width:0;max-width:none;max-height:none;flex:1 1 auto;border:none;border-radius:0;';
-
-        const header = document.createElement('div');
-        header.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:9px 9px 9px 16px;border-bottom:1px solid ${SETTINGS_BORDER};flex:0 0 auto;user-select:none;`;
-        if (mobile) header.style.paddingLeft = '8px';
-        const hTitle = document.createElement('span');
-        hTitle.textContent = 'Chart settings';
-        hTitle.style.cssText = 'font-size:17px;font-weight:600;letter-spacing:0.2px;';
-        if (mobile) hTitle.style.cssText += 'flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-        // Mobile: the tab rail hides behind a burger-opened sidebar (there is no room for
-        // a permanent 170px column); the button lives left of the title, iOS-nav style.
         let toggleRail: ((open?: boolean) => void) | null = null;
+        let burger: HTMLButtonElement | undefined;
         if (mobile) {
-            const burger = document.createElement('button');
+            burger = document.createElement('button');
             burger.type = 'button';
             burger.className = 'vela-sd-burger';
             burger.innerHTML = iconAt('burger', 16);
             burger.title = 'Sections';
             burger.addEventListener('click', () => toggleRail?.());
-            header.append(burger);
         }
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.innerHTML = iconAt('close', 15);
-        closeBtn.title = 'Close';
-        closeBtn.className = 'vela-sd-close';
-        closeBtn.addEventListener('click', () => this.close());
-        header.append(hTitle, closeBtn);
-        if (!mobile) {
-            // Header dragging is a pointer affordance — a fullscreen mobile card has
-            // nowhere to move.
-            header.style.cursor = 'move';
-            let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
-            header.addEventListener('pointerdown', (e) => {
-                // ANCESTRY, not identity: the button holds an SVG icon, so a press on the ✕
-                // targets the `<path>`. Comparing against the button itself let the header
-                // take pointer capture, which retargets the click away — the button was dead
-                // everywhere except its few pixels of padding.
-                if ((e.target as Element | null)?.closest('.vela-sd-close')) return;
-                dragging = true;
-                sx = e.clientX - ox;
-                sy = e.clientY - oy;
-                header.setPointerCapture(e.pointerId);
-            });
-            header.addEventListener('pointermove', (e) => {
-                if (!dragging) return;
-                ox = e.clientX - sx;
-                oy = e.clientY - sy;
-                dlg.style.transform = `translate(${ox}px, ${oy}px)`;
-            });
-            header.addEventListener('pointerup', () => (dragging = false));
-        }
-        dlg.appendChild(header);
 
         const body = document.createElement('div');
         body.style.cssText = 'display:flex;flex-direction:column;gap:0;';
@@ -350,9 +290,10 @@ export class SettingsDialog {
         const groups: Partial<Record<string, HTMLElement>> = {};
         const showActive = (style: string): void => {
             const active = style === 'heikinashi' ? 'candles' : style; // heikin-ashi is candle-drawn
+            // Gate via the !important class, not inline display: the field-grid pass
+            // rewrites every group's display to 'contents' AFTER this visibility pass.
             for (const key of priceStyleIds()) {
-                const el = groups[key];
-                if (el) el.style.display = key === active ? 'contents' : 'none';
+                groups[key]?.classList.toggle('vela-sd-hide', key !== active);
             }
         };
         body.append(
@@ -597,6 +538,34 @@ export class SettingsDialog {
             });
             if (hidActive) activate(0);
         };
+        const ui = new Dialog({
+            host: this.container,
+            title: 'Chart settings',
+            // Non-modal: a live-edit dialog must leave the page interactive — a modal
+            // machine locks pointer events on the whole body, killing the chart, the
+            // legend, and the body-portaled popovers (color picker, select lists).
+            modal: false,
+            contained: true,
+            align: 'top',
+            draggable: !mobile,
+            flush: true,
+            className: 'vela-dialog--settings',
+            headerStart: burger,
+            closeOnBackdrop: true,
+            footer: (foot) => {
+                foot.style.cssText = `padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;`;
+                const resetBtn = document.createElement('button');
+                resetBtn.type = 'button';
+                resetBtn.textContent = 'Reset defaults';
+                resetBtn.className = 'vela-sd-btn';
+                resetBtn.addEventListener('click', () => this.onReset?.());
+                foot.appendChild(resetBtn);
+            },
+            onOpenChange: (open) => { if (!open) this.close(); },
+        });
+        if (mobile) ui.positioner.classList.add('vela-sd-mobile');
+        ui.positioner.style.paddingTop = mobile ? '0' : '8vh';
+
         const activate = (idx: number): void => {
             panes.forEach((p, i) => {
                 p.el.style.display = i === idx ? 'block' : 'none';
@@ -604,8 +573,7 @@ export class SettingsDialog {
             });
             this.activeSection = panes[idx]?.title ?? null;
             if (mobile) {
-                // The header names the section (the rail is hidden); picking one closes the sidebar.
-                hTitle.textContent = panes[idx]?.title ?? 'Chart settings';
+                ui.titleEl.textContent = panes[idx]?.title ?? 'Chart settings';
                 toggleRail?.(false);
             }
         };
@@ -627,32 +595,30 @@ export class SettingsDialog {
 
         shell.append(rail, paneHost);
         if (railScrim) shell.append(railScrim);
-        dlg.appendChild(shell);
-        dlg.appendChild(this.footer(config));
-
-        scrim.appendChild(dlg);
-        this.container.appendChild(scrim);
-        this.root = scrim;
-        // Pane-wide label column — must run after mount so label clones can be measured
-        // against the live dialog (detached/`display:none` trees report width 0).
+        ui.body.appendChild(shell);
+        this.root = ui.positioner;
+        this.ui = ui;
+        ui.show();
         // Structured chart-type panes (instance strip / group TOC) own their layout and
-        // tag their rows hosts instead; each host gets its own grid.
+        // tag their rows hosts instead; each host gets its own field grid.
         for (const p of panes) {
             const hosts = [...p.el.querySelectorAll('[data-sd-rows-host]')] as HTMLElement[];
             if (hosts.length === 0) {
-                this.layoutSettingsGrids(p.el, dlg);
+                this.layoutSettingsGrids(p.el);
                 continue;
             }
-            for (const h of hosts) this.layoutSettingsGrids(h, dlg);
+            for (const h of hosts) this.layoutSettingsGrids(h);
         }
     }
 
     close(): void {
         closeOpenPopovers();
         closeWidthPopover();
-        this.root?.remove();
+        const ui = this.ui;
+        this.ui = null;
         this.root = null;
         this.tabs = [];
+        ui?.destroy();
     }
 
     destroy(): void {
@@ -671,14 +637,9 @@ export class SettingsDialog {
         this.onChange?.(patch);
     }
 
-    /** In-pane section title (the reference `set-section-title`). The generous top margin
-     *  is what separates groups — whitespace, not rules. */
+    /** In-pane section title. The generous top margin is what separates groups. */
     private sectionTitle(text: string): HTMLElement {
-        const el = document.createElement('div');
-        el.className = 'vela-sd-sect';
-        el.style.cssText = 'margin:24px 0 0;padding-bottom:8px;font-size:var(--vela-font-size-sm);font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--vela-fg-muted);';
-        el.textContent = text;
-        return el;
+        return fieldSection(text);
     }
 
     /**
@@ -811,8 +772,8 @@ export class SettingsDialog {
 
     /**
      * Build ONE inline control from its descriptor — the factory behind the composite
-     * row path. `compact` narrows number inputs on toggle rows (the historical inline
-     * width) while standalone rows keep the full-width input.
+     * row path. `compact` narrows number inputs on toggle rows (80px) while standalone
+     * rows keep the 100px kit column.
      */
     private inlineControl(
         c: SettingsInlineControl,
@@ -827,56 +788,55 @@ export class SettingsDialog {
             return s;
         }
         if (c.kind === 'color') {
-            const sw = this.swatch(bag[c.key] as string, (v) => put(c.key, v), () => bag[c.key] as string);
-            sw.title = c.label;
-            return sw;
+            return buildFieldControl({
+                kind: 'color',
+                theme: this.theme,
+                get: () => bag[c.key] as string,
+                onChange: (v) => put(c.key, v),
+                title: c.label,
+            }).el;
         }
         if (c.kind === 'width') {
-            let cur = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
-            const wf = widthField(this.theme, () => cur, (v) => {
-                cur = v;
-                put(c.key, v);
-            });
-            wf.title = c.label;
-            return wf;
+            const def = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
+            return buildFieldControl({
+                kind: 'width',
+                theme: this.theme,
+                get: () => (typeof bag[c.key] === 'number' ? (bag[c.key] as number) : def),
+                onChange: (v) => put(c.key, v),
+                title: c.label,
+            }).el;
         }
         if (c.kind === 'select') {
-            const current = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
-            const sel = new Select({
+            const def = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
+            return buildFieldControl({
+                kind: 'select',
                 options: normalizeSelectOptions(c.options).map(([value, label]) => ({ value, label })),
-                value: current,
-                size: 'sm',
+                value: def,
+                fill: false,
                 theme: this.theme,
+                title: c.label,
                 onChange: (v) => put(c.key, v),
-            });
-            sel.el.title = c.label;
-            sel.el.addEventListener('vela-sync', () => {
-                sel.setValue(typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval);
-            });
-            return sel.el;
+                sync: () => (typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval),
+            }).el;
         }
-        // number
-        const current = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
-        const ni = new NumberInput({
-            value: current,
+        const def = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
+        return buildFieldControl({
+            kind: 'number',
+            value: def,
             min: c.min,
             max: c.max,
             step: c.step ?? 1,
-            size: 'sm',
+            fill: false,
             commit: 'live',
             clamp: c.placeholder !== undefined,
-            steppers: false,
+            steppers: true,
             compact,
             title: c.label,
             placeholder: c.placeholder,
             emptyValue: c.placeholder !== undefined ? c.defval : undefined,
             onChange: (v) => put(c.key, v),
-        });
-        ni.el.addEventListener('vela-sync', () => {
-            const next = typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval;
-            ni.setValue(next);
-        });
-        return ni.el;
+            sync: () => (typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval),
+        }).el;
     }
 
     /**
@@ -1062,101 +1022,44 @@ export class SettingsDialog {
         return wrap;
     }
 
-    /** Vertical breathing space between row clusters — grouping reads from whitespace,
-     *  so no drawn rule. */
+    /** Vertical breathing space between row clusters — grouping reads from whitespace. */
     private separator(): HTMLElement {
-        const el = document.createElement('div');
-        el.className = 'vela-sd-sep';
-        el.style.cssText = 'height:14px;';
-        return el;
+        return fieldSeparator();
     }
 
-    /**
-     * One pane-wide control column (section-agnostic), sized to the longest setting
-     * title — same idea as the indicator settings dialog's `minmax(..., auto)` label
-     * track, but shared across every section in the tab.
-     *
-     * `measureHost` must be a visible, in-document ancestor (the dialog): panes are
-     * `display:none` until selected, which would zero layout measurements.
-     */
-    private layoutSettingsGrids(pane: HTMLElement, measureHost: HTMLElement): void {
+    /** Wrap a pane (or a structured rows host) in the shared field grid. */
+    private layoutSettingsGrids(pane: HTMLElement): void {
         if (pane.childElementCount === 0) return;
-        // Mobile: no measured label track — a fixed widest-label column would overflow a
-        // phone width. Labels get the flexible track (and may wrap), controls hug the
-        // right edge; no probe pass needed.
-        if (this.mobileLayout) {
-            const grid = document.createElement('div');
-            grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:center;column-gap:12px;row-gap:16px;';
-            while (pane.firstChild) grid.appendChild(pane.firstChild);
-            pane.appendChild(grid);
-            this.prepareGridItems(grid);
-            return;
-        }
-        const rows = [...pane.querySelectorAll('.vela-sd-row')] as HTMLElement[];
-
-        // Clone labels into a visible host so hidden price-style groups still contribute
-        // (switching Type must not jump the column) and spanning bool/section rows can't
-        // inflate the track.
-        const probe = document.createElement('div');
-        probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;display:flex;flex-direction:column;font:13px var(--vela-font);pointer-events:none;';
-        measureHost.appendChild(probe);
-        let widest = 0;
-        for (const row of rows) {
-            const cell = row.children[0];
-            if (!cell) continue;
-            const clone = cell.cloneNode(true) as HTMLElement;
-            probe.appendChild(clone);
-            widest = Math.max(widest, clone.getBoundingClientRect().width);
-        }
-        probe.remove();
-
-        // A pane of only spanning rows (toggles, section titles) has no label column to
-        // measure — it still gets the grid, so its rows share the same 16px rhythm.
-        const labelTrack = widest > 0 ? `${Math.ceil(widest)}px` : 'max-content';
-        const grid = document.createElement('div');
-        grid.style.cssText =
-            `display:grid;grid-template-columns:${labelTrack} max-content;align-items:center;column-gap:12px;row-gap:16px;`;
+        const grid = fieldGrid({ variant: 'settings', mobile: this.mobileLayout });
         while (pane.firstChild) grid.appendChild(pane.firstChild);
         pane.appendChild(grid);
-        this.prepareGridItems(grid);
-    }
-
-    /** Mark rows/titles/bools so they participate in the pane grid; `display:contents`
-     *  groups dissolve so their children land on the same tracks. */
-    private prepareGridItems(container: HTMLElement): void {
-        for (const kid of [...container.children] as HTMLElement[]) {
-            if (kid.dataset.sdGroup !== undefined) {
-                this.prepareGridItems(kid);
-                continue;
-            }
-            if (kid.classList.contains('vela-sd-row')) {
-                kid.style.display = 'contents';
-            } else if (
-                kid.classList.contains('vela-sd-bool')
-                || kid.classList.contains('vela-sd-sect')
-                || kid.classList.contains('vela-sd-sep')
-            ) {
-                kid.style.gridColumn = '1 / -1';
-            }
+        for (const kid of [...grid.children] as HTMLElement[]) {
+            if (kid.dataset.sdGroup !== undefined) this.flattenGroup(kid, grid);
         }
     }
 
-    /** A bare color swatch input (for toggle-row right groups / swatch pairs). */
-    /** With `get`, the field reads its value live (and repaints on 'vela-sync') —
-     *  duplicate-keyed rows stay honest when another row edits the shared key. */
+    /** `display:contents` groups dissolve so their children land on the pane grid. */
+    private flattenGroup(group: HTMLElement, grid: HTMLElement): void {
+        group.style.display = 'contents';
+        for (const kid of [...group.children] as HTMLElement[]) {
+            if (kid.dataset.sdGroup !== undefined) this.flattenGroup(kid, grid);
+        }
+    }
+
+    /** A bare color swatch (toggle-row right groups / swatch pairs). */
     private swatch(value: string, onChange: (v: string) => void, get?: () => string): HTMLElement {
         let current = value;
-        return colorField(this.theme, () => (get ? get() : current), (v) => { current = v; onChange(v); });
+        return buildFieldControl({
+            kind: 'color',
+            theme: this.theme,
+            get: () => (get ? get() : current),
+            onChange: (v) => { current = v; onChange(v); },
+        }).el;
     }
 
     /** A label row with arbitrary controls in the shared control column (no toggle). */
     private rowWith(label: string, controls: HTMLElement[]): HTMLElement {
-        const { wrap } = this.row(label);
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;flex:0 0 auto;';
-        for (const c of controls) box.appendChild(c);
-        wrap.appendChild(box);
-        return wrap;
+        return fieldRow({ label, labelSize: 'sm', control: controls, className: 'vela-sd-row' });
     }
 
     private section(title: string): HTMLElement {
@@ -1176,25 +1079,20 @@ export class SettingsDialog {
         return el;
     }
 
-    private row(label: string): { wrap: HTMLDivElement } {
-        // A DIV, not a <label>: a label forwards a click anywhere on the row to its embedded
-        // control (opening a color picker from the row's empty space) — only the control
-        // itself should respond. `layoutSettingsGrids` later sets `display:contents` so the
-        // label + control participate in the pane's shared grid.
-        const wrap = document.createElement('div');
-        wrap.className = 'vela-sd-row';
-        const lbl = document.createElement('span');
-        lbl.textContent = label;
-        lbl.style.cssText = 'opacity:0.85;white-space:nowrap;';
-        wrap.appendChild(lbl);
-        return { wrap };
-    }
-
     private colorRow(label: string, value: string, onChange: (v: string) => void): HTMLElement {
-        const { wrap } = this.row(label);
         let current = value;
-        wrap.appendChild(colorField(this.theme, () => current, (v) => { current = v; onChange(v); }));
-        return wrap;
+        return fieldRow({
+            label,
+            labelSize: 'sm',
+            fit: true,
+            className: 'vela-sd-row',
+            control: buildFieldControl({
+                kind: 'color',
+                theme: this.theme,
+                get: () => current,
+                onChange: (v) => { current = v; onChange(v); },
+            }).el,
+        });
     }
 
     /** A toggle row: the checkbox sits to the LEFT of its label (never in the control area). */
@@ -1204,90 +1102,56 @@ export class SettingsDialog {
 
     /** An enable row: checkbox + label in the label column, dependent controls in the
      *  shared control column; the control group dims and ignores input while the toggle
-     *  is off. With no controls it reads like a plain toggle row (full-width in the grid).
-     *  With `get`, the row re-reads its state on a 'vela-sync' event — the seam that
-     *  keeps DUPLICATE-KEYED rows honest (several `when`-gated rows over one bag key,
-     *  only one visible at a time; see `typeRow`). */
+     *  is off. With `get`, the row re-reads its state on a 'vela-sync' event. */
     private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean): HTMLElement {
-        const wrap = document.createElement('div');
-        const sw = new Switch({ checked: value, size: 'sm', onChange: (v) => {
-            onToggle(v);
-            if (controls.length > 0) syncDim(v);
-        } });
-        const lbl = document.createElement('span');
-        lbl.textContent = label;
-        lbl.style.cssText = 'opacity:0.85;white-space:nowrap;';
-        const syncDim = (on: boolean): void => {
-            for (const c of controls) {
-                if (c.dataset.sdSelfGated === '1') continue;
-                c.style.opacity = on ? '1' : '0.4';
-                c.style.pointerEvents = on ? '' : 'none';
-            }
-        };
-        if (controls.length === 0) {
-            wrap.className = 'vela-sd-bool';
-            wrap.style.cssText = 'display:flex;align-items:center;gap:8px;min-height:22px;';
-            wrap.append(sw.el, lbl);
-            if (get) {
-                wrap.addEventListener('vela-sync', () => { sw.setChecked(get()); });
-            }
-            return wrap;
-        }
-        wrap.className = 'vela-sd-row';
-        const left = document.createElement('div');
-        left.style.cssText = 'display:flex;align-items:center;gap:8px;';
-        left.append(sw.el, lbl);
-        const box = document.createElement('div');
-        box.style.cssText = 'display:flex;align-items:center;gap:6px;';
-        for (const c of controls) box.appendChild(c);
-        syncDim(value);
-        if (get) {
-            wrap.addEventListener('vela-sync', () => {
-                const v = get();
-                sw.setChecked(v);
-                syncDim(v);
-            });
-        }
-        wrap.append(left, box);
-        return wrap;
+        return fieldRow({
+            label,
+            labelSize: 'sm',
+            bool: controls.length === 0,
+            toggle: { checked: value, onChange: onToggle, get },
+            control: controls,
+            className: controls.length === 0 ? 'vela-sd-bool' : 'vela-sd-row',
+        });
     }
 
     private numberRow(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
-        const { wrap } = this.row(label);
-        wrap.appendChild(new NumberInput({ value, min, max, step, size: 'sm', commit: 'live', onChange }).el);
-        return wrap;
+        return fieldRow({
+            label,
+            labelSize: 'sm',
+            className: 'vela-sd-row',
+            control: buildFieldControl({
+                kind: 'number',
+                value,
+                min,
+                max,
+                step,
+                fill: false,
+                commit: 'live',
+                steppers: true,
+                onChange,
+            }).el,
+        });
     }
 
     /** A dropdown whose option values differ from their display labels. */
     private selectRowLabeled(label: string, value: string, options: readonly (readonly [string, string])[], onChange: (v: string) => void): HTMLElement {
-        const { wrap } = this.row(label);
-        wrap.appendChild(new Select({
-            options: options.map(([v, l]) => ({ value: v, label: l })),
-            value,
-            size: 'sm',
-            theme: this.theme,
-            onChange,
-        }).el);
-        return wrap;
+        return fieldRow({
+            label,
+            labelSize: 'sm',
+            className: 'vela-sd-row',
+            control: buildFieldControl({
+                kind: 'select',
+                options: options.map(([v, l]) => ({ value: v, label: l })),
+                value,
+                fill: false,
+                theme: this.theme,
+                onChange,
+            }).el,
+        });
     }
 
     private selectRow(label: string, value: string, options: string[], onChange: (v: string) => void): HTMLElement {
         return this.selectRowLabeled(label, value, options.map((o) => [o, o] as const), onChange);
-    }
-
-    /** Footer with the full config as JSON — the export/import (templating) surface. */
-    private footer(_config: ChartConfig): HTMLElement {
-        // Reference footer: actions only (Reset defaults, left-aligned). The JSON
-        // export/import lives on the public API (getConfig/applyConfig), not in the UI.
-        const foot = document.createElement('div');
-        foot.style.cssText = `border-top:1px solid ${SETTINGS_BORDER};padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 auto;`;
-        const resetBtn = document.createElement('button');
-        resetBtn.type = 'button';
-        resetBtn.textContent = 'Reset defaults';
-        resetBtn.className = 'vela-sd-btn';
-        resetBtn.addEventListener('click', () => this.onReset?.());
-        foot.appendChild(resetBtn);
-        return foot;
     }
 }
 
