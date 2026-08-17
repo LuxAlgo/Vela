@@ -22,6 +22,8 @@ export class TextField {
         if (this.ctrl.fill) wrap.dataset.fill = '';
         const ti = doc.createElement('input');
         ti.type = 'text';
+        // Kill the UA ~20ch min-width so a 100px wrap (or fill parent) actually holds.
+        ti.size = 1;
         if (opts.id) ti.id = opts.id;
         ti.value = this.ctrl.value;
         ti.className = 'vela-text-field';

@@ -1,4 +1,4 @@
-export const TEXT_STYLE_ID = 'vela-ui-text';
+export const TEXT_STYLE_ID = 'vela-ui-text-2';
 
 export const TEXT_CSS = `
 .vela-text {
@@ -6,8 +6,10 @@ export const TEXT_CSS = `
     min-width: 0;
 }
 .vela-text[data-fill] { width: 100%; }
+.vela-text:not([data-fill]) { width: 100px; flex: none; justify-self: start; }
 .vela-text-field {
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
     height: 34px;
     background: transparent;
@@ -18,6 +20,8 @@ export const TEXT_CSS = `
     font-size: 14px;
     font-family: inherit;
     outline: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .vela-text-field:hover { border-color: var(--vela-fg-muted); }

@@ -168,17 +168,19 @@ export class Select {
         chevron.appendChild(iconEl('chevron-down', doc));
         btn.append(label, chevron);
         wrap.appendChild(btn);
-        // Width stability: stack every option label invisibly so the wrap's intrinsic
-        // width is the widest option's, exactly like the native select this replaces.
-        const sizer = doc.createElement('div');
-        sizer.className = 'vela-select-sizer';
-        sizer.setAttribute('aria-hidden', 'true');
-        for (const o of this.ctrl.options) {
-            const s = doc.createElement('span');
-            s.textContent = o.label;
-            sizer.appendChild(s);
+        // Compact toolbar selects hug the widest option. md uses a fixed 100px
+        // column and ellipsizes the trigger; the open list still shows full labels.
+        if (this.ctrl.size === 'sm') {
+            const sizer = doc.createElement('div');
+            sizer.className = 'vela-select-sizer';
+            sizer.setAttribute('aria-hidden', 'true');
+            for (const o of this.ctrl.options) {
+                const s = doc.createElement('span');
+                s.textContent = o.label;
+                sizer.appendChild(s);
+            }
+            wrap.appendChild(sizer);
         }
-        wrap.appendChild(sizer);
 
         // Suppress the default mousedown focus: when this press outside-dismisses an open
         // popover, Chrome's focus action can scroll the dialog body under the pointer.

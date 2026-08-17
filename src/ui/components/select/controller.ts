@@ -11,7 +11,7 @@ export interface SelectControllerOptions {
     options: readonly SelectOption[];
     value?: string;
     size?: SelectSize;
-    /** Stretch the trigger to its parent (indicator dialog). Chart settings hug content. */
+    /** Stretch the trigger to its parent. Off: the shared 100px kit column (ellipsis). */
     fill?: boolean;
     disabled?: boolean;
     onChange?: (value: string, label: string) => void;

@@ -45,6 +45,23 @@ export function openPopoverTrigger(): HTMLElement | null {
     return open?.trigger ?? null;
 }
 
+/** Flag stamped on a pointer event whose only job was dismissing an open popover. */
+const POPOVER_DISMISS_FLAG = '__velaPopoverDismiss';
+
+function markPopoverDismiss(e: Event): void {
+    (e as Event & { [POPOVER_DISMISS_FLAG]?: boolean })[POPOVER_DISMISS_FLAG] = true;
+}
+
+/**
+ * True when this event already dismissed a popover on its way down — a dialog's
+ * outside-click close must swallow it instead of closing the dialog too (the popover
+ * hides itself on document CAPTURE, so by the time a backdrop listener runs,
+ * {@link isPopoverOpen} is already false).
+ */
+export function eventDismissedPopover(e: Event): boolean {
+    return (e as Event & { [POPOVER_DISMISS_FLAG]?: boolean })[POPOVER_DISMISS_FLAG] === true;
+}
+
 function toRect(r: DOMRect): Rect {
     return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
 }
@@ -106,6 +123,9 @@ export class Popover {
         const onOutside = (ev: Event): void => {
             const t = ev.target as Node;
             if (this.el.contains(t) || this.trigger.contains(t)) return;
+            // Mark the event: it spent itself dismissing this popover, so listeners
+            // further down the path (a dialog backdrop) must not ALSO dismiss on it.
+            markPopoverDismiss(ev);
             this.hide();
         };
         const onKey = (ev: KeyboardEvent): void => {

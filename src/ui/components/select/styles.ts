@@ -1,12 +1,16 @@
-export const SELECT_STYLE_ID = 'vela-ui-select';
+export const SELECT_STYLE_ID = 'vela-ui-select-3';
 
 export const SELECT_CSS = `
 .vela-select { position: relative; display: inline-block; min-width: 0; }
 .vela-select[data-fill] { width: 100%; }
+/* Closed trigger matches NumberInput / TextField (100px). Long labels ellipsis;
+   the open list still sizes to the longest item. */
+.vela-select:not([data-fill]) { width: 100px; flex: none; justify-self: start; }
 .vela-select-trigger {
     display: flex;
     align-items: center;
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
     height: 34px;
     padding: 0 26px 0 8px;
@@ -23,10 +27,6 @@ export const SELECT_CSS = `
 }
 .vela-select-trigger:hover { border-color: var(--vela-fg-muted); }
 .vela-select-trigger:focus { border-color: var(--vela-focus); box-shadow: 0 0 0 3px var(--vela-focus-soft); }
-/* As a grid item (chart-settings rows dissolve via display:contents into a shared
-   max-content column) the wrap must NOT stretch to the column: it sizes to its own
-   widest option, like the native select it replaces. */
-.vela-select[data-size='sm'] { max-width: 200px; flex: 0 0 auto; justify-self: start; }
 .vela-select[data-size='sm'] .vela-select-trigger {
     height: 28px;
     background: var(--vela-surface-elev);
@@ -36,12 +36,10 @@ export const SELECT_CSS = `
     box-shadow: none;
 }
 .vela-select[data-size='sm'] .vela-select-trigger:focus { box-shadow: none; border-color: var(--vela-fg-muted); }
-.vela-select-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Invisible option-label stack: gives the shrink-to-fit wrap the WIDEST option's
-   intrinsic width (like a native select), so picking a shorter/longer label never
-   resizes the trigger and shifts the row around it. */
-.vela-select-sizer { visibility: hidden; height: 0; overflow: hidden; font-size: 14px; }
-.vela-select[data-size='sm'] .vela-select-sizer { font-size: 13px; }
+.vela-select-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Compact toolbar selects still hug the widest option (no 100px kit column). */
+.vela-select[data-size='sm']:not([data-fill]) { width: auto; max-width: 200px; }
+.vela-select-sizer { visibility: hidden; height: 0; overflow: hidden; font-size: 13px; }
 .vela-select-sizer span { display: block; height: 0; white-space: nowrap; padding: 0 26px 0 8px; border-inline: 1px solid transparent; }
 .vela-select-chevron {
     position: absolute;
@@ -56,6 +54,7 @@ export const SELECT_CSS = `
 }
 .vela-select-chevron .vela-icon, .vela-select-chevron svg { width: 12px; height: 12px; display: block; }
 .vela-select-list {
+    width: max-content;
     background: var(--vela-bg);
     color: var(--vela-fg);
     border: none;
@@ -66,11 +65,11 @@ export const SELECT_CSS = `
     overflow: hidden;
 }
 .vela-select-list[data-size='sm'] { font-size: 13px; background: var(--vela-surface-overlay); }
-.vela-select-items { max-height: none; overflow: hidden; }
+.vela-select-items { width: max-content; min-width: 100%; max-height: none; overflow: hidden; }
 .vela-select-list.is-scroll { display: flex; align-items: stretch; gap: 2px; }
 .vela-select-list.is-scroll .vela-select-items {
     flex: 1 1 auto;
-    min-width: 0;
+    min-width: min-content;
     max-height: 240px;
     overflow-y: auto;
     scrollbar-width: none;
@@ -80,7 +79,9 @@ export const SELECT_CSS = `
 .vela-select-thumb { width: 3px; border-radius: 2px; background: var(--vela-scroll); }
 .vela-select-item {
     display: block;
-    width: 100%;
+    width: auto;
+    min-width: 100%;
+    white-space: nowrap;
     text-align: left;
     padding: 7px 10px;
     border: none;

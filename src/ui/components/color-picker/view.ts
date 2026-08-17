@@ -156,8 +156,8 @@ export interface ColorFieldOpts {
     popover?: Pick<PopoverOptions, 'host' | 'position' | 'boundary' | 'zIndex' | 'gap' | 'align'>;
 }
 
-/** Closed-state swatch shape. `square` is the chart-settings field; `circle` is the
- *  indicator-dialog preview — a square chip inset from a matching square field border. */
+/** Closed-state swatch shape. `circle` is the settings-dialog preview (a square chip
+ *  inset from a matching field border); `square` is the compact drawing-chrome swatch. */
 export function colorField(theme: VelaTheme, getVal: () => string, onVal: (v: string) => void, opts?: { shape?: ColorFieldShape; id?: string; popover?: ColorFieldOpts['popover'] }): HTMLElement {
     return new ColorField({ theme, getVal, onVal, shape: opts?.shape, id: opts?.id, popover: opts?.popover }).el;
 }
