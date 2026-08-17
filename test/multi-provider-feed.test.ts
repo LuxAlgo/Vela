@@ -544,3 +544,92 @@ describe('poll-fallback live ticks (a provider without subscribe)', () => {
         }
     });
 });
+
+describe('listing-prefix resolution (TradingView parity)', () => {
+    /** One provider serving a US-equities tape: descriptors carry the LISTING prefix. */
+    function equitiesProvider() {
+        const provider: DataProvider = {
+            getBars: (_t, _tf, range) => Promise.resolve(makeBars(range.limit ?? 10)),
+            listSymbols: () =>
+                Promise.resolve([
+                    { ticker: 'AAPL', type: 'stock', prefix: 'NASDAQ' },
+                    { ticker: 'IBM', type: 'stock', prefix: 'NYSE' },
+                    { ticker: 'SPY', type: 'stock', prefix: 'AMEX' },
+                ]),
+        };
+        return provider;
+    }
+
+    async function boot() {
+        const feed = new MultiProviderFeed(new BarStore());
+        feed.registerProvider('binance', fakeProvider(['BTCUSDT']).provider);
+        feed.registerProvider('edgx', equitiesProvider());
+        await feed.ready();
+        return feed;
+    }
+
+    it('PREFIX:TICKER resolves through the descriptor prefix to the serving provider', async () => {
+        const feed = await boot();
+        expect(feed.resolveSymbol('NASDAQ:AAPL')).toEqual({ provider: 'edgx', ticker: 'AAPL' });
+        // Case-insensitive, and the resolved ticker takes the DESCRIPTOR spelling.
+        expect(feed.resolveSymbol('nyse:ibm')).toEqual({ provider: 'edgx', ticker: 'IBM' });
+    });
+
+    it('is TradingView-STRICT: a wrong listing venue resolves to nothing, never auto-corrects', async () => {
+        const feed = await boot();
+        expect(feed.resolveSymbol('NYSE:AAPL')).toBeNull();
+    });
+
+    it('the provider name still routes (persisted `edgx:AAPL` documents keep resolving)', async () => {
+        const feed = await boot();
+        expect(feed.resolveSymbol('edgx:AAPL')).toEqual({ provider: 'edgx', ticker: 'AAPL' });
+    });
+
+    it('display prefix and canonical form come from the DATA; provider-name fallback for crypto', async () => {
+        const feed = await boot();
+        expect(feed.displayPrefix('AAPL')).toBe('NASDAQ'); //          bare pick re-displays canonical
+        expect(feed.displayPrefix('edgx:AAPL')).toBe('NASDAQ'); //     legacy spelling re-displays canonical
+        expect(feed.canonicalSymbol('edgx:ibm')).toBe('NYSE:IBM');
+        expect(feed.displayPrefix('BTCUSDT')).toBe('binance'); //      no prefix declared -> provider name
+        expect(feed.canonicalSymbol('BTCUSDT')).toBe('binance:BTCUSDT');
+        expect(feed.displayPrefix('NOPE:NOPE')).toBeNull();
+    });
+});
+
+describe('session flag propagation (provider seam)', () => {
+    it('rides getBars ranges (load, loadRange, poll) and the subscribe opts', async () => {
+        const ranges: Array<Record<string, unknown>> = [];
+        const subOpts: unknown[] = [];
+        const provider: DataProvider = {
+            getBars(_t, _tf, range) {
+                ranges.push({ ...range });
+                return Promise.resolve(makeBars(range.limit ?? 10));
+            },
+            listSymbols: () => Promise.resolve([{ ticker: 'AAPL', prefix: 'NASDAQ' }]),
+            subscribe(_t, _tf, _onBar, opts) {
+                subOpts.push(opts);
+                return () => {};
+            },
+        };
+        const feed = new MultiProviderFeed(new BarStore());
+        feed.registerProvider('edgx', provider);
+        await feed.ready();
+
+        await feed.load({ symbol: 'NASDAQ:AAPL', timeframe: '60', bars: 5, session: 'extended' });
+        expect(ranges[ranges.length - 1]!.session).toBe('extended');
+
+        await feed.loadRange!({ symbol: 'NASDAQ:AAPL', timeframe: '60', session: 'extended' }, { from: 0, limit: 5 });
+        expect(ranges[ranges.length - 1]).toMatchObject({ from: 0, session: 'extended' });
+
+        const off = feed.subscribe({ symbol: 'NASDAQ:AAPL', timeframe: '60', session: 'extended' }, () => {});
+        off();
+        expect(subOpts).toEqual([{ session: 'extended' }]);
+
+        // No session set -> nothing invented: the flag is simply absent.
+        await feed.load({ symbol: 'NASDAQ:AAPL', timeframe: '60', bars: 5 });
+        expect(ranges[ranges.length - 1]!.session).toBeUndefined();
+        const off2 = feed.subscribe({ symbol: 'NASDAQ:AAPL', timeframe: '60' }, () => {});
+        off2();
+        expect(subOpts[1]).toBeUndefined();
+    });
+});

@@ -7,7 +7,7 @@
 // layout change — its state then round-trips through the workspace pool, so shrinking
 // 4 → 2 → 4 restores the third and fourth exactly, indicators and drawings included).
 import { Vela } from '../Vela';
-import type { VelaTheme, NativeBackend, VelaOptions } from '../core/options';
+import { normalizeSession, type MarketSession, type NativeBackend, type VelaOptions, type VelaTheme } from '../core/options';
 import type { OHLCV } from '../core/model/ohlcv';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
@@ -16,6 +16,7 @@ import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import { Statusline, statuslineInkOf } from '../widget/statusline';
+import { MarketStatusTracker } from '../widget/market-status';
 import { Watermark } from '../widget/watermark';
 import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
@@ -37,6 +38,8 @@ export interface CellSeed {
     timeframe?: string;
     priceStyle?: string;
     bars?: number;
+    /** Trading session to show (markets that have one; `regular` is the default). */
+    session?: string;
     /** Offline bars for this cell — replaces the provider (boot-only). */
     data?: OHLCV[];
     /** Initial visible window (boot-only). */
@@ -53,12 +56,13 @@ export type CellBoot = PooledCellState & Pick<CellSeed, 'data' | 'visibleRange'>
 
 /** The per-cell SEED the workspace's top-level chart options provide — same words as
  *  the widget; `cells[id]` spreads over this. */
-export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'bars' | 'priceStyle' | 'data' | 'visibleRange'>): CellSeed {
+export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'bars' | 'priceStyle' | 'session' | 'data' | 'visibleRange'>): CellSeed {
     return {
         symbol: opts.symbol,
         timeframe: opts.timeframe,
         bars: opts.bars,
         priceStyle: opts.priceStyle,
+        session: opts.session,
         data: opts.data,
         visibleRange: opts.visibleRange,
     };
@@ -152,12 +156,16 @@ export class ChartCell {
     lastCrossPrice: number | null = null;
     /** The bottombar range chip this cell is framed on (null = none). */
     activeRangeId: string | null = null;
+    /** Latched verdict of {@link sessionAvailable} (async metadata, sticky per symbol). */
+    private sessionAvailableFlag = false;
 
     private inner: Vela | null;
     /** The live app theme — seeded from deps, updated on `theme:changed` (the base the
      *  plot-overlay tokens re-derive from). */
     private appTheme: VelaTheme;
     private readonly statusline: Statusline | null;
+    /** Keeps this cell's market badge on the symbol's real calendar (see {@link MarketStatusTracker}). */
+    private readonly marketStatus: MarketStatusTracker | null;
     private readonly watermark: Watermark | null;
     private readonly contextMenu: ChartContextMenu;
     private readonly offMarket: () => void;
@@ -195,7 +203,7 @@ export class ChartCell {
         // The canonical symbol form: pre-prefix pooled/persisted states carried the venue
         // in `provider` beside a bare symbol — weld them back together once, at boot.
         const symbol = prefixedSymbol(seed);
-        this.state = { symbol, provider: parseSymbol(symbol ?? '').provider ?? undefined, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars };
+        this.state = { symbol, provider: parseSymbol(symbol ?? '').provider ?? undefined, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars, session: normalizeSession(seed.session) };
         const doc = gridHost.ownerDocument;
         this.host = doc.createElement('div');
         this.host.className = 'vela-cell';
@@ -215,6 +223,7 @@ export class ChartCell {
                 timeframe: seed.timeframe,
                 bars: seed.bars,
                 priceStyle: seed.priceStyle,
+                session: normalizeSession(seed.session),
                 data: seed.data,
                 visibleRange: seed.visibleRange,
                 theme: deps.theme,
@@ -299,6 +308,15 @@ export class ChartCell {
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '') : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
+        this.marketStatus = this.statusline ? new MarketStatusTracker((s) => this.statusline?.setMarketStatus(s)) : null;
+        // The venue chip above is provisional (persisted/typed prefix): once the shared
+        // feed's indexes settle, re-derive it from the DATA — a cell restored as
+        // `edgx:AAPL` must come back up reading NASDAQ.
+        void this.inner.data.ready().then(() => {
+            if (this.inner && this.state.symbol) this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
+            this.refreshSessionAvailable();
+            if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
+        });
         this.syncStatuslineColors();
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => {
@@ -438,12 +456,51 @@ export class ChartCell {
             this.state.symbol = symbol;
             this.state.provider = parseSymbol(symbol).provider ?? undefined;
             this.state.timeframe = timeframe;
+            this.state.session = normalizeSession(this.inner?.market.session);
             this.watermark?.update(symbol, timeframe);
             this.statusline?.setSymbol(symbol);
-            this.statusline?.setMeta(timeframe, this.inner?.data.resolve(symbol)?.provider ?? this.state.provider ?? '');
+            this.statusline?.setMeta(timeframe, this.inner?.data.displayPrefix(symbol) ?? this.state.provider ?? '');
             if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
             this.refreshNativeCatalog(); // per-symbol support flags may differ
+            this.refreshSessionAvailable(); // the new symbol may (not) have sessions
+            if (this.inner) this.marketStatus?.track(this.inner.data, symbol); // …and its own market clock
             this.deps.onMarketChanged(this.id);
+        });
+    }
+
+    /**
+     * Does this cell's market HAVE sessions (RTH/ETH meaningful)? Derived from the
+     * symbol's own metadata (`syminfo.session !== '24x7'`), asynchronously — the
+     * workspace re-projects the shared bottombar when the verdict lands or changes.
+     */
+    get sessionAvailable(): boolean {
+        return this.sessionAvailableFlag;
+    }
+
+    /** This cell's shown session (`regular` when unset — the provider default). */
+    get session(): MarketSession {
+        return normalizeSession(this.state.session) ?? 'regular';
+    }
+
+    /** Switch this cell's shown session in place (a reload — RTH and ETH are different bars). */
+    setSession(session: MarketSession): void {
+        if (session === this.session) return;
+        this.state.session = session;
+        this.deps.onStateDirty();
+        void this.inner?.setMarket({ session });
+    }
+
+    private refreshSessionAvailable(): void {
+        const chart = this.inner;
+        const symbol = this.state.symbol;
+        if (!chart || !symbol) return;
+        void chart.data.symbolInfo(symbol).then((si) => {
+            if (this.inner !== chart) return;
+            const available = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
+            if (available !== this.sessionAvailableFlag) {
+                this.sessionAvailableFlag = available;
+                this.deps.onMarketChanged(this.id); // re-project the shared bottombar toggle
+            }
         });
     }
 
@@ -763,6 +820,7 @@ export class ChartCell {
         this.offMarket();
         this.contextMenu.destroy();
         this.history.destroy();
+        this.marketStatus?.stop();
         this.statusline?.destroy();
         this.watermark?.destroy();
         this.inner?.destroy();

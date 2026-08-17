@@ -66,6 +66,22 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.registry.resolve(raw, { default: this.primaryProvider });
     }
 
+    /**
+     * The DISPLAY prefix for `raw` — the descriptor's LISTING prefix when the data
+     * declares one (`NASDAQ` for AAPL), else the resolved provider name. Null while
+     * nothing resolves the symbol.
+     */
+    displayPrefix(raw: string): string | null {
+        const resolved = this.resolveSymbol(raw);
+        return resolved ? this.registry.displayPrefixOf(resolved) : null;
+    }
+
+    /** The canonical `PREFIX:TICKER` form of `raw`, or null while unresolvable. */
+    canonicalSymbol(raw: string): string | null {
+        const resolved = this.resolveSymbol(raw);
+        return resolved ? this.registry.canonicalSymbol(resolved) : null;
+    }
+
     /** The registered provider INSTANCE under `name` (undefined if unknown). */
     providerInstance(name: string): DataProvider | undefined {
         return this.registry.get(name);
@@ -245,14 +261,14 @@ class RegistryFetchFeed implements MarketDataFeed {
         const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
         const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500 });
+        return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session });
     }
 
     loadRange(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]> {
         const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
         const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, ticker, cfg.timeframe ?? '60', range);
+        return safeBars(provider, ticker, cfg.timeframe ?? '60', { ...range, session: cfg.session });
     }
 
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe {
@@ -260,7 +276,7 @@ class RegistryFetchFeed implements MarketDataFeed {
         const provider = this.registry.get(name ?? '');
         if (!provider) return () => {};
         const tf = cfg.timeframe ?? '60';
-        if (provider.subscribe) return provider.subscribe(ticker, tf, onBar);
+        if (provider.subscribe) return provider.subscribe(ticker, tf, onBar, cfg.session ? { session: cfg.session } : undefined);
 
         let stopped = false;
         let timer: ReturnType<typeof setTimeout> | null = null;
@@ -269,7 +285,7 @@ class RegistryFetchFeed implements MarketDataFeed {
             try {
                 // Last two bars: the (possibly just-closed) previous bar and the forming
                 // one. onBar dedupes by time, so the older one is harmless.
-                const bars = await provider.getBars(ticker, tf, { limit: 2 });
+                const bars = await provider.getBars(ticker, tf, { limit: 2, session: cfg.session });
                 // Re-check AFTER the await: an unsubscribe during the fetch (a market
                 // switch) must not push the OLD market's bars into the new series — on the
                 // same timeframe the forming bar shares its open time, so a stale bar would

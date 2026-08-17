@@ -162,7 +162,9 @@ class FakeRenderer implements IChartRenderer {
     onRemoveIndicator(_cb: (id: string) => void): Unsubscribe { return () => {}; }
     onCrosshairMove(_cb: (e: CrosshairEvent) => void): Unsubscribe { return () => {}; }
     onClick(_cb: (e: ClickEvent) => void): Unsubscribe { return () => {}; }
-    getVisibleRange(): VisibleRange | null { return null; }
+    /** Settable current viewport — what a session-only switch may carry over. */
+    visibleRange: VisibleRange | null = null;
+    getVisibleRange(): VisibleRange | null { return this.visibleRange; }
     setVisibleRange(r: VisibleRange): void { this.visibleRangeCalls.push(r); }
     onViewportChange(_cb: (r: VisibleRange) => void): Unsubscribe { return () => {}; }
 }
@@ -284,6 +286,104 @@ describe('setMarket — in-place market switch', () => {
         const snap = chart.market;
         snap.symbol = 'ZZZ';
         expect(chart.market.symbol).toBe('BBB');
+    });
+
+    it('a SESSION switch reloads like a timeframe change, and the flag rides the load config', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        const events: unknown[] = [];
+        chart.on('market:changed', (e) => events.push(e));
+
+        await chart.setMarket({ session: 'extended' });
+
+        // The reload happened (same symbol — the SESSION is the changed identity),
+        // and the feed saw the flag on the load config (providers read it off BarRange).
+        expect(feed.loads[feed.loads.length - 1]).toMatchObject({ symbol: 'AAA', session: 'extended' });
+        expect(chart.market.session).toBe('extended');
+        expect(events).toHaveLength(1); // an identity change — the chrome must re-sync
+
+        // Same session again: a no-op, no reload.
+        const loadsBefore = feed.loads.length;
+        await chart.setMarket({ session: 'extended' });
+        expect(feed.loads.length).toBe(loadsBefore);
+    });
+
+    it('a session-only flip carries the current zoom/position over the reload', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        const window = { from: 1_700_010_000_000, to: 1_700_020_000_000 };
+        renderer.visibleRange = window; // where the user panned/zoomed to
+
+        await chart.setMarket({ session: 'extended' });
+        // The reload re-framed the SAME window — no zoom/position reset on RTH↔ETH.
+        expect(renderer.visibleRangeCalls).toContainEqual(window);
+
+        // An explicit frame from the caller still wins over the carry.
+        renderer.visibleRangeCalls = [];
+        const asked = { from: 1_700_000_000_000, to: 1_700_005_000_000 };
+        await chart.setMarket({ session: 'regular', visibleRange: asked });
+        expect(renderer.visibleRangeCalls).toContainEqual(asked);
+        expect(renderer.visibleRangeCalls).not.toContainEqual(window);
+    });
+
+    it('the carried view keeps the BAR COUNT, not the wall clock (densities differ per session)', async () => {
+        // Extended = hourly bars; regular = every OTHER hour (half density), same right
+        // edge — the RTH/ETH shape. Preserving the raw time window across the flip
+        // would halve the bars on screen (a perceived zoom-in); the carry must instead
+        // keep the COUNT and re-derive the window from the incoming series.
+        const END = 1_700_216_000_000;
+        const densityFeed = {
+            load: (cfg: MarketConfig): Promise<OHLCV[]> => {
+                const step = cfg.session === 'regular' ? 7_200_000 : 3_600_000;
+                const n = 60;
+                return Promise.resolve(Array.from({ length: n }, (_, i) => ({ time: END - (n - 1 - i) * step, open: 1, high: 2, low: 0, close: 1, volume: 1 })));
+            },
+            subscribe: (): (() => void) => () => {},
+        } as unknown as MarketDataFeed;
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', session: 'extended', volume: false }, { renderer, engines: [], dataFeed: densityFeed });
+        await chart.ready();
+        // The user looks at the last 10 hourly bars.
+        renderer.visibleRange = { from: END - 9 * 3_600_000 - 1, to: END + 1 };
+
+        await chart.setMarket({ session: 'regular' });
+        // Refined frame: 10 bars of the NEW series — twice the wall clock, same zoom.
+        const last = renderer.visibleRangeCalls[renderer.visibleRangeCalls.length - 1]!;
+        expect(last).toEqual({ from: END - 9 * 7_200_000, to: END + 1 });
+    });
+
+    it('a session-only flip DEEPENS the reload to cover the carried window', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        // The user panned ~900 hourly bars into the past — 500 bars cannot reach it.
+        renderer.visibleRange = { from: Date.now() - 900 * 3_600_000, to: Date.now() - 880 * 3_600_000 };
+        await chart.setMarket({ session: 'extended' });
+        const deep = feed.loads[feed.loads.length - 1]!.bars ?? 0;
+        expect(deep).toBeGreaterThanOrEqual(900); // reaches the window (+ margin)
+        expect(deep).toBeLessThanOrEqual(5000); // …but never a mega-load
+
+        // A NEARBY window needs no deepening — the default depth already covers it.
+        renderer.visibleRange = { from: Date.now() - 100 * 3_600_000, to: Date.now() - 90 * 3_600_000 };
+        await chart.setMarket({ session: 'regular' });
+        // Depth only ever grows within a chart's lifetime (the previous flip deepened it).
+        expect(feed.loads[feed.loads.length - 1]!.bars).toBe(deep);
+    });
+
+    it('a SYMBOL switch keeps today\'s re-frame (no stale window carried to a new clock)', async () => {
+        const feed = new SwitchFeed();
+        const renderer = new FakeRenderer();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        renderer.visibleRange = { from: 1_700_010_000_000, to: 1_700_020_000_000 };
+
+        await chart.setMarket({ symbol: 'BBB' });
+        expect(renderer.visibleRangeCalls).not.toContainEqual({ from: 1_700_010_000_000, to: 1_700_020_000_000 });
     });
 
     it('frames a requested visibleRange on the first paint of the new market', async () => {

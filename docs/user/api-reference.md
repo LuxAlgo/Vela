@@ -299,7 +299,9 @@ registering the one that resolves the chart symbol fires the parked initial load
 | `registerProvider(name, provider)` | Register (or replace) a provider; chainable. Fires the parked load when it resolves the symbol. |
 | `unregisterProvider(name)` | Remove a provider. |
 | `providers()` | Metadata for every registered provider. |
-| `resolve(symbol)` | How a symbol routes now (`{ provider, ticker }`, or `null`). |
+| `resolve(symbol)` | How a symbol routes now (`{ provider, ticker }`, or `null`). Accepts a provider-name prefix or a descriptor-declared **listing prefix** (`NASDAQ:AAPL` — strict: a wrong venue resolves to `null`). |
+| `displayPrefix(symbol)` | The venue label to display — the descriptor's listing prefix when declared, else the resolved provider name. `null` while unresolvable. |
+| `canonicalSymbol(symbol)` | The canonical `PREFIX:TICKER` form of the symbol (`edgx:aapl` → `NASDAQ:AAPL`). `null` while unresolvable. |
 | `symbols(provider?)` | Indexed symbols for autocomplete — one provider, or all. |
 | `symbolInfo(symbol)` | `Promise` of per-symbol metadata (Pine `syminfo.*`), via the owning provider. |
 | `capabilities(symbol)` | The full resolved per-symbol `ProviderCapabilities` (behavior flags), or `null` while nothing resolves the symbol. |

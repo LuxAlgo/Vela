@@ -13,6 +13,15 @@ export interface SymbolDescriptor {
     description?: string;
     /** Instrument class, free-form (e.g. `crypto`, `futures`, `stock`). */
     type?: string;
+    /**
+     * The instrument's LISTING-venue prefix (`NASDAQ`, `NYSE`, `AMEX`) — a property of the
+     * SYMBOL, not of the provider: AAPL is Nasdaq-listed and IBM NYSE-listed even when one
+     * provider supplies both tapes. When declared, it is what pickers/legends display, what
+     * `PREFIX:TICKER` strings resolve against (TradingView parity: `NYSE:AAPL` is NOT
+     * found), and what the canonical committed/persisted form carries. Absent on venues
+     * where the provider IS the identity (crypto, fx) — the provider name prefixes those.
+     */
+    prefix?: string;
     /** Owning provider name — annotated by the registry aggregation (badges in pickers). */
     provider?: string;
 }
@@ -75,9 +84,22 @@ export interface DataProvider {
     /**
      * Open a true live stream for `ticker`/`timeframe`. Each call to `onBar` delivers
      * the forming candle (or a freshly-closed one). Returns an unsubscribe fn. Absent
-     * ⇒ the feed polls `getBars` for ticks instead.
+     * ⇒ the feed polls `getBars` for ticks instead. `opts.session` names the trading
+     * session the chart is showing (see {@link BarRange.session}) — a provider whose
+     * live source cannot filter by session may fall back to polling internally.
      */
-    subscribe?(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void): Unsubscribe;
+    subscribe?(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void, opts?: { session?: string }): Unsubscribe;
+
+    /**
+     * Resolved market-calendar windows over `[range.from, range.to)`: ascending epoch-ms
+     * `[start, end)` pairs of OPEN market time, holidays and DST already applied by the
+     * source — the single market-time truth for session-anchored consumers (market-status
+     * badges, session profiles), which must never recompute a holiday themselves.
+     * `range.session` selects the window set (`'regular'` default; `'extended'` = the
+     * full tape). Absent ⇒ the venue offers no calendar (continuous markets) and
+     * consumers fall back to their own anchoring (e.g. UTC days).
+     */
+    getCalendar?(ticker: string, range: { from: number; to: number; session?: string }): Promise<ReadonlyArray<readonly [number, number]>>;
 
     /** Apply runtime config (e.g. API keys). Absent ⇒ no configuration needed. */
     configure?(config: unknown): void;

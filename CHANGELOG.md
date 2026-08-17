@@ -17,6 +17,67 @@ All notable changes to Vela, newest first.
   profile, or Fibonacci/Mach levels opens a real settings dialog (same shell as
   indicator inputs) instead of an inline panel. Cancel restores the open-time
   snapshot; Ok keeps the live edits. The compact drawing toolbar is unchanged.
+- **Market calendars (`DataProvider.getCalendar`).** A provider may now serve the
+  RESOLVED market calendar — ascending epoch-ms `[start, end)` open windows with
+  holidays and DST already applied by the source, `session` selecting the regular
+  or extended set. It is the single market-time truth for session-anchored
+  consumers; nothing in Vela recomputes a holiday. Continuous venues simply omit
+  the method.
+- **A real market-status badge.** The statusline's session badge (widget and
+  workspace cells) now derives its state from the provider calendar — Market
+  Open / Pre-Market / Post-Market / Market Closed / Market Holiday — and
+  re-derives itself at every session boundary. Symbols without a calendar keep
+  the permanent "Market Open" exactly as before.
+- **The chart session reaches data engines.** `SeriesDataEngineHost.session` and
+  `NativeIndicatorContext.session` expose the chart's trading session
+  (`'regular'` | `'extended'`) to chart-type data engines and native indicators,
+  so session-anchored fetchers can request the tape the chart is actually
+  showing. A session switch rebuilds engines/indicators, so the value is stable
+  within one host's lifetime.
+
+### Fixed
+
+- **RTH↔ETH no longer resets the viewport.** A session-only `setMarket` flip
+  carries the current zoom/position over the reload (the time axis is the same
+  clock — only which bars exist changes); an explicit `visibleRange` from the
+  caller still wins, and symbol/timeframe switches keep the usual re-frame.
+
+## [v0.6.1]
+
+### Added
+
+- **Trading sessions (RTH/ETH).** Charts gain a `session` dimension
+  (`'regular'` | `'extended'`) on markets that have one: pass it as a chart option,
+  switch it with `chart.setMarket({ session })`, or click the bottombar's RTH/ETH
+  toggle — previously a disabled stub, now live and enabled automatically when the
+  active symbol's metadata declares real sessions (crypto keeps the disabled chips).
+  A session switch reloads like a timeframe change; the two sessions cache as
+  separate series (their bars genuinely differ), the flag rides every provider
+  request (`BarRange.session`, `subscribe` `opts.session`), persists per cell
+  (`extended` only — documents stay lean), and travels in shareable URLs
+  (`?session=extended`). In a workspace the toggle acts on the ACTIVE cell, like
+  the range chips.
+
+## [v0.6.0]
+
+### Added
+
+- **Per-symbol listing prefixes (TradingView parity).** A provider's symbol
+  descriptors may declare `prefix: 'NASDAQ'` — the venue the instrument is _listed_
+  on, a property of the symbol rather than of the provider. When declared,
+  `NASDAQ:AAPL` resolves through it (strictly: `NYSE:AAPL` matches nothing, no
+  auto-correction), every label displays it — legend venue chip, symbol-search
+  badges — and the picker commits and the workspace persists the canonical
+  `NASDAQ:AAPL` form. Typing the listing venue in the symbol search scopes it
+  (`nasdaq AAP`), like provider names always have. Explicit provider-name prefixes
+  keep routing (persisted `edgx:AAPL` documents re-display canonically), and
+  symbols without a declared prefix behave exactly as before. New `chart.data`
+  members: `displayPrefix(symbol)` and `canonicalSymbol(symbol)`.
+
+## [v0.5.4]
+
+### Added
+
 - **Form controls on the UI kit.** Toggles, dropdowns, number and text fields, the
   color picker, and a shared popover shell are available from `@luxalgo/vela/ui`,
   so a host can build settings panels that match the chart's own chrome. The

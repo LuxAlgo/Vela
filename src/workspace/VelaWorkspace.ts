@@ -516,6 +516,9 @@ export class VelaWorkspace {
                           this.bottombar?.setActiveRange(preset.id);
                       },
                       onTimezone: (zone) => this.setTimezone(zone),
+                      // RTH/ETH acts on the ACTIVE cell (like the range chips): sessions
+                      // are a per-chart market dimension, not a shell preference.
+                      onSession: (session) => this.active.setSession(session),
                       onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
                 : null;
@@ -909,6 +912,7 @@ export class VelaWorkspace {
         this.objectTree.setSymbol(cell.symbol);
         this.dock.onChart(cell.chart); // every docked panel follows the active cell
         this.bottombar?.setActiveRange(cell.activeRangeId);
+        this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
         this.indicatorPicker?.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
         // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet + stay
@@ -1380,6 +1384,7 @@ export class VelaWorkspace {
         this.mobileBar?.setSymbol(cell.symbol);
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
+        this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
     }
 
     /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */

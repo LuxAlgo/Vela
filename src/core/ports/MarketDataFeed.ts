@@ -29,6 +29,12 @@ export interface BarRange {
     to?: number;
     /** Max bars. */
     limit?: number;
+    /**
+     * Trading session to serve (`'regular'` | `'extended'`) — rides every request on
+     * markets that have sessions; absent = the provider's default. A provider without
+     * a session concept ignores it.
+     */
+    session?: string;
 }
 
 export interface MarketDataFeed {

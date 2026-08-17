@@ -91,10 +91,12 @@ const CSS = `
     color: var(--vela-fg-muted);
     font-size: 11px;
     font-weight: 600;
-    cursor: not-allowed;
-    opacity: 0.55;
+    cursor: pointer;
 }
-.vela-bb-session-btn.is-active { color: var(--vela-fg); background: var(--vela-surface-elev); opacity: 0.8; }
+.vela-bb-session-btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.vela-bb-session-btn:not(:disabled):hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-bb-session-btn.is-active { color: var(--vela-fg); background: var(--vela-surface-elev); }
+.vela-bb-session-btn.is-active:disabled { opacity: 0.8; }
 .vela-bb-settings {
     all: unset;
     display: inline-flex;
@@ -115,6 +117,8 @@ export interface BottombarOptions {
     timezone: string;
     onRange: (preset: RangePreset) => void;
     onTimezone: (zone: string) => void;
+    /** RTH/ETH toggled by the user. Fires only while the toggle is ENABLED (see {@link Bottombar.setSession}). */
+    onSession?: (session: 'regular' | 'extended') => void;
     onSettingsClick?: () => void;
 }
 
@@ -126,6 +130,8 @@ export class Bottombar {
     private readonly tzMenu: Menu;
     private readonly settingsTip: Tooltip | null = null;
     private readonly rangeButtons = new Map<string, HTMLButtonElement>();
+    private readonly sessionButtons = new Map<'regular' | 'extended', HTMLButtonElement>();
+    private sessionEl: HTMLElement | null = null;
     private timezone: string;
     private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -161,14 +167,21 @@ export class Bottombar {
         this.tzButton.append(this.clockEl, this.tzLabelEl);
         const session = doc.createElement('span');
         session.className = 'vela-bb-session';
-        // Reference-exact stub: RTH is the active chip, both disabled — sessions only
-        // apply to stocks/ETFs and the renderer has no session model (documented gap).
+        this.sessionEl = session;
+        // Boots in the DISABLED posture (sessions only apply to markets that have them);
+        // the host enables it per active chart via `setSession` once symbol metadata lands.
         session.title = 'Session — stocks & ETFs only';
-        for (const [label, active] of [['RTH', true], ['ETH', false]] as const) {
+        for (const [key, label] of [['regular', 'RTH'], ['extended', 'ETH']] as const) {
             const b = doc.createElement('button');
-            b.className = 'vela-bb-session-btn' + (active ? ' is-active' : '');
+            b.className = 'vela-bb-session-btn' + (key === 'regular' ? ' is-active' : '');
             b.textContent = label;
             b.disabled = true;
+            b.addEventListener('click', () => {
+                if (b.disabled) return;
+                this.setSession({ session: key, enabled: true }); // optimistic — the reload confirms
+                opts.onSession?.(key);
+            });
+            this.sessionButtons.set(key, b);
             session.appendChild(b);
         }
         const settingsBtn = doc.createElement('button');
@@ -208,6 +221,20 @@ export class Bottombar {
         for (const [key, b] of this.rangeButtons) {
             if (id !== null && key === id) b.dataset.active = '1';
             else delete b.dataset.active;
+        }
+    }
+
+    /**
+     * Reflect the ACTIVE chart's session posture. `enabled: false` (a continuous
+     * market, or metadata not landed yet) shows the disabled RTH-active stub — the
+     * pre-session-model look, byte-for-byte. Enabled, the chips become clickable and
+     * the active one tracks the chart's current session.
+     */
+    setSession(state: { session: 'regular' | 'extended'; enabled: boolean }): void {
+        if (this.sessionEl) this.sessionEl.title = state.enabled ? 'Session — regular (RTH) vs extended (ETH) hours' : 'Session — stocks & ETFs only';
+        for (const [key, b] of this.sessionButtons) {
+            b.disabled = !state.enabled;
+            b.classList.toggle('is-active', state.enabled ? key === state.session : key === 'regular');
         }
     }
 
