@@ -39,6 +39,11 @@ All notable changes to Vela, newest first.
   session switch used to sit disabled on continuous markets (crypto); it is now
   hidden entirely there and appears once the active symbol declares real trading
   sessions.
+- **UI text is no longer selectable.** Chrome text everywhere — titles, buttons,
+  menus, legends, dialog labels — can't be text-selected anymore (a drag or a
+  sloppy double-click used to leave blue selections across the UI). Text-entry
+  fields (text, number, textarea) keep normal selection, and the data window's
+  readout stays selectable too — it is data meant to be copied out.
 
 ### Fixed
 

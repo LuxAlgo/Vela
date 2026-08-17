@@ -1238,7 +1238,9 @@ export class NativeRenderer implements IChartRenderer {
         this.surfaceTextColor = theme.textColor;
 
         this.wrapper = document.createElement('div');
-        Object.assign(this.wrapper.style, { position: 'relative', width: '100%', height: '100%', overflow: 'hidden', cursor: 'crosshair' });
+        // user-select none: in-chart chrome text (legend, dialogs, axis buttons) is UI,
+        // never selectable — the kit's text-entry controls opt back in in their own CSS.
+        Object.assign(this.wrapper.style, { position: 'relative', width: '100%', height: '100%', overflow: 'hidden', cursor: 'crosshair', userSelect: 'none', webkitUserSelect: 'none' });
         // Every DOM overlay below is a descendant, so the chrome tokens land once here.
         applyChromeTokens(this.wrapper, this.chromeTheme());
 

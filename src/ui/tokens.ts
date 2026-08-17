@@ -20,8 +20,13 @@ const STATIC_CSS = `
 ${STATIC_DECLS}
     font-family: var(--vela-font, -apple-system, system-ui, sans-serif);
     box-sizing: border-box;
+    /* Chrome text (titles, buttons, menus, readouts) is UI, not copy — never selectable. */
+    user-select: none;
+    -webkit-user-select: none;
 }
 .vela-ui *, .vela-ui-layer * { box-sizing: border-box; }
+/* Text ENTRY is the one exception: selection is part of editing. */
+.vela-ui :is(input, textarea), .vela-ui-layer :is(input, textarea) { user-select: text; -webkit-user-select: text; }
 .vela-icon { display: inline-flex; align-items: center; flex: none; }
 .vela-icon svg { display: block; }
 `;
