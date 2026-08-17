@@ -93,11 +93,23 @@ export interface FieldRowOptions {
 }
 
 function labelEl(text: string, opts: { id?: string; size?: FieldLabelSize }): HTMLElement {
-    const el = opts.id ? document.createElement('label') : document.createElement('span');
-    if (opts.id && el instanceof HTMLLabelElement) el.htmlFor = opts.id;
+    // A SPAN on purpose, never a `<label for>`: the title is fully INERT — it neither
+    // reacts to hover (native labels propagate `:hover` onto their control) nor to
+    // clicks. Only the input itself is interactive. The a11y association a label would
+    // have given lives on the control as `aria-labelledby` instead.
+    const el = document.createElement('span');
     el.className = 'vela-field-label';
     if (opts.size) el.dataset.size = opts.size;
     el.textContent = text;
+    const id = opts.id;
+    if (id) {
+        el.id = `${id}--title`;
+        // The control exists but may not be attached yet (rows are assembled before the
+        // dialog mounts); after the current task it is, so the name lands reliably.
+        queueMicrotask(() => {
+            el.ownerDocument.getElementById(id)?.setAttribute('aria-labelledby', el.id);
+        });
+    }
     return el;
 }
 
@@ -130,9 +142,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
             it.className = 'vela-field-inline-item';
             if (item.toggleFirst) it.style.flexDirection = 'row-reverse';
             if (item.label) {
-                const lbl = labelEl(item.label, { id: item.id, size });
-                if (item.toggleFirst) lbl.style.cursor = 'pointer';
-                it.appendChild(lbl);
+                it.appendChild(labelEl(item.label, { id: item.id, size }));
             }
             if (item.fit) it.appendChild(item.control);
             else {
@@ -158,7 +168,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
             tone: 'bright',
             onChange: (v) => opts.toggle?.onChange(v),
         });
-        wrap.append(sw.el, labelEl(opts.label, { size }));
+        wrap.append(sw.el, labelEl(opts.label, { id: opts.toggle?.id ?? opts.id, size }));
         if (opts.info) wrap.appendChild(opts.info);
         if (opts.toggle?.get) {
             const get = opts.toggle.get;
@@ -198,7 +208,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
                 if (controls.length > 0) dimControls(controls, v);
             },
         });
-        left.append(sw.el, labelEl(opts.label, { size }));
+        left.append(sw.el, labelEl(opts.label, { id: opts.toggle.id ?? opts.id, size }));
         wrap.appendChild(left);
         if (controls.length > 0) dimControls(controls, opts.toggle.checked);
         if (opts.toggle.get) {

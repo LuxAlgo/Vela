@@ -16,6 +16,8 @@ import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Topbar } from './topbar';
 import { Statusline, statuslineInkOf } from './statusline';
 import { MarketStatusTracker } from './market-status';
+import { SessionShadingTracker } from './session-shading';
+import { timeframeMs } from './timeframe';
 import { Watermark } from './watermark';
 import { Bottombar, RANGE_PRESETS, type RangePreset } from './bottombar';
 import { SymbolPicker } from './symbol-picker';
@@ -80,6 +82,11 @@ export class VelaWidget {
     private readonly statusline: Statusline | null;
     /** Keeps the statusline's market badge on the symbol's real calendar (see {@link MarketStatusTracker}). */
     private readonly marketStatus: MarketStatusTracker | null;
+    /** Keeps the pre/post-market shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
+    private readonly sessionShading = new SessionShadingTracker((zones) => this.inner?.renderer.set('sessionZones', zones));
+    /** Whether the ACTIVE symbol declares real trading sessions (RTH/ETH meaningful) —
+     *  gates the bottombar toggle and the settings dialog's Trading session group. */
+    private sessionsAvailable = false;
     private readonly watermark: Watermark | null;
     private readonly bottombar: Bottombar | null;
     private readonly objectTree: ObjectTree;
@@ -651,16 +658,143 @@ export class VelaWidget {
         void this.inner?.setMarket({ session });
     }
 
-    /** Re-derive the RTH/ETH toggle's posture from the ACTIVE symbol's metadata: enabled
-     *  iff the resolved symbol declares a real session vocabulary (not `24x7`). */
+    /** Re-derive the session chrome from the ACTIVE symbol's metadata: the RTH/ETH
+     *  toggle shows (and the settings dialog's Trading session group appears) iff the
+     *  resolved symbol declares a real session vocabulary (not `24x7`); the pre/post
+     *  shading re-derives for the new market either way. */
     private refreshSessionToggle(): void {
         const chart = this.inner;
-        if (!chart || !this.bottombar) return;
+        if (!chart) return;
         void chart.data.symbolInfo(this.symbol).then((si) => {
             if (this.destroyed || this.inner !== chart) return;
             const enabled = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
             this.bottombar?.setSession({ session: this.session ?? 'regular', enabled });
+            if (enabled !== this.sessionsAvailable) {
+                this.sessionsAvailable = enabled;
+                this.pushSettingsSections(); // the Trading session group follows the symbol
+            }
+            this.refreshSessionShading();
         });
+    }
+
+    /** (Re)derive the pre/post-market shading bands for the current market. The loaded
+     *  depth (bars × timeframe) bounds the calendar fetch; the tracker clamps it. */
+    private refreshSessionShading(): void {
+        const chart = this.inner;
+        if (!chart) return;
+        const lookbackMs = Math.max(this.bars, this.rangeBars) * timeframeMs(this.timeframe);
+        this.sessionShading.track(chart.data, this.symbol, { session: this.session ?? 'regular', lookbackMs });
+    }
+
+    /** The session-shade colors live in the renderer CONFIG (persisted with it, edited
+     *  live by the dialog swatch) — the widget only proxies them into its settings rows. */
+    private sessionShadeColor(key: 'premarketColor' | 'postmarketColor'): string {
+        const cfg = this.inner?.renderer.getConfig() as { sessions?: Record<string, unknown> } | null | undefined;
+        const v = cfg?.sessions?.[key];
+        return typeof v === 'string' ? v : '';
+    }
+
+    private setSessionShadeColor(key: 'premarketColor' | 'postmarketColor', color: string): void {
+        this.inner?.renderer.applyConfig({ sessions: { [key]: color } });
+        this.markStateDirty(); // the colors persist with the renderer config document
+    }
+
+    /**
+     * (Re)contribute the widget's settings-dialog sections: status line parts, the fetch
+     * depth, the watermark toggle, and — only while the active symbol HAS sessions — the
+     * Trading session group (RTH/ETH switch + the pre/post-market shading colors) inside
+     * the Symbol tab. Re-run whenever a gate changes (the dialog reads them on open).
+     */
+    private pushSettingsSections(): void {
+        const chart = this.inner;
+        if (!chart) return;
+        const rth = 'Regular hours (RTH)';
+        const eth = 'Extended hours (ETH)';
+        const sessionSection = {
+            title: 'Trading session',
+            placement: 'symbol' as const,
+            rows: [
+                {
+                    kind: 'select' as const,
+                    label: 'Session',
+                    options: [rth, eth],
+                    get: () => ((this.session ?? 'regular') === 'extended' ? eth : rth),
+                    set: (v: string) => this.setSession(v === eth ? 'extended' : 'regular'),
+                },
+                {
+                    kind: 'color' as const,
+                    label: 'Pre-market',
+                    get: () => this.sessionShadeColor('premarketColor'),
+                    set: (v: string) => this.setSessionShadeColor('premarketColor', v),
+                },
+                {
+                    kind: 'color' as const,
+                    label: 'Post-market',
+                    get: () => this.sessionShadeColor('postmarketColor'),
+                    set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
+                },
+            ],
+        };
+        const advanced = {
+            title: 'Advanced',
+            placement: 'end' as const,
+            rows: [
+                {
+                    kind: 'select' as const,
+                    label: 'Bars to fetch',
+                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
+                    get: () => String(this.bars),
+                    set: (v: string) => {
+                        this.bars = Number(v);
+                        this.markStateDirty();
+                        void this.inner?.setMarket({ bars: Math.max(this.bars, this.rangeBars) });
+                    },
+                },
+            ],
+        };
+        const watermarkSection = {
+            title: 'Watermark',
+            placement: 'symbol' as const,
+            rows: [
+                {
+                    kind: 'toggle' as const,
+                    label: 'Symbol watermark',
+                    get: () => this.watermarkOn,
+                    set: (v: boolean) => this.setWatermarkVisible(v),
+                },
+            ],
+        };
+        const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol' }> = [];
+        if (this.statusline) {
+            const sl = this.statusline;
+            sections.push({
+                title: 'Status line',
+                rows: [
+                    { kind: 'heading', label: 'Status line' },
+                    { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
+                    { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
+                    { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
+                    { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                    { kind: 'heading', label: 'Indicators' },
+                    {
+                        kind: 'toggle',
+                        label: 'Titles',
+                        get: () => this.indicatorTitlesOn,
+                        set: (v: boolean) => this.setIndicatorTitlesVisible(v),
+                    },
+                    {
+                        kind: 'toggle',
+                        label: 'Values',
+                        get: () => this.indicatorValuesOn,
+                        set: (v: boolean) => this.setIndicatorValuesVisible(v),
+                    },
+                ],
+            });
+        }
+        sections.push(advanced);
+        if (this.sessionsAvailable) sections.push(sessionSection);
+        sections.push(watermarkSection);
+        chart.renderer.setSettingsSections(sections);
     }
 
     /** Star/unstar a timeframe — the topbar chips and dropdown stars follow, and the
@@ -1013,6 +1147,7 @@ export class VelaWidget {
         this.indicatorPicker?.destroy();
         this.tfQuick.destroy();
         this.marketStatus?.stop();
+        this.sessionShading.stop();
         this.statusline?.destroy();
         this.watermark?.destroy();
         this.bottombar?.destroy();
@@ -1190,7 +1325,10 @@ export class VelaWidget {
                 this.refreshSessionToggle(); // the new symbol may (not) have sessions
                 this.marketStatus?.track(chart.data, symbol); // …and its own market clock
             }
-            if (timeframe !== this.timeframe) this.syncTimeframeChrome(timeframe);
+            if (timeframe !== this.timeframe) {
+                this.syncTimeframeChrome(timeframe);
+                this.refreshSessionShading(); // the loaded span (bars × tf) bounds the bands
+            }
         });
         this.history.onChart(chart);
         chart.on('alert', (alert) => {
@@ -1250,67 +1388,7 @@ export class VelaWidget {
         this.statusline?.onChart(chart);
         this.drawingPill.onChart(chart);
         this.syncStatuslineColors();
-        const advanced = {
-            title: 'Advanced',
-            placement: 'end' as const,
-            rows: [
-                {
-                    kind: 'select' as const,
-                    label: 'Bars to fetch',
-                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
-                    get: () => String(this.bars),
-                    set: (v: string) => {
-                        this.bars = Number(v);
-                        this.markStateDirty();
-                        void this.inner?.setMarket({ bars: Math.max(this.bars, this.rangeBars) });
-                    },
-                },
-            ],
-        };
-        const watermarkSection = {
-            title: 'Watermark',
-            placement: 'symbol' as const,
-            rows: [
-                {
-                    kind: 'toggle' as const,
-                    label: 'Symbol watermark',
-                    get: () => this.watermarkOn,
-                    set: (v: boolean) => this.setWatermarkVisible(v),
-                },
-            ],
-        };
-        if (this.statusline) {
-            const sl = this.statusline;
-            chart.renderer.setSettingsSections([
-                {
-                    title: 'Status line',
-                    rows: [
-                        { kind: 'heading', label: 'Status line' },
-                        { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
-                        { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
-                        { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
-                        { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
-                        { kind: 'heading', label: 'Indicators' },
-                        {
-                            kind: 'toggle',
-                            label: 'Titles',
-                            get: () => this.indicatorTitlesOn,
-                            set: (v: boolean) => this.setIndicatorTitlesVisible(v),
-                        },
-                        {
-                            kind: 'toggle',
-                            label: 'Values',
-                            get: () => this.indicatorValuesOn,
-                            set: (v: boolean) => this.setIndicatorValuesVisible(v),
-                        },
-                    ],
-                },
-                advanced,
-                watermarkSection,
-            ]);
-        } else {
-            chart.renderer.setSettingsSections([advanced, watermarkSection]);
-        }
+        this.pushSettingsSections();
 
         void chart.ready().then(() => {
             if (this.buildSeq !== seq || this.destroyed) return;
