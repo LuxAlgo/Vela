@@ -180,6 +180,10 @@ export interface SymbolPickerOptions {
     host?: HTMLElement;
 }
 
+/** Rows rendered per page — the list GROWS by this much every time the scroll nears the
+ *  bottom, so a 13k-symbol venue browses whole without ever rendering 13k rows up front. */
+const PAGE = 100;
+
 export class SymbolPicker {
     private readonly dialog: Dialog;
     private readonly input: HTMLInputElement;
@@ -190,6 +194,7 @@ export class SymbolPicker {
     private seed = '';
     private activeTab = 'All';
     private tabs!: HTMLElement;
+    private visible = PAGE;
 
     constructor(opts: SymbolPickerOptions) {
         const doc = (opts.host ?? document.body).ownerDocument;
@@ -219,6 +224,16 @@ export class SymbolPicker {
         }
         this.list = doc.createElement('div');
         this.list.className = 'vela-sp-list';
+        // Infinite scroll: nearing the bottom grows the page and APPENDS the new rows —
+        // `filterSymbols` is a pure re-run with a larger limit whose result is a stable
+        // superset (same ranking, same order), so appended rows never reshuffle the ones
+        // already on screen. A short page (rows < visible) means the pool is exhausted.
+        this.list.addEventListener('scroll', () => {
+            if (this.rows.length < this.visible) return;
+            if (this.list.scrollTop + this.list.clientHeight < this.list.scrollHeight - 200) return;
+            this.visible += PAGE;
+            this.grow();
+        });
 
         this.dialog = new Dialog({
             title: 'Symbol Search',
@@ -299,14 +314,19 @@ export class SymbolPicker {
         });
     }
 
-    private refresh(): void {
-        const doc = this.list.ownerDocument;
+    private computeRows(): SymbolDescriptor[] {
         const TAB_TYPES: Record<string, string[]> = { Crypto: ['crypto'], Stocks: ['stock'], ETFs: ['etf'], Forex: ['forex'], Commodities: ['commodity'] };
         const pool =
             this.activeTab === 'All'
                 ? this.source()
                 : this.source().filter((s) => TAB_TYPES[this.activeTab]?.includes((s.type ?? '').toLowerCase()) || (this.activeTab === 'Crypto' && (s.type ?? '').toLowerCase() === 'futures'));
-        this.rows = filterSymbols(pool, this.input.value);
+        return filterSymbols(pool, this.input.value, this.visible);
+    }
+
+    private refresh(): void {
+        const doc = this.list.ownerDocument;
+        this.visible = PAGE; // a new query/tab starts back at one page
+        this.rows = this.computeRows();
         this.highlighted = 0;
         this.list.replaceChildren();
         if (!this.rows.length) {
@@ -316,36 +336,46 @@ export class SymbolPicker {
             this.list.appendChild(empty);
             return;
         }
-        for (const s of this.rows) {
-            const row = doc.createElement('div');
-            row.className = 'vela-sp-row';
-            row.dataset.ticker = s.ticker;
-            // The venue the user is pointing at travels with the pick — the same ticker can be
-            // listed by several providers, and dropping it would silently route to another one.
-            // The LISTING prefix wins over the provider id: it is the canonical spelling.
-            const venue = s.prefix ?? s.provider;
-            if (venue) row.dataset.venue = venue;
-            const av = tickerIconEl(doc, baseOf(s), s.ticker, 'vela-sp-avatar');
-            const main = doc.createElement('span');
-            main.className = 'vela-sp-main';
-            const t = doc.createElement('span');
-            t.className = 'vela-sp-ticker';
-            t.textContent = s.ticker;
-            const d = doc.createElement('span');
-            d.className = 'vela-sp-desc';
-            d.textContent = s.description ?? (s.type ?? '');
-            main.append(t, d);
-            row.append(av, main);
-            if (venue) {
-                const badge = doc.createElement('span');
-                badge.className = 'vela-sp-badge';
-                // Brand colors key on the PROVIDER id; the visible text is the venue label.
-                badge.dataset.p = s.provider ?? venue;
-                badge.textContent = venue;
-                row.appendChild(badge);
-            }
-            this.list.appendChild(row);
-        }
+        for (const s of this.rows) this.list.appendChild(this.rowEl(s));
         this.renderHighlight();
+    }
+
+    /** Append the page the grown `visible` just uncovered — rows already on screen stay put. */
+    private grow(): void {
+        const already = this.rows.length;
+        this.rows = this.computeRows();
+        for (const s of this.rows.slice(already)) this.list.appendChild(this.rowEl(s));
+    }
+
+    private rowEl(s: SymbolDescriptor): HTMLElement {
+        const doc = this.list.ownerDocument;
+        const row = doc.createElement('div');
+        row.className = 'vela-sp-row';
+        row.dataset.ticker = s.ticker;
+        // The venue the user is pointing at travels with the pick — the same ticker can be
+        // listed by several providers, and dropping it would silently route to another one.
+        // The LISTING prefix wins over the provider id: it is the canonical spelling.
+        const venue = s.prefix ?? s.provider;
+        if (venue) row.dataset.venue = venue;
+        const av = tickerIconEl(doc, baseOf(s), s.ticker, 'vela-sp-avatar');
+        const main = doc.createElement('span');
+        main.className = 'vela-sp-main';
+        const t = doc.createElement('span');
+        t.className = 'vela-sp-ticker';
+        t.textContent = s.ticker;
+        const d = doc.createElement('span');
+        d.className = 'vela-sp-desc';
+        d.textContent = s.description ?? (s.type ?? '');
+        main.append(t, d);
+        row.append(av, main);
+        if (venue) {
+            const badge = doc.createElement('span');
+            badge.className = 'vela-sp-badge';
+            // Brand colors key on the PROVIDER id; the visible text is the venue label.
+            badge.dataset.p = s.provider ?? venue;
+            badge.textContent = venue;
+            row.appendChild(badge);
+        }
+        return row;
     }
 }
