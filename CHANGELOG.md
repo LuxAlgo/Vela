@@ -2,6 +2,20 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.4]
+
+### Fixed
+
+- **The workspace toolbar follows chart-style changes.** In a multi-chart
+  workspace, changing the active chart's style now updates the toolbar's style
+  button and its menu checkmark immediately — previously they refreshed only
+  when the active chart changed, so the button kept showing the old style's
+  icon.
+- **The timeframe button no longer looks stuck pressed.** Without favorite
+  timeframes, the compact timeframe trigger drew a permanent highlight
+  background. It now highlights on hover only, like the buttons around it; the
+  in-place highlight still marks the current timeframe among favorite chips.
+
 ## [v0.6.2]
 
 ### Added

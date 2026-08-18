@@ -70,12 +70,14 @@ const CSS = `
     color: var(--vela-fg-muted);
 }
 .vela-widget-tf-caret:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+/* The merged trigger is a plain button (hover feedback only) — the highlight
+   background marks the CURRENT chip among favorites, and a lone trigger with a
+   permanent highlight would read as stuck-pressed. */
 .vela-widget-tf-caret[data-solo='1'] {
     width: auto;
     padding: 0 6px 0 9px;
     gap: 4px;
     color: var(--vela-fg-bright);
-    background: var(--vela-hover-strong);
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
