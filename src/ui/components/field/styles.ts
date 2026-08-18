@@ -27,6 +27,8 @@ export const FIELD_CSS = `
     font-size: 14px;
 }
 .vela-field-label[data-size='sm'] { font-size: inherit; opacity: 0.85; }
+/* Titles are fully inert: spans, not label[for] — native labels propagate :hover and
+   clicks onto their control, and both belong to the input alone. */
 .vela-field-cell { display: flex; align-items: center; gap: 8px; justify-self: start; }
 .vela-field-bool { display: flex; align-items: center; gap: 8px; min-height: 22px; }
 .vela-field-stacked { display: flex; flex-direction: column; gap: 8px; }

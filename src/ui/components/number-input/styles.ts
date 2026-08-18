@@ -20,6 +20,9 @@ export const NUMBER_CSS = `
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
     -moz-appearance: textfield;
     appearance: textfield;
+    /* Selectable even under a user-select:none host (chart wrapper, .vela-ui). */
+    user-select: text;
+    -webkit-user-select: text;
 }
 .vela-num input::-webkit-inner-spin-button, .vela-num input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .vela-num input:hover { border-color: var(--vela-fg-muted); }

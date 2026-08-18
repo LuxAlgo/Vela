@@ -130,6 +130,13 @@ Gated values are **still stored and delivered** — hiding a row never clears it
 consumers decide what a hidden-but-set value means (usually: the gating toggle already
 disables the feature).
 
+The **indicator inputs dialog speaks the same condition vocabulary**: an `InputSchema`
+may carry a `when` (`InputCondition` / `InputWhen`, evaluated by `inputVisible(when,
+bag)`), and the gear dialog re-applies it live on every edit — rows hide and return,
+a group heading or tab whose inputs are all gated out leaves with them, and hidden
+inputs keep their values. Inputs sharing an `inline=` row show while any member's
+gate passes.
+
 **Duplicate keys across gated rows are supported.** Several `when`-gated rows may store
 under the same key(s) — the pattern for per-mode rows over one shared state (each mode
 gets its own row label, e.g. "Volume gradient" / "Delta gradient", while the gradient

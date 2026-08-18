@@ -2,6 +2,76 @@
 
 All notable changes to Vela, newest first.
 
+
+## [v0.6.4]
+
+### Added
+
+- **Indicator inputs that show only when they matter.** An indicator input can now
+  declare a condition on another input's current value (a toggle being on, a dropdown
+  sitting on one choice or any of several), and its row appears in the settings dialog
+  only while that condition holds. The dialog re-evaluates live on every edit — flip
+  the governing toggle and the dependent rows appear or disappear in place, group
+  headings and tabs whose inputs are all hidden leave with them, and a hidden input
+  keeps its value for when it comes back.
+
+- **Auto and Log toggles on the price scale.** Hovering a price scale now reveals
+  two small buttons at its bottom — **A** for autoscale and **L** for the
+  logarithmic scale — sitting on a full-width background strip so the axis values
+  behind them stay readable. Each click toggles its mode for the hovered pane
+  independently (log never snaps the scale back to auto), and an active mode wears
+  the filled (selected) button style, so the scale's state is readable at a glance
+  without opening the axis menu. Hovering a letter shows its themed tooltip
+  (Auto / Logarithmic scale).
+- **Pre- and post-market session shading.** On markets with trading sessions,
+  showing the extended tape now tints the pre-market and post-market time bands
+  behind the candles (faint orange and blue by default), derived from the
+  provider's market calendar. Both colors are editable — chart settings → Symbol →
+  Trading session — and persist with the rest of the chart settings. The same
+  Trading session group also carries a Session dropdown, so RTH/ETH can be
+  switched from the settings dialog as well as from the bottom bar. The group
+  only appears on markets that actually have sessions.
+
+### Changed
+
+- **Right-click menus mark the active choice with a checkmark.** Context menus
+  anchored at the pointer — the price-axis, time-axis and chart-body menus, and
+  the indicator legend's row menu — now show the selected entry with a ✓ on its
+  left instead of a highlighted row, so selection never reads as hover. Dropdown
+  menus opened from a button (timeframe, chart style, time zone) keep the
+  highlighted-row style.
+- **The legend's status indicator steps aside while a row is open.** While an
+  indicator's legend row shows its action buttons (on hover or selection), the
+  loading dots / live pulse move to after the buttons instead of sitting between
+  the title and the actions, so the buttons stay glued to the title.
+- **The RTH/ETH toggle only appears on markets with sessions.** The bottom bar's
+  session switch used to sit disabled on continuous markets (crypto); it is now
+  hidden entirely there and appears once the active symbol declares real trading
+  sessions.
+- **UI text is no longer selectable.** Chrome text everywhere — titles, buttons,
+  menus, legends, dialog labels — can't be text-selected anymore (a drag or a
+  sloppy double-click used to leave blue selections across the UI). Text-entry
+  fields (text, number, textarea) keep normal selection, and the data window's
+  readout stays selectable too — it is data meant to be copied out.
+
+### Fixed
+
+- **Input titles are fully inert.** In the settings and indicator dialogs, an
+  input's title no longer reacts to hover or clicks (native `label[for]`
+  forwarding used to light up and activate the control from its title) — only
+  the input itself is interactive. Titles keep naming their control for
+  assistive tech via `aria-labelledby`.
+
+- **The workspace toolbar follows chart-style changes.** In a multi-chart
+  workspace, changing the active chart's style now updates the toolbar's style
+  button and its menu checkmark immediately — previously they refreshed only
+  when the active chart changed, so the button kept showing the old style's
+  icon.
+- **The timeframe button no longer looks stuck pressed.** Without favorite
+  timeframes, the compact timeframe trigger drew a permanent highlight
+  background. It now highlights on hover only, like the buttons around it; the
+  in-place highlight still marks the current timeframe among favorite chips.
+
 ## [v0.6.2]
 
 ### Added

@@ -17,6 +17,8 @@ import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import { Statusline, statuslineInkOf } from '../widget/statusline';
 import { MarketStatusTracker } from '../widget/market-status';
+import { SessionShadingTracker } from '../widget/session-shading';
+import { timeframeMs } from '../widget/timeframe';
 import { Watermark } from '../widget/watermark';
 import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
@@ -135,6 +137,8 @@ export interface CellDeps {
     activate(id: string): void;
     /** The cell's market changed in place (chrome/retention refresh upstream). */
     onMarketChanged(id: string): void;
+    /** The cell's price style changed in place (topbar icon/menu refresh upstream). */
+    onPriceStyleChanged(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** Persistable per-cell state changed outside the market/indicator channels
@@ -166,6 +170,8 @@ export class ChartCell {
     private readonly statusline: Statusline | null;
     /** Keeps this cell's market badge on the symbol's real calendar (see {@link MarketStatusTracker}). */
     private readonly marketStatus: MarketStatusTracker | null;
+    /** Keeps the pre/post-market shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
+    private readonly sessionShading = new SessionShadingTracker((zones) => this.inner?.renderer.set('sessionZones', zones));
     private readonly watermark: Watermark | null;
     private readonly contextMenu: ChartContextMenu;
     private readonly offMarket: () => void;
@@ -383,71 +389,8 @@ export class ChartCell {
         this.refreshNativeCatalog();
 
         // HOST settings sections — the same set the widget contributes, per cell
-        // (the shared topbar gear opens the ACTIVE cell's dialog): status line parts,
-        // the per-cell fetch depth, and the per-cell watermark/titles toggles.
-        // Bars/watermark/titles are persistable cell state; a depth-only reload is
-        // silent, so mark dirty here.
-        const advanced = {
-            title: 'Advanced',
-            placement: 'end' as const,
-            rows: [
-                {
-                    kind: 'select' as const,
-                    label: 'Bars to fetch',
-                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
-                    get: () => String(this.state.bars ?? 1000),
-                    set: (v: string) => {
-                        this.state.bars = Number(v);
-                        this.deps.onStateDirty();
-                        void this.inner?.setMarket({ bars: Math.max(this.state.bars, this.rangeBars) });
-                    },
-                },
-            ],
-        };
-        const watermarkSection = {
-            title: 'Watermark',
-            placement: 'symbol' as const,
-            rows: [
-                {
-                    kind: 'toggle' as const,
-                    label: 'Symbol watermark',
-                    get: () => this.watermarkOn,
-                    set: (v: boolean) => this.setWatermarkVisible(v),
-                },
-            ],
-        };
-        if (this.statusline) {
-            const sl = this.statusline;
-            this.inner.renderer.setSettingsSections([
-                {
-                    title: 'Status line',
-                    rows: [
-                        { kind: 'heading', label: 'Status line' },
-                        { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
-                        { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
-                        { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
-                        { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
-                        { kind: 'heading', label: 'Indicators' },
-                        {
-                            kind: 'toggle',
-                            label: 'Titles',
-                            get: () => this.indicatorTitlesOn,
-                            set: (v: boolean) => this.setIndicatorTitlesVisible(v),
-                        },
-                        {
-                            kind: 'toggle',
-                            label: 'Values',
-                            get: () => this.indicatorValuesOn,
-                            set: (v: boolean) => this.setIndicatorValuesVisible(v),
-                        },
-                    ],
-                },
-                advanced,
-                watermarkSection,
-            ]);
-        } else {
-            this.inner.renderer.setSettingsSections([advanced, watermarkSection]);
-        }
+        // (the shared topbar gear opens the ACTIVE cell's dialog).
+        this.pushSettingsSections();
 
         // The ONE bookkeeping seam: every market change — cell setters, sync links, or
         // host code calling chart.setMarket directly — lands here and updates the cell
@@ -500,8 +443,133 @@ export class ChartCell {
             if (available !== this.sessionAvailableFlag) {
                 this.sessionAvailableFlag = available;
                 this.deps.onMarketChanged(this.id); // re-project the shared bottombar toggle
+                this.pushSettingsSections(); // the Trading session group follows the symbol
             }
+            this.refreshSessionShading();
         });
+    }
+
+    /** (Re)derive the pre/post-market shading bands for this cell's market. The loaded
+     *  depth (bars × timeframe) bounds the calendar fetch; the tracker clamps it. */
+    private refreshSessionShading(): void {
+        const chart = this.inner;
+        const symbol = this.state.symbol;
+        if (!chart || !symbol) return;
+        const lookbackMs = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
+        this.sessionShading.track(chart.data, symbol, { session: this.session, lookbackMs });
+    }
+
+    /** The session-shade colors live in the renderer CONFIG (persisted with it, edited
+     *  live by the dialog swatch) — the cell only proxies them into its settings rows. */
+    private sessionShadeColor(key: 'premarketColor' | 'postmarketColor'): string {
+        const cfg = this.inner?.renderer.getConfig() as { sessions?: Record<string, unknown> } | null | undefined;
+        const v = cfg?.sessions?.[key];
+        return typeof v === 'string' ? v : '';
+    }
+
+    private setSessionShadeColor(key: 'premarketColor' | 'postmarketColor', color: string): void {
+        this.inner?.renderer.applyConfig({ sessions: { [key]: color } });
+        this.deps.onStateDirty(); // the colors persist with the renderer config document
+    }
+
+    /**
+     * (Re)contribute this cell's settings-dialog sections: status line parts, the
+     * per-cell fetch depth, the watermark toggle, and — only while the cell's symbol
+     * HAS sessions — the Trading session group (RTH/ETH switch + the pre/post-market
+     * shading colors) inside the Symbol tab. Bars/watermark/titles are persistable
+     * cell state; a depth-only reload is silent, so mark dirty here. Re-run whenever
+     * a gate changes (the dialog reads the sections on open).
+     */
+    private pushSettingsSections(): void {
+        const chart = this.inner;
+        if (!chart) return;
+        const rth = 'Regular hours (RTH)';
+        const eth = 'Extended hours (ETH)';
+        const sessionSection = {
+            title: 'Trading session',
+            placement: 'symbol' as const,
+            rows: [
+                {
+                    kind: 'select' as const,
+                    label: 'Session',
+                    options: [rth, eth],
+                    get: () => (this.session === 'extended' ? eth : rth),
+                    set: (v: string) => this.setSession(v === eth ? 'extended' : 'regular'),
+                },
+                {
+                    kind: 'color' as const,
+                    label: 'Pre-market',
+                    get: () => this.sessionShadeColor('premarketColor'),
+                    set: (v: string) => this.setSessionShadeColor('premarketColor', v),
+                },
+                {
+                    kind: 'color' as const,
+                    label: 'Post-market',
+                    get: () => this.sessionShadeColor('postmarketColor'),
+                    set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
+                },
+            ],
+        };
+        const advanced = {
+            title: 'Advanced',
+            placement: 'end' as const,
+            rows: [
+                {
+                    kind: 'select' as const,
+                    label: 'Bars to fetch',
+                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
+                    get: () => String(this.state.bars ?? 1000),
+                    set: (v: string) => {
+                        this.state.bars = Number(v);
+                        this.deps.onStateDirty();
+                        void this.inner?.setMarket({ bars: Math.max(this.state.bars, this.rangeBars) });
+                    },
+                },
+            ],
+        };
+        const watermarkSection = {
+            title: 'Watermark',
+            placement: 'symbol' as const,
+            rows: [
+                {
+                    kind: 'toggle' as const,
+                    label: 'Symbol watermark',
+                    get: () => this.watermarkOn,
+                    set: (v: boolean) => this.setWatermarkVisible(v),
+                },
+            ],
+        };
+        const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol' }> = [];
+        if (this.statusline) {
+            const sl = this.statusline;
+            sections.push({
+                title: 'Status line',
+                rows: [
+                    { kind: 'heading', label: 'Status line' },
+                    { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
+                    { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
+                    { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
+                    { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                    { kind: 'heading', label: 'Indicators' },
+                    {
+                        kind: 'toggle',
+                        label: 'Titles',
+                        get: () => this.indicatorTitlesOn,
+                        set: (v: boolean) => this.setIndicatorTitlesVisible(v),
+                    },
+                    {
+                        kind: 'toggle',
+                        label: 'Values',
+                        get: () => this.indicatorValuesOn,
+                        set: (v: boolean) => this.setIndicatorValuesVisible(v),
+                    },
+                ],
+            });
+        }
+        sections.push(advanced);
+        if (this.sessionAvailableFlag) sections.push(sessionSection);
+        sections.push(watermarkSection);
+        chart.renderer.setSettingsSections(sections);
     }
 
     /** Show/hide this cell's symbol watermark (persisted per cell). */
@@ -569,6 +637,7 @@ export class ChartCell {
         this.state.priceStyle = style;
         this.inner?.renderer.set('priceStyle', style);
         this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
+        this.deps.onPriceStyleChanged(this.id);
     }
 
     /** OHLC/change ink in the status line follows the ACTIVE price style's configured
@@ -821,6 +890,7 @@ export class ChartCell {
         this.contextMenu.destroy();
         this.history.destroy();
         this.marketStatus?.stop();
+        this.sessionShading.stop();
         this.statusline?.destroy();
         this.watermark?.destroy();
         this.inner?.destroy();

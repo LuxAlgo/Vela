@@ -790,10 +790,12 @@ export class Canvas2dBackend implements IRenderBackend {
         ctx.fillRect(x1, pane.bounds.top, x2 - x1, pane.bounds.height);
     }
 
-    /** Renderer-owned session highlight bands: full-height (all panes), behind grid + data. */
+    /** Renderer-owned session highlight bands: full-height (all panes), behind grid + data.
+     *  Session-zone washes (pre/post-market) paint first, host highlights on top. */
     private drawHighlights(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem): void {
-        if (scene.highlights.length === 0) return;
-        for (const band of scene.highlights) {
+        const bands = [...scene.sessionHighlightBands(), ...scene.highlights];
+        if (bands.length === 0) return;
+        for (const band of bands) {
             const x1 = coords.timeToX(band.from);
             const x2 = coords.timeToX(band.to);
             if (x2 < 0 || x1 > coords.width || x2 <= x1) continue;

@@ -20,6 +20,15 @@ export interface HighlightArea {
     color: string;
 }
 
+/** Pre/post-market time bands (the `sessionZones` feature): `[start, end)` epoch-ms
+ *  pairs a host derives from its market calendar. The renderer shades them with the
+ *  config's session colors (`ChartStyle.sessions`), behind grid + data — null means
+ *  the market has no session structure at all (continuous venues). */
+export interface SessionZones {
+    pre: ReadonlyArray<readonly [number, number]>;
+    post: ReadonlyArray<readonly [number, number]>;
+}
+
 /** Price-axis display mode: absolute price, percent change vs a visible baseline, or
  *  values indexed to 100 at that same baseline (`index = price / baseline * 100`). */
 export type ScaleMode = 'price' | 'percent' | 'indexed';
@@ -169,6 +178,8 @@ export class SceneGraph {
     tradeMarkers: TradeMarkersState = defaultTradeMarkersState();
     /** Renderer-owned shaded time bands (session highlighting), behind grid + data. */
     highlights: HighlightArea[] = [];
+    /** Pre/post-market bands pushed by the host (`sessionZones` feature); null ⇒ no sessions. */
+    sessionZones: SessionZones | null = null;
     /** Draw-order key of the price candles, relative to indicator series z (see `seriesZ`).
      *  Indicators with z below this draw BEHIND the candles; at/above draw in front.
      *  Default 0 with indicators mounting at z < 0 ⇒ the price reads on top of every overlay,
@@ -202,6 +213,16 @@ export class SceneGraph {
     orderedPanes(): PaneNode[] {
         if (!this.orderedCache) this.orderedCache = [...this.panes.values()].sort((a, b) => a.order - b.order);
         return this.orderedCache;
+    }
+
+    /** The session zones resolved into colored bands (pre/post-market washes from the
+     *  config's session colors) — consumed by the same painting path as {@link highlights}. */
+    sessionHighlightBands(): HighlightArea[] {
+        if (!this.sessionZones) return [];
+        const out: HighlightArea[] = [];
+        for (const [from, to] of this.sessionZones.pre) out.push({ from, to, color: this.style.sessions.premarketColor });
+        for (const [from, to] of this.sessionZones.post) out.push({ from, to, color: this.style.sessions.postmarketColor });
+        return out;
     }
 
     indicatorsForPane(paneId: string): IndicatorModel[] {

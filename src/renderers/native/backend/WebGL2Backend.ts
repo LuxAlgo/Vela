@@ -627,10 +627,12 @@ export class WebGL2Backend implements IRenderBackend {
         // Pane separators are drawn on the chrome layer (full-width, above the data), so nothing here.
     }
 
-    /** Renderer-owned session highlight bands, clipped per-pane (scissor reconstructs full height). */
+    /** Renderer-owned session highlight bands, clipped per-pane (scissor reconstructs full height).
+     *  Session-zone washes (pre/post-market) paint first, host highlights on top. */
     private emitHighlights(b: Batch, scene: SceneGraph, pane: PaneNode, coords: CoordinateSystem): void {
-        if (scene.highlights.length === 0) return;
-        for (const band of scene.highlights) {
+        const bands = [...scene.sessionHighlightBands(), ...scene.highlights];
+        if (bands.length === 0) return;
+        for (const band of bands) {
             const x1 = coords.timeToX(band.from);
             const x2 = coords.timeToX(band.to);
             if (x2 < 0 || x1 > coords.width || x2 <= x1) continue;

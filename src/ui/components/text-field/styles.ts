@@ -23,6 +23,9 @@ export const TEXT_CSS = `
     overflow: hidden;
     text-overflow: ellipsis;
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    /* Selectable even under a user-select:none host (chart wrapper, .vela-ui). */
+    user-select: text;
+    -webkit-user-select: text;
 }
 .vela-text-field:hover { border-color: var(--vela-fg-muted); }
 .vela-text-field:focus { border-color: var(--vela-focus); box-shadow: 0 0 0 3px var(--vela-focus-soft); }

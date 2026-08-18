@@ -1043,6 +1043,7 @@ export class VelaWorkspace {
                 context: () => this.context(),
                 activate: (id) => this.setActiveCell(id),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
+                onPriceStyleChanged: (id) => this.onCellPriceStyleChanged(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStateDirty: () => this.markStateDirty(),
                 manifestSettled: () => this.manifestSettled,
@@ -1385,6 +1386,17 @@ export class VelaWorkspace {
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
         this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
+    }
+
+    /** Trigger ② — a cell's price style changed: the topbar button/menu only if active.
+     *  Reads the cell back (not the requested style) so the button reflects what the
+     *  renderer actually applied. */
+    private onCellPriceStyleChanged(id: string): void {
+        this.markStateDirty();
+        if (id !== this.activeId) return;
+        const cell = this.cellsById.get(id);
+        if (!cell) return;
+        this.topbar.setPriceStyle(cell.priceStyle);
     }
 
     /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */
