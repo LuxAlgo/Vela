@@ -45,11 +45,13 @@ type ConfigPatch = Record<string, unknown>;
  */
 
 /** A host-contributed settings row: callback-based (the host owns the state).
- *  `heading` opens a titled group inside the tab (an in-pane section title). */
+ *  `heading` opens a titled group inside the tab (an in-pane section title);
+ *  `color` is a swatch opening the themed picker (any CSS color, alpha included). */
 export type HostSettingsRow =
     | { kind: 'heading'; label: string }
     | { kind: 'toggle'; label: string; get: () => boolean; set: (v: boolean) => void }
-    | { kind: 'select'; label: string; options: readonly string[]; get: () => string; set: (v: string) => void };
+    | { kind: 'select'; label: string; options: readonly string[]; get: () => string; set: (v: string) => void }
+    | { kind: 'color'; label: string; get: () => string; set: (v: string) => void };
 
 /** A host-contributed settings tab (see `RendererControl.setSettingsSections`). */
 export interface HostSettingsSection {
@@ -405,7 +407,8 @@ export class SettingsDialog {
                 for (const hr of hs.rows) {
                     if (hr.kind === 'heading') body.append(this.sectionTitle(hr.label));
                     else if (hr.kind === 'toggle') body.append(this.boolRow(hr.label, hr.get(), (v) => hr.set(v)));
-                    else body.append(this.selectRowLabeled(hr.label, hr.get() as string, hr.options.map((o) => [o, o] as const), (v) => hr.set(v)));
+                    else if (hr.kind === 'color') body.append(this.colorRow(hr.label, hr.get(), (v) => hr.set(v)));
+                    else body.append(this.selectRowLabeled(hr.label, hr.get(), hr.options.map((o) => [o, o] as const), (v) => hr.set(v)));
                 }
             }
         };

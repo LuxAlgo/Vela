@@ -459,6 +459,8 @@ export class InputsUI {
                 host: this.container,
                 items,
                 placement: 'bottom-start',
+                // Right-click action menu — checked state reads as a leading ✓ (see the kit Menu).
+                checkmarks: true,
                 onSelect: (itemId) => {
                     if (itemId !== 'values' || !this.rowMenuId) return;
                     const target = this.rows.get(this.rowMenuId);
@@ -689,6 +691,8 @@ export class InputsUI {
         // Status indicator (right of the title): pulsing load dots while fetching, a
         // pulse while live, hidden when idle. Lives next to the title — not the row's
         // far end — so the dots stay a title companion even before values arrive.
+        // While the row is open (hovered/selected) it trails the action cluster instead,
+        // so the buttons stay glued to the title (see syncRowActions).
         const statusEl = document.createElement('span');
         statusEl.style.cssText = 'display:none;box-sizing:border-box;flex:none;';
         // Title (+ optional "beta" exponent) wrapped so the superscript stays glued to the label and
@@ -893,6 +897,11 @@ export class InputsUI {
     private syncRowActions(row: LegendRow): void {
         const open = row.highlighted;
         row.controlsEl.style.display = open || row.hidden ? 'inline-flex' : 'none';
+        // The status indicator steps aside while the controls are out — moved after the
+        // action cluster (its title-side margin rides along) — and returns to the title's
+        // side when the row closes.
+        if (open) row.el.appendChild(row.statusEl);
+        else row.el.insertBefore(row.statusEl, row.valuesEl);
         for (const child of Array.from(row.controlsEl.children)) {
             if (!(child instanceof HTMLElement) || child === row.eyeEl) continue;
             if (child === row.extrasEl) {

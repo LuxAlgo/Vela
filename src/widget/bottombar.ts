@@ -168,9 +168,10 @@ export class Bottombar {
         const session = doc.createElement('span');
         session.className = 'vela-bb-session';
         this.sessionEl = session;
-        // Boots in the DISABLED posture (sessions only apply to markets that have them);
-        // the host enables it per active chart via `setSession` once symbol metadata lands.
-        session.title = 'Session — stocks & ETFs only';
+        // Boots HIDDEN (sessions only apply to markets that have them); the host reveals
+        // it per active chart via `setSession` once symbol metadata declares sessions.
+        session.style.display = 'none';
+        session.title = 'Session — regular (RTH) vs extended (ETH) hours';
         for (const [key, label] of [['regular', 'RTH'], ['extended', 'ETH']] as const) {
             const b = doc.createElement('button');
             b.className = 'vela-bb-session-btn' + (key === 'regular' ? ' is-active' : '');
@@ -226,15 +227,15 @@ export class Bottombar {
 
     /**
      * Reflect the ACTIVE chart's session posture. `enabled: false` (a continuous
-     * market, or metadata not landed yet) shows the disabled RTH-active stub — the
-     * pre-session-model look, byte-for-byte. Enabled, the chips become clickable and
-     * the active one tracks the chart's current session.
+     * market, or metadata not landed yet) HIDES the toggle entirely — RTH/ETH is
+     * meaningless there. Enabled, the chips appear and the active one tracks the
+     * chart's current session.
      */
     setSession(state: { session: 'regular' | 'extended'; enabled: boolean }): void {
-        if (this.sessionEl) this.sessionEl.title = state.enabled ? 'Session — regular (RTH) vs extended (ETH) hours' : 'Session — stocks & ETFs only';
+        if (this.sessionEl) this.sessionEl.style.display = state.enabled ? '' : 'none';
         for (const [key, b] of this.sessionButtons) {
             b.disabled = !state.enabled;
-            b.classList.toggle('is-active', state.enabled ? key === state.session : key === 'regular');
+            b.classList.toggle('is-active', key === (state.enabled ? state.session : 'regular'));
         }
     }
 

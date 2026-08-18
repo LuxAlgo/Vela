@@ -16,8 +16,9 @@ export interface ChromeTooltipOptions {
     text: () => string;
     /** Hover delay before the tip opens. Default 700 ms. */
     delayMs?: number;
-    /** `below` the anchor (legend rows) or to its `right` (a vertical toolbar). Default below. */
-    placement?: 'below' | 'right';
+    /** `below` the anchor (legend rows), to its `right` (a vertical toolbar), or `above`
+     *  (controls sitting on the bottom edge). Default below. */
+    placement?: 'below' | 'right' | 'above';
     /** Allow wrapping (long texts, e.g. an input's docs). Default false — one line. */
     wrap?: boolean;
 }
@@ -63,10 +64,13 @@ export function attachChromeTooltip(anchor: HTMLElement, opts: ChromeTooltipOpti
             tip.style.left = `${a.right - h.left + 8}px`;
             tip.style.top = `${a.top - h.top + (a.height - tip.offsetHeight) / 2}px`;
         } else {
-            // Below the anchor, left-aligned, clamped so it never spills out of the host.
+            // Left-aligned, clamped so it never spills out of the host. `above` is for
+            // anchors sitting on the bottom edge (the A/L scale buttons).
             const left = Math.min(a.left - h.left, Math.max(0, h.width - tip.offsetWidth - 4));
             tip.style.left = `${Math.max(0, left)}px`;
-            tip.style.top = `${a.bottom - h.top + 6}px`;
+            tip.style.top = opts.placement === 'above'
+                ? `${Math.max(0, a.top - h.top - tip.offsetHeight - 6)}px`
+                : `${a.bottom - h.top + 6}px`;
         }
     };
 
