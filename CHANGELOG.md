@@ -2,7 +2,8 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+
+## [v0.6.4]
 
 ### Added
 
@@ -13,9 +14,6 @@ All notable changes to Vela, newest first.
   the governing toggle and the dependent rows appear or disappear in place, group
   headings and tabs whose inputs are all hidden leave with them, and a hidden input
   keeps its value for when it comes back.
-## [v0.6.3]
-
-### Added
 
 - **Auto and Log toggles on the price scale.** Hovering a price scale now reveals
   two small buttons at its bottom — **A** for autoscale and **L** for the
@@ -63,6 +61,16 @@ All notable changes to Vela, newest first.
   forwarding used to light up and activate the control from its title) — only
   the input itself is interactive. Titles keep naming their control for
   assistive tech via `aria-labelledby`.
+
+- **The workspace toolbar follows chart-style changes.** In a multi-chart
+  workspace, changing the active chart's style now updates the toolbar's style
+  button and its menu checkmark immediately — previously they refreshed only
+  when the active chart changed, so the button kept showing the old style's
+  icon.
+- **The timeframe button no longer looks stuck pressed.** Without favorite
+  timeframes, the compact timeframe trigger drew a permanent highlight
+  background. It now highlights on hover only, like the buttons around it; the
+  in-place highlight still marks the current timeframe among favorite chips.
 
 ## [v0.6.2]
 

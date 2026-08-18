@@ -137,6 +137,8 @@ export interface CellDeps {
     activate(id: string): void;
     /** The cell's market changed in place (chrome/retention refresh upstream). */
     onMarketChanged(id: string): void;
+    /** The cell's price style changed in place (topbar icon/menu refresh upstream). */
+    onPriceStyleChanged(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** Persistable per-cell state changed outside the market/indicator channels
@@ -635,6 +637,7 @@ export class ChartCell {
         this.state.priceStyle = style;
         this.inner?.renderer.set('priceStyle', style);
         this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
+        this.deps.onPriceStyleChanged(this.id);
     }
 
     /** OHLC/change ink in the status line follows the ACTIVE price style's configured
