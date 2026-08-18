@@ -160,6 +160,18 @@ describe('filterSymbols', () => {
         expect(filterSymbols(list, 'USDT', 2)).toHaveLength(2);
     });
 
+    it('a grown limit yields a stable SUPERSET — the picker appends pages without reshuffling', () => {
+        // The infinite-scroll contract: re-running with a larger limit must keep the smaller
+        // result as its exact prefix, for every query shape (empty, ranked search, scoped).
+        const wide = Array.from({ length: 250 }, (_, i) => ({ ticker: `AA${String(i).padStart(3, '0')}`, description: `Issue ${i}`, provider: 'edgx' }));
+        for (const q of ['', 'AA', 'Issue', 'edgx:']) {
+            const small = filterSymbols(wide, q, 100).map((s) => s.ticker);
+            const big = filterSymbols(wide, q, 200).map((s) => s.ticker);
+            expect(big.slice(0, small.length)).toEqual(small);
+            expect(big.length).toBeGreaterThan(small.length);
+        }
+    });
+
     describe('venue-aware search', () => {
         const venues = [
             { ticker: 'BTCUSDT', description: 'Bitcoin / TetherUS', provider: 'binance' },

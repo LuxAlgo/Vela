@@ -3,6 +3,18 @@
 All notable changes to Vela, newest first.
 
 
+## [Unreleased]
+
+### Fixed
+
+- **The symbol picker browses past its first page.** The search dialog's list was
+  hard-capped at 100 rows with no way to load more — on a 13k-symbol venue (US
+  equities) the Stocks tab stopped mid-alphabet and everything beyond needed an
+  explicit search. Scrolling near the bottom now loads the next 100 rows in place,
+  repeatedly, until the pool is exhausted; the rows already on screen never
+  reshuffle, and a new query or tab starts back at one page.
+
+
 ## [v0.6.4]
 
 ### Added
