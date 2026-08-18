@@ -29,6 +29,7 @@ import type { Unsubscribe } from '../../core/util/types';
 import { isLineLikeSeries } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
+import { AxisScaleButtons, type AxisScaleView } from './chrome/AxisScaleButtons';
 import { TableOverlay } from '../shared/TableOverlay';
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
@@ -37,7 +38,7 @@ import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from './core
 import { Animator, easeToward } from './core/Animator';
 import { InputController } from './core/InputController';
 import { KeyboardController } from './core/KeyboardController';
-import { SceneGraph, paneLogScale, paneScaleMode, paneInvert, type PaneNode, type HighlightArea, type ScaleMode } from './core/SceneGraph';
+import { SceneGraph, paneLogScale, paneScaleMode, paneInvert, type PaneNode, type HighlightArea, type SessionZones, type ScaleMode } from './core/SceneGraph';
 import { clampBarSpacing, defaultViewport, MIN_BAR_SPACING, MAX_BAR_SPACING, type ViewportState } from './core/ViewportState';
 import { Canvas2dBackend } from './backend/Canvas2dBackend';
 import type { IRenderBackend } from './backend/IRenderBackend';
@@ -244,6 +245,7 @@ export class NativeRenderer implements IChartRenderer {
     private maximizedPaneId: string | null = null; // pane filling the plot (others hidden), or null
     private rightAxisW = RIGHT_AXIS_W; // total right-gutter width (master column + merged-scale columns)
     private paneControls: PaneControls | null = null; // per-pane hover button cluster (top-right)
+    private axisScaleButtons: AxisScaleButtons | null = null; // A/L hover buttons at the bottom of each pane's price scale
     private readonly paneActionCbs = new Set<(a: PaneAction) => void>();
 
     // ── data window (crosshair OHLC + per-series readout, pulled by host panels) ──
@@ -309,7 +311,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -380,6 +382,11 @@ export class NativeRenderer implements IChartRenderer {
                 break;
             case 'highlights':
                 this.scene.highlights = sanitizeHighlights(value);
+                break;
+            case 'sessionZones':
+                // Pre/post-market bands from the host's market calendar; painted with the
+                // config's session colors. Null ⇒ the market has no session structure.
+                this.scene.sessionZones = sanitizeSessionZones(value);
                 break;
             case 'gridlines':
                 this.scene.showGrid = Boolean(value);
@@ -492,6 +499,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'candleVisible': return !this.scene.candlesHidden;
             case 'seriesOrder': return this.scene.indicatorZOrder();
             case 'highlights': return this.scene.highlights;
+            case 'sessionZones': return this.scene.sessionZones;
             case 'gridlines': return this.scene.showGrid;
             case 'axisLabels': return this.scene.showAxisLabels;
             case 'scaleMode': return this.scene.scaleMode;
@@ -700,6 +708,7 @@ export class NativeRenderer implements IChartRenderer {
                 };
             })(),
             series: { style: this.scene.priceStyle, baseline: this.scene.baselineValue, spacing: this.coords.spacingScale },
+            sessions: { premarketColor: s.sessions.premarketColor, postmarketColor: s.sessions.postmarketColor },
         };
     }
 
@@ -813,6 +822,8 @@ export class NativeRenderer implements IChartRenderer {
             width: next.baseline.width,
             baselineLevel: next.baseline.baselineLevel,
         };
+        // session shading
+        s.sessions = { premarketColor: next.sessions.premarketColor, postmarketColor: next.sessions.postmarketColor };
         // series
         this.setPriceStyle(next.series.style);
         // Re-read the active style's candle override: setPriceStyle no-ops when the style
@@ -834,6 +845,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.inputsUI?.setTheme(this.theme);
         this.paneControls?.setTheme(this.theme);
+        this.axisScaleButtons?.setTheme(this.theme);
         // Re-theme the docked drawing toolbar on the STABLE chrome surface, so editing the
         // plot background (layout.background) never bleeds into the toolbar.
         this.userDrawings?.setTheme(this.chromeTheme());
@@ -1226,7 +1238,9 @@ export class NativeRenderer implements IChartRenderer {
         this.surfaceTextColor = theme.textColor;
 
         this.wrapper = document.createElement('div');
-        Object.assign(this.wrapper.style, { position: 'relative', width: '100%', height: '100%', overflow: 'hidden', cursor: 'crosshair' });
+        // user-select none: in-chart chrome text (legend, dialogs, axis buttons) is UI,
+        // never selectable — the kit's text-entry controls opt back in in their own CSS.
+        Object.assign(this.wrapper.style, { position: 'relative', width: '100%', height: '100%', overflow: 'hidden', cursor: 'crosshair', userSelect: 'none', webkitUserSelect: 'none' });
         // Every DOM overlay below is a descendant, so the chrome tokens land once here.
         applyChromeTokens(this.wrapper, this.chromeTheme());
 
@@ -1440,6 +1454,16 @@ export class NativeRenderer implements IChartRenderer {
             },
         });
 
+        this.axisScaleButtons = new AxisScaleButtons(this.plot, theme, {
+            panes: () => this.axisScaleViews(),
+            rightAxis: () => this.rightAxisW,
+            onToggleAuto: (paneId) => this.togglePaneAuto(paneId),
+            onToggleLog: (paneId) => {
+                const pane = this.scene.panes.get(paneId);
+                if (pane) this.setPaneLog(paneId, !paneLogScale(this.scene, pane));
+            },
+        });
+
         this.resizeObserver = new ResizeObserver(() => this.resize());
         this.resizeObserver.observe(this.wrapper);
         this.watchDpr();
@@ -1527,6 +1551,7 @@ export class NativeRenderer implements IChartRenderer {
         this.applyBackground();
         this.inputsUI.setTheme(theme);
         this.paneControls?.setTheme(this.theme);
+        this.axisScaleButtons?.setTheme(this.theme);
         // An open dialog rebuilds on setTheme — hand it the re-based config + the new
         // current of its Theme row first, so the rebuilt controls show live values.
         this.settingsDialog?.refreshConfig(this.getConfig());
@@ -1577,6 +1602,7 @@ export class NativeRenderer implements IChartRenderer {
         this.liveRegion = null;
         this.inputsUI?.destroy();
         this.paneControls?.destroy();
+        this.axisScaleButtons?.destroy();
         for (const overlay of this.tableOverlays.values()) overlay.destroy();
         this.tableOverlays.clear();
         this.resizeObserver?.disconnect();
@@ -3225,6 +3251,27 @@ export class NativeRenderer implements IChartRenderer {
         }));
     }
 
+    /** Thin projection of the panes for the axis A/L hover buttons (top-to-bottom order). */
+    private axisScaleViews(): AxisScaleView[] {
+        return this.scene.orderedPanes().map((p) => ({
+            id: p.id,
+            top: p.bounds.top,
+            height: p.bounds.height,
+            collapsed: p.collapsed,
+            auto: p.manualScale == null,
+            log: paneLogScale(this.scene, p),
+        }));
+    }
+
+    /** Toggle one pane's autoscale (the A axis button): off freezes the current window into
+     *  manual mode, on drops it — the per-pane twin of the chart-level `autoScale` feature. */
+    private togglePaneAuto(paneId: string): void {
+        const pane = this.scene.panes.get(paneId);
+        if (!pane) return;
+        pane.manualScale = pane.manualScale == null ? { ...pane.scale } : null;
+        this.scheduler?.invalidate(InvalidateLevel.Full);
+    }
+
     /** Set one pane's axis mode. The price pane routes to the scene-level setting (persisted +
      *  keyboard shortcuts); a study pane keeps its own, so panes never affect each other. */
     private setPaneScaleMode(paneId: string, mode: ScaleMode): void {
@@ -3237,19 +3284,20 @@ export class NativeRenderer implements IChartRenderer {
         this.scheduler?.invalidate(InvalidateLevel.Full);
     }
 
-    /** Set one pane's logarithmic flag. Clears that pane's frozen (manual) window so the new
-     *  space re-fits, and routes the price pane to the scene-level flag. */
+    /** Set one pane's logarithmic flag; the price pane routes to the scene-level flag.
+     *  Log and auto are INDEPENDENT: a frozen (manual) window is kept — its price bounds
+     *  stay put and only its `log` tag flips, so the same range re-renders in the new
+     *  space instead of snapping back to autoscale. */
     private setPaneLog(paneId: string, log: boolean): void {
-        if (paneId === PRICE_PANE_ID) {
-            this.scene.logScale = log;
-            const price = this.scene.orderedPanes().find((p) => p.kind === 'price');
-            if (price) price.manualScale = null;
-        } else {
-            const p = this.scene.panes.get(paneId);
-            if (!p) return;
-            p.logScale = log;
-            p.manualScale = null;
+        const pane = paneId === PRICE_PANE_ID
+            ? this.scene.orderedPanes().find((p) => p.kind === 'price')
+            : this.scene.panes.get(paneId);
+        if (paneId === PRICE_PANE_ID) this.scene.logScale = log;
+        else {
+            if (!pane) return;
+            pane.logScale = log;
         }
+        if (pane?.manualScale) pane.manualScale.log = log;
         this.scheduler?.invalidate(InvalidateLevel.Full);
     }
 
@@ -3354,6 +3402,7 @@ export class NativeRenderer implements IChartRenderer {
             }
             this.inputsUI?.reposition();
             this.paneControls?.reposition();
+            this.axisScaleButtons?.reposition();
             this.repositionScrollButton();
             this.positionAttribution();
             this.publishPricePaneBounds();
@@ -3373,6 +3422,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.inputsUI?.reposition(); // keep each pane's legend pinned to its pane top
         this.paneControls?.reposition();
+        this.axisScaleButtons?.reposition();
         this.repositionScrollButton();
         this.positionAttribution(); // the mark follows the lowest open pane's bottom edge
         this.publishPricePaneBounds();
@@ -3625,6 +3675,24 @@ function sanitizeHighlights(value: unknown): HighlightArea[] {
         out.push({ from, to, color: typeof r.color === 'string' ? r.color : 'rgba(120,130,160,0.10)' });
     }
     return out.sort((a, b) => a.from - b.from);
+}
+
+/** Coerce arbitrary input into clean pre/post session bands, or null (no session structure). */
+function sanitizeSessionZones(value: unknown): SessionZones | null {
+    if (value == null || typeof value !== 'object') return null;
+    const v = value as { pre?: unknown; post?: unknown };
+    const windows = (raw: unknown): Array<readonly [number, number]> => {
+        if (!Array.isArray(raw)) return [];
+        const out: Array<readonly [number, number]> = [];
+        for (const w of raw) {
+            if (!Array.isArray(w)) continue;
+            const from = Number(w[0]);
+            const to = Number(w[1]);
+            if (Number.isFinite(from) && Number.isFinite(to) && to > from) out.push([from, to]);
+        }
+        return out.sort((a, b) => a[0] - b[0]);
+    };
+    return { pre: windows(v.pre), post: windows(v.post) };
 }
 
 /** Whether a value is one of the supported price-series styles (built-ins + SDK-registered). */

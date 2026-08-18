@@ -1,4 +1,4 @@
-import type { InputSchema, InputValue, SymbolPickerFn } from '../../core/model/inputs';
+import { inputVisible, type InputSchema, type InputValue, type SymbolPickerFn } from '../../core/model/inputs';
 import type { VelaTheme } from '../../core/options';
 import { isDarkColor } from '../../core/color';
 import { iconAt } from '../../core/icons';
@@ -49,6 +49,8 @@ export class IndicatorInputsDialog {
     private row: IndicatorDialogRow | null = null;
     private snapshot: Record<string, InputValue> | null = null;
     private dialogTips: Array<() => void> = [];
+    /** Re-applies every `when` gate against current values; set while the dialog is open. */
+    private refreshVisibility: (() => void) | null = null;
     private choicePop: Popover | null = null;
     private calendarPop: Popover | null = null;
     private calendarAnchor: HTMLElement | null = null;
@@ -112,14 +114,17 @@ export class IndicatorInputsDialog {
         tabs.style.cssText = `display:flex;gap:12px;padding:0 20px;border-bottom:1px solid ${border};flex:0 0 auto;`;
         const tabEls: HTMLElement[] = [];
         const bodies: HTMLElement[] = [];
+        const gates: VisibilityGate[] = [];
+        let active = 0;
         const activate = (idx: number): void => {
+            active = idx;
             for (let i = 0; i < tabEls.length; i += 1) {
-                const active = i === idx;
+                const on = i === idx;
                 const el = tabEls[i]!;
-                el.style.borderBottomColor = active ? fg : 'transparent';
-                el.style.color = active ? 'inherit' : 'var(--vela-fg-muted)';
-                el.classList.toggle('vela-ind-tab-active', active);
-                bodies[i]!.style.display = active ? 'grid' : 'none';
+                el.style.borderBottomColor = on ? fg : 'transparent';
+                el.style.color = on ? 'inherit' : 'var(--vela-fg-muted)';
+                el.classList.toggle('vela-ind-tab-active', on);
+                bodies[i]!.style.display = on ? 'grid' : 'none';
             }
         };
         for (const [idx, def] of tabDefs.entries()) {
@@ -130,11 +135,27 @@ export class IndicatorInputsDialog {
             tab.addEventListener('click', () => activate(idx));
             tabs.appendChild(tab);
             tabEls.push(tab);
-            bodies.push(this.buildTabBody(def.inputs, row));
+            bodies.push(this.buildTabBody(def.inputs, row, gates));
+            // The strip label leaves only when every input on the tab is gated out —
+            // possible only when all of them carry a `when`.
+            if (def.inputs.every((d) => d.when)) {
+                gates.push({ el: tab, visible: (bag) => def.inputs.some((d) => inputVisible(d.when, bag)) });
+            }
         }
         ui.body.appendChild(tabs);
         for (const b of bodies) ui.body.appendChild(b);
         activate(0);
+        const refresh = (): void => {
+            const bag = valuesBag(row);
+            for (const g of gates) g.el.style.display = g.visible(bag) ? '' : 'none';
+            // An edit that gates the ACTIVE tab out lands the user on the first live one.
+            if (tabEls[active]?.style.display === 'none') {
+                const next = tabEls.findIndex((el) => el.style.display !== 'none');
+                if (next >= 0) activate(next);
+            }
+        };
+        this.refreshVisibility = refresh;
+        refresh();
 
         const onBackdropDown = (e: Event): void => {
             if (e.target !== ui.backdrop && e.target !== ui.positioner) return;
@@ -158,7 +179,7 @@ export class IndicatorInputsDialog {
 
     /** One tab's scrollable body — one shared grid so every group's controls share a
      *  left edge (a 100px number field lines up with a wider session/time pair). */
-    private buildTabBody(inputs: InputSchema[], row: IndicatorDialogRow): HTMLElement {
+    private buildTabBody(inputs: InputSchema[], row: IndicatorDialogRow, gates: VisibilityGate[]): HTMLElement {
         const body = document.createElement('div');
         // `display:contents` on each group lets headers + rows participate in this
         // one grid; per-section grids would each pick their own control-column width.
@@ -173,10 +194,22 @@ export class IndicatorInputsDialog {
         for (const group of groupInputs(inputs)) {
             const section = document.createElement('div');
             section.style.cssText = 'display:contents;';
+            let header: HTMLElement | null = null;
             if (group.name) {
-                section.appendChild(fieldSection(group.name, { variant: 'inputs', first: body.childElementCount === 0 }));
+                header = fieldSection(group.name, { variant: 'inputs', first: body.childElementCount === 0 });
+                section.appendChild(header);
             }
-            for (const inputRow of group.rows) this.buildInputRow(section, inputRow, row);
+            for (const inputRow of group.rows) {
+                const el = this.buildInputRow(section, inputRow, row);
+                if (inputRow.some((d) => d.when)) {
+                    gates.push({ el, visible: (bag) => rowVisible(inputRow, bag) });
+                }
+            }
+            // The heading follows its rows out only when every row can actually hide.
+            if (header && group.rows.every((r) => r.every((d) => d.when))) {
+                const rows = group.rows;
+                gates.push({ el: header, visible: (bag) => rows.some((r) => rowVisible(r, bag)) });
+            }
             body.appendChild(section);
         }
         return body;
@@ -185,6 +218,7 @@ export class IndicatorInputsDialog {
     close(): void {
         document.removeEventListener('keydown', this.onDialogKey);
         closeOpenPopovers();
+        this.refreshVisibility = null;
         this.choicePop = null;
         this.calendarPop = null;
         this.calendarAnchor = null;
@@ -216,12 +250,23 @@ export class IndicatorInputsDialog {
         this.close();
     }
 
+    /** Write one edit through: store it, notify the host, and re-apply the `when` gates. */
+    private commit(row: IndicatorDialogRow, key: string, value: InputValue): void {
+        row.values[key] = value;
+        this.host.onChange?.({ indicatorId: row.id, key, value });
+        this.refreshVisibility?.();
+    }
+
     /** One settings row (or several `inline=` inputs) placed into a section's grid. */
-    private buildInputRow(grid: HTMLElement, decls: InputSchema[], row: IndicatorDialogRow): void {
+    private buildInputRow(grid: HTMLElement, decls: InputSchema[], row: IndicatorDialogRow): HTMLElement {
         const idOf = (inp: InputSchema): string => `vela-inp-${row.id}-${inp.key}`;
+        const append = (el: HTMLElement): HTMLElement => {
+            grid.appendChild(el);
+            return el;
+        };
 
         if (decls.length > 1) {
-            grid.appendChild(fieldRow({
+            return append(fieldRow({
                 label: '',
                 inline: decls.map((d) => ({
                     label: nameOf(d) || undefined,
@@ -234,7 +279,6 @@ export class IndicatorInputsDialog {
                     ? this.infoButton([...decls].reverse().find((d) => d.tooltip)!.tooltip!)
                     : undefined,
             }));
-            return;
         }
 
         const lead = decls[0]!;
@@ -243,7 +287,7 @@ export class IndicatorInputsDialog {
 
         if (lead.type === 'bool') {
             const current = Boolean(row.values[lead.key] ?? lead.defval);
-            grid.appendChild(fieldRow({
+            return append(fieldRow({
                 label: nameOf(lead),
                 id,
                 bool: true,
@@ -251,28 +295,23 @@ export class IndicatorInputsDialog {
                 toggle: {
                     id,
                     checked: current,
-                    onChange: (v) => {
-                        row.values[lead.key] = v;
-                        this.host.onChange?.({ indicatorId: row.id, key: lead.key, value: v });
-                    },
+                    onChange: (v) => this.commit(row, lead.key, v),
                 },
             }));
-            return;
         }
 
         if (lead.type === 'text_area') {
-            grid.appendChild(fieldRow({
+            return append(fieldRow({
                 label: nameOf(lead),
                 id,
                 stacked: true,
                 info,
                 control: this.buildControl(row, lead, id),
             }));
-            return;
         }
 
         const fit = lead.type === 'color' || lead.type === 'session' || lead.type === 'time';
-        grid.appendChild(fieldRow({
+        return append(fieldRow({
             label: nameOf(lead),
             id,
             fit,
@@ -285,10 +324,7 @@ export class IndicatorInputsDialog {
     /** Build the typed control for one input, committing edits live via `onChange`. */
     private buildControl(row: IndicatorDialogRow, inp: InputSchema, id: string): HTMLElement {
         const current = row.values[inp.key] ?? inp.defval;
-        const emit = (value: InputValue): void => {
-            row.values[inp.key] = value;
-            this.host.onChange?.({ indicatorId: row.id, key: inp.key, value });
-        };
+        const emit = (value: InputValue): void => this.commit(row, inp.key, value);
 
         if (inp.type === 'bool') {
             return buildFieldControl({ kind: 'switch', id, checked: Boolean(current), onChange: (v) => emit(v) }).el;
@@ -728,6 +764,24 @@ export function tabInputs(inputs: InputSchema[]): InputTab[] {
         names.unshift(DEFAULT_INPUT_TAB);
     }
     return names.map((name) => ({ name, inputs: byTab.get(name)! }));
+}
+
+/** A dialog element shown only while `visible(bag)` holds — a gated row, group heading, or tab label. */
+interface VisibilityGate {
+    el: HTMLElement;
+    visible: (bag: Record<string, InputValue>) => boolean;
+}
+
+/** A row shows while ANY of its `inline=` members' gates pass (a member with no gate always passes). */
+function rowVisible(decls: InputSchema[], bag: Record<string, InputValue>): boolean {
+    return decls.some((d) => inputVisible(d.when, bag));
+}
+
+/** Current values resolved for gate evaluation: the stored value, else the input's `defval`. */
+function valuesBag(row: IndicatorDialogRow): Record<string, InputValue> {
+    const bag: Record<string, InputValue> = {};
+    for (const inp of row.inputs) bag[inp.key] = row.values[inp.key] ?? inp.defval;
+    return bag;
 }
 
 interface InputGroup {

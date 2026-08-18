@@ -55,6 +55,9 @@ export class ChartContextMenu {
             host,
             items: [],
             placement: 'bottom-start',
+            // Pointer-anchored action menu: checked state reads as a leading ✓, not a
+            // washed row (which would read as hover in a menu with no trigger button).
+            checkmarks: true,
             onSelect: (id) => this.run(id),
         });
         host.addEventListener('contextmenu', this.onContextMenu);

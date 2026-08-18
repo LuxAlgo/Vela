@@ -13,7 +13,8 @@ export interface MenuItemDescriptor {
     /** Right-aligned hint (e.g. a shortcut display from KeymapManager). */
     hint?: string;
     /** Selected state (undefined = plain item). A plain checked item renders as a
-     *  highlighted row (brighter surface + bright ink). */
+     *  highlighted row (brighter surface + bright ink) — or, in a menu built with
+     *  `checkmarks`, as a leading ✓ with the row surface left free for hover. */
     checked?: boolean;
     /** Render as a SWITCH row (a right-aligned toggle pill reflecting `checked`)
      *  instead of the selected-row highlight, and keep the menu OPEN on selection —

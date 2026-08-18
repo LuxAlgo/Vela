@@ -22,6 +22,9 @@ const CSS = `
     letter-spacing: 0.08em;
 }
 .vela-dw-group:first-child { border-top: none; margin-top: 0; padding-top: 8px; }
+/* The readout is DATA, not chrome: selectable (an exception to the UI-wide
+   user-select:none) so values can be copied out. The panel header stays chrome. */
+.vela-dw-group, .vela-dw-row { user-select: text; -webkit-user-select: text; cursor: text; }
 .vela-dw-row {
     display: flex;
     align-items: center;

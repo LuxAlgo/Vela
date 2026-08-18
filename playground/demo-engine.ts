@@ -163,8 +163,21 @@ function parseProgram(source: string): Program {
                 prog.overlay = tail !== 'false';
                 break;
             case 'input': {
+                // A bar-source default (`input source = close`) declares a dropdown over
+                // the sources; anything else must be numeric.
+                const src = /^(\w+)\s*=\s*([a-z]\w*)$/.exec(tail);
+                if (src && src[2]! in SOURCES) {
+                    prog.inputs.push({
+                        key: src[1]!,
+                        title: src[1]!,
+                        type: 'string',
+                        defval: src[2]!,
+                        options: Object.keys(SOURCES),
+                    });
+                    break;
+                }
                 const m = /^(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/.exec(tail);
-                if (!m) throw new Error(`bad input declaration: "${line}" (expected: input name = number)`);
+                if (!m) throw new Error(`bad input declaration: "${line}" (expected: input name = number|source)`);
                 const defval = Number(m[2]);
                 prog.inputs.push({
                     key: m[1]!,
@@ -243,6 +256,7 @@ function evaluate(node: Node, bars: OHLCV[], inputs: Record<string, InputValue>)
             if (src) return bars.map(src);
             const iv = inputs[node.name];
             if (typeof iv === 'number') return iv;
+            if (typeof iv === 'string' && SOURCES[iv]) return bars.map(SOURCES[iv]!);
             throw new Error(`unknown name "${node.name}"`);
         }
         case 'bin': {
@@ -423,7 +437,8 @@ export const DEMO_SCRIPTS = {
     ema: `title    EMA 20
 overlay  true
 input    length = 20
-plot     ema(close, length) "EMA" #f0b90b width=2`,
+input    source = close
+plot     ema(source, length) "EMA" #f0b90b width=2`,
     bands: `title    Bollinger Bands
 overlay  true
 input    length = 20

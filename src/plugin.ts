@@ -131,6 +131,8 @@ export type * from './core/model';
 // Series ids must come from `stableSeriesId` so renderer reconciliation and persisted
 // per-series settings survive re-runs identically whichever engine produced the series.
 export { stableSeriesId } from './core/model';
+// Evaluate an input's `when` gate the way the settings dialog does (host-built inputs UIs).
+export { inputVisible } from './core/model';
 // The semantic palette (fixed brand/meaning colors, never theme-dependent) so plugin
 // output — default plot colors, layer inks — matches core affordances exactly.
 export * from './core/palette';
