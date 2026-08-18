@@ -1,7 +1,8 @@
 export type { Millis } from './time';
 export type { OHLCV } from './ohlcv';
 
-export type { InputType, InputValue, InputSchema } from './inputs';
+export type { InputType, InputValue, InputSchema, InputCondition, InputWhen } from './inputs';
+export { inputVisible } from './inputs';
 export type {
     LineLikeKind,
     SeriesKind,

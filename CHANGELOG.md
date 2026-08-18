@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Indicator inputs that show only when they matter.** An indicator input can now
+  declare a condition on another input's current value (a toggle being on, a dropdown
+  sitting on one choice or any of several), and its row appears in the settings dialog
+  only while that condition holds. The dialog re-evaluates live on every edit — flip
+  the governing toggle and the dependent rows appear or disappear in place, group
+  headings and tabs whose inputs are all hidden leave with them, and a hidden input
+  keeps its value for when it comes back.
 ## [v0.6.3]
 
 ### Added
