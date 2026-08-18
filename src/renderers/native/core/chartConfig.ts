@@ -1,7 +1,7 @@
 import type { LineStyle } from '../../../core/model/series';
 import { chartTypes, settingsRowValueKeys, type SettingsRowDescriptor } from '../../../chart-types/registry';
 import { withAlpha } from '../../../core/color';
-import { BEARISH, BULLISH, CROSSHAIR, SERIES_LINE, SLATE } from '../../../core/palette';
+import { ACCENT, BEARISH, BULLISH, CROSSHAIR, SERIES_LINE, SLATE, WARNING } from '../../../core/palette';
 import type { PriceStyle } from '../../../core/options';
 import type { ScaleMode } from './SceneGraph';
 
@@ -121,6 +121,17 @@ export interface BaselineSeriesStyle {
     baselineLevel: number;
 }
 
+/** Session-zone shading (the `sessionZones` feature): the wash painted over
+ *  pre-market and post-market time bands. Alpha belongs in the color itself. */
+export interface SessionShadeStyle {
+    premarketColor: string;
+    postmarketColor: string;
+}
+
+/** Default session washes — faint enough to sit behind candles and gridlines. */
+export const PREMARKET_SHADE = withAlpha(WARNING, 0.08);
+export const POSTMARKET_SHADE = withAlpha(ACCENT, 0.08);
+
 export interface ChartStyle {
     /** Per-chart-type settings (plugin SDK sections), keyed by type id then row key. */
     chartTypes: Record<string, Record<string, unknown>>;
@@ -138,6 +149,7 @@ export interface ChartStyle {
     line: LineSeriesStyle;
     area: AreaSeriesStyle;
     baseline: BaselineSeriesStyle;
+    sessions: SessionShadeStyle;
 }
 
 /** A fresh live style store with every value at its "inherit / current behavior" default. */
@@ -172,6 +184,7 @@ export function defaultChartStyle(): ChartStyle {
             width: 2,
             baselineLevel: BASELINE_LEVEL_DEFAULT,
         },
+        sessions: { premarketColor: PREMARKET_SHADE, postmarketColor: POSTMARKET_SHADE },
     };
 }
 
@@ -271,6 +284,12 @@ export interface ChartConfig {
         /** Spacing multiplier for non-connecting styles (candles/bars/HA/plugin types): scales the
          *  center-to-center pitch (and the crosshair step) without changing body width. 1 = default. */
         spacing: number;
+    };
+    /** Session-zone shading — the washes painted over the pre/post-market bands a host
+     *  pushes through the `sessionZones` feature (no bands ⇒ the colors are dormant). */
+    sessions: {
+        premarketColor: string;
+        postmarketColor: string;
     };
     /** Draw-order keys — what paints in front of what. The candles' own key plus one per
      *  indicator id; user drawings persist their keys in the drawings document, in the same
@@ -505,6 +524,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const area = asObject(p.area);
     const baseline = asObject(p.baseline);
     const series = asObject(p.series);
+    const sessions = asObject(p.sessions);
     const stacking = asObject(p.stacking);
     const stackSeries = asObject(stacking.series);
 
@@ -597,6 +617,10 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             style: isPriceStyle(series.style) ? series.style : base.series.style,
             baseline: series.baseline === null ? null : isNum(series.baseline) ? series.baseline : base.series.baseline,
             spacing: isNum(series.spacing) ? clampSpacing(series.spacing) : base.series.spacing,
+        },
+        sessions: {
+            premarketColor: isColor(sessions.premarketColor) ? sessions.premarketColor : base.sessions.premarketColor,
+            postmarketColor: isColor(sessions.postmarketColor) ? sessions.postmarketColor : base.sessions.postmarketColor,
         },
         stacking: {
             candles: isNum(stacking.candles) ? stacking.candles : base.stacking.candles,

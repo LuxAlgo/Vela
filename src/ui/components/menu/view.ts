@@ -21,6 +21,13 @@ export interface MenuOptions extends MenuControllerOptions {
     /** Star-toggle reports from items carrying `favorite` (the menu stays open — starring
      *  is a side action on a row, never a selection). */
     onFavorite?: (id: string, on: boolean) => void;
+    /** Mark checked items with a leading ✓ instead of the selected-row background wash —
+     *  the shape for pointer-anchored action menus (right-click context menus), where a
+     *  washed row reads as hover state. A level holding checkable rows reserves the mark
+     *  column on all its rows so labels align; an all-action level keeps its natural left
+     *  edge. Submenus inherit the mode. Dropdown menus (a trigger button opening a
+     *  picker) keep the default wash. */
+    checkmarks?: boolean;
 }
 
 interface SurfaceOptions {
@@ -33,6 +40,7 @@ interface SurfaceOptions {
     id?: string;
     minWidth?: string;
     onFavorite?: (id: string, on: boolean) => void;
+    checkmarks?: boolean;
 }
 
 /**
@@ -50,6 +58,7 @@ class Surface {
     private readonly host: HTMLElement;
     private readonly onSelect: (id: string) => void;
     private readonly onFavorite?: (id: string, on: boolean) => void;
+    private readonly checkmarks: boolean;
     private items: readonly MenuItemDescriptor[] = [];
     /** Branch item id → the surface it opens. */
     private readonly subs = new Map<string, Surface>();
@@ -62,6 +71,7 @@ class Surface {
         this.host = opts.host;
         this.onSelect = opts.onSelect;
         this.onFavorite = opts.onFavorite;
+        this.checkmarks = opts.checkmarks === true;
 
         this.positioner = doc.createElement('div');
         this.positioner.className = 'vela-ui-layer';
@@ -152,6 +162,11 @@ class Surface {
     private build(): void {
         const doc = this.doc;
         this.list.replaceChildren();
+        // Reserve the leading mark column only when THIS level actually holds checkable
+        // rows — an all-action list (e.g. the chart-body context menu) keeps its natural
+        // left edge instead of carrying an empty gutter.
+        const markable = this.checkmarks
+            && this.items.some((i) => !(i.submenu && i.submenu.length > 0) && !i.toggle && i.checked !== undefined);
         for (const item of this.items) {
             if (item.separatorBefore) {
                 const sep = doc.createElement('li');
@@ -167,7 +182,19 @@ class Surface {
                 // Switch row: the pill carries the state.
                 // (Zag owns the item's ARIA props; the pill below is decorative.)
                 li.dataset.toggle = '1';
-            } else if (!branch && item.checked) {
+            }
+            if (markable) {
+                // Mark mode: a leading ✓ slot on every row of this level (empty when
+                // unchecked, so labels share a left edge); the row surface stays free
+                // for hover.
+                const mark = doc.createElement('span');
+                mark.className = 'vela-menu-mark';
+                if (!branch && !item.toggle && item.checked) {
+                    mark.appendChild(iconEl('check', doc));
+                    li.dataset.checkmark = '1';
+                }
+                li.appendChild(mark);
+            } else if (!branch && !item.toggle && item.checked) {
                 // Selection reads from the row surface: a stronger background wash
                 // marks the active entry (hover stays the lighter wash).
                 li.dataset.checked = '1';
@@ -220,6 +247,7 @@ class Surface {
                     placement: 'right-start',
                     onSelect: this.onSelect,
                     onFavorite: this.onFavorite,
+                    checkmarks: this.checkmarks,
                     id: `${this.mid}--${item.id}`,
                 });
                 sub.setItems(item.submenu ?? []);
@@ -248,6 +276,7 @@ export class Menu {
             id: opts.id,
             minWidth: opts.minWidth,
             onFavorite: opts.onFavorite,
+            checkmarks: opts.checkmarks,
         });
         this.root.setItems(opts.items);
     }

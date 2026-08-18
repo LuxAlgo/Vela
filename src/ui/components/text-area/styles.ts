@@ -18,6 +18,9 @@ export const TEXTAREA_CSS = `
     resize: vertical;
     outline: none;
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    /* Selectable even under a user-select:none host (chart wrapper, .vela-ui). */
+    user-select: text;
+    -webkit-user-select: text;
 }
 .vela-textarea-field:hover { border-color: var(--vela-fg-muted); }
 .vela-textarea-field:focus { border-color: var(--vela-focus); box-shadow: 0 0 0 3px var(--vela-focus-soft); }
