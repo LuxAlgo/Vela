@@ -44,6 +44,15 @@ describe('percent-scale ticks + labels (item 14a)', () => {
         expect(t!.price).toBeCloseTo(100); // 0% ⇒ baseline price
     });
 
+    it("format 'none' (unscaled pane) yields no ticks and an empty chip label", () => {
+        const scale = { min: 90, max: 110 };
+        // No ticks ⇒ no axis labels and no horizontal gridlines (both ride paneAxisTicks).
+        expect(paneAxisTicks(scale, 300, undefined, undefined, 'none')).toEqual([]);
+        // 'none' wins over a percent descriptor — the pane's content is not value-mapped at all.
+        expect(paneAxisTicks(scale, 300, { baseline: 100, indexed: false }, undefined, 'none')).toEqual([]);
+        expect(formatAxisValue(scale, 300, 100, undefined, undefined, 'none')).toBe('');
+    });
+
     it('indexed-to-100 ticks are plain numbers centered on 100 at the baseline', () => {
         const ticks = paneAxisTicks({ min: 95, max: 105 }, 300, { baseline: 100, indexed: true });
         expect(ticks.length).toBeGreaterThan(0);

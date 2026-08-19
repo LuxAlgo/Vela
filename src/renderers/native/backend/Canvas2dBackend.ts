@@ -849,7 +849,7 @@ export class Canvas2dBackend implements IRenderBackend {
                 ctx.strokeStyle = horzColor;
                 const pct = percentScaleFor(scene, pane);
                 ctx.beginPath();
-                for (const t of paneAxisTicks(pane.scale, pane.bounds.height, pct)) {
+                for (const t of paneAxisTicks(pane.scale, pane.bounds.height, pct, undefined, pane.axisFormat)) {
                     const y = Math.round(coords.priceToY(t.price, pane.scale, pane.bounds)) + 0.5;
                     if (y < pane.bounds.top || y > pane.bounds.top + pane.bounds.height) continue;
                     ctx.moveTo(0, y);

@@ -1455,6 +1455,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             overlay: d.overlay,
             paneHint: d.paneHint,
             native: { type: record.native!.type },
+            ...(out.paneAxis != null ? { paneAxis: out.paneAxis } : {}),
             series: out.series ?? [],
             fills: out.fills ?? [],
             backgrounds: out.backgrounds ?? [],

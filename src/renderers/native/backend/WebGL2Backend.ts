@@ -617,7 +617,7 @@ export class WebGL2Backend implements IRenderBackend {
         if (scene.showGrid && gridHorz.visible && !pane.collapsed) {
             const grid = parseColor(gridHorz.color ?? theme.gridColor);
             const pct = percentScaleFor(scene, pane);
-            for (const t of paneAxisTicks(pane.scale, pane.bounds.height, pct)) {
+            for (const t of paneAxisTicks(pane.scale, pane.bounds.height, pct, undefined, pane.axisFormat)) {
                 const y = coords.priceToY(t.price, pane.scale, pane.bounds);
                 if (y < top || y > bot) continue;
                 const g = crispHairline(y, dpr); // whole-device-pixel row

@@ -5,6 +5,17 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Panes with a categorical (or blank) value axis.** A native indicator whose visuals
+  are painted entirely by a plugin renderer layer can now declare that its pane's
+  content is not value-mapped: the pane then shows no price numbers, no horizontal
+  gridlines, and no crosshair value chip — and instead of a blank axis it can label its
+  own bands (one label per row, placed at any height), the right reading for table- or
+  ribbon-style panes where a price scale would be meaningless. The labels follow the
+  indicator's settings live, and merging a regular series into the pane brings the
+  price axis back automatically.
+
 ### Fixed
 
 - **Layer-drawn indicators obey the object tree.** Indicators that paint through a

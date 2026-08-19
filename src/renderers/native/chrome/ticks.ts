@@ -142,14 +142,17 @@ function trimZeros(v: number): string {
  * or index values mapped back to price; otherwise nice round prices. Linear only for
  * percent/indexed (the affine price↔percent map keeps the geometry identical to a linear
  * price axis). `format:'volume'` abbreviates the labels (K/M/B) — used for a volume-only pane.
+ * `format:'none'` yields no ticks at all — an unscaled pane (content not value-mapped) draws
+ * neither labels nor the gridlines that would ride them.
  */
 export function paneAxisTicks(
     scale: { min: number; max: number; log?: boolean },
     heightPx: number,
     pct?: PctScale,
     mintick?: number,
-    format?: 'volume',
+    format?: 'volume' | 'none',
 ): Array<{ price: number; label: string }> {
+    if (format === 'none') return [];
     if (pct) {
         const { baseline, indexed } = pct;
         const lo = Math.min(scale.min, scale.max);
@@ -170,15 +173,16 @@ export function paneAxisTicks(
 }
 
 /** Format a single price for an axis chip in the pane's mode (percent / indexed vs absolute; a
- *  volume pane abbreviates with K/M/B). */
+ *  volume pane abbreviates with K/M/B; an unscaled pane yields '' — callers skip the chip). */
 export function formatAxisValue(
     scale: { min: number; max: number; log?: boolean },
     heightPx: number,
     value: number,
     pct?: PctScale,
     mintick?: number,
-    format?: 'volume',
+    format?: 'volume' | 'none',
 ): string {
+    if (format === 'none') return '';
     if (pct) return pct.indexed ? formatIndex(toIndex(value, pct.baseline)) : formatPct(toPct(value, pct.baseline));
     if (format === 'volume') return formatCompactValue(value);
     return formatPriceLabel(scale, heightPx, value, mintick);

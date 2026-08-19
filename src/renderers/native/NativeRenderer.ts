@@ -21,7 +21,7 @@ import type { OHLCV } from '../../core/model/ohlcv';
 import type { Millis } from '../../core/model/time';
 import type { VolumeLayerData, VpvrLayerData } from '../../core/model/volume-layers';
 import type { Pane } from '../../core/model/scene';
-import type { IndicatorModel } from '../../core/model/indicator';
+import type { IndicatorModel, PaneAxisBand } from '../../core/model/indicator';
 import type { ScenePatch } from '../../core/model/patch';
 import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
@@ -3145,6 +3145,7 @@ export class NativeRenderer implements IChartRenderer {
             // 0..maxVol mapping so labels line up with the bars. Only when volume is this pane's
             // sole content (any real merged/master series takes over the scale as usual).
             pane.axisFormat = undefined;
+            pane.axisBands = undefined;
             if (this.volumeOwnsPane(pane, masterModels)) {
                 const maxVol = this.maxVisibleVolume(i0, i1);
                 if (maxVol > 0) {
@@ -3158,6 +3159,14 @@ export class NativeRenderer implements IChartRenderer {
                 // the way the price pane does, so the layer lands where the axis says.
                 pane.scaleTarget = computePaneScale([], this.bars, true, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id));
                 pane.percentBaseline = this.bars[i0]?.close ?? 0;
+                // Content declaring a paneAxis override is not value-mapped: no price
+                // ticks, no horizontal gridlines, no crosshair chip — and band labels
+                // (a categorical axis) draw in the price ticks' place.
+                if (masterModels.every((m) => m.paneAxis != null)) {
+                    pane.axisFormat = 'none';
+                    const banded = masterModels.find((m) => typeof m.paneAxis === 'object');
+                    pane.axisBands = banded ? (banded.paneAxis as { bands: PaneAxisBand[] }).bands : undefined;
+                }
             }
             // Strategy trade markers reserve their PIXEL headroom on the price pane, so a
             // marker stack under the lows (or above the highs) never clips at the pane edge.
