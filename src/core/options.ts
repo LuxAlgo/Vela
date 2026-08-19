@@ -138,6 +138,20 @@ export interface VelaOptions extends MarketConfig {
      *  price pane, on their own scale (they never affect the price autoscale). Added
      *  automatically on chart creation (native renderer) — pass `false` to opt out. */
     volume?: boolean;
+    /** Settings-dialog visibility policy. Default: everything visible. `hidden` lists
+     *  setting ids to hide — a tab (`'canvas'`), a group (`'canvas.grid'`), or a single
+     *  row (`'canvas.grid.vertical'`); an id hides its whole subtree, and a tab with
+     *  nothing left disappears from the rail. Hiding is presentation-only: hidden
+     *  values keep being stored and applied. Enumerate the addressable ids of a live
+     *  chart with `chart.renderer.listSettingsIds()`; the catalog is documented in
+     *  docs/user/options.md. */
+    settings?: SettingsVisibilityPolicy;
+}
+
+/** Settings-dialog visibility policy (see `VelaOptions.settings`). */
+export interface SettingsVisibilityPolicy {
+    /** Setting ids to hide — a tab, a group, or a row; an id hides its subtree. */
+    hidden?: readonly string[];
 }
 
 /** Per-feature native-renderer animation toggles. */

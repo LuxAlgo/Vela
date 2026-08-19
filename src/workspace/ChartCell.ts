@@ -77,13 +77,13 @@ export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'b
  *  sub-key (see {@link cellDrawings}). */
 export type CellChartDefaults = Pick<
     VelaOptions,
-    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings'
+    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings' | 'settings'
 >;
 
 /** The {@link CellChartDefaults} pick of a workspace's options (pure, for the build). */
 export function cellChartDefaults(opts: CellChartDefaults): CellChartDefaults {
-    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings } = opts;
-    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings };
+    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings } = opts;
+    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings };
 }
 
 /** The cell form of the shell's `drawings` option: everything passes through EXCEPT the
@@ -485,13 +485,17 @@ export class ChartCell {
         if (!chart) return;
         const rth = 'Regular hours (RTH)';
         const eth = 'Extended hours (ETH)';
+        // The `id` fields are the sections' stable visibility ids (`settings.hidden`,
+        // docs/user/options.md) — same reserved ids as the widget's sections.
         const sessionSection = {
             title: 'Trading session',
+            id: 'trading-session',
             placement: 'symbol' as const,
             rows: [
                 {
                     kind: 'select' as const,
                     label: 'Session',
+                    id: 'session',
                     options: [rth, eth],
                     get: () => (this.session === 'extended' ? eth : rth),
                     set: (v: string) => this.setSession(v === eth ? 'extended' : 'regular'),
@@ -499,12 +503,14 @@ export class ChartCell {
                 {
                     kind: 'color' as const,
                     label: 'Pre-market',
+                    id: 'premarket-color',
                     get: () => this.sessionShadeColor('premarketColor'),
                     set: (v: string) => this.setSessionShadeColor('premarketColor', v),
                 },
                 {
                     kind: 'color' as const,
                     label: 'Post-market',
+                    id: 'postmarket-color',
                     get: () => this.sessionShadeColor('postmarketColor'),
                     set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
                 },
@@ -512,11 +518,13 @@ export class ChartCell {
         };
         const advanced = {
             title: 'Advanced',
+            id: 'advanced',
             placement: 'end' as const,
             rows: [
                 {
                     kind: 'select' as const,
                     label: 'Bars to fetch',
+                    id: 'bars',
                     options: ['500', '1000', '2000', '5000', '10000', '20000'],
                     get: () => String(this.state.bars ?? 1000),
                     set: (v: string) => {
@@ -529,37 +537,42 @@ export class ChartCell {
         };
         const watermarkSection = {
             title: 'Watermark',
+            id: 'watermark',
             placement: 'symbol' as const,
             rows: [
                 {
                     kind: 'toggle' as const,
                     label: 'Symbol watermark',
+                    id: 'visible',
                     get: () => this.watermarkOn,
                     set: (v: boolean) => this.setWatermarkVisible(v),
                 },
             ],
         };
-        const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol' }> = [];
+        const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol'; id?: string }> = [];
         if (this.statusline) {
             const sl = this.statusline;
             sections.push({
                 title: 'Status line',
+                id: 'status-line',
                 rows: [
-                    { kind: 'heading', label: 'Status line' },
-                    { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
-                    { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
-                    { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
-                    { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
-                    { kind: 'heading', label: 'Indicators' },
+                    { kind: 'heading', label: 'Status line', id: 'parts' },
+                    { kind: 'toggle', label: 'Symbol name', id: 'name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
+                    { kind: 'toggle', label: 'Market status', id: 'market', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
+                    { kind: 'toggle', label: 'OHLC values', id: 'ohlc', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
+                    { kind: 'toggle', label: 'Bar change values', id: 'change', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                    { kind: 'heading', label: 'Indicators', id: 'indicators' },
                     {
                         kind: 'toggle',
                         label: 'Titles',
+                        id: 'indicator-titles',
                         get: () => this.indicatorTitlesOn,
                         set: (v: boolean) => this.setIndicatorTitlesVisible(v),
                     },
                     {
                         kind: 'toggle',
                         label: 'Values',
+                        id: 'indicator-values',
                         get: () => this.indicatorValuesOn,
                         set: (v: boolean) => this.setIndicatorValuesVisible(v),
                     },

@@ -4,6 +4,19 @@ All notable changes to Vela, newest first.
 
 ## [v0.6.5]
 
+### Added
+
+- **Hide chart-settings entries you don't want to expose.** A new `settings` option
+  (chart, widget, and workspace) takes a list of setting ids to hide from the chart
+  settings dialog — a whole tab (`'advanced'`), a group (`'canvas.grid'`), or a single
+  row (`'canvas.grid.vertical'`); a tab with nothing left disappears from the rail.
+  Hiding is display-only: the hidden values keep applying, so an embedder can force a
+  value through its options and remove the control that would let users change it.
+  Everything stays visible by default. Call `chart.renderer.listSettingsIds()` to
+  enumerate the addressable ids of a live chart — plugin chart types and host-app
+  sections are included automatically, with no changes needed on their side — or set
+  the policy at runtime with `chart.renderer.setSettingsVisibility(...)`.
+
 ### Fixed
 
 - **Layer-drawn indicators obey the object tree.** Indicators that paint through a

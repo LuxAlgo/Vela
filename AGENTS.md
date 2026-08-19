@@ -29,6 +29,10 @@ reality.
 
 ---
 
+## Output style
+
+Use The Google developer documentation style guide as a reference for your answers style, if you don't have it in your knowledge base you can read it here https://developers.google.com/style
+
 ## The working loop
 
 For anything beyond a trivial edit:
@@ -170,7 +174,7 @@ descriptors working when multiple charts exist.
 - Any authored `display` on a component's root defeats the `[hidden]` UA rule — pair it
   with `[hidden] { display: none !important; }`.
 - New components follow the uniform skeleton (`controller.ts` + `view.ts` + `styles.css`
-  + `index.ts`) documented in `docs/contributing/adding-a-ui-component.md`.
+  - `index.ts`) documented in `docs/contributing/adding-a-ui-component.md`.
 
 **Style and prose.**
 
@@ -219,7 +223,7 @@ afterthought). Follow the house format exactly:
   someone who read the source, rewrite it.
 - **What goes where.** `Added` = new capabilities. `Changed` = behavior a v-1 user will
   notice, with breaking changes flagged inline as `_(Breaking: what changed and what to
-  do instead.)_`. `Fixed` = bugs that existed in a **released** version only — a bug
+do instead.)_`. `Fixed` = bugs that existed in a **released** version only — a bug
   introduced and fixed within the same unreleased cycle gets no entry.
 - **What stays out.** Internal refactors, tests/probes, CI, playground-only tweaks with
   no user-visible effect, and anything that lives in a private extension package.

@@ -43,6 +43,8 @@ const widget = new VelaWidget('#chart', {
 
     // ── The rest of the CHART options, at their defaults — uncomment to play ─────────
     // bars: 1000,                     // history depth to load (paints progressively: newest window first)
+    // settings: { hidden: ['advanced'] }, // hide settings-dialog entries by id — a tab ('advanced'), a
+    //                                 //  group ('canvas.grid'), or a row; ids via chart.renderer.listSettingsIds()
     // data: myBars,                   // offline OHLCV[] — replaces the provider entirely (no fetches, no live)
     // visibleRange: '3M',             // initial window: '1D'|'1W'|'1M'|'3M'|'6M'|'1Y'|'5Y'|'YTD'|'ALL' or {from,to} in ms (default: frame the tail)
     // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'area'|'baseline'|'heikinashi' or a registered chart-type id

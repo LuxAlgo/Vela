@@ -331,12 +331,14 @@ describe('unified options — the cell seed/defaults merge (pure)', () => {
         const defaults = cellChartDefaults({
             upColor: '#0a0', downColor: '#a00', glow: 0.5, logScale: true, currentPriceLine: false,
             animations: { zoom: false, pan: true }, defaultLanguage: 'pine', drawings: true,
+            settings: { hidden: ['advanced'] },
             // extra keys a caller might hold — must NOT pass through:
             ...( { symbol: 'BTCUSDT', height: 400, nativeBackend: 'webgl2' } as object),
         });
         expect(defaults).toEqual({
             renderer: undefined, defaultLanguage: 'pine', currentPriceLine: false, logScale: true,
             animations: { zoom: false, pan: true }, glow: 0.5, upColor: '#0a0', downColor: '#a00', drawings: true,
+            settings: { hidden: ['advanced'] },
         });
         expect('symbol' in defaults).toBe(false);
         expect('height' in defaults).toBe(false);
