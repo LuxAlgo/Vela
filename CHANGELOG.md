@@ -2,8 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-
-## [Unreleased]
+## [v0.6.5]
 
 ### Fixed
 
@@ -23,7 +22,6 @@ All notable changes to Vela, newest first.
   explicit search. Scrolling near the bottom now loads the next 100 rows in place,
   repeatedly, until the pool is exhausted; the rows already on screen never
   reshuffle, and a new query or tab starts back at one page.
-
 
 ## [v0.6.4]
 
