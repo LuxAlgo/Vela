@@ -501,6 +501,48 @@ describe('EngineOrchestrator', () => {
         }
     });
 
+    it("an output's paneAxis override is stamped onto the mounted model (and only then)", async () => {
+        // A layer-painting native: series-less output declaring a categorical pane axis.
+        class UnscaledNative implements NativeIndicator {
+            private ctx: NativeIndicatorContext | null = null;
+            start(ctx: NativeIndicatorContext): void { this.ctx = ctx; this.emit(); }
+            onBars(): void { this.emit(); }
+            onViewport(): void {}
+            setInputs(): void { this.emit(); }
+            suspend(): void {}
+            resume(): void { this.emit(); }
+            stop(): void {}
+            private emit(): void {
+                this.ctx?.emit({ paneAxis: { bands: [{ frac: 0.25, label: 'Top' }, { frac: 0.75, label: 'Bottom' }] } });
+            }
+        }
+        const unscaledDescriptor: NativeIndicatorDescriptor = {
+            ...testNativeDescriptor, type: 'test-unscaled', title: 'Unscaled Native', paneHint: 'new', overlay: false,
+            create: () => new UnscaledNative(),
+        };
+        registerNativeIndicator(testNativeDescriptor);
+        registerNativeIndicator(unscaledDescriptor);
+        try {
+            const renderer = new FakeRenderer();
+            const chart = new Vela({} as unknown as HTMLElement, { live: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+            const plain = chart.addNativeIndicator('test-native');
+            const unscaled = chart.addNativeIndicator('test-unscaled');
+            await chart.ready();
+            await flush();
+
+            // The override rides the model so the renderer can relabel/suppress the pane's axis.
+            const unscaledModel = renderer.mountedModels.find((m) => m.id === unscaled.id && m.native);
+            expect(unscaledModel?.paneAxis).toEqual({ bands: [{ frac: 0.25, label: 'Top' }, { frac: 0.75, label: 'Bottom' }] });
+            expect(unscaledModel?.series).toEqual([]);
+            // An output without the override leaves the model without it (the renderer scales as usual).
+            const plainModel = renderer.mountedModels.find((m) => m.id === plain.id && m.native);
+            expect(plainModel?.paneAxis).toBeUndefined();
+        } finally {
+            unregisterNativeIndicator('test-native');
+            unregisterNativeIndicator('test-unscaled');
+        }
+    });
+
     it('native indicators sort to the TOP of inspect().indicators (even when added last)', async () => {
         registerNativeIndicator(testNativeDescriptor);
         try {

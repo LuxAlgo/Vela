@@ -245,6 +245,15 @@ export class ChromeRenderer {
                 if (y < pane.bounds.top + 6 || y > pane.bounds.top + pane.bounds.height - 4) continue;
                 ctx.fillText(t.label, dataW + 6, y);
             }
+            // A paneAxis-overridden pane labels its bands instead of prices (a
+            // categorical axis) — same column, same typography as the price ticks.
+            if (pane.axisBands) {
+                for (const b of pane.axisBands) {
+                    const y = pane.bounds.top + b.frac * pane.bounds.height;
+                    if (y < pane.bounds.top + 6 || y > pane.bounds.top + pane.bounds.height - 4) continue;
+                    ctx.fillText(b.label, dataW + 6, y);
+                }
+            }
         }
         ctx.textAlign = 'start';
     }

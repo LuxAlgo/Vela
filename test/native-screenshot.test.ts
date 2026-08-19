@@ -44,6 +44,7 @@ function setupRenderer(): { renderer: NativeRenderer; drawn: string[]; paintedBe
 
     const renderer = new NativeRenderer();
     const r = renderer as unknown as Record<string, unknown>;
+    r.backdropCanvas = layer('backdrop');
     r.dataCanvas = layer('data');
     r.chromeCanvas = layer('chrome');
     r.drawingsCanvas = layer('drawings');
@@ -62,8 +63,9 @@ describe('NativeRenderer.screenshot() layer composition', () => {
         expect(url).toBe('data:image/png;base64,STUB');
         // The drawings layer must be present (the regression) …
         expect(drawn).toContain('drawings');
-        // … drawn after chrome so user drawings sit above Pine drawings, matching the screen.
-        expect(drawn).toEqual(['data', 'chrome', 'drawings']);
+        // … drawn after chrome so user drawings sit above Pine drawings, matching the
+        // screen — and the backdrop (grid + highlights) composites first, under everything.
+        expect(drawn).toEqual(['backdrop', 'data', 'chrome', 'drawings']);
     });
 
     it('runs a fresh paint before reading the layers back', () => {

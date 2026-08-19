@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [v0.6.5]
+## [v0.6.6]
 
 ### Added
 
@@ -16,6 +16,16 @@ All notable changes to Vela, newest first.
   enumerate the addressable ids of a live chart — plugin chart types and host-app
   sections are included automatically, with no changes needed on their side — or set
   the policy at runtime with `chart.renderer.setSettingsVisibility(...)`.
+- **Panes with a categorical (or blank) value axis.** A native indicator whose visuals
+  are painted entirely by a plugin renderer layer can now declare that its pane's
+  content is not value-mapped: the pane then shows no price numbers, no horizontal
+  gridlines, and no crosshair value chip — and instead of a blank axis it can label its
+  own bands (one label per row, placed at any height), the right reading for table- or
+  ribbon-style panes where a price scale would be meaningless. The labels follow the
+  indicator's settings live, and merging a regular series into the pane brings the
+  price axis back automatically.
+
+## [v0.6.5]
 
 ### Fixed
 
@@ -27,7 +37,8 @@ All notable changes to Vela, newest first.
   new pane scales itself to the visible bars, and collapsing it blanks the painting),
   and a fresh add is recorded at the top of the stack, which is where such overlays
   really paint — so the tree reads true from the start. Screenshots composite in the
-  same order the chart shows.
+  same order the chart shows. The gridlines stay at the very back throughout: sending
+  an indicator behind the candles never hides it behind the grid.
 
 - **The symbol picker browses past its first page.** The search dialog's list was
   hard-capped at 100 rows with no way to load more — on a 13k-symbol venue (US
