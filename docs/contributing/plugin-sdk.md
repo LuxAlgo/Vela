@@ -118,7 +118,9 @@ normal object model instead of sitting outside it:
   mounts at the top of the stack (that is where an `above-data` canvas actually paints),
   so the recorded order is honest from the first frame. Granularity is the data canvas:
   model series composite inside ONE canvas, so an owned layer sits below or above that
-  whole canvas, never between two individual plots.
+  whole canvas, never between two individual plots. The gridlines are the floor: they
+  paint on the backdrop canvas below every layer, so an indicator sent to the very back
+  still renders on top of the grid.
 - **Pane:** `args.scale`/`args.bounds` are the owner's pane — moving the indicator to
   its own pane takes the layer along. A study pane whose master content is only such
   layer natives autoscales from the visible bars (layer natives paint at bar prices), a
@@ -147,6 +149,21 @@ Two per-frame levers beyond the basic contract:
 
 Core-computed indicators (no script engine) with renderer-drawn layers — the built-in
 volume and VPVR ride this seam. See `NativeIndicator` types in `vela/plugin`.
+
+A native whose visuals come entirely from a bespoke renderer layer (its `type` equals a
+registered layer id) can override the axis of the pane it OWNS by emitting **`paneAxis`**
+on its output: such content is not value-mapped (the layer paints in pixel bands), so a
+derived price scale would label meaningless numbers. Two shapes:
+
+- `paneAxis: 'none'` — a blank axis;
+- `paneAxis: { bands: [{ frac, label }, …] }` — a **categorical axis**: each label is
+  drawn in the axis column (same typography as price ticks) at `frac` of the pane's
+  height (0 = top, 1 = bottom) — e.g. a table pane labels its rows at their centers.
+
+Either way the pane draws no price ticks, no horizontal gridlines, and no crosshair
+value chip. The override is emitted per compute, so it can follow the inputs (toggling a
+row off relabels the axis). It only holds while overriding natives are the pane's sole
+content; merging any real series into the pane brings the price axis back.
 
 ## Widget actions — `registerWidgetAction`
 

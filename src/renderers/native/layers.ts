@@ -99,7 +99,9 @@ export interface RendererLayerDefinition {
     /** Stacking: `'below-data'` = behind the candles (reveal-under styles); `'above-data'` =
      *  over the candles, under the chrome/axes. Default `'above-data'`. A layer owned by a
      *  native indicator (its type equals the layer id) follows that indicator's z key in
-     *  the pane stacking instead (`seriesOrder` / the object tree), mounting in front. */
+     *  the pane stacking instead (`seriesOrder` / the object tree), mounting in front.
+     *  Either way the gridlines stay BELOW every layer (they live on the backdrop canvas
+     *  at the bottom of the pile) — no stacking puts a layer behind the grid. */
     placement?: 'below-data' | 'above-data';
     /** Repaint this layer when the pointer moves (hover hit-testing UIs). Off by default:
      *  pointer moves normally repaint only the crosshair overlay, not the layers. */

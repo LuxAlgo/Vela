@@ -23,7 +23,8 @@ export interface LayerStackEntry {
  * else above — matching how a model series at that z would paint against the candles).
  * Unowned 'below-data' layers stay at the very back; unowned 'above-data' layers sit
  * directly over the data canvas, under any owned layer raised above it. Ties keep
- * registration order (the sort is stable).
+ * registration order (the sort is stable). "The very back" is still above the grid:
+ * the backdrop canvas (highlights + gridlines) sits below every layer this orders.
  */
 export function stackLayers(entries: readonly LayerStackEntry[], candleZ: number): { below: string[]; above: string[] } {
     const keyed = entries.map((e) => ({
