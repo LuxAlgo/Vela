@@ -31,7 +31,11 @@ reality.
 
 ## Output style
 
-Use The Google developer documentation style guide as a reference for your answers style, if you don't have it in your knowledge base you can read it here https://developers.google.com/style
+Write your answers in the style of the
+[Google developer documentation style guide](https://developers.google.com/style):
+address the reader directly, prefer the active voice and the present tense, lead with
+what matters, and keep sentences short and concrete. When unsure what the guide
+prescribes, consult it at that URL instead of guessing.
 
 ## The working loop
 
