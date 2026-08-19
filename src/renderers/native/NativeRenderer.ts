@@ -59,6 +59,7 @@ import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
+import { stackLayers } from './core/layerStacking';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
 import { rasterizeOverlay } from '../shared/dom-raster';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
@@ -145,6 +146,8 @@ export class NativeRenderer implements IChartRenderer {
     private readonly volumeRenderer = new VolumeRenderer();
     /** SDK renderer layers instantiated at mount ({@link registerRendererLayer}). */
     private extLayers: Array<{ def: RendererLayerDefinition; instance: RendererLayerInstance; canvas: HTMLCanvasElement }> = [];
+    /** Last applied layer-canvas order (ids below + above the data canvas) — re-slotted only on change. */
+    private layerOrderSig = '';
     // The attribution mark (see chrome/AttributionMark + the NOTICE file): default-on;
     // disabling requires an equivalent visible attribution elsewhere in the host UI.
     private attributionEl: HTMLElement | null = null;
@@ -1117,9 +1120,7 @@ export class NativeRenderer implements IChartRenderer {
                 if (el.getAttribute('data-vela-screenshot') === 'under') rasterizeOverlay(ctx, el, frame);
             }
         }
-        const below = this.extLayers.filter((l) => l.def.placement === 'below-data').map((l) => l.canvas);
-        const above = this.extLayers.filter((l) => l.def.placement !== 'below-data').map((l) => l.canvas);
-        for (const canvas of [...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas]) {
+        for (const canvas of [...this.canvasPile(), this.chromeCanvas, this.drawingsCanvas]) {
             if (canvas && canvas.width > 0 && canvas.height > 0) ctx.drawImage(canvas, 0, 0);
         }
         if (frame) {
@@ -1293,6 +1294,7 @@ export class NativeRenderer implements IChartRenderer {
         const below = this.extLayers.filter((l) => l.def.placement === 'below-data').map((l) => l.canvas);
         const above = this.extLayers.filter((l) => l.def.placement !== 'below-data').map((l) => l.canvas);
         this.plot.append(...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas, this.cursorCanvas, this.overlayRoot);
+        this.layerOrderSig = ''; // recomputed on the first data frame (owned layers follow their indicator's z)
         this.wrapper.appendChild(this.plot);
         this.factoryConfig = this.getConfig();
         this.attributionEl = this.buildAttributionEl();
@@ -1896,7 +1898,11 @@ export class NativeRenderer implements IChartRenderer {
     mountIndicator(model: IndicatorModel): IndicatorRenderHandle {
         this.scene.indicators.set(model.id, model);
         this.refreshAnchorOffset(model);
-        this.scene.assignIndicatorZ(model.id); // default z = mount order (later ⇒ in front)
+        // Default z = mount order (later ⇒ in front) — except a native that paints through
+        // an SDK layer: its canvas stacks ABOVE the data canvas by default, so its key must
+        // say so or the recorded order (object tree, seriesOrder reads) starts out a lie.
+        if (model.native && this.extLayers.some((l) => l.def.id === model.native!.type)) this.scene.assignIndicatorZTop(model.id);
+        else this.scene.assignIndicatorZ(model.id);
         // Legend chip prefers the compact shorttitle; the settings dialog keeps the full title.
         this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
             native: !!model.native,
@@ -2850,9 +2856,17 @@ export class NativeRenderer implements IChartRenderer {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         for (const l of this.extLayers) {
             if (!l.def.repaintOnCursor) continue;
-            l.instance.render(this.extLayerArgs(l.def.id, pane.scale, pane.bounds, nowMs));
+            const lp = this.layerPane(l.def.id) ?? pane;
+            if (lp.collapsed) continue; // blanked by the data frame; nothing to hover
+            l.instance.render(this.extLayerArgs(l.def.id, lp.scale, lp.bounds, nowMs));
             if (this.animZoom && l.instance.animating?.()) this.animator.start();
         }
+    }
+
+    /** Blank one SDK layer canvas (a collapsed host pane suppresses the layer's painting). */
+    private clearLayerCanvas(canvas: HTMLCanvasElement): void {
+        if (canvas.width === 0 || canvas.height === 0) return;
+        canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     }
 
     /** One frame's args for an SDK renderer layer (shared by the data + cursor paint paths). */
@@ -2874,6 +2888,10 @@ export class NativeRenderer implements IChartRenderer {
 
     /** Paint the below-data (L-1) + geometry (L0) + chrome (L1) layers from the current scene/coords. */
     private paintData(): void {
+        // Layer-canvas stacking follows the indicators' z keys — recomputed lazily here so
+        // every path that can move them (a z write, a restored config, a mount/remove, a
+        // pane move) is covered without its own call site. No-op when unchanged.
+        this.syncLayerCanvasOrder();
         this.stampScaleInvert(); // flip axes (if inverted) before any layer reads pane.scale
         this.backend.modelAlpha = this.modelAlpha;
         this.backend.candleBodyAlpha = this.candleBodyAlpha;
@@ -2903,15 +2921,26 @@ export class NativeRenderer implements IChartRenderer {
                 bounds: pane.bounds,
                 theme: this.theme,
             });
-            // SDK renderer layers: shared paint cycle, own channel data, own canvas.
+            // SDK renderer layers: shared paint cycle, own channel data, own canvas. Each
+            // paints on its OWNING indicator's pane (the volume layer's rule, generalized) —
+            // the price pane for chart-type channels and price-pane overlays alike.
             const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
             let folded: BasePaintingModulation | null = null;
             for (const l of this.extLayers) {
-                const args = this.extLayerArgs(l.def.id, pane.scale, pane.bounds, nowMs);
+                const lp: PaneNode = this.layerPane(l.def.id) ?? pane;
+                // A collapsed host pane shows its legend strip only — blank the layer for
+                // the duration (the instance isn't poked, so it can't clear itself).
+                if (lp.collapsed) {
+                    this.clearLayerCanvas(l.canvas);
+                    continue;
+                }
+                const args = this.extLayerArgs(l.def.id, lp.scale, lp.bounds, nowMs);
                 l.instance.render(args);
                 // Any mounted layer may dim/slim the base painting (chart type or overlay)
-                // — folded this same frame, applied below before the backend paints.
-                folded = foldBaseModulation(folded, l.instance.modulateBase?.(args) ?? null);
+                // — folded this same frame, applied below before the backend paints. Only
+                // layers ON the price pane get a say: one moved to its own pane no longer
+                // sits over the candles it would be dimming.
+                if (lp === pane) folded = foldBaseModulation(folded, l.instance.modulateBase?.(args) ?? null);
                 // A pulsing/fading layer keeps the animator alive; it stops itself when done.
                 if (this.animZoom && l.instance.animating?.()) this.animator.start();
             }
@@ -3122,6 +3151,13 @@ export class NativeRenderer implements IChartRenderer {
                     pane.scaleTarget = { min: 0, max: maxVol / VOLUME_PANE_FILL_FRAC };
                     pane.axisFormat = 'volume';
                 }
+            } else if (this.layerNativesOwnPane(pane, masterModels)) {
+                // An SDK-layer native moved to its own pane hits the same placeholder: its
+                // model carries no series, and its layer paints at BAR PRICES (that is what
+                // the price-pane overlay was showing). Scale the pane from the visible bars,
+                // the way the price pane does, so the layer lands where the axis says.
+                pane.scaleTarget = computePaneScale([], this.bars, true, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id));
+                pane.percentBaseline = this.bars[i0]?.close ?? 0;
             }
             // Strategy trade markers reserve their PIXEL headroom on the price pane, so a
             // marker stack under the lows (or above the highs) never clips at the pane edge.
@@ -3224,6 +3260,64 @@ export class NativeRenderer implements IChartRenderer {
         return null;
     }
 
+    /** The mounted native indicator that OWNS an SDK layer — the one whose type equals the
+     *  layer id (the id doubles as the data channel, so the pairing is the SDK's own
+     *  contract). Null for chart-type channels and while the owner is hidden (a hidden
+     *  indicator leaves the scene; its cleared data channel paints nothing anyway). */
+    private layerOwner(layerId: string): IndicatorModel | null {
+        for (const m of this.scene.indicators.values()) {
+            if (m.native?.type === layerId) return m;
+        }
+        return null;
+    }
+
+    /** The pane an SDK layer paints on: its owner's pane, else the price pane. */
+    private layerPane(layerId: string): PaneNode | null {
+        const owner = this.layerOwner(layerId);
+        const paneId = owner ? (owner.paneId ?? PRICE_PANE_ID) : PRICE_PANE_ID;
+        return this.scene.panes.get(paneId) ?? null;
+    }
+
+    /** The SDK layer canvases split around the data canvas, each side back-to-front:
+     *  owned layers by their owner's z key against the candles' (an indicator restacked
+     *  below the candles takes its layer canvas along), unowned by declared placement. */
+    private orderedLayerCanvases(): { below: HTMLCanvasElement[]; above: HTMLCanvasElement[] } {
+        const byId = new Map(this.extLayers.map((l) => [l.def.id, l.canvas]));
+        const { below, above } = stackLayers(
+            this.extLayers.map((l) => {
+                const owner = this.layerOwner(l.def.id);
+                return {
+                    id: l.def.id,
+                    placement: l.def.placement === 'below-data' ? 'below-data' as const : 'above-data' as const,
+                    ownerZ: owner ? this.scene.zOf(owner.id) : null,
+                };
+            }),
+            this.scene.candleZ,
+        );
+        return { below: below.map((id) => byId.get(id)!), above: above.map((id) => byId.get(id)!) };
+    }
+
+    /** The full canvas pile in paint order (layers + data/volume/vpvr) — what the DOM
+     *  stacking and the screenshot compositor must both follow. */
+    private canvasPile(): HTMLCanvasElement[] {
+        const { below, above } = this.orderedLayerCanvases();
+        return [...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above];
+    }
+
+    /** Re-slot the SDK layer canvases in the plot when the computed order changed (a z
+     *  write, a restored config, an indicator mount/remove/restack). Runs at the top of
+     *  every data frame; a no-op when the signature is unchanged. Re-inserting an
+     *  absolutely-positioned, pointer-transparent canvas repaints nothing by itself. */
+    private syncLayerCanvasOrder(): void {
+        if (this.extLayers.length === 0 || !this.plot) return;
+        const { below, above } = this.orderedLayerCanvases();
+        const sig = [...below.map((c) => this.extLayers.find((l) => l.canvas === c)!.def.id), '|', ...above.map((c) => this.extLayers.find((l) => l.canvas === c)!.def.id)].join(',');
+        if (sig === this.layerOrderSig) return;
+        this.layerOrderSig = sig;
+        for (const c of below) this.plot.insertBefore(c, this.dataCanvas);
+        for (const c of above) this.plot.insertBefore(c, this.chromeCanvas);
+    }
+
     /** True when an active volume layer is this study pane's ONLY content — so its scale should
      *  come from volume, not the empty {0,1} placeholder. (In the price pane, or alongside a real
      *  series, volume stays a bottom overlay and the master scale wins.) */
@@ -3233,6 +3327,16 @@ export class NativeRenderer implements IChartRenderer {
         if (this.nativeLayerPane('volume') !== pane) return false;
         // The volume indicator's own (series-less) model doesn't count as real content.
         return masterModels.every((m) => m.native?.type === 'volume');
+    }
+
+    /** True when this study pane's master content is only SDK-layer natives (series-less
+     *  models whose type names a mounted layer) — its scale then follows the visible bars
+     *  (see the call site). Any real master series takes over the scale as usual. */
+    private layerNativesOwnPane(pane: PaneNode, masterModels: IndicatorModel[]): boolean {
+        if (pane.kind === 'price' || masterModels.length === 0) return false;
+        return masterModels.every(
+            (m) => m.series.length === 0 && !!m.native && this.extLayers.some((l) => l.def.id === m.native!.type),
+        );
     }
 
     /** Per-pane scale state for a host UI (e.g. a price-axis context menu): the pane's pixel

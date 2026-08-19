@@ -108,6 +108,26 @@ registerRendererLayer({
 });
 ```
 
+**Ownership — layers backed by a native indicator.** When a mounted native indicator's
+type equals a layer's id, that indicator OWNS the layer, and the layer joins the chart's
+normal object model instead of sitting outside it:
+
+- **Stacking:** the layer canvas follows the owner's z key (`seriesOrder`, the object
+  tree's drag/bring-to-front/send-to-back) against the candles' `candleZOrder` — restack
+  the indicator below the candles and its layer paints behind them. Such an indicator
+  mounts at the top of the stack (that is where an `above-data` canvas actually paints),
+  so the recorded order is honest from the first frame. Granularity is the data canvas:
+  model series composite inside ONE canvas, so an owned layer sits below or above that
+  whole canvas, never between two individual plots.
+- **Pane:** `args.scale`/`args.bounds` are the owner's pane — moving the indicator to
+  its own pane takes the layer along. A study pane whose master content is only such
+  layer natives autoscales from the visible bars (layer natives paint at bar prices), a
+  collapsed host pane blanks the layer, and `modulateBase` is consulted only while the
+  owner sits on the price pane.
+
+Chart-type channels (no owning indicator) keep the declared `placement` and the price
+pane, exactly as before.
+
 Two per-frame levers beyond the basic contract:
 
 - **`repaintOnCursor`** (definition): pointer moves normally repaint only the crosshair

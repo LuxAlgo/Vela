@@ -321,6 +321,13 @@ export class SceneGraph {
         if (!this.seriesZ.has(id)) this.seriesZ.set(id, this.bottomZ() - 1);
     }
 
+    /** Mount-time default for a LAYER-BACKED native (it paints on a canvas stacked above the
+     *  data canvas by default): top of the stack, so the recorded order tells the truth from
+     *  the first frame. Keeps an existing key, so a restored stack survives the remount. */
+    assignIndicatorZTop(id: string): void {
+        if (!this.seriesZ.has(id)) this.seriesZ.set(id, this.topZ() + 1);
+    }
+
     forgetIndicatorZ(id: string): void {
         this.seriesZ.delete(id);
     }
