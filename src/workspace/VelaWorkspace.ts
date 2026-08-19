@@ -46,8 +46,10 @@ import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } fro
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { applyAttributionMarkTheme, createAttributionMark, createCustomMark } from '../renderers/native/chrome/AttributionMark';
 import { rendererDefaults } from '../core/renderer-defaults';
-import { defaultToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMode } from '../core/drawings';
+import { buildToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMode, type ToolbarDefinition } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
+import { timeframeLabel } from '../widget/timeframe';
+import { registerBuiltinChartTypes } from '../chart-types/builtins';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { syncTargets, rangesWithin, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
@@ -78,8 +80,15 @@ import { SplitterLayer, evenTracks } from './splitters';
  */
 export interface VelaWorkspaceOptions extends Omit<VelaOptions, 'height'>, VelaShellOptions {
     /** Initial layout — a registered id (`'1'`, `'2h'`, `'2v'`, `'4'`, `'8'`, or a
-     *  plugin-registered one) or an inline definition. Default `'4'`. */
-    layout?: string | LayoutDefinition;
+     *  plugin-registered one) or an inline definition. Default `'4'`.
+     *
+     *  `false` = SINGLE-CHART mode: the grid is pinned to the one-cell layout, the
+     *  layout picker disappears from the topbar and the mobile drawer (the sync
+     *  switches with it — meaningless with one cell), `setLayout` becomes a no-op,
+     *  and a restored document keeps only its first chart live (the rest stays
+     *  dormant in the pool). No `cells` entry is needed — the top-level chart
+     *  options seed the single chart. */
+    layout?: string | LayoutDefinition | false;
     /** Per-cell overrides of the top-level chart defaults, keyed by a FREE-FORM cell
      *  name — the name is the cell's durable IDENTITY (persistence, `sync` groups,
      *  `ws.cell(name)`), never its position: DECLARATION ORDER fills the layout's
@@ -105,6 +114,8 @@ export interface VelaWorkspaceOptions extends Omit<VelaOptions, 'height'>, VelaS
      *  the browser's WebGL-context budget; glow is unavailable there). Default 8; an
      *  explicit `nativeBackend` other than `'auto'` wins over this policy. */
     maxWebglCells?: number;
+    /** How many alerts the topbar bell keeps (the oldest drop beyond it). Default 50. */
+    alertCap?: number;
 }
 
 /** A cell's {@link ScriptRun}, tagged with the cell it ran in. */
@@ -212,6 +223,14 @@ export class VelaWorkspace {
     private order: string[] = [];
     private activeId: string | null = null;
     private cellBackend: NativeBackend = 'auto';
+    /** `layout: false` — the grid is pinned to the one-cell layout, the layout picker
+     *  and sync switches never render, and `setLayout` no-ops. */
+    private readonly monoLayout: boolean;
+    /** `drawings: false` — the whole user-drawings surface is gone: no shared bar, no
+     *  mobile drawings stop, no pill (the headless `chart.drawings` API stays). */
+    private readonly drawingsEnabled: boolean;
+    /** The shared bar's content — `drawings: { tools | groups }` picks it. */
+    private readonly toolbarDef: ToolbarDefinition;
     private destroyed = false;
 
     // ── shared chrome ──
@@ -226,7 +245,7 @@ export class VelaWorkspace {
     private readonly indicatorPicker: IndicatorPicker | null;
     private readonly tfQuick: TimeframeQuick;
     private shortcutsHelp: ShortcutsHelp | null = null;
-    private readonly toast: Toast;
+    private readonly toastHost: Toast;
     private readonly glider = new Glider(() => (this.activeId ? (this.cellsById.get(this.activeId)?.chart ?? null) : null));
     private readonly drawToolbar: DrawingToolbar | null;
     /** The GLOBAL armed tool/magnet/stay (workspace policy) — re-applied to whichever cell
@@ -266,14 +285,16 @@ export class VelaWorkspace {
     private manifestSettled = false;
     private timezone: string;
     private openDialogs = 0;
-    private alerts: Array<{ cellId: string; symbol: string; title: string; message: string; time: number }> = [];
+    private alerts: Array<{ cellId: string; source: string; title: string; message: string; time: number }> = [];
+    /** Bell retention — `alertCap` option, default {@link ALERT_CAP}. */
+    private readonly alertCap: number;
     private alertsMenu: Menu | null = null;
     // ── mobile chrome (same components as the widget shell; CSS keys off data-layout
     // on the root, the drawers build lazily on first open and act on the ACTIVE cell) ──
     /** Writes `data-layout` on the root and pushes mode flips into every cell's renderer. */
     private layoutCtl!: LayoutModeController;
     private readonly mobileBar: MobileBar | null;
-    private readonly drawingPill: DrawingPill;
+    private readonly drawingPill: DrawingPill | null;
     private tfDrawer: TimeframeDrawer | null = null;
     private drawingsDrawer: DrawingsDrawer | null = null;
     private moreDrawer: MoreDrawer | null = null;
@@ -288,6 +309,7 @@ export class VelaWorkspace {
 
     constructor(container: HTMLElement | string, opts: VelaWorkspaceOptions = {}) {
         registerBuiltinLayouts(); // idempotent — pickers and `layout` ids resolve from the registry
+        registerBuiltinChartTypes(); // ditto — the topbar style menu resolves before the first cell builds
         const hostEl = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container;
         if (!hostEl) throw new Error(`VelaWorkspace: container not found: ${String(container)}`);
         this.opts = opts;
@@ -313,7 +335,13 @@ export class VelaWorkspace {
         for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair', 'drawings'] as const) {
             this.applySyncSetting(kind, sync?.[kind]);
         }
-        this.def = this.resolveLayout(boot?.layout && ensureLayout(boot.layout) ? boot.layout : (opts.layout ?? '4'));
+        // Single-chart mode pins the grid to '1' — a persisted document's layout is
+        // presentation the mode overrides, while its charts still restore (first one
+        // live, the rest dormant in the pool).
+        this.monoLayout = opts.layout === false;
+        const optLayout = opts.layout === false || opts.layout === undefined ? '4' : opts.layout;
+        this.def = this.resolveLayout(this.monoLayout ? '1' : (boot?.layout && ensureLayout(boot.layout) ? boot.layout : optLayout));
+        this.alertCap = Math.max(1, opts.alertCap ?? ALERT_CAP);
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
         if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
         // Identity ↔ slot mapping: the persisted document's chart order wins (it IS the
@@ -389,7 +417,9 @@ export class VelaWorkspace {
             onTimeframe: (tf) => this.setActiveTimeframe(tf),
             onTimeframeFavorite: (tf, on) => this.setTimeframeFavorite(tf, on),
             onPriceStyle: (style) => this.active.setPriceStyle(style),
-            layout: {
+            // Single-chart mode: no layout block at all — the topbar renders no layout
+            // button and no sync switches (see TopbarOptions.layout).
+            layout: this.monoLayout ? undefined : {
                 current: this.def.id,
                 // The picker composes dynamic layouts on its grid canvas; registered
                 // presets the canvas cannot express (bespoke plugin areas) list as rows.
@@ -416,8 +446,16 @@ export class VelaWorkspace {
         // ── main row: the shared drawing toolbar + the grid + the docked side panels ──
         const main = doc.createElement('div');
         main.className = 'vela-ws-main';
+        // The `drawings` option drives the SHARED drawing surface the way it drives a
+        // lone chart's own bar: `false` removes the whole feature (the headless
+        // `chart.drawings` API stays), `{ toolbar: false }` hides the bar,
+        // `{ tools | groups }` picks its content. `drawingToolbar: false` stays the
+        // workspace-level bar opt-out.
+        const toolbar = buildToolbar(opts.drawings);
+        this.drawingsEnabled = opts.drawings !== false;
+        this.toolbarDef = toolbar.definition;
         let toolbarHost: HTMLElement | null = null;
-        if (opts.drawingToolbar !== false) {
+        if (this.drawingsEnabled && toolbar.visible && opts.drawingToolbar !== false) {
             toolbarHost = doc.createElement('div');
             toolbarHost.className = 'vela-ws-toolbar';
             main.appendChild(toolbarHost);
@@ -438,7 +476,7 @@ export class VelaWorkspace {
         this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
         this.dock.refresh();
         this.root.appendChild(main);
-        this.toast = new Toast(this.gridEl);
+        this.toastHost = new Toast(this.gridEl);
 
         // ONE attribution mark for the whole grid (bottom-left, floating above the
         // bottom-left cell's time axis) — the cells disable their per-chart marks, and
@@ -502,7 +540,7 @@ export class VelaWorkspace {
                   },
               )
             : null;
-        this.drawToolbar?.setDefinition(defaultToolbar());
+        this.drawToolbar?.setDefinition(this.toolbarDef);
         this.drawToolbar?.setVisible(true);
         // Sync settings applied before the bar existed (boot/persisted) — reflect now.
         this.drawToolbar?.setDrawingsSyncMode(!!this.syncOpts.drawings);
@@ -535,13 +573,13 @@ export class VelaWorkspace {
                       onTimeframeClick: () => this.openTimeframeDrawer(),
                       ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
                       getContext: () => this.context(),
-                      onDrawingsClick: () => this.openDrawingsDrawer(),
+                      ...(this.drawingsEnabled ? { onDrawingsClick: () => this.openDrawingsDrawer() } : {}),
                       onMoreClick: () => this.openMoreDrawer(),
                       onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
                 : null;
         // One pill for the whole grid — rebound to the active cell on every projection.
-        this.drawingPill = new DrawingPill(this.gridEl);
+        this.drawingPill = this.drawingsEnabled ? new DrawingPill(this.gridEl) : null;
 
         hostEl.appendChild(this.root);
 
@@ -662,7 +700,7 @@ export class VelaWorkspace {
             openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
             togglePanel: (id, open) => this.dock.toggle(id, open),
             root: this.root,
-            toast: (message, kind) => this.toast.show(message, kind),
+            toast: (message, kind) => this.toastHost.show(message, kind),
         });
     }
 
@@ -721,18 +759,19 @@ export class VelaWorkspace {
 
     /**
      * Restore a state document produced by {@link getState} (untrusted-safe: malformed
-     * fields are dropped). Replaces the WHOLE workspace state: prefs, sync links,
-     * layout, and every slot — current cells are rebuilt from the document. A layout id
-     * that is not registered keeps the current grid (register custom layouts first).
+     * fields are dropped). When the document matches the live grid one-to-one — same
+     * layout, same ordered slot identities — it is applied IN PLACE: every chart
+     * instance survives (markets switch via `setMarket`), so chart references,
+     * indicator handles, and event subscriptions stay valid. Any structural difference
+     * (layout, slot count, renamed ids) falls back to the full rebuild: prefs, sync
+     * links, layout, and every slot are replaced, current cells rebuilt from the
+     * document. A layout id that is not registered keeps the current grid (register
+     * custom layouts first).
      */
     applyState(state: unknown): void {
         if (this.destroyed) return;
         const st = sanitizeState(state);
         if (!st) return;
-        if (st.timezone) {
-            this.timezone = st.timezone;
-            this.bottombar?.setTimezone(st.timezone);
-        }
         if (st.favorites) this.favs = [...st.favorites]; // newborn cells inherit below (buildCells)
         if (st.timeframeFavorites) {
             this.tfFavs = [...st.timeframeFavorites];
@@ -743,6 +782,47 @@ export class VelaWorkspace {
         for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair', 'drawings'] as const) this.applySyncSetting(kind, st.sync?.[kind]);
         this.trackSizes.clear();
         if (st.trackSizes) for (const [id, ts] of Object.entries(st.trackSizes)) this.trackSizes.set(id, ts);
+
+        // ── IN PLACE: same layout, and the document's leading charts map one-to-one
+        // onto the live slots. Live cells rehydrate (chart survives); the document's
+        // extra charts refresh the dormant pool. No cell:* / layout:changed events —
+        // structurally, nothing happened.
+        const targetDef = this.monoLayout ? this.def : (ensureLayout(st.layout) ?? this.def);
+        const liveCount = this.def.cells.length;
+        const inPlace =
+            targetDef.id === this.def.id
+            && st.charts.length >= liveCount
+            && this.order.length >= liveCount
+            && this.def.cells.every((_, i) => st.charts[i]!.id === this.order[i] && this.cellsById.has(this.order[i]!));
+        if (inPlace) {
+            if (st.favorites) {
+                for (const cell of this.cellsById.values()) cell.chart.drawings.setFavorites(this.favs as never[]);
+            }
+            this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
+            for (const [i] of this.def.cells.entries()) {
+                const { id, ...cs } = st.charts[i]!;
+                this.cellsById.get(id)?.rehydrate(cs);
+            }
+            // AFTER the cells: each restored rendererConfig carries its own zone and the
+            // cell mirror adopts it — the document's shell-level field must have the
+            // last word when the two disagree (a host editing just `timezone`).
+            if (st.timezone) this.setTimezone(st.timezone);
+            this.pool.clear();
+            for (const { id, ...cs } of st.charts.slice(liveCount)) this.pool.set(id, cs);
+            this.order = st.charts.map((c) => c.id);
+            this.applyGrid(); // re-assert the restored track sizes on the unchanged grid
+            const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.order[0] ?? null);
+            if (nextActive === this.activeId) this.projectActiveCell();
+            else this.setActiveCell(nextActive);
+            this.refreshRetention();
+            this.markStateDirty();
+            return;
+        }
+
+        if (st.timezone) {
+            this.timezone = st.timezone;
+            this.bottombar?.setTimezone(st.timezone);
+        }
         // Full rebuild from the document — every current slot is replaced by the restored one.
         for (const [id, cell] of [...this.cellsById]) {
             cell.destroy();
@@ -753,7 +833,7 @@ export class VelaWorkspace {
         this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
         this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
-        const def = ensureLayout(st.layout);
+        const def = this.monoLayout ? null : ensureLayout(st.layout); // mono: grid stays pinned to '1'
         if (def) this.def = def;
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
@@ -808,6 +888,7 @@ export class VelaWorkspace {
      */
     setLayout(layout: string | LayoutDefinition): void {
         if (this.destroyed) return;
+        if (this.monoLayout) return; // single-chart mode — the grid is pinned to '1'
         const next = this.resolveLayout(layout);
         const nextBackend = this.backendFor(next);
         const rebuildAll = nextBackend !== this.cellBackend;
@@ -842,6 +923,13 @@ export class VelaWorkspace {
         this.splitters.layout(); // each cell's renderer follows its own ResizeObserver
     }
 
+    /** Show a toast over the grid — the same surface the shell's own notices use
+     *  (alerts, script errors) and the one contributions reach via `ctx.toast`. */
+    toast(message: string, kind: 'info' | 'success' | 'error' = 'info', durationMs = 3000): void {
+        if (this.destroyed) return;
+        this.toastHost.show(message, kind, durationMs);
+    }
+
     destroy(): void {
         if (this.destroyed) return;
         this.persistNow(); // snapshot while the cells are still alive
@@ -868,7 +956,7 @@ export class VelaWorkspace {
         this.topbar.destroy();
         this.bottombar?.destroy();
         this.mobileBar?.destroy();
-        this.drawingPill.destroy();
+        this.drawingPill?.destroy();
         this.tfDrawer?.destroy();
         this.drawingsDrawer?.destroy();
         this.moreDrawer?.destroy();
@@ -882,10 +970,10 @@ export class VelaWorkspace {
         this.indicatorPicker?.destroy();
         this.tfQuick.destroy();
         this.shortcutsHelp?.destroy();
-        this.toast.destroy();
+        this.toastHost.destroy();
         this.alertsMenu?.destroy();
         this.glider.stop();
-        sharedBarStore.retain(new Set()); // back to the single-chart retention policy
+        sharedBarStore.retain(new Set(), this); // release OUR declaration only — other shells on the page keep theirs
         this.root.remove();
         this.events.clear();
     }
@@ -904,7 +992,7 @@ export class VelaWorkspace {
         this.mobileBar?.renderActions();
         this.mobileBar?.setSymbol(cell.symbol);
         this.mobileBar?.setTimeframe(cell.timeframe);
-        this.drawingPill.onChart(cell.chart); // the pill mirrors the ACTIVE cell's tool state
+        this.drawingPill?.onChart(cell.chart); // the pill mirrors the ACTIVE cell's tool state
         const pushHistory = (): void => this.topbar.setHistoryState(cell.history.canUndo, cell.history.canRedo);
         this.historyUnsub?.();
         this.historyUnsub = cell.history.onChange(pushHistory);
@@ -1047,6 +1135,7 @@ export class VelaWorkspace {
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStateDirty: () => this.markStateDirty(),
                 manifestSettled: () => this.manifestSettled,
+                toast: (message, kind, durationMs) => this.toastHost.show(message, kind, durationMs),
             });
             cell.host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
             this.cellsById.set(id, cell);
@@ -1076,15 +1165,20 @@ export class VelaWorkspace {
      *  cell's whole life, so these live and die with the cell). */
     private wireCell(cell: ChartCell): void {
         const chart = cell.chart;
-        chart.on('indicator:error', ({ error }) => this.toast.show(`[${cell.id}] ${error.message}`, 'error', 5000));
+        chart.on('indicator:error', ({ error }) => this.toastHost.show(`[${cell.id}] ${error.message}`, 'error', 5000));
         // Script runs relay up with the cell they came from, so ONE subscription on the
         // workspace covers a grid whose cells come and go. Each cell runs its own engine
         // session, so the `cell` field is what tells two identical scripts apart.
         chart.on('script:run', (run) => this.events.emit('script:run', { ...run, cell: cell.id }));
         chart.on('alert', (alert) => {
-            this.alerts.unshift({ cellId: cell.id, symbol: cell.symbol, title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
-            if (this.alerts.length > ALERT_CAP) this.alerts.pop();
-            this.toast.show(`[${cell.id} · ${cell.symbol}] ${alert.title ? alert.title + ' — ' : ''}${alert.message}`, 'info', 4000);
+            // Provenance the way a user reads it — symbol, timeframe, and the indicator
+            // that fired — captured at fire time (the cell may switch markets later).
+            const source = [parseSymbol(cell.symbol).ticker || cell.symbol, timeframeLabel(cell.timeframe), alert.indicator]
+                .filter(Boolean)
+                .join(' ');
+            this.alerts.unshift({ cellId: cell.id, source, title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
+            if (this.alerts.length > this.alertCap) this.alerts.pop();
+            this.toastHost.show(`${source} — ${alert.title ? alert.title + ' — ' : ''}${alert.message}`, 'info', 4000);
             this.topbar.setAlertCount(this.alerts.length);
         });
         // Favorites are a WORKSPACE preference: one shared toolbar, one star set — a star
@@ -1386,6 +1480,10 @@ export class VelaWorkspace {
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
         this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
+        // The chip highlight must track the cell through EVERY market path: a timeframe
+        // change (cell API, contribution context, sync link) leaves range mode and a
+        // direct `applyRange` enters it — the bar follows the cell's own record.
+        this.bottombar?.setActiveRange(cell.activeRangeId);
     }
 
     /** Trigger ② — a cell's price style changed: the topbar button/menu only if active.
@@ -1479,7 +1577,7 @@ export class VelaWorkspace {
     private openDrawingsDrawer(): void {
         this.drawingsDrawer ??= new DrawingsDrawer({
             host: this.root,
-            toolbar: () => defaultToolbar(), // the shared static toolbar's definition (see constructor)
+            toolbar: () => this.toolbarDef, // the shared static toolbar's definition (see constructor)
             currentTool: () => this.active.chart.drawings.getTool(),
             isFavorite: (type) => this.active.chart.drawings.isFavorite(type),
             onFavorite: (type, on) => this.active.chart.drawings.setFavorite(type, on),
@@ -1502,7 +1600,7 @@ export class VelaWorkspace {
             onPriceStyle: (id) => this.active.setPriceStyle(id),
             panels: () => [...this.dock.list()],
             onTogglePanel: (id) => this.dock.toggle(id),
-            alerts: () => this.alerts.map((a) => ({ title: `[${a.cellId} · ${a.symbol}] ${a.title}`, message: a.message, time: a.time })),
+            alerts: () => this.alerts.map((a) => ({ title: `${a.source} · ${a.title}`, message: a.message, time: a.time })),
             // Left-aligned actions have their own bottom-bar stop — only the rest
             // lands in the drawer, or every left action would appear twice.
             actions: () =>
@@ -1511,8 +1609,9 @@ export class VelaWorkspace {
                     .map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) })),
             // The desktop layout dropdown's whole surface — the grid canvas, the
             // non-canvas presets and the sync switches — relocated into the kebab
-            // drawer (the topbar is hidden on mobile). Same reads as the topbar block.
-            layout: {
+            // drawer (the topbar is hidden on mobile). Same reads as the topbar block;
+            // single-chart mode omits it here too.
+            layout: this.monoLayout ? undefined : {
                 shape: () => layoutShape(this.def),
                 presets: () =>
                     layouts()
@@ -1562,7 +1661,7 @@ export class VelaWorkspace {
         const items = this.alerts.length
             ? this.alerts.map((a, i) => ({
                   id: String(i),
-                  label: `[${a.cellId} · ${a.symbol}] ${new Date(a.time).toLocaleTimeString()} · ${a.title}: ${a.message}`.slice(0, 80),
+                  label: `${a.source} · ${new Date(a.time).toLocaleTimeString()} · ${a.title}: ${a.message}`.slice(0, 80),
               }))
             : [{ id: 'none', label: 'No alerts yet', disabled: true }];
         this.alertsMenu = new Menu({
@@ -1691,6 +1790,6 @@ export class VelaWorkspace {
             if (!raw) continue;
             symbols.add(this.feed.resolveSymbol(raw)?.ticker ?? raw);
         }
-        sharedBarStore.retain(symbols);
+        sharedBarStore.retain(symbols, this);
     }
 }

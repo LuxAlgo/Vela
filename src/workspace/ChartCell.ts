@@ -144,6 +144,8 @@ export interface CellDeps {
     /** Persistable per-cell state changed outside the market/indicator channels
      *  (bars budget, watermark/titles toggles) — the workspace debounces a save. */
     onStateDirty(): void;
+    /** The shell's toast surface (unresolved-symbol notices land there). */
+    toast(message: string, kind: 'info' | 'success' | 'error', durationMs?: number): void;
 }
 
 export class ChartCell {
@@ -185,13 +187,17 @@ export class ChartCell {
     /** The volume auto-add rides the cell's first candles (`load:end`); until then the
      *  registry can't show it and the dehydrated ledger reports the INTENT instead. */
     private volumeMayBePending = true;
-    /** Volume intent: the seed's ledger, else the workspace `volume` option. */
-    private readonly volumeIntent: boolean;
+    /** Volume intent: the seed's ledger, else the workspace `volume` option — a
+     *  rehydrated ledger overwrites it (see {@link applyIndicatorLedger}). */
+    private volumeIntent: boolean;
     /** Sync mirror of the chart's present native types — the removal handler diffs
      *  against it to identify (and record) whichever type was just removed. */
     private presentNatives: string[] = [];
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
+    /** Last symbol we toasted "no provider serves this" for — once per symbol (the
+     *  core re-reports on every provider-index settle). */
+    private unresolvedToasted: string | null = null;
     private watermarkOn: boolean;
     /** Indicator titles (this cell's in-chart legend rows) shown. */
     private indicatorTitlesOn = true;
@@ -297,6 +303,14 @@ export class ChartCell {
         // registry is the whole truth and the dehydrated ledger stops reporting intent.
         this.inner.on('load:end', () => {
             this.volumeMayBePending = false;
+        });
+        // A symbol nothing serves parks the load forever — say so instead of showing a
+        // blank cell. Once per symbol: the core re-reports on every index settle.
+        this.inner.on('data:unresolved', ({ symbol, providers }) => {
+            if (this.unresolvedToasted === symbol) return;
+            this.unresolvedToasted = symbol;
+            const list = providers.length > 0 ? providers.join(', ') : 'none';
+            this.deps.toast(`No registered provider serves "${symbol}" (registered: ${list})`, 'error', 6000);
         });
         // The loading affordance and the watermark never share the canvas.
         this.inner.on('load:start', () => this.watermark?.setLoading(true));
@@ -634,6 +648,7 @@ export class ChartCell {
     /** Switch this cell's market in place (the chart instance survives). */
     setSymbol(symbol: string): void {
         if (!this.inner || symbol === this.symbol) return;
+        this.unresolvedToasted = null; // a re-picked symbol gets a fresh verdict
         void this.inner.setMarket({ symbol });
     }
 
@@ -735,6 +750,43 @@ export class ChartCell {
         if (seedEnabled) {
             for (const entry of list) if (entry.enabled) this.addManifestInstance(entry, { record: false });
         }
+    }
+
+    /**
+     * Replace the indicator ledger: natives converge to the listed set (volume
+     * included — removing it sticks, the core's auto-add respects the opt-out), and
+     * manifest instances are re-created by name, held until the shared manifest
+     * resolves. Convergence is state application, not user edits — nothing enters the
+     * undo timeline.
+     */
+    private applyIndicatorLedger(led: { manifest: string[]; natives: string[] }): void {
+        const chart = this.inner;
+        if (!chart) return;
+        this.volumeIntent = led.natives.includes('volume');
+        this.history.silently(() => {
+            const present = chart.presentNativeIndicators();
+            for (const type of led.natives) {
+                if (!present.includes(type)) chart.addNativeIndicator(type);
+            }
+            for (const type of present) {
+                // addNativeIndicator on a present type returns the EXISTING handle.
+                if (!led.natives.includes(type)) chart.addNativeIndicator(type).remove();
+            }
+            for (const it of [...this.instances]) this.dropInstance(it);
+            if (this.manifest.length > 0) {
+                for (const name of led.manifest) {
+                    const entry = this.manifest.find((e) => e.name === name);
+                    if (entry) this.addManifestInstance(entry, { record: false });
+                }
+                this.pendingManifestNames = null;
+            } else if (!this.deps.manifestSettled()) {
+                this.pendingManifestNames = [...led.manifest]; // consumed by setManifest on resolution
+            } else {
+                this.pendingManifestNames = null; // no manifest will ever resolve — never park names
+            }
+        });
+        this.syncPresentNatives();
+        this.refreshNativeCatalog();
     }
 
     /** The picker's library rows: supported natives first, then the manifest. */
@@ -867,6 +919,43 @@ export class ChartCell {
     }
 
     // ── lifecycle ──
+    /**
+     * Apply a restored cell state IN PLACE — the chart instance survives (the market
+     * switches via `setMarket`) while cosmetics, renderer config, drawings, and the
+     * indicator ledger converge to the document. The workspace takes this path when a
+     * state document lands on a grid of the same shape (async-storage boot, host
+     * `applyState`), so chart references, indicator handles, event subscriptions, and
+     * the cell host all stay valid.
+     */
+    rehydrate(cs: CellState): void {
+        if (!this.inner || this.destroyed) return;
+        if (cs.priceStyle && cs.priceStyle !== this.priceStyle) this.setPriceStyle(cs.priceStyle);
+        if (cs.watermark !== undefined && cs.watermark !== this.watermarkOn) this.setWatermarkVisible(cs.watermark);
+        if (cs.indicatorTitles !== undefined && cs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cs.indicatorTitles);
+        if (cs.indicatorValues !== undefined && cs.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(cs.indicatorValues);
+        // Cosmetics + drawings round-trip (both validate untrusted input).
+        if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
+        if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
+        if (cs.indicators) this.applyIndicatorLedger(cs.indicators);
+        // Market last, as ONE in-place switch — `market:changed` re-syncs the cell
+        // overlays and notifies the workspace (chrome projection, retention).
+        const symbol = prefixedSymbol(cs);
+        const session = normalizeSession(cs.session) ?? 'regular';
+        const bars = typeof cs.bars === 'number' && Number.isFinite(cs.bars) && cs.bars > 0 ? cs.bars : 0;
+        const next: { symbol?: string; timeframe?: string; bars?: number; session?: MarketSession } = {};
+        if (symbol && symbol !== this.symbol) next.symbol = symbol;
+        if (cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
+        if (session !== this.session) {
+            this.state.session = session;
+            next.session = session;
+        }
+        if (bars > 0 && bars !== this.state.bars) {
+            this.state.bars = bars;
+            next.bars = Math.max(bars, this.rangeBars);
+        }
+        if (Object.keys(next).length > 0) void this.inner.setMarket(next);
+    }
+
     /** Snapshot everything the pool needs to restore this slot later. The market fields
      *  come from the LIVE config (`chart.market`) — the requested identity — so a switch
      *  still loading when the snapshot is taken (persist-on-close) is not lost. */

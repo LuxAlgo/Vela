@@ -6,6 +6,26 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Single-chart workspaces.** `layout: false` pins a `VelaWorkspace` to one chart:
+  the layout picker and the sync switches disappear (desktop and mobile),
+  `setLayout` becomes a no-op, and no `cells` entry is needed — the top-level chart
+  options seed the single chart. A previously persisted multi-chart document still
+  restores its first chart; the others stay dormant.
+- **Restores that keep the chart alive.** `applyState` now applies a document IN
+  PLACE when it matches the live grid (same layout, same slots): markets switch on
+  the existing charts, so chart references, indicator handles, and event
+  subscriptions survive a restore — including the late restore of an async storage
+  backend. Structural changes still rebuild as before.
+- **Workspace toasts.** `ws.toast(message, kind?, durationMs?)` shows a notice on
+  the same surface the workspace's own alerts and script errors use.
+- **Readable alert provenance.** Alert toasts and the bell menu now name their
+  source as `SYMBOL timeframe Indicator` instead of the internal cell id, and a new
+  `alertCap` option sets how many alerts the bell keeps (default 50). The chart's
+  `alert` event now carries the firing indicator's display title.
+- **`drawings` honored by the workspace.** `drawings: false` removes the whole
+  drawing surface (the shared toolbar, the mobile entry, the tool pill — the
+  programmatic `chart.drawings` API stays); `{ tools }` / `{ groups }` pick what the
+  shared toolbar offers, exactly as they do on a lone chart.
 - **Hide chart-settings entries you don't want to expose.** A new `settings` option
   (chart, widget, and workspace) takes a list of setting ids to hide from the chart
   settings dialog — a whole tab (`'advanced'`), a group (`'canvas.grid'`), or a single
@@ -24,6 +44,18 @@ All notable changes to Vela, newest first.
   ribbon-style panes where a price scale would be meaningless. The labels follow the
   indicator's settings live, and merging a regular series into the pane brings the
   price axis back automatically.
+
+### Fixed
+
+- **A workspace now says so when no provider serves a symbol** — the same one-time
+  notice a single-chart shell shows, instead of a silently blank cell.
+- **Destroying one shell no longer evicts another's cached history.** The shared
+  bar cache scopes its protected symbols per shell instance; releasing one leaves
+  the others' intact.
+- **The range chips stay truthful.** Changing the timeframe through the API or a
+  contributed action now clears the highlighted range chip, and framing a range
+  through the API highlights it — the bar follows the chart, whichever path drove
+  the change.
 
 ## [v0.6.5]
 

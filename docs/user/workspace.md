@@ -14,6 +14,8 @@ import { BinanceProvider } from 'vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {
     layout: '4', // '1' | '2h' | '2v' | '4' | '8' | picker ids ('g3x2') | a registerLayout() id
+    //           // `false` = SINGLE-CHART mode: one cell, no layout picker or sync
+    //           // switches anywhere, `setLayout` no-ops, no `cells` entry needed
     // Chart options at the TOP LEVEL are every cell's DEFAULT — the same words the
     // widget (and the bare chart) use. `cells` overrides them per cell; a cell's NAME
     // is its durable identity, DECLARATION ORDER fills the layout's slots:
@@ -36,12 +38,23 @@ const ws = new VelaWorkspace('#app', {
 `VelaOptions` except `height` — the grid sizes its cells) + the shared shell surface
 (`providers`, `engines`, `indicators`, `timeframes`, `timezone`, chrome toggles,
 `persist`/`storage`) + the grid's own options (`layout`, `cells`, `sync`,
-`drawingToolbar`, `maxWebglCells`). A chart option means the same thing everywhere: on
-the widget it configures *the* chart, here it is the *default* of each cell —
-`upColor`, `glow`, `logScale`, `animations`, `defaultLanguage`, `drawings` (its toolbar
-excepted: the shared bar replaces per-cell bars), even `renderer` all apply to every
-cell. An explicit `nativeBackend` (other than `'auto'`) wins over the `maxWebglCells`
-budget policy.
+`drawingToolbar`, `maxWebglCells`, `alertCap`). A chart option means the same thing
+everywhere: on the widget it configures *the* chart, here it is the *default* of each
+cell — `upColor`, `glow`, `logScale`, `animations`, `defaultLanguage`, even `renderer`
+all apply to every cell. An explicit `nativeBackend` (other than `'auto'`) wins over
+the `maxWebglCells` budget policy.
+
+The `drawings` option applies here too, mapped onto the SHARED drawing surface:
+`false` removes it entirely — no toolbar, no mobile drawings entry, no tool pill (the
+programmatic `chart.drawings` API stays) — and `{ tools }` / `{ groups }` pick what
+the shared toolbar offers. Only its `toolbar` sub-key changes meaning: one shared bar
+serves the grid, so per-cell in-chart bars never render (`drawingToolbar: false` hides
+the shared bar itself).
+
+Alerts from every cell aggregate in the topbar bell, newest first, each entry naming
+its source as `SYMBOL timeframe Indicator`; `alertCap` bounds how many are kept
+(default 50). `ws.toast(message, kind?, durationMs?)` shows a host notice on the same
+surface.
 
 ## Cells and the active cell
 
@@ -160,7 +173,9 @@ const state = ws.getState();
 //   priceStyle, bars?, watermark?, indicatorTitles?, rendererConfig (renderer.getConfig() document),
 //   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] } }
 
-ws.applyState(state); // untrusted-safe: malformed fields dropped, whole grid rebuilt
+ws.applyState(state); // untrusted-safe: malformed fields dropped; same-shape documents
+//                    // apply IN PLACE (charts, handles and subscriptions survive),
+//                    // structural changes rebuild the grid
 ws.on('state:changed', () => {
     /* debounced (~500ms) — re-pull getState() */
 });
