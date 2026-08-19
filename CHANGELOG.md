@@ -2,6 +2,26 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.5]
+
+### Fixed
+
+- **Layer-drawn indicators obey the object tree.** Indicators that paint through a
+  plugin renderer layer (order-flow overlays and the like) now take part in the
+  chart's stacking and pane structure like any other indicator: dragging one in the
+  object tree — or using Bring to front / Send to back — actually moves it in front
+  of or behind the candles, moving it to another pane takes its painting along (the
+  new pane scales itself to the visible bars, and collapsing it blanks the painting),
+  and a fresh add is recorded at the top of the stack, which is where such overlays
+  really paint — so the tree reads true from the start. Screenshots composite in the
+  same order the chart shows.
+
+- **The symbol picker browses past its first page.** The search dialog's list was
+  hard-capped at 100 rows with no way to load more — on a 13k-symbol venue (US
+  equities) the Stocks tab stopped mid-alphabet and everything beyond needed an
+  explicit search. Scrolling near the bottom now loads the next 100 rows in place,
+  repeatedly, until the pool is exhausted; the rows already on screen never
+  reshuffle, and a new query or tab starts back at one page.
 
 ## [v0.6.4]
 

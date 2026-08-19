@@ -23,7 +23,9 @@ export interface RendererLayerArgs {
     /** Time ranges still loading (`<id>-pending` channel) — skeleton/reveal UIs. */
     pending: ReadonlyArray<readonly [number, number]>;
     coords: CoordinateSystem;
-    /** The price pane's scale + bounds. */
+    /** The scale + bounds of the pane the layer paints on: the pane of the native
+     *  indicator that owns this channel (its type equals the layer id), else the price
+     *  pane — so a layer-backed indicator moved to its own pane takes its layer along. */
     scale: PriceScale;
     bounds: PaneBounds;
     theme: VelaTheme;
@@ -95,7 +97,9 @@ export interface RendererLayerDefinition {
     /** The layer id — also its native-data channel (`setNativeData(id, …)` / `id + '-pending'`). */
     id: string;
     /** Stacking: `'below-data'` = behind the candles (reveal-under styles); `'above-data'` =
-     *  over the candles, under the chrome/axes. Default `'above-data'`. */
+     *  over the candles, under the chrome/axes. Default `'above-data'`. A layer owned by a
+     *  native indicator (its type equals the layer id) follows that indicator's z key in
+     *  the pane stacking instead (`seriesOrder` / the object tree), mounting in front. */
     placement?: 'below-data' | 'above-data';
     /** Repaint this layer when the pointer moves (hover hit-testing UIs). Off by default:
      *  pointer moves normally repaint only the crosshair overlay, not the layers. */
