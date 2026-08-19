@@ -415,8 +415,16 @@ export interface IChartRenderer {
     /** A chart type's SDK settings changed (dialog edit / applyConfig) — the core forwards
      *  them to the type's data engine. */
     onChartTypeSettingsChange?(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe;
-    /** Host-app settings tabs (callback rows) shown by the renderer's settings dialog. */
-    setSettingsSections?(sections: ReadonlyArray<{ title: string; rows: readonly unknown[] }>): void;
+    /** Host-app settings tabs (callback rows) shown by the renderer's settings dialog.
+     *  `id` names a section for the visibility policy (defaults to the title's slug). */
+    setSettingsSections?(sections: ReadonlyArray<{ title: string; rows: readonly unknown[]; id?: string }>): void;
+    /** Settings-dialog visibility policy: `hidden` lists setting ids to hide (a tab, a
+     *  group, or a row — subtree semantics). Presentation-only: hidden values keep
+     *  being stored and applied. Optional — a renderer without a settings dialog omits it. */
+    setSettingsVisibility?(policy: { hidden?: readonly string[] }): void;
+    /** Every addressable setting id of this chart (built-ins, chart-type sections,
+     *  host sections) — the discovery surface for the visibility policy. */
+    listSettingsIds?(): string[];
 
     /**
      * The host shell's chrome size class. `'mobile'` asks the renderer's own chrome

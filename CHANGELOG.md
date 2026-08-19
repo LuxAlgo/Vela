@@ -2,10 +2,20 @@
 
 All notable changes to Vela, newest first.
 
-## [v0.6.5]
+## [v0.6.6]
 
 ### Added
 
+- **Hide chart-settings entries you don't want to expose.** A new `settings` option
+  (chart, widget, and workspace) takes a list of setting ids to hide from the chart
+  settings dialog — a whole tab (`'advanced'`), a group (`'canvas.grid'`), or a single
+  row (`'canvas.grid.vertical'`); a tab with nothing left disappears from the rail.
+  Hiding is display-only: the hidden values keep applying, so an embedder can force a
+  value through its options and remove the control that would let users change it.
+  Everything stays visible by default. Call `chart.renderer.listSettingsIds()` to
+  enumerate the addressable ids of a live chart — plugin chart types and host-app
+  sections are included automatically, with no changes needed on their side — or set
+  the policy at runtime with `chart.renderer.setSettingsVisibility(...)`.
 - **Panes with a categorical (or blank) value axis.** A native indicator whose visuals
   are painted entirely by a plugin renderer layer can now declare that its pane's
   content is not value-mapped: the pane then shows no price numbers, no horizontal
@@ -14,6 +24,8 @@ All notable changes to Vela, newest first.
   ribbon-style panes where a price scale would be meaningless. The labels follow the
   indicator's settings live, and merging a regular series into the pane brings the
   price axis back automatically.
+
+## [v0.6.5]
 
 ### Fixed
 

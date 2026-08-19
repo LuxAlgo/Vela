@@ -67,6 +67,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `downColor` | string | `#f23645` (red) | Bearish candle color (native renderer). |
 | `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn (native renderer). |
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
+| `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
 
 \* `defaultLanguage` falls back to the first injected engine's language if you don't set it.
 
@@ -93,6 +94,136 @@ new Vela('#chart', { data: bars, drawings: { tools: ['trendline', 'hline', 'box'
 
 See [Drawing tools](./drawing-tools.md) for the full catalogue and the `chart.drawings` API.
 
+### The `settings` option — hiding settings-dialog entries
+
+By default the chart-settings dialog shows everything. `settings.hidden` lists setting
+**ids** to hide; an id hides its whole subtree, and a tab with nothing left disappears
+from the rail:
+
+```js
+new VelaWidget('#chart', {
+  bars: 1000,                                  // force the fetch depth…
+  settings: { hidden: ['advanced'] },          // …and remove the tab that would change it
+});
+
+// or a finer cut: one group, one row
+new Vela('#chart', { data: bars, settings: { hidden: ['canvas.grid', 'scales.price-scale.countdown'] } });
+```
+
+Hiding is **display-only**: hidden values keep being stored, delivered, and applied —
+which is exactly what makes "force an option, hide its control" work. The policy is
+instance state, not chart config: it never rides `getConfig()`/`applyConfig()` into
+exported templates. It can also be set at runtime with
+`chart.renderer.setSettingsVisibility({ hidden: [...] })`.
+
+Ids are dot-separated paths: `<tab>`, `<tab>.<group>`, `<tab>.<group>.<row>`. Enumerate
+every addressable id of a live chart with `chart.renderer.listSettingsIds()` (plugin
+chart types and host-app sections included).
+
+The complete catalog — every id, at every depth. Any subset works; a parent id makes
+its children redundant:
+
+```js
+new VelaWidget('#chart', {
+  settings: {
+    hidden: [
+      // ══ Symbol tab ════════════════════════════════════════════════
+      'symbol',                              // the whole tab
+      'symbol.type',                         //   the Type select (chart style)
+      'symbol.style.candles',                //   Candles group (also styles Heikin Ashi)
+      'symbol.style.candles.body',           //     Body toggle + up/down colors
+      'symbol.style.candles.borders',        //     Borders toggle + colors
+      'symbol.style.candles.wick',           //     Wick toggle + colors
+      'symbol.style.candles.spacing',        //     Spacing
+      'symbol.style.bars',                   //   Bars group
+      'symbol.style.bars.up-color',          //     Color Up
+      'symbol.style.bars.down-color',        //     Color Down
+      'symbol.style.bars.spacing',           //     Spacing
+      'symbol.style.line',                   //   Line group
+      'symbol.style.line.color',             //     Color
+      'symbol.style.line.width',             //     Width
+      'symbol.style.area',                   //   Area group
+      'symbol.style.area.line-color',        //     Line color
+      'symbol.style.area.width',             //     Width
+      'symbol.style.area.top-fill',          //     Top fill
+      'symbol.style.area.bottom-fill',       //     Bottom fill
+      'symbol.style.baseline',               //   Baseline group
+      'symbol.style.baseline.top-line',      //     Top line
+      'symbol.style.baseline.bottom-line',   //     Bottom line
+      'symbol.style.baseline.fill-top',      //     Fill top area
+      'symbol.style.baseline.fill-bottom',   //     Fill bottom area
+      'symbol.style.baseline.base-level',    //     Base level %
+      'symbol.style.baseline.width',         //     Width
+      'symbol.timezone',                     //   Time zone group
+
+      // ══ Scales and lines tab ══════════════════════════════════════
+      'scales',                              // the whole tab
+      'scales.price-scale',                  //   Price scale group
+      'scales.price-scale.mode',             //     Regular/Percent/Indexed/Logarithmic
+      'scales.price-scale.invert',           //     Invert scale
+      'scales.price-scale.last-price-line',  //     Last Price Line
+      'scales.price-scale.last-price-label', //     Last price label
+      'scales.price-scale.countdown',        //     Countdown to bar close
+      'scales.price-scale.axis-labels',      //     Axis labels
+      'scales.price-scale.border-color',     //     Scale border color
+      'scales.crosshair',                    //   Crosshair group
+      'scales.crosshair.color',              //     Color
+      'scales.crosshair.width',              //     Width
+      'scales.crosshair.style',              //     Solid/Dashed/Dotted
+
+      // ══ Canvas tab ════════════════════════════════════════════════
+      'canvas',                              // the whole tab
+      'canvas.background',                   //   Background & text group
+      'canvas.background.color',             //     Background
+      'canvas.background.text-color',        //     Text color
+      'canvas.background.text-size',         //     Text size
+      'canvas.background.pane-separator',    //     Pane separator color
+      'canvas.grid',                         //   Grid group
+      'canvas.grid.vertical',                //     Vertical lines toggle + color
+      'canvas.grid.horizontal',              //     Horizontal lines toggle + color
+      'canvas.theme',                        //   Theme group (Dark/Light)
+
+      // ══ Widget & workspace tabs (shell-contributed) ═══════════════
+      'status-line',                         // the whole Status line tab
+      'status-line.parts',                   //   Status line group (the four rows below)
+      'status-line.name',                    //     Symbol name
+      'status-line.market',                  //     Market status
+      'status-line.ohlc',                    //     OHLC values
+      'status-line.change',                  //     Bar change values
+      'status-line.indicators',              //   Indicators group (the two rows below)
+      'status-line.indicator-titles',        //     Titles
+      'status-line.indicator-values',        //     Values
+      'advanced',                            // the whole Advanced tab
+      'advanced.bars',                       //   Bars to fetch
+      'trading-session',                     // the RTH/ETH group in the Symbol tab
+      'trading-session.session',             //   Session select
+      'trading-session.premarket-color',     //   Pre-market shading color
+      'trading-session.postmarket-color',    //   Post-market shading color
+      'watermark',                           // the Symbol watermark toggle
+      'watermark.visible',                   //   (same row — the group has one row)
+
+      // ══ Plugin chart types (registerChartType) ════════════════════
+      'type:<chartTypeId>',                  // the type's settings tab (+ its subsections)
+      'type:<chartTypeId>.<key>',            //   a value row, by its settings bag key
+      'type:<chartTypeId>.<heading-slug>',   //   a group, by its heading label's slug
+      'type:<chartTypeId>.<subsection-slug>',//   a subsection, by its title's slug
+      'symbol.style.<chartTypeId>',          // a candle-drawn plugin style's Candles group
+                                             //   (rows: .body, .borders, .wick, .spacing)
+
+      // ══ Host sections (setSettingsSections) ═══════════════════════
+      '<sectionId>',                         // the section's `id` field, else its title's slug
+      '<sectionId>.<rowId>',                 //   a row's `id` field, else its label's slug
+    ],
+  },
+});
+```
+
+Conditional entries hide-and-stay-hidden: `trading-session` only appears on symbols
+that have sessions, `status-line` only when the shell's status line is on,
+`canvas.theme` only when the host wires the theme switch — hiding them is safe either
+way. Host sections contributed through `setSettingsSections` need nothing from the
+contributor: the `id` fields are optional stability aids, label slugs are the
+fallback.
 
 ### Non-obvious defaults, called out
 

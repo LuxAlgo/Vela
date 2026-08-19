@@ -63,6 +63,7 @@ export type {
     RendererConstructor,
     RendererDisplayOptions,
     AddIndicatorOptions,
+    SettingsVisibilityPolicy,
 } from './core/options';
 export type { IndicatorHandle, IndicatorEventMap } from './core/IndicatorHandle';
 export type { VelaEventMap } from './core/events/types';

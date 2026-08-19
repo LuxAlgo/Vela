@@ -64,6 +64,7 @@ import { stackLayers } from './core/layerStacking';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
 import { rasterizeOverlay } from '../shared/dom-raster';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
+import { settingsIdCatalog } from './chrome/settings-visibility';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
 import { DARK_THEME, LIGHT_THEME } from '../../core/theme';
 import { isDarkColor } from '../../core/color';
@@ -259,6 +260,9 @@ export class NativeRenderer implements IChartRenderer {
 
     // ── settings dialog (rich, serializable config — item 15) ──
     private settingsDialog: SettingsDialog | null = null;
+    /** The host's visibility policy (setting ids hidden from the dialog) — instance
+     *  state, never part of the persisted config. */
+    private hiddenSettings: readonly string[] = [];
     /** Where modal dialogs mount — a HOST override (multi-chart shells pass their root
      *  so dialogs center globally instead of clipping inside one cell). Null = the plot. */
     private dialogHost: HTMLElement | null = null;
@@ -957,6 +961,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
+        this.settingsDialog.setHiddenSettings(this.hiddenSettings);
         this.syncThemeControl();
         this.settingsDialog.toggle(
             this.getConfig(),
@@ -2079,6 +2084,15 @@ export class NativeRenderer implements IChartRenderer {
     setSettingsSections(sections: HostSettingsSection[]): void {
         this.hostSettingsSections = sections;
         this.settingsDialog?.setHostSections(sections);
+    }
+
+    setSettingsVisibility(policy: { hidden?: readonly string[] }): void {
+        this.hiddenSettings = [...(policy.hidden ?? [])];
+        this.settingsDialog?.setHiddenSettings(this.hiddenSettings);
+    }
+
+    listSettingsIds(): string[] {
+        return settingsIdCatalog(this.hostSettingsSections);
     }
 
     onChartTypeSettingsChange(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe {
