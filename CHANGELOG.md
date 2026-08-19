@@ -45,6 +45,18 @@ All notable changes to Vela, newest first.
   indicator's settings live, and merging a regular series into the pane brings the
   price axis back automatically.
 
+### Changed
+
+- **`VelaWidget` is deprecated.** The single-chart app is now `VelaWorkspace` with
+  `layout: false` — same chart, same options, same persisted state document. The old
+  class remains for this release as a thin wrapper (a console notice says so) and will
+  be removed in a future release; replace `new VelaWidget(el, opts)` with
+  `new VelaWorkspace(el, { ...opts, layout: false })`, and pass `persist: 'vela-widget'`
+  to keep reading the state the widget stored. _(Breaking: the widget-only `urlState`
+  option no longer does anything — encode `getState()` into your own URL scheme for
+  shareable links — and state saved by very old versions in the pre-unified three-key
+  layout is no longer migrated.)_
+
 ### Fixed
 
 - **A workspace now says so when no provider serves a symbol** — the same one-time

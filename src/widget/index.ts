@@ -8,12 +8,11 @@ export { Bottombar, RANGE_PRESETS, type BottombarOptions, type RangePreset } fro
 export { SymbolPicker, filterSymbols, type SymbolPickerOptions } from './symbol-picker';
 export { IndicatorPicker, type IndicatorPickerOptions, type IndicatorRow } from './indicator-picker';
 export { TimeframeQuick, type TimeframeQuickOptions } from './timeframe-quick';
-export { loadPersisted, savePersisted, parsePersisted, legacyWidgetState, localStorageAdapter, type VelaStorage, type WidgetStorage, type PersistedState } from './persist';
+export { localStorageAdapter, type VelaStorage, type WidgetStorage } from './persist';
 // The unified shell-state document — the SAME format `vela/workspace` exposes; the
 // widget's `getState()`/`applyState()` speak it with a single `c1` cell.
 export { encodeState, decodeState, sanitizeState } from '../state/document';
 export type { WorkspaceState, CellState, ChartState, PanelsState } from '../state/document';
-export { readUrlState, writeUrlState } from './url-state';
 export { SidePanel, clampPanelWidth, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_MIN_WIDTH, DEFAULT_PANEL_MAX_WIDTH, type SidePanelOptions } from './side-panel';
 export { PanelDock, type PanelChrome, type PanelDockDeps, type BuiltInPanel } from './panel-dock';
 export { ObjectTree } from './object-tree';

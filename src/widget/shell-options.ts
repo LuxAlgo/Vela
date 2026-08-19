@@ -1,5 +1,5 @@
 // The SHELL options — the one option vocabulary both batteries-included shells share.
-// `VelaWidgetOptions` = chart options (`VelaOptions`) + this + `urlState`;
+// `VelaWidgetOptions` (deprecated wrapper) = chart options (`VelaOptions`) + this;
 // `VelaWorkspaceOptions` = the same minus `height`, plus the grid options — and at the
 // workspace, every chart option given top-level becomes the DEFAULT of each cell.
 // Every name below means the SAME thing in both shells; per-shell multiplicity

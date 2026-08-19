@@ -2,7 +2,7 @@
 
 Vela is a modern charting library built around a small, robust **core** wrapped by three independently-extensible **layers**: **Data providers** feed market data in, **Scripting engines** execute indicators, and **Renderers** draw the result. The core owns the canonical data and orchestrates everything; each layer plugs in behind a single narrow port, so you can swap any one of them — a different data source, a different scripting language, a different drawing backend — without touching the others or the core.
 
-On top of the core, Vela ships two more things: a **widget** (`vela/widget` — the batteries-included chart app: topbar, pickers, status line, bottom bar, object tree, keyboard-first UX) and a **plugin SDK** (`vela/plugin` — chart types, renderer layers, native indicators, widget actions) that lets external packages extend both.
+On top of the core, Vela ships two more things: a **shell** (`vela/workspace` — the batteries-included chart app, one chart or a grid: topbar, pickers, status line, bottom bar, object tree, keyboard-first UX) and a **plugin SDK** (`vela/plugin` — chart types, renderer layers, native indicators, widget actions) that lets external packages extend both.
 
 ## The one mental model
 
@@ -40,7 +40,7 @@ Each layer ships with a **bundled default backend** that you can replace. One nu
 
 The documentation is grouped by what you are trying to do.
 
-- **User** — get a chart rendering and drive it from your app: [Quickstart](user/quickstart.md), [The widget](user/widget.md), [The workspace (multi-chart)](user/workspace.md), [Options](user/options.md), [API reference](user/api-reference.md), [Drawing tools](user/drawing-tools.md), [Renderer features](user/renderer-features.md), [Data providers](user/data-providers.md), [Scripting engines](user/scripting-engines.md), [Examples](user/examples.md), [FAQ](user/faq.md).
+- **User** — get a chart rendering and drive it from your app: [Quickstart](user/quickstart.md), [The workspace](user/workspace.md) (single chart or a multi-chart grid), [Options](user/options.md), [API reference](user/api-reference.md), [Drawing tools](user/drawing-tools.md), [Renderer features](user/renderer-features.md), [Data providers](user/data-providers.md), [Scripting engines](user/scripting-engines.md), [Examples](user/examples.md), [FAQ](user/faq.md).
 - **Architecture** — understand the core, the three layers, the neutral model, and how data flows: [Overview](architecture/overview.md), [Data flow](architecture/data-flow.md), and the [decision records](architecture/adr/README.md).
 - **Contributing** — set up the project and extend Vela: the [plugin SDK](contributing/plugin-sdk.md) (chart types, renderer layers, widget actions — no fork needed), or extend a layer behind its port in-repo: add a [renderer](contributing/adding-a-renderer.md), an [engine](contributing/adding-an-engine.md), a [data provider](contributing/adding-a-data-provider.md), a [drawing tool](contributing/adding-a-drawing-tool.md), or a [UI-kit component](contributing/adding-a-ui-component.md).
 
@@ -48,7 +48,7 @@ The documentation is grouped by what you are trying to do.
 
 Pick the path that matches your goal.
 
-- **"I want a full chart app in one line"** → [The widget](user/widget.md)
+- **"I want a full chart app in one line"** → [The workspace](user/workspace.md) with `layout: false`
 - **"I want a grid of charts with one shared UI"** → [The workspace](user/workspace.md)
 - **"I want to render a headless chart fast"** → [User quickstart](user/quickstart.md)
 - **"I want to run Pine Script indicators"** → [Scripting engines](user/scripting-engines.md)

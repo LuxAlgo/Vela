@@ -304,7 +304,7 @@ registerWidgetAction({
 The host page opts out of the built-in dialog when it constructs the shell:
 
 ```ts
-new VelaWidget('#chart', { symbol: 'BTCUSDT', indicatorPicker: false });
+new VelaWorkspace('#chart', { symbol: 'BTCUSDT', indicatorPicker: false });
 ```
 
 The two halves stay decoupled on purpose: a host can hide the picker without replacing
