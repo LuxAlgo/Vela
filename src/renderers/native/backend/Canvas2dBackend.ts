@@ -6,9 +6,6 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { paneAxisTicks, timeTicks } from '../chrome/ticks';
-import { percentScaleFor } from '../core/SceneGraph';
-import { tzOffsetMs } from '../chrome/tz';
 import { candleTier, wickWidth, candleGeometry } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
@@ -16,19 +13,19 @@ import type { IRenderBackend } from './IRenderBackend';
 /**
  * Canvas2d GEOMETRY backend (L0) — the PRIMARY native backend and the WebGL2
  * backend's permanent fallback. Renders immediate-mode from the scene each frame,
- * culled to the visible bar range: grid, bgcolor, fills (flat/conditional/gradient),
+ * culled to the visible bar range: bgcolor, fills (flat/conditional/gradient),
  * candles, line/area/step/histogram/columns/circles/cross with per-point/per-bar
  * color, hline. Per-pane price scales are computed by the renderer BEFORE this
  * runs (it reads pane.scale). Pine drawings, axes, the current-price line, and the
  * crosshair are NOT its concern — they live on the canvas2d chrome (ChromeRenderer)
- * and cursor (CrosshairRenderer) layers above.
+ * and cursor (CrosshairRenderer) layers above; the grid + session highlights live
+ * on the backdrop canvas below (BackdropRenderer).
  */
 export class Canvas2dBackend implements IRenderBackend {
     readonly kind = 'canvas2d' as const;
     modelAlpha = 1;
     candleBodyAlpha = 1;
     candleStructureAlpha = 1;
-    gridAlpha = 1;
     candleBodyScale = 1;
     private canvas: HTMLCanvasElement | null = null;
     private ctx: CanvasRenderingContext2D | null = null;
@@ -61,10 +58,8 @@ export class Canvas2dBackend implements IRenderBackend {
         const barColorMap = mergeBarColors(scene.indicators);
         const panes = scene.orderedPanes();
 
-        // ── session highlights (very back, behind grid + data) ──
-        this.drawHighlights(ctx, scene, coords);
-        // ── grid (behind everything) ──
-        this.drawGrid(ctx, scene, coords, theme, dataW);
+        // Session highlights + the grid paint on the renderer's BACKDROP canvas, below
+        // every layer canvas (see backdrop/BackdropRenderer) — nothing to do here.
 
         // ── per-pane data (pane.scale was set by the renderer's autoscale) ──
         for (const pane of panes) {
@@ -790,23 +785,6 @@ export class Canvas2dBackend implements IRenderBackend {
         ctx.fillRect(x1, pane.bounds.top, x2 - x1, pane.bounds.height);
     }
 
-    /** Renderer-owned session highlight bands: full-height (all panes), behind grid + data.
-     *  Session-zone washes (pre/post-market) paint first, host highlights on top. */
-    private drawHighlights(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem): void {
-        const bands = [...scene.sessionHighlightBands(), ...scene.highlights];
-        if (bands.length === 0) return;
-        for (const band of bands) {
-            const x1 = coords.timeToX(band.from);
-            const x2 = coords.timeToX(band.to);
-            if (x2 < 0 || x1 > coords.width || x2 <= x1) continue;
-            const cx = Math.max(0, x1);
-            const cw = Math.min(coords.width, x2) - cx;
-            if (cw <= 0) continue;
-            ctx.fillStyle = band.color;
-            ctx.fillRect(cx, 0, cw, coords.height);
-        }
-    }
-
     private drawHline(ctx: CanvasRenderingContext2D, pl: PriceLine, pane: PaneNode, coords: CoordinateSystem, dataW: number, theme: VelaTheme): void {
         const y = Math.round(coords.priceToY(pl.price, pane.scale, pane.bounds)) + 0.5;
         if (y < pane.bounds.top || y > pane.bounds.top + pane.bounds.height) return;
@@ -818,47 +796,6 @@ export class Canvas2dBackend implements IRenderBackend {
         ctx.lineTo(dataW, y);
         ctx.stroke();
         setDash(ctx, 'solid');
-    }
-
-    // ── grid (L0, behind data) ── vert/horz gate on `scene.showGrid` AND their own
-    // per-axis visibility (style); each uses its own color. Pane separators are drawn on the
-    // chrome layer (full-width, above the data) so series never overpaint them.
-    private drawGrid(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number): void {
-        const panes = scene.orderedPanes();
-        const { gridVert, gridHorz } = scene.style;
-        const vertColor = gridVert.color ?? theme.gridColor;
-        const horzColor = gridHorz.color ?? theme.gridColor;
-        ctx.lineWidth = 1;
-        if (scene.showGrid && gridVert.visible) {
-            ctx.globalAlpha = this.gridAlpha; // fade the grid out as a reveal-under style opens up
-            ctx.strokeStyle = vertColor;
-            const tr = coords.visibleTimeRange();
-            const offset = tzOffsetMs((tr.from + tr.to) / 2, scene.timezone);
-            ctx.beginPath();
-            for (const tick of timeTicks(tr.from, tr.to, 8, offset)) {
-                const x = Math.round(coords.timeToX(tick.time)) + 0.5;
-                if (x < 0 || x > dataW) continue;
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, coords.height);
-            }
-            ctx.stroke();
-        }
-        for (const pane of panes) {
-            if (scene.showGrid && gridHorz.visible && !pane.collapsed) {
-                ctx.globalAlpha = this.gridAlpha; // fade horizontal gridlines so they don't show through fading candles
-                ctx.strokeStyle = horzColor;
-                const pct = percentScaleFor(scene, pane);
-                ctx.beginPath();
-                for (const t of paneAxisTicks(pane.scale, pane.bounds.height, pct, undefined, pane.axisFormat)) {
-                    const y = Math.round(coords.priceToY(t.price, pane.scale, pane.bounds)) + 0.5;
-                    if (y < pane.bounds.top || y > pane.bounds.top + pane.bounds.height) continue;
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(dataW, y);
-                }
-                ctx.stroke();
-            }
-        }
-        ctx.globalAlpha = 1;
     }
 }
 

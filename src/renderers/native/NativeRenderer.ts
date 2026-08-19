@@ -57,6 +57,7 @@ import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from 
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
+import { BackdropRenderer } from './backdrop/BackdropRenderer';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
 import { stackLayers } from './core/layerStacking';
@@ -135,6 +136,7 @@ export class NativeRenderer implements IChartRenderer {
     private plot!: HTMLDivElement; // the plot area (canvases + DOM overlays), inset to the right of the toolbar gutter
     private toolbarGutter = 0; // px reserved on the left for the docked drawings toolbar (0 when hidden)
     private mountContainer: HTMLElement | null = null; // the host-owned element mount() renders into
+    private backdropCanvas!: HTMLCanvasElement; // session highlights + gridlines, the pile's very bottom
     private dataCanvas!: HTMLCanvasElement;
     private volumeCanvas!: HTMLCanvasElement; // bottom-anchored volume columns above grid/candles
     private vpvrCanvas!: HTMLCanvasElement; // visible-range volume profile (above candles, right edge)
@@ -143,6 +145,7 @@ export class NativeRenderer implements IChartRenderer {
     private cursorCanvas!: HTMLCanvasElement;
     private overlayRoot!: HTMLDivElement;
     private userDrawings: UserDrawingController | null = null;
+    private readonly backdropRenderer = new BackdropRenderer();
     private readonly volumeRenderer = new VolumeRenderer();
     /** SDK renderer layers instantiated at mount ({@link registerRendererLayer}). */
     private extLayers: Array<{ def: RendererLayerDefinition; instance: RendererLayerInstance; canvas: HTMLCanvasElement }> = [];
@@ -1245,6 +1248,11 @@ export class NativeRenderer implements IChartRenderer {
         // Every DOM overlay below is a descendant, so the chrome tokens land once here.
         applyChromeTokens(this.wrapper, this.chromeTheme());
 
+        // L-2 backdrop: session highlights + gridlines, the very BOTTOM of the pile — even
+        // an SDK layer canvas slotted below the data canvas stays above the grid.
+        this.backdropCanvas = document.createElement('canvas');
+        Object.assign(this.backdropCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+
         // L0.25 volume columns: bottom-anchored per-bar volume, ABOVE the geometry canvas so
         // grid lines and candles cannot paint over them. Transparent + pointer-transparent.
         this.volumeCanvas = document.createElement('canvas');
@@ -1293,7 +1301,7 @@ export class NativeRenderer implements IChartRenderer {
         });
         const below = this.extLayers.filter((l) => l.def.placement === 'below-data').map((l) => l.canvas);
         const above = this.extLayers.filter((l) => l.def.placement !== 'below-data').map((l) => l.canvas);
-        this.plot.append(...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas, this.cursorCanvas, this.overlayRoot);
+        this.plot.append(this.backdropCanvas, ...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas, this.cursorCanvas, this.overlayRoot);
         this.layerOrderSig = ''; // recomputed on the first data frame (owned layers follow their indicator's z)
         this.wrapper.appendChild(this.plot);
         this.factoryConfig = this.getConfig();
@@ -1304,6 +1312,7 @@ export class NativeRenderer implements IChartRenderer {
         container.appendChild(this.wrapper);
         this.applyBackground();
 
+        this.backdropRenderer.mount(this.backdropCanvas);
         this.volumeRenderer.mount(this.volumeCanvas);
         this.vpvrRenderer.mount(this.vpvrCanvas);
         for (const l of this.extLayers) l.instance.mount(l.canvas);
@@ -1623,6 +1632,7 @@ export class NativeRenderer implements IChartRenderer {
         this.scrollButton = null;
         for (const l of this.extLayers) l.instance.destroy?.();
         this.extLayers = [];
+        this.backdropRenderer.destroy();
         this.volumeRenderer.destroy();
         this.vpvrRenderer.destroy();
         this.backend.destroy();
@@ -2896,7 +2906,7 @@ export class NativeRenderer implements IChartRenderer {
         this.backend.modelAlpha = this.modelAlpha;
         this.backend.candleBodyAlpha = this.candleBodyAlpha;
         this.backend.candleStructureAlpha = this.candleStructureAlpha;
-        this.backend.gridAlpha = 1;
+        let gridAlpha = 1; // the backdrop's gridline opacity (layers may fade it via modulateBase)
         const candleBodyScale = 1;
         this.backend.candleBodyScale = candleBodyScale;
         const pane = this.scene.panes.get(PRICE_PANE_ID);
@@ -2947,7 +2957,7 @@ export class NativeRenderer implements IChartRenderer {
             if (folded) {
                 if (folded.candleBodyScale != null) this.backend.candleBodyScale = clamp01(folded.candleBodyScale) || 0.01;
                 if (folded.candleBodyAlpha != null) this.backend.candleBodyAlpha = clamp01(folded.candleBodyAlpha) * this.candleBodyAlpha;
-                if (folded.gridAlpha != null) this.backend.gridAlpha = clamp01(folded.gridAlpha);
+                if (folded.gridAlpha != null) gridAlpha = clamp01(folded.gridAlpha);
             }
         }
         // Live-bar easing: render the eased (gliding) OHLC for the forming bar, then restore the true
@@ -2961,6 +2971,7 @@ export class NativeRenderer implements IChartRenderer {
         // Interleave layers: the drawings whose z sits inside a pane's series stack, prepainted
         // so the backend can composite them mid-stack (under the candles, between indicators).
         this.scene.drawingSlices = this.userDrawings?.prepareSlices(this.scene.orderedPanes().map((p) => p.id)) ?? new Map();
+        this.backdropRenderer.render(this.scene, this.coords, this.theme, gridAlpha); // L-2, under every layer canvas
         this.backend.render(this.scene, this.coords, this.theme);
         this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair
@@ -3306,11 +3317,11 @@ export class NativeRenderer implements IChartRenderer {
         return { below: below.map((id) => byId.get(id)!), above: above.map((id) => byId.get(id)!) };
     }
 
-    /** The full canvas pile in paint order (layers + data/volume/vpvr) — what the DOM
-     *  stacking and the screenshot compositor must both follow. */
+    /** The full canvas pile in paint order (backdrop + layers + data/volume/vpvr) — what
+     *  the DOM stacking and the screenshot compositor must both follow. */
     private canvasPile(): HTMLCanvasElement[] {
         const { below, above } = this.orderedLayerCanvases();
-        return [...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above];
+        return [this.backdropCanvas, ...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above];
     }
 
     /** Re-slot the SDK layer canvases in the plot when the computed order changed (a z
@@ -3668,6 +3679,8 @@ export class NativeRenderer implements IChartRenderer {
         const ph = h;
         this.dataCanvas.width = Math.round(pw * dpr);
         this.dataCanvas.height = Math.round(ph * dpr);
+        this.backdropCanvas.width = this.dataCanvas.width;
+        this.backdropCanvas.height = this.dataCanvas.height;
         this.volumeCanvas.width = this.dataCanvas.width;
         this.volumeCanvas.height = this.dataCanvas.height;
         for (const l of this.extLayers) { l.canvas.width = this.dataCanvas.width; l.canvas.height = this.dataCanvas.height; }

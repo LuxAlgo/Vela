@@ -118,7 +118,9 @@ normal object model instead of sitting outside it:
   mounts at the top of the stack (that is where an `above-data` canvas actually paints),
   so the recorded order is honest from the first frame. Granularity is the data canvas:
   model series composite inside ONE canvas, so an owned layer sits below or above that
-  whole canvas, never between two individual plots.
+  whole canvas, never between two individual plots. The gridlines are the floor: they
+  paint on the backdrop canvas below every layer, so an indicator sent to the very back
+  still renders on top of the grid.
 - **Pane:** `args.scale`/`args.bounds` are the owner's pane — moving the indicator to
   its own pane takes the layer along. A study pane whose master content is only such
   layer natives autoscales from the visible bars (layer natives paint at bar prices), a

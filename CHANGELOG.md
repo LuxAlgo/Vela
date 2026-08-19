@@ -26,7 +26,8 @@ All notable changes to Vela, newest first.
   new pane scales itself to the visible bars, and collapsing it blanks the painting),
   and a fresh add is recorded at the top of the stack, which is where such overlays
   really paint — so the tree reads true from the start. Screenshots composite in the
-  same order the chart shows.
+  same order the chart shows. The gridlines stay at the very back throughout: sending
+  an indicator behind the candles never hides it behind the grid.
 
 - **The symbol picker browses past its first page.** The search dialog's list was
   hard-capped at 100 rows with no way to load more — on a 13k-symbol venue (US
