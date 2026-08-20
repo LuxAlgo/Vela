@@ -121,6 +121,8 @@ export interface VelaEventMap extends Record<string, unknown> {
     oldestTime: number;
     barsLoaded: number;
   };
-  alert: EngineAlert;
+  /** An indicator's script raised an alert. `indicator` names the source — the
+   *  indicator's display title (what its legend row shows). */
+  alert: EngineAlert & { indicator?: string };
   warning: EngineWarning;
 }

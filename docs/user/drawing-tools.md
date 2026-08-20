@@ -43,11 +43,11 @@ right, so the bar never overlaps candles, the legend, or the axes).
   tooltip names the tool its icon will arm (the group's last-used one).
 - **Favorites.** Every tool row in a flyout carries a **star** at its right edge (revealed on row
   hover, gold when set). Starring is a user preference, not document data: the set survives
-  symbol/timeframe rebuilds, is persisted by the widget alongside the other UI state (`persist`),
+  symbol/timeframe rebuilds, is persisted by the shell alongside the other UI state (`persist`),
   and is readable and writable from code — see below. Hosts and plugins can build their own UI on
   top of it (a favorites bar, a radial picker…).
 - **Shortcut hints.** When the host binds a keyboard shortcut that arms or places a tool, the
-  flyout row shows the chord beside the star (the widget binds `Alt+T` for the trend line and
+  flyout row shows the chord beside the star (the shell binds `Alt+T` for the trend line and
   `Alt+H` / `Alt+V` for lines at the cursor out of the box). Hints are pushed as display strings
   via `chart.drawings.setToolShortcuts({ trendline: 'Alt+T', … })`, so they always match the
   host's actual bindings and platform formatting.
@@ -139,7 +139,7 @@ A drawing under the data stays fully interactive: it still hit-tests, and its se
 draw on top, so you can always see and grab what you selected.
 
 The position is part of the drawing, so it is saved with `toJSON()`, restored by `fromJSON()`, and
-undoable; the widget also persists the series' own order, so a saved chart comes back stacked as
+undoable; the shell also persists the series' own order, so a saved chart comes back stacked as
 you left it. Depth needs a renderer that declares the `drawingDepth` capability (the **native
 renderer** does); where it is missing, drawings all paint over the data, `zIndex` orders only the
 drawings among themselves, and the tree keeps them in one block above the series.
@@ -345,7 +345,7 @@ chart.drawings.setFavorites(['ray', 'box']);    // replace the whole set (unknow
 chart.on('drawing:favorites', ({ favorites }) => { /* the set changed (star click or code) */ });
 ```
 
-The widget persists the set with its other state when `persist` is enabled, and restores it on
+The shell persists the set with its other state when `persist` is enabled, and restores it on
 the next load.
 
 ## Persistence, undo & clipboard

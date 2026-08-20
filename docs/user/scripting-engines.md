@@ -55,18 +55,19 @@ The shells take engine **factories**, keyed by language — one instance per cha
 worker engine gets its own thread and dies with its chart:
 
 ```ts
-import { VelaWidget } from '@luxalgo/vela/widget';
+import { VelaWorkspace } from '@luxalgo/vela/workspace';
 import { PineWorkerEngine } from '@luxalgo/vela-pinets';
 
-new VelaWidget('#app', {
+new VelaWorkspace('#app', {
+    layout: false, // one chart; any grid layout takes the same options
     symbol: 'BTCUSDT',
     engines: { pine: () => new PineWorkerEngine() },
     indicators: [{ name: 'EMA 20', enabled: true, script: '…' }], // manifest entries default to `pine`
 });
 ```
 
-`VelaWorkspace` takes the same `engines` option with the same meaning (one instance per
-cell). See [the widget](./widget.md) and [the workspace](./workspace.md).
+The `engines` factories are instantiated once per chart (each workspace cell gets its
+own — a worker engine per chart). See [the workspace](./workspace.md).
 
 ### Registering it once, app-wide
 

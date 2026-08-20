@@ -383,6 +383,33 @@ describe('BarStore', () => {
         store.retainSymbol('SOLUSDT'); // chart symbol actually changes → drop the secondary
         expect(store.get(seriesKey('binance', 'ETHUSDT', '240'))).toBeUndefined();
     });
+
+    it('retain is owner-scoped — one shell releasing never evicts what another retains', () => {
+        const store = new BarStore();
+        const bar = { time: 1, open: 1, high: 1, low: 1, close: 1, volume: 0 };
+        const wsA = {};
+        const wsB = {};
+        // Both shells declare their symbols (boot), then the series land (loads).
+        store.retain(new Set(['BTCUSDT']), wsA);
+        store.retain(new Set(['ETHUSDT']), wsB);
+        store.merge(seriesKey('binance', 'BTCUSDT', '60'), [bar]);
+        store.merge(seriesKey('binance', 'ETHUSDT', '60'), [bar]);
+        // A re-declaring must not purge B's symbol (the effective set is the union).
+        store.retain(new Set(['BTCUSDT']), wsA);
+        expect(store.get(seriesKey('binance', 'ETHUSDT', '60'))).toBeDefined();
+        expect(store.get(seriesKey('binance', 'BTCUSDT', '60'))).toBeDefined();
+
+        // A destroys (releases) — B's protection must survive A's empty set.
+        store.retain(new Set(), wsA);
+        store.retainSymbol('SOLUSDT'); // a purge pass
+        expect(store.get(seriesKey('binance', 'ETHUSDT', '60'))).toBeDefined();
+        expect(store.get(seriesKey('binance', 'BTCUSDT', '60'))).toBeUndefined(); // A's symbol no longer protected
+
+        // B releases too — back to the legacy single-chart policy.
+        store.retain(new Set(), wsB);
+        store.retainSymbol('BTCUSDT');
+        expect(store.get(seriesKey('binance', 'ETHUSDT', '60'))).toBeUndefined();
+    });
 });
 
 describe('session-keyed series (RTH vs ETH are different bars)', () => {

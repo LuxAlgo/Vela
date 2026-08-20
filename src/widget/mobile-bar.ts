@@ -66,7 +66,8 @@ export interface MobileBarOptions {
     /** Omitted ⇒ no indicators stop (the host replaced the picker — see the
      *  `indicatorPicker` shell option). */
     onIndicatorsClick?: () => void;
-    onDrawingsClick: () => void;
+    /** Omitted ⇒ no drawings stop (the shell disabled user drawings — `drawings: false`). */
+    onDrawingsClick?: () => void;
     onMoreClick: () => void;
     onSettingsClick: () => void;
     /** Live widget context — left-aligned contributed actions (`align: 'left'`)
@@ -106,11 +107,12 @@ export class MobileBar {
         const indicators = onIndicators ? item('vela-mb-indicators', 'Indicators', onIndicators, 'indicators') : null;
         this.actionsHost = doc.createElement('span');
         this.actionsHost.className = 'vela-mb-actions';
-        const drawings = item('vela-mb-drawings', 'Drawings', opts.onDrawingsClick, 'pen');
+        const onDrawings = opts.onDrawingsClick;
+        const drawings = onDrawings ? item('vela-mb-drawings', 'Drawings', onDrawings, 'pen') : null;
         const more = item('vela-mb-more', 'More', opts.onMoreClick, 'kebab');
         const settings = item('vela-mb-settings', 'Chart settings', opts.onSettingsClick, 'gear');
 
-        this.el.append(this.symbolEl, this.tfEl, ...(indicators ? [indicators] : []), this.actionsHost, drawings, more, settings);
+        this.el.append(this.symbolEl, this.tfEl, ...(indicators ? [indicators] : []), this.actionsHost, ...(drawings ? [drawings] : []), more, settings);
         host.appendChild(this.el);
         this.renderActions();
     }
