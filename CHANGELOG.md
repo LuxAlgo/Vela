@@ -79,6 +79,12 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Reset an indicator's settings to its defaults.** The indicator settings dialog
+  gained a "Reset defaults" button on the left of its footer: one click restores
+  every input to the value the indicator declares, re-running it immediately — the
+  same affordance the chart settings dialog already offers. A reset is still
+  cancelable: Cancel keeps reverting the whole session to the values the dialog
+  opened with.
 - **Shell-routed indicator adds for plugins.** The contribution context gained
   `ctx.addIndicator({ name, script, language? })` and `ctx.addNativeIndicator(type)`:
   unlike the raw `chart.addIndicator` / `chart.addNativeIndicator`, additions made
