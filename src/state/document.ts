@@ -76,6 +76,12 @@ export interface CellState {
     drawings?: unknown;
     /** The indicator ledger: manifest entries by name + present native types. */
     indicators?: { manifest: string[]; natives: string[] };
+    /** Third-party per-chart state, by namespaced key (`'vendor.feature'`) — written and
+     *  read by registered state-persistence handlers (`registerStatePersistence`, scope
+     *  `'cell'`). Values are OPAQUE here: the codec preserves entries verbatim — a key
+     *  whose handler is absent this session still round-trips — and each handler
+     *  validates its own payload at restore. JSON-serializable values only. */
+    ext?: Record<string, unknown>;
 }
 
 /** One entry of the document's `charts` array: a chart's state plus its cell IDENTITY. */
@@ -108,6 +114,9 @@ export interface WorkspaceState {
     /** Per-chart state, one entry per SLOT (a single `c1` entry for the widget).
      *  Ids are unique — the codec drops id-less entries and keeps the LAST duplicate. */
     charts: ChartState[];
+    /** Third-party document-level state, by namespaced key (`'vendor.feature'`) — the
+     *  `scope: 'global'` counterpart of {@link CellState.ext}, same opacity contract. */
+    ext?: Record<string, unknown>;
 }
 
 /** Serialize a state document (the inverse of {@link decodeState}). */
@@ -172,7 +181,23 @@ export function sanitizeState(doc: unknown): WorkspaceState | null {
     if (tracks) out.trackSizes = tracks;
     const panels = sanitizePanels(d.panels);
     if (panels) out.panels = panels;
+    const ext = sanitizeExt(d.ext);
+    if (ext) out.ext = ext;
     return out;
+}
+
+/** The `ext` bag passes through OPAQUELY (the rendererConfig/drawings precedent): only
+ *  object-ness and key shape are checked here — each entry's payload is validated by the
+ *  handler that owns the key, at restore time. Entries whose handler is not registered
+ *  this session survive verbatim, so a document never loses a plugin's state just
+ *  because the plugin wasn't loaded when the document passed through. */
+function sanitizeExt(raw: unknown): Record<string, unknown> | null {
+    if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+        if (key.length > 0 && value !== undefined) out[key] = value;
+    }
+    return Object.keys(out).length > 0 ? out : null;
 }
 
 function sanitizeCell(raw: unknown): CellState | null {
@@ -196,6 +221,8 @@ function sanitizeCell(raw: unknown): CellState | null {
         const natives = Array.isArray(ind.natives) ? ind.natives.filter((n): n is string => typeof n === 'string') : [];
         out.indicators = { manifest, natives };
     }
+    const ext = sanitizeExt(c.ext);
+    if (ext) out.ext = ext;
     return out;
 }
 

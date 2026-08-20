@@ -29,8 +29,12 @@ export class BarStore {
     /** Earliest bar-open time fetched for a series — what the cache actually covers. */
     private readonly coveredFrom = new Map<string, number>();
     private currentSymbol?: string;
-    /** Symbols protected from the current-symbol purge (multi-chart cells). Empty = legacy single-chart behavior. */
+    /** Symbols protected from the current-symbol purge (multi-chart cells) — the UNION
+     *  of every owner's declaration. Empty = legacy single-chart behavior. */
     private retained: ReadonlySet<string> = new Set();
+    /** Per-owner declarations behind {@link retained} — several shells on one page must
+     *  not clobber (or, on destroy, evict) each other's protected symbols. */
+    private readonly retainedByOwner = new Map<unknown, ReadonlySet<string>>();
 
     get(key: string): OHLCV[] | undefined {
         return this.series.get(key);
@@ -79,14 +83,21 @@ export class BarStore {
      * Declare the set of symbols a multi-chart workspace is displaying (CANONICAL
      * tickers, post-registry resolution — `chart.data.resolve(sym).ticker`). These
      * survive every {@link retainSymbol} purge, so cells loading different symbols
-     * stop evicting each other's history. Replaces the previous set and purges
-     * anything now outside `symbols ∪ {currentSymbol}` immediately. An empty set
-     * restores the legacy single-chart policy. Note: SECONDARY symbols a script
-     * fetches (`request.security` cross-symbol) are not in this set and still drop
-     * on cross-cell loads — correctness is unaffected (they re-fetch on demand).
+     * stop evicting each other's history. Replaces the previous set FOR THAT OWNER
+     * (pass the shell instance as `owner`; several shells on one page keep separate
+     * declarations, the effective set is their union) and purges anything now outside
+     * the union ∪ {currentSymbol} immediately. An empty set releases the owner's
+     * declaration — with no owners left, the legacy single-chart policy is back.
+     * Note: SECONDARY symbols a script fetches (`request.security` cross-symbol) are
+     * not in this set and still drop on cross-cell loads — correctness is unaffected
+     * (they re-fetch on demand).
      */
-    retain(symbols: ReadonlySet<string>): void {
-        this.retained = new Set(symbols);
+    retain(symbols: ReadonlySet<string>, owner: unknown = 'default'): void {
+        if (symbols.size === 0) this.retainedByOwner.delete(owner);
+        else this.retainedByOwner.set(owner, new Set(symbols));
+        const union = new Set<string>();
+        for (const set of this.retainedByOwner.values()) for (const s of set) union.add(s);
+        this.retained = union;
         this.purgeOutside(this.currentSymbol);
     }
 

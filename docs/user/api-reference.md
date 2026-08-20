@@ -10,7 +10,7 @@ The **neutral model** — bars, series, pane overlays, drawings, inputs, update 
 
 > Vela installs **from source**; the `'vela'` imports in these snippets refer to the local workspace package (see [installation.md](./installation.md)).
 
-Higher-level shells are documented on their own pages: [the widget](./widget.md) (`vela/widget` — one chart, full chrome) and [the workspace](./workspace.md) (`vela/workspace` — a multi-chart grid with one shared chrome and sync links). Both expose the SAME state surface — `getState()` / `applyState()` / `state:changed` over one shared document format (the widget is the single-cell case) — which is also what their `persist` option writes.
+The higher-level shell is documented on its own page: [the workspace](./workspace.md) (`vela/workspace` — one chart with `layout: false`, or a multi-chart grid with one shared chrome and sync links). It exposes the state surface — `getState()` / `applyState()` / `state:changed` over one shared document format — which is also what its `persist` option writes.
 
 ---
 

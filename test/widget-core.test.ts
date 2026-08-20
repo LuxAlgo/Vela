@@ -8,14 +8,11 @@ import { tzMenuLabel, tzButtonLabel } from '../src/widget/timezones';
 import { priceStyleLabel } from '../src/widget/topbar';
 import { RANGE_PRESETS } from '../src/widget/bottombar';
 import { filterSymbols } from '../src/widget/symbol-picker';
-import { readUrlState } from '../src/widget/url-state';
 import { zoomTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
 import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, registerLegendAction, unregisterLegendAction, legendActions, legendActionsProviderFor, type EngineFactory, type LegendIndicatorInfo } from '../src/widget/contributions';
 import type { ScriptingEngine } from '../src/core/ports/ScriptingEngine';
-import { loadPersisted, savePersisted, legacyWidgetState, type WidgetStorage } from '../src/widget/persist';
 import { watermarkFontPx } from '../src/widget/watermark';
-import { sanitizeState } from '../src/state/document';
 
 describe('parseTimeframe', () => {
     it('bare numbers are minutes; canonical collapses to bare minutes', () => {
@@ -262,58 +259,6 @@ describe('indicatorLedger', () => {
     });
 });
 
-describe('readUrlState', () => {
-    it('maps the query params and ignores absent/empty ones', () => {
-        expect(readUrlState('?symbol=ETHUSDT&interval=15&style=heikinashi&tz=Europe%2FParis')).toEqual({
-            symbol: 'ETHUSDT',
-            timeframe: '15',
-            priceStyle: 'heikinashi',
-            timezone: 'Europe/Paris',
-        });
-        expect(readUrlState('?interval=240')).toEqual({ timeframe: '240' });
-        expect(readUrlState('')).toEqual({});
-        expect(readUrlState('?symbol=')).toEqual({});
-        expect(readUrlState('?session=extended')).toEqual({ session: 'extended' }); // shareable ETH links
-    });
-});
-
-describe('legacyWidgetState (pre-unified three-key migration)', () => {
-    it('folds prefs + config + drawings keys into one single-cell unified document', () => {
-        const doc = legacyWidgetState(
-            { symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'bars', timezone: 'Europe/Paris', bars: '2000', watermark: '0', favorites: 'trendline,hline' },
-            JSON.stringify({ theme: 'dark' }),
-            JSON.stringify({ version: 1, drawings: [{ type: 'hline' }] }),
-        );
-        expect(doc).toEqual({
-            version: 1,
-            layout: '1',
-            activeCellId: 'c1',
-            timezone: 'Europe/Paris',
-            favorites: ['trendline', 'hline'],
-            charts: [
-                {
-                    id: 'c1',
-                    symbol: 'ETHUSDT',
-                    timeframe: '15',
-                    priceStyle: 'bars',
-                    bars: 2000,
-                    watermark: false,
-                    rendererConfig: { theme: 'dark' },
-                    drawings: { version: 1, drawings: [{ type: 'hline' }] },
-                },
-            ],
-        });
-        // The migrated document must survive the shared sanitizer untouched.
-        expect(sanitizeState(doc)).toEqual(doc);
-    });
-
-    it('tolerates junk: corrupt sub-documents are dropped, an empty payload is null', () => {
-        const doc = legacyWidgetState({ symbol: 'BTCUSDT', bars: 'not-a-number' }, '{corrupt', 'also corrupt');
-        expect(doc!.charts[0]).toEqual({ id: 'c1', symbol: 'BTCUSDT' });
-        expect(legacyWidgetState({}, null, null)).toBeNull(); // nothing usable → no migration
-    });
-});
-
 describe('widget action contributions', () => {
     it('registers per target, order-sorts, when-filters, and last-id-wins', () => {
         const ran: string[] = [];
@@ -413,37 +358,6 @@ describe('avatarColor', () => {
         expect(avatarColor('BTCUSDT')).toBe(avatarColor('BTCUSDT'));
         expect(avatarColor('ETHUSDT')).toMatch(/^hsl\(\d+, 42%, 38%\)$/);
         expect(avatarColor('BTCUSDT')).not.toBe(avatarColor('ETHUSDT'));
-    });
-});
-
-describe('WidgetStorage adapter (pluggable persistence)', () => {
-    it('sync adapters resolve synchronously (the localStorage-like path)', () => {
-        const store = new Map<string, string>();
-        const sync: WidgetStorage = { get: (k) => store.get(k) ?? null, set: (k, v) => void store.set(k, v) };
-        savePersisted(sync, 'k', { symbol: 'ETHUSDT', timeframe: '15' });
-        const out = loadPersisted(sync, 'k');
-        expect(out).not.toBeInstanceOf(Promise); // construction-time restore relies on this
-        expect(out).toEqual({ symbol: 'ETHUSDT', timeframe: '15' });
-    });
-
-    it('async adapters return a promise with the parsed state (late-apply path)', async () => {
-        const store = new Map<string, string>();
-        const asyncStore: WidgetStorage = {
-            get: async (k) => store.get(k) ?? null,
-            set: async (k, v) => void store.set(k, v),
-        };
-        savePersisted(asyncStore, 'k', { priceStyle: 'heikinashi' });
-        await Promise.resolve(); // let the fire-and-forget set land
-        const out = loadPersisted(asyncStore, 'k');
-        expect(out).toBeInstanceOf(Promise);
-        expect(await out).toEqual({ priceStyle: 'heikinashi' });
-    });
-
-    it('corrupted payloads and rejecting adapters degrade to an empty state', async () => {
-        const bad: WidgetStorage = { get: () => '{not json', set: () => {} };
-        expect(loadPersisted(bad, 'k')).toEqual({});
-        const rejecting: WidgetStorage = { get: async () => Promise.reject(new Error('offline')), set: () => {} };
-        expect(await loadPersisted(rejecting, 'k')).toEqual({});
     });
 });
 

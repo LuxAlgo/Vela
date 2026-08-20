@@ -6,6 +6,43 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Shell-routed indicator adds for plugins.** The contribution context gained
+  `ctx.addIndicator({ name, script, language? })` and `ctx.addNativeIndicator(type)`:
+  unlike the raw `chart.addIndicator` / `chart.addNativeIndicator`, additions made
+  through them enter the shell's unified undo/redo timeline and the topbar indicator
+  count — a custom indicator menu now behaves exactly like the built-in picker under
+  Ctrl+Z. These externally-added scripts stay OUT of the persisted manifest ledger
+  (their names can't resolve against the host manifest); persisting them is the
+  plugin's job, via the seam below.
+- **Third-party state in the persisted document.** `registerStatePersistence({ key,
+  scope: 'cell' | 'global', serialize, restore })` lets a plugin store its own state
+  inside the shell's state document instead of a parallel store: entries live in new
+  `ext` bags (`state.ext` at the document root, `charts[i].ext` per chart) under
+  namespaced keys. `serialize` runs on every snapshot; `restore` runs when a document
+  carrying the key is applied — after the core state, and muted for cell scope so a
+  restore never pollutes undo/redo. The codec passes `ext` through opaquely: entries
+  whose plugin isn't loaded still round-trip, so no data is lost on a plugin-less
+  reload. `ctx.stateChanged()` schedules a save for state changes the shell can't see.
+- **Single-chart workspaces.** `layout: false` pins a `VelaWorkspace` to one chart:
+  the layout picker and the sync switches disappear (desktop and mobile),
+  `setLayout` becomes a no-op, and no `cells` entry is needed — the top-level chart
+  options seed the single chart. A previously persisted multi-chart document still
+  restores its first chart; the others stay dormant.
+- **Restores that keep the chart alive.** `applyState` now applies a document IN
+  PLACE when it matches the live grid (same layout, same slots): markets switch on
+  the existing charts, so chart references, indicator handles, and event
+  subscriptions survive a restore — including the late restore of an async storage
+  backend. Structural changes still rebuild as before.
+- **Workspace toasts.** `ws.toast(message, kind?, durationMs?)` shows a notice on
+  the same surface the workspace's own alerts and script errors use.
+- **Readable alert provenance.** Alert toasts and the bell menu now name their
+  source as `SYMBOL timeframe Indicator` instead of the internal cell id, and a new
+  `alertCap` option sets how many alerts the bell keeps (default 50). The chart's
+  `alert` event now carries the firing indicator's display title.
+- **`drawings` honored by the workspace.** `drawings: false` removes the whole
+  drawing surface (the shared toolbar, the mobile entry, the tool pill — the
+  programmatic `chart.drawings` API stays); `{ tools }` / `{ groups }` pick what the
+  shared toolbar offers, exactly as they do on a lone chart.
 - **Hide chart-settings entries you don't want to expose.** A new `settings` option
   (chart, widget, and workspace) takes a list of setting ids to hide from the chart
   settings dialog — a whole tab (`'advanced'`), a group (`'canvas.grid'`), or a single
@@ -25,6 +62,18 @@ All notable changes to Vela, newest first.
   indicator's settings live, and merging a regular series into the pane brings the
   price axis back automatically.
 
+### Changed
+
+- **`VelaWidget` is deprecated.** The single-chart app is now `VelaWorkspace` with
+  `layout: false` — same chart, same options, same persisted state document. The old
+  class remains for this release as a thin wrapper (a console notice says so) and will
+  be removed in a future release; replace `new VelaWidget(el, opts)` with
+  `new VelaWorkspace(el, { ...opts, layout: false })`, and pass `persist: 'vela-widget'`
+  to keep reading the state the widget stored. _(Breaking: the widget-only `urlState`
+  option no longer does anything — encode `getState()` into your own URL scheme for
+  shareable links — and state saved by very old versions in the pre-unified three-key
+  layout is no longer migrated.)_
+
 ### Fixed
 
 - **Pre- and post-market shading is instant and follows the complete chart history.**
@@ -34,6 +83,15 @@ All notable changes to Vela, newest first.
   known and panning through arbitrarily deep extended-hours history never waits or
   stops after a fixed lookback. The tint is clipped to loaded candle slots, so it
   never appears before available history or in empty space ahead of the current bar.
+- **A workspace now says so when no provider serves a symbol** — the same one-time
+  notice a single-chart shell shows, instead of a silently blank cell.
+- **Destroying one shell no longer evicts another's cached history.** The shared
+  bar cache scopes its protected symbols per shell instance; releasing one leaves
+  the others' intact.
+- **The range chips stay truthful.** Changing the timeframe through the API or a
+  contributed action now clears the highlighted range chip, and framing a range
+  through the API highlights it — the bar follows the chart, whichever path drove
+  the change.
 
 ## [v0.6.5]
 

@@ -29,6 +29,29 @@ export interface WidgetContext {
     host: HTMLElement;
     /** The widget's feedback pill (bottom-center, auto-hides). */
     toast(message: string, kind?: 'info' | 'success' | 'error'): void;
+    /** Add a SCRIPT indicator to the active chart THROUGH THE SHELL — unlike the raw
+     *  `chart.addIndicator`, the addition enters the unified undo/redo timeline, the
+     *  topbar indicator count, and the shell's bookkeeping. The entry's source rides the
+     *  recorded action, so redo re-adds it even after the original handle died. The
+     *  shell does NOT persist these across reloads (they are not manifest entries) —
+     *  a plugin that wants them back owns that via {@link registerStatePersistence}. */
+    addIndicator(entry: ExternalIndicatorEntry): void;
+    /** Add a native (core-computed) indicator to the active chart through the shell —
+     *  recorded in the undo/redo timeline, unlike the raw `chart.addNativeIndicator`. */
+    addNativeIndicator(type: string): void;
+    /** Tell the shell some PERSISTABLE third-party state changed (a debounced
+     *  `state:changed` + storage write follows). Only needed for state with no shell
+     *  event of its own — indicator adds/removals already trigger the save cycle. */
+    stateChanged(): void;
+}
+
+/** What {@link WidgetContext.addIndicator} takes: a named script, ready to run. */
+export interface ExternalIndicatorEntry {
+    name: string;
+    /** The script source (the recorded undo/redo action re-adds from it). */
+    script: string;
+    /** Engine language (default: the chart's default engine). */
+    language?: string;
 }
 
 /** Where an action is projected. */
@@ -252,6 +275,79 @@ export function legendActionsProviderFor(chart: Vela, context: () => WidgetConte
             .filter((d) => !d.when || d.when(info))
             .map((d) => ({ id: d.id, icon: d.icon, tooltip: d.tooltip, run: () => d.run(context(), info) }));
     };
+}
+
+// ── State persistence (the `ext` seam) ─────────────────────────────────────────────
+
+/**
+ * The surface a `scope: 'cell'` persistence handler works against — bound to ONE cell
+ * (never the active one by proxy), because serialize/restore run per cell, including
+ * cells that are not active. `addIndicator`/`addNativeIndicator` target THIS cell and
+ * are ALWAYS muted — unlike their {@link WidgetContext} namesakes they never enter the
+ * undo timeline, even from an async `restore` continuation (fetch, then add): applying
+ * a document is state application, not a user edit.
+ */
+export interface CellStateContext {
+    /** The cell's durable identity (`'c1'`, a declared name). */
+    cellId: string;
+    /** The cell's LIVE chart. */
+    chart: Vela;
+    /** Add a script indicator to THIS cell through the shell (see {@link WidgetContext.addIndicator}). */
+    addIndicator(entry: ExternalIndicatorEntry): void;
+    /** Add a native indicator to THIS cell through the shell. */
+    addNativeIndicator(type: string): void;
+}
+
+/**
+ * A third-party STATE PERSISTENCE handler — how a plugin puts its own state into the
+ * shell's persisted document (the `ext` bag of `WorkspaceState` / per-chart state)
+ * instead of running a parallel store. `key` is namespaced (`'vendor.feature'`) and
+ * flat — one entry per handler. `serialize` runs on every shell snapshot (`getState`,
+ * the persist write) and returns a JSON-serializable payload, or `undefined` for "no
+ * entry". `restore` runs when a document carrying the key is applied (boot restore,
+ * `applyState`) — AFTER the core state (chart alive, engines registered, indicator
+ * ledger converged) and, for cell scope, inside the cell's history-mute, so nothing it
+ * does enters undo/redo. The payload is UNTRUSTED (the codec passes `ext` through
+ * opaquely): validate it. `restore` is only called for keys present in the document.
+ *
+ * Register at import time, before shells are constructed — the rule every contribution
+ * registry shares. A key with no registered handler still round-trips verbatim, so a
+ * session without the plugin never loses its state.
+ */
+export type StatePersistenceHandler =
+    | {
+          /** Namespaced entry key (`'velapro.indicators'`) — re-registering a key replaces it. */
+          key: string;
+          /** Where the entry lives: per chart (`charts[i].ext`) — follows the cell through pool/layout moves. */
+          scope: 'cell';
+          serialize(ctx: CellStateContext): unknown;
+          restore(payload: unknown, ctx: CellStateContext): void;
+      }
+    | {
+          key: string;
+          /** Document root (`state.ext`) — one entry per document, whatever the grid. */
+          scope: 'global';
+          serialize(ctx: WidgetContext): unknown;
+          restore(payload: unknown, ctx: WidgetContext): void;
+      };
+
+const stateHandlers = new Map<string, StatePersistenceHandler>();
+
+/** Register (or replace) a state-persistence handler. Returns an unregister disposer. */
+export function registerStatePersistence(handler: StatePersistenceHandler): () => void {
+    stateHandlers.set(handler.key, handler);
+    return () => {
+        if (stateHandlers.get(handler.key) === handler) stateHandlers.delete(handler.key);
+    };
+}
+
+export function unregisterStatePersistence(key: string): void {
+    stateHandlers.delete(key);
+}
+
+/** The registered handlers of one scope (registration order). */
+export function statePersistenceHandlers<S extends StatePersistenceHandler['scope']>(scope: S): Array<Extract<StatePersistenceHandler, { scope: S }>> {
+    return [...stateHandlers.values()].filter((h): h is Extract<StatePersistenceHandler, { scope: S }> => h.scope === scope);
 }
 
 // ── Default scripting engines ──────────────────────────────────────────────────────

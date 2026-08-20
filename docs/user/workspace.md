@@ -14,6 +14,8 @@ import { BinanceProvider } from 'vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {
     layout: '4', // '1' | '2h' | '2v' | '4' | '8' | picker ids ('g3x2') | a registerLayout() id
+    //           // `false` = SINGLE-CHART mode: one cell, no layout picker or sync
+    //           // switches anywhere, `setLayout` no-ops, no `cells` entry needed
     // Chart options at the TOP LEVEL are every cell's DEFAULT — the same words the
     // widget (and the bare chart) use. `cells` overrides them per cell; a cell's NAME
     // is its durable identity, DECLARATION ORDER fills the layout's slots:
@@ -36,12 +38,47 @@ const ws = new VelaWorkspace('#app', {
 `VelaOptions` except `height` — the grid sizes its cells) + the shared shell surface
 (`providers`, `engines`, `indicators`, `timeframes`, `timezone`, chrome toggles,
 `persist`/`storage`) + the grid's own options (`layout`, `cells`, `sync`,
-`drawingToolbar`, `maxWebglCells`). A chart option means the same thing everywhere: on
-the widget it configures *the* chart, here it is the *default* of each cell —
-`upColor`, `glow`, `logScale`, `animations`, `defaultLanguage`, `drawings` (its toolbar
-excepted: the shared bar replaces per-cell bars), even `renderer` all apply to every
-cell. An explicit `nativeBackend` (other than `'auto'`) wins over the `maxWebglCells`
-budget policy.
+`drawingToolbar`, `maxWebglCells`, `alertCap`). A chart option means the same thing
+everywhere: on the widget it configures *the* chart, here it is the *default* of each
+cell — `upColor`, `glow`, `logScale`, `animations`, `defaultLanguage`, even `renderer`
+all apply to every cell. An explicit `nativeBackend` (other than `'auto'`) wins over
+the `maxWebglCells` budget policy.
+
+The `drawings` option applies here too, mapped onto the SHARED drawing surface:
+`false` removes it entirely — no toolbar, no mobile drawings entry, no tool pill (the
+programmatic `chart.drawings` API stays) — and `{ tools }` / `{ groups }` pick what
+the shared toolbar offers. Only its `toolbar` sub-key changes meaning: one shared bar
+serves the grid, so per-cell in-chart bars never render (`drawingToolbar: false` hides
+the shared bar itself).
+
+Alerts from every cell aggregate in the topbar bell, newest first, each entry naming
+its source as `SYMBOL timeframe Indicator`; `alertCap` bounds how many are kept
+(default 50). `ws.toast(message, kind?, durationMs?)` shows a host notice on the same
+surface.
+
+## Single chart (`layout: false`)
+
+`layout: false` pins the workspace to **one chart**: the layout picker and the sync
+switches disappear (desktop and mobile), `setLayout` is a no-op, and no `cells` entry
+is needed — the top-level chart options seed the single chart. Everything else on this
+page applies unchanged; the state document is simply the single-cell case
+(`layout: '1'`, one `charts` entry).
+
+```ts
+const chart = new VelaWorkspace('#chart', {
+    layout: false,
+    symbol: 'BTCUSDT',
+    timeframe: '60',
+    providers: { binance: () => new BinanceProvider() },
+    persist: true,
+});
+```
+
+> **Migrating from `VelaWidget`.** The old single-chart class is deprecated and now
+> wraps exactly this. Replace `new VelaWidget(el, opts)` with
+> `new VelaWorkspace(el, { ...opts, layout: false })`; pass `persist: 'vela-widget'`
+> to keep reading the state the widget stored. The widget-only `urlState` option is
+> gone — encode `getState()` into your own URL scheme if you need shareable links.
 
 ## Cells and the active cell
 
@@ -154,13 +191,19 @@ The state SURFACE is the product; persistence is an adapter on top of it.
 ```ts
 const state = ws.getState();
 // → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?,
-//     timeframeFavorites?, charts: […] }
+//     timeframeFavorites?, charts: […], ext? }
 // One ORDERED `charts` entry per cell, live AND dormant — array position i restores
 // into slot i, `id` is the cell's durable name: { id: 'btc', symbol, provider?, timeframe,
 //   priceStyle, bars?, watermark?, indicatorTitles?, rendererConfig (renderer.getConfig() document),
-//   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] } }
+//   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] },
+//   ext? (third-party per-chart state, by namespaced key) }
+// `ext` bags (document root and per chart) carry PLUGIN state — written and restored by
+// handlers plugins register (registerStatePersistence, see the plugin SDK); entries pass
+// through opaquely, so a document never loses them when the plugin isn't loaded.
 
-ws.applyState(state); // untrusted-safe: malformed fields dropped, whole grid rebuilt
+ws.applyState(state); // untrusted-safe: malformed fields dropped; same-shape documents
+//                    // apply IN PLACE (charts, handles and subscriptions survive),
+//                    // structural changes rebuild the grid
 ws.on('state:changed', () => {
     /* debounced (~500ms) — re-pull getState() */
 });
@@ -172,10 +215,10 @@ links, layout templates — compose these two directly and need none of the plum
 below. There is deliberately **no built-in URL persistence**: a host wanting shareable
 links encodes `getState()` into its own URL scheme and calls `applyState()` at boot.
 
-The document format is **shared with [the widget](./widget.md)** — same triplet
-(`getState`/`applyState`/`state:changed`), same codec, the widget being the
-single-chart case (`layout: '1'`, one `charts` entry). A saved widget chart drops into
-a workspace slot as-is, and a cell's state restores into a widget.
+One format for every shape: the [single-chart mode](#single-chart-layout-false) speaks
+the same triplet (`getState`/`applyState`/`state:changed`) and writes the same document
+with one `c1` cell — a saved single chart drops into a grid slot as-is, and a cell's
+state restores into a single-chart shell.
 
 ### The `persist` option and the storage interface
 
@@ -258,36 +301,184 @@ silently reorder them).
 | `timezone` | `'Etc/UTC'` | Display timezone (every cell). |
 | `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
 | `indicatorPicker` | `true` | The built-in indicator dialog's entry points (topbar button, mobile-bar item, `/`). `false` removes them for hosts shipping their own indicator UI — see [Replacing the indicator menu](../contributing/plugin-sdk.md#replacing-the-indicator-menu). |
-| `layoutMode` | `'auto'` | Chrome size class — see [the widget's Mobile section](./widget.md#mobile); the workspace behaves the same. |
+| `layoutMode` | `'auto'` | Chrome size class — see [Mobile](#mobile). |
 | `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
 | `persist` / `storage` | off / localStorage | State persistence (see above). |
-
-**Mobile.** The workspace follows the same mobile rules as the widget (narrow container
-or coarse pointer, or a pinned `layoutMode`): the shared topbar, the desktop bottombar
-and the docked drawing-toolbar column give way to one touch-first bottom bar whose
-sheets and full-screen pickers act on the **active cell**, and every cell's chart gains
-the touch gestures. The one workspace-specific addition sits in the three-dots sheet: a
-**Layout** entry opening the same tap-to-apply grid canvas as the desktop topbar's
-layout dropdown (plus its non-grid preset rows), with the symbol/interval/crosshair
-sync switches below it.
-
-In **multi-cell grids** each cell's status line stays on one row — segments that don't
-fit the cell hide instead of wrapping (bar change first, then venue/timeframe, then the
-market badge; the logo + ticker always stay) — and on mobile the indicator legend's
-count chip opens the **object tree** instead of unfolding rows in place; its
-per-indicator action menu carries an "Indicator settings" entry, so everything the
-legend rows offered stays one tap away.
 
 **Workspace options** (the grid's own):
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `layout` | `'4'` | Initial grid — preset id, picker id (`g3x2`), `registerLayout()` id, or inline definition. |
+| `layout` | `'4'` | Initial grid — preset id, picker id (`g3x2`), `registerLayout()` id, or inline definition. `false` = [single-chart mode](#single-chart-layout-false). |
 | `cells` | — | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above). |
 | `sync` | off | Initial sync links (see above). |
 | `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |
 | `maxWebglCells` | `8` | Above this many cells, every cell uses canvas2d (uniform look inside the browser's WebGL budget; `glow` unavailable there). |
+| `alertCap` | `50` | Alerts the topbar bell keeps (oldest drop beyond it). |
 
 Contributed actions/attachments (`vela/plugin`) work unchanged — `ctx.chart` resolves
 to the ACTIVE cell's chart; grid-aware plugins additionally get `ctx.cells`,
 `ctx.activeCellId`, and `ctx.setActiveCell(id)`.
+
+## The indicator manifest
+
+The shell takes its script library as **data** — an array (or `{ indicators: [...] }`
+wrapper) of entries, inline or fetched from a URL, shared by every cell:
+
+```json
+[
+    { "name": "EMA 20", "script": "//@version=5\nindicator(\"EMA 20\", overlay=true)\nplot(ta.ema(close, 20))" },
+    { "name": "My RSI", "url": "/scripts/rsi.pine", "language": "pine", "enabled": false }
+]
+```
+
+- `script` is inline source; `url` fetches it (relative to the manifest URL).
+- `enabled: false` entries don't auto-add — they appear in the **Indicators** picker for
+  the user to toggle on. Toggles are live and per cell, and survive market switches.
+- A broken entry is skipped with a console warning — one bad script never takes the
+  chart down. A failing manifest URL throws.
+
+## Keyboard
+
+The shell is keyboard-first (bindings act on the **active cell**):
+
+- Type a **letter** anywhere on a chart → the symbol search opens, seeded with it.
+- Type a **digit** → the timeframe entry opens (`15`, `4h`, `D`, `3M`, … — a bare
+  number is minutes, a bare letter means one unit).
+- `alt+S` → download a PNG screenshot. `?` → the shortcuts panel.
+- `mod+↑/↓` glide-zoom, `mod+←/→` glide-pan with the exact feel and limits of a drag
+  (toward now it rests on the newest candle plus the usual empty space). `alt+T` arms
+  the trend line tool; `alt+H` / `alt+V` drop a horizontal / vertical line at the
+  cursor — the drawing toolbar's menus show these chords beside the tools.
+- Mouse: `Shift`+scroll pans through history instead of zooming, `Shift`+click starts
+  the measure ruler at the cursor, and middle-click deletes the drawing under it.
+- Drawing keys (undo/redo, copy/paste, delete, nudge) come from the core — see
+  [Drawing tools](./drawing-tools.md).
+
+Bindings are declarative descriptors on `ws.keymap` — `register({ id, keys:
+'mod+shift+k', label, category, scope?, run })` — and are listed automatically in the
+`?` panel. `'mod'` is ⌘ on macOS and Ctrl elsewhere. Scopes stack: the shell pushes
+`'dialog'` while any of its dialogs is open, muting chart-scope bindings.
+
+Shortcuts fire while keyboard focus is **inside the shell** (any click on a chart puts
+it there). For a page where the chart is the main content, set `autofocus: true` so
+they work from the very first keystroke, before any click.
+
+## The chrome
+
+- **Topbar** — symbol button (opens the search), timeframe dropdown (hover a row to
+  star a favorite: starred timeframes sit as duration-sorted chips, the current one
+  highlighted in place; an unstarred current sits next to the caret, and the caret
+  opens the full list — or the combined label+caret when nothing is starred),
+  chart-style dropdown (built-ins ∪ [plugin chart types](../contributing/plugin-sdk.md),
+  with their icons and labels), the layout dropdown (multi-chart grids only),
+  Indicators picker, undo/redo (same history as Ctrl+Z / Ctrl+Y), alerts bell,
+  data-window and object-tree panel toggles, then any
+  [contributed actions](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)
+  in the right-hand cluster.
+- **Status line** — symbol + OHLC and change of the hovered bar (resting on the latest
+  live bar), stacked above the renderer's indicator legend. In multi-cell grids it
+  stays on one row — segments that don't fit the cell hide instead of wrapping (bar
+  change first, then venue/timeframe, then the market badge; the logo + ticker always
+  stay).
+- **Object tree** — a docked panel grouping every item under the pane it belongs to. Each pane is
+  one column read top to bottom as front to back: its drawings, its indicators and, in the main
+  pane, the price series, all in draw order — new indicators and new drawings both start under
+  the price, so the candles stay readable. Rows carry hide/show, lock and remove; right-clicking one opens the rest
+  (duplicate, restack, and moving an indicator to another pane or a new one), and each pane's
+  header carries its reorder/collapse/maximize controls. Rows are also draggable — onto a pane to
+  move an item there, onto the band between two panes to open a new one, or to any slot in a
+  pane's column to set draw order, a drawing under the candles or between two indicators included
+  — with a ghost label and a drop hint while the drag is live. Drawings can be multi-selected
+  (Ctrl/Cmd-click) and bundled into a named group that hides, locks, deletes and drags as one
+  block; groups live for as long as the chart and are not persisted. Kept in sync with the
+  chart's events.
+- **Data window** — the other docked panel: the date and time of the bar under the crosshair,
+  its OHLCV tinted with the bar's direction, then one section per indicator showing each plot's
+  value in its own color. It follows the crosshair and falls back to the latest bar when the
+  pointer leaves the chart. The two panels share the dock, so opening one closes the other.
+- **The dock** — the column both panels live in, and the one plugins extend
+  ([`registerSidePanel`](../contributing/plugin-sdk.md#side-panels--registersidepanel)): every
+  panel gets a toggle in the topbar's panel group, one panel shows at a time, and a panel that
+  declares itself resizable has a drag handle on its inner edge (double-click returns it to its
+  declared width). Which panel is open and the widths you dragged are part of the saved state.
+- **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
+  the active chart's timeframe, **fetches the depth its window needs**, and frames it:
+  `1D`→1m, `7D`→5m, `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing
+  the timeframe by hand leaves range mode (the chip clears and the fetch depth returns
+  to the chart's own `bars` setting).
+- **Context menus** — right-click the chart body for reset view, removing all drawings or all
+  indicators, and the settings dialog; the price axis for that pane's own scale (autoscale,
+  invert, regular/percent/indexed/logarithmic, and the label and level toggles); the time axis
+  for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
+  is independent of the main one. Each menu's settings entry opens the settings dialog on the
+  tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
+
+## Mobile
+
+In a container narrower than ~640px (or up to ~920px with a coarse pointer — a
+tablet), the shell switches to its **mobile chrome**; `layoutMode: 'mobile'` or
+`'desktop'` pins the choice. The mode is container-driven and live: resizing across
+the breakpoint swaps the chrome in place, closing whatever was open in the other
+presentation. Sheets and full-screen pickers act on the **active cell**.
+
+What changes on mobile:
+
+- **One bottom bar replaces both desktop bars**, left to right: the symbol button
+  (full-screen symbol search), the timeframe button (a bottom sheet with the date-range
+  presets on top and the timeframe grid below), indicators (the full-screen picker),
+  drawings (a bottom sheet with a search bar, the tool groups as scrollable tabs, and
+  favorite stars), a three-dots sheet (undo/redo, screenshot, chart type, the side
+  panels, time zone, alerts, contributed topbar actions and — multi-chart grids only —
+  a **Layout** entry with the same tap-to-apply grid canvas as the desktop dropdown,
+  the sync switches below it), and chart settings.
+- **The docked drawing toolbar hides.** Picking a tool from the drawings sheet arms it
+  and shows a floating pill over the chart — the armed tool's icon, the magnet cycle,
+  stay-in-drawing-mode, the eraser, and ✕ to disarm. Favorites keep working (stars in
+  the sheet), so a radial-wheel-style picker built on them keeps its data.
+- **Dialogs go full-screen** — symbol search, the indicator picker, indicator settings,
+  and chart settings, where the section rail sits behind a burger button, a section's
+  group list becomes scrollable tabs at the top, and instance strips scroll sideways.
+- **Side panels** (data window, object tree, contributed) open over the chart instead
+  of docking a column beside it.
+- **The indicator legend starts collapsed** behind its count chip — tapping it opens
+  the **object tree**, whose per-indicator action menu carries an "Indicator settings"
+  entry, so everything the legend rows offered stays one tap away.
+- **Touch gestures**: one-finger pan (with the usual fling), two-finger pinch zoom
+  anchored between the fingers, and a **long-press** that inspects with the crosshair —
+  the view stays put while the finger drives the readout; lifting clears it. A
+  **double-tap** mirrors the desktop double-click: on the price axis it resets that
+  pane's scale to auto, on the time axis it fits the view to content, and inside the
+  plot it maximizes the tapped pane (price or indicator) — a second double-tap
+  restores the split. The price/time axis strips still drag-rescale, and the button
+  that jumps back to the most recent bar stays visible whenever the chart has data.
+
+Embedders need nothing special: the mode also reaches the renderer's own chrome, and a
+chart in a phone-sized *container on a desktop page* gets the same treatment — the
+shell's own bounds, not the viewport, are what count.
+
+## Theming
+
+The `theme` option (`'dark'`, `'light'`, or a full theme object) skins the whole shell —
+charts, topbar, menus, panels. Swap it at runtime with `ws.setTheme(...)`: every chart
+re-skins live and the chrome follows, no rebuild. Users reach the same switch in chart
+settings → Canvas → Theme. The built-in themes share the same candle colors, so
+switching never recolors the series.
+
+## Customization
+
+Three levels, shallow to deep:
+
+1. **Design tokens** — all chrome is styled through `--vela-*` CSS custom properties
+   (surfaces, borders, focus, radii, spacing, z-index). Override them on the container.
+2. **Stable class names** — every component uses prefixed classes (`.vela-dialog`,
+   `.vela-menu-item`, `.vela-sp-row`, …) your CSS can restyle.
+3. **Contributed actions** — plugins and hosts add topbar buttons and context-menu items
+   as data descriptors via
+   [`registerWidgetAction`](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction);
+   the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `Popover`, `Switch`,
+   `Select`, `NumberInput`, `TextField`, `ColorField` / `buildColorPicker`,
+   `KeymapManager`) are exported from `vela/ui` for building your own panels against
+   the headless core. Form controls share `md` (settings dialogs: 34px fields, hover
+   steppers, chip colors) and a compact `sm` size so a host panel can match either
+   surface.

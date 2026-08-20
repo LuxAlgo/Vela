@@ -125,7 +125,7 @@ own color. Every number is already formatted on the scale of the pane it belongs
 built on it does no formatting of its own.
 
 Pair it with `onCrosshairMove` to keep your own readout in step; it returns `null` on a renderer
-that doesn't provide one. This is what the [widget's data window](./widget.md#the-chrome) is
+that doesn't provide one. This is what the [workspace's data window](./workspace.md#the-chrome) is
 built from.
 
 ```js

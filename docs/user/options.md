@@ -2,10 +2,9 @@
 
 The second argument to `new Vela(container, options, deps?)` configures market data, display, and behavior. Everything here is optional — `new Vela('#chart', { data: myBars })` is enough to render candles.
 
-This vocabulary is shared by all three entry points: the [widget](./widget.md) accepts
-every option below verbatim (plus its shell options), and the
-[workspace](./workspace.md) accepts them all except `height` — there, each one is the
-DEFAULT of every cell, overridable per cell through `cells`.
+This vocabulary is shared with the [workspace](./workspace.md), which accepts every
+option below except `height` (plus its shell options) — there, each one is the DEFAULT
+of every cell, overridable per cell through `cells`.
 
 Per-indicator options (the third argument to `addIndicator`) are covered at the end.
 
@@ -101,7 +100,8 @@ By default the chart-settings dialog shows everything. `settings.hidden` lists s
 from the rail:
 
 ```js
-new VelaWidget('#chart', {
+new VelaWorkspace('#chart', {
+  layout: false,
   bars: 1000,                                  // force the fetch depth…
   settings: { hidden: ['advanced'] },          // …and remove the tab that would change it
 });
@@ -124,7 +124,7 @@ The complete catalog — every id, at every depth. Any subset works; a parent id
 its children redundant:
 
 ```js
-new VelaWidget('#chart', {
+new VelaWorkspace('#chart', {
   settings: {
     hidden: [
       // ══ Symbol tab ════════════════════════════════════════════════
