@@ -5,6 +5,7 @@
 import type { Vela } from '../Vela';
 import type { LegendActionView } from '../core/ports/IChartRenderer';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
+import { TOPBAR_BUILTIN_IDS } from './topbar-composition';
 
 /** The runtime surface an action's `when`/`run` receives. */
 export interface WidgetContext {
@@ -192,8 +193,37 @@ export function sidePanels(): SidePanelDescriptor[] {
     return [...panels.values()].sort((a, b) => (a.order ?? DEFAULT_PANEL_ORDER) - (b.order ?? DEFAULT_PANEL_ORDER));
 }
 
-/** Register (or replace) a widget action. Widgets read the registry live. */
+/** The built-in topbar slots a contributed action may TAKE OVER by registering under
+ *  their id — the "simple button" slots. The composites (symbol, timeframes, style,
+ *  layout, undo-redo, alerts, panels) are stateful controls the shell pushes state
+ *  into; a plain `{label, icon, run}` descriptor cannot stand in for them. */
+export const OVERRIDABLE_TOPBAR_IDS = ['indicators', 'screenshot'] as const;
+
+const overridableSet = new Set<string>(OVERRIDABLE_TOPBAR_IDS);
+const builtinTopbarSet = new Set<string>(TOPBAR_BUILTIN_IDS);
+
+/**
+ * The action OVERRIDING a built-in topbar slot, if one is registered — an action whose
+ * `id` IS the built-in id. An override takes the slot's WHOLE surface: the desktop
+ * button (at the slot's position), the mobile counterpart, and the keyboard chord all
+ * route to `run`, and the native machinery behind the slot (the built-in indicator
+ * picker) is not constructed. Shells resolve this at construction — register at import
+ * time, like every contribution.
+ */
+export function topbarActionOverride(id: string): WidgetActionDescriptor | undefined {
+    if (!overridableSet.has(id)) return undefined;
+    return registry.get(id);
+}
+
+/** Register (or replace) a widget action. Widgets read the registry live.
+ *  Registering under a RESERVED built-in topbar id (`'indicators'`, `'screenshot'`)
+ *  OVERRIDES that slot — see {@link topbarActionOverride}. Built-in ids that are
+ *  stateful composites cannot be overridden and the registration is refused. */
 export function registerWidgetAction(desc: WidgetActionDescriptor): () => void {
+    if (builtinTopbarSet.has(desc.id) && !overridableSet.has(desc.id)) {
+        console.warn(`[vela] widget action "${desc.id}": this built-in topbar slot is a stateful control and cannot be overridden — ignored. Overridable slots: ${OVERRIDABLE_TOPBAR_IDS.join(', ')}.`);
+        return () => undefined;
+    }
     registry.set(desc.id, desc);
     return () => {
         if (registry.get(desc.id) === desc) registry.delete(desc.id);

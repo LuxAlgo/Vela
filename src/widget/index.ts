@@ -2,6 +2,16 @@
 export { VelaWidget, type VelaWidgetOptions } from './VelaWidget';
 export type { VelaShellOptions } from './shell-options';
 export { Topbar, priceStyleLabel, type TopbarOptions } from './topbar';
+export {
+    resolveTopbarComposition,
+    topbarHas,
+    pinnedTopbarActionIds,
+    TOPBAR_BUILTIN_IDS,
+    TOPBAR_DEFAULT_LEFT,
+    TOPBAR_DEFAULT_RIGHT,
+    type TopbarComposition,
+    type ResolvedTopbarComposition,
+} from './topbar-composition';
 export { Statusline } from './statusline';
 export { Watermark } from './watermark';
 export { Bottombar, RANGE_PRESETS, type BottombarOptions, type RangePreset } from './bottombar';
@@ -33,6 +43,8 @@ export {
     registerStatePersistence,
     unregisterStatePersistence,
     statePersistenceHandlers,
+    topbarActionOverride,
+    OVERRIDABLE_TOPBAR_IDS,
     type StatePersistenceHandler,
     type CellStateContext,
     type ExternalIndicatorEntry,

@@ -81,6 +81,8 @@ export {
     registerStatePersistence,
     unregisterStatePersistence,
     statePersistenceHandlers,
+    topbarActionOverride,
+    OVERRIDABLE_TOPBAR_IDS,
     type StatePersistenceHandler,
     type CellStateContext,
     type ExternalIndicatorEntry,
