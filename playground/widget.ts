@@ -71,6 +71,18 @@ const ws = new VelaWorkspace('#chart', {
     // statusline: true,               // chrome: the status line
     // watermark: true,                // chrome: the symbol watermark behind the candles
     // bottombar: true,                // chrome: the range-presets + timezone bar
+    // topbar: {                       // COMPOSE the topbar: each side lists its VISIBLE
+    //     left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'actions', 'undo-redo'],
+    //     right: ['actions', 'alerts', 'panels', 'screenshot'],
+    // },
+    //                                 // These values ARE the defaults (an undeclared side keeps
+    //                                 //  them; 'layout' simply never renders on this single-chart
+    //                                 //  page). Entries render in LIST ORDER; omitting an id also
+    //                                 //  removes its mobile entry and keyboard chord (mod+alt+S
+    //                                 //  with 'screenshot', `/` with 'indicators'). 'actions' is
+    //                                 //  the flow slot for contributed actions — naming an
+    //                                 //  action's ID instead pins it at that spot. An explicit
+    //                                 //  list is the side's complete (and frozen) contract.
 });
 
 void ws.chart.ready().then(() => console.log('[vela-dev] chart ready'));

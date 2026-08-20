@@ -8,6 +8,7 @@ import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorManifest, IndicatorLoader } from './indicators';
 import type { VelaStorage } from './persist';
+import type { TopbarComposition } from './topbar-composition';
 
 /** What a shell (widget or workspace) accepts BEYOND the chart options themselves. */
 export interface VelaShellOptions {
@@ -34,10 +35,25 @@ export interface VelaShellOptions {
     statusline?: boolean;
     watermark?: boolean;
     bottombar?: boolean;
+    /** Declarative topbar composition: `{ left, right }` lists of the VISIBLE entries,
+     *  in render order — built-in ids (`'symbol'`, `'timeframes'`, `'style'`,
+     *  `'layout'`, `'indicators'`, `'actions'`, `'undo-redo'`, `'alerts'`, `'panels'`,
+     *  `'screenshot'`) and/or contributed-action ids (naming one PINS it there,
+     *  overriding its `align`/`order`; `'actions'` is where the unlisted ones flow).
+     *  An undeclared side keeps its default. An explicit list is that side's complete
+     *  contract — it also FREEZES it: chrome a future release adds will not appear.
+     *  Hiding a built-in removes its mobile entry and keyboard chord too (`mod+alt+S`
+     *  for `'screenshot'`); Ctrl+Z / Ctrl+Y stay — they belong to editing, not to the
+     *  `'undo-redo'` buttons. */
+    topbar?: TopbarComposition;
     /** The built-in indicator picker's entry points — the topbar button, the mobile-bar
-     *  item, and the `/` shortcut. `false` removes them, for hosts that replace the
-     *  picker with their own indicator UI (e.g. a contributed topbar action opening a
-     *  custom dialog). The `indicators` manifest still resolves and auto-adds. */
+     *  item, and the `/` shortcut. `false` removes them. The `indicators` manifest
+     *  still resolves and auto-adds.
+     *  @deprecated Removed in 0.7.0. To HIDE the built-in surface, omit `'indicators'`
+     *  from `topbar.left` (same effect: no button, no mobile stop, no `/`, no dialog).
+     *  To REPLACE it, a plugin registers its action under the id `'indicators'`
+     *  (`registerWidgetAction`) — the override takes the slot's whole surface and
+     *  needs no shell option at all. */
     indicatorPicker?: boolean;
     /** Chrome size class. `'auto'` (default) follows the CONTAINER width plus a
      *  coarse-pointer heuristic; `'mobile'` / `'desktop'` pin it. Mobile swaps the

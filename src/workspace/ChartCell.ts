@@ -338,15 +338,19 @@ export class ChartCell {
         this.watermarkOn = seed.watermark ?? deps.watermark;
         this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60') : null;
         if (!this.watermarkOn) this.watermark?.setVisible(false);
-        this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '') : null;
+        this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '', (sym) => this.inner?.data.symbolIcon(sym)) : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
         this.marketStatus = this.statusline ? new MarketStatusTracker((s) => this.statusline?.setMarketStatus(s)) : null;
         // The venue chip above is provisional (persisted/typed prefix): once the shared
         // feed's indexes settle, re-derive it from the DATA — a cell restored as
-        // `edgx:AAPL` must come back up reading NASDAQ.
+        // `edgx:AAPL` must come back up reading NASDAQ. The avatar re-resolves too: the
+        // provider's icon resolver may only answer once its index is in.
         void this.inner.data.ready().then(() => {
-            if (this.inner && this.state.symbol) this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
+            if (this.inner && this.state.symbol) {
+                this.statusline?.setSymbol(this.state.symbol);
+                this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
+            }
             this.refreshSessionAvailable();
             if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
         });

@@ -6,7 +6,8 @@ import { LayoutPicker, type LayoutPickerShape } from './layout-picker';
 import { iconEl, iconMarkup, registerIcon } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import { chartType } from '../chart-types/registry';
-import { widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
+import { topbarActionOverride, widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
+import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition, type TopbarComposition } from './topbar-composition';
 import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
 import { favoriteTimeframeChips, timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
@@ -104,9 +105,14 @@ const CSS = `
     align-items: center;
     justify-content: center;
 }
-.vela-widget-actions { margin-left: auto; display: inline-flex; gap: var(--vela-space-1); }
+/* The right side of the bar — whatever the composition puts there rides this one
+   auto-margin push (the flow-actions host used to carry it; composition can omit it). */
+.vela-topbar-right { margin-left: auto; display: inline-flex; align-items: center; gap: var(--vela-space-1); }
+.vela-widget-actions { display: inline-flex; gap: var(--vela-space-1); }
 /* Left-aligned contributed actions — the primary-chrome cluster after the dropdowns. */
 .vela-widget-actions-left { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
+/* One PINNED contributed action's slot (a composition entry naming the action's id). */
+.vela-widget-action-pin { display: inline-flex; align-items: center; }
 /* The side-panel toggles, one per docked panel — a group so the dock can rebuild them
    without disturbing the tools around it. */
 .vela-widget-panels { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
@@ -201,6 +207,11 @@ export interface TopbarOptions {
     onAlertsClick?: (anchor: HTMLElement) => void;
     /** Live widget context for contributed actions (topbar target). */
     getContext?: () => WidgetContext;
+    /** The host's declarative composition (see {@link TopbarComposition}) — which
+     *  entries render, per side, in list order. An undeclared side keeps its default.
+     *  The shell that owns this bar also gates the matching mobile entries and
+     *  keyboard chords on the same composition — the bar only handles its own DOM. */
+    composition?: TopbarComposition;
 }
 
 export class Topbar {
@@ -231,6 +242,14 @@ export class Topbar {
     private panelTooltips: Tooltip[] = [];
     private readonly host: HTMLElement;
     private alertsBadge!: HTMLElement;
+    /** The resolved composition (defaults applied) — what renders, where, in order. */
+    private readonly comp: ResolvedTopbarComposition;
+    /** Pinned contributed-action slots, by action id (composition entries that name one,
+     *  plus built-in slots taken over by an override). */
+    private readonly pinned = new Map<string, { host: HTMLElement; left: boolean }>();
+    /** Overrides that LEFT their native slot (default side + a declared `order`) — they
+     *  render through the flow cluster like ordinary actions. */
+    private readonly flowingOverrides = new Set<string>();
     private readonly opts: TopbarOptions;
     private timeframe: string;
     private priceStyle: string;
@@ -250,6 +269,8 @@ export class Topbar {
         this.host = host;
         this.timeframe = opts.timeframe;
         this.priceStyle = opts.priceStyle;
+        this.comp = resolveTopbarComposition(opts.composition);
+        const vis = (id: string): boolean => topbarHas(this.comp, id);
         const doc = host.ownerDocument;
         injectStyles(STYLE_ID, CSS, doc);
 
@@ -276,10 +297,12 @@ export class Topbar {
         this.styleButton = doc.createElement('button');
         this.styleButton.className = 'vela-widget-style';
         this.renderStyleButton(doc);
-        // No callback ⇒ no button: a host replacing the indicator picker with its own
-        // UI (shell option `indicatorPicker: false`) must not show a dead entry point.
+        // No callback ⇒ no button: a host hiding the built-in picker (composition
+        // without 'indicators', or the deprecated `indicatorPicker: false`) must not
+        // show a dead entry point. An OVERRIDE of the slot renders through
+        // renderActions instead.
         let indicatorsBtn: HTMLButtonElement | null = null;
-        if (opts.onIndicatorsClick) {
+        if (opts.onIndicatorsClick && !topbarActionOverride('indicators')) {
             indicatorsBtn = doc.createElement('button');
             indicatorsBtn.className = 'vela-widget-indicators';
             indicatorsBtn.append(iconEl('indicators', doc), doc.createTextNode('Indicators'));
@@ -296,12 +319,20 @@ export class Topbar {
         this.panelsHost.className = 'vela-widget-panels';
         const tool = (cls: string, icon: string, tip: string, onClick?: () => void): HTMLButtonElement =>
             this.toolButton(cls, icon, tip, onClick, this.tooltips);
+        // Hidden tools get a DETACHED bare button instead: the state setters
+        // (setHistoryState, setAlertCount) stay safe no-ops, and no tooltip machine
+        // ever binds to chrome the composition removed.
         // Undo/redo sit beside Indicators (same icon-tool chrome as the right cluster).
-        this.undoBtn = tool('vela-widget-undo', 'undo', 'Undo', opts.onUndoClick);
-        this.redoBtn = tool('vela-widget-redo', 'redo', 'Redo', opts.onRedoClick);
+        if (vis('undo-redo')) {
+            this.undoBtn = tool('vela-widget-undo', 'undo', 'Undo', opts.onUndoClick);
+            this.redoBtn = tool('vela-widget-redo', 'redo', 'Redo', opts.onRedoClick);
+        } else {
+            this.undoBtn = doc.createElement('button');
+            this.redoBtn = doc.createElement('button');
+        }
         this.setHistoryState(false, false);
-        const screenshotBtn = tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick);
-        this.alertsBtn = tool('vela-widget-alerts', 'bell', 'Alerts');
+        const screenshotBtn = vis('screenshot') && !topbarActionOverride('screenshot') ? tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick) : null;
+        this.alertsBtn = vis('alerts') ? tool('vela-widget-alerts', 'bell', 'Alerts') : doc.createElement('button');
         this.alertsBtn.style.position = 'relative';
         if (opts.onAlertsClick) this.alertsBtn.addEventListener('click', () => opts.onAlertsClick!(this.alertsBtn));
         this.alertsBadge = doc.createElement('span');
@@ -309,8 +340,9 @@ export class Topbar {
         this.alertsBadge.style.display = 'none';
         this.alertsBtn.appendChild(this.alertsBadge);
 
-        // Workspace layout dropdown — present only when the host supplies the option.
-        if (opts.layout) {
+        // Workspace layout dropdown — present only when the host supplies the option
+        // (and the composition keeps it).
+        if (opts.layout && vis('layout')) {
             this.layoutId = opts.layout.current;
             this.layoutButton = doc.createElement('button');
             this.layoutButton.className = 'vela-widget-style';
@@ -322,14 +354,76 @@ export class Topbar {
             d.className = 'vela-sep';
             return d;
         };
-        const leading: Array<HTMLElement> = [this.symbolEl, sep(), tfGroup, sep(), this.styleButton, sep()];
-        if (this.layoutButton) leading.push(this.layoutButton, sep());
-        if (indicatorsBtn) leading.push(indicatorsBtn, sep());
-        // The left action cluster sits where the built-in Indicators button lives; its
-        // trailing hairline shows only while the cluster is non-empty (renderActions).
+        // The left action cluster's trailing hairline shows only while the cluster is
+        // non-empty (renderActions).
         this.leftActionsSep = sep();
         this.leftActionsSep.hidden = true;
-        this.el.append(...leading, this.leftActionsHost, this.leftActionsSep, this.undoBtn, this.redoBtn, this.actionsHost, this.alertsBtn, this.panelsHost, screenshotBtn);
+        // ── assemble per the composition: each side is its list, in order. Primary
+        // controls carry a trailing hairline (except as a side's last entry); `actions`
+        // is the FLOW slot for unlisted contributed actions; any other unknown id is a
+        // PINNED slot for the contributed action with that id (filled by renderActions).
+        const primaries = new Set(['symbol', 'timeframes', 'style', 'layout', 'indicators']);
+        const pinSlot = (id: string, left: boolean): HTMLElement[] => {
+            const slot = doc.createElement('span');
+            slot.className = 'vela-widget-action-pin';
+            this.pinned.set(id, { host: slot, left });
+            return [slot];
+        };
+        // A built-in slot taken over by an OVERRIDE (an action registered under the
+        // built-in id) renders the contributed action instead of the native button, at
+        // the slot's position. One exception: on a side the host left on DEFAULTS, an
+        // override that declares `order` opts back into ordinary flow placement — the
+        // host's explicit list, when there is one, always has the last word.
+        const overridden = (id: string, left: boolean): HTMLElement[] | null => {
+            const ov = topbarActionOverride(id);
+            if (!ov) return null;
+            const sideDeclared = left ? opts.composition?.left != null : opts.composition?.right != null;
+            if (!sideDeclared && ov.order !== undefined) {
+                this.flowingOverrides.add(id);
+                return [];
+            }
+            return pinSlot(id, left);
+        };
+        const elementsFor = (id: string, left: boolean): HTMLElement[] => {
+            switch (id) {
+                case 'symbol':
+                    return [this.symbolEl];
+                case 'timeframes':
+                    return [tfGroup];
+                case 'style':
+                    return [this.styleButton];
+                case 'layout':
+                    return this.layoutButton ? [this.layoutButton] : [];
+                case 'indicators':
+                    return overridden(id, left) ?? (indicatorsBtn ? [indicatorsBtn] : []);
+                case 'actions':
+                    return left ? [this.leftActionsHost, this.leftActionsSep] : [this.actionsHost];
+                case 'undo-redo':
+                    return [this.undoBtn, this.redoBtn];
+                case 'alerts':
+                    return [this.alertsBtn];
+                case 'panels':
+                    return [this.panelsHost];
+                case 'screenshot':
+                    return overridden(id, left) ?? (screenshotBtn ? [screenshotBtn] : []);
+                default:
+                    return pinSlot(id, left);
+            }
+        };
+        const sideEls = (list: readonly string[], left: boolean): HTMLElement[] => {
+            const out: HTMLElement[] = [];
+            for (const [i, id] of list.entries()) {
+                const els = elementsFor(id, left);
+                if (els.length === 0) continue;
+                out.push(...els);
+                if (primaries.has(id) && i < list.length - 1) out.push(sep());
+            }
+            return out;
+        };
+        const right = doc.createElement('span');
+        right.className = 'vela-topbar-right';
+        right.append(...sideEls(this.comp.right, false));
+        this.el.append(...sideEls(this.comp.left, true), right);
         host.appendChild(this.el);
         this.renderTfChips();
         // Snap after layout; RO catches later reflows (symbol / timeframe length).
@@ -462,14 +556,27 @@ export class Topbar {
         this.styleButton.setAttribute('aria-label', `Chart style — ${priceStyleLabel(this.priceStyle)}`);
     }
 
-    /** Re-project the contributed topbar actions (call after registrations change). */
+    /** Re-project the contributed topbar actions (call after registrations change).
+     *  An action PINNED by the composition renders into its named slot (list position
+     *  wins over `align`/`order`); the rest flow into the side's `actions` slot — or
+     *  not at all when an explicit list omits it (the list is the side's contract). */
     renderActions(): void {
         const ctx = this.opts.getContext?.();
         this.actionsHost.replaceChildren();
         this.leftActionsHost.replaceChildren();
+        for (const pin of this.pinned.values()) pin.host.replaceChildren();
         const doc = this.actionsHost.ownerDocument;
+        const flowLeft = this.comp.left.includes('actions');
+        const flowRight = this.comp.right.includes('actions');
+        const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
         for (const action of widgetActions('topbar', ctx)) {
-            const left = action.align === 'left';
+            const pin = this.pinned.get(action.id);
+            // A built-in-id action renders only through its slot pin, or through the
+            // flow when the override opted back into it (default side + `order`) —
+            // never as an ordinary extra button beside a still-native slot.
+            if (!pin && builtin.has(action.id) && !this.flowingOverrides.has(action.id)) continue;
+            const left = pin ? pin.left : action.align === 'left';
+            if (!pin && !(left ? flowLeft : flowRight)) continue;
             const b = doc.createElement('button');
             // Left actions wear the primary-chrome styling (the built-in Indicators
             // button's own class list); right actions keep the compact tool look.
@@ -480,7 +587,7 @@ export class Topbar {
                 const c = this.opts.getContext?.();
                 if (c) action.run(c);
             });
-            (left ? this.leftActionsHost : this.actionsHost).appendChild(b);
+            (pin ? pin.host : left ? this.leftActionsHost : this.actionsHost).appendChild(b);
         }
         this.leftActionsSep.hidden = this.leftActionsHost.childElementCount === 0;
         this.onHairlineSync(); // the visible hairline set may have changed

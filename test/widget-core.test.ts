@@ -8,6 +8,7 @@ import { tzMenuLabel, tzButtonLabel } from '../src/widget/timezones';
 import { priceStyleLabel } from '../src/widget/topbar';
 import { RANGE_PRESETS } from '../src/widget/bottombar';
 import { filterSymbols } from '../src/widget/symbol-picker';
+import { registerSymbolRanking, symbolRanking, type SymbolRankingHook } from '../src/widget/contributions';
 import { zoomTarget, followStep } from '../src/widget/glide';
 import { avatarColor } from '../src/widget/symbol-picker';
 import { registerWidgetAction, unregisterWidgetAction, widgetActions, registerWidgetAttachment, unregisterWidgetAttachment, widgetAttachments, registerDefaultEngine, unregisterDefaultEngine, resolveEngines, registerLegendAction, unregisterLegendAction, legendActions, legendActionsProviderFor, type EngineFactory, type LegendIndicatorInfo } from '../src/widget/contributions';
@@ -137,6 +138,23 @@ describe('widget chrome pure helpers', () => {
     });
 });
 
+describe('registerSymbolRanking', () => {
+    it('one slot, last registration wins; a stale disposer never clears a successor', () => {
+        const a: SymbolRankingHook = (p) => p;
+        const b: SymbolRankingHook = (p) => [...p].reverse();
+        const offA = registerSymbolRanking(a);
+        expect(symbolRanking()).toBe(a);
+        registerSymbolRanking(b);
+        expect(symbolRanking()).toBe(b);
+        offA(); // stale — b owns the slot now
+        expect(symbolRanking()).toBe(b);
+        registerSymbolRanking(b); // idempotent re-register
+        const offB = registerSymbolRanking(b);
+        offB();
+        expect(symbolRanking()).toBeUndefined();
+    });
+});
+
 describe('filterSymbols', () => {
     const list = [
         { ticker: 'BTCUSDT', description: 'Bitcoin / TetherUS' },
@@ -155,6 +173,18 @@ describe('filterSymbols', () => {
     it('empty query returns the head of the list; limit caps results', () => {
         expect(filterSymbols(list, '', 2).map((s) => s.ticker)).toEqual(['BTCUSDT', 'ETHUSDT']);
         expect(filterSymbols(list, 'USDT', 2)).toHaveLength(2);
+    });
+
+    it('the empty-query pin is parameterized: a custom top list, or none at all', () => {
+        // default: the built-in majors pin (BTCUSDT sits in it — pulled ahead)
+        const shuffled = [list[3]!, list[2]!, list[0]!, list[1]!]; // SOL, WBTC, BTC, ETH
+        expect(filterSymbols(shuffled, '').map((s) => s.ticker)).toEqual(['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'WBTCUSDT']);
+        // custom top list: pinned in ITS order, rest keeps pool order
+        expect(filterSymbols(shuffled, '', 100, ['WBTCUSDT']).map((s) => s.ticker)).toEqual(['WBTCUSDT', 'SOLUSDT', 'BTCUSDT', 'ETHUSDT']);
+        // top: false — a registered symbol ranking already shaped the pool: trust its order
+        expect(filterSymbols(shuffled, '', 100, false).map((s) => s.ticker)).toEqual(['SOLUSDT', 'WBTCUSDT', 'BTCUSDT', 'ETHUSDT']);
+        // a typed query is untouched by the pin policy
+        expect(filterSymbols(shuffled, 'BTC', 100, false).map((s) => s.ticker)).toEqual(['BTCUSDT', 'WBTCUSDT']);
     });
 
     it('a grown limit yields a stable SUPERSET — the picker appends pages without reshuffling', () => {

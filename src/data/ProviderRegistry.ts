@@ -278,6 +278,32 @@ export class ProviderRegistry {
         return `${d?.prefix ?? resolved.provider}:${d?.ticker ?? resolved.ticker}`;
     }
 
+    /** The icon URL for a DESCRIPTOR — routed to its OWNING provider's resolver (the
+     *  provider owns the knowledge of where its asset class's icons live). A missing
+     *  provider, an absent resolver, or a resolver that throws all mean "no icon" —
+     *  the shells' initials badge takes over, never an error. */
+    symbolIconOf(d: SymbolDescriptor): string | undefined {
+        const name = d.provider ? normName(d.provider) : [...this.entries.keys()][0];
+        const entry = name !== undefined ? this.entries.get(name) : undefined;
+        try {
+            return entry?.provider.resolveSymbolIcon?.(d) ?? undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** The icon URL for a raw SYMBOL string (the statusline/object-tree path): resolve
+     *  to the owning provider, find its descriptor, route to the resolver. Before the
+     *  index settles (or for a lenient sole-provider resolution) a minimal synthetic
+     *  descriptor is offered — crypto resolvers can answer from the ticker alone. */
+    symbolIcon(resolved: Resolved | null): string | undefined {
+        if (!resolved) return undefined;
+        const d = this.entries.get(resolved.provider)?.byTicker?.get(normTicker(resolved.ticker));
+        // The indexed descriptor carries no owner annotation (that happens on
+        // aggregation) — stamp the resolved provider so the resolver sees it.
+        return this.symbolIconOf({ ...(d ?? { ticker: resolved.ticker }), provider: d?.provider ?? resolved.provider });
+    }
+
     /** Indexed symbols for one provider (or all, concatenated) — for autocomplete. */
     symbolsOf(rawName?: string): SymbolDescriptor[] {
         if (rawName != null) return this.entries.get(normName(rawName))?.descriptors ?? [];
