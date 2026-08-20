@@ -80,7 +80,28 @@ describe('icon registry', () => {
         // Duplicate attributes: the first wins, so the px size overrides the `1em` default.
         expect(attr(iconAt('check', 13), 'width')).toBe('13');
     });
+
+    it('points the pre-market sunrise up and the post-market sunset down', () => {
+        // The statusline badge is 12px: the chevron is what tells sunrise from sunset.
+        // First relative dy of the 3-vertex chevron: negative = tip above the wings.
+        expect(chevronTip('market-pre')).toBe('up');
+        expect(chevronTip('market-post')).toBe('down');
+    });
 });
+
+/** The 3-vertex relative chevron (`m x y dx dy dx dy`) that marks sunrise vs sunset. */
+function chevronTip(id: string): 'up' | 'down' {
+    const svg = iconMarkup(id);
+    expect(svg, `missing icon: ${id}`).toBeTruthy();
+    for (const m of svg!.matchAll(/<path d="([^"]+)"/g)) {
+        const d = m[1] ?? '';
+        if (d[0] !== 'm' && d[0] !== 'M') continue;
+        const nums = d.slice(1).match(/-?[\d.]+/g)?.map(Number) ?? [];
+        if (nums.length !== 6) continue;
+        return nums[3]! < 0 ? 'up' : 'down';
+    }
+    throw new Error(`${id} has no 3-vertex chevron`);
+}
 
 describe('icon conventions', () => {
     const registered = [...CHROME_ICONS, ...TOOL_ICONS].map((id) => [id, iconMarkup(id)!] as const);
