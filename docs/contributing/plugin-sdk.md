@@ -189,6 +189,10 @@ registerWidgetAction({
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
         // ctx.setSymbol / setTimeframe / setPriceStyle / openSymbolSearch(query?)
         // ctx.togglePanel(id, open?) — open/close a docked side panel (dock stays exclusive)
+        // ctx.addIndicator({ name, script, language? }) — add a script indicator THROUGH
+        //   the shell: recorded in the unified undo/redo timeline and the indicator count
+        // ctx.addNativeIndicator(type) — same, for native (core-computed) indicators
+        // ctx.stateChanged() — persistable third-party state changed (debounced save)
         // ctx.host  — mount host for kit components (Dialog/Menu/Tooltip)
         // ctx.toast(message, kind?) — the widget's feedback pill
     },
@@ -255,10 +259,14 @@ contributions above:
   and auto-adds its enabled entries.
 - **Your menu is an ordinary contribution**: a topbar **action** provides the button, a
   widget **attachment** owns the per-shell dialog (and any shortcut you want back).
-  Everything a menu needs is public on the context — the native catalog and adds via
-  `ctx.chart.availableNativeIndicators()` / `ctx.chart.addNativeIndicator(type)`, any
-  script source via `ctx.chart.addIndicator(source, { language })`, and `ctx.host` as
-  the mount host for kit components.
+  Everything a menu needs is public on the context — the native catalog via
+  `ctx.chart.availableNativeIndicators()`, and **shell-routed adds** via
+  `ctx.addNativeIndicator(type)` and `ctx.addIndicator({ name, script, language? })`.
+  Prefer these over the raw `ctx.chart.addNativeIndicator` / `ctx.chart.addIndicator`:
+  the context forms enter the shell's unified **undo/redo timeline** and the topbar
+  indicator count, exactly like an add from the built-in picker — the raw chart calls
+  bypass the shell and stay invisible to Ctrl+Z. `ctx.host` is the mount host for kit
+  components.
 
 ```ts
 import { registerWidgetAction, registerWidgetAttachment } from 'vela/plugin';
@@ -279,10 +287,10 @@ registerWidgetAttachment({
                     for (const n of natives.filter((n) => n.supported)) {
                         const row = body.ownerDocument.createElement('button');
                         row.textContent = n.title;
-                        row.addEventListener('click', () => ctx.chart.addNativeIndicator(n.type));
+                        row.addEventListener('click', () => ctx.addNativeIndicator(n.type)); // undo/redo-recorded
                         body.appendChild(row);
                     }
-                    // …plus any script rows: ctx.chart.addIndicator(source, { language: 'pine' })
+                    // …plus any script rows: ctx.addIndicator({ name, script, language: 'pine' })
                 });
             },
         });
@@ -310,11 +318,100 @@ new VelaWorkspace('#chart', { symbol: 'BTCUSDT', indicatorPicker: false });
 The two halves stay decoupled on purpose: a host can hide the picker without replacing
 it, run both menus side by side while migrating, and any plugin — not just one blessed
 package — can ship its own menu through the same public surface. Two caveats to design
-for: indicators added straight through `chart.addIndicator` live on the chart (legend,
-inputs, removal all work) but are **not** part of the shell's persisted manifest ledger,
-so your menu owns their persistence if you want them restored; and a shortcut you bind
-yourself must never steal keystrokes from editable targets (the shell's own `/` binding
-is gone with the picker).
+for: indicators added through `ctx.addIndicator` live on the chart and in the undo
+timeline, but are **not** part of the shell's persisted manifest ledger (their names
+would never resolve against the host's manifest on restore) — your menu owns their
+persistence if you want them back after a reload, and
+[`registerStatePersistence`](#state-persistence--registerstatepersistence) is the seam
+built for exactly that; and a shortcut you bind yourself must never steal keystrokes
+from editable targets (the shell's own `/` binding is gone with the picker).
+
+## State persistence — `registerStatePersistence`
+
+The shells persist one versioned **state document** (`getState()` / `applyState()`,
+written to storage in `persist` mode). A plugin can put its own state INTO that document
+— instead of running a parallel store that can drift from it — through the document's
+`ext` bags: one at the document root, one per chart. A registered handler owns one
+namespaced key and says how its entry is written and read back:
+
+```ts
+import { registerStatePersistence } from 'vela/plugin';
+
+// Per-chart state (scope 'cell'): one entry per chart, following the chart through
+// layout switches, the dormant pool, and shell-to-shell document moves.
+// The canonical use: restoring indicators your own menu added via ctx.addIndicator.
+registerStatePersistence({
+    key: 'mytool.indicators',                 // namespaced, flat: 'vendor.feature'
+    scope: 'cell',
+    serialize(ctx) {
+        // Snapshot whatever your plugin needs to re-add its indicators later — refs
+        // (slugs/ids) beat full sources: the document stays light. `undefined` = no entry.
+        const mine = trackedIndicators(ctx.cellId); // your bookkeeping
+        return mine.length > 0 ? mine.map((i) => ({ slug: i.slug })) : undefined;
+    },
+    restore(payload, ctx) {
+        // The payload is UNTRUSTED (the codec passes `ext` through opaquely) — validate.
+        if (!Array.isArray(payload)) return;
+        for (const item of payload) {
+            if (typeof item?.slug !== 'string') continue;
+            void fetchSource(item.slug).then((script) =>
+                // Cell-bound adds: THIS chart (not the active one), and muted — a
+                // restore never pollutes the undo timeline.
+                ctx.addIndicator({ name: item.slug, script, language: 'pine' }),
+            );
+        }
+    },
+});
+
+// Document-level state (scope 'global'): one entry per document — shared preferences.
+registerStatePersistence({
+    key: 'mytool.prefs',
+    scope: 'global',
+    serialize: () => ({ starred: [...starred] }),
+    restore(payload) {
+        if (payload && typeof payload === 'object' && Array.isArray((payload as { starred?: unknown }).starred)) {
+            starred = new Set((payload as { starred: string[] }).starred.filter((s) => typeof s === 'string'));
+        }
+    },
+});
+```
+
+The resulting document (what `persist` writes and `getState()` returns):
+
+```jsonc
+{
+    "version": 1,
+    "layout": "4",
+    "charts": [
+        { "id": "c1", "symbol": "BTCUSDT", /* … */ "ext": { "mytool.indicators": [{ "slug": "my-osc" }] } }
+    ],
+    "ext": { "mytool.prefs": { "starred": ["my-osc"] } }
+}
+```
+
+The contract, in five rules:
+
+- **Register at import time**, before shells are constructed — the rule every
+  contribution registry shares. Re-registering a key replaces the handler.
+- **`serialize` runs on every shell snapshot** (`getState`, each debounced persist
+  write). Return a JSON-serializable payload, or `undefined` for "no entry". When your
+  state changes outside any shell event (no indicator add, no market switch), call
+  `ctx.stateChanged()` so a save is scheduled — indicator adds/removals already
+  trigger one.
+- **`restore` runs when a document carrying your key is applied** — boot restore,
+  host `applyState` — after the core state is in place (chart alive, engines
+  registered, indicator ledger converged). Cell-scope restores run **muted**, and the
+  cell context's `addIndicator`/`addNativeIndicator` are muted on their own too — so
+  an **async** restore (fetch a source, then add) also stays out of the undo/redo
+  timeline. It is only called for keys the document actually carries.
+- **The payload is opaque to Vela and untrusted by you.** The codec round-trips `ext`
+  entries verbatim — including keys whose plugin is not loaded this session, so a
+  plugin-less reload never loses your state — and validates nothing inside them:
+  your `restore` must.
+- **Scope picks the bag.** `'cell'` entries live on each chart (`charts[i].ext`) and
+  travel with it; `'global'` entries live at the document root (`state.ext`). Handlers
+  whose restore touches chart content belong in `'cell'` scope — its context is bound
+  to the right chart even when it is not the active one.
 
 ## Legend actions — `registerLegendAction`
 

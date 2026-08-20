@@ -191,11 +191,15 @@ The state SURFACE is the product; persistence is an adapter on top of it.
 ```ts
 const state = ws.getState();
 // → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?,
-//     timeframeFavorites?, charts: […] }
+//     timeframeFavorites?, charts: […], ext? }
 // One ORDERED `charts` entry per cell, live AND dormant — array position i restores
 // into slot i, `id` is the cell's durable name: { id: 'btc', symbol, provider?, timeframe,
 //   priceStyle, bars?, watermark?, indicatorTitles?, rendererConfig (renderer.getConfig() document),
-//   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] } }
+//   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] },
+//   ext? (third-party per-chart state, by namespaced key) }
+// `ext` bags (document root and per chart) carry PLUGIN state — written and restored by
+// handlers plugins register (registerStatePersistence, see the plugin SDK); entries pass
+// through opaquely, so a document never loses them when the plugin isn't loaded.
 
 ws.applyState(state); // untrusted-safe: malformed fields dropped; same-shape documents
 //                    // apply IN PLACE (charts, handles and subscriptions survive),

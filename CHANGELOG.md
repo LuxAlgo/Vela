@@ -6,6 +6,23 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Shell-routed indicator adds for plugins.** The contribution context gained
+  `ctx.addIndicator({ name, script, language? })` and `ctx.addNativeIndicator(type)`:
+  unlike the raw `chart.addIndicator` / `chart.addNativeIndicator`, additions made
+  through them enter the shell's unified undo/redo timeline and the topbar indicator
+  count — a custom indicator menu now behaves exactly like the built-in picker under
+  Ctrl+Z. These externally-added scripts stay OUT of the persisted manifest ledger
+  (their names can't resolve against the host manifest); persisting them is the
+  plugin's job, via the seam below.
+- **Third-party state in the persisted document.** `registerStatePersistence({ key,
+  scope: 'cell' | 'global', serialize, restore })` lets a plugin store its own state
+  inside the shell's state document instead of a parallel store: entries live in new
+  `ext` bags (`state.ext` at the document root, `charts[i].ext` per chart) under
+  namespaced keys. `serialize` runs on every snapshot; `restore` runs when a document
+  carrying the key is applied — after the core state, and muted for cell scope so a
+  restore never pollutes undo/redo. The codec passes `ext` through opaquely: entries
+  whose plugin isn't loaded still round-trip, so no data is lost on a plugin-less
+  reload. `ctx.stateChanged()` schedules a save for state changes the shell can't see.
 - **Single-chart workspaces.** `layout: false` pins a `VelaWorkspace` to one chart:
   the layout picker and the sync switches disappear (desktop and mobile),
   `setLayout` becomes a no-op, and no `cells` entry is needed — the top-level chart

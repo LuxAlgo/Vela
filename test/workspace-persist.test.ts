@@ -30,9 +30,11 @@ const fullDoc: WorkspaceState = {
             rendererConfig: { theme: 'dark', nested: { any: ['shape'] } },
             drawings: { version: 1, items: [{ type: 'trendline' }] },
             indicators: { manifest: ['EMA 20'], natives: ['volume'] },
+            ext: { 'velapro.indicators': [{ slug: 'smart-money', inputs: { len: 20 } }] },
         },
         { id: 'c2', symbol: 'ETHUSDT', timeframe: '15' },
     ],
+    ext: { 'velapro.favorites': { starred: ['smart-money'] } },
 };
 
 describe('state codec round-trip', () => {
@@ -131,6 +133,28 @@ describe('sanitizeState (the applyState gate)', () => {
             { id: 'c1', symbol: 'NEW' },
             { id: 'c2', symbol: 'ETHUSDT' },
         ]);
+    });
+
+    it('passes ext bags through opaquely — unknown keys and arbitrary payloads survive', () => {
+        // The third-party seam: entries are validated by their OWN handler at restore
+        // time; the codec only rejects non-object bags. A key whose plugin is absent
+        // this session must round-trip verbatim (no data loss on a plugin-less reload).
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            ext: { 'vendor.prefs': { any: ['shape', 42] }, 'unknown.plugin': 'a bare string payload', '': 'dropped (empty key)' },
+            charts: [
+                { id: 'c1', ext: { 'vendor.indicators': [1, 2, 3] } },
+                { id: 'c2', ext: ['not', 'an', 'object'] }, // array bag → dropped
+                { id: 'c3', ext: 'nope' }, // primitive bag → dropped
+            ],
+        });
+        expect(doc!.ext).toEqual({ 'vendor.prefs': { any: ['shape', 42] }, 'unknown.plugin': 'a bare string payload' });
+        expect(doc!.charts[0]!.ext).toEqual({ 'vendor.indicators': [1, 2, 3] });
+        expect(doc!.charts[1]!.ext).toBeUndefined();
+        expect(doc!.charts[2]!.ext).toBeUndefined();
+        // an emptied bag disappears entirely rather than persisting `{}`
+        expect(sanitizeState({ version: 1, layout: '1', ext: {}, charts: [] })!.ext).toBeUndefined();
     });
 
     it('passes renderer-config and drawings documents through opaquely', () => {

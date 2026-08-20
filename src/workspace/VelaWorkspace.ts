@@ -32,7 +32,7 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { legendActionsProviderFor, widgetActions, widgetAttachments } from '../widget/contributions';
+import { legendActionsProviderFor, statePersistenceHandlers, widgetActions, widgetAttachments } from '../widget/contributions';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { MobileBar } from '../widget/mobile-bar';
 import { TimeframeDrawer } from '../widget/timeframe-drawer';
@@ -303,6 +303,10 @@ export class VelaWorkspace {
     /** Plot-local y of the last price-axis long-press (targets the pane under the finger). */
     private priceScalePressY = 0;
     private readonly attachmentDisposers = new Map<string, () => void>();
+    /** The document-level third-party state bag (`state.ext`) — seeded from the restored
+     *  document, refreshed by global-scope handler `serialize` calls at snapshot time.
+     *  Entries with no registered handler this session ride along verbatim. */
+    private extState: Record<string, unknown> = {};
     /** The single grid-wide attribution mark — re-inked on a live theme swap. */
     private attributionMark: HTMLElement | null = null;
     private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
@@ -343,6 +347,7 @@ export class VelaWorkspace {
         this.def = this.resolveLayout(this.monoLayout ? '1' : (boot?.layout && ensureLayout(boot.layout) ? boot.layout : optLayout));
         this.alertCap = Math.max(1, opts.alertCap ?? ALERT_CAP);
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
+        if (boot?.ext) this.extState = { ...boot.ext }; // global handlers restore at the end of construction
         if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
         // Identity ↔ slot mapping: the persisted document's chart order wins (it IS the
         // saved arrangement); a fresh boot takes the `cells` declaration order.
@@ -630,6 +635,10 @@ export class VelaWorkspace {
             this.manifestSettled = true; // nothing will ever resolve — settled empty from the start
         }
         this.mountAttachments();
+        // A sync-storage boot restores third-party document-level state here — the shell
+        // is fully built (cells live, attachments mounted). The async-adapter boot and
+        // host `applyState` calls reach the same handlers through applyState.
+        this.restoreGlobalExt();
     }
 
     // ── access ──────────────────────────────────────────────────
@@ -701,6 +710,7 @@ export class VelaWorkspace {
             togglePanel: (id, open) => this.dock.toggle(id, open),
             root: this.root,
             toast: (message, kind) => this.toastHost.show(message, kind),
+            stateDirty: () => this.markStateDirty(),
         });
     }
 
@@ -754,6 +764,22 @@ export class VelaWorkspace {
         if (this.trackSizes.size > 0) state.trackSizes = Object.fromEntries([...this.trackSizes].map(([k, v]) => [k, { ...v }]));
         const panels = this.dock.getState();
         if (panels) state.panels = panels;
+        // Document-level third-party state: fresh global-handler snapshots merged OVER
+        // the preserved entries (a key with no handler this session rides along; a
+        // handler returning `undefined` withdraws its entry). Per-cell `ext` was
+        // assembled by each cell's dehydrate above.
+        const ext = { ...this.extState };
+        for (const h of statePersistenceHandlers('global')) {
+            try {
+                const value = h.serialize(this.context());
+                if (value === undefined) delete ext[h.key];
+                else ext[h.key] = value;
+            } catch (err) {
+                console.warn(`[vela] state persistence "${h.key}" serialize failed:`, err);
+            }
+        }
+        this.extState = ext;
+        if (Object.keys(ext).length > 0) state.ext = ext;
         return state;
     }
 
@@ -815,6 +841,10 @@ export class VelaWorkspace {
             if (nextActive === this.activeId) this.projectActiveCell();
             else this.setActiveCell(nextActive);
             this.refreshRetention();
+            // Document-level third-party state converges to the document (absent = none);
+            // per-cell `ext` was handled by each cell's rehydrate above.
+            this.extState = { ...(st.ext ?? {}) };
+            this.restoreGlobalExt();
             this.markStateDirty();
             return;
         }
@@ -845,7 +875,26 @@ export class VelaWorkspace {
         else this.setActiveCell(nextActive);
         this.refreshRetention();
         this.events.emit('layout:changed', { layout: this.def.id });
+        // Same convergence as the in-place branch; the rebuilt cells already ran their
+        // own cell-scope restores (buildCells → restorePersistedExt).
+        this.extState = { ...(st.ext ?? {}) };
+        this.restoreGlobalExt();
         this.markStateDirty();
+    }
+
+    /** Run the registered global-scope `restore` handlers against the document-level
+     *  `ext` bag — keys present in the document only; a failing handler is contained.
+     *  Handlers whose restore touches chart content should be `scope: 'cell'` instead
+     *  (those run inside the cell's history-mute). */
+    private restoreGlobalExt(): void {
+        for (const h of statePersistenceHandlers('global')) {
+            if (!(h.key in this.extState)) continue;
+            try {
+                h.restore(this.extState[h.key], this.context());
+            } catch (err) {
+                console.warn(`[vela] state persistence "${h.key}" restore failed:`, err);
+            }
+        }
     }
 
     /** Set the workspace-global display timezone — applied to EVERY cell. */
@@ -1152,6 +1201,10 @@ export class VelaWorkspace {
             // The indicator ledger: a restored cell re-adds ITS recorded set (held until
             // the manifest resolves); a fresh cell seeds the manifest's enabled entries.
             cell.setManifest(this.manifest, pooled?.indicators == null);
+            // Third-party state last — the cell is wired and its core state is in
+            // place, so a handler's restore (e.g. re-adding external indicators) lands
+            // on a cell the workspace fully knows. Runs muted (no undo entries).
+            cell.restorePersistedExt();
             this.events.emit('cell:created', { id });
         }
         // DOM order = slot order (auto-flow layouts place row-major by child order).

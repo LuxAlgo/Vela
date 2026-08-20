@@ -25,6 +25,8 @@ export interface ContextHost {
     togglePanel(id: string, open?: boolean): void;
     root: HTMLElement;
     toast(message: string, kind?: 'info' | 'success' | 'error'): void;
+    /** Debounced dirty mark — third-party persistable state changed (`ctx.stateChanged()`). */
+    stateDirty(): void;
 }
 
 /** Build a fresh context bound to the CURRENT active cell (rebuilt per invocation —
@@ -49,6 +51,9 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         togglePanel: (id, open) => host.togglePanel(id, open),
         host: host.root,
         toast: (message, kind) => host.toast(message, kind),
+        addIndicator: (entry) => host.active()?.addExternalIndicator(entry),
+        addNativeIndicator: (type) => host.active()?.addNative(type),
+        stateChanged: () => host.stateDirty(),
         cells: host.cells().map((c) => ({ id: c.id, chart: c.chart, symbol: c.symbol, timeframe: c.timeframe })),
         activeCellId: active?.id ?? '',
         setActiveCell: (id) => host.setActiveCell(id),

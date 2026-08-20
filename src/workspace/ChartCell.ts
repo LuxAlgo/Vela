@@ -24,7 +24,7 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
-import { legendActionsProviderFor, resolveEngines, type WidgetContext } from '../widget/contributions';
+import { legendActionsProviderFor, resolveEngines, statePersistenceHandlers, type CellStateContext, type ExternalIndicatorEntry, type WidgetContext } from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { normalizeTimezone } from '../core/timezones';
@@ -153,8 +153,12 @@ export class ChartCell {
     readonly host: HTMLElement;
     /** This cell's unified app+drawings undo timeline (the shared Ctrl+Z routes here). */
     readonly history = new WidgetHistory(() => this.inner);
-    /** Live manifest-indicator instances on this cell (the SAME entry may repeat). */
-    readonly instances: Array<{ entry: ResolvedIndicator; handle: IndicatorHandle | null }> = [];
+    /** Live manifest-indicator instances on this cell (the SAME entry may repeat).
+     *  `external` marks instances added through the public seam (`ctx.addIndicator`)
+     *  rather than the shell manifest — they share the undo/redo and picker plumbing
+     *  but stay OUT of the persisted ledger (their names would never resolve against
+     *  the manifest); persisting them is their plugin's job (`registerStatePersistence`). */
+    readonly instances: Array<{ entry: ResolvedIndicator; handle: IndicatorHandle | null; external?: boolean }> = [];
     /** The native-indicator catalog with this cell's live supported/present flags. */
     nativeCatalog: CellNativeInfo[] = [];
     /** Last crosshair position in this cell (the alt+H/alt+V shortcuts anchor here). */
@@ -198,6 +202,11 @@ export class ChartCell {
     /** Last symbol we toasted "no provider serves this" for — once per symbol (the
      *  core re-reports on every provider-index settle). */
     private unresolvedToasted: string | null = null;
+    /** The cell's third-party state bag (`ext` of the persisted per-chart state) —
+     *  seeded from the boot/restored document, refreshed by handler `serialize` calls at
+     *  dehydrate time. Entries with no registered handler this session ride along
+     *  verbatim, so a document never loses a plugin's state in the plugin's absence. */
+    private extState: Record<string, unknown> = {};
     private watermarkOn: boolean;
     /** Indicator titles (this cell's in-chart legend rows) shown. */
     private indicatorTitlesOn = true;
@@ -299,6 +308,10 @@ export class ChartCell {
             this.pendingManifestNames = [...seed.indicators.manifest];
         }
         this.volumeIntent = seed.indicators ? seed.indicators.natives.includes('volume') : deps.volume;
+        // Third-party state rides in verbatim; the workspace triggers the handlers'
+        // `restore` AFTER wiring the cell (restorePersistedExt) — a restore that adds
+        // indicators must not call back into a workspace that doesn't know the cell yet.
+        this.extState = { ...(seed.ext ?? {}) };
         // The volume auto-add rides the cell's first candles — from `load:end` on, the
         // registry is the whole truth and the dehydrated ledger stops reporting intent.
         this.inner.on('load:end', () => {
@@ -822,10 +835,21 @@ export class ChartCell {
         else this.removeInstance(index - present.length);
     }
 
+    /**
+     * Add a script indicator through the PUBLIC seam (`ctx.addIndicator`) — same undo/
+     * redo and picker plumbing as a manifest entry, but flagged `external` so the
+     * persisted ledger never records a name the manifest can't resolve (the plugin owns
+     * persistence via `registerStatePersistence`). Recording follows the ambient mute:
+     * a persistence handler's `restore` runs silently, a user-driven call records.
+     */
+    addExternalIndicator(entry: ExternalIndicatorEntry): void {
+        this.addManifestInstance({ ...entry, enabled: true }, { external: true });
+    }
+
     /** Add ONE instance of a manifest entry (repeatable — duplicates are legitimate). */
-    addManifestInstance(entry: ResolvedIndicator, opts: { record?: boolean } = {}): void {
+    addManifestInstance(entry: ResolvedIndicator, opts: { record?: boolean; external?: boolean } = {}): void {
         if (this.destroyed) return;
-        const it = { entry, handle: this.addToChart(entry) };
+        const it = { entry, handle: this.addToChart(entry), ...(opts.external ? { external: true } : {}) };
         this.instances.push(it);
         this.deps.onIndicatorsChanged(this.id);
         if (opts.record === false) return;
@@ -918,6 +942,58 @@ export class ChartCell {
         }
     }
 
+    // ── third-party state (the `ext` seam) ──
+    /** The cell-bound surface persistence handlers work against (built per call — the
+     *  widget-context rule; nothing here may be cached by a handler). Its add methods
+     *  are ALWAYS muted — a `restore` that fetches before adding escapes the sync mute
+     *  of {@link restorePersistedExt}, and a state application must never enter the
+     *  undo timeline, however late its continuation lands. */
+    private stateContext(): CellStateContext {
+        return {
+            cellId: this.id,
+            chart: this.chart,
+            addIndicator: (entry) => this.history.silently(() => this.addExternalIndicator(entry)),
+            addNativeIndicator: (type) => this.history.silently(() => this.addNative(type)),
+        };
+    }
+
+    /**
+     * Run the registered cell-scope `restore` handlers against the cell's restored
+     * `ext` bag — the workspace calls this AFTER the core state is in place (chart
+     * alive and wired, indicator ledger converged). Muted: nothing a restore does
+     * enters the undo timeline. Handlers only see keys the document carries; a failing
+     * handler is contained (one broken plugin must not take the cell down).
+     */
+    restorePersistedExt(): void {
+        if (this.destroyed) return;
+        for (const h of statePersistenceHandlers('cell')) {
+            if (!(h.key in this.extState)) continue;
+            try {
+                this.history.silently(() => h.restore(this.extState[h.key], this.stateContext()));
+            } catch (err) {
+                console.warn(`[vela] state persistence "${h.key}" restore failed:`, err);
+            }
+        }
+    }
+
+    /** Assemble the cell's `ext` bag: fresh handler snapshots merged OVER the preserved
+     *  entries — a key with no handler this session rides along verbatim; a registered
+     *  handler returning `undefined` withdraws its entry. */
+    private dehydrateExt(): Record<string, unknown> | undefined {
+        const ext = { ...this.extState };
+        for (const h of statePersistenceHandlers('cell')) {
+            try {
+                const value = h.serialize(this.stateContext());
+                if (value === undefined) delete ext[h.key];
+                else ext[h.key] = value;
+            } catch (err) {
+                console.warn(`[vela] state persistence "${h.key}" serialize failed:`, err);
+            }
+        }
+        this.extState = ext; // the merged bag is the new baseline
+        return Object.keys(ext).length > 0 ? ext : undefined;
+    }
+
     // ── lifecycle ──
     /**
      * Apply a restored cell state IN PLACE — the chart instance survives (the market
@@ -937,6 +1013,12 @@ export class ChartCell {
         if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
         if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
         if (cs.indicators) this.applyIndicatorLedger(cs.indicators);
+        // Third-party state converges to the document too: the restored bag REPLACES
+        // the baseline (absent in the document = the document carries none), then the
+        // registered handlers re-apply. After the ledger — a handler re-adding external
+        // indicators must land on the converged (external-free) instance set.
+        this.extState = { ...(cs.ext ?? {}) };
+        this.restorePersistedExt();
         // Market last, as ONE in-place switch — `market:changed` re-syncs the cell
         // overlays and notifies the workspace (chrome projection, retention).
         const symbol = prefixedSymbol(cs);
@@ -963,6 +1045,7 @@ export class ChartCell {
         // Identity from the live config; depth (`bars`) stays the cell's own durable
         // budget — in range mode the config carries the chip's transient fetch budget.
         const live = this.inner?.market;
+        const ext = this.inner ? this.dehydrateExt() : (Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined);
         return {
             ...this.state,
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
@@ -975,14 +1058,17 @@ export class ChartCell {
             // Natives from the chart's SYNC registry read — an async catalog mirror here
             // lost unload-time saves, and the old empty-set fallbacks resurrected removed
             // indicators. Manifest names fall back to the restored ledger only until the
-            // shared manifest settles. See {@link indicatorLedger}.
+            // shared manifest settles. See {@link indicatorLedger}. External instances
+            // (`ctx.addIndicator`) stay out: their names would never resolve against the
+            // manifest — their plugin persists them via the `ext` seam instead.
             indicators: indicatorLedger({
                 present: this.inner ? this.inner.presentNativeIndicators() : [],
-                instanceNames: this.instances.map((it) => it.entry.name),
+                instanceNames: this.instances.filter((it) => !it.external).map((it) => it.entry.name),
                 pendingManifest: this.pendingManifestNames,
                 manifestSettled: this.deps.manifestSettled(),
                 volumePending: this.volumeMayBePending && this.volumeIntent,
             }),
+            ...(ext ? { ext } : {}),
         };
     }
 
