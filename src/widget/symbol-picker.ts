@@ -6,6 +6,21 @@ import { Dialog } from '../ui/components/dialog';
 import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { tickerIconEl, baseOf } from './symbol-icon';
+import { symbolRanking } from './contributions';
+
+/** First occurrence wins, keyed by venue+ticker — a ranking hook may inject an entry
+ *  that also exists later in the pool; the injected one keeps position AND data. */
+function dedupeSymbols(list: readonly SymbolDescriptor[]): SymbolDescriptor[] {
+    const seen = new Set<string>();
+    const out: SymbolDescriptor[] = [];
+    for (const s of list) {
+        const key = `${(s.prefix ?? s.provider ?? '').toLowerCase()}:${s.ticker.toUpperCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(s);
+    }
+    return out;
+}
 
 /** The pinned head of the empty-query list (majors first, like the reference picker). */
 const TOP_TICKERS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT'];
@@ -46,7 +61,7 @@ function onlyOne<T>(matches: readonly T[]): T | null {
 /** The row's venue label — the LISTING prefix the data declares, else the provider name. */
 const venueOf = (s: SymbolDescriptor): string | undefined => s.prefix ?? s.provider;
 
-export function filterSymbols(list: readonly SymbolDescriptor[], query: string, limit = 100): SymbolDescriptor[] {
+export function filterSymbols(list: readonly SymbolDescriptor[], query: string, limit = 100, top: readonly string[] | false = TOP_TICKERS): SymbolDescriptor[] {
     // The venues are the list's own — the picker's pool is already tab-filtered, and a scope
     // token must never resolve to a venue that has nothing to show. Both spellings scope:
     // the displayed listing venue (`nasdaq AAP`) and the provider id (`edgx AAP`).
@@ -55,13 +70,15 @@ export function filterSymbols(list: readonly SymbolDescriptor[], query: string, 
     const pool = scope ? list.filter((s) => venueOf(s)?.toLowerCase() === scope || s.provider?.toLowerCase() === scope) : list;
     const q = term.toUpperCase();
     if (!q) {
-        // Venue alone: browse the whole venue, alphabetically. Empty query: pin the majors
-        // that exist in the index, then fill with the head.
+        // Venue alone: browse the whole venue, alphabetically. Empty query: pin the `top`
+        // tickers that exist in the index, then fill with the head — `top: false` trusts
+        // the pool's own order instead (a registered symbol ranking already shaped it).
         if (scope) return [...pool].sort((a, b) => a.ticker.localeCompare(b.ticker)).slice(0, limit);
+        if (top === false) return pool.slice(0, limit);
         const byTicker = new Map(pool.map((s) => [s.ticker.toUpperCase(), s]));
-        const top = TOP_TICKERS.map((t) => byTicker.get(t)).filter((s): s is SymbolDescriptor => s !== undefined);
-        const rest = pool.filter((s) => !TOP_TICKERS.includes(s.ticker.toUpperCase()));
-        return [...top, ...rest].slice(0, limit);
+        const pinned = top.map((t) => byTicker.get(t)).filter((s): s is SymbolDescriptor => s !== undefined);
+        const rest = pool.filter((s) => !top.includes(s.ticker.toUpperCase()));
+        return [...pinned, ...rest].slice(0, limit);
     }
     const qLower = term.toLowerCase();
     const prefix: SymbolDescriptor[] = [];
@@ -195,6 +212,9 @@ export class SymbolPicker {
     private activeTab = 'All';
     private tabs!: HTMLElement;
     private visible = PAGE;
+    /** The ranked pool cache — `key` fingerprints the raw pool the ranking ran on. */
+    private ranked: { key: string; result: SymbolDescriptor[] } | null = null;
+    private ranking = false;
 
     constructor(opts: SymbolPickerOptions) {
         const doc = (opts.host ?? document.body).ownerDocument;
@@ -314,13 +334,44 @@ export class SymbolPicker {
         });
     }
 
+    /** The picker's pool: the source, shaped by the registered symbol ranking. Cached —
+     *  the hook runs when the pool CHANGES (an index lands or refreshes), never per
+     *  keystroke; an async hook resolves onto the next repaint (stale-while-revalidate
+     *  in between, the raw pool before the first resolve). */
+    private pool(): readonly SymbolDescriptor[] {
+        const raw = this.source();
+        const hook = symbolRanking();
+        if (!hook) return raw;
+        const key = `${raw.length}:${raw[0]?.ticker ?? ''}:${raw[raw.length - 1]?.ticker ?? ''}`;
+        if (this.ranked?.key !== key && !this.ranking) {
+            this.ranking = true;
+            Promise.resolve([...raw])
+                .then((copy) => hook(copy))
+                .then((out) => {
+                    this.ranked = { key, result: dedupeSymbols(out) };
+                })
+                .catch((err) => {
+                    console.warn('[vela] symbol ranking failed — pool order kept:', err);
+                    this.ranked = { key, result: [...raw] };
+                })
+                .finally(() => {
+                    this.ranking = false;
+                    this.refresh(); // repaint the (possibly open) list with the ranked pool
+                });
+        }
+        return this.ranked?.result ?? raw;
+    }
+
     private computeRows(): SymbolDescriptor[] {
         const TAB_TYPES: Record<string, string[]> = { Crypto: ['crypto'], Stocks: ['stock'], ETFs: ['etf'], Forex: ['forex'], Commodities: ['commodity'] };
+        const all = this.pool();
         const pool =
             this.activeTab === 'All'
-                ? this.source()
-                : this.source().filter((s) => TAB_TYPES[this.activeTab]?.includes((s.type ?? '').toLowerCase()) || (this.activeTab === 'Crypto' && (s.type ?? '').toLowerCase() === 'futures'));
-        return filterSymbols(pool, this.input.value, this.visible);
+                ? all
+                : all.filter((s) => TAB_TYPES[this.activeTab]?.includes((s.type ?? '').toLowerCase()) || (this.activeTab === 'Crypto' && (s.type ?? '').toLowerCase() === 'futures'));
+        // A registered ranking OWNS the empty-query head — the built-in majors pin
+        // stands down and the pool's own order shows.
+        return filterSymbols(pool, this.input.value, this.visible, symbolRanking() ? false : TOP_TICKERS);
     }
 
     private refresh(): void {

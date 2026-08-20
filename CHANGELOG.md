@@ -6,6 +6,15 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Custom symbol ordering.** `registerSymbolRanking(hook)` (plugin SDK) hands a
+  plugin or host the display order of the symbol-search dialog: the hook receives
+  the whole aggregated pool (every source combined), returns it in display order,
+  and may inject or omit entries (first duplicate wins). It runs when the pool
+  changes — never per keystroke — and may be async. While registered, the built-in
+  "majors first" pin stands down: the head of the returned list is the dialog's
+  opening screen; under a typed query the relevance tiers still lead, with the
+  custom order breaking ties. `filterSymbols` gained a `top` parameter
+  (`string[] | false`) for the empty-query pin policy.
 - **Built-in slot overrides.** A plugin can now TAKE OVER a built-in topbar button by
   registering its action under the built-in id (`registerWidgetAction({ id:
   'indicators' | 'screenshot', ... })`): the contributed button replaces the native one

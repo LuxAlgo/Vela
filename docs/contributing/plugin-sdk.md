@@ -350,6 +350,42 @@ persistence if you want them back after a reload, and
 [`registerStatePersistence`](#state-persistence--registerstatepersistence) is the seam
 built for exactly that.
 
+## Symbol ranking — `registerSymbolRanking`
+
+The shells' symbol-search dialog displays the providers' AGGREGATED symbol index. A
+plugin (or host) can own its display order — one hook, last registration wins:
+
+```ts
+import { registerSymbolRanking } from 'vela/plugin';
+
+registerSymbolRanking(async (pool) => {
+    const top = await fetchTopSymbols();               // may be async — a server-driven list
+    const rank = new Map(top.map((t, i) => [t.ticker, i]));
+    const head = pool.filter((s) => rank.has(s.ticker)).sort((a, b) => rank.get(a.ticker)! - rank.get(b.ticker)!);
+    const rest = pool.filter((s) => !rank.has(s.ticker));
+    return [...head, ...rest];                          // full display order, all sources combined
+});
+```
+
+The contract:
+
+- **The hook sees the whole pool** — every source combined, exactly what the dialog
+  shows — and returns the full display order. Cross-source ordering (a top list mixing
+  venues) is the point.
+- **Called when the pool changes** (a provider's index lands or refreshes), never per
+  keystroke — the picker caches the result. Async results land on the next repaint
+  (stale-while-revalidate in between).
+- **Empty query = the head of your list.** The built-in "majors first" pin stands down
+  while a ranking is registered. Under a typed query, the relevance tiers still lead
+  (prefix > substring > description > venue) — your order breaks ties within each
+  tier. Venue browsing (`nasdaq …`) stays alphabetical.
+- **Injection and hiding**: the returned list may contain descriptors absent from the
+  pool (give them their `provider`, and only inject what a provider actually serves —
+  selecting an unservable row parks the load) and may omit entries. Duplicates keep
+  their FIRST occurrence, so injecting at the head fixes both position and data.
+- A failing or rejecting hook is contained: the pool order stands, with a console
+  warning.
+
 ## State persistence — `registerStatePersistence`
 
 The shells persist one versioned **state document** (`getState()` / `applyState()`,

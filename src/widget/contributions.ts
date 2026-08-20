@@ -5,6 +5,7 @@
 import type { Vela } from '../Vela';
 import type { LegendActionView } from '../core/ports/IChartRenderer';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
+import type { SymbolDescriptor } from '../core/ports/DataProvider';
 import { TOPBAR_BUILTIN_IDS } from './topbar-composition';
 
 /** The runtime surface an action's `when`/`run` receives. */
@@ -378,6 +379,42 @@ export function unregisterStatePersistence(key: string): void {
 /** The registered handlers of one scope (registration order). */
 export function statePersistenceHandlers<S extends StatePersistenceHandler['scope']>(scope: S): Array<Extract<StatePersistenceHandler, { scope: S }>> {
     return [...stateHandlers.values()].filter((h): h is Extract<StatePersistenceHandler, { scope: S }> => h.scope === scope);
+}
+
+// ── Symbol ranking (the picker's display order) ────────────────────────────────────
+
+/**
+ * Reorder the symbol picker's AGGREGATED pool — every source combined, exactly what
+ * the search dialog displays. Called when the pool changes (a provider's index lands
+ * or refreshes), NOT per keystroke: the picker caches the result. May be async (a
+ * server-fetched top list) — the picker shows the current order and refreshes when
+ * the promise resolves.
+ *
+ * The returned list may INJECT descriptors absent from the pool (they must carry
+ * their `provider` and be genuinely servable, or selecting them parks the load) and
+ * may OMIT entries (hiding them). The picker dedupes by venue+ticker, FIRST
+ * occurrence winning — injecting at the head fixes both position and display data.
+ *
+ * While a ranking is registered, the picker's built-in empty-query pin (the hardcoded
+ * majors) stands down: the head of YOUR list is the dialog's opening screen. Under a
+ * typed query the relevance tiers still lead — the ranking orders within each tier.
+ */
+export type SymbolRankingHook = (pool: SymbolDescriptor[]) => SymbolDescriptor[] | Promise<SymbolDescriptor[]>;
+
+let symbolRankingHook: SymbolRankingHook | undefined;
+
+/** Register (or replace — ONE ranking at a time, last wins) the symbol ranking.
+ *  Returns an unregister disposer. Register at import time, like every contribution. */
+export function registerSymbolRanking(hook: SymbolRankingHook): () => void {
+    symbolRankingHook = hook;
+    return () => {
+        if (symbolRankingHook === hook) symbolRankingHook = undefined;
+    };
+}
+
+/** The registered ranking, if any — what the shells' symbol picker consults. */
+export function symbolRanking(): SymbolRankingHook | undefined {
+    return symbolRankingHook;
 }
 
 // ── Default scripting engines ──────────────────────────────────────────────────────
