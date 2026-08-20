@@ -164,6 +164,13 @@ scope: 'cell' | 'global', serialize, restore })` lets a plugin store its own sta
 
 ### Fixed
 
+- **Pre- and post-market shading is instant and follows the complete chart history.**
+  The bands now expand locally from the symbol's declared session vocabulary
+  (`session`, optional `session_extended`, `timezone` on its metadata) instead of
+  round-tripping the provider calendar, so they paint the moment symbol metadata is
+  known and panning through arbitrarily deep extended-hours history never waits or
+  stops after a fixed lookback. The tint is clipped to loaded candle slots, so it
+  never appears before available history or in empty space ahead of the current bar.
 - **A workspace now says so when no provider serves a symbol** — the same one-time
   notice a single-chart shell shows, instead of a silently blank cell.
 - **Destroying one shell no longer evicts another's cached history.** The shared
