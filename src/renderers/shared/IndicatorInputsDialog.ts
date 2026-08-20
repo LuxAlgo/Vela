@@ -39,7 +39,8 @@ const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'volume
 
 /**
  * Indicator settings dialog — tabbed live-edit form opened from the legend gear.
- * Cancel reverts to the open-time snapshot; Ok / × / backdrop / Esc keep live edits.
+ * Cancel reverts to the open-time snapshot; Ok / × / backdrop / Esc keep live edits;
+ * Reset defaults restores every input's declared `defval` (still cancelable).
  */
 export class IndicatorInputsDialog {
     private dialog: HTMLElement | null = null;
@@ -95,11 +96,15 @@ export class IndicatorInputsDialog {
             closeOnEscape: false,
             footer: (foot) => {
                 foot.append(
+                    this.resetAction(),
                     this.dialogButton('Cancel', false, () => this.revertAndClose()),
                     this.dialogButton('Ok', true, () => this.close()),
                 );
             },
-            onOpenChange: (open) => { if (!open) this.close(); },
+            // Stale-guard: destroying a dialog fires its machine's onOpenChange(false)
+            // asynchronously — after a reset rebuild that notification must not close
+            // the replacement dialog.
+            onOpenChange: (open) => { if (!open && this.uiDialog === ui) this.close(); },
         });
         applyChromeTokens(ui.panel, t);
         ui.panel.style.colorScheme = this.isDarkTheme() ? 'dark' : 'light';
@@ -248,6 +253,32 @@ export class IndicatorInputsDialog {
             }
         }
         this.close();
+    }
+
+    /** The footer's reset button — same chip as Cancel, pinned to the LEFT edge
+     *  (`margin-right:auto` against the footer's flex-end keeps Cancel/Ok right). */
+    private resetAction(): HTMLButtonElement {
+        const b = this.dialogButton('Reset defaults', false, () => this.resetToDefaults());
+        b.style.marginRight = 'auto';
+        return b;
+    }
+
+    /** Restore every input to its declared default (re-running the indicator), then
+     *  re-open the form so each control re-reads the restored values — the same
+     *  rebuild-after-reset move as the chart-settings dialog. The open-time snapshot
+     *  survives the rebuild, so Cancel after a reset still reverts the whole session. */
+    private resetToDefaults(): void {
+        const row = this.row;
+        if (!row) return;
+        const snap = this.snapshot;
+        for (const inp of row.inputs) {
+            if (row.values[inp.key] !== inp.defval) {
+                row.values[inp.key] = inp.defval;
+                this.host.onChange?.({ indicatorId: row.id, key: inp.key, value: inp.defval });
+            }
+        }
+        this.open(row);
+        if (snap) this.snapshot = snap;
     }
 
     /** Write one edit through: store it, notify the host, and re-apply the `when` gates. */
