@@ -1,6 +1,7 @@
 import type { OHLCV } from '../../../core/model/ohlcv';
 import type { BarRange, SymbolInfo } from '../../../core/ports/MarketDataFeed';
 import type { DataProvider, ProviderInfo, SymbolDescriptor } from '../../../core/ports/DataProvider';
+import { baseOf, ledgerCryptoIconUrl } from '../../symbol-base';
 import type { Unsubscribe } from '../../../core/util/types';
 
 const INFO_URL = 'https://api.hyperliquid.xyz/info';
@@ -205,6 +206,12 @@ export class HyperliquidProvider implements DataProvider {
             ]).then(([perps, spot]) => [...perps, ...spot]);
         }
         return this.symbolsPromise;
+    }
+
+    /** Predefined icon source for a crypto venue: the Ledger crypto-icon CDN, keyed by
+     *  the BASE asset (the description's first segment, else the de-suffixed ticker). */
+    resolveSymbolIcon(symbol: SymbolDescriptor): string | undefined {
+        return ledgerCryptoIconUrl(baseOf(symbol));
     }
 
     subscribe(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void): Unsubscribe {

@@ -195,6 +195,9 @@ export interface SymbolPickerOptions {
     onSelect: (symbol: string) => void;
     onOpenChange?: (open: boolean) => void;
     host?: HTMLElement;
+    /** The row's icon URL — routed to the descriptor's OWNING provider
+     *  (`resolveSymbolIcon`). Absent or `undefined` per row ⇒ the initials badge. */
+    iconFor?: (d: SymbolDescriptor) => string | undefined;
 }
 
 /** Rows rendered per page — the list GROWS by this much every time the scroll nears the
@@ -216,7 +219,7 @@ export class SymbolPicker {
     private ranked: { key: string; result: SymbolDescriptor[] } | null = null;
     private ranking = false;
 
-    constructor(opts: SymbolPickerOptions) {
+    constructor(private readonly opts: SymbolPickerOptions) {
         const doc = (opts.host ?? document.body).ownerDocument;
         injectStyles(STYLE_ID, CSS, doc);
 
@@ -408,7 +411,7 @@ export class SymbolPicker {
         // The LISTING prefix wins over the provider id: it is the canonical spelling.
         const venue = s.prefix ?? s.provider;
         if (venue) row.dataset.venue = venue;
-        const av = tickerIconEl(doc, baseOf(s), s.ticker, 'vela-sp-avatar');
+        const av = tickerIconEl(doc, baseOf(s), s.ticker, 'vela-sp-avatar', this.opts.iconFor?.(s));
         const main = doc.createElement('span');
         main.className = 'vela-sp-main';
         const t = doc.createElement('span');

@@ -82,6 +82,17 @@ export interface DataProvider {
     getSymbolInfo?(ticker: string): Promise<SymbolInfo | undefined>;
 
     /**
+     * The icon URL for one of THIS provider's symbols — the provider owns the knowledge
+     * of where its asset class's icons live (a crypto CDN, a self-hosted store), the
+     * shells own the rendering (round badge, colored-initials fallback). Called lazily,
+     * per RENDERED row — never per index build — so it must be cheap and synchronous.
+     * `undefined` ⇒ no icon (the initials badge shows). Absent ⇒ same. The URL must be
+     * CORS-clean (`Access-Control-Allow-Origin`) or drawing it taints the canvas and
+     * breaks the PNG export — a load error falls back to initials either way.
+     */
+    resolveSymbolIcon?(symbol: SymbolDescriptor): string | undefined;
+
+    /**
      * Open a true live stream for `ticker`/`timeframe`. Each call to `onBar` delivers
      * the forming candle (or a freshly-closed one). Returns an unsubscribe fn. Absent
      * ⇒ the feed polls `getBars` for ticks instead. `opts.session` names the trading

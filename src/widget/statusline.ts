@@ -257,7 +257,13 @@ export class Statusline {
     private fitMode = false;
     private fitRO: ResizeObserver | null = null;
 
-    constructor(private readonly host: HTMLElement, symbol: string) {
+    constructor(
+        private readonly host: HTMLElement,
+        symbol: string,
+        /** The avatar's icon URL for a raw symbol — the shell routes it to the owning
+         *  provider's `resolveSymbolIcon`. Absent ⇒ the initials badge. */
+        private readonly iconFor?: (symbol: string) => string | undefined,
+    ) {
         const doc = host.ownerDocument;
         injectStyles(STYLE_ID, CSS, doc);
         host.classList.add('vela-has-statusline'); // scopes the price-legend shift to THIS host
@@ -268,7 +274,7 @@ export class Statusline {
         // Display the bare ticker — the venue prefix is identity, not label; the venue
         // itself shows in the meta segment ("· BINANCE · 1h") beside it.
         const ticker = parseSymbol(symbol).ticker;
-        this.avatarEl = tickerIconEl(doc, baseOfTicker(ticker), ticker, 'vela-sl-avatar');
+        this.avatarEl = tickerIconEl(doc, baseOfTicker(ticker), ticker, 'vela-sl-avatar', this.iconFor?.(symbol));
         this.symbolEl = doc.createElement('span');
         this.symbolEl.className = 'vela-sl-symbol';
         this.symbolEl.textContent = ticker;
@@ -292,7 +298,7 @@ export class Statusline {
     setSymbol(symbol: string): void {
         const ticker = parseSymbol(symbol).ticker;
         this.symbolEl.textContent = ticker;
-        const fresh = tickerIconEl(this.el.ownerDocument, baseOfTicker(ticker), ticker, 'vela-sl-avatar');
+        const fresh = tickerIconEl(this.el.ownerDocument, baseOfTicker(ticker), ticker, 'vela-sl-avatar', this.iconFor?.(symbol));
         this.avatarEl.replaceWith(fresh);
         this.avatarEl = fresh;
         this.fit();

@@ -383,6 +383,8 @@ export class VelaWorkspace {
         // ── shared dialogs/pickers (they act on the ACTIVE cell at call time) ──
         this.symbolPicker = new SymbolPicker({
             host: this.root,
+            // Row icons come from each descriptor's OWNING provider (resolveSymbolIcon).
+            iconFor: (d) => this.feed.symbolIconOf(d),
             onSelect: (ticker) => this.active.setSymbol(ticker),
             onOpenChange: (open) => {
                 // In-chart dialogs (indicator inputs, chart settings) live inside a cell's
@@ -493,7 +495,7 @@ export class VelaWorkspace {
             context: () => this.context(),
             changed: () => this.markStateDirty(),
         });
-        this.objectTree = new ObjectTree(main);
+        this.objectTree = new ObjectTree(main, (sym) => this.feed.symbolIcon(sym));
         this.dataWindow = new DataWindow(main);
         this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
         this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
