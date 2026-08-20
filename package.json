@@ -1,6 +1,6 @@
 {
   "name": "@luxalgo/vela",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "Open-source charting library with a native high-performance renderer, drawing tools, pluggable chart types and pluggable scripting engines.",
   "license": "Apache-2.0",
   "homepage": "https://luxalgo.com/vela",

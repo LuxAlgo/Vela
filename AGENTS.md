@@ -217,6 +217,14 @@ afterthought). Follow the house format exactly:
 
 - **Structure.** Newest first; `## [vX.Y.Z]` sections; `### Added` / `### Changed` /
   `### Fixed` subsections in that order, each present only when non-empty.
+- **Where a new entry goes — released sections are immutable.** Before writing, check
+  whether the version at the top of the file has already SHIPPED: `package.json`'s
+  current version matching a published release (a git tag `vX.Y.Z`, or the version on
+  the npm registry) means that section is history — never append to it. New work then
+  goes under a `## [Unreleased]` heading created above it; at release time that heading
+  is renamed to the version being cut. **When in doubt, use `[Unreleased]`** — a
+  release can always absorb it, but an entry written into an already-published
+  section silently rewrites release notes users have read.
 - **Entry shape.** `- **Bold, feature-first lead.** ` followed by short prose that
   explains what the reader can now do and how it behaves — full sentences, concrete,
   calm. One entry per feature: merge related sub-features into one narrative entry

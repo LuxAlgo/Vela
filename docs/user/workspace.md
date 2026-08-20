@@ -313,7 +313,8 @@ silently reorder them).
 | `timeframes` | presets | Topbar timeframe presets. |
 | `timezone` | `'Etc/UTC'` | Display timezone (every cell). |
 | `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
-| `indicatorPicker` | `true` | The built-in indicator dialog's entry points (topbar button, mobile-bar item, `/`). `false` removes them for hosts shipping their own indicator UI — see [Replacing the indicator menu](../contributing/plugin-sdk.md#replacing-the-indicator-menu). |
+| `topbar` | defaults | Declarative topbar composition — `{ left, right }` lists of the VISIBLE entries, in order (see [Composing the topbar](#composing-the-topbar)). |
+| `indicatorPicker` | `true` | **Deprecated (removal in 0.7.0).** `false` removes the built-in indicator dialog's entry points. Replace it with the composition (omit `'indicators'` from `topbar.left` — same effect) or a plugin [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). |
 | `layoutMode` | `'auto'` | Chrome size class — see [Mobile](#mobile). |
 | `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
 | `persist` / `storage` | off / localStorage | State persistence (see above). |
@@ -388,7 +389,8 @@ they work from the very first keystroke, before any click.
   Indicators picker, undo/redo (same history as Ctrl+Z / Ctrl+Y), alerts bell,
   data-window and object-tree panel toggles, then any
   [contributed actions](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)
-  in the right-hand cluster.
+  in the right-hand cluster. The whole bar is composable — see
+  [Composing the topbar](#composing-the-topbar).
 - **Status line** — symbol + OHLC and change of the hovered bar (resting on the latest
   live bar), stacked above the renderer's indicator legend. In multi-cell grids it
   stays on one row — segments that don't fit the cell hide instead of wrapping (bar
@@ -426,6 +428,58 @@ they work from the very first keystroke, before any click.
   for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
   is independent of the main one. Each menu's settings entry opens the settings dialog on the
   tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
+
+## Composing the topbar
+
+The `topbar` option DESCRIBES the bar: `{ left, right }` lists of the **visible**
+entries, per side, in render order. A side you don't declare keeps its default — the
+option is pure opt-in, and a shell without it behaves exactly as before.
+
+```ts
+new VelaWorkspace('#chart', {
+    topbar: {
+        // right undeclared ⇒ default right side (actions, alerts, panels, screenshot)
+        left: ['symbol', 'timeframes', 'style', 'vela-pro.indicator-menu.open', 'undo-redo'],
+    },
+});
+```
+
+Entries come from one shared vocabulary:
+
+| Entry | What it is |
+| --- | --- |
+| `'symbol'` | The symbol button (opens the search). |
+| `'timeframes'` | The favorite chips + timeframe dropdown group. |
+| `'style'` | The chart-style dropdown. |
+| `'layout'` | The layout dropdown (renders on multi-chart shells only). |
+| `'indicators'` | The Indicators slot — the built-in button, or a plugin's [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). Omitting it removes the button, the mobile stop, the `/` shortcut, and skips the picker dialog. |
+| `'undo-redo'` | The undo/redo pair. |
+| `'alerts'` | The alerts bell (badge included). |
+| `'panels'` | The side-panel toggle group (object tree, data window, contributed panels). |
+| `'screenshot'` | The screenshot slot — the built-in download button, or a plugin's override (which then also owns `mod+alt+S` and the mobile drawer button). |
+| `'actions'` | The FLOW slot: where contributed actions not named in the lists land, per their declared `align` (may appear once per side). |
+| any other id | A [contributed action](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)'s `id` — naming it PINS the action at that list position, overriding its declared `align`/`order`. |
+
+The rules that make it predictable:
+
+- **An explicit list is that side's complete contract.** Ids not listed do not render
+  there — including contributed actions, when the side has no `'actions'` slot. It also
+  **freezes** the side: chrome a future Vela release adds will not appear for a curating
+  host (the deliberate trade-off of describing what IS there).
+- **Hiding an entry removes its other entry points too**: the mobile counterpart (the
+  more-drawer's undo/redo/screenshot buttons, alerts and panel rows, the mobile-bar
+  indicators stop) and the entry's keyboard chord — `mod+alt+S` goes with
+  `'screenshot'`. Ctrl+Z / Ctrl+Y stay regardless of `'undo-redo'`: they belong to
+  editing, not to the buttons.
+- **Mobile keeps its own arrangement.** The composition decides *visibility* everywhere,
+  but only the desktop bar takes the *ordering* — the mobile bar and drawers keep their
+  touch-first layout.
+- Separators are the shell's business — never listed.
+
+The replace-a-built-in recipe pairs naturally with the plugin SDK: hide `'screenshot'`,
+pin your own action in its place (`right: ['actions', 'alerts', 'panels',
+'mytool.screenshot.open']`), and the contributed dropdown sits exactly where the
+built-in button was.
 
 ## Mobile
 

@@ -9,6 +9,7 @@ import { injectStyles } from '../ui/styles';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { timeframeLabel } from './timeframe';
 import { widgetActions, type WidgetContext } from './contributions';
+import { TOPBAR_BUILTIN_IDS } from './topbar-composition';
 
 const STYLE_ID = 'vela-widget-mobilebar';
 const CSS = `
@@ -63,8 +64,9 @@ export interface MobileBarOptions {
     timeframe: string;
     onSymbolClick: () => void;
     onTimeframeClick: () => void;
-    /** Omitted ⇒ no indicators stop (the host replaced the picker — see the
-     *  `indicatorPicker` shell option). */
+    /** Omitted ⇒ no indicators stop (the composition hides the 'indicators' slot, or
+     *  the deprecated `indicatorPicker: false`). A slot OVERRIDE keeps the stop — the
+     *  shell passes a callback routed to the override. */
     onIndicatorsClick?: () => void;
     /** Omitted ⇒ no drawings stop (the shell disabled user drawings — `drawings: false`). */
     onDrawingsClick?: () => void;
@@ -125,7 +127,10 @@ export class MobileBar {
         if (!ctx) return;
         const doc = this.el.ownerDocument;
         this.actionsHost.replaceChildren();
-        for (const action of widgetActions('topbar', ctx).filter((a) => a.align === 'left')) {
+        // Built-in-id actions are slot OVERRIDES — they reach mobile through the slot's
+        // own stop (the shell routes it), never as an extra flow stop here.
+        const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
+        for (const action of widgetActions('topbar', ctx).filter((a) => a.align === 'left' && !builtin.has(a.id))) {
             const b = doc.createElement('button');
             b.className = 'vela-mb-item';
             b.setAttribute('aria-label', action.label);

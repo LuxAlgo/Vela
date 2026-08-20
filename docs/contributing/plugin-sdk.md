@@ -178,8 +178,13 @@ registerIcon('rocket', '<svg …>…</svg>'); // optional, inline SVG (stroke cu
 registerWidgetAction({
     id: 'mytool.open',
     target: 'topbar',            // or 'context:body' | 'context:price-axis' | 'context:time-axis'
-    label: 'My tool',
+    label: 'My tool',            // ALWAYS required: aria-label, tooltip, mobile row text
     icon: 'rocket',
+    iconOnly: true,              // topbar only: no button text — the native 32px tool look
+                                 //  on the right cluster (label becomes aria-label + a kit
+                                 //  tooltip; mobile surfaces keep their text). Requires
+                                 //  `icon`. The piece that makes a 'screenshot' slot
+                                 //  override pixel-faithful to the button it replaces.
     order: 10,                   // sort key within the contributed group
     align: 'left',               // topbar only: 'left' joins the primary chrome cluster
                                  //  (after the style/layout dropdowns, styled like them);
@@ -209,12 +214,24 @@ ones stay in the three-dots sheet. `context:*` actions are appended to the match
 right-click menu zone. Register at import time — a widget constructed later picks them
 up; after late registrations call `widget.refreshActions()`.
 
+`align`/`order` are the action's *suggestion* — the HOST has the last word: the shell's
+`topbar: { left, right }` option (see [Composing the
+topbar](../user/workspace.md#composing-the-topbar)) can pin an action id at an exact
+position (overriding both), or omit the `'actions'` flow slot entirely, in which case
+unpinned actions don't render on that side. Publish your action ids (a stable exported
+constant) so hosts can compose with them.
+
 Two rules keep actions portable:
 
 - **Everything through `ctx`, no outer references.** `when`/`run` must not close over a
   widget or chart instance — the context is rebuilt per invocation, so it always binds
   the widget that projected the action (and, in a future multi-chart shell, the
-  **active** chart). `ctx.chart` is live at call time; don't cache it across calls.
+  **active** chart). Every member of the context is LIVE — `ctx.chart` resolves the
+  current chart at call time, and `ctx.symbol` / `ctx.timeframe` / `ctx.priceStyle`
+  (and a workspace's `ctx.cells` / `ctx.activeCellId`) are getters that follow every
+  market and active-cell switch. Read them at the point of use; copying one into a
+  variable at mount freezes it (an attachment once named screenshot files after the
+  mount-time symbol that way).
 - **Kit components get `ctx.host`.** Mounting a `Dialog`/`Menu`/`Tooltip` without an
   explicit host portals it to `<body>`, outside the theme's CSS variables (invisible
   backgrounds). Pass `host: ctx.host`.
@@ -247,26 +264,51 @@ Attachments mount at widget construction (and on `widget.refreshActions()` for l
 registrations), once per id per widget. The same portability rules as actions apply: everything
 comes from `ctx`, never from module state.
 
+## Replacing a built-in button — slot overrides
+
+The topbar's built-in entries are named SLOTS (see [Composing the
+topbar](../user/workspace.md#composing-the-topbar)). The simple-button slots —
+**`'indicators'`** and **`'screenshot'`** — can be TAKEN OVER by a plugin: register an
+action under the built-in id, and the override owns the slot's **whole surface**:
+
+- the desktop button renders your action at the slot's position (native button gone);
+- the slot's mobile counterpart (the mobile-bar Indicators stop, the more-drawer
+  Screenshot button) routes to your `run(ctx)`;
+- the slot's keyboard chord (`/` for indicators, `mod+alt+S` for screenshot) routes to
+  your `run(ctx)` too — don't bind your own;
+- the native machinery behind the slot is not constructed (the built-in indicator
+  picker dialog, for `'indicators'`).
+
+The composite slots (`symbol`, `timeframes`, `style`, `layout`, `undo-redo`, `alerts`,
+`panels`) are stateful controls the shell pushes state into — a `{label, icon, run}`
+descriptor cannot stand in for them, so registering under those ids is refused with a
+console warning.
+
+Position follows the composition rules: a host-declared list places the slot wherever
+it lists the id (and omitting the id hides your override with the slot — the host
+keeps the last word); on a default side the override sits exactly where the native
+button was, unless it declares `order` — then it flows like an ordinary action.
+
 ## Replacing the indicator menu
 
-The shells ship a built-in indicator dialog (the *Indicators* button). Replacing it
-needs **no dedicated seam** — it is the composition of one shell option and the two
-contributions above:
+Replacing the built-in indicator dialog is the canonical slot override plus the two
+contributions above — **no shell option needed**:
 
-- **`indicatorPicker: false`** (a shell option on both the widget and the workspace)
-  removes the built-in dialog's entry points — the topbar button, the mobile-bar item,
-  and the `/` shortcut. Nothing else changes: the `indicators` manifest still resolves
-  and auto-adds its enabled entries.
-- **Your menu is an ordinary contribution**: a topbar **action** provides the button, a
-  widget **attachment** owns the per-shell dialog (and any shortcut you want back).
-  Everything a menu needs is public on the context — the native catalog via
-  `ctx.chart.availableNativeIndicators()`, and **shell-routed adds** via
-  `ctx.addNativeIndicator(type)` and `ctx.addIndicator({ name, script, language? })`.
-  Prefer these over the raw `ctx.chart.addNativeIndicator` / `ctx.chart.addIndicator`:
-  the context forms enter the shell's unified **undo/redo timeline** and the topbar
-  indicator count, exactly like an add from the built-in picker — the raw chart calls
-  bypass the shell and stay invisible to Ctrl+Z. `ctx.host` is the mount host for kit
-  components.
+- **Your menu is an ordinary contribution**: a topbar **action registered under the id
+  `'indicators'`** provides the button (and inherits `/` + the mobile stop), a widget
+  **attachment** owns the per-shell dialog. Everything a menu needs is public on the
+  context — the native catalog via `ctx.chart.availableNativeIndicators()`, and
+  **shell-routed adds** via `ctx.addNativeIndicator(type)` and
+  `ctx.addIndicator({ name, script, language? })`. Prefer these over the raw
+  `ctx.chart.addNativeIndicator` / `ctx.chart.addIndicator`: the context forms enter
+  the shell's unified **undo/redo timeline** and the topbar indicator count, exactly
+  like an add from the built-in picker — the raw chart calls bypass the shell and stay
+  invisible to Ctrl+Z. `ctx.host` is the mount host for kit components.
+- The `indicators` manifest still resolves and auto-adds its enabled entries — the
+  override replaces the UI, not the ledger.
+- The historical **`indicatorPicker: false`** shell option is deprecated (removal in
+  0.7.0): to *hide* the built-in surface without replacing it, omit `'indicators'`
+  from `topbar.left` — same effect (no button, no mobile stop, no `/`, no dialog).
 
 ```ts
 import { registerWidgetAction, registerWidgetAttachment } from 'vela/plugin';
@@ -300,31 +342,59 @@ registerWidgetAttachment({
 });
 
 registerWidgetAction({
-    id: 'mytool.indicators.open',
+    id: 'indicators',      // the built-in SLOT — button, mobile stop and `/` are yours
     target: 'topbar',
     label: 'Indicators',
-    icon: 'indicators', // the shells' own icon id — reuse it for a familiar button
-    align: 'left',      // the built-in button's exact spot and styling
+    icon: 'indicators',    // the shells' own icon id — reuse it for a familiar button
     run: (ctx) => menus.get(ctx.host)?.show(),
 });
 ```
 
-The host page opts out of the built-in dialog when it constructs the shell:
-
-```ts
-new VelaWorkspace('#chart', { symbol: 'BTCUSDT', indicatorPicker: false });
-```
-
-The two halves stay decoupled on purpose: a host can hide the picker without replacing
-it, run both menus side by side while migrating, and any plugin — not just one blessed
-package — can ship its own menu through the same public surface. Two caveats to design
+No host-side wiring: any page that imports your package (before constructing shells)
+gets your menu in place of the built-in one. Any plugin — not just one blessed
+package — can ship its menu through this same public surface. One caveat to design
 for: indicators added through `ctx.addIndicator` live on the chart and in the undo
 timeline, but are **not** part of the shell's persisted manifest ledger (their names
 would never resolve against the host's manifest on restore) — your menu owns their
 persistence if you want them back after a reload, and
 [`registerStatePersistence`](#state-persistence--registerstatepersistence) is the seam
-built for exactly that; and a shortcut you bind yourself must never steal keystrokes
-from editable targets (the shell's own `/` binding is gone with the picker).
+built for exactly that.
+
+## Symbol ranking — `registerSymbolRanking`
+
+The shells' symbol-search dialog displays the providers' AGGREGATED symbol index. A
+plugin (or host) can own its display order — one hook, last registration wins:
+
+```ts
+import { registerSymbolRanking } from 'vela/plugin';
+
+registerSymbolRanking(async (pool) => {
+    const top = await fetchTopSymbols();               // may be async — a server-driven list
+    const rank = new Map(top.map((t, i) => [t.ticker, i]));
+    const head = pool.filter((s) => rank.has(s.ticker)).sort((a, b) => rank.get(a.ticker)! - rank.get(b.ticker)!);
+    const rest = pool.filter((s) => !rank.has(s.ticker));
+    return [...head, ...rest];                          // full display order, all sources combined
+});
+```
+
+The contract:
+
+- **The hook sees the whole pool** — every source combined, exactly what the dialog
+  shows — and returns the full display order. Cross-source ordering (a top list mixing
+  venues) is the point.
+- **Called when the pool changes** (a provider's index lands or refreshes), never per
+  keystroke — the picker caches the result. Async results land on the next repaint
+  (stale-while-revalidate in between).
+- **Empty query = the head of your list.** The built-in "majors first" pin stands down
+  while a ranking is registered. Under a typed query, the relevance tiers still lead
+  (prefix > substring > description > venue) — your order breaks ties within each
+  tier. Venue browsing (`nasdaq …`) stays alphabetical.
+- **Injection and hiding**: the returned list may contain descriptors absent from the
+  pool (give them their `provider`, and only inject what a provider actually serves —
+  selecting an unservable row parks the load) and may omit entries. Duplicates keep
+  their FIRST occurrence, so injecting at the head fixes both position and data.
+- A failing or rejecting hook is contained: the pool order stands, with a console
+  warning.
 
 ## State persistence — `registerStatePersistence`
 

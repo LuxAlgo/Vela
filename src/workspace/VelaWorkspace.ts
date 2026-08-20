@@ -32,7 +32,8 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { legendActionsProviderFor, statePersistenceHandlers, widgetActions, widgetAttachments } from '../widget/contributions';
+import { legendActionsProviderFor, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type WidgetActionDescriptor } from '../widget/contributions';
+import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { MobileBar } from '../widget/mobile-bar';
 import { TimeframeDrawer } from '../widget/timeframe-drawer';
@@ -308,6 +309,13 @@ export class VelaWorkspace {
     /** Plot-local y of the last price-axis long-press (targets the pane under the finger). */
     private priceScalePressY = 0;
     private readonly attachmentDisposers = new Map<string, () => void>();
+    /** The resolved topbar composition — one visibility truth for topbar, mobile, keys. */
+    private topbarComp!: ResolvedTopbarComposition;
+    /** Built-in slots taken over by a contributed action (resolved at construction —
+     *  the register-at-import-time contribution rule). The override owns the slot's
+     *  WHOLE surface: desktop button, mobile counterpart, keyboard chord. */
+    private indicatorsOverride?: WidgetActionDescriptor;
+    private screenshotOverride?: WidgetActionDescriptor;
     /** The document-level third-party state bag (`state.ext`) — seeded from the restored
      *  document, refreshed by global-scope handler `serialize` calls at snapshot time.
      *  Entries with no registered handler this session ride along verbatim. */
@@ -349,6 +357,11 @@ export class VelaWorkspace {
         const optLayout = opts.layout === false || opts.layout === undefined ? '4' : opts.layout;
         this.def = this.resolveLayout(this.monoLayout ? '1' : (boot?.layout && ensureLayout(boot.layout) ? boot.layout : optLayout));
         this.alertCap = Math.max(1, opts.alertCap ?? ALERT_CAP);
+        // The topbar composition also gates the matching MOBILE entries (bar stop,
+        // drawer rows) and keyboard chords below — one visibility truth for an entry.
+        this.topbarComp = resolveTopbarComposition(opts.topbar);
+        this.indicatorsOverride = topbarActionOverride('indicators');
+        this.screenshotOverride = topbarActionOverride('screenshot');
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
         if (boot?.ext) this.extState = { ...boot.ext }; // global handlers restore at the end of construction
         if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
@@ -373,6 +386,8 @@ export class VelaWorkspace {
         // ── shared dialogs/pickers (they act on the ACTIVE cell at call time) ──
         this.symbolPicker = new SymbolPicker({
             host: this.root,
+            // Row icons come from each descriptor's OWNING provider (resolveSymbolIcon).
+            iconFor: (d) => this.feed.symbolIconOf(d),
             onSelect: (ticker) => this.active.setSymbol(ticker),
             onOpenChange: (open) => {
                 // In-chart dialogs (indicator inputs, chart settings) live inside a cell's
@@ -383,11 +398,13 @@ export class VelaWorkspace {
             },
         });
         this.symbolPicker.setSource(() => this.feed.symbols());
-        // The picker exists only while the host keeps it (`indicatorPicker: false` removes
-        // every entry point — topbar button, mobile-bar item, `/` — for hosts that replace
-        // it with their own indicator UI). The shared manifest still resolves and auto-adds.
+        // The picker exists only while it has an entry point left: the deprecated
+        // `indicatorPicker: false`, a composition without 'indicators', or an OVERRIDE
+        // of the slot all remove every one of them (topbar button, mobile-bar item,
+        // `/`), so the dialog is not built. The shared manifest still resolves and
+        // auto-adds either way.
         this.indicatorPicker =
-            opts.indicatorPicker !== false
+            opts.indicatorPicker !== false && !this.indicatorsOverride && topbarHas(this.topbarComp, 'indicators')
                 ? new IndicatorPicker({
                       host: this.root,
                       library: () => this.active.libraryRows(),
@@ -412,6 +429,9 @@ export class VelaWorkspace {
         // ── topbar (shared) — reflects the active cell; the layout dropdown reads the registry live ──
         this.topbar = new Topbar(this.root, {
             symbol: '',
+            // RAW option, not the resolved lists — the bar distinguishes a host-declared
+            // side (list is law) from a default one (an override's `order` may flow).
+            composition: opts.topbar,
             onSymbolClick: () => this.symbolPicker.open(),
             ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
             onUndoClick: () => this.active.history.undo(),
@@ -479,7 +499,7 @@ export class VelaWorkspace {
             context: () => this.context(),
             changed: () => this.markStateDirty(),
         });
-        this.objectTree = new ObjectTree(main);
+        this.objectTree = new ObjectTree(main, (sym) => this.feed.symbolIcon(sym));
         this.dataWindow = new DataWindow(main);
         this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
         this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
@@ -580,7 +600,11 @@ export class VelaWorkspace {
                       timeframe: '60',
                       onSymbolClick: () => this.symbolPicker.open(),
                       onTimeframeClick: () => this.openTimeframeDrawer(),
-                      ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
+                      // Same visibility truth as the desktop bar: composition-hidden
+                      // indicators lose their mobile stop too; an override takes it over.
+                      ...(topbarHas(this.topbarComp, 'indicators') && (picker || this.indicatorsOverride)
+                          ? { onIndicatorsClick: this.indicatorsOverride ? () => this.runOverride(this.indicatorsOverride!) : () => picker!.open() }
+                          : {}),
                       getContext: () => this.context(),
                       ...(this.drawingsEnabled ? { onDrawingsClick: () => this.openDrawingsDrawer() } : {}),
                       onMoreClick: () => this.openMoreDrawer(),
@@ -1720,30 +1744,38 @@ export class VelaWorkspace {
     }
 
     private openMoreDrawer(): void {
+        // The drawer is the mobile counterpart of the topbar's tools — composition-
+        // hidden entries lose their drawer rows too (handlers omitted ⇒ rows omitted).
+        const has = (id: string): boolean => topbarHas(this.topbarComp, id);
         this.moreDrawer ??= new MoreDrawer({
             host: this.root,
-            onUndo: () => this.active.history.undo(),
-            onRedo: () => this.active.history.redo(),
-            onScreenshot: () => this.active.downloadScreenshot(),
+            ...(has('undo-redo') ? { onUndo: () => this.active.history.undo(), onRedo: () => this.active.history.redo() } : {}),
+            ...(has('screenshot')
+                ? { onScreenshot: this.screenshotOverride ? () => this.runOverride(this.screenshotOverride!) : () => this.active.downloadScreenshot() }
+                : {}),
             canUndo: () => this.active.history.canUndo,
             canRedo: () => this.active.history.canRedo,
             priceStyles: () => priceStyleIds().map((id) => ({ id, label: priceStyleLabel(id), icon: priceStyleIcon(id) })),
             priceStyle: () => this.active.priceStyle,
             onPriceStyle: (id) => this.active.setPriceStyle(id),
-            panels: () => [...this.dock.list()],
+            panels: () => (has('panels') ? [...this.dock.list()] : []),
             onTogglePanel: (id) => this.dock.toggle(id),
-            alerts: () => this.alerts.map((a) => ({ title: `${a.source} · ${a.title}`, message: a.message, time: a.time })),
+            ...(has('alerts') ? { alerts: () => this.alerts.map((a) => ({ title: `${a.source} · ${a.title}`, message: a.message, time: a.time })) } : {}),
             // Left-aligned actions have their own bottom-bar stop — only the rest
-            // lands in the drawer, or every left action would appear twice.
-            actions: () =>
-                widgetActions('topbar', this.context())
-                    .filter((a) => a.align !== 'left')
-                    .map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) })),
+            // lands in the drawer, or every left action would appear twice. Built-in-id
+            // actions are slot OVERRIDES: they reach the drawer through the slot's own
+            // routed button (screenshot) or stop (indicators), never as an extra row.
+            actions: () => {
+                const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
+                return widgetActions('topbar', this.context())
+                    .filter((a) => a.align !== 'left' && !builtin.has(a.id))
+                    .map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) }));
+            },
             // The desktop layout dropdown's whole surface — the grid canvas, the
             // non-canvas presets and the sync switches — relocated into the kebab
             // drawer (the topbar is hidden on mobile). Same reads as the topbar block;
-            // single-chart mode omits it here too.
-            layout: this.monoLayout ? undefined : {
+            // single-chart mode and a composition without 'layout' omit it here too.
+            layout: this.monoLayout || !has('layout') ? undefined : {
                 shape: () => layoutShape(this.def),
                 presets: () =>
                     layouts()
@@ -1821,9 +1853,29 @@ export class VelaWorkspace {
         }
     }
 
+    /** Invoke a slot override the way its button would: fresh context, `when` respected. */
+    private runOverride(action: WidgetActionDescriptor): void {
+        const ctx = this.context();
+        if (!action.when || action.when(ctx)) action.run(ctx);
+    }
+
     /** The default shortcut set — every binding acts on the ACTIVE cell. */
     private registerDefaultKeys(): void {
-        this.keymap.register({ id: 'chart.screenshot', keys: 'mod+alt+s', label: 'Download a chart screenshot', category: 'Chart', run: () => this.active.downloadScreenshot() });
+        // The screenshot chord belongs to the screenshot SLOT — a composition that
+        // removes the slot removes its shortcut too, and an OVERRIDE of the slot takes
+        // the chord over (a host replacing the surface must not keep the old behavior
+        // reachable). Ctrl+Z/Y below are editing primitives and stay regardless of the
+        // 'undo-redo' buttons.
+        if (topbarHas(this.topbarComp, 'screenshot')) {
+            const ov = this.screenshotOverride;
+            this.keymap.register({
+                id: 'chart.screenshot',
+                keys: 'mod+alt+s',
+                label: ov ? ov.label : 'Download a chart screenshot',
+                category: 'Chart',
+                run: ov ? () => this.runOverride(ov) : () => this.active.downloadScreenshot(),
+            });
+        }
         this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: 'Reset view (all history)', category: 'Chart', run: () => this.active.chart.setVisibleRangePreset('ALL') });
         this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: 'Toggle logarithmic scale', category: 'Chart', run: () => this.active.chart.renderer.set('logScale', !this.active.chart.renderer.get('logScale')) });
         this.keymap.register({
@@ -1864,7 +1916,12 @@ export class VelaWorkspace {
         // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
         this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.active.chart.panBy(-PAN_FAST) });
         this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.active.chart.panBy(PAN_FAST) });
-        if (this.indicatorPicker) {
+        // `/` belongs to the indicators SLOT: it opens the built-in picker, or routes
+        // to the slot's override — a replaced Indicators surface keeps its shortcut.
+        const indOv = this.indicatorsOverride;
+        if (indOv && topbarHas(this.topbarComp, 'indicators')) {
+            this.keymap.register({ id: 'indicators.open', keys: '/', label: indOv.label, category: 'Indicators', run: () => this.runOverride(indOv) });
+        } else if (this.indicatorPicker) {
             this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker?.open() });
         }
         this.keymap.register({

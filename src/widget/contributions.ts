@@ -5,6 +5,8 @@
 import type { Vela } from '../Vela';
 import type { LegendActionView } from '../core/ports/IChartRenderer';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
+import type { SymbolDescriptor } from '../core/ports/DataProvider';
+import { TOPBAR_BUILTIN_IDS } from './topbar-composition';
 
 /** The runtime surface an action's `when`/`run` receives. */
 export interface WidgetContext {
@@ -12,6 +14,10 @@ export interface WidgetContext {
      *  a shell may replace its chart instance, and a captured one would be destroyed.
      *  (Symbol and timeframe switches are applied IN PLACE — the instance survives them.) */
     chart: Vela;
+    /** LIVE getters, like `chart` — they resolve the ACTIVE cell's market at every
+     *  read, so an attachment that holds its mount context keeps reading the truth
+     *  after a symbol/timeframe switch. Read them at the point of use; never copy
+     *  them into long-lived state. */
     symbol: string;
     timeframe: string;
     priceStyle: string;
@@ -61,9 +67,18 @@ export interface WidgetActionDescriptor {
     /** Stable id — re-registering an id replaces it. */
     id: string;
     target: WidgetActionTarget;
+    /** Always required, even icon-only: it is the button's aria-label and tooltip, the
+     *  mobile drawer row's text, and the context-menu item's label. */
     label: string;
     /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
     icon?: string;
+    /** Topbar only: render the DESKTOP button icon-only, like the built-in tools — the
+     *  `label` moves to the aria-label and a kit tooltip instead of button text (mobile
+     *  surfaces keep their text). The right cluster gets the native 32px tool look; the
+     *  left cluster keeps the primary chrome, minus the text. Requires `icon` — without
+     *  one the flag is ignored (with a console warning) and the label renders. The piece
+     *  that makes a `'screenshot'` slot override pixel-faithful to the native button. */
+    iconOnly?: boolean;
     /** Sort key within the contributed group (ascending; default 0). */
     order?: number;
     /** Topbar only: which cluster the button joins. `'right'` (default) is the
@@ -192,8 +207,37 @@ export function sidePanels(): SidePanelDescriptor[] {
     return [...panels.values()].sort((a, b) => (a.order ?? DEFAULT_PANEL_ORDER) - (b.order ?? DEFAULT_PANEL_ORDER));
 }
 
-/** Register (or replace) a widget action. Widgets read the registry live. */
+/** The built-in topbar slots a contributed action may TAKE OVER by registering under
+ *  their id — the "simple button" slots. The composites (symbol, timeframes, style,
+ *  layout, undo-redo, alerts, panels) are stateful controls the shell pushes state
+ *  into; a plain `{label, icon, run}` descriptor cannot stand in for them. */
+export const OVERRIDABLE_TOPBAR_IDS = ['indicators', 'screenshot'] as const;
+
+const overridableSet = new Set<string>(OVERRIDABLE_TOPBAR_IDS);
+const builtinTopbarSet = new Set<string>(TOPBAR_BUILTIN_IDS);
+
+/**
+ * The action OVERRIDING a built-in topbar slot, if one is registered — an action whose
+ * `id` IS the built-in id. An override takes the slot's WHOLE surface: the desktop
+ * button (at the slot's position), the mobile counterpart, and the keyboard chord all
+ * route to `run`, and the native machinery behind the slot (the built-in indicator
+ * picker) is not constructed. Shells resolve this at construction — register at import
+ * time, like every contribution.
+ */
+export function topbarActionOverride(id: string): WidgetActionDescriptor | undefined {
+    if (!overridableSet.has(id)) return undefined;
+    return registry.get(id);
+}
+
+/** Register (or replace) a widget action. Widgets read the registry live.
+ *  Registering under a RESERVED built-in topbar id (`'indicators'`, `'screenshot'`)
+ *  OVERRIDES that slot — see {@link topbarActionOverride}. Built-in ids that are
+ *  stateful composites cannot be overridden and the registration is refused. */
 export function registerWidgetAction(desc: WidgetActionDescriptor): () => void {
+    if (builtinTopbarSet.has(desc.id) && !overridableSet.has(desc.id)) {
+        console.warn(`[vela] widget action "${desc.id}": this built-in topbar slot is a stateful control and cannot be overridden — ignored. Overridable slots: ${OVERRIDABLE_TOPBAR_IDS.join(', ')}.`);
+        return () => undefined;
+    }
     registry.set(desc.id, desc);
     return () => {
         if (registry.get(desc.id) === desc) registry.delete(desc.id);
@@ -348,6 +392,42 @@ export function unregisterStatePersistence(key: string): void {
 /** The registered handlers of one scope (registration order). */
 export function statePersistenceHandlers<S extends StatePersistenceHandler['scope']>(scope: S): Array<Extract<StatePersistenceHandler, { scope: S }>> {
     return [...stateHandlers.values()].filter((h): h is Extract<StatePersistenceHandler, { scope: S }> => h.scope === scope);
+}
+
+// ── Symbol ranking (the picker's display order) ────────────────────────────────────
+
+/**
+ * Reorder the symbol picker's AGGREGATED pool — every source combined, exactly what
+ * the search dialog displays. Called when the pool changes (a provider's index lands
+ * or refreshes), NOT per keystroke: the picker caches the result. May be async (a
+ * server-fetched top list) — the picker shows the current order and refreshes when
+ * the promise resolves.
+ *
+ * The returned list may INJECT descriptors absent from the pool (they must carry
+ * their `provider` and be genuinely servable, or selecting them parks the load) and
+ * may OMIT entries (hiding them). The picker dedupes by venue+ticker, FIRST
+ * occurrence winning — injecting at the head fixes both position and display data.
+ *
+ * While a ranking is registered, the picker's built-in empty-query pin (the hardcoded
+ * majors) stands down: the head of YOUR list is the dialog's opening screen. Under a
+ * typed query the relevance tiers still lead — the ranking orders within each tier.
+ */
+export type SymbolRankingHook = (pool: SymbolDescriptor[]) => SymbolDescriptor[] | Promise<SymbolDescriptor[]>;
+
+let symbolRankingHook: SymbolRankingHook | undefined;
+
+/** Register (or replace — ONE ranking at a time, last wins) the symbol ranking.
+ *  Returns an unregister disposer. Register at import time, like every contribution. */
+export function registerSymbolRanking(hook: SymbolRankingHook): () => void {
+    symbolRankingHook = hook;
+    return () => {
+        if (symbolRankingHook === hook) symbolRankingHook = undefined;
+    };
+}
+
+/** The registered ranking, if any — what the shells' symbol picker consults. */
+export function symbolRanking(): SymbolRankingHook | undefined {
+    return symbolRankingHook;
 }
 
 // ── Default scripting engines ──────────────────────────────────────────────────────

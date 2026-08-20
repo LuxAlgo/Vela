@@ -91,9 +91,12 @@ export interface MoreDrawerAction {
 
 export interface MoreDrawerOptions {
     host: HTMLElement;
-    onUndo: () => void;
-    onRedo: () => void;
-    onScreenshot: () => void;
+    /** Omitted (with onRedo) ⇒ no undo/redo action buttons — the shell's topbar
+     *  composition removed `'undo-redo'`; the keyboard chords are the shell's call. */
+    onUndo?: () => void;
+    onRedo?: () => void;
+    /** Omitted ⇒ no screenshot action button (composition removed `'screenshot'`). */
+    onScreenshot?: () => void;
     canUndo: () => boolean;
     canRedo: () => boolean;
     /** Chart style list + current selection (read live at open). */
@@ -103,7 +106,8 @@ export interface MoreDrawerOptions {
     /** Docked side panels (built-in + contributed), toggled by id. */
     panels: () => Array<{ id: string; title: string; icon: string }>;
     onTogglePanel: (id: string) => void;
-    alerts: () => Array<{ title: string; message: string; time: number }>;
+    /** Omitted ⇒ no Alerts row (composition removed `'alerts'`). */
+    alerts?: () => Array<{ title: string; message: string; time: number }>;
     /** Contributed topbar actions, projected as plain rows. */
     actions: () => MoreDrawerAction[];
     /** Multi-chart layout switching (workspace shells) — the row is hidden when omitted.
@@ -207,10 +211,10 @@ export class MoreDrawer {
             });
             actions.appendChild(b);
         };
-        action('undo', 'Undo', this.opts.canUndo(), this.opts.onUndo);
-        action('redo', 'Redo', this.opts.canRedo(), this.opts.onRedo);
-        action('camera', 'Screenshot', true, this.opts.onScreenshot);
-        this.drawer.body.appendChild(actions);
+        if (this.opts.onUndo) action('undo', 'Undo', this.opts.canUndo(), this.opts.onUndo);
+        if (this.opts.onRedo) action('redo', 'Redo', this.opts.canRedo(), this.opts.onRedo);
+        if (this.opts.onScreenshot) action('camera', 'Screenshot', true, this.opts.onScreenshot);
+        if (actions.childElementCount > 0) this.drawer.body.appendChild(actions);
 
         const list = doc.createElement('div');
         list.className = 'vela-md-list';
@@ -232,8 +236,10 @@ export class MoreDrawer {
                 }),
             );
         }
-        const alertCount = this.opts.alerts().length;
-        list.appendChild(this.row(doc, 'Alerts', { icon: 'bell', value: alertCount > 0 ? String(alertCount) : undefined, chevron: true, onClick: () => this.show('alerts') }));
+        if (this.opts.alerts) {
+            const alertCount = this.opts.alerts().length;
+            list.appendChild(this.row(doc, 'Alerts', { icon: 'bell', value: alertCount > 0 ? String(alertCount) : undefined, chevron: true, onClick: () => this.show('alerts') }));
+        }
         for (const act of this.opts.actions()) {
             list.appendChild(
                 this.row(doc, act.label, {
@@ -319,7 +325,7 @@ export class MoreDrawer {
     }
 
     private renderAlerts(doc: Document): void {
-        const alerts = this.opts.alerts();
+        const alerts = this.opts.alerts?.() ?? [];
         if (alerts.length === 0) {
             const empty = doc.createElement('div');
             empty.className = 'vela-md-empty';

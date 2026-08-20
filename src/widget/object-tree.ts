@@ -339,6 +339,8 @@ export class ObjectTree extends SidePanel {
     private chart: Vela | null = null;
     private selectedDrawing: string | null = null;
     private symbolName = '';
+    /** The raw (possibly venue-prefixed) symbol — what icon resolution routes on. */
+    private symbolRaw = '';
     /** Drawing bundles — a view-side grouping, held for the panel's lifetime and never persisted.
      *  Kept per chart because a workspace points this one panel at whichever chart is active, and
      *  each chart's bundles have to survive the switch. */
@@ -369,7 +371,12 @@ export class ObjectTree extends SidePanel {
     private menuActions = new Map<string, () => void>();
     private drag: DragSession | null = null;
 
-    constructor(host: HTMLElement) {
+    constructor(
+        host: HTMLElement,
+        /** The price row's avatar icon URL for a raw symbol — routed by the shell to the
+         *  owning provider's `resolveSymbolIcon`. Absent ⇒ the initials badge. */
+        private readonly iconFor?: (symbol: string) => string | undefined,
+    ) {
         super(host, 'Object tree', 'vela-ot');
         injectStyles(STYLE_ID, CSS, host.ownerDocument);
 
@@ -383,7 +390,9 @@ export class ObjectTree extends SidePanel {
     }
 
     setSymbol(symbol: string): void {
-        // Bare ticker — the tree labels the price series, not its routing venue.
+        // Bare ticker — the tree labels the price series, not its routing venue. The
+        // RAW form is kept beside it: icon resolution routes through the venue.
+        this.symbolRaw = symbol;
         this.symbolName = parseSymbol(symbol).ticker;
     }
 
@@ -604,7 +613,7 @@ export class ObjectTree extends SidePanel {
         const { chart } = pass;
         if (row.kind === 'price') {
             const base = this.symbolName.replace(/[-_/]?(USDT|USDC|USD1|USDS|BUSD|USD|EUR|PERP)$/i, '') || this.symbolName;
-            const icon = tickerIconEl(doc, base || 'P', this.symbolName || 'Price', 'vela-ot-avatar');
+            const icon = tickerIconEl(doc, base || 'P', this.symbolName || 'Price', 'vela-ot-avatar', this.symbolRaw ? this.iconFor?.(this.symbolRaw) : undefined);
             const el = this.row(icon, row.label, row.visible, [
                 {
                     icon: row.visible ? 'eye' : 'eye-off',

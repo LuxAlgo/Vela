@@ -8,8 +8,10 @@ import type { ChartCell } from './ChartCell';
 
 /** The extended context a workspace hands to contributed actions/attachments. */
 export interface WorkspaceWidgetContext extends WidgetContext {
-    /** Every live cell (layout order) — id + LIVE chart + market snapshot. */
+    /** Every live cell (layout order) — id + LIVE chart + its market. A LIVE getter
+     *  (fresh array per read): read it at the point of use, never keep the array. */
     cells: ReadonlyArray<{ id: string; chart: Vela; symbol: string; timeframe: string }>;
+    /** LIVE getter — follows every active-cell switch. */
     activeCellId: string;
     setActiveCell(id: string): void;
 }
@@ -29,21 +31,30 @@ export interface ContextHost {
     stateDirty(): void;
 }
 
-/** Build a fresh context bound to the CURRENT active cell (rebuilt per invocation —
- *  nothing here may be cached by a plugin across calls). `chart` resolves LAZILY: the
- *  context is also built during early construction, before any cell exists — reading
- *  `.chart` then throws, and only if an action's `when()` actually touches it. */
+/** Build a fresh context bound to the CURRENT active cell. EVERY read resolves live —
+ *  `chart` lazily (the context is also built during early construction, before any
+ *  cell exists: reading `.chart` then throws, and only if an action's `when()`
+ *  actually touches it), and the market fields (`symbol`/`timeframe`/`priceStyle`,
+ *  `activeCellId`, `cells`) through getters, so an ATTACHMENT that holds its mount
+ *  context for the shell's whole life keeps reading the truth after every symbol or
+ *  active-cell switch — a snapshot here once named screenshot files after the
+ *  mount-time market. */
 export function buildContext(host: ContextHost): WorkspaceWidgetContext {
-    const active = host.active();
     return {
         get chart() {
             const cell = host.active();
             if (!cell) throw new Error('VelaWorkspace has no active cell yet');
             return cell.chart;
         },
-        symbol: active?.symbol ?? '',
-        timeframe: active?.timeframe ?? '60',
-        priceStyle: active?.priceStyle ?? 'candles',
+        get symbol() {
+            return host.active()?.symbol ?? '';
+        },
+        get timeframe() {
+            return host.active()?.timeframe ?? '60';
+        },
+        get priceStyle() {
+            return host.active()?.priceStyle ?? 'candles';
+        },
         setSymbol: (symbol) => host.active()?.setSymbol(symbol),
         setTimeframe: (tf) => host.active()?.setTimeframe(tf),
         setPriceStyle: (style) => host.active()?.setPriceStyle(style),
@@ -54,8 +65,12 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         addIndicator: (entry) => host.active()?.addExternalIndicator(entry),
         addNativeIndicator: (type) => host.active()?.addNative(type),
         stateChanged: () => host.stateDirty(),
-        cells: host.cells().map((c) => ({ id: c.id, chart: c.chart, symbol: c.symbol, timeframe: c.timeframe })),
-        activeCellId: active?.id ?? '',
+        get cells() {
+            return host.cells().map((c) => ({ id: c.id, chart: c.chart, symbol: c.symbol, timeframe: c.timeframe }));
+        },
+        get activeCellId() {
+            return host.active()?.id ?? '';
+        },
         setActiveCell: (id) => host.setActiveCell(id),
     };
 }
