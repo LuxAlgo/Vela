@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Pre-market sunrise and post-market sunset point the right way.** The
+  statusline's session badges had their chevrons inverted, so pre-market read as
+  sunset and post-market as sunrise.
+
 ## [v0.6.8]
 
 ### Added
