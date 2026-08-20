@@ -20,15 +20,22 @@ All notable changes to Vela, newest first.
   aligns them to the active chart once, and charts a layout change adds while the
   link is on inherit the group's presentation on arrival. Candle colors, line
   width, and other series settings stay individual to each chart.
+
 ### Fixed
 
+- **Pre- and post-market shading is instant and follows the complete chart history.**
+  The bands now expand locally from the symbol's declared session vocabulary
+  (`session`, optional `session_extended`, `timezone` on its metadata) instead of
+  round-tripping the provider calendar, so they paint the moment symbol metadata is
+  known and panning through arbitrarily deep extended-hours history never waits or
+  stops after a fixed lookback. The tint is clipped to loaded candle slots, so it
+  never appears before available history or in empty space ahead of the current bar.
 - **A long-held plugin context now follows the market.** `ctx.symbol`, `ctx.timeframe`
   and `ctx.priceStyle` (plus a workspace's `ctx.cells` and `ctx.activeCellId`) were
   snapshots taken when the context was built: an attachment keeping its mount context
   kept reading the mount-time market after a symbol switch — a screenshot could
   capture the current chart but name the file after the old one. They are live now,
   like `ctx.chart` always was.
-
 
 ## [v0.6.7]
 
@@ -82,7 +89,6 @@ All notable changes to Vela, newest first.
   built-in indicator surface, omit `'indicators'` from `topbar.left` (same effect: no
   button, no mobile stop, no `/`, no dialog); to replace it, register an action under
   the id `'indicators'` (see _Built-in slot overrides_) — no shell option needed.
-
 
 ## [v0.6.6]
 
@@ -164,13 +170,6 @@ scope: 'cell' | 'global', serialize, restore })` lets a plugin store its own sta
 
 ### Fixed
 
-- **Pre- and post-market shading is instant and follows the complete chart history.**
-  The bands now expand locally from the symbol's declared session vocabulary
-  (`session`, optional `session_extended`, `timezone` on its metadata) instead of
-  round-tripping the provider calendar, so they paint the moment symbol metadata is
-  known and panning through arbitrarily deep extended-hours history never waits or
-  stops after a fixed lookback. The tint is clipped to loaded candle slots, so it
-  never appears before available history or in empty space ahead of the current bar.
 - **A workspace now says so when no provider serves a symbol** — the same one-time
   notice a single-chart shell shows, instead of a silently blank cell.
 - **Destroying one shell no longer evicts another's cached history.** The shared
