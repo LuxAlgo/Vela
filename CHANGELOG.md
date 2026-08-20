@@ -2,6 +2,41 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.8]
+
+### Added
+
+- **Icon-only contributed actions.** `iconOnly: true` on a topbar action drops the
+  desktop button text: the right cluster gets the built-in tools' exact 32px look
+  (a `'screenshot'` slot override becomes pixel-faithful), the left cluster keeps
+  the primary chrome minus the text. `label` stays required — it becomes the
+  aria-label and a kit tooltip, and mobile surfaces keep their text. Without an
+  `icon` the flag is ignored with a console warning.
+- **Style sync for multi-chart workspaces.** A new **Style** switch in the layout
+  dropdown's sync section (and a `style` kind for `ws.sync.set`, with the same
+  all-cells or named-group forms as the other links) keeps chart presentation
+  identical across linked charts: edits in the settings dialog's Canvas, Scales and
+  lines, and Status line tabs apply to every linked chart, turning the link on
+  aligns them to the active chart once, and charts a layout change adds while the
+  link is on inherit the group's presentation on arrival. Candle colors, line
+  width, and other series settings stay individual to each chart.
+
+### Fixed
+
+- **Pre- and post-market shading is instant and follows the complete chart history.**
+  The bands now expand locally from the symbol's declared session vocabulary
+  (`session`, optional `session_extended`, `timezone` on its metadata) instead of
+  round-tripping the provider calendar, so they paint the moment symbol metadata is
+  known and panning through arbitrarily deep extended-hours history never waits or
+  stops after a fixed lookback. The tint is clipped to loaded candle slots, so it
+  never appears before available history or in empty space ahead of the current bar.
+- **A long-held plugin context now follows the market.** `ctx.symbol`, `ctx.timeframe`
+  and `ctx.priceStyle` (plus a workspace's `ctx.cells` and `ctx.activeCellId`) were
+  snapshots taken when the context was built: an attachment keeping its mount context
+  kept reading the mount-time market after a symbol switch — a screenshot could
+  capture the current chart but name the file after the old one. They are live now,
+  like `ctx.chart` always was.
+
 ## [v0.6.7]
 
 ### Added
@@ -59,6 +94,12 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Reset an indicator's settings to its defaults.** The indicator settings dialog
+  gained a "Reset defaults" button on the left of its footer: one click restores
+  every input to the value the indicator declares, re-running it immediately — the
+  same affordance the chart settings dialog already offers. A reset is still
+  cancelable: Cancel keeps reverting the whole session to the values the dialog
+  opened with.
 - **Shell-routed indicator adds for plugins.** The contribution context gained
   `ctx.addIndicator({ name, script, language? })` and `ctx.addNativeIndicator(type)`:
   unlike the raw `chart.addIndicator` / `chart.addNativeIndicator`, additions made

@@ -125,10 +125,11 @@ split).
 
 ## Sync links
 
-Per kind — `viewport`, `symbol`, `timeframe`, `crosshair`, `drawings` — link every cell
-(`true`) or named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a', sol: 'b' }`:
-only same-group cells follow each other). Cross-timeframe viewport groups align on the
-**right edge** (a finer-timeframe cell clamps the window to its own minimum zoom).
+Per kind — `viewport`, `symbol`, `timeframe`, `crosshair`, `drawings`, `style` — link
+every cell (`true`) or named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a',
+sol: 'b' }`: only same-group cells follow each other). Cross-timeframe viewport groups
+align on the **right edge** (a finer-timeframe cell clamps the window to its own
+minimum zoom).
 
 `crosshair` mirrors the pointer's TIME onto same-group cells as a **ghost crosshair**
 (a dimmed vertical line snapped to each follower's own bar, with its time chip);
@@ -149,9 +150,20 @@ linked earlier in the session. Drawings created while the link was off stay
 independent — re-enabling never copies or pairs them. A reload (or `applyState`)
 drops the pairs, so previously synced drawings are independent again.
 
-**Symbol**, **Interval** (timeframe) and **Crosshair** are also switches in the
-topbar's layout dropdown (its SYNC section), and **Drawings** is a toggle on the
-shared drawing toolbar (the pen-with-panes icon under stay-in-drawing-mode). A
+`style` mirrors the chart's presentation across same-group cells: the settings
+dialog's **Canvas** tab (background and text, grid, pane separators), its **Scales
+and lines** tab (price-scale mode, last-price line and labels, crosshair style), and
+its **Status line** tab (segment toggles, indicator titles and values). Editing any
+of them on one cell applies the same change to its group, and enabling the link
+aligns the group to the active cell once. Cells a later layout change adds to a
+linked group inherit the group's presentation on arrival (from the active cell when
+it belongs to the group). Candle colors, line width, and other series settings stay
+per cell, and the display timezone and theme are already workspace-global, so
+neither rides this link.
+
+**Symbol**, **Interval** (timeframe), **Crosshair** and **Style** are also switches
+in the topbar's layout dropdown (its SYNC section), and **Drawings** is a toggle on
+the shared drawing toolbar (the pen-with-panes icon under stay-in-drawing-mode). A
 switch reflects the simple all-cells form (`true`/off); flipping one overrides a
 host-set group record with plain on/off — group records stay an API-only shape.
 
@@ -160,8 +172,9 @@ ws.sync.set('viewport', true); // aligns followers to the active cell, then foll
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
 ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
+ws.sync.set('style', true); // canvas/scales/status-line settings mirror on all the others
 ws.sync.get('viewport'); // true
-ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true }
+ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true, style: true }
 ```
 
 ## Watching what the cells compute

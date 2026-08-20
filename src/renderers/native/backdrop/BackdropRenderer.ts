@@ -4,6 +4,13 @@ import { percentScaleFor, type SceneGraph } from '../core/SceneGraph';
 import { paneAxisTicks, timeTicks } from '../chrome/ticks';
 import { tzOffsetMs } from '../chrome/tz';
 
+/** Clip one time-band rectangle to its permitted horizontal paint interval. */
+export function clipHighlightRect(x1: number, x2: number, left: number, right: number): { x: number; width: number } | null {
+    const x = Math.max(left, x1);
+    const end = Math.min(right, x2);
+    return end > x ? { x, width: end - x } : null;
+}
+
 /**
  * The backdrop layer (L-2): session highlights + the axis gridlines, on their own
  * canvas at the very BOTTOM of the canvas pile. The grid used to be painted inside the
@@ -51,17 +58,26 @@ export class BackdropRenderer {
     /** Renderer-owned session highlight bands: full-height (all panes), behind the grid.
      *  Session-zone washes (pre/post-market) paint first, host highlights on top. */
     private drawHighlights(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem): void {
-        const bands = [...scene.sessionHighlightBands(), ...scene.highlights];
-        if (bands.length === 0) return;
+        const sessions = scene.sessionHighlightBands();
+        if (sessions.length > 0) {
+            // Calendar windows may extend beyond loaded candles (the tracker fetches ahead
+            // for live charts). Paint only the occupied bar slots: no wash before history,
+            // and none in right-side whitespace beyond the current bar.
+            const left = Math.max(0, coords.logicalToX(-0.5));
+            const right = Math.min(coords.width, coords.logicalToX(coords.barCount - 0.5));
+            this.drawHighlightSet(ctx, sessions, coords, left, right);
+        }
+        this.drawHighlightSet(ctx, scene.highlights, coords, 0, coords.width);
+    }
+
+    private drawHighlightSet(ctx: CanvasRenderingContext2D, bands: ReturnType<SceneGraph['sessionHighlightBands']>, coords: CoordinateSystem, left: number, right: number): void {
         for (const band of bands) {
             const x1 = coords.timeToX(band.from);
             const x2 = coords.timeToX(band.to);
-            if (x2 < 0 || x1 > coords.width || x2 <= x1) continue;
-            const cx = Math.max(0, x1);
-            const cw = Math.min(coords.width, x2) - cx;
-            if (cw <= 0) continue;
+            const rect = clipHighlightRect(x1, x2, left, right);
+            if (!rect) continue;
             ctx.fillStyle = band.color;
-            ctx.fillRect(cx, 0, cw, coords.height);
+            ctx.fillRect(rect.x, 0, rect.width, coords.height);
         }
     }
 

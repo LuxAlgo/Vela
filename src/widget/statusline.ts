@@ -231,6 +231,9 @@ export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [s
     }
 }
 
+/** The status line's toggleable segments (the settings dialog's Status line tab). */
+export type StatuslinePart = 'name' | 'market' | 'ohlc' | 'change';
+
 export class Statusline {
     readonly el: HTMLElement;
     private readonly ohlcEl: HTMLElement;
@@ -383,13 +386,13 @@ export class Statusline {
         this.marketTip.setContent(MARKET_LABELS[status]);
     }
 
-    setPartVisible(part: 'name' | 'market' | 'ohlc' | 'change', visible: boolean): void {
+    setPartVisible(part: StatuslinePart, visible: boolean): void {
         this.parts[part] = visible;
         this.syncParts();
         this.fit();
     }
 
-    partVisible(part: 'name' | 'market' | 'ohlc' | 'change'): boolean {
+    partVisible(part: StatuslinePart): boolean {
         return this.parts[part];
     }
 

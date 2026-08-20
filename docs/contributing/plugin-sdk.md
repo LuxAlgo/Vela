@@ -178,8 +178,13 @@ registerIcon('rocket', '<svg …>…</svg>'); // optional, inline SVG (stroke cu
 registerWidgetAction({
     id: 'mytool.open',
     target: 'topbar',            // or 'context:body' | 'context:price-axis' | 'context:time-axis'
-    label: 'My tool',
+    label: 'My tool',            // ALWAYS required: aria-label, tooltip, mobile row text
     icon: 'rocket',
+    iconOnly: true,              // topbar only: no button text — the native 32px tool look
+                                 //  on the right cluster (label becomes aria-label + a kit
+                                 //  tooltip; mobile surfaces keep their text). Requires
+                                 //  `icon`. The piece that makes a 'screenshot' slot
+                                 //  override pixel-faithful to the button it replaces.
     order: 10,                   // sort key within the contributed group
     align: 'left',               // topbar only: 'left' joins the primary chrome cluster
                                  //  (after the style/layout dropdowns, styled like them);
@@ -221,7 +226,12 @@ Two rules keep actions portable:
 - **Everything through `ctx`, no outer references.** `when`/`run` must not close over a
   widget or chart instance — the context is rebuilt per invocation, so it always binds
   the widget that projected the action (and, in a future multi-chart shell, the
-  **active** chart). `ctx.chart` is live at call time; don't cache it across calls.
+  **active** chart). Every member of the context is LIVE — `ctx.chart` resolves the
+  current chart at call time, and `ctx.symbol` / `ctx.timeframe` / `ctx.priceStyle`
+  (and a workspace's `ctx.cells` / `ctx.activeCellId`) are getters that follow every
+  market and active-cell switch. Read them at the point of use; copying one into a
+  variable at mount freezes it (an attachment once named screenshot files after the
+  mount-time symbol that way).
 - **Kit components get `ctx.host`.** Mounting a `Dialog`/`Menu`/`Tooltip` without an
   explicit host portals it to `<body>`, outside the theme's CSS variables (invisible
   backgrounds). Pass `host: ctx.host`.
