@@ -87,6 +87,16 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.registry.get(name);
     }
 
+    /** The icon URL for a DESCRIPTOR — its owning provider's `resolveSymbolIcon` (picker rows). */
+    symbolIconOf(d: SymbolDescriptor): string | undefined {
+        return this.registry.symbolIconOf(d);
+    }
+
+    /** The icon URL for a raw SYMBOL string — resolve, then route (statusline, object tree). */
+    symbolIcon(raw: string): string | undefined {
+        return this.registry.symbolIcon(this.resolveSymbol(raw));
+    }
+
     symbols(name?: string): SymbolDescriptor[] {
         return this.registry.symbolsOf(name);
     }

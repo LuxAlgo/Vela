@@ -633,3 +633,56 @@ describe('session flag propagation (provider seam)', () => {
         expect(subOpts[1]).toBeUndefined();
     });
 });
+
+describe('symbol icons — routed to the OWNING provider (resolveSymbolIcon)', () => {
+    const withIcons = (served: string[], url: (t: string) => string | undefined) => {
+        const { provider } = fakeProvider(served);
+        provider.resolveSymbolIcon = (d) => url(d.ticker);
+        return provider;
+    };
+
+    it('symbolIconOf routes a descriptor to ITS provider; absent resolver ⇒ undefined', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        await feed.registerProvider('binance', withIcons(['BTCUSDT'], (t) => `https://icons.example/${t}.png`));
+        await feed.registerProvider('plain', fakeProvider(['AAPL']).provider); // no resolver
+        await flush();
+        expect(feed.symbolIconOf({ ticker: 'BTCUSDT', provider: 'binance' })).toBe('https://icons.example/BTCUSDT.png');
+        expect(feed.symbolIconOf({ ticker: 'AAPL', provider: 'plain' })).toBeUndefined();
+        expect(feed.symbolIconOf({ ticker: 'X', provider: 'ghost' })).toBeUndefined(); // unknown provider
+    });
+
+    it('symbolIcon resolves a RAW string (prefix or bare) then routes — and hands the resolver the indexed descriptor', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        const { provider } = fakeProvider(['BTCUSDT']);
+        const seen: unknown[] = [];
+        provider.resolveSymbolIcon = (d) => {
+            seen.push(d);
+            return `u/${d.ticker}`;
+        };
+        await feed.registerProvider('binance', provider);
+        await flush();
+        expect(feed.symbolIcon('binance:BTCUSDT')).toBe('u/BTCUSDT');
+        expect(feed.symbolIcon('BTCUSDT')).toBe('u/BTCUSDT'); // bare — declaration order
+        expect(feed.symbolIcon('nope:NOTHING')).toBeUndefined(); // unresolvable ⇒ initials upstream
+        expect((seen[0] as { provider?: string }).provider).toBe('binance'); // the registry-annotated descriptor
+    });
+
+    it('a resolver that THROWS means "no icon", never an error', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        const { provider } = fakeProvider(['ETHUSDT']);
+        provider.resolveSymbolIcon = () => {
+            throw new Error('bad resolver');
+        };
+        await feed.registerProvider('binance', provider);
+        await flush();
+        expect(feed.symbolIcon('ETHUSDT')).toBeUndefined();
+    });
+
+    it('DataControl.symbolIcon delegates (and no-ops on a custom feed)', async () => {
+        const feed = new MultiProviderFeed(new BarStore());
+        await feed.registerProvider('binance', withIcons(['BTCUSDT'], () => 'u/icon.png'));
+        await flush();
+        expect(new DataControl(feed).symbolIcon('BTCUSDT')).toBe('u/icon.png');
+        expect(new DataControl({} as MarketDataFeed).symbolIcon('BTCUSDT')).toBeUndefined();
+    });
+});

@@ -84,6 +84,13 @@ export class DataControl {
         return this.registry?.symbols(provider) ?? [];
     }
 
+    /** The icon URL for `symbol` — its owning provider's `resolveSymbolIcon`, routed
+     *  through resolution. Undefined while unresolvable, when the provider declares no
+     *  resolver, or on a custom `deps.dataFeed` — the shells then show initials. */
+    symbolIcon(symbol: string): string | undefined {
+        return this.registry?.symbolIcon(symbol);
+    }
+
     /** Per-symbol metadata (Pine `syminfo.*`), resolved through the owning provider. */
     symbolInfo(symbol: string): Promise<SymbolInfo | undefined> {
         return this.registry?.symbolInfoFor(symbol) ?? Promise.resolve(undefined);

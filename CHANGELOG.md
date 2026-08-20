@@ -2,6 +2,59 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.7]
+
+### Added
+
+- **Provider-owned symbol icons.** A new optional `resolveSymbolIcon(descriptor)`
+  on the `DataProvider` port hands each provider the icon URL for its own symbols —
+  the shells (symbol search rows, status-line avatar, object-tree price row) route
+  every badge to the descriptor's OWNING provider and render a colored-initials
+  fallback when there is no resolver, no URL, or the image fails. The bundled
+  crypto providers (Binance, Coinbase, Hyperliquid) predefine the Ledger
+  crypto-icon CDN — the shell itself no longer assumes any asset class, so a
+  provider serving equities stops producing doomed crypto-CDN lookups. Behavior
+  note: a third-party provider without a resolver now gets initials instead of a
+  guessed crypto icon — one line restores it (`resolveSymbolIcon`).
+- **Custom symbol ordering.** `registerSymbolRanking(hook)` (plugin SDK) hands a
+  plugin or host the display order of the symbol-search dialog: the hook receives
+  the whole aggregated pool (every source combined), returns it in display order,
+  and may inject or omit entries (first duplicate wins). It runs when the pool
+  changes — never per keystroke — and may be async. While registered, the built-in
+  "majors first" pin stands down: the head of the returned list is the dialog's
+  opening screen; under a typed query the relevance tiers still lead, with the
+  custom order breaking ties. `filterSymbols` gained a `top` parameter
+  (`string[] | false`) for the empty-query pin policy.
+- **Built-in slot overrides.** A plugin can now TAKE OVER a built-in topbar button by
+  registering its action under the built-in id (`registerWidgetAction({ id:
+'indicators' | 'screenshot', ... })`): the contributed button replaces the native one
+  in place, and the slot's whole surface follows — the mobile counterpart and the
+  keyboard chord (`/`, `mod+alt+S`) route to the override, and the native machinery
+  (the built-in indicator picker dialog) is not constructed. Stateful composite slots
+  (symbol, timeframes, style, layout, undo-redo, alerts, panels) are not overridable
+  and refuse the registration with a warning. Position follows the composition rules:
+  a host-declared list has the last word; on a default side an override sits in the
+  native slot unless it declares `order` (then it flows like an ordinary action).
+
+- **Composable topbar.** A new `topbar: { left, right }` shell option lists the
+  VISIBLE topbar entries per side, in render order — built-in ids (`'symbol'`,
+  `'timeframes'`, `'style'`, `'layout'`, `'indicators'`, `'actions'`, `'undo-redo'`,
+  `'alerts'`, `'panels'`, `'screenshot'`) and/or contributed-action ids, which pins
+  those actions at exact positions (overriding their `align`/`order`; the `'actions'`
+  entry is the flow slot for the unpinned rest). An undeclared side keeps its default,
+  so the option is pure opt-in. An explicit list is the side's complete contract:
+  unlisted entries don't render, and a hidden entry loses its mobile counterpart and
+  keyboard chord too (`mod+alt+S` goes with `'screenshot'`; Ctrl+Z / Ctrl+Y stay).
+  The replace-a-built-in recipe becomes declarative — hide `'screenshot'`, pin your
+  own dropdown action in its place.
+
+### Deprecated
+
+- **`indicatorPicker` is deprecated** (both shells) — removal in 0.7.0. To hide the
+  built-in indicator surface, omit `'indicators'` from `topbar.left` (same effect: no
+  button, no mobile stop, no `/`, no dialog); to replace it, register an action under
+  the id `'indicators'` (see _Built-in slot overrides_) — no shell option needed.
+
 ## [v0.6.6]
 
 ### Added
@@ -15,7 +68,7 @@ All notable changes to Vela, newest first.
   (their names can't resolve against the host manifest); persisting them is the
   plugin's job, via the seam below.
 - **Third-party state in the persisted document.** `registerStatePersistence({ key,
-  scope: 'cell' | 'global', serialize, restore })` lets a plugin store its own state
+scope: 'cell' | 'global', serialize, restore })` lets a plugin store its own state
   inside the shell's state document instead of a parallel store: entries live in new
   `ext` bags (`state.ext` at the document root, `charts[i].ext` per chart) under
   namespaced keys. `serialize` runs on every snapshot; `restore` runs when a document
