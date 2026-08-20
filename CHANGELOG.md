@@ -12,7 +12,14 @@ All notable changes to Vela, newest first.
   the primary chrome minus the text. `label` stays required — it becomes the
   aria-label and a kit tooltip, and mobile surfaces keep their text. Without an
   `icon` the flag is ignored with a console warning.
-
+- **Style sync for multi-chart workspaces.** A new **Style** switch in the layout
+  dropdown's sync section (and a `style` kind for `ws.sync.set`, with the same
+  all-cells or named-group forms as the other links) keeps chart presentation
+  identical across linked charts: edits in the settings dialog's Canvas, Scales and
+  lines, and Status line tabs apply to every linked chart, turning the link on
+  aligns them to the active chart once, and charts a layout change adds while the
+  link is on inherit the group's presentation on arrival. Candle colors, line
+  width, and other series settings stay individual to each chart.
 ### Fixed
 
 - **A long-held plugin context now follows the market.** `ctx.symbol`, `ctx.timeframe`
@@ -21,6 +28,7 @@ All notable changes to Vela, newest first.
   kept reading the mount-time market after a symbol switch — a screenshot could
   capture the current chart but name the file after the old one. They are live now,
   like `ctx.chart` always was.
+
 
 ## [v0.6.7]
 
@@ -74,6 +82,7 @@ All notable changes to Vela, newest first.
   built-in indicator surface, omit `'indicators'` from `topbar.left` (same effect: no
   button, no mobile stop, no `/`, no dialog); to replace it, register an action under
   the id `'indicators'` (see _Built-in slot overrides_) — no shell option needed.
+
 
 ## [v0.6.6]
 

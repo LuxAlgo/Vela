@@ -301,6 +301,37 @@ describe('sync model (pure)', () => {
         expect(rangesWithin(a, { from: 1000, to: 2601 }, 500)).toBe(false); // to drifted past eps
         expect(rangesWithin(a, a, 0)).toBe(true);
     });
+
+    it('styleConfigSlice keeps exactly the Canvas + Scales-and-lines keys', async () => {
+        const { styleConfigSlice } = await import('../src/workspace/sync');
+        const slice = styleConfigSlice({
+            version: 1,
+            layout: { background: '#000' },
+            panes: { separatorColor: '#111' },
+            grid: { vertLines: { visible: false } },
+            priceScale: { invert: true },
+            crosshair: { style: 'dotted' },
+            // Per-style/series cosmetics stay per cell; the timezone is workspace-global.
+            candles: { upColor: '#0f0' },
+            series: { style: 'line' },
+            timeScale: { timezone: 'Europe/Paris' },
+        });
+        expect(slice).toEqual({
+            layout: { background: '#000' },
+            panes: { separatorColor: '#111' },
+            grid: { vertLines: { visible: false } },
+            priceScale: { invert: true },
+            crosshair: { style: 'dotted' },
+        });
+    });
+
+    it('styleConfigSlice is null on shapeless or sliceless documents', async () => {
+        const { styleConfigSlice } = await import('../src/workspace/sync');
+        expect(styleConfigSlice(null)).toBeNull();
+        expect(styleConfigSlice('nope')).toBeNull();
+        expect(styleConfigSlice({ candles: { upColor: '#0f0' } })).toBeNull();
+        expect(styleConfigSlice({ layout: 'not-an-object' })).toBeNull();
+    });
 });
 
 describe('unified options — the cell seed/defaults merge (pure)', () => {

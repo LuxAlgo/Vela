@@ -15,7 +15,7 @@ import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
-import { Statusline, statuslineInkOf } from '../widget/statusline';
+import { Statusline, statuslineInkOf, type StatuslinePart } from '../widget/statusline';
 import { MarketStatusTracker } from '../widget/market-status';
 import { SessionShadingTracker } from '../widget/session-shading';
 import { timeframeMs } from '../widget/timeframe';
@@ -95,6 +95,15 @@ export function cellDrawings(opt: DrawingsOption | undefined): DrawingsOption {
     return { ...opt, toolbar: false };
 }
 
+/** A cell's Status line tab prefs as one bundle — the segment toggles (null when the
+ *  shell runs without status lines) plus the indicator legend's titles/values. What
+ *  the workspace's STYLE link mirrors across same-group cells. */
+export interface CellStatusPrefs {
+    parts: Record<StatuslinePart, boolean> | null;
+    indicatorTitles: boolean;
+    indicatorValues: boolean;
+}
+
 /** One entry of the shared indicator picker's native catalog, per cell. */
 export interface CellNativeInfo {
     type: string;
@@ -141,6 +150,8 @@ export interface CellDeps {
     onPriceStyleChanged(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
+    /** A Status line tab pref changed on this cell (the style link mirrors upstream). */
+    onStatusPrefsChanged(id: string): void;
     /** Persistable per-cell state changed outside the market/indicator channels
      *  (bars budget, watermark/titles toggles) — the workspace debounces a save. */
     onStateDirty(): void;
@@ -588,10 +599,10 @@ export class ChartCell {
                 id: 'status-line',
                 rows: [
                     { kind: 'heading', label: 'Status line', id: 'parts' },
-                    { kind: 'toggle', label: 'Symbol name', id: 'name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
-                    { kind: 'toggle', label: 'Market status', id: 'market', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
-                    { kind: 'toggle', label: 'OHLC values', id: 'ohlc', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
-                    { kind: 'toggle', label: 'Bar change values', id: 'change', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                    { kind: 'toggle', label: 'Symbol name', id: 'name', get: () => sl.partVisible('name'), set: (v: boolean) => this.setStatuslinePart('name', v) },
+                    { kind: 'toggle', label: 'Market status', id: 'market', get: () => sl.partVisible('market'), set: (v: boolean) => this.setStatuslinePart('market', v) },
+                    { kind: 'toggle', label: 'OHLC values', id: 'ohlc', get: () => sl.partVisible('ohlc'), set: (v: boolean) => this.setStatuslinePart('ohlc', v) },
+                    { kind: 'toggle', label: 'Bar change values', id: 'change', get: () => sl.partVisible('change'), set: (v: boolean) => this.setStatuslinePart('change', v) },
                     { kind: 'heading', label: 'Indicators', id: 'indicators' },
                     {
                         kind: 'toggle',
@@ -628,6 +639,7 @@ export class ChartCell {
         this.indicatorTitlesOn = visible;
         this.inner?.renderer.set('indicatorTitles', visible);
         this.deps.onStateDirty();
+        this.deps.onStatusPrefsChanged(this.id);
     }
 
     /** Show/hide the plot values beside this cell's legend titles (persisted per cell). */
@@ -635,6 +647,38 @@ export class ChartCell {
         this.indicatorValuesOn = visible;
         this.inner?.renderer.set('indicatorValues', visible);
         this.deps.onStateDirty();
+        this.deps.onStatusPrefsChanged(this.id);
+    }
+
+    /** Show/hide one status-line segment (the settings dialog's Status line tab). */
+    private setStatuslinePart(part: StatuslinePart, visible: boolean): void {
+        this.statusline?.setPartVisible(part, visible);
+        this.deps.onStatusPrefsChanged(this.id);
+    }
+
+    /** This cell's Status line tab prefs as one bundle (see {@link CellStatusPrefs}). */
+    statusPrefs(): CellStatusPrefs {
+        const sl = this.statusline;
+        return {
+            parts: sl
+                ? { name: sl.partVisible('name'), market: sl.partVisible('market'), ohlc: sl.partVisible('ohlc'), change: sl.partVisible('change') }
+                : null,
+            indicatorTitles: this.indicatorTitlesOn,
+            indicatorValues: this.indicatorValuesOn,
+        };
+    }
+
+    /** Converge this cell's Status line tab prefs to `prefs` — the follower half of
+     *  the workspace's style link. Idempotent: matching values change nothing, so a
+     *  propagated echo dies on its own. */
+    applyStatusPrefs(prefs: CellStatusPrefs): void {
+        if (prefs.parts && this.statusline) {
+            for (const part of Object.keys(prefs.parts) as StatuslinePart[]) {
+                if (this.statusline.partVisible(part) !== prefs.parts[part]) this.statusline.setPartVisible(part, prefs.parts[part]);
+            }
+        }
+        if (prefs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(prefs.indicatorTitles);
+        if (prefs.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(prefs.indicatorValues);
     }
 
     /** The LIVE chart of this cell — never cache it across a layout change (the cell's
