@@ -24,7 +24,7 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
-import { legendActionsProviderFor, resolveEngines, type WidgetContext } from '../widget/contributions';
+import { legendActionsProviderFor, resolveEngines, statePersistenceHandlers, type CellStateContext, type ExternalIndicatorEntry, type WidgetContext } from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { normalizeTimezone } from '../core/timezones';
@@ -77,13 +77,13 @@ export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'b
  *  sub-key (see {@link cellDrawings}). */
 export type CellChartDefaults = Pick<
     VelaOptions,
-    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings'
+    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings' | 'settings'
 >;
 
 /** The {@link CellChartDefaults} pick of a workspace's options (pure, for the build). */
 export function cellChartDefaults(opts: CellChartDefaults): CellChartDefaults {
-    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings } = opts;
-    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings };
+    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings } = opts;
+    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings };
 }
 
 /** The cell form of the shell's `drawings` option: everything passes through EXCEPT the
@@ -144,6 +144,8 @@ export interface CellDeps {
     /** Persistable per-cell state changed outside the market/indicator channels
      *  (bars budget, watermark/titles toggles) — the workspace debounces a save. */
     onStateDirty(): void;
+    /** The shell's toast surface (unresolved-symbol notices land there). */
+    toast(message: string, kind: 'info' | 'success' | 'error', durationMs?: number): void;
 }
 
 export class ChartCell {
@@ -151,8 +153,12 @@ export class ChartCell {
     readonly host: HTMLElement;
     /** This cell's unified app+drawings undo timeline (the shared Ctrl+Z routes here). */
     readonly history = new WidgetHistory(() => this.inner);
-    /** Live manifest-indicator instances on this cell (the SAME entry may repeat). */
-    readonly instances: Array<{ entry: ResolvedIndicator; handle: IndicatorHandle | null }> = [];
+    /** Live manifest-indicator instances on this cell (the SAME entry may repeat).
+     *  `external` marks instances added through the public seam (`ctx.addIndicator`)
+     *  rather than the shell manifest — they share the undo/redo and picker plumbing
+     *  but stay OUT of the persisted ledger (their names would never resolve against
+     *  the manifest); persisting them is their plugin's job (`registerStatePersistence`). */
+    readonly instances: Array<{ entry: ResolvedIndicator; handle: IndicatorHandle | null; external?: boolean }> = [];
     /** The native-indicator catalog with this cell's live supported/present flags. */
     nativeCatalog: CellNativeInfo[] = [];
     /** Last crosshair position in this cell (the alt+H/alt+V shortcuts anchor here). */
@@ -185,13 +191,22 @@ export class ChartCell {
     /** The volume auto-add rides the cell's first candles (`load:end`); until then the
      *  registry can't show it and the dehydrated ledger reports the INTENT instead. */
     private volumeMayBePending = true;
-    /** Volume intent: the seed's ledger, else the workspace `volume` option. */
-    private readonly volumeIntent: boolean;
+    /** Volume intent: the seed's ledger, else the workspace `volume` option — a
+     *  rehydrated ledger overwrites it (see {@link applyIndicatorLedger}). */
+    private volumeIntent: boolean;
     /** Sync mirror of the chart's present native types — the removal handler diffs
      *  against it to identify (and record) whichever type was just removed. */
     private presentNatives: string[] = [];
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
+    /** Last symbol we toasted "no provider serves this" for — once per symbol (the
+     *  core re-reports on every provider-index settle). */
+    private unresolvedToasted: string | null = null;
+    /** The cell's third-party state bag (`ext` of the persisted per-chart state) —
+     *  seeded from the boot/restored document, refreshed by handler `serialize` calls at
+     *  dehydrate time. Entries with no registered handler this session ride along
+     *  verbatim, so a document never loses a plugin's state in the plugin's absence. */
+    private extState: Record<string, unknown> = {};
     private watermarkOn: boolean;
     /** Indicator titles (this cell's in-chart legend rows) shown. */
     private indicatorTitlesOn = true;
@@ -293,10 +308,22 @@ export class ChartCell {
             this.pendingManifestNames = [...seed.indicators.manifest];
         }
         this.volumeIntent = seed.indicators ? seed.indicators.natives.includes('volume') : deps.volume;
+        // Third-party state rides in verbatim; the workspace triggers the handlers'
+        // `restore` AFTER wiring the cell (restorePersistedExt) — a restore that adds
+        // indicators must not call back into a workspace that doesn't know the cell yet.
+        this.extState = { ...(seed.ext ?? {}) };
         // The volume auto-add rides the cell's first candles — from `load:end` on, the
         // registry is the whole truth and the dehydrated ledger stops reporting intent.
         this.inner.on('load:end', () => {
             this.volumeMayBePending = false;
+        });
+        // A symbol nothing serves parks the load forever — say so instead of showing a
+        // blank cell. Once per symbol: the core re-reports on every index settle.
+        this.inner.on('data:unresolved', ({ symbol, providers }) => {
+            if (this.unresolvedToasted === symbol) return;
+            this.unresolvedToasted = symbol;
+            const list = providers.length > 0 ? providers.join(', ') : 'none';
+            this.deps.toast(`No registered provider serves "${symbol}" (registered: ${list})`, 'error', 6000);
         });
         // The loading affordance and the watermark never share the canvas.
         this.inner.on('load:start', () => this.watermark?.setLoading(true));
@@ -485,13 +512,17 @@ export class ChartCell {
         if (!chart) return;
         const rth = 'Regular hours (RTH)';
         const eth = 'Extended hours (ETH)';
+        // The `id` fields are the sections' stable visibility ids (`settings.hidden`,
+        // docs/user/options.md) — same reserved ids as the widget's sections.
         const sessionSection = {
             title: 'Trading session',
+            id: 'trading-session',
             placement: 'symbol' as const,
             rows: [
                 {
                     kind: 'select' as const,
                     label: 'Session',
+                    id: 'session',
                     options: [rth, eth],
                     get: () => (this.session === 'extended' ? eth : rth),
                     set: (v: string) => this.setSession(v === eth ? 'extended' : 'regular'),
@@ -499,12 +530,14 @@ export class ChartCell {
                 {
                     kind: 'color' as const,
                     label: 'Pre-market',
+                    id: 'premarket-color',
                     get: () => this.sessionShadeColor('premarketColor'),
                     set: (v: string) => this.setSessionShadeColor('premarketColor', v),
                 },
                 {
                     kind: 'color' as const,
                     label: 'Post-market',
+                    id: 'postmarket-color',
                     get: () => this.sessionShadeColor('postmarketColor'),
                     set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
                 },
@@ -512,11 +545,13 @@ export class ChartCell {
         };
         const advanced = {
             title: 'Advanced',
+            id: 'advanced',
             placement: 'end' as const,
             rows: [
                 {
                     kind: 'select' as const,
                     label: 'Bars to fetch',
+                    id: 'bars',
                     options: ['500', '1000', '2000', '5000', '10000', '20000'],
                     get: () => String(this.state.bars ?? 1000),
                     set: (v: string) => {
@@ -529,37 +564,42 @@ export class ChartCell {
         };
         const watermarkSection = {
             title: 'Watermark',
+            id: 'watermark',
             placement: 'symbol' as const,
             rows: [
                 {
                     kind: 'toggle' as const,
                     label: 'Symbol watermark',
+                    id: 'visible',
                     get: () => this.watermarkOn,
                     set: (v: boolean) => this.setWatermarkVisible(v),
                 },
             ],
         };
-        const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol' }> = [];
+        const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol'; id?: string }> = [];
         if (this.statusline) {
             const sl = this.statusline;
             sections.push({
                 title: 'Status line',
+                id: 'status-line',
                 rows: [
-                    { kind: 'heading', label: 'Status line' },
-                    { kind: 'toggle', label: 'Symbol name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
-                    { kind: 'toggle', label: 'Market status', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
-                    { kind: 'toggle', label: 'OHLC values', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
-                    { kind: 'toggle', label: 'Bar change values', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
-                    { kind: 'heading', label: 'Indicators' },
+                    { kind: 'heading', label: 'Status line', id: 'parts' },
+                    { kind: 'toggle', label: 'Symbol name', id: 'name', get: () => sl.partVisible('name'), set: (v: boolean) => sl.setPartVisible('name', v) },
+                    { kind: 'toggle', label: 'Market status', id: 'market', get: () => sl.partVisible('market'), set: (v: boolean) => sl.setPartVisible('market', v) },
+                    { kind: 'toggle', label: 'OHLC values', id: 'ohlc', get: () => sl.partVisible('ohlc'), set: (v: boolean) => sl.setPartVisible('ohlc', v) },
+                    { kind: 'toggle', label: 'Bar change values', id: 'change', get: () => sl.partVisible('change'), set: (v: boolean) => sl.setPartVisible('change', v) },
+                    { kind: 'heading', label: 'Indicators', id: 'indicators' },
                     {
                         kind: 'toggle',
                         label: 'Titles',
+                        id: 'indicator-titles',
                         get: () => this.indicatorTitlesOn,
                         set: (v: boolean) => this.setIndicatorTitlesVisible(v),
                     },
                     {
                         kind: 'toggle',
                         label: 'Values',
+                        id: 'indicator-values',
                         get: () => this.indicatorValuesOn,
                         set: (v: boolean) => this.setIndicatorValuesVisible(v),
                     },
@@ -621,6 +661,7 @@ export class ChartCell {
     /** Switch this cell's market in place (the chart instance survives). */
     setSymbol(symbol: string): void {
         if (!this.inner || symbol === this.symbol) return;
+        this.unresolvedToasted = null; // a re-picked symbol gets a fresh verdict
         void this.inner.setMarket({ symbol });
     }
 
@@ -724,6 +765,43 @@ export class ChartCell {
         }
     }
 
+    /**
+     * Replace the indicator ledger: natives converge to the listed set (volume
+     * included — removing it sticks, the core's auto-add respects the opt-out), and
+     * manifest instances are re-created by name, held until the shared manifest
+     * resolves. Convergence is state application, not user edits — nothing enters the
+     * undo timeline.
+     */
+    private applyIndicatorLedger(led: { manifest: string[]; natives: string[] }): void {
+        const chart = this.inner;
+        if (!chart) return;
+        this.volumeIntent = led.natives.includes('volume');
+        this.history.silently(() => {
+            const present = chart.presentNativeIndicators();
+            for (const type of led.natives) {
+                if (!present.includes(type)) chart.addNativeIndicator(type);
+            }
+            for (const type of present) {
+                // addNativeIndicator on a present type returns the EXISTING handle.
+                if (!led.natives.includes(type)) chart.addNativeIndicator(type).remove();
+            }
+            for (const it of [...this.instances]) this.dropInstance(it);
+            if (this.manifest.length > 0) {
+                for (const name of led.manifest) {
+                    const entry = this.manifest.find((e) => e.name === name);
+                    if (entry) this.addManifestInstance(entry, { record: false });
+                }
+                this.pendingManifestNames = null;
+            } else if (!this.deps.manifestSettled()) {
+                this.pendingManifestNames = [...led.manifest]; // consumed by setManifest on resolution
+            } else {
+                this.pendingManifestNames = null; // no manifest will ever resolve — never park names
+            }
+        });
+        this.syncPresentNatives();
+        this.refreshNativeCatalog();
+    }
+
     /** The picker's library rows: supported natives first, then the manifest. */
     libraryRows(): Array<{ name: string; language?: string; category?: string; native?: boolean; nativeType?: string; beta?: boolean }> {
         return [
@@ -757,10 +835,21 @@ export class ChartCell {
         else this.removeInstance(index - present.length);
     }
 
+    /**
+     * Add a script indicator through the PUBLIC seam (`ctx.addIndicator`) — same undo/
+     * redo and picker plumbing as a manifest entry, but flagged `external` so the
+     * persisted ledger never records a name the manifest can't resolve (the plugin owns
+     * persistence via `registerStatePersistence`). Recording follows the ambient mute:
+     * a persistence handler's `restore` runs silently, a user-driven call records.
+     */
+    addExternalIndicator(entry: ExternalIndicatorEntry): void {
+        this.addManifestInstance({ ...entry, enabled: true }, { external: true });
+    }
+
     /** Add ONE instance of a manifest entry (repeatable — duplicates are legitimate). */
-    addManifestInstance(entry: ResolvedIndicator, opts: { record?: boolean } = {}): void {
+    addManifestInstance(entry: ResolvedIndicator, opts: { record?: boolean; external?: boolean } = {}): void {
         if (this.destroyed) return;
-        const it = { entry, handle: this.addToChart(entry) };
+        const it = { entry, handle: this.addToChart(entry), ...(opts.external ? { external: true } : {}) };
         this.instances.push(it);
         this.deps.onIndicatorsChanged(this.id);
         if (opts.record === false) return;
@@ -853,7 +942,102 @@ export class ChartCell {
         }
     }
 
+    // ── third-party state (the `ext` seam) ──
+    /** The cell-bound surface persistence handlers work against (built per call — the
+     *  widget-context rule; nothing here may be cached by a handler). Its add methods
+     *  are ALWAYS muted — a `restore` that fetches before adding escapes the sync mute
+     *  of {@link restorePersistedExt}, and a state application must never enter the
+     *  undo timeline, however late its continuation lands. */
+    private stateContext(): CellStateContext {
+        return {
+            cellId: this.id,
+            chart: this.chart,
+            addIndicator: (entry) => this.history.silently(() => this.addExternalIndicator(entry)),
+            addNativeIndicator: (type) => this.history.silently(() => this.addNative(type)),
+        };
+    }
+
+    /**
+     * Run the registered cell-scope `restore` handlers against the cell's restored
+     * `ext` bag — the workspace calls this AFTER the core state is in place (chart
+     * alive and wired, indicator ledger converged). Muted: nothing a restore does
+     * enters the undo timeline. Handlers only see keys the document carries; a failing
+     * handler is contained (one broken plugin must not take the cell down).
+     */
+    restorePersistedExt(): void {
+        if (this.destroyed) return;
+        for (const h of statePersistenceHandlers('cell')) {
+            if (!(h.key in this.extState)) continue;
+            try {
+                this.history.silently(() => h.restore(this.extState[h.key], this.stateContext()));
+            } catch (err) {
+                console.warn(`[vela] state persistence "${h.key}" restore failed:`, err);
+            }
+        }
+    }
+
+    /** Assemble the cell's `ext` bag: fresh handler snapshots merged OVER the preserved
+     *  entries — a key with no handler this session rides along verbatim; a registered
+     *  handler returning `undefined` withdraws its entry. */
+    private dehydrateExt(): Record<string, unknown> | undefined {
+        const ext = { ...this.extState };
+        for (const h of statePersistenceHandlers('cell')) {
+            try {
+                const value = h.serialize(this.stateContext());
+                if (value === undefined) delete ext[h.key];
+                else ext[h.key] = value;
+            } catch (err) {
+                console.warn(`[vela] state persistence "${h.key}" serialize failed:`, err);
+            }
+        }
+        this.extState = ext; // the merged bag is the new baseline
+        return Object.keys(ext).length > 0 ? ext : undefined;
+    }
+
     // ── lifecycle ──
+    /**
+     * Apply a restored cell state IN PLACE — the chart instance survives (the market
+     * switches via `setMarket`) while cosmetics, renderer config, drawings, and the
+     * indicator ledger converge to the document. The workspace takes this path when a
+     * state document lands on a grid of the same shape (async-storage boot, host
+     * `applyState`), so chart references, indicator handles, event subscriptions, and
+     * the cell host all stay valid.
+     */
+    rehydrate(cs: CellState): void {
+        if (!this.inner || this.destroyed) return;
+        if (cs.priceStyle && cs.priceStyle !== this.priceStyle) this.setPriceStyle(cs.priceStyle);
+        if (cs.watermark !== undefined && cs.watermark !== this.watermarkOn) this.setWatermarkVisible(cs.watermark);
+        if (cs.indicatorTitles !== undefined && cs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cs.indicatorTitles);
+        if (cs.indicatorValues !== undefined && cs.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(cs.indicatorValues);
+        // Cosmetics + drawings round-trip (both validate untrusted input).
+        if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
+        if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
+        if (cs.indicators) this.applyIndicatorLedger(cs.indicators);
+        // Third-party state converges to the document too: the restored bag REPLACES
+        // the baseline (absent in the document = the document carries none), then the
+        // registered handlers re-apply. After the ledger — a handler re-adding external
+        // indicators must land on the converged (external-free) instance set.
+        this.extState = { ...(cs.ext ?? {}) };
+        this.restorePersistedExt();
+        // Market last, as ONE in-place switch — `market:changed` re-syncs the cell
+        // overlays and notifies the workspace (chrome projection, retention).
+        const symbol = prefixedSymbol(cs);
+        const session = normalizeSession(cs.session) ?? 'regular';
+        const bars = typeof cs.bars === 'number' && Number.isFinite(cs.bars) && cs.bars > 0 ? cs.bars : 0;
+        const next: { symbol?: string; timeframe?: string; bars?: number; session?: MarketSession } = {};
+        if (symbol && symbol !== this.symbol) next.symbol = symbol;
+        if (cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
+        if (session !== this.session) {
+            this.state.session = session;
+            next.session = session;
+        }
+        if (bars > 0 && bars !== this.state.bars) {
+            this.state.bars = bars;
+            next.bars = Math.max(bars, this.rangeBars);
+        }
+        if (Object.keys(next).length > 0) void this.inner.setMarket(next);
+    }
+
     /** Snapshot everything the pool needs to restore this slot later. The market fields
      *  come from the LIVE config (`chart.market`) — the requested identity — so a switch
      *  still loading when the snapshot is taken (persist-on-close) is not lost. */
@@ -861,6 +1045,7 @@ export class ChartCell {
         // Identity from the live config; depth (`bars`) stays the cell's own durable
         // budget — in range mode the config carries the chip's transient fetch budget.
         const live = this.inner?.market;
+        const ext = this.inner ? this.dehydrateExt() : (Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined);
         return {
             ...this.state,
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
@@ -873,14 +1058,17 @@ export class ChartCell {
             // Natives from the chart's SYNC registry read — an async catalog mirror here
             // lost unload-time saves, and the old empty-set fallbacks resurrected removed
             // indicators. Manifest names fall back to the restored ledger only until the
-            // shared manifest settles. See {@link indicatorLedger}.
+            // shared manifest settles. See {@link indicatorLedger}. External instances
+            // (`ctx.addIndicator`) stay out: their names would never resolve against the
+            // manifest — their plugin persists them via the `ext` seam instead.
             indicators: indicatorLedger({
                 present: this.inner ? this.inner.presentNativeIndicators() : [],
-                instanceNames: this.instances.map((it) => it.entry.name),
+                instanceNames: this.instances.filter((it) => !it.external).map((it) => it.entry.name),
                 pendingManifest: this.pendingManifestNames,
                 manifestSettled: this.deps.manifestSettled(),
                 volumePending: this.volumeMayBePending && this.volumeIntent,
             }),
+            ...(ext ? { ext } : {}),
         };
     }
 

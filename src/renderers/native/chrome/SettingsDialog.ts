@@ -28,6 +28,13 @@ import {
     buildFieldControl,
 } from '../../../ui/components/field';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
+import {
+    filterHiddenHostRows,
+    filterHiddenRows,
+    hostSectionId,
+    settingsIdHidden,
+    settingsIdSlug,
+} from './settings-visibility';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -46,12 +53,14 @@ type ConfigPatch = Record<string, unknown>;
 
 /** A host-contributed settings row: callback-based (the host owns the state).
  *  `heading` opens a titled group inside the tab (an in-pane section title);
- *  `color` is a swatch opening the themed picker (any CSS color, alpha included). */
+ *  `color` is a swatch opening the themed picker (any CSS color, alpha included).
+ *  `id` is the row's stable visibility id (defaults to the label's slug) — hiding a
+ *  heading's id hides its whole group (see `settings-visibility.ts`). */
 export type HostSettingsRow =
-    | { kind: 'heading'; label: string }
-    | { kind: 'toggle'; label: string; get: () => boolean; set: (v: boolean) => void }
-    | { kind: 'select'; label: string; options: readonly string[]; get: () => string; set: (v: string) => void }
-    | { kind: 'color'; label: string; get: () => string; set: (v: string) => void };
+    | { kind: 'heading'; label: string; id?: string }
+    | { kind: 'toggle'; label: string; get: () => boolean; set: (v: boolean) => void; id?: string }
+    | { kind: 'select'; label: string; options: readonly string[]; get: () => string; set: (v: string) => void; id?: string }
+    | { kind: 'color'; label: string; get: () => string; set: (v: string) => void; id?: string };
 
 /** A host-contributed settings tab (see `RendererControl.setSettingsSections`). */
 export interface HostSettingsSection {
@@ -60,6 +69,8 @@ export interface HostSettingsSection {
     /** Tab position: own tab after Symbol (default), end of the rail, or rows INSIDE
      *  the Symbol tab itself (`'symbol'` — e.g. the widget's watermark toggle). */
     placement?: 'after-symbol' | 'end' | 'symbol';
+    /** Stable visibility id (defaults to the title's slug). Row ids scope under it. */
+    id?: string;
 }
 
 const BUILTIN_STYLE_LABELS: Record<string, string> = {
@@ -191,9 +202,20 @@ export class SettingsDialog {
     /** Mobile chrome: fullscreen card, burger-opened section sidebar, TOC as top tabs. */
     private mobileLayout = false;
 
+    /** The visibility policy: setting ids hidden by the host (subtree semantics). */
+    private hiddenSettings: ReadonlySet<string> = new Set();
+
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
         this.hostSections = sections;
+    }
+
+    /** Replace the visibility policy — an open dialog rebuilds in place to honor it. */
+    setHiddenSettings(ids: readonly string[]): void {
+        const next = new Set(ids);
+        const same = next.size === this.hiddenSettings.size && [...next].every((id) => this.hiddenSettings.has(id));
+        this.hiddenSettings = next;
+        if (!same) this.reopenIfLive();
     }
 
     /** Configure the Canvas → Theme row (see {@link themeControl}); null hides the row. */
@@ -286,9 +308,17 @@ export class SettingsDialog {
         const body = document.createElement('div');
         body.style.cssText = 'display:flex;flex-direction:column;gap:0;';
 
+        // Stamp an element with its visibility id (`settings-visibility.ts`) — the
+        // hidden-policy pass below removes stamped elements before the pane split.
+        // Keep the literals in sync with BUILTIN_SETTINGS_IDS.
+        const sid = (el: HTMLElement, id: string): HTMLElement => {
+            el.dataset.sdId = id;
+            return el;
+        };
+
         // ══ SYMBOL — chart type + per-style cosmetics + time zone (the reference tab) ══
-        body.append(this.section('Symbol'));
-        body.append(this.sectionTitle('Chart type'));
+        body.append(sid(this.section('Symbol'), 'symbol'));
+        body.append(sid(this.sectionTitle('Chart type'), 'symbol.type'));
         const groups: Partial<Record<string, HTMLElement>> = {};
         const showActive = (style: string): void => {
             const active = style === 'heikinashi' ? 'candles' : style; // heikin-ashi is candle-drawn
@@ -299,70 +329,70 @@ export class SettingsDialog {
             }
         };
         body.append(
-            this.selectRowLabeled('Type', config.series.style, priceStyleIds().map((id) => [id, styleLabel(id)] as const), (v) => {
+            sid(this.selectRowLabeled('Type', config.series.style, priceStyleIds().map((id) => [id, styleLabel(id)] as const), (v) => {
                 this.emit({ series: { style: v } });
                 showActive(v);
                 this.syncTypeTabs?.(v);
-            }),
+            }), 'symbol.type'),
         );
 
         // Candles — the reference compact rows: one toggle + an up/down swatch pair each.
-        const candles = this.group();
+        const candles = sid(this.group(), 'symbol.style.candles');
         candles.append(this.sectionTitle('Candles'));
-        candles.append(this.toggleRow('Body', config.candles.bodyVisible, (v) => this.emit({ candles: { bodyVisible: v } }), [
+        candles.append(sid(this.toggleRow('Body', config.candles.bodyVisible, (v) => this.emit({ candles: { bodyVisible: v } }), [
             this.swatch(config.candles.upColor, (v) => this.emit({ candles: { upColor: v } })),
             this.swatch(config.candles.downColor, (v) => this.emit({ candles: { downColor: v } })),
-        ]));
-        candles.append(this.toggleRow('Borders', config.candles.borderVisible, (v) => this.emit({ candles: { borderVisible: v } }), [
+        ]), 'symbol.style.candles.body'));
+        candles.append(sid(this.toggleRow('Borders', config.candles.borderVisible, (v) => this.emit({ candles: { borderVisible: v } }), [
             this.swatch(config.candles.borderUpColor, (v) => this.emit({ candles: { borderUpColor: v } })),
             this.swatch(config.candles.borderDownColor, (v) => this.emit({ candles: { borderDownColor: v } })),
-        ]));
-        candles.append(this.toggleRow('Wick', config.candles.wickVisible, (v) => this.emit({ candles: { wickVisible: v } }), [
+        ]), 'symbol.style.candles.borders'));
+        candles.append(sid(this.toggleRow('Wick', config.candles.wickVisible, (v) => this.emit({ candles: { wickVisible: v } }), [
             this.swatch(config.candles.wickUpColor, (v) => this.emit({ candles: { wickUpColor: v } })),
             this.swatch(config.candles.wickDownColor, (v) => this.emit({ candles: { wickDownColor: v } })),
-        ]));
-        candles.append(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })));
+        ]), 'symbol.style.candles.wick'));
+        candles.append(sid(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.candles.spacing'));
         groups.candles = candles;
         body.append(candles);
 
-        const bars = this.group();
+        const bars = sid(this.group(), 'symbol.style.bars');
         bars.append(this.sectionTitle('Bars'));
-        bars.append(this.colorRow('Color Up', config.bars.upColor, (v) => this.emit({ bars: { upColor: v } })));
-        bars.append(this.colorRow('Color Down', config.bars.downColor, (v) => this.emit({ bars: { downColor: v } })));
-        bars.append(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })));
+        bars.append(sid(this.colorRow('Color Up', config.bars.upColor, (v) => this.emit({ bars: { upColor: v } })), 'symbol.style.bars.up-color'));
+        bars.append(sid(this.colorRow('Color Down', config.bars.downColor, (v) => this.emit({ bars: { downColor: v } })), 'symbol.style.bars.down-color'));
+        bars.append(sid(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.bars.spacing'));
         groups.bars = bars;
         body.append(bars);
 
-        const line = this.group();
+        const line = sid(this.group(), 'symbol.style.line');
         line.append(this.sectionTitle('Line'));
-        line.append(this.colorRow('Color', config.line.color, (v) => this.emit({ line: { color: v } })));
-        line.append(this.numberRow('Width', config.line.width, 1, 10, 1, (v) => this.emit({ line: { width: v } })));
+        line.append(sid(this.colorRow('Color', config.line.color, (v) => this.emit({ line: { color: v } })), 'symbol.style.line.color'));
+        line.append(sid(this.numberRow('Width', config.line.width, 1, 10, 1, (v) => this.emit({ line: { width: v } })), 'symbol.style.line.width'));
         groups.line = line;
         body.append(line);
 
-        const area = this.group();
+        const area = sid(this.group(), 'symbol.style.area');
         area.append(this.sectionTitle('Area'));
-        area.append(this.colorRow('Line color', config.area.lineColor, (v) => this.emit({ area: { lineColor: v } })));
-        area.append(this.numberRow('Width', config.area.width, 1, 10, 1, (v) => this.emit({ area: { width: v } })));
-        area.append(this.colorRow('Top fill', config.area.topColor, (v) => this.emit({ area: { topColor: v } })));
-        area.append(this.colorRow('Bottom fill', config.area.bottomColor, (v) => this.emit({ area: { bottomColor: v } })));
+        area.append(sid(this.colorRow('Line color', config.area.lineColor, (v) => this.emit({ area: { lineColor: v } })), 'symbol.style.area.line-color'));
+        area.append(sid(this.numberRow('Width', config.area.width, 1, 10, 1, (v) => this.emit({ area: { width: v } })), 'symbol.style.area.width'));
+        area.append(sid(this.colorRow('Top fill', config.area.topColor, (v) => this.emit({ area: { topColor: v } })), 'symbol.style.area.top-fill'));
+        area.append(sid(this.colorRow('Bottom fill', config.area.bottomColor, (v) => this.emit({ area: { bottomColor: v } })), 'symbol.style.area.bottom-fill'));
         groups.area = area;
         body.append(area);
 
-        const baseline = this.group();
+        const baseline = sid(this.group(), 'symbol.style.baseline');
         baseline.append(this.sectionTitle('Baseline'));
-        baseline.append(this.rowWith('Top line', [this.swatch(config.baseline.topLineColor, (v) => this.emit({ baseline: { topLineColor: v } }))]));
-        baseline.append(this.rowWith('Bottom line', [this.swatch(config.baseline.bottomLineColor, (v) => this.emit({ baseline: { bottomLineColor: v } }))]));
-        baseline.append(this.rowWith('Fill top area', [
+        baseline.append(sid(this.rowWith('Top line', [this.swatch(config.baseline.topLineColor, (v) => this.emit({ baseline: { topLineColor: v } }))]), 'symbol.style.baseline.top-line'));
+        baseline.append(sid(this.rowWith('Bottom line', [this.swatch(config.baseline.bottomLineColor, (v) => this.emit({ baseline: { bottomLineColor: v } }))]), 'symbol.style.baseline.bottom-line'));
+        baseline.append(sid(this.rowWith('Fill top area', [
             this.swatch(config.baseline.topFillColor, (v) => this.emit({ baseline: { topFillColor: v } })),
             this.swatch(config.baseline.topFillColor2, (v) => this.emit({ baseline: { topFillColor2: v } })),
-        ]));
-        baseline.append(this.rowWith('Fill bottom area', [
+        ]), 'symbol.style.baseline.fill-top'));
+        baseline.append(sid(this.rowWith('Fill bottom area', [
             this.swatch(config.baseline.bottomFillColor2, (v) => this.emit({ baseline: { bottomFillColor2: v } })),
             this.swatch(config.baseline.bottomFillColor, (v) => this.emit({ baseline: { bottomFillColor: v } })),
-        ]));
-        baseline.append(this.numberRow('Base level %', config.baseline.baselineLevel, 0, 100, 1, (v) => this.emit({ baseline: { baselineLevel: v } })));
-        baseline.append(this.numberRow('Width', config.baseline.width, 1, 10, 1, (v) => this.emit({ baseline: { width: v } })));
+        ]), 'symbol.style.baseline.fill-bottom'));
+        baseline.append(sid(this.numberRow('Base level %', config.baseline.baselineLevel, 0, 100, 1, (v) => this.emit({ baseline: { baselineLevel: v } })), 'symbol.style.baseline.base-level'));
+        baseline.append(sid(this.numberRow('Width', config.baseline.width, 1, 10, 1, (v) => this.emit({ baseline: { width: v } })), 'symbol.style.baseline.width'));
         groups.baseline = baseline;
         body.append(baseline);
 
@@ -375,36 +405,43 @@ export class SettingsDialog {
             const bag = config.chartTypes[def.id] ?? {};
             const colorOf = (key: string, shared: string): string => (typeof bag[key] === 'string' && bag[key] !== '' ? bag[key] as string : shared);
             const boolOf = (key: string, shared: boolean): boolean => (typeof bag[key] === 'boolean' ? bag[key] as boolean : shared);
-            const g = this.group();
+            const g = sid(this.group(), `symbol.style.${def.id}`);
             g.append(this.sectionTitle('Candles'));
-            g.append(this.toggleRow('Body', boolOf('candleBodyVisible', config.candles.bodyVisible), (v) => this.emitType(def.id, 'candleBodyVisible', v), [
+            g.append(sid(this.toggleRow('Body', boolOf('candleBodyVisible', config.candles.bodyVisible), (v) => this.emitType(def.id, 'candleBodyVisible', v), [
                 this.swatch(colorOf('candleUpColor', config.candles.upColor), (v) => this.emitType(def.id, 'candleUpColor', v)),
                 this.swatch(colorOf('candleDownColor', config.candles.downColor), (v) => this.emitType(def.id, 'candleDownColor', v)),
-            ]));
-            g.append(this.toggleRow('Borders', boolOf('candleBorderVisible', config.candles.borderVisible), (v) => this.emitType(def.id, 'candleBorderVisible', v), [
+            ]), `symbol.style.${def.id}.body`));
+            g.append(sid(this.toggleRow('Borders', boolOf('candleBorderVisible', config.candles.borderVisible), (v) => this.emitType(def.id, 'candleBorderVisible', v), [
                 this.swatch(colorOf('candleBorderUpColor', config.candles.borderUpColor), (v) => this.emitType(def.id, 'candleBorderUpColor', v)),
                 this.swatch(colorOf('candleBorderDownColor', config.candles.borderDownColor), (v) => this.emitType(def.id, 'candleBorderDownColor', v)),
-            ]));
-            g.append(this.toggleRow('Wick', boolOf('candleWickVisible', config.candles.wickVisible), (v) => this.emitType(def.id, 'candleWickVisible', v), [
+            ]), `symbol.style.${def.id}.borders`));
+            g.append(sid(this.toggleRow('Wick', boolOf('candleWickVisible', config.candles.wickVisible), (v) => this.emitType(def.id, 'candleWickVisible', v), [
                 this.swatch(colorOf('candleWickUpColor', config.candles.wickUpColor), (v) => this.emitType(def.id, 'candleWickUpColor', v)),
                 this.swatch(colorOf('candleWickDownColor', config.candles.wickDownColor), (v) => this.emitType(def.id, 'candleWickDownColor', v)),
-            ]));
-            g.append(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })));
+            ]), `symbol.style.${def.id}.wick`));
+            g.append(sid(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), `symbol.style.${def.id}.spacing`));
             groups[def.id] = g;
             body.append(g);
         }
         showActive(config.series.style);
 
-        body.append(this.sectionTitle('Time zone'));
-        body.append(this.selectRowLabeled('Time zone', normalizeTimezone(config.timeScale.timezone), timezoneOptions(config.timeScale.timezone), (v) => this.emit({ timeScale: { timezone: v } })));
+        body.append(sid(this.sectionTitle('Time zone'), 'symbol.timezone'));
+        body.append(sid(this.selectRowLabeled('Time zone', normalizeTimezone(config.timeScale.timezone), timezoneOptions(config.timeScale.timezone), (v) => this.emit({ timeScale: { timezone: v } })), 'symbol.timezone'));
 
         // ══ HOST SECTIONS — tabs contributed by the embedding app (widget Status line…) ══
         const renderHostSections = (placement: 'after-symbol' | 'end' | 'symbol'): void => {
             for (const hs of this.hostSections) {
                 if ((hs.placement ?? 'after-symbol') !== placement) continue;
+                // The visibility policy filters at the DESCRIPTOR level: a hidden
+                // section (or one whose rows are all hidden) never renders, hidden
+                // rows drop out, a hidden heading takes its group with it.
+                const scope = hostSectionId(hs);
+                if (settingsIdHidden(scope, this.hiddenSettings)) continue;
+                const rows = filterHiddenHostRows(hs.rows, scope, this.hiddenSettings);
+                if (rows.length === 0) continue;
                 // 'symbol' inlines rows into the CURRENT pane (a section title, no tab).
                 body.append(placement === 'symbol' ? this.sectionTitle(hs.title) : this.section(hs.title));
-                for (const hr of hs.rows) {
+                for (const hr of rows) {
                     if (hr.kind === 'heading') body.append(this.sectionTitle(hr.label));
                     else if (hr.kind === 'toggle') body.append(this.boolRow(hr.label, hr.get(), (v) => hr.set(v)));
                     else if (hr.kind === 'color') body.append(this.colorRow(hr.label, hr.get(), (v) => hr.set(v)));
@@ -423,6 +460,7 @@ export class SettingsDialog {
                 const typeSettings = def.settings;
                 if (!typeSettings) continue;
                 if ((typeSettings.placement ?? 'end') !== placement) continue;
+                if (settingsIdHidden(`type:${def.id}`, this.hiddenSettings)) continue;
                 this.chartTypeSection(def.id, typeSettings, config, body);
             }
         };
@@ -436,51 +474,72 @@ export class SettingsDialog {
         renderHostSections('after-symbol');
 
         // ══ SCALES AND LINES — price scale + crosshair (the reference tab) ══
-        body.append(this.section('Scales and lines'));
-        body.append(this.sectionTitle('Price scale'));
+        body.append(sid(this.section('Scales and lines'), 'scales'));
+        body.append(sid(this.sectionTitle('Price scale'), 'scales.price-scale'));
         body.append(
-            this.selectRowLabeled(
+            sid(this.selectRowLabeled(
                 'Mode',
                 config.priceScale.log ? 'log' : config.priceScale.mode,
                 [['price', 'Regular'], ['percent', 'Percent'], ['indexed', 'Indexed to 100'], ['log', 'Logarithmic']] as const,
                 (v) => this.emit({ priceScale: v === 'log' ? { mode: 'price', log: true } : { mode: v, log: false } }),
-            ),
+            ), 'scales.price-scale.mode'),
         );
-        body.append(this.boolRow('Invert scale', config.priceScale.invert, (v) => this.emit({ priceScale: { invert: v } })));
-        body.append(this.separator());
-        body.append(this.boolRow('Last Price Line', config.priceScale.currentPriceLine, (v) => this.emit({ priceScale: { currentPriceLine: v } })));
-        body.append(this.boolRow('Last price label', config.priceScale.priceLabel, (v) => this.emit({ priceScale: { priceLabel: v } })));
-        body.append(this.boolRow('Countdown to bar close', config.priceScale.countdown, (v) => this.emit({ priceScale: { countdown: v } })));
-        body.append(this.boolRow('Axis labels', config.priceScale.labelsVisible, (v) => this.emit({ priceScale: { labelsVisible: v } })));
-        body.append(this.colorRow('Scale border color', config.priceScale.borderColor, (v) => this.emit({ priceScale: { borderColor: v } })));
-        body.append(this.sectionTitle('Crosshair'));
-        body.append(this.colorRow('Color', config.crosshair.color, (v) => this.emit({ crosshair: { color: v } })));
-        body.append(this.numberRow('Width', config.crosshair.width, 0.5, 8, 0.5, (v) => this.emit({ crosshair: { width: v } })));
-        body.append(this.selectRowLabeled('Style', config.crosshair.style, [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']] as const, (v) => this.emit({ crosshair: { style: v } })));
+        body.append(sid(this.boolRow('Invert scale', config.priceScale.invert, (v) => this.emit({ priceScale: { invert: v } })), 'scales.price-scale.invert'));
+        body.append(sid(this.separator(), 'scales.price-scale'));
+        body.append(sid(this.boolRow('Last Price Line', config.priceScale.currentPriceLine, (v) => this.emit({ priceScale: { currentPriceLine: v } })), 'scales.price-scale.last-price-line'));
+        body.append(sid(this.boolRow('Last price label', config.priceScale.priceLabel, (v) => this.emit({ priceScale: { priceLabel: v } })), 'scales.price-scale.last-price-label'));
+        body.append(sid(this.boolRow('Countdown to bar close', config.priceScale.countdown, (v) => this.emit({ priceScale: { countdown: v } })), 'scales.price-scale.countdown'));
+        body.append(sid(this.boolRow('Axis labels', config.priceScale.labelsVisible, (v) => this.emit({ priceScale: { labelsVisible: v } })), 'scales.price-scale.axis-labels'));
+        body.append(sid(this.colorRow('Scale border color', config.priceScale.borderColor, (v) => this.emit({ priceScale: { borderColor: v } })), 'scales.price-scale.border-color'));
+        body.append(sid(this.sectionTitle('Crosshair'), 'scales.crosshair'));
+        body.append(sid(this.colorRow('Color', config.crosshair.color, (v) => this.emit({ crosshair: { color: v } })), 'scales.crosshair.color'));
+        body.append(sid(this.numberRow('Width', config.crosshair.width, 0.5, 8, 0.5, (v) => this.emit({ crosshair: { width: v } })), 'scales.crosshair.width'));
+        body.append(sid(this.selectRowLabeled('Style', config.crosshair.style, [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']] as const, (v) => this.emit({ crosshair: { style: v } })), 'scales.crosshair.style'));
 
         // ══ CANVAS — background/text + grid (the reference tab) ══
-        body.append(this.section('Canvas'));
-        body.append(this.sectionTitle('Background & text'));
-        body.append(this.colorRow('Background', config.layout.background, (v) => this.emit({ layout: { background: v } })));
-        body.append(this.colorRow('Text color', config.layout.textColor, (v) => this.emit({ layout: { textColor: v } })));
-        body.append(this.numberRow('Text size', config.layout.fontSize, 6, 32, 1, (v) => this.emit({ layout: { fontSize: v } })));
-        body.append(this.colorRow('Pane separator color', config.panes.separatorColor, (v) => this.emit({ panes: { separatorColor: v } })));
-        body.append(this.sectionTitle('Grid'));
-        body.append(this.toggleRow('Vertical', config.grid.vertLines.visible, (v) => this.emit({ grid: { vertLines: { visible: v } } }), [
+        body.append(sid(this.section('Canvas'), 'canvas'));
+        body.append(sid(this.sectionTitle('Background & text'), 'canvas.background'));
+        body.append(sid(this.colorRow('Background', config.layout.background, (v) => this.emit({ layout: { background: v } })), 'canvas.background.color'));
+        body.append(sid(this.colorRow('Text color', config.layout.textColor, (v) => this.emit({ layout: { textColor: v } })), 'canvas.background.text-color'));
+        body.append(sid(this.numberRow('Text size', config.layout.fontSize, 6, 32, 1, (v) => this.emit({ layout: { fontSize: v } })), 'canvas.background.text-size'));
+        body.append(sid(this.colorRow('Pane separator color', config.panes.separatorColor, (v) => this.emit({ panes: { separatorColor: v } })), 'canvas.background.pane-separator'));
+        body.append(sid(this.sectionTitle('Grid'), 'canvas.grid'));
+        body.append(sid(this.toggleRow('Vertical', config.grid.vertLines.visible, (v) => this.emit({ grid: { vertLines: { visible: v } } }), [
             this.swatch(config.grid.vertLines.color, (v) => this.emit({ grid: { vertLines: { color: v } } })),
-        ]));
-        body.append(this.toggleRow('Horizontal', config.grid.horzLines.visible, (v) => this.emit({ grid: { horzLines: { visible: v } } }), [
+        ]), 'canvas.grid.vertical'));
+        body.append(sid(this.toggleRow('Horizontal', config.grid.horzLines.visible, (v) => this.emit({ grid: { horzLines: { visible: v } } }), [
             this.swatch(config.grid.horzLines.color, (v) => this.emit({ grid: { horzLines: { color: v } } })),
-        ]));
+        ]), 'canvas.grid.horizontal'));
         if (this.themeControl) {
             const tc = this.themeControl;
-            body.append(this.sectionTitle('Theme'));
-            body.append(this.selectRow('Color theme', tc.current === 'dark' ? 'Dark' : 'Light', ['Dark', 'Light'], (v) => tc.onSelect(v === 'Dark' ? 'dark' : 'light')));
+            body.append(sid(this.sectionTitle('Theme'), 'canvas.theme'));
+            body.append(sid(this.selectRow('Color theme', tc.current === 'dark' ? 'Dark' : 'Light', ['Dark', 'Light'], (v) => tc.onSelect(v === 'Dark' ? 'dark' : 'light')), 'canvas.theme'));
         }
 
         renderChartTypeSections('end');
 
         renderHostSections('end');
+
+        // ── Visibility policy: drop hidden BUILT-IN elements before the pane split ──
+        // Host and chart-type sections were already filtered at the descriptor level;
+        // the built-ins carry `data-sd-id` stamps instead. A hidden tab marker takes
+        // its whole linear run (up to the next marker); a hidden group id takes the
+        // group title and, by dot-prefix, every row stamped under it.
+        if (this.hiddenSettings.size > 0) {
+            let skipTab = false;
+            for (const child of [...body.children] as HTMLElement[]) {
+                if (child.dataset.sdTab !== undefined) {
+                    skipTab = child.dataset.sdId !== undefined && settingsIdHidden(child.dataset.sdId, this.hiddenSettings);
+                }
+                if (skipTab || (child.dataset.sdId !== undefined && settingsIdHidden(child.dataset.sdId, this.hiddenSettings))) {
+                    child.remove();
+                    continue;
+                }
+                for (const el of [...child.querySelectorAll('[data-sd-id]')] as HTMLElement[]) {
+                    if (settingsIdHidden(el.dataset.sdId!, this.hiddenSettings)) el.remove();
+                }
+            }
+        }
 
         // ── Split the linear sections into a left tab rail + one pane per section ──
         const shell = document.createElement('div');
@@ -528,6 +587,11 @@ export class SettingsDialog {
                 continue;
             }
             if (current) current.appendChild(child);
+        }
+        // A pane emptied by the visibility policy loses its rail tab too (in place —
+        // the closures below share this array).
+        for (let i = panes.length - 1; i >= 0; i--) {
+            if (panes[i]!.el.childElementCount === 0) panes.splice(i, 1);
         }
         // Chart-type tabs with visibility 'active' follow the Type select live.
         this.syncTypeTabs = (active: string): void => {
@@ -690,22 +754,31 @@ export class SettingsDialog {
             for (const r of refreshers) r();
         };
 
+        // The visibility policy filters DESCRIPTORS (never the bag): the seeding above
+        // ran on the full row set, so `when` gates keep reading hidden keys' defaults
+        // and hidden values keep persisting and delivering.
+        const scope = `type:${typeId}`;
         if (section.instances && section.instances.length > 0) {
-            body.append(this.instancesBlock(typeId, section.instances, bag, put, refreshers));
+            const instances = section.instances.map((inst) => ({ ...inst, rows: filterHiddenRows(inst.rows, scope, this.hiddenSettings) }));
+            body.append(this.instancesBlock(typeId, instances, bag, put, refreshers));
         } else if (section.rows) {
+            const rows = filterHiddenRows(section.rows, scope, this.hiddenSettings);
             // 'grouped' promotes the flat rows to the structured pane's group-TOC
             // presentation (the TOC column right of the tab rail) — same rows, no strip.
-            if (section.layout === 'grouped') body.append(this.groupedRows(`${typeId}/rows`, section.rows, bag, put, refreshers));
-            else this.flatTypeRows(section.rows, bag, put, refreshers, body);
+            if (section.layout === 'grouped') body.append(this.groupedRows(`${typeId}/rows`, rows, bag, put, refreshers));
+            else this.flatTypeRows(rows, bag, put, refreshers, body);
         }
 
         for (const sub of section.subsections ?? []) {
+            if (settingsIdHidden(`${scope}.${settingsIdSlug(sub.title)}`, this.hiddenSettings)) continue;
+            const rows = filterHiddenRows(sub.rows, scope, this.hiddenSettings);
+            if (rows.length === 0) continue;
             const subMarker = this.section(sub.title);
             subMarker.dataset.sdStyle = typeId;
             subMarker.dataset.sdVisibility = section.visibility ?? 'active';
             subMarker.dataset.sdSub = '1';
             body.append(subMarker);
-            body.append(this.groupedRows(`${typeId}/${sub.title}`, sub.rows, bag, put, refreshers, sub.enableKey));
+            body.append(this.groupedRows(`${typeId}/${sub.title}`, rows, bag, put, refreshers, sub.enableKey));
         }
         for (const r of refreshers) r();
     }

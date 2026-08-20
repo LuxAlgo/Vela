@@ -2,7 +2,7 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 
 import type { VolumeLayerData, VpvrLayerData } from '../../../core/model/volume-layers';
 import type { PaneKind } from '../../../core/model/scene';
-import type { IndicatorModel } from '../../../core/model/indicator';
+import type { IndicatorModel, PaneAxisBand } from '../../../core/model/indicator';
 import type { PriceStyle } from '../../../core/options';
 import type { PriceScale, PaneBounds } from './CoordinateSystem';
 import { type CandlePaintOverride, type ChartStyle, defaultChartStyle } from './chartConfig';
@@ -82,9 +82,16 @@ export interface PaneNode {
      *  height, keeping its weight so expanding restores its proportion. */
     collapsed: boolean;
     /** How this pane's axis labels read. `'volume'` (a volume indicator alone in its own
-     *  pane) abbreviates the scale with K/M/B suffixes; undefined ⇒ the default price format.
-     *  Recomputed per autoscale pass, so it clears the moment the pane's content changes. */
-    axisFormat?: 'volume';
+     *  pane) abbreviates the scale with K/M/B suffixes; `'none'` (a pane whose owning
+     *  content declares a `paneAxis` override) suppresses price ticks, horizontal
+     *  gridlines and the crosshair value chip — the content is not value-mapped.
+     *  Undefined ⇒ the default price format. Recomputed per autoscale pass, so it clears
+     *  the moment the pane's content changes. */
+    axisFormat?: 'volume' | 'none';
+    /** Categorical axis labels for a `paneAxis`-overridden pane (band labels at
+     *  fractions of the pane's height, drawn instead of price ticks). Recomputed per
+     *  autoscale pass alongside {@link axisFormat}. */
+    axisBands?: PaneAxisBand[];
     /** This STUDY pane's own axis mode — `'price'` (absolute) or `'percent'` (change vs its
      *  own `percentBaseline`). The PRICE pane instead follows the scene-level `scaleMode`
      *  (persisted chart setting), so every pane's scale is independent. Undefined ⇒ `'price'`. */

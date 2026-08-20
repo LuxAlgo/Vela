@@ -1,4 +1,5 @@
 import type { OHLCV } from '../model/ohlcv';
+import type { PaneAxis } from '../model/indicator';
 import type { SeriesSpec } from '../model/series';
 import type { Fill, Background, PriceLine } from '../model/scene';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from '../model/drawings';
@@ -14,6 +15,13 @@ import type { DataControl } from '../DataControl';
  * columns — instead pushes its payload through the dedicated renderer seam, `pushData`.)
  */
 export interface NativeIndicatorOutput {
+    /**
+     * Value-axis override for the pane this native OWNS (see `IndicatorModel.paneAxis`):
+     * `'none'` for content that is not value-mapped, or band labels for a categorical
+     * axis. Emitted per compute, so it can follow the inputs (e.g. row toggles relabel
+     * the axis). Absent ⇒ the pane derives a scale from its content as usual.
+     */
+    paneAxis?: PaneAxis;
     series?: SeriesSpec[];
     fills?: Fill[];
     backgrounds?: Background[];

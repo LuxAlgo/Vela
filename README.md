@@ -1,35 +1,35 @@
 # Vela
 
 A fast, extensible financial charting library with its own native canvas renderer, a
-headless core, a batteries-included widget, and a plugin SDK for custom chart types and
+headless core, a batteries-included shell, and a plugin SDK for custom chart types and
 renderer layers.
 
 - **`vela`** — the headless chart: data model, engines, drawings, providers, native renderer.
-- **`vela/widget`** — the full chart app: topbar (symbol / timeframe / style / indicators),
-  status line, watermark, bottom bar (ranges, clock, timezone), object tree, keyboard-first UX.
-- **`vela/ui`** — the component kit the widget is built on: design tokens, overlay chrome
+- **`vela/workspace`** — the full chart app: one chart (`layout: false`) or a grid of
+  them under one shared topbar (symbol / timeframe / style / indicators), status line,
+  watermark, bottom bar (ranges, clock, timezone), object tree, keyboard-first UX,
+  named cells, sync groups and one persisted state document.
+- **`vela/ui`** — the component kit the shell is built on: design tokens, overlay chrome
   ([Zag.js](https://zagjs.com) menu/dialog/drawer/tooltip), form primitives (switch, select,
   number, text, color, popover), and the `KeymapManager`.
 - **`vela/plugin`** — the extension SDK: chart types, renderer layers, native indicators.
-- **`vela/workspace`** — the multi-chart shell: a grid of full charts under one shared
-  topbar, with named cells, sync groups and one persisted state document.
 - **`vela/providers/*`** — data providers (Binance, Coinbase, Hyperliquid).
 
 ## Quick start
 
 ```ts
-import { VelaWidget } from 'vela/widget';
+import { VelaWorkspace } from 'vela/workspace';
 import { BinanceProvider } from 'vela/providers/binance';
 
-const widget = new VelaWidget('#chart', {
+const chart = new VelaWorkspace('#chart', {
+    layout: false, // one chart; '2h' | '4' | '8' | … for a multi-chart grid
     symbol: 'BTCUSDT', // bare = first declared provider listing it; 'binance:BTCUSDT' pins the venue
     timeframe: '60',
     live: true,
     theme: 'dark',
     providers: { binance: () => new BinanceProvider() },
-    persist: true,   // restore the full state document — market, style, timezone, renderer
-                     // config, drawings and indicators — from localStorage
-    urlState: true,  // ?symbol=…&interval=… shareable links
+    persist: true, // restore the full state document — market, style, timezone, renderer
+                   // config, drawings and indicators — from localStorage
 });
 ```
 
@@ -67,11 +67,11 @@ value** — via `handle.context()` (read-only snapshots, worker-safe). See the
 [API reference](docs/user/api-reference.md#reading-a-scripts-execution-context), and
 [Scripting engines](docs/user/scripting-engines.md) for the addon and for writing your own.
 
-The widget takes an **indicator manifest** — inline JSON, a URL returning it, or an async
+The shell takes an **indicator manifest** — inline JSON, a URL returning it, or an async
 loader (`() => Promise<manifest>`):
 
 ```ts
-new VelaWidget('#chart', {
+new VelaWorkspace('#chart', {
     // …
     engines: { pine: () => new PineEngine() },
     indicators: '/indicators.json', // or an inline [{ name, script | url, language?, enabled? }]
@@ -82,7 +82,7 @@ new VelaWidget('#chart', {
 
 Type a **letter** → symbol search. Type a **digit** → timeframe entry (`15`, `4h`, `D`, `3M`…).
 `mod+alt+S` (Ctrl+Alt+S, ⌥⌘S on macOS) → screenshot. `?` → the shortcuts panel. Bindings are declarative
-(`widget.keymap.register({...})`) — plugins register theirs the same way.
+(`chart.keymap.register({...})`) — plugins register theirs the same way.
 
 ## Extending (plugin SDK)
 
@@ -104,14 +104,14 @@ registerRendererLayer({
 });
 ```
 
-A registered chart type automatically appears in the widget's style dropdown; a chart
+A registered chart type automatically appears in the shell's style dropdown; a chart
 type's `dataEngine` pushes to its layer's channel with zero extra wiring. See
 [docs/contributing/plugin-sdk.md](docs/contributing/plugin-sdk.md).
 
 ## Documentation
 
 Full documentation lives in [docs/](docs/index.md) — user guides ([quickstart](docs/user/quickstart.md),
-[the widget](docs/user/widget.md), [options](docs/user/options.md), [API reference](docs/user/api-reference.md)),
+[the workspace](docs/user/workspace.md), [options](docs/user/options.md), [API reference](docs/user/api-reference.md)),
 [architecture](docs/architecture/overview.md), and [contributing](docs/contributing/setup.md) guides
 including the [plugin SDK](docs/contributing/plugin-sdk.md).
 

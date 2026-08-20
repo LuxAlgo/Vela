@@ -17,6 +17,17 @@ export interface IndicatorMeta {
 /** Where an indicator's plots are placed. */
 export type PaneHint = 'price' | 'new';
 
+/** One label of a categorical pane axis: `frac` is the label's center as a fraction of
+ *  the pane's height (0 = top, 1 = bottom). */
+export interface PaneAxisBand {
+    frac: number;
+    label: string;
+}
+
+/** A pane's value-axis override (see {@link IndicatorModel.paneAxis}): `'none'` = a
+ *  blank axis; band labels = a categorical axis, one label per content band/row. */
+export type PaneAxis = 'none' | { bands: PaneAxisBand[] };
+
 /**
  * Everything one `addIndicator()` produces — the unit the orchestrator mounts
  * on the renderer. Renderer-neutral.
@@ -39,6 +50,17 @@ export interface IndicatorModel {
      * (distinct title color) + list ordering (native indicators pin to the top).
      */
     native?: { type: string };
+    /**
+     * Value-axis override for the pane this indicator OWNS — declared by content that is
+     * not value-mapped (e.g. a bespoke renderer layer painting in pixel bands), where a
+     * derived price scale would label meaningless numbers. `'none'` leaves the axis blank;
+     * band labels place text at fractions of the pane's height (a categorical axis — one
+     * label per band/row, e.g. `frac: 0.25` centers a label in the top quarter). Either way
+     * the renderer draws no price ticks, no horizontal gridlines, and no crosshair value
+     * chip in that pane. Only honored while such indicators are the pane's sole content —
+     * any real series merged into the pane takes the scale (and its labels) back over.
+     */
+    paneAxis?: PaneAxis;
     /** Resolved pane id, filled in by the orchestrator after routing. */
     paneId?: string;
     /**

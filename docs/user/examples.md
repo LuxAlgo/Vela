@@ -148,7 +148,7 @@ See [drawing-tools.md](./drawing-tools.md) for the full tool catalogue and toolb
 
 ## Playground
 
-The in-repo **playground** (`npm run playground`) mounts the full Vela widget against live Binance data straight from the source (open `/widget.html` from the index) — edit `playground/widget.ts` to try options, providers, or your own indicator manifest. Press `?` in the widget for the shortcut list.
+The in-repo **playground** (`npm run playground`) mounts the full single-chart shell against live Binance data straight from the source (open `/widget.html` from the index) — edit `playground/widget.ts` to try options, providers, or your own indicator manifest. Press `?` in the shell for the shortcut list.
 
 ## Next steps
 

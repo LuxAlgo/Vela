@@ -205,9 +205,29 @@ export class RendererControl {
 
     /** Contribute host settings tabs (callback rows) to the renderer's settings dialog —
      *  e.g. the widget's Status line toggles. Silent no-op without a dialog. */
-    setSettingsSections(sections: ReadonlyArray<{ title: string; rows: readonly unknown[] }>): this {
+    setSettingsSections(sections: ReadonlyArray<{ title: string; rows: readonly unknown[]; id?: string }>): this {
         this.renderer.setSettingsSections?.(sections);
         return this;
+    }
+
+    /**
+     * Set the settings-dialog visibility policy: `hidden` lists setting ids to hide —
+     * a tab (`'canvas'`), a group (`'canvas.grid'`), or a single row
+     * (`'canvas.grid.vertical'`); an id hides its whole subtree, and a tab with nothing
+     * left disappears from the rail. Presentation-only: hidden values keep being stored
+     * and applied (e.g. hide `'advanced'` while forcing the widget's `bars` option).
+     * Seeded from `VelaOptions.settings`; silent no-op without a settings dialog.
+     */
+    setSettingsVisibility(policy: { hidden?: readonly string[] }): this {
+        this.renderer.setSettingsVisibility?.(policy);
+        return this;
+    }
+
+    /** Every addressable setting id of this chart (built-in tabs/groups/rows, chart-type
+     *  sections, host sections) — enumerate these to build a `hidden` list instead of
+     *  reading contributor source. Empty on a renderer without a settings dialog. */
+    listSettingsIds(): string[] {
+        return this.renderer.listSettingsIds?.() ?? [];
     }
 
     /** Tell the renderer's own chrome which size class the host shell is in —

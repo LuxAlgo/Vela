@@ -83,7 +83,8 @@ export class CrosshairRenderer {
             }
         }
         const chipBg = cs.labelBackground ?? theme.borderColor;
-        if (pane) {
+        // An unscaled pane (axisFormat 'none') has no value axis, so no value chip either.
+        if (pane && pane.axisFormat !== 'none') {
             const price = coords.yToPrice(ch.y, pane.scale, pane.bounds);
             this.chip(ctx, dataW + 1, ch.y, formatAxisValue(pane.scale, pane.bounds.height, price, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat), chipBg, 'left', false, theme.background);
         }
@@ -136,7 +137,7 @@ export class CrosshairRenderer {
                     break;
                 }
             }
-            if (pane) {
+            if (pane && pane.axisFormat !== 'none') {
                 this.chip(ctx, dataW + 1, ext.y, formatAxisValue(pane.scale, pane.bounds.height, ext.price, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat), chipBg, 'left', false, theme.background);
             }
         }

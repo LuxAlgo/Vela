@@ -6,9 +6,6 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { paneAxisTicks, timeTicks } from '../chrome/ticks';
-import { percentScaleFor } from '../core/SceneGraph';
-import { tzOffsetMs } from '../chrome/tz';
 import { candleTier, wickWidth, candleGeometry } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
@@ -82,18 +79,6 @@ const DASH: Record<string, readonly [number, number] | null> = {
     dotted: [2, 3],
 };
 
-/**
- * A crisp axis-aligned hairline: a ~1-CSS-px line snapped to WHOLE DEVICE pixels — both its position
- * and its width — returned in CSS px so it maps to integer device columns/rows. Without this a 1px
- * grid line lands on a fractional device-pixel phase (different per line at non-integer dpr), and MSAA
- * spreads it across two columns at partial coverage — so lines read gray/dim and vary line-to-line.
- */
-function crispHairline(cssCenter: number, dpr: number): { pos: number; size: number } {
-    const w = Math.max(1, Math.round(dpr)); // ~1 CSS px as a whole number of device px
-    const edge = Math.round(cssCenter * dpr - w / 2); // integer device-px left/top edge
-    return { pos: edge / dpr, size: w / dpr };
-}
-
 /** Triangle-fan segment count for a round line join/cap of half-width `hw` (round enough, not over-tessellated). */
 function joinSegments(hw: number): number {
     return Math.max(6, Math.min(20, Math.round(hw * 4)));
@@ -102,8 +87,9 @@ function joinSegments(hw: number): number {
 /**
  * Hand-rolled WebGL2 GEOMETRY backend (L0). Same `IRenderBackend` seam as the
  * canvas2d backend: it consumes the retained scene + coordinate system and draws
- * grid + bgcolor + fills + candles + series + hline — everything else (axes,
- * drawings, the crosshair) stays on the canvas2d chrome/cursor layers above.
+ * bgcolor + fills + candles + series + hline — everything else stays on canvas2d
+ * layers: axes, drawings and the crosshair on the chrome/cursor layers above, the
+ * grid + session highlights on the backdrop canvas below (BackdropRenderer).
  *
  * Design: ONE per-vertex-color triangle pipeline. Every primitive decomposes into
  * colored triangles (rects, quads, line-quads, fans) in CSS-pixel space; a vertical
@@ -117,7 +103,6 @@ export class WebGL2Backend implements IRenderBackend {
     modelAlpha = 1;
     candleBodyAlpha = 1;
     candleStructureAlpha = 1;
-    gridAlpha = 1;
     candleBodyScale = 1;
     /** Set by the renderer; invoked after a context restore to request a repaint. */
     onNeedsRedraw: (() => void) | null = null;
@@ -381,15 +366,12 @@ export class WebGL2Backend implements IRenderBackend {
                     if (this.drawSliceTexture(gl, slices[si]!.canvas)) liveSlices.add(slices[si]!.canvas);
                 }
             };
-            // z-order within the batch (painter's): grid, bg, fills, then the candles +
-            // each indicator's series interleaved by `scene.candleZ`/per-indicator z, then hlines.
+            // z-order within the batch (painter's): bg, fills, then the candles + each
+            // indicator's series interleaved by `scene.candleZ`/per-indicator z, then hlines.
+            // (The grid + session highlights live on the renderer's backdrop canvas below.)
             b.alpha = 1;
-            // A collapsed pane is a legend-only strip: emit just its separator (via emitGrid), no plots.
-            if (pane.collapsed) {
-                this.emitGrid(b, coords, theme, dataW, pane, scene);
-            } else {
-                this.emitHighlights(b, scene, pane, coords);
-                this.emitGrid(b, coords, theme, dataW, pane, scene);
+            // A collapsed pane is a legend-only strip: no plots (legend + separator are chrome).
+            if (!pane.collapsed) {
                 const models = scene.orderedIndicatorsForPane(pane.id);
                 const isPrice = pane.kind === 'price';
                 // Merged (own-scale) indicators draw against their own price window inside the pane.
@@ -596,53 +578,6 @@ export class WebGL2Backend implements IRenderBackend {
     }
 
     // ── geometry emit (mirrors Canvas2dBackend, in CSS-px space) ──
-    private emitGrid(b: Batch, coords: CoordinateSystem, theme: VelaTheme, dataW: number, pane: PaneNode, scene: SceneGraph): void {
-        const top = pane.bounds.top;
-        const bot = pane.bounds.top + pane.bounds.height;
-        const { gridVert, gridHorz } = scene.style;
-        const dpr = coords.dpr;
-        b.alpha = this.gridAlpha; // fade the grid out as a reveal-under style opens (no grid through translucent candles)
-        // A collapsed pane is a legend-only strip → draw its separator but no gridlines.
-        if (scene.showGrid && gridVert.visible && !pane.collapsed) {
-            const grid = parseColor(gridVert.color ?? theme.gridColor);
-            const tr = coords.visibleTimeRange();
-            const offset = tzOffsetMs((tr.from + tr.to) / 2, scene.timezone);
-            for (const tick of timeTicks(tr.from, tr.to, 8, offset)) {
-                const x = coords.timeToX(tick.time);
-                if (x < 0 || x > dataW) continue;
-                const g = crispHairline(x, dpr); // whole-device-pixel column → crisp, uniform brightness
-                b.rect(g.pos, top, g.size, bot - top, grid);
-            }
-        }
-        if (scene.showGrid && gridHorz.visible && !pane.collapsed) {
-            const grid = parseColor(gridHorz.color ?? theme.gridColor);
-            const pct = percentScaleFor(scene, pane);
-            for (const t of paneAxisTicks(pane.scale, pane.bounds.height, pct)) {
-                const y = coords.priceToY(t.price, pane.scale, pane.bounds);
-                if (y < top || y > bot) continue;
-                const g = crispHairline(y, dpr); // whole-device-pixel row
-                b.rect(0, g.pos, dataW, g.size, grid);
-            }
-        }
-        // Pane separators are drawn on the chrome layer (full-width, above the data), so nothing here.
-    }
-
-    /** Renderer-owned session highlight bands, clipped per-pane (scissor reconstructs full height).
-     *  Session-zone washes (pre/post-market) paint first, host highlights on top. */
-    private emitHighlights(b: Batch, scene: SceneGraph, pane: PaneNode, coords: CoordinateSystem): void {
-        const bands = [...scene.sessionHighlightBands(), ...scene.highlights];
-        if (bands.length === 0) return;
-        for (const band of bands) {
-            const x1 = coords.timeToX(band.from);
-            const x2 = coords.timeToX(band.to);
-            if (x2 < 0 || x1 > coords.width || x2 <= x1) continue;
-            const cx = Math.max(0, x1);
-            const cw = Math.min(coords.width, x2) - cx;
-            if (cw <= 0) continue;
-            b.rect(cx, pane.bounds.top, cw, pane.bounds.height, parseColor(band.color));
-        }
-    }
-
     private emitBackground(b: Batch, bg: Background, pane: PaneNode, coords: CoordinateSystem): void {
         const x1 = coords.timeToX(bg.from);
         const x2 = coords.timeToX(bg.to);

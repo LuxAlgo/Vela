@@ -1404,7 +1404,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                     this.emitScriptRun(id, cause, first);
                 },
                 onAlert: (a) => {
-                    this.events.emit('alert', a);
+                    // The chart-level event names its source — the indicator's effective
+                    // display title (host override, else the script's own; the same rule
+                    // the legend announce uses) — hosts render alerts from many
+                    // indicators on one surface (the shells' bell menu).
+                    const indicator = record.options?.title ?? record.prepared?.meta.title ?? record.title;
+                    this.events.emit('alert', { ...a, indicator });
                     handle.emit('alert', { id: a.id, message: a.message, title: a.title, time: a.time });
                 },
                 onWarning: (w) => this.events.emit('warning', w),
@@ -1455,6 +1460,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             overlay: d.overlay,
             paneHint: d.paneHint,
             native: { type: record.native!.type },
+            ...(out.paneAxis != null ? { paneAxis: out.paneAxis } : {}),
             series: out.series ?? [],
             fills: out.fills ?? [],
             backgrounds: out.backgrounds ?? [],

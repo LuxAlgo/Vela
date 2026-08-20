@@ -5,13 +5,16 @@ import type { SceneGraph } from '../core/SceneGraph';
 /**
  * The single seam between the renderer and a drawing backend. The backend
  * consumes the retained scene + the shared coordinate system and rasterizes the
- * data layer (series, fills, bgcolor, hline, drawing geometry) plus its axes/
- * grid onto the data canvas. Two implementations sit behind it: `Canvas2dBackend`
- * (primary) and, later, `WebGL2Backend` (hand-rolled, selected when available).
+ * data layer (series, fills, bgcolor, hline, drawing geometry) onto the data
+ * canvas. Two implementations sit behind it: `Canvas2dBackend` (primary) and,
+ * later, `WebGL2Backend` (hand-rolled, selected when available).
  *
  * The crosshair is NOT the backend's concern — it's a renderer-owned overlay
  * layer (`CrosshairRenderer`) on its own canvas, repainted on the Scheduler's
- * cheap `Cursor` tier without touching the data layer.
+ * cheap `Cursor` tier without touching the data layer. Neither is the grid: it
+ * lives with the session highlights on the renderer-owned backdrop canvas
+ * (`BackdropRenderer`) at the very bottom of the pile, so SDK layer canvases
+ * stacked below the data canvas still paint above it.
  */
 export interface IRenderBackend {
     readonly kind: 'canvas2d' | 'webgl2';
@@ -24,9 +27,6 @@ export interface IRenderBackend {
     /** Opacity of the candle STRUCTURE (wicks + body border). `1` normally; fades only
      *  partway on zoom-in so the candle keeps a visible skeleton over the revealed layer. */
     candleStructureAlpha: number;
-    /** Opacity of the price/time gridlines. `1` normally; fades to `0` as a reveal-under
-     *  reveals so the grid doesn't show through the translucent candle bodies (a "grid" look). */
-    gridAlpha: number;
     /** Multiplier on the candle BODY width. `1` normally; the renderer shrinks it as a
      *  side-positioned reveal layer opens, freeing the inter-candle gap for it. */
     candleBodyScale: number;

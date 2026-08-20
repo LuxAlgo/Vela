@@ -212,6 +212,26 @@ stays untouched.
 Consumers (layers via `args.settings`, engines via `onSettings`) receive the raw stored
 value — a new kind needs no changes on their side.
 
+## The visibility policy (host-hidden settings)
+
+Hosts can hide any dialog entry via `VelaOptions.settings.hidden` /
+`renderer.setSettingsVisibility` (see [options.md](../user/options.md)). For sections
+declared here the ids are **implicit** — nothing to declare, nothing to wire:
+
+- the tab is `type:<typeId>`, a subsection `type:<typeId>.<slug(title)>`;
+- a value row is addressed by its stable bag key (`type:<typeId>.<key>` — composite
+  rows by their toggle key, else their first control key), a `heading`/`header` by its
+  label's slug. Hiding a heading takes its whole group, a header its subgroup.
+
+The filtering happens at the DESCRIPTOR level in the dialog
+(`filterHiddenRows` in `src/renderers/native/chrome/settings-visibility.ts`), **after**
+seeding: the values bag still seeds from the full row set, so `when` gates keep reading
+hidden keys' defaults, and hidden values keep persisting and reaching layers/engines —
+the same "hidden ≠ cleared" contract as `when` itself. Rows sharing a key under
+mutually exclusive gates share an id and hide together (they are one logical setting).
+`renderer.listSettingsIds()` enumerates every addressable id, so hosts never read
+plugin source to build a policy.
+
 ## Rules
 
 - Keys are scoped per type id — no cross-type collisions, no global registry.

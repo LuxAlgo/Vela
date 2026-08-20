@@ -1,6 +1,7 @@
-// The bare playground page: mount the Vela WIDGET (topbar + chart) with the Binance provider
-// (public API, no key, no server needed), the page's own demo scripting engine, and an
-// inline indicator manifest — the OS integration surface exercised end to end.
+// The bare playground page: a SINGLE-CHART workspace (topbar + chart, `layout: false`)
+// with the Binance provider (public API, no key, no server needed), the page's own demo
+// scripting engine, and an inline indicator manifest — the OSS integration surface
+// exercised end to end.
 //
 // Vela SHIPS NO SCRIPTING ENGINE. `demo-engine.ts` (next to this file) is a ~300-line
 // engine written against the public `ScriptingEngine` port purely so this page can
@@ -13,24 +14,25 @@
 //     engines: { pine: () => new PineWorkerEngine() }
 //
 // …which is exactly what the addon's own playground does (repos/Vela-pinets, port 5192).
-import { VelaWidget } from '../src/widget';
+import { VelaWorkspace } from '../src/workspace';
 import { BinanceProvider } from '../src/data/providers/binance';
 import { DemoEngine, DEMO_SCRIPTS } from './demo-engine';
 import { playgroundStorage } from './persistence';
 
 // The playground's CUSTOM persistence (shared with the workspace page): with `persist`
-// on, the widget saves and restores EVERYTHING through this adapter — prefs, renderer
-// config, and user drawings. No `urlState` here — a URL param would win over the
-// stored state and mask the system this page is exercising.
+// on, the shell saves and restores EVERYTHING through this adapter — prefs, renderer
+// config, and user drawings. The key is pinned so this page never collides with the
+// multi-chart page's own document ('vela-workspace') in the same adapter namespace.
 const storage = playgroundStorage();
 
-const widget = new VelaWidget('#chart', {
+const ws = new VelaWorkspace('#chart', {
+    layout: false, // SINGLE-CHART mode: one cell, no layout picker, no sync switches
     symbol: 'BTCUSDT', // bare = first declared provider (binance); 'coinbase:BTC-USD' pins a venue
     timeframe: '60',
     live: true,
     theme: 'dark',
     autofocus: true, // the chart IS the page — shortcuts work from the first keystroke
-    persist: true, // key 'vela-widget' → 'vela-play:vela-widget' in devtools
+    persist: 'vela-widget', // → 'vela-play:vela-widget' in devtools (the page's historical key)
     storage,
     providers: { binance: () => new BinanceProvider() },
     engines: { demo: () => new DemoEngine() }, // swap for `pine: () => new PineWorkerEngine()` (see the header)
@@ -43,6 +45,8 @@ const widget = new VelaWidget('#chart', {
 
     // ── The rest of the CHART options, at their defaults — uncomment to play ─────────
     // bars: 1000,                     // history depth to load (paints progressively: newest window first)
+    // settings: { hidden: ['advanced'] }, // hide settings-dialog entries by id — a tab ('advanced'), a
+    //                                 //  group ('canvas.grid'), or a row; ids via chart.renderer.listSettingsIds()
     // data: myBars,                   // offline OHLCV[] — replaces the provider entirely (no fetches, no live)
     // visibleRange: '3M',             // initial window: '1D'|'1W'|'1M'|'3M'|'6M'|'1Y'|'5Y'|'YTD'|'ALL' or {from,to} in ms (default: frame the tail)
     // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'area'|'baseline'|'heikinashi' or a registered chart-type id
@@ -55,9 +59,9 @@ const widget = new VelaWidget('#chart', {
     // animations: { zoom: true, pan: true }, // eased zoom + inertial pan; false disables both
     // nativeBackend: 'auto',          // 'auto' = WebGL2 when available, else canvas2d; or force either
     // renderer: NativeRenderer,       // a custom IChartRenderer class (default: the native renderer)
-    // drawings: true,                 // user drawings — default: toolbar VISIBLE; false hides it (the
-    //                                 //  chart.drawings API stays); {tools/groups, toolbar} customizes
-    // height: 600,                    // px or CSS size (default: fill the container)
+    // drawings: true,                 // user drawings — default: toolbar VISIBLE; false removes the whole
+    //                                 //  surface (the chart.drawings API stays); {tools/groups, toolbar} customizes
+    // alertCap: 50,                   // alerts the topbar bell keeps (oldest drop beyond it)
 
     // ── The rest of the SHELL options, at their defaults ──────────────────────────────
     // indicators: async () => (await fetch('/my/manifest.json')).json(), // the manifest can also
@@ -67,48 +71,45 @@ const widget = new VelaWidget('#chart', {
     // statusline: true,               // chrome: the status line
     // watermark: true,                // chrome: the symbol watermark behind the candles
     // bottombar: true,                // chrome: the range-presets + timezone bar
-    // urlState: false,                // mirror symbol/tf/style/tz in the URL (shareable links) — kept
-    //                                 //  OFF here: a URL param would win over the persisted state
-    //                                 //  this page exercises, and mask it
 });
 
-void widget.chart.ready().then(() => console.log('[vela-dev] chart ready'));
+void ws.chart.ready().then(() => console.log('[vela-dev] chart ready'));
 
 // The page shell follows the app theme — flip it from chart settings → Canvas → Theme
-// (or `widget.setTheme('light')` in the console) and the body around the chart follows.
-widget.chart.on('theme:changed', (t) => {
+// (or `ws.setTheme('light')` in the console) and the body around the chart follows.
+ws.chart.on('theme:changed', (t) => {
     document.body.style.background = t.background;
 });
 
 // Handy for poking around from the browser console.
-(window as unknown as { widget: VelaWidget }).widget = widget;
+(window as unknown as { ws: VelaWorkspace }).ws = ws;
 
 // ── State surface demo (uncomment to try) ─────────────────────────────────────
-// The widget speaks the SAME state triplet and document format as the workspace —
+// Single-chart mode speaks the SAME state triplet and document format as the grid —
 // it is the single-cell case (layout '1', one `c1` cell). `persist` above writes
 // exactly this document; the calls below are how a host composes custom flows
 // (server snapshots, share links, templates) on top of it.
 //
 // // READ — one versioned document: market, prefs, renderer config, user drawings,
 // // and the indicator ledger. JSON-safe: `JSON.stringify(snapshot)` is the payload.
-// const snapshot = widget.getState();
-// console.log('[state] widget document:', snapshot);
+// const snapshot = ws.getState();
+// console.log('[state] document:', snapshot);
 //
 // // EVENT — fires debounced (~500ms) after ANY persistable change (draw a line,
 // // switch the symbol, add an indicator…). Re-pull getState() for the fresh doc.
 // // Returns an unsubscribe function.
-// const offState = widget.on('state:changed', () => {
-//     console.log('[state] changed →', widget.getState().charts[0]);
+// const offState = ws.on('state:changed', () => {
+//     console.log('[state] changed →', ws.getState().charts[0]);
 // });
 //
-// // WRITE — applied IN PLACE: the chart instance survives (the market switches via
-// // setMarket), config/drawings/indicators are replaced. Untrusted-safe: malformed
-// // fields are dropped by the shared codec, never thrown on.
+// // WRITE — a same-shape document applies IN PLACE: the chart instance survives
+// // (the market switches via setMarket), config/drawings/indicators are replaced.
+// // Untrusted-safe: malformed fields are dropped by the shared codec, never thrown on.
 // setTimeout(() => {
-//     const doc = widget.getState();
+//     const doc = ws.getState();
 //     doc.charts[0]!.symbol = 'SOLUSDT'; // retarget the chart…
 //     doc.charts[0]!.drawings = { version: 1, drawings: [] }; // …and wipe its drawings
-//     widget.applyState(doc);
+//     ws.applyState(doc);
 //     offState();
 // }, 5000);
 
@@ -123,7 +124,7 @@ registerIcon('code', '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="no
 // Lazy UI singletons — DOM state only (the edited script survives reopen). The
 // WidgetContext is NEVER stored: `run(ctx)` rebinds the Run button's handler on every
 // invocation, so the ctx lives in that closure alone and always belongs to the
-// invoking widget (the pattern that keeps working in a multi-chart shell).
+// invoking shell (the pattern that keeps working in a multi-chart grid).
 let codeDialog: Dialog | null = null;
 let codeArea: HTMLTextAreaElement | null = null;
 let codeStatus: HTMLElement | null = null;
@@ -149,7 +150,7 @@ registerWidgetAction({
             codeStatus.style.cssText = 'margin-top:8px;min-height:1.3em;font-size:var(--vela-font-size-md);white-space:pre-wrap;';
             codeDialog = new Dialog({
                 title: 'Run an indicator',
-                host: ctx.host, // first invoker's root hosts the singleton (fine for the one-widget demo)
+                host: ctx.host, // first invoker's root hosts the singleton (fine for the one-chart demo)
                 closeOnInteractOutside: true,
                 content: (body) => body.append(codeArea!, codeRun!, codeStatus!),
             });
@@ -176,14 +177,14 @@ async function runCode(ctx: WidgetContext): Promise<void> {
     }
 }
 
-widget.refreshActions();
+ws.refreshActions();
 
 // ── Execution-context listener demo — how host code intercepts Vela's engine context.
 // 'context:changed' fires after the initial run and (throttled ~1/s) on live candles;
 // pull a read-only snapshot and inspect it. Subscriptions survive symbol/timeframe
-// changes — the widget switches markets IN PLACE (setMarket), same chart instance.
-void widget.chart.ready().then(() => {
-    const chart = widget.chart;
+// changes — the shell switches markets IN PLACE (setMarket), same chart instance.
+void ws.chart.ready().then(() => {
+    const chart = ws.chart;
     chart.on('context:changed', ({ id }) => {
         void (async () => {
             const handle = chart.indicators().find((h) => h.id === id);
@@ -198,4 +199,3 @@ void widget.chart.ready().then(() => {
         })();
     });
 });
-

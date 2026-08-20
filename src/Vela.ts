@@ -117,6 +117,9 @@ export class Vela {
             volume: options.volume ?? true, // the volume indicator is on by default
         };
         this.rendererControl = new RendererControl(renderer);
+        // The settings-dialog visibility policy is instance state, not chart config —
+        // it must never ride `getConfig()`/`applyConfig()` into exported templates.
+        if (options.settings) this.rendererControl.setSettingsVisibility(options.settings);
         this.dataControl = new DataControl(feed);
         this.orchestrator = new EngineOrchestrator(element, renderer, feed, engines, config, this.dataControl);
         // Plugin-contributed renderer defaults (`registerRendererDefaults`), applied once the
