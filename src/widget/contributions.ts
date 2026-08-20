@@ -14,6 +14,10 @@ export interface WidgetContext {
      *  a shell may replace its chart instance, and a captured one would be destroyed.
      *  (Symbol and timeframe switches are applied IN PLACE — the instance survives them.) */
     chart: Vela;
+    /** LIVE getters, like `chart` — they resolve the ACTIVE cell's market at every
+     *  read, so an attachment that holds its mount context keeps reading the truth
+     *  after a symbol/timeframe switch. Read them at the point of use; never copy
+     *  them into long-lived state. */
     symbol: string;
     timeframe: string;
     priceStyle: string;
@@ -63,9 +67,18 @@ export interface WidgetActionDescriptor {
     /** Stable id — re-registering an id replaces it. */
     id: string;
     target: WidgetActionTarget;
+    /** Always required, even icon-only: it is the button's aria-label and tooltip, the
+     *  mobile drawer row's text, and the context-menu item's label. */
     label: string;
     /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
     icon?: string;
+    /** Topbar only: render the DESKTOP button icon-only, like the built-in tools — the
+     *  `label` moves to the aria-label and a kit tooltip instead of button text (mobile
+     *  surfaces keep their text). The right cluster gets the native 32px tool look; the
+     *  left cluster keeps the primary chrome, minus the text. Requires `icon` — without
+     *  one the flag is ignored (with a console warning) and the label renders. The piece
+     *  that makes a `'screenshot'` slot override pixel-faithful to the native button. */
+    iconOnly?: boolean;
     /** Sort key within the contributed group (ascending; default 0). */
     order?: number;
     /** Topbar only: which cluster the button joins. `'right'` (default) is the

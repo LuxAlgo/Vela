@@ -250,6 +250,11 @@ export class Topbar {
     /** Overrides that LEFT their native slot (default side + a declared `order`) — they
      *  render through the flow cluster like ordinary actions. */
     private readonly flowingOverrides = new Set<string>();
+    /** Tooltips of the CURRENT icon-only action buttons — rebuilt with every
+     *  renderActions pass (contributed buttons are replaceChildren'd away). */
+    private actionTooltips: Tooltip[] = [];
+    /** `iconOnly` misuse warned once per action id (renderActions re-runs freely). */
+    private readonly warnedIconless = new Set<string>();
     private readonly opts: TopbarOptions;
     private timeframe: string;
     private priceStyle: string;
@@ -565,6 +570,10 @@ export class Topbar {
         this.actionsHost.replaceChildren();
         this.leftActionsHost.replaceChildren();
         for (const pin of this.pinned.values()) pin.host.replaceChildren();
+        // Icon-only action buttons carry kit tooltips — dispose the previous render's
+        // machines before the buttons they were bound to are discarded.
+        for (const t of this.actionTooltips) t.destroy();
+        this.actionTooltips = [];
         const doc = this.actionsHost.ownerDocument;
         const flowLeft = this.comp.left.includes('actions');
         const flowRight = this.comp.right.includes('actions');
@@ -577,12 +586,25 @@ export class Topbar {
             if (!pin && builtin.has(action.id) && !this.flowingOverrides.has(action.id)) continue;
             const left = pin ? pin.left : action.align === 'left';
             if (!pin && !(left ? flowLeft : flowRight)) continue;
+            const iconOnly = action.iconOnly === true && !!action.icon;
+            if (action.iconOnly === true && !action.icon && !this.warnedIconless.has(action.id)) {
+                this.warnedIconless.add(action.id);
+                console.warn(`[vela] widget action "${action.id}": iconOnly needs an \`icon\` — rendering the label instead.`);
+            }
             const b = doc.createElement('button');
             // Left actions wear the primary-chrome styling (the built-in Indicators
-            // button's own class list); right actions keep the compact tool look.
-            b.className = left ? 'vela-widget-action-left' : 'vela-widget-action';
+            // button's own class list); right actions keep the compact tool look — and
+            // icon-only ones on the right take the native 32px TOOL chrome outright,
+            // so a slot override is pixel-faithful to the button it replaces.
+            b.className = left ? 'vela-widget-action-left' : iconOnly ? 'vela-widget-tool' : 'vela-widget-action';
             if (action.icon) b.appendChild(iconEl(action.icon, doc));
-            b.appendChild(doc.createTextNode(action.label));
+            if (iconOnly) {
+                // The label still speaks — as the accessible name and the hover tooltip.
+                b.setAttribute('aria-label', action.label);
+                this.actionTooltips.push(new Tooltip(b, { content: action.label, triggerId: `vela-action-${action.id}`, host: this.host }));
+            } else {
+                b.appendChild(doc.createTextNode(action.label));
+            }
             b.addEventListener('click', () => {
                 const c = this.opts.getContext?.();
                 if (c) action.run(c);
@@ -640,7 +662,7 @@ export class Topbar {
         this.tfMenu.destroy();
         this.styleMenu.destroy();
         this.layoutPicker?.destroy();
-        for (const t of [...this.tooltips, ...this.panelTooltips]) t.destroy();
+        for (const t of [...this.tooltips, ...this.panelTooltips, ...this.actionTooltips]) t.destroy();
         this.el.remove();
     }
 

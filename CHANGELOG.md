@@ -2,6 +2,26 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Icon-only contributed actions.** `iconOnly: true` on a topbar action drops the
+  desktop button text: the right cluster gets the built-in tools' exact 32px look
+  (a `'screenshot'` slot override becomes pixel-faithful), the left cluster keeps
+  the primary chrome minus the text. `label` stays required — it becomes the
+  aria-label and a kit tooltip, and mobile surfaces keep their text. Without an
+  `icon` the flag is ignored with a console warning.
+
+### Fixed
+
+- **A long-held plugin context now follows the market.** `ctx.symbol`, `ctx.timeframe`
+  and `ctx.priceStyle` (plus a workspace's `ctx.cells` and `ctx.activeCellId`) were
+  snapshots taken when the context was built: an attachment keeping its mount context
+  kept reading the mount-time market after a symbol switch — a screenshot could
+  capture the current chart but name the file after the old one. They are live now,
+  like `ctx.chart` always was.
+
 ## [v0.6.7]
 
 ### Added
