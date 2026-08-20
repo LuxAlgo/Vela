@@ -677,13 +677,17 @@ export class VelaWidget {
         });
     }
 
-    /** (Re)derive the pre/post-market shading bands for the current market. The loaded
-     *  depth (bars × timeframe) bounds the calendar fetch; the tracker clamps it. */
+    /** (Re)derive the pre/post-market shading bands for the current market. The bands
+     *  expand locally from the symbol's session vocabulary, so they paint as soon as
+     *  metadata is known and follow any pan depth without provider round trips. */
     private refreshSessionShading(): void {
         const chart = this.inner;
         if (!chart) return;
-        const lookbackMs = Math.max(this.bars, this.rangeBars) * timeframeMs(this.timeframe);
-        this.sessionShading.track(chart.data, this.symbol, { session: this.session ?? 'regular', lookbackMs });
+        const now = Date.now();
+        const requestedSpan = Math.max(this.bars, this.rangeBars) * timeframeMs(this.timeframe);
+        const fallbackSpan = Number.isFinite(requestedSpan) ? Math.max(3 * 86_400_000, requestedSpan) : 3 * 86_400_000;
+        const range = chart.getVisibleRange() ?? { from: now - fallbackSpan, to: now };
+        this.sessionShading.track(chart.data, this.symbol, { session: this.session ?? 'regular', range });
     }
 
     /** The session-shade colors live in the renderer CONFIG (persisted with it, edited
@@ -1310,7 +1314,11 @@ export class VelaWidget {
         });
         // The loading affordance and the watermark never share the canvas.
         chart.on('load:start', () => this.watermark?.setLoading(true));
-        chart.on('load:end', () => this.watermark?.setLoading(false));
+        chart.on('load:end', () => {
+            this.watermark?.setLoading(false);
+            this.refreshSessionShading(); // the first painted bars now define the exact range
+        });
+        chart.on('viewport:changed', (range) => this.sessionShading.updateRange(range));
         // Market switches happen IN PLACE (`setMarket`) — the chart instance survives, so
         // reflect them from the event: per-symbol native support may differ, the statusline's
         // resting OHLC belongs to the old market, and an out-of-band switch (host code calling

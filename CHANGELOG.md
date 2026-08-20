@@ -25,6 +25,16 @@ All notable changes to Vela, newest first.
   indicator's settings live, and merging a regular series into the pane brings the
   price axis back automatically.
 
+### Fixed
+
+- **Pre- and post-market shading is instant and follows the complete chart history.**
+  The bands now expand locally from the symbol's declared session vocabulary
+  (`session`, optional `session_extended`, `timezone` on its metadata) instead of
+  round-tripping the provider calendar, so they paint the moment symbol metadata is
+  known and panning through arbitrarily deep extended-hours history never waits or
+  stops after a fixed lookback. The tint is clipped to loaded candle slots, so it
+  never appears before available history or in empty space ahead of the current bar.
+
 ## [v0.6.5]
 
 ### Fixed

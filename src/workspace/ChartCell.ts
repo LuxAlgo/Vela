@@ -300,7 +300,11 @@ export class ChartCell {
         });
         // The loading affordance and the watermark never share the canvas.
         this.inner.on('load:start', () => this.watermark?.setLoading(true));
-        this.inner.on('load:end', () => this.watermark?.setLoading(false));
+        this.inner.on('load:end', () => {
+            this.watermark?.setLoading(false);
+            this.refreshSessionShading(); // the first painted bars now define the exact range
+        });
+        this.inner.on('viewport:changed', (range) => this.sessionShading.updateRange(range));
         const tz = deps.timezone();
         if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
 
@@ -449,14 +453,18 @@ export class ChartCell {
         });
     }
 
-    /** (Re)derive the pre/post-market shading bands for this cell's market. The loaded
-     *  depth (bars × timeframe) bounds the calendar fetch; the tracker clamps it. */
+    /** (Re)derive the pre/post-market shading bands for this cell's market. The bands
+     *  expand locally from the symbol's session vocabulary, so they paint as soon as
+     *  metadata is known and follow any pan depth without provider round trips. */
     private refreshSessionShading(): void {
         const chart = this.inner;
         const symbol = this.state.symbol;
         if (!chart || !symbol) return;
-        const lookbackMs = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
-        this.sessionShading.track(chart.data, symbol, { session: this.session, lookbackMs });
+        const now = Date.now();
+        const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
+        const fallbackSpan = Number.isFinite(requestedSpan) ? Math.max(3 * 86_400_000, requestedSpan) : 3 * 86_400_000;
+        const range = chart.getVisibleRange() ?? { from: now - fallbackSpan, to: now };
+        this.sessionShading.track(chart.data, symbol, { session: this.session, range });
     }
 
     /** The session-shade colors live in the renderer CONFIG (persisted with it, edited
