@@ -2,6 +2,19 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.7]
+
+### Added
+
+- **Style sync for multi-chart workspaces.** A new **Style** switch in the layout
+  dropdown's sync section (and a `style` kind for `ws.sync.set`, with the same
+  all-cells or named-group forms as the other links) keeps chart presentation
+  identical across linked charts: edits in the settings dialog's Canvas, Scales and
+  lines, and Status line tabs apply to every linked chart, turning the link on
+  aligns them to the active chart once, and charts a layout change adds while the
+  link is on inherit the group's presentation on arrival. Candle colors, line
+  width, and other series settings stay individual to each chart.
+
 ## [v0.6.6]
 
 ### Added

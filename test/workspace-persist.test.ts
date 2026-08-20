@@ -14,7 +14,7 @@ const fullDoc: WorkspaceState = {
     timezone: 'Europe/Paris',
     favorites: ['trendline', 'hline'],
     timeframeFavorites: ['15', '60', 'D'],
-    sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true, drawings: true },
+    sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true, drawings: true, style: true },
     trackSizes: { '4': { cols: [1.4, 0.6], rows: [1, 1] } },
     charts: [
         {

@@ -16,8 +16,13 @@
  *  same-group cells and keeps the set linked: edits and removals of any member
  *  follow. Link membership is session-scoped and survives a toggle-off (re-enabling
  *  resumes edit/delete for drawings paired earlier; drawings created while off stay
- *  independent). After a reload, every drawing is unpaired again. */
-export type SyncKind = 'viewport' | 'symbol' | 'timeframe' | 'crosshair' | 'drawings';
+ *  independent). After a reload, every drawing is unpaired again. `style` mirrors
+ *  the chart's presentation settings — the Canvas and Scales-and-lines slice of the
+ *  renderer config plus the status-line display prefs — onto same-group cells. */
+export type SyncKind = 'viewport' | 'symbol' | 'timeframe' | 'crosshair' | 'drawings' | 'style';
+
+/** Every linkable dimension — the one list the codec and both shells iterate. */
+export const SYNC_KINDS = ['viewport', 'symbol', 'timeframe', 'crosshair', 'drawings', 'style'] as const;
 
 /**
  * One link's configuration: `false`/absent = off; `true` = ALL cells linked (one
@@ -32,6 +37,7 @@ export interface SyncOptions {
     timeframe?: SyncSetting;
     crosshair?: SyncSetting;
     drawings?: SyncSetting;
+    style?: SyncSetting;
 }
 
 /** Splitter track weights along each grid axis. */
@@ -230,7 +236,7 @@ function sanitizeSync(raw: unknown): SyncOptions | null {
     if (raw == null || typeof raw !== 'object') return null;
     const s = raw as Record<string, unknown>;
     const out: SyncOptions = {};
-    for (const kind of ['viewport', 'symbol', 'timeframe', 'crosshair', 'drawings'] as const) {
+    for (const kind of SYNC_KINDS) {
         const v = s[kind];
         if (v === true) out[kind] = true;
         else if (v != null && typeof v === 'object') {
