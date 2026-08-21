@@ -6,6 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Pre- and post-market shading stays off daily and higher timeframes.** On an
+  extended-session chart the tint used to paint over daily, weekly, and monthly
+  candles, even though each of those bars spans whole sessions and there is
+  nothing to shade. The bands now appear only on intraday timeframes.
 - **Pre-market sunrise and post-market sunset point the right way.** The
   statusline's session badges had their chevrons inverted, so pre-market read as
   sunset and post-market as sunrise.
