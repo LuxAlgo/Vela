@@ -6,6 +6,11 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **A label with an `na` color keeps its style's placement.** A Pine label whose
+  bubble color is `na` used to draw its text centered on the anchor no matter
+  which style it declared, so `label.style_label_up` read like
+  `label.style_label_center`. The text now sits exactly where the bubble would
+  have put it — only the bubble itself goes unpainted.
 - **Pre-market sunrise and post-market sunset point the right way.** The
   statusline's session badges had their chevrons inverted, so pre-market read as
   sunset and post-market as sunrise.
