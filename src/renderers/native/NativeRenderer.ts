@@ -52,7 +52,7 @@ import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
 import { formatPriceLabel } from './chrome/ticks';
 import { zonedDate } from './chrome/tz';
-import { computePaneScale, expandScaleByPixels } from './core/autoscale';
+import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
@@ -3152,7 +3152,13 @@ export class NativeRenderer implements IChartRenderer {
             const masterModels = models.filter((m) => m.ownScale !== true);
             // User drawings do not expand the scale (placing one in the empty margin
             // must not yank the window to follow the cursor). Pine drawings still fold in.
-            const dr = this.chrome.paneDrawingsRange(masterModels, this.scene, pane === pricePane, vr);
+            let dr = this.chrome.paneDrawingsRange(masterModels, this.scene, pane === pricePane, vr);
+            // force_overlay series render on the price pane whatever pane their indicator
+            // owns — fold their visible range in here (their own pane excludes them).
+            if (pane === pricePane) {
+                const or = overlaySeriesRange(this.scene.indicators.values(), i0, i1, (id) => this.scene.offsetOf(id));
+                if (or) dr = dr ? { min: Math.min(dr.min, or.min), max: Math.max(dr.max, or.max) } : or;
+            }
             // Hidden candles drop out of the price pane's autoscale, so overlay indicators fill the pane.
             const includeCandles = pane.kind === 'price' && !this.scene.candlesHidden;
             // Each pane logs (or not) on its OWN flag — the price pane from the scene setting,
@@ -3479,6 +3485,7 @@ export class NativeRenderer implements IChartRenderer {
         for (const m of models) {
             const off = this.scene.offsetOf(m.id);
             for (const s of m.series) {
+                if (s.overlay === true) continue; // renders on the price pane, not this one
                 if (isLineLikeSeries(s)) {
                     const v = s.points[i0 - off]?.value;
                     if (v != null && Number.isFinite(v)) return v;

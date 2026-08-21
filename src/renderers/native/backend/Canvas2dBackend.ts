@@ -82,9 +82,18 @@ export class Canvas2dBackend implements IRenderBackend {
             };
 
             // Behind everything: backgrounds + fills (kept under the candle/series layers).
+            // Own (non-force_overlay) content on each model's pane; force_overlay content
+            // on the price pane against its MASTER scale, whatever pane the indicator owns
+            // (Pine semantics — mirrors the chrome's overlay-drawing routing).
             ctx.globalAlpha = this.modelAlpha; // indicator models fade in after the intro; candles stay opaque
-            for (const m of models) for (const bg of m.backgrounds) this.drawBackground(ctx, bg, pane, coords);
-            for (const m of models) for (const f of m.fills) this.drawFill(ctx, m, f, effPane(m), coords, i0, i1, scene.offsetOf(m.id));
+            for (const m of models) for (const bg of m.backgrounds) if (bg.overlay !== true) this.drawBackground(ctx, bg, pane, coords);
+            for (const m of models) for (const f of m.fills) if (f.overlay !== true) this.drawFill(ctx, m, f, effPane(m), coords, i0, i1, scene.offsetOf(m.id));
+            if (isPrice) {
+                for (const m of scene.indicators.values()) {
+                    for (const bg of m.backgrounds) if (bg.overlay === true) this.drawBackground(ctx, bg, pane, coords);
+                    for (const f of m.fills) if (f.overlay === true) this.drawFill(ctx, m, f, pane, coords, i0, i1, scene.offsetOf(m.id));
+                }
+            }
 
             // User-drawing interleave layers, prepainted by the renderer: each composites just
             // before the series carrying its `beforeZ`, so a drawing can sit under the candles
@@ -114,7 +123,7 @@ export class Canvas2dBackend implements IRenderBackend {
                 // Model data is index-aligned from the model's ANCHOR bar (offset 0 = whole-chart).
                 const off = scene.offsetOf(m.id);
                 const mp = effPane(m);
-                for (const s of m.series) this.drawSeries(ctx, s, mp, coords, i0, i1, theme, off);
+                for (const s of m.series) if (s.overlay !== true) this.drawSeries(ctx, s, mp, coords, i0, i1, theme, off);
             }
             if (drawCandles && !candleDrawn) {
                 drawSlicesUpTo(scene.candleZ);
@@ -122,6 +131,16 @@ export class Canvas2dBackend implements IRenderBackend {
                 this.drawPriceSeries(ctx, scene, i0, i1, coords, pane, theme, barColorMap, dataW);
             }
             drawSlicesUpTo(Infinity); // layers bound to a hidden/removed series still paint, at the stack top
+
+            // force_overlay series from EVERY indicator paint on the price pane, at the top
+            // of its series stack, against the master price scale.
+            if (isPrice) {
+                ctx.globalAlpha = this.modelAlpha;
+                for (const m of scene.indicators.values()) {
+                    const off = scene.offsetOf(m.id);
+                    for (const s of m.series) if (s.overlay === true) this.drawSeries(ctx, s, pane, coords, i0, i1, theme, off);
+                }
+            }
 
             // On top: price lines.
             ctx.globalAlpha = this.modelAlpha;

@@ -4,6 +4,15 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **`force_overlay` content joins the price pane.** Model elements flagged
+  `force_overlay` — value series, plotted candles and bars, fills, backgrounds,
+  markers, and tables, like the drawing objects before them — now render on the
+  price pane even when their indicator occupies its own pane, and they share the
+  price scale (the pane's autoscale folds them in). `chart.inspect()` reports a
+  `forcedOverlay` count per indicator so the routing is verifiable.
+
 ### Fixed
 
 - **Pre-market sunrise and post-market sunset point the right way.** The
