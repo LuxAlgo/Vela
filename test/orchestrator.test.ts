@@ -1919,7 +1919,8 @@ describe('EngineOrchestrator — force_overlay routing', () => {
         await flush();
 
         // The loading placeholder mounts first (empty series); the computed model remounts last.
-        const m = renderer.mountedModels.filter((x) => x.id === ind.id).at(-1)!;
+        const mounted = renderer.mountedModels.filter((x) => x.id === ind.id);
+        const m = mounted[mounted.length - 1]!;
         const studyPane = m.paneId!;
         expect(studyPane).not.toBe('price'); // the indicator itself still routes to its own pane
 
