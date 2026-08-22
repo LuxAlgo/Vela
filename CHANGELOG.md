@@ -4,6 +4,15 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **`force_overlay` content joins the price pane.** Model elements flagged
+  `force_overlay` — value series, plotted candles and bars, fills, backgrounds,
+  markers, and tables, like the drawing objects before them — now render on the
+  price pane even when their indicator occupies its own pane, and they share the
+  price scale (the pane's autoscale folds them in). `chart.inspect()` reports a
+  `forcedOverlay` count per indicator so the routing is verifiable.
+
 ### Fixed
 
 - **A label with an `na` color keeps its style's placement.** A Pine label whose
@@ -11,6 +20,10 @@ All notable changes to Vela, newest first.
   which style it declared, so `label.style_label_up` read like
   `label.style_label_center`. The text now sits exactly where the bubble would
   have put it — only the bubble itself goes unpainted.
+- **Pre- and post-market shading stays off daily and higher timeframes.** On an
+  extended-session chart the tint used to paint over daily, weekly, and monthly
+  candles, even though each of those bars spans whole sessions and there is
+  nothing to shade. The bands now appear only on intraday timeframes.
 - **Pre-market sunrise and post-market sunset point the right way.** The
   statusline's session badges had their chevrons inverted, so pre-market read as
   sunset and post-market as sunrise.

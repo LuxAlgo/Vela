@@ -31,6 +31,7 @@ import { registerChartType, unregisterChartType, type SeriesDataEngineHost } fro
 import type { BarTransform } from '../src/core/price-styles/BarTransform';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../src/core/native-indicators/NativeIndicator';
 import type { Pane } from '../src/core/model/scene';
+import type { DrawingLine } from '../src/core/model/drawings';
 import type { IndicatorModel } from '../src/core/model/indicator';
 import type { ScenePatch } from '../src/core/model/patch';
 import type { InputValue } from '../src/core/model/inputs';
@@ -1859,6 +1860,84 @@ describe('chart.runScript — execute and receive the run', () => {
         expect(result.run).toBeNull();
         expect(result.error?.message).toBe('compile blew up');
         expect(chart.indicators()).toHaveLength(0);
+        chart.destroy();
+    });
+});
+
+/** A study engine whose model carries `force_overlay`-flagged items next to own ones. */
+class ForcedOverlayEngine extends MockEngine {
+    override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        const token = req.prepared.token as { instanceId: string };
+        const id = token.instanceId;
+        const bars = req.getBars?.() ?? req.bars;
+        const points = bars.map((b) => ({ time: b.time, value: b.close }));
+        const line = (name: string, overlay: boolean): DrawingLine => ({
+            id: `${id}:line-drawing:${name}`, paneId: 'unrouted', xloc: 'bar_time',
+            x1: bars[0]!.time, y1: 100, x2: bars[1]!.time, y2: 101, extend: 'none',
+            invisible: false, width: 1, style: 'solid', arrowLeft: false, arrowRight: false, overlay,
+        });
+        handlers.onModel({
+            id, title: 'Mock', overlay: false, paneHint: 'new',
+            series: [
+                { id: `${id}:line:own#0`, title: 'own', paneId: 'unrouted', kind: 'line', points, style: { color: '#fff', width: 1, lineStyle: 'solid' } },
+                { id: `${id}:line:forced#0`, title: 'forced', paneId: 'unrouted', kind: 'line', points, overlay: true, style: { color: '#0f0', width: 1, lineStyle: 'solid' } },
+            ],
+            fills: [],
+            backgrounds: [{ id: `${id}:bg#0`, paneId: 'unrouted', from: bars[0]!.time, to: bars[1]!.time, color: '#123456', overlay: true }],
+            priceLines: [],
+            lines: [line('own', false), line('forced', true)],
+            boxes: [
+                { id: `${id}:box:own`, paneId: 'unrouted', xloc: 'bar_time', left: bars[0]!.time, top: 105, right: bars[1]!.time, bottom: 95, extend: 'none', borderWidth: 1, borderStyle: 'solid', textSize: 'auto', hAlign: 'center', vAlign: 'center', wrap: false, fontFamily: 'default', bold: false, italic: false, overlay: false },
+                { id: `${id}:box:forced`, paneId: 'unrouted', xloc: 'bar_time', left: bars[0]!.time, top: 105, right: bars[1]!.time, bottom: 95, extend: 'none', borderWidth: 1, borderStyle: 'solid', textSize: 'auto', hAlign: 'center', vAlign: 'center', wrap: false, fontFamily: 'default', bold: false, italic: false, overlay: true },
+            ],
+            labels: [
+                { id: `${id}:label:own`, paneId: 'unrouted', xloc: 'bar_time', x: bars[0]!.time, y: 100, yloc: 'price', style: 'label_down', size: 'normal', textAlign: 'center', fontFamily: 'default', overlay: false },
+                { id: `${id}:label:forced`, paneId: 'unrouted', xloc: 'bar_time', x: bars[0]!.time, y: 100, yloc: 'price', style: 'label_down', size: 'normal', textAlign: 'center', fontFamily: 'default', overlay: true },
+            ],
+            polylines: [
+                { id: `${id}:poly:own`, paneId: 'unrouted', points: [{ xloc: 'bar_time', x: bars[0]!.time, price: 100 }, { xloc: 'bar_time', x: bars[1]!.time, price: 101 }], curved: false, closed: false, lineWidth: 1, lineStyle: 'solid', arrowLeft: false, arrowRight: false, overlay: false },
+                { id: `${id}:poly:forced`, paneId: 'unrouted', points: [{ xloc: 'bar_time', x: bars[0]!.time, price: 100 }, { xloc: 'bar_time', x: bars[1]!.time, price: 101 }], curved: false, closed: false, lineWidth: 1, lineStyle: 'solid', arrowLeft: false, arrowRight: false, overlay: true },
+            ],
+            linefills: [
+                { id: `${id}:lf:own`, paneId: 'unrouted', line1: line('lf-own-a', false), line2: line('lf-own-b', false), color: '#123456', overlay: false },
+                { id: `${id}:lf:forced`, paneId: 'unrouted', line1: line('lf-forced-a', true), line2: line('lf-forced-b', true), color: '#654321', overlay: true },
+            ],
+            tables: [{ id: `${id}:tb#0`, paneId: 'unrouted', position: 'top_right', columns: 1, rows: 1, frameWidth: 0, borderWidth: 0, cells: [[null]], merges: [], overlay: true }],
+            inputs: [], inputValues: {},
+        });
+        handlers.onDone?.();
+        return { stop: () => {}, update: () => {}, setVisibleRange: () => {}, notifyBars: () => {} };
+    }
+}
+
+describe('EngineOrchestrator — force_overlay routing', () => {
+    it('stamps force_overlay items with the price pane while own items keep the study pane', async () => {
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [new ForcedOverlayEngine()], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('//@version=5\nindicator("Study")\nplot(close)');
+        await chart.ready();
+        await flush();
+
+        // The loading placeholder mounts first (empty series); the computed model remounts last.
+        const m = renderer.mountedModels.filter((x) => x.id === ind.id).at(-1)!;
+        const studyPane = m.paneId!;
+        expect(studyPane).not.toBe('price'); // the indicator itself still routes to its own pane
+
+        expect(m.series.find((s) => s.title === 'own')?.paneId).toBe(studyPane);
+        expect(m.series.find((s) => s.title === 'forced')?.paneId).toBe('price');
+        expect(m.backgrounds[0]?.paneId).toBe('price');
+        expect(m.tables?.[0]?.paneId).toBe('price');
+        // Every drawing kind: the forced instance routes to price, the own one stays put.
+        for (const kind of ['lines', 'boxes', 'labels', 'polylines', 'linefills'] as const) {
+            const items = m[kind]!;
+            expect(items.find((d) => d.id.endsWith(':own'))?.paneId).toBe(studyPane);
+            expect(items.find((d) => d.id.endsWith(':forced'))?.paneId).toBe('price');
+        }
+
+        // The deterministic oracle signal: inspect() counts the flagged items.
+        const summary = chart.inspect().indicators.find((s) => s.id === ind.id)!;
+        // forced series + background + table + one of each drawing kind (line, box, label, polyline, linefill)
+        expect(summary.forcedOverlay).toBe(8);
         chart.destroy();
     });
 });

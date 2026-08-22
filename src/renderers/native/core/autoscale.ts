@@ -1,5 +1,6 @@
 import type { OHLCV } from '../../../core/model/ohlcv';
 import type { IndicatorModel } from '../../../core/model/indicator';
+import type { SeriesSpec } from '../../../core/model/series';
 import { isLineLikeSeries } from '../../../core/model/series';
 import type { PriceScale } from './CoordinateSystem';
 
@@ -47,23 +48,10 @@ export function computePaneScale(
     for (const model of models) {
         const off = offsetOf(model.id);
         for (const s of model.series) {
-            if (s.kind === 'candle' || s.kind === 'bar') {
-                for (let i = i0; i <= i1; i += 1) {
-                    const b = s.bars[i - off];
-                    if (b) {
-                        consider(b.high);
-                        consider(b.low);
-                    }
-                }
-            } else if (isLineLikeSeries(s)) {
-                // Hidden (display.none / na) series are NOT skipped — like LWC they
-                // stay on the price scale so a fill anchored to them stays in view.
-                for (let i = i0; i <= i1; i += 1) consider(s.points[i - off]?.value);
-                // Histogram/columns grow from their base (default 0) — include it so
-                // an all-positive plot autoscales from a visible zero line.
-                if (s.kind === 'histogram' || s.kind === 'columns') consider(s.style?.base ?? 0);
-                else if (s.style?.base != null) consider(s.style.base);
-            }
+            // force_overlay series render (and scale) on the PRICE pane, not their own —
+            // the price pane folds them back in via overlaySeriesRange.
+            if (s.overlay === true) continue;
+            considerSeries(s, i0, i1, off, consider);
         }
         for (const pl of model.priceLines) consider(pl.price);
     }
@@ -88,6 +76,53 @@ export function computePaneScale(
     }
     const span = max - min;
     return { min: min - span * MARGIN_BOTTOM, max: max + span * MARGIN_TOP };
+}
+
+/** Fold one series' visible values (bars or points + base) into `consider`. */
+function considerSeries(s: SeriesSpec, i0: number, i1: number, off: number, consider: (v: number | null | undefined) => void): void {
+    if (s.kind === 'candle' || s.kind === 'bar') {
+        for (let i = i0; i <= i1; i += 1) {
+            const b = s.bars[i - off];
+            if (b) {
+                consider(b.high);
+                consider(b.low);
+            }
+        }
+    } else if (isLineLikeSeries(s)) {
+        // Hidden (display.none / na) series are NOT skipped — like LWC they
+        // stay on the price scale so a fill anchored to them stays in view.
+        for (let i = i0; i <= i1; i += 1) consider(s.points[i - off]?.value);
+        // Histogram/columns grow from their base (default 0) — include it so
+        // an all-positive plot autoscales from a visible zero line.
+        if (s.kind === 'histogram' || s.kind === 'columns') consider(s.style?.base ?? 0);
+        else if (s.style?.base != null) consider(s.style.base);
+    }
+}
+
+/**
+ * Visible range of the `force_overlay` series across the given models — these render
+ * on the PRICE pane (whatever pane their indicator routed to), so the price pane's
+ * autoscale folds them in the way it folds force_overlay drawings. Null when none.
+ */
+export function overlaySeriesRange(
+    models: Iterable<IndicatorModel>,
+    i0: number,
+    i1: number,
+    offsetOf: (id: string) => number = () => 0,
+): { min: number; max: number } | null {
+    let min = Infinity;
+    let max = -Infinity;
+    const consider = (v: number | null | undefined): void => {
+        if (v != null && Number.isFinite(v)) {
+            if (v < min) min = v;
+            if (v > max) max = v;
+        }
+    };
+    for (const model of models) {
+        const off = offsetOf(model.id);
+        for (const s of model.series) if (s.overlay === true) considerSeries(s, i0, i1, off, consider);
+    }
+    return min === Infinity ? null : { min, max };
 }
 
 /**
