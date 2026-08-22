@@ -32,7 +32,7 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { legendActionsProviderFor, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type WidgetActionDescriptor } from '../widget/contributions';
+import { legendActionsProviderFor, legendCalloutsProviderFor, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { MobileBar } from '../widget/mobile-bar';
@@ -748,8 +748,12 @@ export class VelaWorkspace {
         this.topbar.renderActions();
         this.mobileBar?.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
-        // Re-project every cell's legend rows so a late registerLegendAction appears there too.
-        for (const cell of this.cells()) cell.chart.renderer.setLegendActions(legendActionsProviderFor(cell.chart, () => this.context()));
+        // Re-project every cell's legend rows so a late registerLegendAction /
+        // registerLegendCallout (or a callout's own state change) appears there too.
+        for (const cell of this.cells()) {
+            cell.chart.renderer.setLegendActions(legendActionsProviderFor(cell.chart, () => this.context()));
+            cell.chart.renderer.setLegendCallouts(legendCalloutsProviderFor(cell.chart, () => this.context()));
+        }
     }
 
     /** The sync-link control surface: `set(kind, true | {cellId: group} | false)`,

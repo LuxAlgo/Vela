@@ -64,6 +64,47 @@ export interface LegendActionView {
     run(): void;
 }
 
+/** One block of a legend callout's deployed panel — plain text, or an action button. */
+export type LegendCalloutPanelItem =
+    | { type: 'text'; text: string }
+    | {
+          type: 'button';
+          label: string;
+          /** Emphasized (selection-colored) button — the panel's main action. */
+          primary?: boolean;
+          /** Close the panel after `run` (default true). */
+          close?: boolean;
+          run(): void;
+      };
+
+/** The panel a clickable legend callout deploys: an optional heading over ordered blocks. */
+export interface LegendCalloutPanel {
+    title?: string;
+    items: LegendCalloutPanelItem[];
+}
+
+/**
+ * One host-contributed legend CALLOUT, as the renderer consumes it: a small tinted
+ * bubble with a centered icon, always visible beside the indicator's legend title
+ * (trailing the whole row while its controls are out). When `content` is present the
+ * bubble is clickable and deploys that panel — below the bubble, flipping above when
+ * the bottom screen edge is too close. Pure data plus thunks, same rule as
+ * {@link LegendActionView}: the shell resolves the plugin descriptor before it
+ * reaches the renderer.
+ */
+export interface LegendCalloutView {
+    id: string;
+    /** Icon id in the core icon registry (`registerIcon`). */
+    icon: string;
+    /** Bubble fill — any CSS color. */
+    background: string;
+    /** Icon ink (default: the legend row's text color). */
+    color?: string;
+    tooltip: string;
+    /** Deployed panel — presence makes the bubble clickable. */
+    content?: LegendCalloutPanel;
+}
+
 /** OHLCV of the price bar under the crosshair (the "data window" source). */
 export interface CrosshairOHLC {
     time: Millis;
@@ -278,6 +319,15 @@ export interface IChartRenderer {
      * renderer without it simply never shows contributed legend actions.
      */
     setLegendActions?(provider: ((indicatorId: string) => LegendActionView[]) | null): void;
+
+    /**
+     * Supply the HOST-CONTRIBUTED callout bubbles of each legend row (the shells wire
+     * the plugin registry through this — see `registerLegendCallout`). Same contract as
+     * {@link setLegendActions}: the provider is called per row, lazily; calling this
+     * again replaces the provider AND re-projects the rows already on screen. Optional —
+     * a renderer without it simply never shows contributed callouts.
+     */
+    setLegendCallouts?(provider: ((indicatorId: string) => LegendCalloutView[]) | null): void;
 
     /**
      * Replace the indicator legend's fold toggle with a HOST action (or restore it with

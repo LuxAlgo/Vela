@@ -24,7 +24,7 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
-import { legendActionsProviderFor, resolveEngines, statePersistenceHandlers, type CellStateContext, type ExternalIndicatorEntry, type WidgetContext } from '../widget/contributions';
+import { legendActionsProviderFor, legendCalloutsProviderFor, resolveEngines, statePersistenceHandlers, type CellStateContext, type ExternalIndicatorEntry, type WidgetContext } from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { normalizeTimezone } from '../core/timezones';
@@ -282,6 +282,7 @@ export class ChartCell {
         // Contributed legend-row actions — the row resolves on THIS cell's chart; the
         // context follows the workspace rule (built fresh per click, active-cell bound).
         this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
+        this.inner.renderer.setLegendCallouts(legendCalloutsProviderFor(this.inner, () => deps.context()));
         // The cell owns ONE unified undo timeline (drawings + indicator ops), driven by
         // the workspace keymap. The drawings layer must not self-serve Ctrl+Z/Y or the
         // two histories desync (its preempt would pop the core drawing stack while the

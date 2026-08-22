@@ -20,3 +20,4 @@ export * from './components/color-picker';
 export * from './components/field';
 export * from './components/text-area';
 export * from './components/glyph-select';
+export * from './components/callout-bubble';

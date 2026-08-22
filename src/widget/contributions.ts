@@ -3,7 +3,7 @@
 // chrome — topbar buttons, context-menu items — so any future view layer (React) can
 // project the same descriptors. Register at import time, before widgets are constructed.
 import type { Vela } from '../Vela';
-import type { LegendActionView } from '../core/ports/IChartRenderer';
+import type { LegendActionView, LegendCalloutView } from '../core/ports/IChartRenderer';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { SymbolDescriptor } from '../core/ports/DataProvider';
 import { TOPBAR_BUILTIN_IDS } from './topbar-composition';
@@ -318,6 +318,128 @@ export function legendActionsProviderFor(chart: Vela, context: () => WidgetConte
         return legendActions()
             .filter((d) => !d.when || d.when(info))
             .map((d) => ({ id: d.id, icon: d.icon, tooltip: d.tooltip, run: () => d.run(context(), info) }));
+    };
+}
+
+// ── Legend callouts ────────────────────────────────────────────────────────────────
+
+/** One block of a legend callout's deployed panel, descriptor-side: plain text, or a
+ *  button whose `run` receives the shell's {@link WidgetContext} and the row's
+ *  indicator — the same signature as a legend action's `run`. */
+export type LegendCalloutItem =
+    | { type: 'text'; text: string }
+    | {
+          type: 'button';
+          label: string;
+          /** Emphasized (selection-colored) button — the panel's main action. */
+          primary?: boolean;
+          /** Close the panel after `run` (default true). */
+          close?: boolean;
+          run(ctx: WidgetContext, indicator: LegendIndicatorInfo): void;
+      };
+
+/** The panel a clickable callout deploys: an optional heading over ordered blocks. */
+export interface LegendCalloutContent {
+    title?: string;
+    items: LegendCalloutItem[];
+}
+
+/** A callout's resolved presentation for one row — what {@link LegendCalloutDescriptor.callout} returns. */
+export interface LegendCalloutSpec {
+    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
+    icon: string;
+    /** Bubble fill — any CSS color (`color-mix` token washes match the built-in badges). */
+    background: string;
+    /** Icon ink (default: the legend row's text color). */
+    color?: string;
+    /** Hover text; also the bubble's accessible name. */
+    tooltip: string;
+    /** Deployed panel — presence makes the bubble clickable. */
+    content?: LegendCalloutContent;
+}
+
+/**
+ * A contributed LEGEND CALLOUT: a small tinted bubble with a centered icon, always
+ * visible right of the indicator's legend title (trailing the whole row while its
+ * hover controls are out). When the spec carries `content`, clicking the bubble
+ * deploys that panel — below it, flipping above near the bottom screen edge.
+ *
+ * Unlike a legend action's static icon, a callout's whole presentation is resolved
+ * per row through `callout` — return `null` to show none (the per-indicator gate),
+ * or a spec whose icon/tint/panel follow your own state (a market-status bubble
+ * changes dress as sessions roll). Late state changes re-project through the shells'
+ * `refreshActions()`, like every contribution.
+ */
+export interface LegendCalloutDescriptor {
+    /** Stable id — re-registering an id replaces it. */
+    id: string;
+    /** Sort key within the contributed group (ascending; default 0). */
+    order?: number;
+    /** Resolve the row's bubble — `null`/`undefined` shows none. */
+    callout(indicator: LegendIndicatorInfo): LegendCalloutSpec | null | undefined;
+}
+
+const calloutRegistry = new Map<string, LegendCalloutDescriptor>();
+
+/** Register (or replace) a legend callout. Returns an unregister disposer. */
+export function registerLegendCallout(desc: LegendCalloutDescriptor): () => void {
+    calloutRegistry.set(desc.id, desc);
+    return () => {
+        if (calloutRegistry.get(desc.id) === desc) calloutRegistry.delete(desc.id);
+    };
+}
+
+export function unregisterLegendCallout(id: string): void {
+    calloutRegistry.delete(id);
+}
+
+/** Every registered legend callout, `order`-sorted (registration order breaks ties). */
+export function legendCallouts(): LegendCalloutDescriptor[] {
+    return [...calloutRegistry.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+/**
+ * The provider a shell hands to `chart.renderer.setLegendCallouts` — resolves the row's
+ * indicator on THAT chart, lets each descriptor dress (or skip) the row, and binds every
+ * panel button to a fresh context per click (never a cached one; the widget context
+ * rule). Both shells wire exactly this, beside {@link legendActionsProviderFor}.
+ */
+export function legendCalloutsProviderFor(chart: Vela, context: () => WidgetContext): (indicatorId: string) => LegendCalloutView[] {
+    return (indicatorId) => {
+        const handle = chart.indicators().find((h) => h.id === indicatorId);
+        if (!handle) return [];
+        const info: LegendIndicatorInfo = { id: handle.id, title: handle.title, ...(handle.source !== undefined ? { source: handle.source } : {}) };
+        const views: LegendCalloutView[] = [];
+        for (const d of legendCallouts()) {
+            const spec = d.callout(info);
+            if (!spec) continue;
+            views.push({
+                id: d.id,
+                icon: spec.icon,
+                background: spec.background,
+                ...(spec.color !== undefined ? { color: spec.color } : {}),
+                tooltip: spec.tooltip,
+                ...(spec.content !== undefined
+                    ? {
+                          content: {
+                              ...(spec.content.title !== undefined ? { title: spec.content.title } : {}),
+                              items: spec.content.items.map((item) =>
+                                  item.type === 'text'
+                                      ? item
+                                      : {
+                                            type: 'button' as const,
+                                            label: item.label,
+                                            ...(item.primary !== undefined ? { primary: item.primary } : {}),
+                                            ...(item.close !== undefined ? { close: item.close } : {}),
+                                            run: () => item.run(context(), info),
+                                        },
+                              ),
+                          },
+                      }
+                    : {}),
+            });
+        }
+        return views;
     };
 }
 
