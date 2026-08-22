@@ -1,4 +1,4 @@
-import type { DrawingTable, BoxTextSize, TablePosition } from '../../core/model/drawings';
+import type { DrawingTable, TableCell, BoxTextSize, TablePosition } from '../../core/model/drawings';
 import type { VelaTheme } from '../../core/options';
 
 const SIZE_PX: Record<BoxTextSize, number> = {
@@ -9,6 +9,57 @@ const SIZE_PX: Record<BoxTextSize, number> = {
     large: 16,
     huge: 20,
 };
+
+/** Font size in px: a Pine integer `text_size` passes through as-is. */
+export function fontPxOf(size: TableCell['textSize']): number {
+    if (typeof size === 'number') return size > 0 ? size : SIZE_PX.auto;
+    return SIZE_PX[size] ?? SIZE_PX.auto;
+}
+
+/**
+ * True when at least one cell was actually set via `table.cell()`. A merely
+ * allocated table (`table.new` with rows × columns of nulls, or only
+ * merge-absorbed stubs) occupies no space in Pine — it must not paint, not
+ * even its background or frame.
+ */
+export function tableHasContent(t: DrawingTable): boolean {
+    return t.cells.some((row) => row?.some((c) => c != null && !c.merged));
+}
+
+/** How each merge region renders: the origin spans, the absorbed cells are omitted. */
+export interface MergeRenderPlan {
+    /** Origin key (`row:col`) → col/row spans. */
+    span: Map<string, { cs: number; rs: number }>;
+    /** Cells to omit entirely (absorbed by a merge region). */
+    omit: Set<string>;
+}
+
+/**
+ * Resolve merge regions to spans + omissions. Defensive on two engine quirks:
+ * duplicate merge records are idempotent, and a `merged` flag stamped on the
+ * ORIGIN cell never omits it — only genuinely absorbed cells are omitted
+ * (region members other than the origin, plus stray `merged`-flagged cells
+ * whose region record is missing).
+ */
+export function mergeRenderPlan(t: DrawingTable): MergeRenderPlan {
+    const span = new Map<string, { cs: number; rs: number }>();
+    const omit = new Set<string>();
+    for (const m of t.merges) {
+        span.set(`${m.startRow}:${m.startCol}`, { cs: m.endCol - m.startCol + 1, rs: m.endRow - m.startRow + 1 });
+        for (let r = m.startRow; r <= m.endRow; r += 1) {
+            for (let c = m.startCol; c <= m.endCol; c += 1) {
+                if (r !== m.startRow || c !== m.startCol) omit.add(`${r}:${c}`);
+            }
+        }
+    }
+    for (let r = 0; r < t.rows; r += 1) {
+        for (let c = 0; c < t.columns; c += 1) {
+            if (t.cells[r]?.[c]?.merged && !span.has(`${r}:${c}`)) omit.add(`${r}:${c}`);
+        }
+    }
+    for (const key of span.keys()) omit.delete(key);
+    return { span, omit };
+}
 
 /**
  * Renders Pine `table.new` objects as DOM overlays anchored to the chart corners.
@@ -44,7 +95,9 @@ export class TableOverlay {
     update(tables: DrawingTable[]): void {
         this.lastTables = tables;
         this.root.replaceChildren();
-        for (const t of tables) this.root.appendChild(this.renderTable(t));
+        for (const t of tables) {
+            if (tableHasContent(t)) this.root.appendChild(this.renderTable(t));
+        }
     }
 
     /** Re-render at the current pane geometry — after layout settles or on resize. */
@@ -63,43 +116,44 @@ export class TableOverlay {
     }
 
     private renderTable(t: DrawingTable): HTMLElement {
+        const b = this.paneBounds(t.paneId);
         const wrap = document.createElement('div');
         wrap.style.position = 'absolute';
-        this.anchor(wrap, t.position, this.paneBounds(t.paneId));
+        // Frame as the wrapper's border: an OUTER stroke around the table's outline,
+        // never covered by cell backgrounds (an inset shadow on the table would be).
+        if (t.frameColor && t.frameWidth > 0) wrap.style.border = `${t.frameWidth}px solid ${t.frameColor}`;
+        this.anchor(wrap, t.position, b);
 
         const table = document.createElement('table');
         Object.assign(table.style, {
             borderCollapse: 'collapse',
             background: t.bgColor ?? 'transparent',
             fontFamily: this.theme.fontFamily || 'sans-serif',
-            // Frame as an inset shadow (not a `border`) so it stays independent of the
-            // collapsed cell borders even when frame_width != border_width.
-            boxShadow: t.frameColor && t.frameWidth > 0 ? `inset 0 0 0 ${t.frameWidth}px ${t.frameColor}` : 'none',
             border: 'none',
             tableLayout: 'auto',
             // Re-enable pointer events on the table only (root is none) so cell tooltips work.
             pointerEvents: 'auto',
         } satisfies Partial<CSSStyleDeclaration>);
 
-        // Merged regions: the origin cell spans; the absorbed cells are not emitted.
-        const span = new Map<string, { cs: number; rs: number }>();
-        const skip = new Set<string>();
-        for (const m of t.merges) {
-            span.set(`${m.startRow}:${m.startCol}`, { cs: m.endCol - m.startCol + 1, rs: m.endRow - m.startRow + 1 });
-            for (let r = m.startRow; r <= m.endRow; r += 1) {
-                for (let c = m.startCol; c <= m.endCol; c += 1) {
-                    if (r !== m.startRow || c !== m.startCol) skip.add(`${r}:${c}`);
-                }
-            }
-        }
+        const { span, omit } = mergeRenderPlan(t);
+        // Pine cell width/height are percents of the pane's plot area.
+        const plotW = Math.max(0, (this.root.clientWidth || this.container.clientWidth) - b.rightAxis);
+        const paneH = b.height;
 
         const cellBorder = t.borderColor && t.borderWidth > 0 ? `${t.borderWidth}px solid ${t.borderColor}` : 'none';
         for (let r = 0; r < t.rows; r += 1) {
             const tr = document.createElement('tr');
             for (let c = 0; c < t.columns; c += 1) {
+                if (omit.has(`${r}:${c}`)) continue; // absorbed by a merge
                 const cell = t.cells[r]?.[c] ?? null;
-                if (skip.has(`${r}:${c}`) || cell?.merged) continue; // absorbed by a merge
                 const td = document.createElement('td');
+                if (cell === null) {
+                    // Never set via table.cell() → occupies no space: an unused
+                    // row/column collapses instead of painting an empty grid.
+                    Object.assign(td.style, { padding: '0', border: 'none' } satisfies Partial<CSSStyleDeclaration>);
+                    tr.appendChild(td);
+                    continue;
+                }
                 const sp = span.get(`${r}:${c}`);
                 if (sp) {
                     if (sp.cs > 1) td.colSpan = sp.cs;
@@ -108,18 +162,22 @@ export class TableOverlay {
                 Object.assign(td.style, {
                     border: cellBorder,
                     padding: '2px 6px',
-                    background: cell?.bgColor ?? 'transparent',
-                    color: cell?.textColor ?? this.theme.textColor,
-                    textAlign: cell?.hAlign ?? 'center',
-                    verticalAlign: cell?.vAlign === 'top' ? 'top' : cell?.vAlign === 'bottom' ? 'bottom' : 'middle',
-                    fontSize: `${SIZE_PX[cell?.textSize ?? 'normal']}px`,
-                    fontFamily: cell?.fontFamily === 'monospace' ? 'monospace' : 'inherit',
-                    fontWeight: cell?.bold ? 'bold' : 'normal',
-                    fontStyle: cell?.italic ? 'italic' : 'normal',
-                    whiteSpace: 'pre-line',
+                    background: cell.bgColor ?? 'transparent',
+                    color: cell.textColor ?? this.theme.textColor,
+                    textAlign: cell.hAlign,
+                    verticalAlign: cell.vAlign === 'top' ? 'top' : cell.vAlign === 'bottom' ? 'bottom' : 'middle',
+                    fontSize: `${fontPxOf(cell.textSize)}px`,
+                    fontFamily: cell.fontFamily === 'monospace' ? 'monospace' : 'inherit',
+                    fontWeight: cell.bold ? 'bold' : 'normal',
+                    fontStyle: cell.italic ? 'italic' : 'normal',
+                    // Pine cell text never wraps; `\n` still breaks lines. Wrapping
+                    // used to collapse unicode sparklines and ━━━ dividers.
+                    whiteSpace: 'pre',
                 } satisfies Partial<CSSStyleDeclaration>);
-                if (cell?.tooltip) td.title = cell.tooltip;
-                td.textContent = cell?.text ?? '';
+                if (cell.width) td.style.width = `${(cell.width / 100) * plotW}px`;
+                if (cell.height) td.style.height = `${(cell.height / 100) * paneH}px`;
+                if (cell.tooltip) td.title = cell.tooltip;
+                td.textContent = cell.text ?? '';
                 tr.appendChild(td);
             }
             table.appendChild(tr);

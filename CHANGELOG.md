@@ -15,6 +15,17 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Pine tables render with Pine's sizing and visibility rules.** An allocated
+  table whose cells were never set no longer paints as an empty grid — it
+  occupies no space until content arrives, and unused rows and columns of a
+  partially filled table collapse instead of padding the layout. Cell text no
+  longer wraps, so unicode sparklines and `━━━` divider rows stay on one line.
+  A cell's `width`/`height` percentages now size the cell against the pane, an
+  integer `text_size` renders at exactly that pixel size, and bold/italic cell
+  formatting is honored. The table frame draws as a clean outer stroke around
+  the table instead of an inset line that cell backgrounds could cover, and the
+  origin cell of a merged region always paints — repeated `table.merge_cells`
+  calls from a running script used to blank the merged title row.
 - **A label with an `na` color keeps its style's placement.** A Pine label whose
   bubble color is `na` used to draw its text centered on the anchor no matter
   which style it declared, so `label.style_label_up` read like
