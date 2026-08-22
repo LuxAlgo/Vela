@@ -15,6 +15,11 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **A label with an `na` color keeps its style's placement.** A Pine label whose
+  bubble color is `na` used to draw its text centered on the anchor no matter
+  which style it declared, so `label.style_label_up` read like
+  `label.style_label_center`. The text now sits exactly where the bubble would
+  have put it — only the bubble itself goes unpainted.
 - **Pre- and post-market shading stays off daily and higher timeframes.** On an
   extended-session chart the tint used to paint over daily, weekly, and monthly
   candles, even though each of those bars spans whole sessions and there is
