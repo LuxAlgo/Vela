@@ -50,6 +50,10 @@ All notable changes to Vela, newest first.
 - **Pre-market sunrise and post-market sunset point the right way.** The
   statusline's session badges had their chevrons inverted, so pre-market read as
   sunset and post-market as sunrise.
+- **A maximized pane's legend stays clear of the status line.** Maximizing an
+  indicator pane moved its legend to the top of the chart, where it merged with
+  the symbol status line. The legend now stacks below the status line, the same
+  way the price pane's legend always has.
 
 ## [v0.6.8]
 

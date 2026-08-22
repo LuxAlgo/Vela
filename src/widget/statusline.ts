@@ -11,6 +11,7 @@ import { fmtPrice, fmtChange, decimalsFor } from './format';
 import { timeframeLabel } from './timeframe';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
+import { LEGEND_AT_TOP_ATTR } from '../renderers/shared/InputsUI';
 
 const STYLE_ID = 'vela-widget-statusline';
 const CSS = `
@@ -89,12 +90,15 @@ const CSS = `
  * these are the pre-ink fallbacks only. */
 .vela-statusline .vela-sl-change[data-dir='up'] { color: var(--vela-up); }
 .vela-statusline .vela-sl-change[data-dir='down'] { color: var(--vela-down); }
-/* Stack the renderer's PRICE-pane legend below the status line (study panes stay put).
- * The renderer sets the legend's inline top — shift with a transform, don't fight it.
- * Scoped to hosts that actually CARRY a status line (the marker class set by the
- * Statusline constructor) — the stylesheet is document-global, so a bare container
- * class here would shift every chart on the page, including statusline-less ones. */
-.vela-has-statusline [data-vela-pane='price'] { transform: translateY(26px); }
+/* Stack the TOP pane's legend below the status line (lower study panes stay put).
+ * The renderer marks whichever legend sits at the plot's top edge — the price pane
+ * normally, or a maximized study pane filling the plot — so the legend never merges
+ * with the status line whichever pane owns the top. The renderer sets the legend's
+ * inline top — shift with a transform, don't fight it. Scoped to hosts that actually
+ * CARRY a status line (the marker class set by the Statusline constructor) — the
+ * stylesheet is document-global, so a bare attribute selector here would shift every
+ * chart on the page, including statusline-less ones. */
+.vela-has-statusline [${LEGEND_AT_TOP_ATTR}] { transform: translateY(26px); }
 /* Mobile: two-line chip — logo / symbol / meta / market status on one aligned row, the
  * bar change on the next. Full O/H/L/C stays hidden (too dense on a phone-width plot).
  * GRID, not a wrapping flexbox: an absolutely positioned wrapping flex container sizes
@@ -130,7 +134,7 @@ const CSS = `
     font-size: var(--vela-font-size-sm);
     line-height: 1.2;
 }
-[data-layout='mobile'] .vela-has-statusline [data-vela-pane='price'] { transform: translateY(40px); }
+[data-layout='mobile'] .vela-has-statusline [${LEGEND_AT_TOP_ATTR}] { transform: translateY(40px); }
 /* FIT mode (multi-chart cells — see setFitMode): the line never wraps; segments that
  * don't fit are HIDDEN by fit() (change first, then meta, then the market badge), so
  * overflow:hidden only guards the transient between a resize and the next measure.
@@ -147,7 +151,7 @@ const CSS = `
     padding-left: 0;
 }
 /* One row again — the mobile two-line shift doesn't apply in fit mode. */
-[data-layout='mobile'] .vela-sl-fit-host.vela-has-statusline [data-vela-pane='price'] { transform: translateY(26px); }
+[data-layout='mobile'] .vela-sl-fit-host.vela-has-statusline [${LEGEND_AT_TOP_ATTR}] { transform: translateY(26px); }
 `;
 
 interface BarLike {

@@ -23,6 +23,12 @@ export {
     type InputTab,
 } from './IndicatorInputsDialog';
 
+/** Marker attribute published on the legend container whose pane sits at the plot's top
+ *  edge — the price pane normally, or a maximized study pane filling the plot. Host
+ *  overlays anchored to the plot's top-left (the widget status line) key on it to shift
+ *  the colliding legend below themselves, whichever pane owns the top. */
+export const LEGEND_AT_TOP_ATTR = 'data-vela-pane-at-top';
+
 /** A pane as the legend move UI sees it (id + label + vertical bounds, top-to-bottom order). */
 export interface LegendPaneView {
     id: string;
@@ -514,6 +520,9 @@ export class InputsUI {
 
     private positionLegend(lg: HTMLElement, paneId: string): void {
         const bounds = this.paneBoundsOf ? this.paneBoundsOf(paneId) : { top: 0, height: Infinity };
+        // Publish whether this legend's pane sits at the very top of the plot (see
+        // LEGEND_AT_TOP_ATTR) — the price pane normally, or a maximized study pane filling it.
+        lg.toggleAttribute(LEGEND_AT_TOP_ATTR, bounds.top === 0);
         // A pane hidden by a maximize elsewhere collapses to ~0 height — hide its legend entirely
         // (a collapsed strip keeps a small height, so its title still shows). Titles switched
         // off (the settings toggle) hide every pane's container the same way. Restore to 'flex'
