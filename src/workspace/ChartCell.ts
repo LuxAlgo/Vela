@@ -438,23 +438,36 @@ export class ChartCell {
         // (the shared topbar gear opens the ACTIVE cell's dialog).
         this.pushSettingsSections();
 
-        // The ONE bookkeeping seam: every market change — cell setters, sync links, or
-        // host code calling chart.setMarket directly — lands here and updates the cell
+        // The committed bookkeeping seam: every market change — cell setters, sync links,
+        // or host code calling chart.setMarket directly — lands here and updates the cell
         // state + overlays, then notifies the workspace (chrome projection, retention).
+        // The cell setters ALSO project optimistically before the load (see projectMarket);
+        // this pass re-runs idempotently and adds the data-dependent bookkeeping.
         this.offMarket = this.inner.on('market:changed', ({ symbol, timeframe }) => {
-            this.state.symbol = symbol;
-            this.state.provider = parseSymbol(symbol).provider ?? undefined;
-            this.state.timeframe = timeframe;
-            this.state.session = normalizeSession(this.inner?.market.session);
-            this.watermark?.update(symbol, timeframe);
-            this.statusline?.setSymbol(symbol);
-            this.statusline?.setMeta(timeframe, this.inner?.data.displayPrefix(symbol) ?? this.state.provider ?? '');
-            if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
+            this.projectMarket(symbol, timeframe);
             this.refreshNativeCatalog(); // per-symbol support flags may differ
             this.refreshSessionAvailable(); // the new symbol may (not) have sessions
             if (this.inner) this.marketStatus?.track(this.inner.data, symbol); // …and its own market clock
             this.deps.onMarketChanged(this.id);
         });
+    }
+
+    /**
+     * Project a market identity into the cell state and its display overlays (watermark,
+     * statusline), WITHOUT the data-dependent bookkeeping. Runs twice per user pick: once
+     * optimistically from the cell setters — the labels reflect the pick immediately, not
+     * after the bars load — and again from `market:changed` (the committed pass, and the
+     * only pass for host `chart.setMarket` calls). Idempotent, so the double run converges.
+     */
+    private projectMarket(symbol: string, timeframe: string): void {
+        this.state.symbol = symbol;
+        this.state.provider = parseSymbol(symbol).provider ?? undefined;
+        this.state.timeframe = timeframe;
+        this.state.session = normalizeSession(this.inner?.market.session);
+        this.watermark?.update(symbol, timeframe);
+        this.statusline?.setSymbol(symbol);
+        this.statusline?.setMeta(timeframe, this.inner?.data.displayPrefix(symbol) ?? this.state.provider ?? '');
+        if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
     }
 
     /**
@@ -714,11 +727,15 @@ export class ChartCell {
         return this.instances.length + this.nativeCatalog.filter((n) => n.present).length;
     }
 
-    /** Switch this cell's market in place (the chart instance survives). */
+    /** Switch this cell's market in place (the chart instance survives). The projection
+     *  is OPTIMISTIC — labels and chrome show the pick before the bars load; it follows
+     *  the setMarket call so the statusline reads the already-blanked chart. */
     setSymbol(symbol: string): void {
         if (!this.inner || symbol === this.symbol) return;
         this.unresolvedToasted = null; // a re-picked symbol gets a fresh verdict
         void this.inner.setMarket({ symbol });
+        this.projectMarket(symbol, this.timeframe);
+        this.deps.onMarketChanged(this.id);
     }
 
     setTimeframe(timeframe: string): void {
@@ -727,6 +744,8 @@ export class ChartCell {
         this.activeRangeId = null;
         this.rangeBars = 0;
         void this.inner.setMarket({ timeframe, bars: this.state.bars });
+        this.projectMarket(this.symbol, timeframe);
+        this.deps.onMarketChanged(this.id);
     }
 
     /** Applied live (renderer feature) — no reload. */

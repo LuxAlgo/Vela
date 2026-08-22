@@ -26,6 +26,11 @@ All notable changes to Vela, newest first.
   the table instead of an inset line that cell backgrounds could cover, and the
   origin cell of a merged region always paints — repeated `table.merge_cells`
   calls from a running script used to blank the merged title row.
+- **Symbol and timeframe picks show instantly.** Choosing a new symbol or
+  timeframe now updates the topbar, status line, and watermark the moment the
+  pick is made instead of after the new market's bars finish loading — on a
+  slow connection the loading chart carries the name you picked rather than
+  the old market's.
 - **A label with an `na` color keeps its style's placement.** A Pine label whose
   bubble color is `na` used to draw its text centered on the anchor no matter
   which style it declared, so `label.style_label_up` read like
