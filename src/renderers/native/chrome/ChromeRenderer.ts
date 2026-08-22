@@ -7,7 +7,7 @@ import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { percentScaleFor } from '../core/SceneGraph';
 // Re-exported so existing importers (crosshair) can keep sourcing it from here.
 export { percentScaleFor } from '../core/SceneGraph';
-import { DrawingSceneRenderer, type DrawingSet } from '../../shared/DrawingSceneRenderer';
+import { DrawingSceneRenderer, type DrawingSet, type LabelTipRegion } from '../../shared/DrawingSceneRenderer';
 import { renderTradeMarkers } from '../../shared/trade-markers';
 import type { TradeExecution } from '../../../core/model/trades';
 import { paneAxisTicks, formatAxisValue, timeTicks } from './ticks';
@@ -35,6 +35,8 @@ export class ChromeRenderer {
     private axisTextColor = DARK_THEME.textColor;
     // Shared Pine-drawing renderer (line/box/label/polyline/linefill); widthCache persists.
     private readonly drawScene = new DrawingSceneRenderer({ timeToLogical: () => 0, barAt: () => null, theme: {} as VelaTheme });
+    // Tooltip hit-rects of every label drawn this frame, in plot coords (rebuilt per render).
+    private labelTips: LabelTipRegion[] = [];
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
@@ -82,6 +84,7 @@ export class ChromeRenderer {
         // The gutters (and their labels) use the surface the host passes (the live chart
         // background); everything data-side keeps the live theme.
         this.axisTextColor = surface?.textColor ?? theme.textColor;
+        this.labelTips = [];
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, fullW, fullH);
         // Paint the price-axis (right) + time-axis (bottom) gutters opaquely so drawings or
@@ -224,6 +227,19 @@ export class ChromeRenderer {
             (price) => coords.priceToY(price, pane.scale, pane.bounds) - pane.bounds.top,
         );
         ctx.restore();
+        // Collect this set's label tooltip rects, shifted from pane space into plot space.
+        for (const r of this.drawScene.labelTipRegions()) {
+            this.labelTips.push({ ...r, top: r.top + pane.bounds.top, bottom: r.bottom + pane.bounds.top });
+        }
+    }
+
+    /** Tooltip of the topmost label under a plot-space point, or null. Fed by the last render. */
+    labelTooltipAt(x: number, y: number): string | null {
+        for (let i = this.labelTips.length - 1; i >= 0; i -= 1) {
+            const r = this.labelTips[i]!;
+            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return r.text;
+        }
+        return null;
     }
 
     // ── axes ──
