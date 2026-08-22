@@ -38,6 +38,15 @@ export interface DrawingPriceRange {
 
 export const EMPTY_DRAWING_SET: DrawingSet = { lines: [], boxes: [], labels: [], polylines: [], linefills: [] };
 
+/** Hover hit-rect of one rendered label that carries a tooltip (canvas coords of the last render). */
+export interface LabelTipRegion {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    text: string;
+}
+
 function fontSizePx(size: BoxTextSize): number {
     return size === 'auto' ? 12 : namedFontSize(size);
 }
@@ -53,6 +62,8 @@ function fontSizePx(size: BoxTextSize): number {
 export class DrawingSceneRenderer {
     /** measureText width cache, keyed by `${font} ${text}`, persists across frames. */
     private readonly widthCache = new Map<string, number>();
+    /** Tooltip hit-rects captured while drawing the CURRENT set (rebuilt per render). */
+    private tipRegions: LabelTipRegion[] = [];
     /**
      * Index offset of the CURRENT set's model: its `xloc:'bar_index'` coordinates count
      * from the model's anchor bar, so they shift by this to land on chart logical indices.
@@ -81,8 +92,14 @@ export class DrawingSceneRenderer {
         return !s.lines.length && !s.boxes.length && !s.labels.length && !s.polylines.length && !s.linefills.length;
     }
 
+    /** Tooltip hit-rects of the labels drawn by the LAST `render` call (same coords as `ctx`). */
+    labelTipRegions(): readonly LabelTipRegion[] {
+        return this.tipRegions;
+    }
+
     /** Draw the whole set into `ctx` using the supplied coordinate closures. */
     render(ctx: CanvasRenderingContext2D, W: number, H: number, xOf: (l: number) => number, yOf: (p: number) => number | null): void {
+        this.tipRegions = [];
         if (this.isEmpty()) return;
         ctx.save();
         this.drawLinefills(ctx, W, H, xOf, yOf);
@@ -465,14 +482,38 @@ export class DrawingSceneRenderer {
             if (this.isPointShape(lb.style)) {
                 if (!lb.noFill) this.drawLabelShape(ctx, lb.style, px, py, fontPx, color);
                 if (lb.text) this.drawLabelText(ctx, lb, px, py + fontPx, fontPx);
+                if (lb.tooltip) {
+                    const r = Math.max(4, fontPx * 0.6) + 3;
+                    this.tipRegions.push({ left: px - r, top: py - r, right: px + r, bottom: py + r, text: lb.tooltip });
+                }
             } else if (lb.style === 'none' || lb.style === 'text_outline') {
-                if (lb.text) this.drawLabelText(ctx, lb, px, py, fontPx, lb.style === 'text_outline');
+                if (lb.text) {
+                    this.drawLabelText(ctx, lb, px, py, fontPx, lb.style === 'text_outline');
+                    if (lb.tooltip) this.tipRegions.push(this.textRegion(ctx, lb, px, py, fontPx, lb.tooltip));
+                }
             } else {
                 // noFill (na color) keeps the bubble style's geometry — drawBubble
                 // places the text as if the bubble were there and skips the fill.
-                this.drawBubble(ctx, lb, px, py, fontPx, color);
+                const r = this.drawBubble(ctx, lb, px, py, fontPx, color);
+                if (lb.tooltip) this.tipRegions.push({ left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h, text: lb.tooltip });
             }
         }
+    }
+
+    /** Canvas font for a label's text — family + Pine `text_formatting` (bold/italic). */
+    private labelFont(lb: DrawingLabel, fontPx: number): string {
+        const family = lb.fontFamily === 'monospace' ? 'monospace' : this.deps.theme.fontFamily || 'sans-serif';
+        return `${lb.italic ? 'italic ' : ''}${lb.bold ? 'bold ' : ''}${fontPx}px ${family}`;
+    }
+
+    /** Hover rect of a text-only label (style none/text_outline/noFill), centered like drawLabelText. */
+    private textRegion(ctx: CanvasRenderingContext2D, lb: DrawingLabel, cx: number, cy: number, fontPx: number, text: string): LabelTipRegion {
+        const font = this.labelFont(lb, fontPx);
+        const lines = (lb.text ?? '').split('\n');
+        const w = Math.max(1, ...lines.map((l) => this.measure(ctx, font, l)));
+        const h = fontPx * 1.25 * lines.length;
+        const left = lb.textAlign === 'left' ? cx : lb.textAlign === 'right' ? cx - w : cx - w / 2;
+        return { left, top: cy - h / 2, right: left + w, bottom: cy + h / 2, text };
     }
 
     private isPointShape(style: DrawingLabel['style']): boolean {
@@ -494,8 +535,7 @@ export class DrawingSceneRenderer {
     }
 
     private drawLabelText(ctx: CanvasRenderingContext2D, lb: DrawingLabel, cx: number, cy: number, fontPx: number, outline = false): void {
-        const family = lb.fontFamily === 'monospace' ? 'monospace' : this.deps.theme.fontFamily || 'sans-serif';
-        ctx.font = `${fontPx}px ${family}`;
+        ctx.font = this.labelFont(lb, fontPx);
         ctx.textAlign = lb.textAlign === 'left' ? 'left' : lb.textAlign === 'right' ? 'right' : 'center';
         ctx.textBaseline = 'middle';
         const lines = lb.text!.split('\n');
@@ -577,9 +617,9 @@ export class DrawingSceneRenderer {
         }
     }
 
-    private drawBubble(ctx: CanvasRenderingContext2D, lb: DrawingLabel, px: number, py: number, fontPx: number, color: string): void {
-        const family = lb.fontFamily === 'monospace' ? 'monospace' : this.deps.theme.fontFamily || 'sans-serif';
-        ctx.font = `${fontPx}px ${family}`;
+    /** Draw a bubble label; returns the bubble body rect (for tooltip hit-testing). */
+    private drawBubble(ctx: CanvasRenderingContext2D, lb: DrawingLabel, px: number, py: number, fontPx: number, color: string): { x: number; y: number; w: number; h: number } {
+        ctx.font = this.labelFont(lb, fontPx);
         const lines = (lb.text ?? '').split('\n');
         const padX = 6;
         const padY = 4;
@@ -645,11 +685,23 @@ export class DrawingSceneRenderer {
             // With no bubble behind it, contrast-of-bubble is meaningless — fall
             // back to the theme's text color (same default as bare label text).
             ctx.fillStyle = lb.textColor ?? (lb.noFill ? this.deps.theme.textColor : contrastColor(color));
-            ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
+            // Pine `textalign` aligns the LINES inside the bubble (the bubble itself stays put).
+            let tx: number;
+            if (lb.textAlign === 'left') {
+                ctx.textAlign = 'left';
+                tx = bx + padX;
+            } else if (lb.textAlign === 'right') {
+                ctx.textAlign = 'right';
+                tx = bx + w - padX;
+            } else {
+                ctx.textAlign = 'center';
+                tx = bx + w / 2;
+            }
             const startY = by + padY + lineH / 2;
-            for (let i = 0; i < lines.length; i += 1) ctx.fillText(lines[i]!, bx + w / 2, startY + i * lineH);
+            for (let i = 0; i < lines.length; i += 1) ctx.fillText(lines[i]!, tx, startY + i * lineH);
         }
+        return { x: bx, y: by, w, h };
     }
 
     private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {

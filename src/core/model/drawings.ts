@@ -124,6 +124,9 @@ export interface DrawingLabel {
     textAlign: BoxHAlign;
     tooltip?: string;
     fontFamily: BoxFontFamily;
+    /** Pine `text_formatting` — bold/italic text, matching the box text options. */
+    bold?: boolean;
+    italic?: boolean;
     /** na bubble/marker color → render text only (no bubble/shape fill). */
     noFill?: boolean;
     /** `force_overlay` → render on the price pane regardless of the indicator's pane. */

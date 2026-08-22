@@ -6,6 +6,11 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Pine label tooltips.** A label created with a `tooltip` now shows it: hover the
+  label (the bubble, marker, or text) and a themed tip opens next to the cursor,
+  wrapping long texts.
+- **Bold and italic label text.** Labels accept the same bold/italic text
+  formatting boxes already support, applied to bubble and plain text styles alike.
 - **`force_overlay` content joins the price pane.** Model elements flagged
   `force_overlay` — value series, plotted candles and bars, fills, backgrounds,
   markers, and tables, like the drawing objects before them — now render on the
@@ -15,6 +20,8 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Label `textalign` works on bubble styles.** Multi-line text inside a label
+  bubble now aligns left, center, or right as asked; it was always centered.
 - **Pine tables render with Pine's sizing and visibility rules.** An allocated
   table whose cells were never set no longer paints as an empty grid — it
   occupies no space until content arrives, and unused rows and columns of a

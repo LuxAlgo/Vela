@@ -43,6 +43,7 @@ import { clampBarSpacing, defaultViewport, MIN_BAR_SPACING, MAX_BAR_SPACING, typ
 import { Canvas2dBackend } from './backend/Canvas2dBackend';
 import type { IRenderBackend } from './backend/IRenderBackend';
 import { ChromeRenderer } from './chrome/ChromeRenderer';
+import { LabelTooltip } from './chrome/LabelTooltip';
 import { AXIS_MASTER_W, AXIS_MERGED_W } from './chrome/axisLayout';
 import { CrosshairRenderer } from './chrome/CrosshairRenderer';
 import { SettingsDialog } from './chrome/SettingsDialog';
@@ -168,6 +169,8 @@ export class NativeRenderer implements IChartRenderer {
     private backendMode: NativeBackend = 'auto';
     private glowAmount = 0; // WebGL2 neon-glow intensity (canvas2d ignores it)
     private readonly chrome = new ChromeRenderer();
+    /** Hover tooltips for Pine labels (canvas hit-rects collected by the chrome layer). */
+    private labelTooltip: LabelTooltip | null = null;
     private readonly crosshairLayer = new CrosshairRenderer();
     private scheduler!: Scheduler;
     /** 1 Hz repaint pump so the price-axis countdown-to-bar-close ticks; null when off. */
@@ -1379,6 +1382,12 @@ export class NativeRenderer implements IChartRenderer {
         this.plot.addEventListener('pointermove', this.onScrollProximityMove);
         this.plot.addEventListener('pointerleave', this.onScrollProximityLeave);
 
+        // Pine label tooltips: hover a label that carries one and a themed tip opens.
+        this.labelTooltip = new LabelTooltip(this.plot, {
+            theme: () => this.chromeTheme(),
+            lookup: (x, y) => this.chrome.labelTooltipAt(x, y),
+        });
+
         // User-drawings layer (paints L1.5 plus the interleave layers the geometry backend
         // composites into the series stack, and owns the interaction/settings popup). It
         // implements the IDrawingsRendererPort the core DrawingController drives.
@@ -1633,6 +1642,8 @@ export class NativeRenderer implements IChartRenderer {
         this.settingsButton = null;
         this.plot?.removeEventListener('pointermove', this.onScrollProximityMove);
         this.plot?.removeEventListener('pointerleave', this.onScrollProximityLeave);
+        this.labelTooltip?.destroy();
+        this.labelTooltip = null;
         this.scrollButton?.remove();
         this.scrollButton = null;
         for (const l of this.extLayers) l.instance.destroy?.();
