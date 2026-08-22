@@ -6,6 +6,11 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Symbol and timeframe picks show instantly.** Choosing a new symbol or
+  timeframe now updates the topbar, status line, and watermark the moment the
+  pick is made instead of after the new market's bars finish loading — on a
+  slow connection the loading chart carries the name you picked rather than
+  the old market's.
 - **Pre-market sunrise and post-market sunset point the right way.** The
   statusline's session badges had their chevrons inverted, so pre-market read as
   sunset and post-market as sunrise.
