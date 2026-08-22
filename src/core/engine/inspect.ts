@@ -28,6 +28,8 @@ export interface IndicatorSummary {
     barColors: number;
     trades: number;
     inputs: number;
+    /** Elements flagged `force_overlay` (routed to the price pane), across every kind. */
+    forcedOverlay: number;
 }
 
 /** A snapshot of everything the Vela core has generated for the mounted indicators. */
@@ -48,6 +50,7 @@ export interface SceneInspection {
         tables: number;
         barColors: number;
         trades: number;
+        forcedOverlay: number;
     };
 }
 
@@ -55,6 +58,11 @@ export interface SceneInspection {
 export function summarizeModel(model: IndicatorModel): IndicatorSummary {
     const series: Record<string, number> = {};
     for (const s of model.series) series[s.kind] = (series[s.kind] ?? 0) + 1;
+    const countOverlay = (items?: ReadonlyArray<{ overlay?: boolean }>): number => items?.filter((i) => i.overlay === true).length ?? 0;
+    const forcedOverlay =
+        countOverlay(model.series) + countOverlay(model.fills) + countOverlay(model.backgrounds) +
+        countOverlay(model.lines) + countOverlay(model.boxes) + countOverlay(model.labels) +
+        countOverlay(model.polylines) + countOverlay(model.linefills) + countOverlay(model.tables);
     return {
         id: model.id,
         title: model.title,
@@ -75,6 +83,7 @@ export function summarizeModel(model: IndicatorModel): IndicatorSummary {
         barColors: model.barColors?.length ?? 0,
         trades: model.trades?.length ?? 0,
         inputs: model.inputs.length,
+        forcedOverlay,
     };
 }
 
@@ -98,6 +107,7 @@ export function inspectModels(models: IndicatorModel[]): SceneInspection {
             tables: sum((s) => s.tables),
             barColors: sum((s) => s.barColors),
             trades: sum((s) => s.trades),
+            forcedOverlay: sum((s) => s.forcedOverlay),
         },
     };
 }

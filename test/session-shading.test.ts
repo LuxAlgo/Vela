@@ -101,7 +101,7 @@ describe('SessionShadingTracker', () => {
         const updates: Array<SessionZonesUpdate | null> = [];
         const tracker = new SessionShadingTracker((zones) => updates.push(zones));
         const monday = Date.UTC(2024, 2, 4);
-        tracker.track(data, 'AAPL', { session: 'extended', range: { from: monday, to: monday + DAY } });
+        tracker.track(data, 'AAPL', { session: 'extended', timeframe: '60', range: { from: monday, to: monday + DAY } });
         // A load's fit animation settles the viewport two weeks earlier before metadata lands.
         tracker.updateRange({ from: monday - 14 * DAY, to: monday - 13 * DAY });
         resolveSi(US_EQUITIES);
@@ -109,6 +109,33 @@ describe('SessionShadingTracker', () => {
         const zones = updates[updates.length - 1]!;
         expect(zones.pre.some(([start]) => start < monday - 13 * DAY)).toBe(true);
         tracker.stop();
+    });
+
+    it('shades nothing on daily and higher timeframes — the bars aggregate whole sessions', async () => {
+        const data = { symbolInfo: () => Promise.resolve<SymbolInfo>(US_EQUITIES) } as unknown as DataControl;
+        const monday = Date.UTC(2024, 2, 4);
+        for (const timeframe of ['1440', 'D', 'W', '43200']) {
+            const updates: Array<SessionZonesUpdate | null> = [];
+            const tracker = new SessionShadingTracker((zones) => updates.push(zones));
+            tracker.track(data, 'AAPL', { session: 'extended', timeframe, range: { from: monday, to: monday + 30 * DAY } });
+            await new Promise((r) => setTimeout(r, 0));
+            expect(updates[updates.length - 1]).toEqual({ pre: [], post: [] });
+            tracker.stop();
+        }
+    });
+
+    it('keeps shading intraday extended-session timeframes', async () => {
+        const data = { symbolInfo: () => Promise.resolve<SymbolInfo>(US_EQUITIES) } as unknown as DataControl;
+        const monday = Date.UTC(2024, 2, 4);
+        for (const timeframe of ['1', '60', '240']) {
+            const updates: Array<SessionZonesUpdate | null> = [];
+            const tracker = new SessionShadingTracker((zones) => updates.push(zones));
+            tracker.track(data, 'AAPL', { session: 'extended', timeframe, range: { from: monday, to: monday + DAY } });
+            await new Promise((r) => setTimeout(r, 0));
+            const zones = updates[updates.length - 1]!;
+            expect(zones.pre.length).toBeGreaterThan(0);
+            tracker.stop();
+        }
     });
 });
 

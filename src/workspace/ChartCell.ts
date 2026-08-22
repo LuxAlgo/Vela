@@ -519,7 +519,7 @@ export class ChartCell {
         const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
         const fallbackSpan = Number.isFinite(requestedSpan) ? Math.max(3 * 86_400_000, requestedSpan) : 3 * 86_400_000;
         const range = chart.getVisibleRange() ?? { from: now - fallbackSpan, to: now };
-        this.sessionShading.track(chart.data, symbol, { session: this.session, range });
+        this.sessionShading.track(chart.data, symbol, { session: this.session, timeframe: this.timeframe, range });
     }
 
     /** The session-shade colors live in the renderer CONFIG (persisted with it, edited

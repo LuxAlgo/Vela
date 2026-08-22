@@ -465,9 +465,11 @@ export class DrawingSceneRenderer {
             if (this.isPointShape(lb.style)) {
                 if (!lb.noFill) this.drawLabelShape(ctx, lb.style, px, py, fontPx, color);
                 if (lb.text) this.drawLabelText(ctx, lb, px, py + fontPx, fontPx);
-            } else if (lb.style === 'none' || lb.style === 'text_outline' || lb.noFill) {
+            } else if (lb.style === 'none' || lb.style === 'text_outline') {
                 if (lb.text) this.drawLabelText(ctx, lb, px, py, fontPx, lb.style === 'text_outline');
             } else {
+                // noFill (na color) keeps the bubble style's geometry — drawBubble
+                // places the text as if the bubble were there and skips the fill.
                 this.drawBubble(ctx, lb, px, py, fontPx, color);
             }
         }
@@ -611,34 +613,38 @@ export class DrawingSceneRenderer {
                 bx = px - w / 2; by = py - h - ptr; pointer = 'down';
         }
 
-        ctx.fillStyle = color;
-        this.roundRect(ctx, bx, by, w, h, 4);
-        ctx.fill();
-        if (pointer !== 'none') {
-            ctx.beginPath();
-            if (pointer === 'down') {
-                ctx.moveTo(px - ptr, by + h);
-                ctx.lineTo(px + ptr, by + h);
-                ctx.lineTo(px, py);
-            } else if (pointer === 'up') {
-                ctx.moveTo(px - ptr, by);
-                ctx.lineTo(px + ptr, by);
-                ctx.lineTo(px, py);
-            } else if (pointer === 'left') {
-                ctx.moveTo(bx, py - ptr);
-                ctx.lineTo(bx, py + ptr);
-                ctx.lineTo(px, py);
-            } else {
-                ctx.moveTo(bx + w, py - ptr);
-                ctx.lineTo(bx + w, py + ptr);
-                ctx.lineTo(px, py);
-            }
-            ctx.closePath();
+        if (!lb.noFill) {
+            ctx.fillStyle = color;
+            this.roundRect(ctx, bx, by, w, h, 4);
             ctx.fill();
+            if (pointer !== 'none') {
+                ctx.beginPath();
+                if (pointer === 'down') {
+                    ctx.moveTo(px - ptr, by + h);
+                    ctx.lineTo(px + ptr, by + h);
+                    ctx.lineTo(px, py);
+                } else if (pointer === 'up') {
+                    ctx.moveTo(px - ptr, by);
+                    ctx.lineTo(px + ptr, by);
+                    ctx.lineTo(px, py);
+                } else if (pointer === 'left') {
+                    ctx.moveTo(bx, py - ptr);
+                    ctx.lineTo(bx, py + ptr);
+                    ctx.lineTo(px, py);
+                } else {
+                    ctx.moveTo(bx + w, py - ptr);
+                    ctx.lineTo(bx + w, py + ptr);
+                    ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.fill();
+            }
         }
 
         if (lb.text) {
-            ctx.fillStyle = lb.textColor ?? contrastColor(color);
+            // With no bubble behind it, contrast-of-bubble is meaningless — fall
+            // back to the theme's text color (same default as bare label text).
+            ctx.fillStyle = lb.textColor ?? (lb.noFill ? this.deps.theme.textColor : contrastColor(color));
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             const startY = by + padY + lineH / 2;
