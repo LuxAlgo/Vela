@@ -8,6 +8,7 @@ import { TypedEventBus } from '../events/EventBus';
 export interface IndicatorController {
     getIndicatorContext(id: string, select?: ContextSelect): Promise<EngineContextSnapshot | null>;
     applyInputs(id: string, values: Record<string, InputValue>): void;
+    applyProps(id: string, values: Record<string, InputValue>): void;
     removeIndicator(id: string): void;
     setVisible(id: string, visible: boolean): void;
     moveIndicator(id: string, target: MoveTarget): void;
@@ -20,6 +21,7 @@ export class IndicatorHandleImpl implements IndicatorHandle {
     /** The script source (see {@link IndicatorHandle.source}); undefined for natives. */
     readonly source?: string;
     private schema: InputSchema[] = [];
+    private propsSchema: InputSchema[] = [];
     private visibleState = true;
     private readonly bus = new TypedEventBus<IndicatorEventMap>();
 
@@ -38,6 +40,10 @@ export class IndicatorHandleImpl implements IndicatorHandle {
         return this.schema;
     }
 
+    get props(): readonly InputSchema[] {
+        return this.propsSchema;
+    }
+
     get visible(): boolean {
         return this.visibleState;
     }
@@ -48,6 +54,14 @@ export class IndicatorHandleImpl implements IndicatorHandle {
 
     setInputs(values: Record<string, InputValue>): void {
         this.controller.applyInputs(this.id, values);
+    }
+
+    setProp(key: string, value: InputValue): void {
+        this.controller.applyProps(this.id, { [key]: value });
+    }
+
+    setProps(values: Record<string, InputValue>): void {
+        this.controller.applyProps(this.id, values);
     }
 
     setVisible(visible: boolean): void {
@@ -73,6 +87,10 @@ export class IndicatorHandleImpl implements IndicatorHandle {
     // ── internal (used by the orchestrator) ──────────────────────
     setSchema(schema: InputSchema[]): void {
         this.schema = schema;
+    }
+
+    setPropsSchema(schema: InputSchema[]): void {
+        this.propsSchema = schema;
     }
 
     /** Sync the public `visible` getter when the orchestrator changes visibility (API or legend eye). */

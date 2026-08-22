@@ -90,9 +90,12 @@ What `addIndicator` returns. Usable immediately.
 | `id` | Stable, content-addressed identity for this indicator. |
 | `title` | Display title (overridable via the `title` option). |
 | `inputs` | The inputs parsed from the script source — each with a `key`, `title`, `type`, `defval`, and optional `min`/`max`/`step`/`options`/`group`/`inline`/`tab`/`tooltip`. Populated once the script is prepared. |
+| `props` | The script's declaration properties (a strategy's `initial_capital`, an indicator's `precision`, …) in the same schema shape as `inputs`. Empty when the engine exposes none. |
 | `visible` | Whether the indicator is currently shown. |
 | `setInput(key, value)` | Change one input by its key. Triggers a re-run (an input edit can restructure output, so this may remount the indicator). |
 | `setInputs(values)` | Change several inputs at once, keyed by input key or title. |
+| `setProp(key, value)` | Override one declaration property (e.g. `initial_capital`). A prop change replays the whole script. |
+| `setProps(values)` | Override several declaration properties at once. |
 | `setVisible(visible)` | Hide or show the indicator. Hiding suspends it — its visuals are dropped and its computation stops; showing re-runs it over the current bars. |
 | `on(event, handler)` | Per-indicator events — `ready`, `error` (`{ error }`), `alert` (`{ id, message, title?, time }`). Returns an unsubscribe function. |
 | `context(select?)` | `Promise` of a **read-only, serializable snapshot** of the engine's execution context — see [below](#capturing-what-a-script-computes). `null` when the engine lacks the capability or nothing ran yet. |

@@ -22,10 +22,18 @@ export interface IndicatorHandle {
     readonly source?: string;
     /** Inputs parsed from the Pine source (populated once the script is prepared). */
     readonly inputs: readonly InputSchema[];
+    /** Declaration-props schema (a strategy's `initial_capital`, an indicator's
+     *  `precision`, …; populated once the script is prepared). Empty when the
+     *  engine exposes none. */
+    readonly props: readonly InputSchema[];
     /** Whether the indicator is currently shown (vs hidden). Hidden indicators stop computing. */
     readonly visible: boolean;
     setInput(key: string, value: InputValue): void;
     setInputs(values: Record<string, InputValue>): void;
+    /** Override one declaration prop and re-run (a prop change replays the whole script). */
+    setProp(key: string, value: InputValue): void;
+    /** Override several declaration props at once and re-run. */
+    setProps(values: Record<string, InputValue>): void;
     /**
      * Hide or show the indicator. Hiding **suspends** it — its visuals are dropped (the legend
      * row stays, marked hidden) and its computation stops (the engine session is torn down), so a

@@ -52,6 +52,9 @@ interface LegendRow {
     settingsTitle: string;
     inputs: InputSchema[];
     values: Record<string, InputValue>;
+    /** Declaration-props schema + values (the settings dialog's "Properties" tab). */
+    props: InputSchema[];
+    propValues: Record<string, InputValue>;
     el: HTMLElement;
     titleEl: HTMLElement;
     statusEl: HTMLElement;
@@ -621,7 +624,7 @@ export class InputsUI {
     }
 
     /** Create or update an indicator's legend row (in the legend for its pane). */
-    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; settingsTitle?: string } = {}): void {
+    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; settingsTitle?: string; props?: InputSchema[]; propValues?: Record<string, InputValue> } = {}): void {
         const settingsTitle = opts.settingsTitle ?? title;
         const existing = this.rows.get(id);
         if (existing) {
@@ -629,6 +632,8 @@ export class InputsUI {
             existing.settingsTitle = settingsTitle;
             existing.inputs = inputs;
             existing.values = { ...values };
+            existing.props = opts.props ?? [];
+            existing.propValues = { ...(opts.propValues ?? {}) };
             existing.titleEl.textContent = title;
             if (existing.paneId !== paneId) { // re-routed to a different pane
                 existing.paneId = paneId;
@@ -742,7 +747,7 @@ export class InputsUI {
             controlsEl.appendChild(eye);
             eyeEl = eye;
         }
-        if (inputs.length > 0) {
+        if (inputs.length > 0 || (opts.props ?? []).length > 0) {
             const gear = document.createElement('button');
             gear.type = 'button';
             gear.setAttribute('aria-label', 'Settings');
@@ -784,7 +789,7 @@ export class InputsUI {
         el.appendChild(controlsEl);
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        this.rows.set(id, { id, title, settingsTitle, inputs, values: { ...values }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
+        this.rows.set(id, { id, title, settingsTitle, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
     }
 
@@ -795,9 +800,11 @@ export class InputsUI {
     }
 
     /** Reflect programmatic input changes (so a re-opened dialog shows current values). */
-    setValues(id: string, values: Record<string, InputValue>): void {
+    setValues(id: string, values: Record<string, InputValue>, props?: Record<string, InputValue>): void {
         const row = this.rows.get(id);
-        if (row) row.values = { ...row.values, ...values };
+        if (!row) return;
+        row.values = { ...row.values, ...values };
+        if (props) row.propValues = { ...row.propValues, ...props };
     }
 
     /**
