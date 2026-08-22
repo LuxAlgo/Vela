@@ -209,6 +209,8 @@ class MockEngine implements ScriptingEngine {
     policyA = false;
     /** Test knob: emit a strategy-style trade-execution pair with every model. */
     emitTrades = false;
+    /** Test knob: prepare-time meta declares this compact shorttitle. */
+    declareShortTitle: string | undefined;
     runCount: Record<string, number> = {};
     lastVisibleRange: Record<string, VisibleBarRange | undefined> = {};
     streamStarts: Record<string, number> = {};
@@ -221,7 +223,7 @@ class MockEngine implements ScriptingEngine {
         return Promise.resolve({
             language: 'pine',
             inputs: [{ key: 'Length', title: 'Length', type: 'int', defval: 14 }],
-            meta: { title: 'Mock', overlay },
+            meta: { title: 'Mock', overlay, ...(this.declareShortTitle ? { shorttitle: this.declareShortTitle } : {}) },
             reactsToViewport,
             token: { instanceId, overlay },
         });
@@ -1094,6 +1096,8 @@ class DeferredEngine extends MockEngine {
     }
     /** When set, emitted models carry THIS overlay flag (to diverge from the prepare-time guess). */
     emitOverlay: boolean | undefined;
+    /** When set, emitted models carry THIS compact shorttitle. */
+    emitShortTitle: string | undefined;
     /** Release every deferred execution (the "compute finished" moment). */
     finish(): void {
         const run = this.pending;
@@ -1110,6 +1114,7 @@ class DeferredEngine extends MockEngine {
     private deferredModel(id: string, overlay: boolean): IndicatorModel {
         return {
             id, title: 'Mock', overlay, paneHint: overlay ? 'price' : 'new',
+            ...(this.emitShortTitle ? { shorttitle: this.emitShortTitle } : {}),
             series: [{ id: `${id}:line:mock#0`, title: 'Mock', paneId: 'unrouted', kind: 'line', points: [{ time: 1, value: 1 }], style: { color: '#fff', width: 1, lineStyle: 'solid' } }],
             fills: [], backgrounds: [], priceLines: [], inputs: [], inputValues: {},
         };
@@ -1152,6 +1157,32 @@ describe('EngineOrchestrator — loading placeholder + legend status', () => {
         expect(added).toEqual([ind.id]);
         expect(chart.inspect().indicators).toHaveLength(1);
         expect(renderer.removed).toHaveLength(0);
+    });
+
+    it('keeps the FULL title while loading; the shorttitle arrives with the first computed model', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new DeferredEngine();
+        engine.declareShortTitle = 'MK'; // prepare-time meta already declares the compact name…
+        engine.emitShortTitle = 'MK'; // …and the computed model carries it
+        const chart = new Vela({} as unknown as HTMLElement, { live: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+
+        const ind = chart.addIndicator('//@version=5\nindicator("Slow", "MK")\nplot(close)');
+        await chart.ready();
+        await flush();
+
+        // Loading: the placeholder identifies the script by its full name — never the shorttitle.
+        const placeholder = renderer.mountedModels.find((m) => m.id === ind.id);
+        expect(placeholder?.title).toBe('Mock');
+        expect(placeholder?.shorttitle).toBeUndefined();
+
+        engine.finish();
+        await flush();
+
+        // Loaded: the computed remount carries the compact name (legend + settings dialog swap to it).
+        const last = renderer.mountedModels[renderer.mountedModels.length - 1];
+        expect(last?.id).toBe(ind.id);
+        expect(last?.title).toBe('Mock');
+        expect(last?.shorttitle).toBe('MK');
     });
 
     it('re-routes to the right pane when the computed overlay differs from the prepare-time guess', async () => {
@@ -1919,7 +1950,8 @@ describe('EngineOrchestrator — force_overlay routing', () => {
         await flush();
 
         // The loading placeholder mounts first (empty series); the computed model remounts last.
-        const m = renderer.mountedModels.filter((x) => x.id === ind.id).at(-1)!;
+        const mounted = renderer.mountedModels.filter((x) => x.id === ind.id);
+        const m = mounted[mounted.length - 1]!;
         const studyPane = m.paneId!;
         expect(studyPane).not.toBe('price'); // the indicator itself still routes to its own pane
 

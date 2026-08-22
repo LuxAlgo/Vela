@@ -1489,6 +1489,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const meta = record.prepared.meta;
         const model: IndicatorModel = {
             id,
+            // Deliberately the FULL title, never a shorttitle: while the script loads the
+            // legend identifies it by its full name; the compact shorttitle arrives with
+            // the first computed model and takes over from there.
             title: record.options?.title ?? meta.title,
             overlay: meta.overlay,
             paneHint: meta.overlay ? 'price' : 'new',

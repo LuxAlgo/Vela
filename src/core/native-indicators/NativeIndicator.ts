@@ -91,8 +91,8 @@ export interface NativeIndicatorDescriptor {
     /** Full display name (picker, settings header, handle title). */
     readonly title: string;
     /**
-     * Compact name for the on-chart legend chip. Absent ⇒ {@link title}. The picker and
-     * settings dialog keep the full title either way.
+     * Compact name for the on-chart legend chip and the settings-dialog header.
+     * Absent ⇒ {@link title}. The picker keeps the full title either way.
      */
     readonly shortTitle?: string;
     readonly paneHint: 'price' | 'new';
