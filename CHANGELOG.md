@@ -11,6 +11,12 @@ All notable changes to Vela, newest first.
   wrapping long texts.
 - **Bold and italic label text.** Labels accept the same bold/italic text
   formatting boxes already support, applied to bubble and plain text styles alike.
+- **`force_overlay` content joins the price pane.** Model elements flagged
+  `force_overlay` — value series, plotted candles and bars, fills, backgrounds,
+  markers, and tables, like the drawing objects before them — now render on the
+  price pane even when their indicator occupies its own pane, and they share the
+  price scale (the pane's autoscale folds them in). `chart.inspect()` reports a
+  `forcedOverlay` count per indicator so the routing is verifiable.
 
 ### Fixed
 
@@ -27,11 +33,20 @@ All notable changes to Vela, newest first.
   the table instead of an inset line that cell backgrounds could cover, and the
   origin cell of a merged region always paints — repeated `table.merge_cells`
   calls from a running script used to blank the merged title row.
+- **Symbol and timeframe picks show instantly.** Choosing a new symbol or
+  timeframe now updates the topbar, status line, and watermark the moment the
+  pick is made instead of after the new market's bars finish loading — on a
+  slow connection the loading chart carries the name you picked rather than
+  the old market's.
 - **A label with an `na` color keeps its style's placement.** A Pine label whose
   bubble color is `na` used to draw its text centered on the anchor no matter
   which style it declared, so `label.style_label_up` read like
   `label.style_label_center`. The text now sits exactly where the bubble would
   have put it — only the bubble itself goes unpainted.
+- **Pre- and post-market shading stays off daily and higher timeframes.** On an
+  extended-session chart the tint used to paint over daily, weekly, and monthly
+  candles, even though each of those bars spans whole sessions and there is
+  nothing to shade. The bands now appear only on intraday timeframes.
 - **Pre-market sunrise and post-market sunset point the right way.** The
   statusline's session badges had their chevrons inverted, so pre-market read as
   sunset and post-market as sunrise.

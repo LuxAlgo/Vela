@@ -36,6 +36,8 @@ export interface Fill {
     colors?: Array<string | null>;
     /** Per-bar vertical gradient (gradient-fill overload), aligned by index. */
     gradient?: Array<FillGradientStop | null>;
+    /** `force_overlay` → render on the price pane regardless of the indicator's pane. */
+    overlay?: boolean;
 }
 
 /** A vertical background tint over a time span (Pine `bgcolor()` / session bands). */
@@ -47,6 +49,8 @@ export interface Background {
     /** Exclusive end, epoch ms. */
     to: Millis;
     color: string;
+    /** `force_overlay` → render on the price pane regardless of the indicator's pane. */
+    overlay?: boolean;
 }
 
 /** A horizontal price line (Pine `hline()`). */

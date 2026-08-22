@@ -65,6 +65,8 @@ interface SeriesBase {
     /** Declared draw-order intent; the renderer owns final z-ordering. */
     zOrder?: number;
     visible?: boolean;
+    /** `force_overlay` → render on the price pane regardless of the indicator's pane. */
+    overlay?: boolean;
 }
 
 export interface LineLikeSeries extends SeriesBase {

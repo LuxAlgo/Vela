@@ -13,6 +13,7 @@ import type { MarketSession } from '../core/options';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
 import type { SymbolInfo } from '../core/ports/MarketDataFeed';
 import type { CalendarWindow } from './market-status';
+import { timeframeMs } from './timeframe';
 
 /** The `sessionZones` feature payload: `[start, end)` epoch-ms bands per phase. */
 export interface SessionZonesUpdate {
@@ -156,8 +157,9 @@ const COVER_PAD_MIN_MS = 2 * DAY_MS;
  * session spec once (symbol metadata — memoized by providers), then every range update
  * is a synchronous local expansion. Reports:
  *  - `null` — no session structure at all (continuous market / no metadata);
- *  - empty bands — sessions exist but the REGULAR tape is shown (no pre/post bars on
- *    screen to shade);
+ *  - empty bands — sessions exist but there are no pre/post bar slots to shade: the
+ *    REGULAR tape is shown, or the timeframe is daily+ (each bar aggregates whole
+ *    sessions, so a band would just tint full-day candles);
  *  - the expanded bands — the extended tape is shown. The renderer clips them to the
  *    loaded bar slots, so nothing paints before history or ahead of the current bar.
  */
@@ -167,6 +169,8 @@ export class SessionShadingTracker {
     private spec: SessionSpec | null = null;
     private ready = false;
     private session: MarketSession = 'regular';
+    /** Whether one bar is shorter than a civil day — only then do pre/post bars exist. */
+    private intraday = false;
     private covered: VisibleRange | null = null;
     /** The newest range seen — viewport moves during metadata resolution (a load's fit
      *  animation) must not be lost, so the resolution always expands the LATEST range. */
@@ -175,12 +179,14 @@ export class SessionShadingTracker {
     constructor(private readonly onZones: (zones: SessionZonesUpdate | null) => void) {}
 
     /** (Re)bind to a chart's data surface + market and expand once metadata lands. */
-    track(data: DataControl, symbol: string, opts: { session: MarketSession; range: VisibleRange }): void {
+    track(data: DataControl, symbol: string, opts: { session: MarketSession; timeframe: string; range: VisibleRange }): void {
         const my = ++this.epoch;
         this.ready = false;
         this.spec = null;
         this.covered = null;
         this.session = opts.session;
+        const tfMs = timeframeMs(opts.timeframe);
+        this.intraday = Number.isFinite(tfMs) && tfMs < DAY_MS;
         this.lastRange = opts.range;
         void data
             .symbolInfo(symbol)
@@ -214,9 +220,10 @@ export class SessionShadingTracker {
             if (force) this.onZones(null);
             return;
         }
-        if (this.session !== 'extended') {
-            // Regular tape: pre/post bars aren't on screen — bands would collapse into
-            // the inter-session gap. Keep the structure known but shade nothing.
+        if (this.session !== 'extended' || !this.intraday) {
+            // No pre/post bars on screen: the regular tape collapses those hours out of
+            // the bar axis, and a daily+ bar aggregates its whole day — either way a
+            // band would land on the wrong pixels. Keep the structure known, shade nothing.
             if (force) this.onZones({ pre: [], post: [] });
             return;
         }

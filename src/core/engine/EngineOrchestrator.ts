@@ -1804,16 +1804,19 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     private placeModel(model: IndicatorModel, id: string, paneId: string): void {
         model.id = id;
         model.paneId = paneId;
-        for (const series of model.series) series.paneId = paneId;
-        for (const fill of model.fills) fill.paneId = paneId;
-        for (const bg of model.backgrounds) bg.paneId = paneId;
+        // A `force_overlay` item (overlay: true) renders on the price pane regardless of
+        // where its indicator routed — stamp it 'price' so the model tells the truth.
+        const paneOf = (item: { overlay?: boolean }): string => (item.overlay === true ? 'price' : paneId);
+        for (const series of model.series) series.paneId = paneOf(series);
+        for (const fill of model.fills) fill.paneId = paneOf(fill);
+        for (const bg of model.backgrounds) bg.paneId = paneOf(bg);
         for (const line of model.priceLines) line.paneId = paneId;
-        if (model.lines) for (const ln of model.lines) ln.paneId = paneId;
-        if (model.boxes) for (const bx of model.boxes) bx.paneId = paneId;
-        if (model.labels) for (const lb of model.labels) lb.paneId = paneId;
-        if (model.polylines) for (const pl of model.polylines) pl.paneId = paneId;
-        if (model.linefills) for (const lf of model.linefills) lf.paneId = paneId;
-        if (model.tables) for (const tb of model.tables) tb.paneId = paneId;
+        if (model.lines) for (const ln of model.lines) ln.paneId = paneOf(ln);
+        if (model.boxes) for (const bx of model.boxes) bx.paneId = paneOf(bx);
+        if (model.labels) for (const lb of model.labels) lb.paneId = paneOf(lb);
+        if (model.polylines) for (const pl of model.polylines) pl.paneId = paneOf(pl);
+        if (model.linefills) for (const lf of model.linefills) lf.paneId = paneOf(lf);
+        if (model.tables) for (const tb of model.tables) tb.paneId = paneOf(tb);
     }
 
     /** Throttled (1/s per indicator) 'context:changed' — streamed models re-emit per tick,

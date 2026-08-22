@@ -231,4 +231,6 @@ export interface DrawingTable {
     cells: Array<Array<TableCell | null>>;
     /** Merged-cell regions (`table.merge_cells`); origin spans, others are dropped. */
     merges: TableMerge[];
+    /** `force_overlay` → anchor to the price pane regardless of the indicator's pane. */
+    overlay?: boolean;
 }
