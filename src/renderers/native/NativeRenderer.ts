@@ -1933,10 +1933,10 @@ export class NativeRenderer implements IChartRenderer {
         // say so or the recorded order (object tree, seriesOrder reads) starts out a lie.
         if (model.native && this.extLayers.some((l) => l.def.id === model.native!.type)) this.scene.assignIndicatorZTop(model.id);
         else this.scene.assignIndicatorZ(model.id);
-        // Legend chip prefers the compact shorttitle; the settings dialog keeps the full title.
+        // The legend chip and the settings dialog both show the compact shorttitle when
+        // declared; the full title stays on the picker, object tree and inspect().
         this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
             native: !!model.native,
-            ...(model.shorttitle ? { settingsTitle: model.title } : {}),
             ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
         });
         this.syncTables(model);

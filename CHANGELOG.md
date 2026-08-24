@@ -39,6 +39,14 @@ All notable changes to Vela, newest first.
   price scale (the pane's autoscale folds them in). `chart.inspect()` reports a
   `forcedOverlay` count per indicator so the routing is verifiable.
 
+### Changed
+
+- **The settings dialog shows the indicator's compact name.** An indicator that
+  declares a short title (Pine `shorttitle`) now shows it in the settings-dialog
+  header as well as the legend chip, so the two always match. While a script is
+  still loading, its legend row identifies it by the full title and swaps to the
+  compact name with the first computed result.
+
 ### Fixed
 
 - **`barcolor()` respects the candle border setting.** A candle tinted by
