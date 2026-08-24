@@ -15,14 +15,32 @@ export interface InputsUIChange {
     indicatorId: string;
     key: string;
     value: InputValue;
+    /** What was edited: a script input (default) or a declaration prop (the "Properties" tab). */
+    kind?: 'input' | 'prop';
 }
 
 /** The slice of a legend row the settings dialog needs. */
 export interface IndicatorDialogRow {
     id: string;
-    settingsTitle: string;
+    /** Dialog header — the same compact text the legend chip shows. */
+    title: string;
     inputs: InputSchema[];
     values: Record<string, InputValue>;
+    /** Declaration-props schema + values — rendered on the "Properties" tab. */
+    props: InputSchema[];
+    propValues: Record<string, InputValue>;
+}
+
+/** The settings-dialog tab hosting declaration props. */
+export const PROPS_TAB = 'Properties';
+
+/** An input decl as the dialog renders it — `prop` marks a declaration-prop entry:
+ *  reads/writes route to `row.propValues` and its commits carry `kind: 'prop'`. */
+type DialogDecl = InputSchema & { prop?: boolean };
+
+/** The value bag a decl reads from / writes to (inputs vs declaration props). */
+function bagOf(row: IndicatorDialogRow, decl: DialogDecl): Record<string, InputValue> {
+    return decl.prop ? row.propValues : row.values;
 }
 
 export interface IndicatorDialogHost {
@@ -49,6 +67,7 @@ export class IndicatorInputsDialog {
     openId: string | null = null;
     private row: IndicatorDialogRow | null = null;
     private snapshot: Record<string, InputValue> | null = null;
+    private propSnapshot: Record<string, InputValue> | null = null;
     private dialogTips: Array<() => void> = [];
     /** Re-applies every `when` gate against current values; set while the dialog is open. */
     private refreshVisibility: (() => void) | null = null;
@@ -72,10 +91,11 @@ export class IndicatorInputsDialog {
 
     open(row: IndicatorDialogRow): void {
         this.close();
-        if (row.inputs.length === 0) return;
+        if (row.inputs.length === 0 && row.props.length === 0) return;
         this.row = row;
         this.openId = row.id;
         this.snapshot = { ...row.values };
+        this.propSnapshot = { ...row.propValues };
         ensureDialogStyles();
         const t = this.host.theme();
         const border = 'var(--vela-border)';
@@ -84,7 +104,7 @@ export class IndicatorInputsDialog {
 
         const ui = new Dialog({
             host,
-            title: row.settingsTitle,
+            title: row.title,
             // Non-modal: live-edit dialog — a modal machine locks pointer events on the
             // whole body, killing the chart and the body-portaled popovers.
             modal: false,
@@ -115,6 +135,19 @@ export class IndicatorInputsDialog {
         }));
 
         const tabDefs = tabInputs(row.inputs);
+        if (row.props.length > 0) {
+            // Props always render on the trailing "Properties" tab — an engine schema
+            // carries no `tab=`, and a script input that DECLARES tab='Properties'
+            // shares the tab rather than spawning a duplicate strip label.
+            const propDecls: DialogDecl[] = row.props.map((p) => {
+                const d: DialogDecl = { ...p, prop: true };
+                delete d.tab;
+                return d;
+            });
+            const existing = tabDefs.find((t) => t.name === PROPS_TAB);
+            if (existing) existing.inputs.push(...propDecls);
+            else tabDefs.push({ name: PROPS_TAB, inputs: propDecls });
+        }
         const tabs = document.createElement('div');
         tabs.style.cssText = `display:flex;gap:12px;padding:0 20px;border-bottom:1px solid ${border};flex:0 0 auto;`;
         const tabEls: HTMLElement[] = [];
@@ -235,10 +268,11 @@ export class IndicatorInputsDialog {
         this.openId = null;
         this.row = null;
         this.snapshot = null;
+        this.propSnapshot = null;
         ui?.destroy();
     }
 
-    /** Restore every input to its open-time value (re-running the indicator), then close. */
+    /** Restore every input and prop to its open-time value (re-running the indicator), then close. */
     private revertAndClose(): void {
         const row = this.row;
         const snap = this.snapshot;
@@ -249,6 +283,17 @@ export class IndicatorInputsDialog {
                 if (row.values[inp.key] !== before) {
                     row.values[inp.key] = before;
                     this.host.onChange?.({ indicatorId: row.id, key: inp.key, value: before });
+                }
+            }
+        }
+        const propSnap = this.propSnapshot;
+        if (row && propSnap) {
+            for (const p of row.props) {
+                const snapped = propSnap[p.key];
+                const before: InputValue = snapped !== undefined ? snapped : p.defval;
+                if (row.propValues[p.key] !== before) {
+                    row.propValues[p.key] = before;
+                    this.host.onChange?.({ indicatorId: row.id, key: p.key, value: before, kind: 'prop' });
                 }
             }
         }
@@ -271,20 +316,30 @@ export class IndicatorInputsDialog {
         const row = this.row;
         if (!row) return;
         const snap = this.snapshot;
+        const propSnap = this.propSnapshot;
         for (const inp of row.inputs) {
             if (row.values[inp.key] !== inp.defval) {
                 row.values[inp.key] = inp.defval;
                 this.host.onChange?.({ indicatorId: row.id, key: inp.key, value: inp.defval });
             }
         }
+        // Props reset to their EFFECTIVE defaults (the script's declared value, else the
+        // engine's) — the schema's defval already carries that resolution.
+        for (const p of row.props) {
+            if (row.propValues[p.key] !== p.defval) {
+                row.propValues[p.key] = p.defval;
+                this.host.onChange?.({ indicatorId: row.id, key: p.key, value: p.defval, kind: 'prop' });
+            }
+        }
         this.open(row);
         if (snap) this.snapshot = snap;
+        if (propSnap) this.propSnapshot = propSnap;
     }
 
     /** Write one edit through: store it, notify the host, and re-apply the `when` gates. */
-    private commit(row: IndicatorDialogRow, key: string, value: InputValue): void {
-        row.values[key] = value;
-        this.host.onChange?.({ indicatorId: row.id, key, value });
+    private commit(row: IndicatorDialogRow, decl: DialogDecl, value: InputValue): void {
+        bagOf(row, decl)[decl.key] = value;
+        this.host.onChange?.({ indicatorId: row.id, key: decl.key, value, ...(decl.prop ? { kind: 'prop' as const } : {}) });
         this.refreshVisibility?.();
     }
 
@@ -317,7 +372,7 @@ export class IndicatorInputsDialog {
         const info = lead.tooltip ? this.infoButton(lead.tooltip) : undefined;
 
         if (lead.type === 'bool') {
-            const current = Boolean(row.values[lead.key] ?? lead.defval);
+            const current = Boolean(bagOf(row, lead)[lead.key] ?? lead.defval);
             return append(fieldRow({
                 label: nameOf(lead),
                 id,
@@ -326,7 +381,7 @@ export class IndicatorInputsDialog {
                 toggle: {
                     id,
                     checked: current,
-                    onChange: (v) => this.commit(row, lead.key, v),
+                    onChange: (v) => this.commit(row, lead, v),
                 },
             }));
         }
@@ -353,9 +408,9 @@ export class IndicatorInputsDialog {
     }
 
     /** Build the typed control for one input, committing edits live via `onChange`. */
-    private buildControl(row: IndicatorDialogRow, inp: InputSchema, id: string): HTMLElement {
-        const current = row.values[inp.key] ?? inp.defval;
-        const emit = (value: InputValue): void => this.commit(row, inp.key, value);
+    private buildControl(row: IndicatorDialogRow, inp: DialogDecl, id: string): HTMLElement {
+        const current = bagOf(row, inp)[inp.key] ?? inp.defval;
+        const emit = (value: InputValue): void => this.commit(row, inp, value);
 
         if (inp.type === 'bool') {
             return buildFieldControl({ kind: 'switch', id, checked: Boolean(current), onChange: (v) => emit(v) }).el;
@@ -367,7 +422,7 @@ export class IndicatorInputsDialog {
                 kind: 'color',
                 id,
                 theme: this.host.theme(),
-                get: () => String(row.values[inp.key] ?? inp.defval),
+                get: () => String(bagOf(row, inp)[inp.key] ?? inp.defval),
                 onChange: (v) => emit(v),
             }).el;
         }

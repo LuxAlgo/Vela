@@ -31,6 +31,7 @@ import { registerChartType, unregisterChartType, type SeriesDataEngineHost } fro
 import type { BarTransform } from '../src/core/price-styles/BarTransform';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../src/core/native-indicators/NativeIndicator';
 import type { Pane } from '../src/core/model/scene';
+import type { DrawingLine } from '../src/core/model/drawings';
 import type { IndicatorModel } from '../src/core/model/indicator';
 import type { ScenePatch } from '../src/core/model/patch';
 import type { InputValue } from '../src/core/model/inputs';
@@ -96,7 +97,10 @@ class FakeRenderer implements IChartRenderer {
     setIndicatorInputs(_h: IndicatorRenderHandle, _v: Record<string, InputValue>): void {}
     indicatorVisible = new Map<string, boolean>();
     setIndicatorVisible(h: IndicatorRenderHandle, visible: boolean): void { this.indicatorVisible.set(h.id, visible); }
-    onInputChange(_cb: (e: InputChangeEvent) => void): Unsubscribe { return () => {}; }
+    private inputChangeCb: ((e: InputChangeEvent) => void) | null = null;
+    onInputChange(cb: (e: InputChangeEvent) => void): Unsubscribe { this.inputChangeCb = cb; return () => { this.inputChangeCb = null; }; }
+    /** Test helper: simulate a settings-dialog edit (input or declaration prop). */
+    fireInputChange(e: InputChangeEvent): void { this.inputChangeCb?.(e); }
     onRemoveIndicator(cb: (id: string) => void): Unsubscribe { this.removeCb = cb; return () => { this.removeCb = null; }; }
     private toggleVisibleCb: ((id: string, visible: boolean) => void) | null = null;
     onToggleIndicatorVisible(cb: (id: string, visible: boolean) => void): Unsubscribe { this.toggleVisibleCb = cb; return () => { this.toggleVisibleCb = null; }; }
@@ -208,6 +212,8 @@ class MockEngine implements ScriptingEngine {
     policyA = false;
     /** Test knob: emit a strategy-style trade-execution pair with every model. */
     emitTrades = false;
+    /** Test knob: prepare-time meta declares this compact shorttitle. */
+    declareShortTitle: string | undefined;
     runCount: Record<string, number> = {};
     lastVisibleRange: Record<string, VisibleBarRange | undefined> = {};
     streamStarts: Record<string, number> = {};
@@ -220,7 +226,7 @@ class MockEngine implements ScriptingEngine {
         return Promise.resolve({
             language: 'pine',
             inputs: [{ key: 'Length', title: 'Length', type: 'int', defval: 14 }],
-            meta: { title: 'Mock', overlay },
+            meta: { title: 'Mock', overlay, ...(this.declareShortTitle ? { shorttitle: this.declareShortTitle } : {}) },
             reactsToViewport,
             token: { instanceId, overlay },
         });
@@ -1093,6 +1099,8 @@ class DeferredEngine extends MockEngine {
     }
     /** When set, emitted models carry THIS overlay flag (to diverge from the prepare-time guess). */
     emitOverlay: boolean | undefined;
+    /** When set, emitted models carry THIS compact shorttitle. */
+    emitShortTitle: string | undefined;
     /** Release every deferred execution (the "compute finished" moment). */
     finish(): void {
         const run = this.pending;
@@ -1109,6 +1117,7 @@ class DeferredEngine extends MockEngine {
     private deferredModel(id: string, overlay: boolean): IndicatorModel {
         return {
             id, title: 'Mock', overlay, paneHint: overlay ? 'price' : 'new',
+            ...(this.emitShortTitle ? { shorttitle: this.emitShortTitle } : {}),
             series: [{ id: `${id}:line:mock#0`, title: 'Mock', paneId: 'unrouted', kind: 'line', points: [{ time: 1, value: 1 }], style: { color: '#fff', width: 1, lineStyle: 'solid' } }],
             fills: [], backgrounds: [], priceLines: [], inputs: [], inputValues: {},
         };
@@ -1151,6 +1160,32 @@ describe('EngineOrchestrator — loading placeholder + legend status', () => {
         expect(added).toEqual([ind.id]);
         expect(chart.inspect().indicators).toHaveLength(1);
         expect(renderer.removed).toHaveLength(0);
+    });
+
+    it('keeps the FULL title while loading; the shorttitle arrives with the first computed model', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new DeferredEngine();
+        engine.declareShortTitle = 'MK'; // prepare-time meta already declares the compact name…
+        engine.emitShortTitle = 'MK'; // …and the computed model carries it
+        const chart = new Vela({} as unknown as HTMLElement, { live: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+
+        const ind = chart.addIndicator('//@version=5\nindicator("Slow", "MK")\nplot(close)');
+        await chart.ready();
+        await flush();
+
+        // Loading: the placeholder identifies the script by its full name — never the shorttitle.
+        const placeholder = renderer.mountedModels.find((m) => m.id === ind.id);
+        expect(placeholder?.title).toBe('Mock');
+        expect(placeholder?.shorttitle).toBeUndefined();
+
+        engine.finish();
+        await flush();
+
+        // Loaded: the computed remount carries the compact name (legend + settings dialog swap to it).
+        const last = renderer.mountedModels[renderer.mountedModels.length - 1];
+        expect(last?.id).toBe(ind.id);
+        expect(last?.title).toBe('Mock');
+        expect(last?.shorttitle).toBe('MK');
     });
 
     it('re-routes to the right pane when the computed overlay differs from the prepare-time guess', async () => {
@@ -1859,6 +1894,192 @@ describe('chart.runScript — execute and receive the run', () => {
         expect(result.run).toBeNull();
         expect(result.error?.message).toBe('compile blew up');
         expect(chart.indicators()).toHaveLength(0);
+        chart.destroy();
+    });
+});
+
+/** A study engine whose model carries `force_overlay`-flagged items next to own ones. */
+class ForcedOverlayEngine extends MockEngine {
+    override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        const token = req.prepared.token as { instanceId: string };
+        const id = token.instanceId;
+        const bars = req.getBars?.() ?? req.bars;
+        const points = bars.map((b) => ({ time: b.time, value: b.close }));
+        const line = (name: string, overlay: boolean): DrawingLine => ({
+            id: `${id}:line-drawing:${name}`, paneId: 'unrouted', xloc: 'bar_time',
+            x1: bars[0]!.time, y1: 100, x2: bars[1]!.time, y2: 101, extend: 'none',
+            invisible: false, width: 1, style: 'solid', arrowLeft: false, arrowRight: false, overlay,
+        });
+        handlers.onModel({
+            id, title: 'Mock', overlay: false, paneHint: 'new',
+            series: [
+                { id: `${id}:line:own#0`, title: 'own', paneId: 'unrouted', kind: 'line', points, style: { color: '#fff', width: 1, lineStyle: 'solid' } },
+                { id: `${id}:line:forced#0`, title: 'forced', paneId: 'unrouted', kind: 'line', points, overlay: true, style: { color: '#0f0', width: 1, lineStyle: 'solid' } },
+            ],
+            fills: [],
+            backgrounds: [{ id: `${id}:bg#0`, paneId: 'unrouted', from: bars[0]!.time, to: bars[1]!.time, color: '#123456', overlay: true }],
+            priceLines: [],
+            lines: [line('own', false), line('forced', true)],
+            boxes: [
+                { id: `${id}:box:own`, paneId: 'unrouted', xloc: 'bar_time', left: bars[0]!.time, top: 105, right: bars[1]!.time, bottom: 95, extend: 'none', borderWidth: 1, borderStyle: 'solid', textSize: 'auto', hAlign: 'center', vAlign: 'center', wrap: false, fontFamily: 'default', bold: false, italic: false, overlay: false },
+                { id: `${id}:box:forced`, paneId: 'unrouted', xloc: 'bar_time', left: bars[0]!.time, top: 105, right: bars[1]!.time, bottom: 95, extend: 'none', borderWidth: 1, borderStyle: 'solid', textSize: 'auto', hAlign: 'center', vAlign: 'center', wrap: false, fontFamily: 'default', bold: false, italic: false, overlay: true },
+            ],
+            labels: [
+                { id: `${id}:label:own`, paneId: 'unrouted', xloc: 'bar_time', x: bars[0]!.time, y: 100, yloc: 'price', style: 'label_down', size: 'normal', textAlign: 'center', fontFamily: 'default', overlay: false },
+                { id: `${id}:label:forced`, paneId: 'unrouted', xloc: 'bar_time', x: bars[0]!.time, y: 100, yloc: 'price', style: 'label_down', size: 'normal', textAlign: 'center', fontFamily: 'default', overlay: true },
+            ],
+            polylines: [
+                { id: `${id}:poly:own`, paneId: 'unrouted', points: [{ xloc: 'bar_time', x: bars[0]!.time, price: 100 }, { xloc: 'bar_time', x: bars[1]!.time, price: 101 }], curved: false, closed: false, lineWidth: 1, lineStyle: 'solid', arrowLeft: false, arrowRight: false, overlay: false },
+                { id: `${id}:poly:forced`, paneId: 'unrouted', points: [{ xloc: 'bar_time', x: bars[0]!.time, price: 100 }, { xloc: 'bar_time', x: bars[1]!.time, price: 101 }], curved: false, closed: false, lineWidth: 1, lineStyle: 'solid', arrowLeft: false, arrowRight: false, overlay: true },
+            ],
+            linefills: [
+                { id: `${id}:lf:own`, paneId: 'unrouted', line1: line('lf-own-a', false), line2: line('lf-own-b', false), color: '#123456', overlay: false },
+                { id: `${id}:lf:forced`, paneId: 'unrouted', line1: line('lf-forced-a', true), line2: line('lf-forced-b', true), color: '#654321', overlay: true },
+            ],
+            tables: [{ id: `${id}:tb#0`, paneId: 'unrouted', position: 'top_right', columns: 1, rows: 1, frameWidth: 0, borderWidth: 0, cells: [[null]], merges: [], overlay: true }],
+            inputs: [], inputValues: {},
+        });
+        handlers.onDone?.();
+        return { stop: () => {}, update: () => {}, setVisibleRange: () => {}, notifyBars: () => {} };
+    }
+}
+
+/** An engine that exposes a declaration-props schema and records what it receives. */
+class PropsEngine extends MockEngine {
+    executeProps: Array<Record<string, InputValue> | undefined> = [];
+    updates: Array<{ inputs: Record<string, InputValue>; props?: Record<string, InputValue> }> = [];
+
+    override prepare(_source: string, instanceId: string): Promise<PreparedScript> {
+        return Promise.resolve({
+            language: 'pine',
+            inputs: [{ key: 'Length', title: 'Length', type: 'int', defval: 14 }],
+            props: [
+                { key: 'initial_capital', title: 'Initial capital', type: 'float', defval: 50000 },
+                { key: 'pyramiding', title: 'Pyramiding', type: 'int', defval: 0 },
+            ],
+            meta: { title: 'Props', overlay: false },
+            reactsToViewport: false,
+            token: { instanceId, overlay: false },
+        });
+    }
+
+    override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        const token = req.prepared.token as { instanceId: string };
+        this.executeProps.push(req.props);
+        const emit = (): void => {
+            handlers.onModel({
+                id: token.instanceId,
+                title: 'Props',
+                overlay: false,
+                paneHint: 'new',
+                series: [],
+                fills: [],
+                backgrounds: [],
+                priceLines: [],
+                inputs: req.prepared.inputs,
+                inputValues: req.inputs ?? {},
+            });
+            handlers.onDone?.();
+        };
+        emit();
+        return {
+            stop: () => {},
+            update: (inputs, props) => {
+                this.updates.push({ inputs, ...(props ? { props } : {}) });
+                emit();
+            },
+            setVisibleRange: () => {},
+            notifyBars: () => {},
+        };
+    }
+}
+
+describe('EngineOrchestrator — declaration props', () => {
+    it('merges schema defaults with add-time overrides and passes them to execute', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new PropsEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('indicator("P")', { props: { initial_capital: 25000 } });
+        await chart.ready();
+        await flush();
+
+        // Schema defaults fill the gaps; the add-time override wins on its key.
+        expect(engine.executeProps[0]).toEqual({ initial_capital: 25000, pyramiding: 0 });
+        // The handle exposes the props schema once prepared.
+        expect(ind.props.map((p) => p.key)).toEqual(['initial_capital', 'pyramiding']);
+        chart.destroy();
+    });
+
+    it('setProps re-runs the session with merged prop overrides', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new PropsEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('indicator("P")');
+        await chart.ready();
+        await flush();
+
+        ind.setProps({ pyramiding: 3 });
+        expect(engine.updates).toHaveLength(1);
+        expect(engine.updates[0]!.props).toEqual({ initial_capital: 50000, pyramiding: 3 });
+        // Inputs travel alongside — the session re-runs with both bags current.
+        expect(engine.updates[0]!.inputs).toEqual({ Length: 14 });
+
+        // setProp (singular) merges on top of the previous overrides.
+        ind.setProp('initial_capital', 10000);
+        expect(engine.updates[1]!.props).toEqual({ initial_capital: 10000, pyramiding: 3 });
+        chart.destroy();
+    });
+
+    it("routes a renderer 'prop' edit to the props bag and an input edit to inputs", async () => {
+        const renderer = new FakeRenderer();
+        const engine = new PropsEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('indicator("P")');
+        await chart.ready();
+        await flush();
+
+        renderer.fireInputChange({ indicatorId: ind.id, key: 'initial_capital', value: 75000, kind: 'prop' });
+        expect(engine.updates[0]!.props).toEqual({ initial_capital: 75000, pyramiding: 0 });
+
+        renderer.fireInputChange({ indicatorId: ind.id, key: 'Length', value: 21 });
+        expect(engine.updates[1]!.inputs).toEqual({ Length: 21 });
+        // An input edit re-runs through update(inputs) — prop overrides are not resent
+        // but stay intact for the NEXT props-driven update.
+        renderer.fireInputChange({ indicatorId: ind.id, key: 'pyramiding', value: 1, kind: 'prop' });
+        expect(engine.updates[2]!.props).toEqual({ initial_capital: 75000, pyramiding: 1 });
+        chart.destroy();
+    });
+});
+
+describe('EngineOrchestrator — force_overlay routing', () => {
+    it('stamps force_overlay items with the price pane while own items keep the study pane', async () => {
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [new ForcedOverlayEngine()], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('//@version=5\nindicator("Study")\nplot(close)');
+        await chart.ready();
+        await flush();
+
+        // The loading placeholder mounts first (empty series); the computed model remounts last.
+        const mounted = renderer.mountedModels.filter((x) => x.id === ind.id);
+        const m = mounted[mounted.length - 1]!;
+        const studyPane = m.paneId!;
+        expect(studyPane).not.toBe('price'); // the indicator itself still routes to its own pane
+
+        expect(m.series.find((s) => s.title === 'own')?.paneId).toBe(studyPane);
+        expect(m.series.find((s) => s.title === 'forced')?.paneId).toBe('price');
+        expect(m.backgrounds[0]?.paneId).toBe('price');
+        expect(m.tables?.[0]?.paneId).toBe('price');
+        // Every drawing kind: the forced instance routes to price, the own one stays put.
+        for (const kind of ['lines', 'boxes', 'labels', 'polylines', 'linefills'] as const) {
+            const items = m[kind]!;
+            expect(items.find((d) => d.id.endsWith(':own'))?.paneId).toBe(studyPane);
+            expect(items.find((d) => d.id.endsWith(':forced'))?.paneId).toBe('price');
+        }
+
+        // The deterministic oracle signal: inspect() counts the flagged items.
+        const summary = chart.inspect().indicators.find((s) => s.id === ind.id)!;
+        // forced series + background + table + one of each drawing kind (line, box, label, polyline, linefill)
+        expect(summary.forcedOverlay).toBe(8);
         chart.destroy();
     });
 });

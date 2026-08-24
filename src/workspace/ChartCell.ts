@@ -24,7 +24,7 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, type ResolvedIndicator } from '../widget/indicators';
-import { legendActionsProviderFor, resolveEngines, statePersistenceHandlers, type CellStateContext, type ExternalIndicatorEntry, type WidgetContext } from '../widget/contributions';
+import { legendActionsProviderFor, legendCalloutsProviderFor, resolveEngines, statePersistenceHandlers, type CellStateContext, type ExternalIndicatorEntry, type WidgetContext } from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { normalizeTimezone } from '../core/timezones';
@@ -282,6 +282,7 @@ export class ChartCell {
         // Contributed legend-row actions — the row resolves on THIS cell's chart; the
         // context follows the workspace rule (built fresh per click, active-cell bound).
         this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
+        this.inner.renderer.setLegendCallouts(legendCalloutsProviderFor(this.inner, () => deps.context()));
         // The cell owns ONE unified undo timeline (drawings + indicator ops), driven by
         // the workspace keymap. The drawings layer must not self-serve Ctrl+Z/Y or the
         // two histories desync (its preempt would pop the core drawing stack while the
@@ -438,23 +439,36 @@ export class ChartCell {
         // (the shared topbar gear opens the ACTIVE cell's dialog).
         this.pushSettingsSections();
 
-        // The ONE bookkeeping seam: every market change — cell setters, sync links, or
-        // host code calling chart.setMarket directly — lands here and updates the cell
+        // The committed bookkeeping seam: every market change — cell setters, sync links,
+        // or host code calling chart.setMarket directly — lands here and updates the cell
         // state + overlays, then notifies the workspace (chrome projection, retention).
+        // The cell setters ALSO project optimistically before the load (see projectMarket);
+        // this pass re-runs idempotently and adds the data-dependent bookkeeping.
         this.offMarket = this.inner.on('market:changed', ({ symbol, timeframe }) => {
-            this.state.symbol = symbol;
-            this.state.provider = parseSymbol(symbol).provider ?? undefined;
-            this.state.timeframe = timeframe;
-            this.state.session = normalizeSession(this.inner?.market.session);
-            this.watermark?.update(symbol, timeframe);
-            this.statusline?.setSymbol(symbol);
-            this.statusline?.setMeta(timeframe, this.inner?.data.displayPrefix(symbol) ?? this.state.provider ?? '');
-            if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
+            this.projectMarket(symbol, timeframe);
             this.refreshNativeCatalog(); // per-symbol support flags may differ
             this.refreshSessionAvailable(); // the new symbol may (not) have sessions
             if (this.inner) this.marketStatus?.track(this.inner.data, symbol); // …and its own market clock
             this.deps.onMarketChanged(this.id);
         });
+    }
+
+    /**
+     * Project a market identity into the cell state and its display overlays (watermark,
+     * statusline), WITHOUT the data-dependent bookkeeping. Runs twice per user pick: once
+     * optimistically from the cell setters — the labels reflect the pick immediately, not
+     * after the bars load — and again from `market:changed` (the committed pass, and the
+     * only pass for host `chart.setMarket` calls). Idempotent, so the double run converges.
+     */
+    private projectMarket(symbol: string, timeframe: string): void {
+        this.state.symbol = symbol;
+        this.state.provider = parseSymbol(symbol).provider ?? undefined;
+        this.state.timeframe = timeframe;
+        this.state.session = normalizeSession(this.inner?.market.session);
+        this.watermark?.update(symbol, timeframe);
+        this.statusline?.setSymbol(symbol);
+        this.statusline?.setMeta(timeframe, this.inner?.data.displayPrefix(symbol) ?? this.state.provider ?? '');
+        if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
     }
 
     /**
@@ -506,7 +520,7 @@ export class ChartCell {
         const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
         const fallbackSpan = Number.isFinite(requestedSpan) ? Math.max(3 * 86_400_000, requestedSpan) : 3 * 86_400_000;
         const range = chart.getVisibleRange() ?? { from: now - fallbackSpan, to: now };
-        this.sessionShading.track(chart.data, symbol, { session: this.session, range });
+        this.sessionShading.track(chart.data, symbol, { session: this.session, timeframe: this.timeframe, range });
     }
 
     /** The session-shade colors live in the renderer CONFIG (persisted with it, edited
@@ -714,11 +728,15 @@ export class ChartCell {
         return this.instances.length + this.nativeCatalog.filter((n) => n.present).length;
     }
 
-    /** Switch this cell's market in place (the chart instance survives). */
+    /** Switch this cell's market in place (the chart instance survives). The projection
+     *  is OPTIMISTIC — labels and chrome show the pick before the bars load; it follows
+     *  the setMarket call so the statusline reads the already-blanked chart. */
     setSymbol(symbol: string): void {
         if (!this.inner || symbol === this.symbol) return;
         this.unresolvedToasted = null; // a re-picked symbol gets a fresh verdict
         void this.inner.setMarket({ symbol });
+        this.projectMarket(symbol, this.timeframe);
+        this.deps.onMarketChanged(this.id);
     }
 
     setTimeframe(timeframe: string): void {
@@ -727,6 +745,8 @@ export class ChartCell {
         this.activeRangeId = null;
         this.rangeBars = 0;
         void this.inner.setMarket({ timeframe, bars: this.state.bars });
+        this.projectMarket(this.symbol, timeframe);
+        this.deps.onMarketChanged(this.id);
     }
 
     /** Applied live (renderer feature) — no reload. */

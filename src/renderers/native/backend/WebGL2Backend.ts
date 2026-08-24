@@ -380,8 +380,17 @@ export class WebGL2Backend implements IRenderBackend {
                     return sc === pane.scale ? pane : { ...pane, scale: sc };
                 };
                 b.alpha = this.modelAlpha; // indicator models fade in after the intro; candles/grid stay opaque
-                for (const m of models) for (const bgSpan of m.backgrounds) this.emitBackground(b, bgSpan, pane, coords);
-                for (const m of models) for (const f of m.fills) this.emitFill(b, m, f, effPane(m), coords, i0, i1, scene.offsetOf(m.id));
+                // Own (non-force_overlay) content on each model's pane; force_overlay content
+                // on the price pane against its MASTER scale, whatever pane the indicator owns
+                // (Pine semantics — mirrors the chrome's overlay-drawing routing).
+                for (const m of models) for (const bgSpan of m.backgrounds) if (bgSpan.overlay !== true) this.emitBackground(b, bgSpan, pane, coords);
+                for (const m of models) for (const f of m.fills) if (f.overlay !== true) this.emitFill(b, m, f, effPane(m), coords, i0, i1, scene.offsetOf(m.id));
+                if (isPrice) {
+                    for (const m of scene.indicators.values()) {
+                        for (const bgSpan of m.backgrounds) if (bgSpan.overlay === true) this.emitBackground(b, bgSpan, pane, coords);
+                        for (const f of m.fills) if (f.overlay === true) this.emitFill(b, m, f, pane, coords, i0, i1, scene.offsetOf(m.id));
+                    }
+                }
                 // When the price is hidden, the candle layer is skipped entirely (overlays still draw).
                 const drawCandles = isPrice && !scene.candlesHidden;
                 let candleDrawn = false;
@@ -397,7 +406,7 @@ export class WebGL2Backend implements IRenderBackend {
                     // Model data is index-aligned from the model's ANCHOR bar (offset 0 = whole-chart).
                     const off = scene.offsetOf(m.id);
                     const mp = effPane(m);
-                    for (const s of m.series) this.emitSeries(b, s, mp, coords, i0, i1, theme, off);
+                    for (const s of m.series) if (s.overlay !== true) this.emitSeries(b, s, mp, coords, i0, i1, theme, off);
                 }
                 if (drawCandles && !candleDrawn) {
                     drawSlicesUpTo(scene.candleZ);
@@ -406,6 +415,14 @@ export class WebGL2Backend implements IRenderBackend {
                 }
                 drawSlicesUpTo(Infinity); // layers bound to a hidden/removed series still paint, at the stack top
                 b.alpha = this.modelAlpha;
+                // force_overlay series from EVERY indicator paint on the price pane, at the top
+                // of its series stack, against the master price scale.
+                if (isPrice) {
+                    for (const m of scene.indicators.values()) {
+                        const off = scene.offsetOf(m.id);
+                        for (const s of m.series) if (s.overlay === true) this.emitSeries(b, s, pane, coords, i0, i1, theme, off);
+                    }
+                }
                 for (const m of models) { const mp = effPane(m); for (const pl of m.priceLines) this.emitHline(b, pl, mp, coords, dataW, theme); }
                 b.alpha = 1;
             }
@@ -458,7 +475,7 @@ export class WebGL2Backend implements IRenderBackend {
         for (const pane of scene.orderedPanes()) {
             const b = this.glowBatch;
             b.reset();
-            this.emitGlowSources(b, scene.indicatorsForPane(pane.id), pane, coords, i0, i1, (id) => scene.offsetOf(id));
+            this.emitGlowSources(b, scene, pane, coords, i0, i1);
             if (b.vertexCount === 0) continue;
             const topH = Math.round(pane.bounds.top * dpr * 0.5);
             const botH = Math.round((pane.bounds.top + pane.bounds.height) * dpr * 0.5);
@@ -533,15 +550,23 @@ export class WebGL2Backend implements IRenderBackend {
         return true;
     }
 
-    /** The "neon" elements that glow: line/area/step lines + point markers (not candles/fills/bars). */
-    private emitGlowSources(b: Batch, models: IndicatorModel[], pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number, offsetOf: (id: string) => number = () => 0): void {
-        for (const m of models) {
-            const off = offsetOf(m.id);
-            for (const s of m.series) {
-                if (!isLineLikeSeries(s) || s.visible === false) continue;
-                if (s.kind === 'histogram' || s.kind === 'columns') continue;
-                if (s.kind === 'circles' || s.kind === 'cross') this.emitPointMarkers(b, s, pane, coords, i0, i1, off);
-                else this.emitPolyline(b, s, pane, coords, i0, i1, s.kind === 'step', off);
+    /** The "neon" elements that glow: line/area/step lines + point markers (not candles/fills/bars).
+     *  Routing mirrors the main pass: own series per pane, force_overlay series on the price pane. */
+    private emitGlowSources(b: Batch, scene: SceneGraph, pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number): void {
+        const emitOne = (s: SeriesSpec, off: number): void => {
+            if (!isLineLikeSeries(s) || s.visible === false) return;
+            if (s.kind === 'histogram' || s.kind === 'columns') return;
+            if (s.kind === 'circles' || s.kind === 'cross') this.emitPointMarkers(b, s, pane, coords, i0, i1, off);
+            else this.emitPolyline(b, s, pane, coords, i0, i1, s.kind === 'step', off);
+        };
+        for (const m of scene.indicatorsForPane(pane.id)) {
+            const off = scene.offsetOf(m.id);
+            for (const s of m.series) if (s.overlay !== true) emitOne(s, off);
+        }
+        if (pane.kind === 'price') {
+            for (const m of scene.indicators.values()) {
+                const off = scene.offsetOf(m.id);
+                for (const s of m.series) if (s.overlay === true) emitOne(s, off);
             }
         }
     }
@@ -871,11 +896,13 @@ export class WebGL2Backend implements IRenderBackend {
                     b.alpha = this.candleBodyAlpha;
                     b.rect(g.bodyX, bodyTop, g.bodyW, bodyH, c);
                 }
-                // A barcolored body always gets a border in the direction color (TV
-                // semantics) — that's what keeps the tinted candle readable.
-                if (cs.borderVisible || bc || (fading && cs.bodyVisible)) {
+                // The border strictly follows its visibility setting — barcolor() never
+                // forces one. An unconfigured border color inherits the body color, so a
+                // barcolored body gets a matching tinted border, not a direction-colored
+                // outline.
+                if (cs.borderVisible || (fading && cs.bodyVisible)) {
                     b.alpha = this.candleStructureAlpha;
-                    const bord = cs.borderVisible || bc ? parseColor((isUp ? cs.borderUpColor : cs.borderDownColor) ?? dir) : c;
+                    const bord = cs.borderVisible ? parseColor((isUp ? cs.borderUpColor : cs.borderDownColor) ?? bodyColorStr) : c;
                     // Inset by half the stroke so the border stays inside the body's
                     // snapped footprint (mirrors the canvas2d backend).
                     const bw = Math.max(0, g.bodyW - 1);

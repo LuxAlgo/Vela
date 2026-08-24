@@ -1,11 +1,12 @@
 import type { InputSchema, InputValue, SymbolPickerFn } from '../../core/model/inputs';
-import type { LegendActionView } from '../../core/ports/IChartRenderer';
+import type { LegendActionView, LegendCalloutView } from '../../core/ports/IChartRenderer';
 import type { VelaTheme, MoveTarget } from '../../core/options';
 import { withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip } from './chrome-tooltip';
 import { Menu, type MenuItemDescriptor } from '../../ui/components/menu';
+import { CalloutBubble } from '../../ui/components/callout-bubble';
 import {
     IndicatorInputsDialog,
     ensureDialogStyles,
@@ -22,6 +23,12 @@ export {
     normalizeTimeInput,
     type InputTab,
 } from './IndicatorInputsDialog';
+
+/** Marker attribute published on the legend container whose pane sits at the plot's top
+ *  edge — the price pane normally, or a maximized study pane filling the plot. Host
+ *  overlays anchored to the plot's top-left (the widget status line) key on it to shift
+ *  the colliding legend below themselves, whichever pane owns the top. */
+export const LEGEND_AT_TOP_ATTR = 'data-vela-pane-at-top';
 
 /** A pane as the legend move UI sees it (id + label + vertical bounds, top-to-bottom order). */
 export interface LegendPaneView {
@@ -46,12 +53,13 @@ export interface LegendPlotValue {
 
 interface LegendRow {
     id: string;
-    /** Legend chip text (may be a compact shorttitle). */
+    /** Display text for the legend chip AND the settings-dialog header (may be a compact shorttitle). */
     title: string;
-    /** Settings-dialog header; falls back to {@link title} when unset. */
-    settingsTitle: string;
     inputs: InputSchema[];
     values: Record<string, InputValue>;
+    /** Declaration-props schema + values (the settings dialog's "Properties" tab). */
+    props: InputSchema[];
+    propValues: Record<string, InputValue>;
     el: HTMLElement;
     titleEl: HTMLElement;
     statusEl: HTMLElement;
@@ -73,6 +81,11 @@ interface LegendRow {
     controlsEl: HTMLElement;
     /** Host-contributed action buttons (inside `controlsEl`, before ✕) — rebuilt on demand. */
     extrasEl: HTMLElement;
+    /** Host-contributed callout bubbles: right of the title when idle, trailing the whole
+     *  row while the controls are out (see syncRowActions) — rebuilt on demand. */
+    calloutsEl: HTMLElement;
+    /** The live bubble instances in {@link calloutsEl} (kept so their panels die with the row). */
+    callouts: CalloutBubble[];
     native: boolean;
 }
 
@@ -135,10 +148,14 @@ export class InputsUI {
     private moveApi: LegendMoveApi | null = null;
     /** Host-contributed legend actions, resolved PER ROW at render time (see setLegendActions). */
     private legendActions: ((indicatorId: string) => LegendActionView[]) | null = null;
+    /** Host-contributed callout bubbles, resolved PER ROW at render time (see setLegendCallouts). */
+    private legendCallouts: ((indicatorId: string) => LegendCalloutView[]) | null = null;
     /** Chrome-tooltip disposers, per row id — a tip open at removal must not outlive its row. */
     private readonly rowTips = new Map<string, Array<() => void>>();
     /** Same, for the contributed extras only (rebuilt independently by setLegendActions). */
     private readonly extrasTips = new Map<string, Array<() => void>>();
+    /** Same, for the contributed callouts only (rebuilt independently by setLegendCallouts). */
+    private readonly calloutTips = new Map<string, Array<() => void>>();
     /** Open "Move to" menu (kept so it can be torn down). */
     private moveMenu: Menu | null = null;
     private moveTargets: MoveTarget[] = [];
@@ -323,6 +340,44 @@ export class InputsUI {
                 action.run();
             });
             extrasEl.appendChild(btn);
+        }
+    }
+
+    /**
+     * Wire the host-contributed callout bubbles. Same contract as
+     * {@link setLegendActions}: re-calling replaces the provider and re-projects the
+     * rows already on screen.
+     */
+    setLegendCallouts(provider: ((indicatorId: string) => LegendCalloutView[]) | null): void {
+        this.legendCallouts = provider;
+        for (const row of this.rows.values()) this.renderCallouts(row);
+    }
+
+    /** (Re)build one row's callout bubbles — tinted icon circles beside the title whose
+     *  click (when the view carries content) deploys a panel of text and actions. */
+    private renderCallouts(row: LegendRow): void {
+        this.disposeTips(this.calloutTips, row.id);
+        for (const bubble of row.callouts) bubble.destroy();
+        row.callouts = [];
+        row.calloutsEl.replaceChildren();
+        const views = this.legendCallouts?.(row.id) ?? [];
+        row.calloutsEl.style.display = views.length > 0 ? 'inline-flex' : 'none';
+        for (const view of views) {
+            const bubble = new CalloutBubble({
+                icon: view.icon,
+                background: view.background,
+                ...(view.color !== undefined ? { color: view.color } : {}),
+                label: view.tooltip,
+                ...(view.content !== undefined ? { panel: view.content } : {}),
+                // The panel portals into the plot host and self-tokens: it must work on
+                // a bare chart, where no `.vela-ui` token ancestor exists.
+                host: this.container,
+                theme: () => this.theme,
+            });
+            bubble.el.dataset.legendCallout = view.id;
+            this.tip(this.calloutTips, row.id, bubble.el, view.tooltip);
+            row.callouts.push(bubble);
+            row.calloutsEl.appendChild(bubble.el);
         }
     }
 
@@ -514,6 +569,9 @@ export class InputsUI {
 
     private positionLegend(lg: HTMLElement, paneId: string): void {
         const bounds = this.paneBoundsOf ? this.paneBoundsOf(paneId) : { top: 0, height: Infinity };
+        // Publish whether this legend's pane sits at the very top of the plot (see
+        // LEGEND_AT_TOP_ATTR) — the price pane normally, or a maximized study pane filling it.
+        lg.toggleAttribute(LEGEND_AT_TOP_ATTR, bounds.top === 0);
         // A pane hidden by a maximize elsewhere collapses to ~0 height — hide its legend entirely
         // (a collapsed strip keeps a small height, so its title still shows). Titles switched
         // off (the settings toggle) hide every pane's container the same way. Restore to 'flex'
@@ -621,14 +679,14 @@ export class InputsUI {
     }
 
     /** Create or update an indicator's legend row (in the legend for its pane). */
-    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; settingsTitle?: string } = {}): void {
-        const settingsTitle = opts.settingsTitle ?? title;
+    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; props?: InputSchema[]; propValues?: Record<string, InputValue> } = {}): void {
         const existing = this.rows.get(id);
         if (existing) {
             existing.title = title;
-            existing.settingsTitle = settingsTitle;
             existing.inputs = inputs;
             existing.values = { ...values };
+            existing.props = opts.props ?? [];
+            existing.propValues = { ...(opts.propValues ?? {}) };
             existing.titleEl.textContent = title;
             if (existing.paneId !== paneId) { // re-routed to a different pane
                 existing.paneId = paneId;
@@ -713,6 +771,11 @@ export class InputsUI {
             titleWrap.appendChild(beta);
         }
         el.appendChild(titleWrap);
+        // Contributed callout bubbles (registerLegendCallout) — a title companion while
+        // the row is idle; syncRowActions trails them after the controls when it opens.
+        const calloutsEl = document.createElement('span');
+        calloutsEl.style.cssText = `display:none;align-items:center;gap:4px;flex:none;margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;`;
+        el.appendChild(calloutsEl);
         el.appendChild(statusEl);
         // Plot values readout, right of the title — filled by setPlotValues, hidden until
         // values arrive (or while the values toggle is off for this row).
@@ -742,7 +805,7 @@ export class InputsUI {
             controlsEl.appendChild(eye);
             eyeEl = eye;
         }
-        if (inputs.length > 0) {
+        if (inputs.length > 0 || (opts.props ?? []).length > 0) {
             const gear = document.createElement('button');
             gear.type = 'button';
             gear.setAttribute('aria-label', 'Settings');
@@ -784,7 +847,9 @@ export class InputsUI {
         el.appendChild(controlsEl);
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        this.rows.set(id, { id, title, settingsTitle, inputs, values: { ...values }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
+        const row: LegendRow = { id, title, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, calloutsEl, callouts: [], native: !!opts.native };
+        this.rows.set(id, row);
+        this.renderCallouts(row);
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
     }
 
@@ -795,9 +860,11 @@ export class InputsUI {
     }
 
     /** Reflect programmatic input changes (so a re-opened dialog shows current values). */
-    setValues(id: string, values: Record<string, InputValue>): void {
+    setValues(id: string, values: Record<string, InputValue>, props?: Record<string, InputValue>): void {
         const row = this.rows.get(id);
-        if (row) row.values = { ...row.values, ...values };
+        if (!row) return;
+        row.values = { ...row.values, ...values };
+        if (props) row.propValues = { ...row.propValues, ...props };
     }
 
     /**
@@ -899,9 +966,15 @@ export class InputsUI {
         row.controlsEl.style.display = open || row.hidden ? 'inline-flex' : 'none';
         // The status indicator steps aside while the controls are out — moved after the
         // action cluster (its title-side margin rides along) — and returns to the title's
-        // side when the row closes.
-        if (open) row.el.appendChild(row.statusEl);
-        else row.el.insertBefore(row.statusEl, row.valuesEl);
+        // side when the row closes. The callout bubbles ride the same shuffle, trailing
+        // the whole open row ("right of the legend"), back beside the title on close.
+        if (open) {
+            row.el.appendChild(row.statusEl);
+            row.el.appendChild(row.calloutsEl);
+        } else {
+            row.el.insertBefore(row.statusEl, row.valuesEl);
+            row.el.insertBefore(row.calloutsEl, row.statusEl);
+        }
         for (const child of Array.from(row.controlsEl.children)) {
             if (!(child instanceof HTMLElement) || child === row.eyeEl) continue;
             if (child === row.extrasEl) {
@@ -921,10 +994,12 @@ export class InputsUI {
 
     remove(id: string): void {
         const row = this.rows.get(id);
+        for (const bubble of row?.callouts ?? []) bubble.destroy(); // an open panel must not outlive its row
         row?.el.remove();
         this.rows.delete(id);
         this.disposeTips(this.rowTips, id);
         this.disposeTips(this.extrasTips, id);
+        this.disposeTips(this.calloutTips, id);
         if (this.selectedId === id) this.selectedId = null;
         if (this.inputsDialog.openId === id) this.inputsDialog.close();
         this.syncFoldToggle(); // below 2 indicators the chevron goes (and a fold in force lifts)
@@ -943,6 +1018,8 @@ export class InputsUI {
         this.rowMenu = null;
         for (const id of [...this.rowTips.keys()]) this.disposeTips(this.rowTips, id);
         for (const id of [...this.extrasTips.keys()]) this.disposeTips(this.extrasTips, id);
+        for (const id of [...this.calloutTips.keys()]) this.disposeTips(this.calloutTips, id);
+        for (const row of this.rows.values()) for (const bubble of row.callouts) bubble.destroy();
         for (const lg of this.legends.values()) lg.remove();
         this.legends.clear();
         this.rows.clear();

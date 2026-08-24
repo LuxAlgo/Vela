@@ -2,6 +2,94 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.9]
+
+### Added
+
+- **Legend callout bubbles.** Plugins and host apps can now pin a small tinted
+  bubble — a colored circle with a centered icon — next to an indicator's legend
+  title (`registerLegendCallout`). The bubble shows a tooltip on hover, moves to
+  the end of the row while the legend controls are out, and can be made clickable:
+  a click deploys a panel of text and action buttons below the bubble (or above
+  it when the screen edge is too close), with the buttons running any host action.
+  The same bubble component powers the status line's market badge and is available
+  from the UI kit for host chrome.
+- **Declaration props: schema, overrides, and a "Properties" settings tab.** A
+  scripting engine can now expose the mutable arguments of a script's declaration
+  call (a strategy's `initial_capital`, `commission_value`, an indicator's
+  `precision`, …) as a props schema (`PreparedScript.props`, announced by
+  `capabilities.props`). Vela threads them end to end: `addIndicator(source,
+{ props })` seeds add-time overrides, the indicator handle gains `props`,
+  `setProp()` and `setProps()` (a prop change replays the whole script, like an
+  input edit), execution requests carry the merged values (`ExecutionRequest.props`,
+  `ExecutionSession.update(inputs, props?)`), and the in-chart settings dialog
+  renders them on a trailing **Properties** tab with the same live-edit /
+  Cancel / Reset-defaults semantics as inputs. Engines without props support are
+  untouched — the tab only appears when the engine publishes a schema.
+
+- **Pine label tooltips.** A label created with a `tooltip` now shows it: hover the
+  label (the bubble, marker, or text) and a themed tip opens next to the cursor,
+  wrapping long texts.
+- **Bold and italic label text.** Labels accept the same bold/italic text
+  formatting boxes already support, applied to bubble and plain text styles alike.
+- **`force_overlay` content joins the price pane.** Model elements flagged
+  `force_overlay` — value series, plotted candles and bars, fills, backgrounds,
+  markers, and tables, like the drawing objects before them — now render on the
+  price pane even when their indicator occupies its own pane, and they share the
+  price scale (the pane's autoscale folds them in). `chart.inspect()` reports a
+  `forcedOverlay` count per indicator so the routing is verifiable.
+
+### Changed
+
+- **The settings dialog shows the indicator's compact name.** An indicator that
+  declares a short title (Pine `shorttitle`) now shows it in the settings-dialog
+  header as well as the legend chip, so the two always match. While a script is
+  still loading, its legend row identifies it by the full title and swaps to the
+  compact name with the first computed result.
+
+### Fixed
+
+- **`barcolor()` respects the candle border setting.** A candle tinted by
+  `barcolor()` no longer gets a forced outline in the up/down direction color:
+  with borders disabled the tinted body renders flat, and with borders enabled an
+  unconfigured border color follows the tint instead of the direction color, so
+  heatmap-style recoloring reads as one solid hue. Explicitly configured border
+  colors still apply.
+- **Label `textalign` works on bubble styles.** Multi-line text inside a label
+  bubble now aligns left, center, or right as asked; it was always centered.
+- **Pine tables render with Pine's sizing and visibility rules.** An allocated
+  table whose cells were never set no longer paints as an empty grid — it
+  occupies no space until content arrives, and unused rows and columns of a
+  partially filled table collapse instead of padding the layout. Cell text no
+  longer wraps, so unicode sparklines and `━━━` divider rows stay on one line.
+  A cell's `width`/`height` percentages now size the cell against the pane, an
+  integer `text_size` renders at exactly that pixel size, and bold/italic cell
+  formatting is honored. The table frame draws as a clean outer stroke around
+  the table instead of an inset line that cell backgrounds could cover, and the
+  origin cell of a merged region always paints — repeated `table.merge_cells`
+  calls from a running script used to blank the merged title row.
+- **Symbol and timeframe picks show instantly.** Choosing a new symbol or
+  timeframe now updates the topbar, status line, and watermark the moment the
+  pick is made instead of after the new market's bars finish loading — on a
+  slow connection the loading chart carries the name you picked rather than
+  the old market's.
+- **A label with an `na` color keeps its style's placement.** A Pine label whose
+  bubble color is `na` used to draw its text centered on the anchor no matter
+  which style it declared, so `label.style_label_up` read like
+  `label.style_label_center`. The text now sits exactly where the bubble would
+  have put it — only the bubble itself goes unpainted.
+- **Pre- and post-market shading stays off daily and higher timeframes.** On an
+  extended-session chart the tint used to paint over daily, weekly, and monthly
+  candles, even though each of those bars spans whole sessions and there is
+  nothing to shade. The bands now appear only on intraday timeframes.
+- **Pre-market sunrise and post-market sunset point the right way.** The
+  statusline's session badges had their chevrons inverted, so pre-market read as
+  sunset and post-market as sunrise.
+- **A maximized pane's legend stays clear of the status line.** Maximizing an
+  indicator pane moved its legend to the top of the chart, where it merged with
+  the symbol status line. The legend now stacks below the status line, the same
+  way the price pane's legend always has.
+
 ## [v0.6.8]
 
 ### Added

@@ -10,6 +10,7 @@ import type {
     VisibleRange,
     IndicatorStatus,
     LegendActionView,
+    LegendCalloutView,
     PaneAction,
     DataWindowRow,
     DataWindowOHLC,
@@ -43,6 +44,7 @@ import { clampBarSpacing, defaultViewport, MIN_BAR_SPACING, MAX_BAR_SPACING, typ
 import { Canvas2dBackend } from './backend/Canvas2dBackend';
 import type { IRenderBackend } from './backend/IRenderBackend';
 import { ChromeRenderer } from './chrome/ChromeRenderer';
+import { LabelTooltip } from './chrome/LabelTooltip';
 import { AXIS_MASTER_W, AXIS_MERGED_W } from './chrome/axisLayout';
 import { CrosshairRenderer } from './chrome/CrosshairRenderer';
 import { SettingsDialog } from './chrome/SettingsDialog';
@@ -52,7 +54,7 @@ import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
 import { formatPriceLabel } from './chrome/ticks';
 import { zonedDate } from './chrome/tz';
-import { computePaneScale, expandScaleByPixels } from './core/autoscale';
+import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
@@ -168,6 +170,8 @@ export class NativeRenderer implements IChartRenderer {
     private backendMode: NativeBackend = 'auto';
     private glowAmount = 0; // WebGL2 neon-glow intensity (canvas2d ignores it)
     private readonly chrome = new ChromeRenderer();
+    /** Hover tooltips for Pine labels (canvas hit-rects collected by the chrome layer). */
+    private labelTooltip: LabelTooltip | null = null;
     private readonly crosshairLayer = new CrosshairRenderer();
     private scheduler!: Scheduler;
     /** 1 Hz repaint pump so the price-axis countdown-to-bar-close ticks; null when off. */
@@ -182,6 +186,8 @@ export class NativeRenderer implements IChartRenderer {
     private indicatorValuesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
+    /** Host-contributed legend callouts — held here so a rebuild of the legend re-wires them. */
+    private legendCalloutsProvider: ((indicatorId: string) => LegendCalloutView[]) | null = null;
     /** Host override of the legend's fold toggle — held here so a remount re-applies it. */
     private legendOverviewAction: (() => void) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
@@ -1379,6 +1385,12 @@ export class NativeRenderer implements IChartRenderer {
         this.plot.addEventListener('pointermove', this.onScrollProximityMove);
         this.plot.addEventListener('pointerleave', this.onScrollProximityLeave);
 
+        // Pine label tooltips: hover a label that carries one and a themed tip opens.
+        this.labelTooltip = new LabelTooltip(this.plot, {
+            theme: () => this.chromeTheme(),
+            lookup: (x, y) => this.chrome.labelTooltipAt(x, y),
+        });
+
         // User-drawings layer (paints L1.5 plus the interleave layers the geometry backend
         // composites into the series stack, and owns the interaction/settings popup). It
         // implements the IDrawingsRendererPort the core DrawingController drives.
@@ -1424,9 +1436,10 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setLegendActions(this.legendActionsProvider);
+        this.inputsUI.setLegendCallouts(this.legendCalloutsProvider);
         this.inputsUI.setLegendOverviewAction(this.legendOverviewAction);
         this.inputsUI.setOnChange((c) => {
-            for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value });
+            for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value, ...(c.kind ? { kind: c.kind } : {}) });
         });
         this.inputsUI.setOnRemove((id) => {
             for (const cb of this.removeIndicatorCbs) cb(id);
@@ -1633,6 +1646,8 @@ export class NativeRenderer implements IChartRenderer {
         this.settingsButton = null;
         this.plot?.removeEventListener('pointermove', this.onScrollProximityMove);
         this.plot?.removeEventListener('pointerleave', this.onScrollProximityLeave);
+        this.labelTooltip?.destroy();
+        this.labelTooltip = null;
         this.scrollButton?.remove();
         this.scrollButton = null;
         for (const l of this.extLayers) l.instance.destroy?.();
@@ -1918,10 +1933,11 @@ export class NativeRenderer implements IChartRenderer {
         // say so or the recorded order (object tree, seriesOrder reads) starts out a lie.
         if (model.native && this.extLayers.some((l) => l.def.id === model.native!.type)) this.scene.assignIndicatorZTop(model.id);
         else this.scene.assignIndicatorZ(model.id);
-        // Legend chip prefers the compact shorttitle; the settings dialog keeps the full title.
+        // The legend chip and the settings dialog both show the compact shorttitle when
+        // declared; the full title stays on the picker, object tree and inspect().
         this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
             native: !!model.native,
-            ...(model.shorttitle ? { settingsTitle: model.title } : {}),
+            ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
         });
         this.syncTables(model);
         if (model.native?.type === 'volume') {
@@ -1977,8 +1993,8 @@ export class NativeRenderer implements IChartRenderer {
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
-    setIndicatorInputs(handle: IndicatorRenderHandle, values: Record<string, InputValue>): void {
-        this.inputsUI.setValues(handle.id, values);
+    setIndicatorInputs(handle: IndicatorRenderHandle, values: Record<string, InputValue>, props?: Record<string, InputValue>): void {
+        this.inputsUI.setValues(handle.id, values, props);
     }
 
     setSymbolPicker(picker: SymbolPickerFn | null): void {
@@ -1989,6 +2005,11 @@ export class NativeRenderer implements IChartRenderer {
     setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
         this.legendActionsProvider = provider;
         this.inputsUI?.setLegendActions(provider);
+    }
+
+    setLegendCallouts(provider: ((indicatorId: string) => LegendCalloutView[]) | null): void {
+        this.legendCalloutsProvider = provider;
+        this.inputsUI?.setLegendCallouts(provider);
     }
 
     setLegendOverviewAction(action: (() => void) | null): void {
@@ -3152,7 +3173,13 @@ export class NativeRenderer implements IChartRenderer {
             const masterModels = models.filter((m) => m.ownScale !== true);
             // User drawings do not expand the scale (placing one in the empty margin
             // must not yank the window to follow the cursor). Pine drawings still fold in.
-            const dr = this.chrome.paneDrawingsRange(masterModels, this.scene, pane === pricePane, vr);
+            let dr = this.chrome.paneDrawingsRange(masterModels, this.scene, pane === pricePane, vr);
+            // force_overlay series render on the price pane whatever pane their indicator
+            // owns — fold their visible range in here (their own pane excludes them).
+            if (pane === pricePane) {
+                const or = overlaySeriesRange(this.scene.indicators.values(), i0, i1, (id) => this.scene.offsetOf(id));
+                if (or) dr = dr ? { min: Math.min(dr.min, or.min), max: Math.max(dr.max, or.max) } : or;
+            }
             // Hidden candles drop out of the price pane's autoscale, so overlay indicators fill the pane.
             const includeCandles = pane.kind === 'price' && !this.scene.candlesHidden;
             // Each pane logs (or not) on its OWN flag — the price pane from the scene setting,
@@ -3479,6 +3506,7 @@ export class NativeRenderer implements IChartRenderer {
         for (const m of models) {
             const off = this.scene.offsetOf(m.id);
             for (const s of m.series) {
+                if (s.overlay === true) continue; // renders on the price pane, not this one
                 if (isLineLikeSeries(s)) {
                     const v = s.points[i0 - off]?.value;
                     if (v != null && Number.isFinite(v)) return v;

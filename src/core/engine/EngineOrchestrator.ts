@@ -175,7 +175,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.defaultLanguage = config.defaultLanguage;
         this.renderer.mount(container, config.theme);
         // The renderer's in-chart settings dialog reports edits here → re-run that indicator.
-        this.renderer.onInputChange((e) => this.applyInputs(e.indicatorId, { [e.key]: e.value }));
+        this.renderer.onInputChange((e) =>
+            e.kind === 'prop' ? this.applyProps(e.indicatorId, { [e.key]: e.value }) : this.applyInputs(e.indicatorId, { [e.key]: e.value }),
+        );
         // The renderer's in-chart legend ✕ reports a removal here → tear the indicator down.
         this.renderer.onRemoveIndicator((id) => this.removeIndicator(id));
         // The renderer's in-chart legend eye reports a hide/show here → suspend/resume the indicator.
@@ -1088,7 +1090,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const title = options.title ?? 'Indicator';
         const handle = new IndicatorHandleImpl(id, title, this, source);
         this.handles.set(id, handle);
-        this.registry.add({ id, title, source, options, inputValues: { ...(options.inputs ?? {}) } });
+        this.registry.add({ id, title, source, options, inputValues: { ...(options.inputs ?? {}) }, propValues: { ...(options.props ?? {}) } });
         void this.startIndicator(id, source, options, handle);
         return handle;
     }
@@ -1113,7 +1115,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             return handle;
         }
         const inputValues = { ...descriptor.defaultInputs(), ...(options.inputs ?? {}) };
-        this.registry.add({ id, title, source: type, inputValues, native: { type, instance: descriptor.create(), descriptor } });
+        this.registry.add({ id, title, source: type, inputValues, propValues: {}, native: { type, instance: descriptor.create(), descriptor } });
         handle.setSchema(descriptor.inputsSchema());
         void this.startNativeIndicator(id, handle);
         return handle;
@@ -1175,6 +1177,21 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         record.pendingCause = 'inputs';
         if (record.session) record.session.update(record.inputValues);
         else if (record.native && !record.hidden) record.native.instance.setInputs(record.inputValues);
+    }
+
+    /** IndicatorController: re-run an indicator with merged declaration-prop overrides.
+     *  Same lifecycle as {@link applyInputs} — a prop change replays the whole script.
+     *  Script indicators only: natives have no declaration props. */
+    applyProps(id: string, values: Record<string, InputValue>): void {
+        const record = this.registry.get(id);
+        if (!record?.session) return;
+        record.propValues = { ...record.propValues, ...values };
+        // Reflect the new value in the open dialog immediately (the model arrives async).
+        if (record.renderHandle) this.renderer.setIndicatorInputs(record.renderHandle, record.inputValues, record.propValues);
+        record.pendingStructural = true;
+        if (!record.hidden) this.setLoading(record, true);
+        record.pendingCause = 'inputs';
+        record.session.update(record.inputValues, record.propValues);
     }
 
     /** IndicatorController: tear down an indicator and (if now empty) its pane. */
@@ -1355,6 +1372,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             for (const input of prepared.inputs) defaults[input.key] = input.defval;
             record.inputValues = { ...defaults, ...record.inputValues };
             handle.setSchema(prepared.inputs);
+            const propDefaults: Record<string, InputValue> = {};
+            for (const prop of prepared.props ?? []) propDefaults[prop.key] = prop.defval;
+            record.propValues = { ...propDefaults, ...record.propValues };
+            handle.setPropsSchema(prepared.props ?? []);
 
             // Mount a legend-only placeholder BEFORE the (possibly long) execution, so
             // the indicator appears immediately with a loading spinner instead of the
@@ -1386,6 +1407,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 getBars: () => this.bars,
                 fetchSeries: (sym, tf, range) => this.fetchSeries(sym, tf, range),
                 inputs: record.inputValues,
+                props: record.propValues,
                 visibleRange: this.currentVisibleRange(),
                 mode,
                 // Mid-backfill session starts (add / re-show / price-style re-execute) let the
@@ -1489,6 +1511,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const meta = record.prepared.meta;
         const model: IndicatorModel = {
             id,
+            // Deliberately the FULL title, never a shorttitle: while the script loads the
+            // legend identifies it by its full name; the compact shorttitle arrives with
+            // the first computed model and takes over from there.
             title: record.options?.title ?? meta.title,
             overlay: meta.overlay,
             paneHint: meta.overlay ? 'price' : 'new',
@@ -1498,6 +1523,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             priceLines: [],
             inputs: record.prepared.inputs,
             inputValues: record.inputValues,
+            ...(record.prepared.props ? { props: record.prepared.props, propValues: record.propValues } : {}),
         };
         const paneId = this.routePane(id, model, record.options ?? {});
         this.placeModel(model, id, paneId);
@@ -1774,7 +1800,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             // Idempotent-by-id remount: refresh visuals while keeping the legend + open
             // settings dialog intact (an input change can restructure series/drawings).
             record.renderHandle = this.renderer.mountIndicator(model);
-            this.renderer.setIndicatorInputs(record.renderHandle, record.inputValues);
+            this.renderer.setIndicatorInputs(record.renderHandle, record.inputValues, record.propValues);
             record.pendingStructural = false;
         } else {
             this.renderer.updateIndicator(record.renderHandle, modelToValuePatch(model));
@@ -1804,16 +1830,19 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     private placeModel(model: IndicatorModel, id: string, paneId: string): void {
         model.id = id;
         model.paneId = paneId;
-        for (const series of model.series) series.paneId = paneId;
-        for (const fill of model.fills) fill.paneId = paneId;
-        for (const bg of model.backgrounds) bg.paneId = paneId;
+        // A `force_overlay` item (overlay: true) renders on the price pane regardless of
+        // where its indicator routed — stamp it 'price' so the model tells the truth.
+        const paneOf = (item: { overlay?: boolean }): string => (item.overlay === true ? 'price' : paneId);
+        for (const series of model.series) series.paneId = paneOf(series);
+        for (const fill of model.fills) fill.paneId = paneOf(fill);
+        for (const bg of model.backgrounds) bg.paneId = paneOf(bg);
         for (const line of model.priceLines) line.paneId = paneId;
-        if (model.lines) for (const ln of model.lines) ln.paneId = paneId;
-        if (model.boxes) for (const bx of model.boxes) bx.paneId = paneId;
-        if (model.labels) for (const lb of model.labels) lb.paneId = paneId;
-        if (model.polylines) for (const pl of model.polylines) pl.paneId = paneId;
-        if (model.linefills) for (const lf of model.linefills) lf.paneId = paneId;
-        if (model.tables) for (const tb of model.tables) tb.paneId = paneId;
+        if (model.lines) for (const ln of model.lines) ln.paneId = paneOf(ln);
+        if (model.boxes) for (const bx of model.boxes) bx.paneId = paneOf(bx);
+        if (model.labels) for (const lb of model.labels) lb.paneId = paneOf(lb);
+        if (model.polylines) for (const pl of model.polylines) pl.paneId = paneOf(pl);
+        if (model.linefills) for (const lf of model.linefills) lf.paneId = paneOf(lf);
+        if (model.tables) for (const tb of model.tables) tb.paneId = paneOf(tb);
     }
 
     /** Throttled (1/s per indicator) 'context:changed' — streamed models re-emit per tick,

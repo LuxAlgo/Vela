@@ -84,7 +84,7 @@ const rsi = chart.addIndicator(
   `//@version=5
 indicator("RSI")
 plot(ta.rsi(close, input.int(14, "Length")), "RSI", color.purple)`,
-  { pane: 'new', title: 'RSI (14)' }, // AddIndicatorOptions: language / inputs / overlay / pane / title
+  { pane: 'new', title: 'RSI (14)' }, // AddIndicatorOptions: language / inputs / props / overlay / pane / title
 );
 rsi.on('ready', () => console.log(rsi.title, '→', rsi.inputs.length, 'inputs'));
 rsi.on('error', ({ error }) => console.error('RSI failed:', error.message));

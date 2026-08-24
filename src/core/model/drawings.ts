@@ -124,6 +124,9 @@ export interface DrawingLabel {
     textAlign: BoxHAlign;
     tooltip?: string;
     fontFamily: BoxFontFamily;
+    /** Pine `text_formatting` — bold/italic text, matching the box text options. */
+    bold?: boolean;
+    italic?: boolean;
     /** na bubble/marker color → render text only (no bubble/shape fill). */
     noFill?: boolean;
     /** `force_overlay` → render on the price pane regardless of the indicator's pane. */
@@ -188,12 +191,19 @@ export interface TableCell {
     bgColor?: string;
     hAlign: BoxHAlign;
     vAlign: BoxVAlign;
-    textSize: BoxTextSize;
+    /** A named size, or Pine's integer `text_size` as a raw pixel value. */
+    textSize: BoxTextSize | number;
     fontFamily: BoxFontFamily;
     tooltip?: string;
     bold: boolean;
     italic: boolean;
-    /** A non-origin cell absorbed by a `table.merge_cells` region → not rendered. */
+    /** Cell width as a percent of the pane's width (absent/0 = size to content). */
+    width?: number;
+    /** Cell height as a percent of the pane's height (absent/0 = size to content). */
+    height?: number;
+    /** A non-origin cell absorbed by a `table.merge_cells` region → not rendered.
+     *  Engines may also (spuriously) stamp this on the merge ORIGIN — renderers must
+     *  resolve visibility against `DrawingTable.merges`, not this flag alone. */
     merged?: boolean;
 }
 
@@ -221,4 +231,6 @@ export interface DrawingTable {
     cells: Array<Array<TableCell | null>>;
     /** Merged-cell regions (`table.merge_cells`); origin spans, others are dropped. */
     merges: TableMerge[];
+    /** `force_overlay` → anchor to the price pane regardless of the indicator's pane. */
+    overlay?: boolean;
 }

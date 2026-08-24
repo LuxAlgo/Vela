@@ -148,6 +148,10 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
   Rows use `display:contents` so a pane shares one label column (`max-content 1fr`).
 - **`GlyphSelect`** / **`widthField`** — icon-rendered options in a popover. Chart
   settings' line-width field is the width preset.
+- **`CalloutBubble`** — a tinted icon circle whose optional click deploys a Popover
+  panel of declarative text/button items (below, flipping above near the screen
+  edge). The legend's contributed callouts (`registerLegendCallout`) and the
+  statusline's market badge are both this component; tooltips stay the caller's.
 
 The primitive's **root is one element**. Chart-settings rows use `display:contents`, so a
 fragment of sibling nodes would fall onto the pane grid as extra tracks.

@@ -1,4 +1,4 @@
-import type { AxisLongPressEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, RendererCapabilities } from './ports/IChartRenderer';
+import type { AxisLongPressEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, LegendCalloutView, RendererCapabilities } from './ports/IChartRenderer';
 import type { Unsubscribe } from './util/types';
 import type { SymbolPickerFn } from './model/inputs';
 
@@ -54,6 +54,16 @@ export class RendererControl {
      */
     setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
         this.renderer.setLegendActions?.(provider);
+    }
+
+    /**
+     * Wire the legend rows' HOST-CONTRIBUTED callout bubbles (the shells route the
+     * plugin registry through this; see `registerLegendCallout`). Silent on a renderer
+     * without the seam — contributed callouts simply never show there, same graceful
+     * degradation as {@link setLegendActions}.
+     */
+    setLegendCallouts(provider: ((indicatorId: string) => LegendCalloutView[]) | null): void {
+        this.renderer.setLegendCallouts?.(provider);
     }
 
     /**

@@ -38,8 +38,9 @@ export interface IndicatorModel {
     /** Full display name (settings dialog, object tree, inspect). */
     title: string;
     /**
-     * Compact legend label when the full {@link title} is too long for the chip.
-     * Absent ⇒ the legend uses {@link title}. Mirrors Pine `indicator(..., shorttitle=)`.
+     * Compact label the legend chip and the settings dialog show instead of the full
+     * {@link title}. Absent ⇒ both use {@link title}. Mirrors Pine
+     * `indicator(..., shorttitle=)`.
      */
     shorttitle?: string;
     overlay: boolean;
@@ -103,4 +104,8 @@ export interface IndicatorModel {
     inputs: InputSchema[];
     /** Current input values (defaults merged with any user/add-time overrides). */
     inputValues: Record<string, InputValue>;
+    /** Declaration-props schema (the settings dialog's "Properties" tab). Absent ≡ none. */
+    props?: InputSchema[];
+    /** Current prop values (effective defaults merged with any user/add-time overrides). */
+    propValues?: Record<string, InputValue>;
 }
