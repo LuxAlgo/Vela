@@ -5,7 +5,7 @@ import type { Vela } from '../Vela';
 import type { OHLCV } from '../core/model/ohlcv';
 import { injectStyles } from '../ui/styles';
 import { Tooltip } from '../ui/components/tooltip';
-import { icon } from '../core/icons';
+import { CalloutBubble } from '../ui/components/callout-bubble';
 import { SESSION_PRE, SESSION_POST, SESSION_OFF } from '../core/palette';
 import { fmtPrice, fmtChange, decimalsFor } from './format';
 import { timeframeLabel } from './timeframe';
@@ -57,33 +57,9 @@ const CSS = `
 }
 .vela-statusline .vela-sl-symbol { font-weight: 600; font-size: var(--vela-font-size-lg); }
 .vela-statusline .vela-sl-meta { color: var(--vela-fg-muted); font-size: var(--vela-font-size-md); font-weight: 600; }
-/* Market status badge — icon-only 16px circle, label on hover (kit tooltip). */
-.vela-statusline .vela-sl-market {
-    display: inline-grid;
-    place-items: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    flex: none;
-    align-self: center;
-    line-height: 0;
-    cursor: default;
-}
-.vela-statusline .vela-sl-market svg {
-    width: 12px;
-    height: 12px;
-    display: block;
-}
-/* Open wears the theme's up color; the other sessions are meaning constants from the
- * palette (amber pre, sky post, gray closed/holiday). Same ink at 20% for the circle. */
-.vela-statusline .vela-sl-market[data-status='open'] {
-    background: color-mix(in srgb, var(--vela-up) 20%, transparent);
-    color: var(--vela-up);
-}
-.vela-statusline .vela-sl-market[data-status='pre'] { background: color-mix(in srgb, ${SESSION_PRE} 20%, transparent); color: ${SESSION_PRE}; }
-.vela-statusline .vela-sl-market[data-status='post'] { background: color-mix(in srgb, ${SESSION_POST} 20%, transparent); color: ${SESSION_POST}; }
-.vela-statusline .vela-sl-market[data-status='closed'],
-.vela-statusline .vela-sl-market[data-status='holiday'] { background: color-mix(in srgb, ${SESSION_OFF} 20%, transparent); color: ${SESSION_OFF}; }
+/* Market status badge — a kit callout bubble (icon-only 16px circle, label on hover
+ * via the kit tooltip); the session tint is applied per status in setMarketStatus. */
+.vela-statusline .vela-sl-market { align-self: center; }
 .vela-statusline .vela-sl-ohlc { display: flex; gap: var(--vela-space-1); color: var(--vela-fg-muted); }
 .vela-statusline .vela-sl-ohlc b { color: var(--vela-fg); font-weight: 500; }
 /* The change value wears the SAME ink as the OHLC values (set inline per render) —
@@ -188,6 +164,17 @@ const MARKET_LABELS: Record<MarketStatus, string> = {
     holiday: 'Market Holiday',
 };
 
+/** Session ink: open wears the theme's up color; the other sessions are meaning
+ *  constants from the palette (amber pre, sky post, gray closed/holiday). The badge
+ *  circle is the same ink at a 20% wash. */
+const MARKET_INKS: Record<MarketStatus, string> = {
+    open: 'var(--vela-up)',
+    pre: SESSION_PRE,
+    post: SESSION_POST,
+    closed: SESSION_OFF,
+    holiday: SESSION_OFF,
+};
+
 /**
  * The active price style's value readout for the status line, read live from the
  * renderer: the up/down COLORS from the cosmetic config (candle bodies for candles/HA —
@@ -244,6 +231,8 @@ export class Statusline {
     private readonly changeEl: HTMLElement;
     private readonly symbolEl: HTMLElement;
     private readonly marketEl: HTMLElement;
+    /** The badge itself — a kit callout bubble (the same element as {@link marketEl}). */
+    private readonly marketBubble: CalloutBubble;
     private marketTip!: Tooltip;
     private avatarEl: HTMLElement;
     private metaEl!: HTMLElement;
@@ -287,8 +276,17 @@ export class Statusline {
         this.symbolEl.textContent = ticker;
         this.metaEl = doc.createElement('span');
         this.metaEl.className = 'vela-sl-meta';
-        this.marketEl = doc.createElement('span');
-        this.marketEl.className = 'vela-sl-market';
+        // The badge is the shared kit callout bubble — no panel, so it stays a plain
+        // (non-clickable) tinted circle; setMarketStatus re-dresses it per session.
+        this.marketBubble = new CalloutBubble({
+            icon: 'market-open',
+            background: `color-mix(in srgb, ${MARKET_INKS.open} 20%, transparent)`,
+            color: MARKET_INKS.open,
+            label: MARKET_LABELS.open,
+            host,
+        });
+        this.marketEl = this.marketBubble.el;
+        this.marketEl.classList.add('vela-sl-market');
         this.ohlcEl = doc.createElement('span');
         this.ohlcEl.className = 'vela-sl-ohlc';
         this.changeEl = doc.createElement('span');
@@ -385,8 +383,13 @@ export class Statusline {
      *  hover label. Callers with no session model leave the constructor's 'open'. */
     setMarketStatus(status: MarketStatus): void {
         this.marketEl.dataset.status = status;
-        this.marketEl.innerHTML = icon(`market-${status}`);
-        this.marketEl.setAttribute('aria-label', MARKET_LABELS[status]);
+        const ink = MARKET_INKS[status];
+        this.marketBubble.set({
+            icon: `market-${status}`,
+            background: `color-mix(in srgb, ${ink} 20%, transparent)`,
+            color: ink,
+            label: MARKET_LABELS[status],
+        });
         this.marketTip.setContent(MARKET_LABELS[status]);
     }
 
@@ -423,6 +426,7 @@ export class Statusline {
         this.fitRO?.disconnect();
         this.fitRO = null;
         this.marketTip.destroy();
+        this.marketBubble.destroy();
         this.host.classList.remove('vela-has-statusline', 'vela-sl-fit-host'); // the legend shift leaves with the line
         this.el.remove();
     }

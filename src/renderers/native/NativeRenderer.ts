@@ -10,6 +10,7 @@ import type {
     VisibleRange,
     IndicatorStatus,
     LegendActionView,
+    LegendCalloutView,
     PaneAction,
     DataWindowRow,
     DataWindowOHLC,
@@ -185,6 +186,8 @@ export class NativeRenderer implements IChartRenderer {
     private indicatorValuesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
+    /** Host-contributed legend callouts — held here so a rebuild of the legend re-wires them. */
+    private legendCalloutsProvider: ((indicatorId: string) => LegendCalloutView[]) | null = null;
     /** Host override of the legend's fold toggle — held here so a remount re-applies it. */
     private legendOverviewAction: (() => void) | null = null;
     // ── keyboard navigation / accessibility (item 11) ──
@@ -1433,6 +1436,7 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI.setDialogHost(this.dialogHost);
         this.inputsUI.setSymbolPicker(this.symbolPicker);
         this.inputsUI.setLegendActions(this.legendActionsProvider);
+        this.inputsUI.setLegendCallouts(this.legendCalloutsProvider);
         this.inputsUI.setLegendOverviewAction(this.legendOverviewAction);
         this.inputsUI.setOnChange((c) => {
             for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value, ...(c.kind ? { kind: c.kind } : {}) });
@@ -2001,6 +2005,11 @@ export class NativeRenderer implements IChartRenderer {
     setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
         this.legendActionsProvider = provider;
         this.inputsUI?.setLegendActions(provider);
+    }
+
+    setLegendCallouts(provider: ((indicatorId: string) => LegendCalloutView[]) | null): void {
+        this.legendCalloutsProvider = provider;
+        this.inputsUI?.setLegendCallouts(provider);
     }
 
     setLegendOverviewAction(action: (() => void) | null): void {

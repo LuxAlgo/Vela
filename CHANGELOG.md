@@ -6,6 +6,14 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Legend callout bubbles.** Plugins and host apps can now pin a small tinted
+  bubble — a colored circle with a centered icon — next to an indicator's legend
+  title (`registerLegendCallout`). The bubble shows a tooltip on hover, moves to
+  the end of the row while the legend controls are out, and can be made clickable:
+  a click deploys a panel of text and action buttons below the bubble (or above
+  it when the screen edge is too close), with the buttons running any host action.
+  The same bubble component powers the status line's market badge and is available
+  from the UI kit for host chrome.
 - **Declaration props: schema, overrides, and a "Properties" settings tab.** A
   scripting engine can now expose the mutable arguments of a script's declaration
   call (a strategy's `initial_capital`, `commission_value`, an indicator's

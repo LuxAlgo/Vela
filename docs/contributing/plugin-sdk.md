@@ -511,6 +511,50 @@ registerLegendAction({
 - The seam degrades gracefully: a custom renderer without `setLegendActions` simply never
   shows contributed legend actions (same rule as the sync ghost crosshair).
 
+## Legend callouts — `registerLegendCallout`
+
+A small tinted **callout bubble** with a centered icon, always visible right of an
+indicator's legend title (it trails the whole row while the hover controls are out).
+Hover shows its tooltip; when the spec carries `content`, clicking deploys a panel of
+text blocks and action buttons — below the bubble, flipping above it near the bottom
+screen edge. The classic use: a live status a user can act on (a market-session badge,
+a "new version available" notice with an Update button).
+
+```ts
+import { registerLegendCallout } from 'vela/plugin';
+
+registerLegendCallout({
+    id: 'mytool.status',
+    callout: (ind) => ({
+        icon: 'market-open',                          // vela/ui icon registry
+        background: 'color-mix(in srgb, var(--vela-up) 20%, transparent)',
+        color: 'var(--vela-up)',                      // icon ink (default: the row's text color)
+        tooltip: `${ind.title}: live`,
+        content: {                                    // omit → a plain, non-clickable badge
+            title: 'Indicator status',
+            items: [
+                { type: 'text', text: 'Computing on live bars.' },
+                { type: 'button', label: 'Details', primary: true, run: (ctx, i) => ctx.togglePanel('mytool.panel') },
+                { type: 'button', label: 'Mute', close: false, run: (ctx, i) => mute(i.id) },
+            ],
+        },
+    }),
+});
+```
+
+- Unlike a legend action's static icon, the whole presentation is **resolved per row**
+  through `callout(ind)` — return `null` to show none (the per-indicator gate), or a
+  spec whose icon/tint/panel follow your own state. When that state changes, call
+  `refreshActions()` and the bubbles re-dress.
+- Panel content is **data, never DOM**: ordered `text` and `button` items (consecutive
+  buttons share one row). A button's `run` receives a fresh `WidgetContext` plus the
+  row's {@link LegendIndicatorInfo}; buttons close the panel after `run` unless
+  `close: false`.
+- The bubble itself is the kit's `CalloutBubble` (`@luxalgo/vela/ui`) — reusable in
+  host chrome; the widget's own market-status badge is the same component.
+- The seam degrades gracefully: a custom renderer without `setLegendCallouts` simply
+  never shows contributed callouts.
+
 ## Side panels — `registerSidePanel`
 
 A **side panel** is a docked column on the chart's right edge — the object tree and the data
