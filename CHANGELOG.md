@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.6.9]
 
 ### Added
 
@@ -19,7 +19,7 @@ All notable changes to Vela, newest first.
   call (a strategy's `initial_capital`, `commission_value`, an indicator's
   `precision`, …) as a props schema (`PreparedScript.props`, announced by
   `capabilities.props`). Vela threads them end to end: `addIndicator(source,
-  { props })` seeds add-time overrides, the indicator handle gains `props`,
+{ props })` seeds add-time overrides, the indicator handle gains `props`,
   `setProp()` and `setProps()` (a prop change replays the whole script, like an
   input edit), execution requests carry the merged values (`ExecutionRequest.props`,
   `ExecutionSession.update(inputs, props?)`), and the in-chart settings dialog
