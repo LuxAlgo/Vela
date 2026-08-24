@@ -218,6 +218,10 @@ export interface AddIndicatorOptions {
     language?: string;
     /** Input overrides, keyed by input title or varId. */
     inputs?: Record<string, InputValue>;
+    /** Declaration-property overrides (a strategy's `initial_capital`, an indicator's
+     *  `precision`, …), keyed like the engine's props schema. Ignored by engines
+     *  without props support. */
+    props?: Record<string, InputValue>;
     /** Force overlay-vs-pane placement (default: read from `indicator(overlay=…)`). */
     overlay?: boolean;
     /** Explicit pane placement. */

@@ -896,11 +896,13 @@ export class WebGL2Backend implements IRenderBackend {
                     b.alpha = this.candleBodyAlpha;
                     b.rect(g.bodyX, bodyTop, g.bodyW, bodyH, c);
                 }
-                // A barcolored body always gets a border in the direction color (TV
-                // semantics) — that's what keeps the tinted candle readable.
-                if (cs.borderVisible || bc || (fading && cs.bodyVisible)) {
+                // The border strictly follows its visibility setting — barcolor() never
+                // forces one. An unconfigured border color inherits the body color, so a
+                // barcolored body gets a matching tinted border, not a direction-colored
+                // outline.
+                if (cs.borderVisible || (fading && cs.bodyVisible)) {
                     b.alpha = this.candleStructureAlpha;
-                    const bord = cs.borderVisible || bc ? parseColor((isUp ? cs.borderUpColor : cs.borderDownColor) ?? dir) : c;
+                    const bord = cs.borderVisible ? parseColor((isUp ? cs.borderUpColor : cs.borderDownColor) ?? bodyColorStr) : c;
                     // Inset by half the stroke so the border stays inside the body's
                     // snapped footprint (mirrors the canvas2d backend).
                     const bw = Math.max(0, g.bodyW - 1);

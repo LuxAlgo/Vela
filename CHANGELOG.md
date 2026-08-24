@@ -14,6 +14,18 @@ All notable changes to Vela, newest first.
   it when the screen edge is too close), with the buttons running any host action.
   The same bubble component powers the status line's market badge and is available
   from the UI kit for host chrome.
+- **Declaration props: schema, overrides, and a "Properties" settings tab.** A
+  scripting engine can now expose the mutable arguments of a script's declaration
+  call (a strategy's `initial_capital`, `commission_value`, an indicator's
+  `precision`, …) as a props schema (`PreparedScript.props`, announced by
+  `capabilities.props`). Vela threads them end to end: `addIndicator(source,
+  { props })` seeds add-time overrides, the indicator handle gains `props`,
+  `setProp()` and `setProps()` (a prop change replays the whole script, like an
+  input edit), execution requests carry the merged values (`ExecutionRequest.props`,
+  `ExecutionSession.update(inputs, props?)`), and the in-chart settings dialog
+  renders them on a trailing **Properties** tab with the same live-edit /
+  Cancel / Reset-defaults semantics as inputs. Engines without props support are
+  untouched — the tab only appears when the engine publishes a schema.
 
 - **Pine label tooltips.** A label created with a `tooltip` now shows it: hover the
   label (the bubble, marker, or text) and a themed tip opens next to the cursor,
@@ -29,6 +41,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **`barcolor()` respects the candle border setting.** A candle tinted by
+  `barcolor()` no longer gets a forced outline in the up/down direction color:
+  with borders disabled the tinted body renders flat, and with borders enabled an
+  unconfigured border color follows the tint instead of the direction color, so
+  heatmap-style recoloring reads as one solid hue. Explicitly configured border
+  colors still apply.
 - **Label `textalign` works on bubble styles.** Multi-line text inside a label
   bubble now aligns left, center, or right as asked; it was always centered.
 - **Pine tables render with Pine's sizing and visibility rules.** An allocated
@@ -59,6 +77,10 @@ All notable changes to Vela, newest first.
 - **Pre-market sunrise and post-market sunset point the right way.** The
   statusline's session badges had their chevrons inverted, so pre-market read as
   sunset and post-market as sunrise.
+- **A maximized pane's legend stays clear of the status line.** Maximizing an
+  indicator pane moved its legend to the top of the chart, where it merged with
+  the symbol status line. The legend now stacks below the status line, the same
+  way the price pane's legend always has.
 
 ## [v0.6.8]
 

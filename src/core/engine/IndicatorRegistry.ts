@@ -27,6 +27,9 @@ export interface IndicatorRecord {
     model?: IndicatorModel;
     renderHandle?: IndicatorRenderHandle;
     inputValues: Record<string, InputValue>;
+    /** Declaration-prop values (effective defaults merged with user/add-time overrides).
+     *  Stays empty for engines without props support and for natives. */
+    propValues: Record<string, InputValue>;
     /** The live execution session (static or streaming) — poked on input/viewport/bar changes. */
     session?: ExecutionSession;
     /**
