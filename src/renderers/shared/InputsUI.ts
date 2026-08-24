@@ -23,6 +23,12 @@ export {
     type InputTab,
 } from './IndicatorInputsDialog';
 
+/** Marker attribute published on the legend container whose pane sits at the plot's top
+ *  edge — the price pane normally, or a maximized study pane filling the plot. Host
+ *  overlays anchored to the plot's top-left (the widget status line) key on it to shift
+ *  the colliding legend below themselves, whichever pane owns the top. */
+export const LEGEND_AT_TOP_ATTR = 'data-vela-pane-at-top';
+
 /** A pane as the legend move UI sees it (id + label + vertical bounds, top-to-bottom order). */
 export interface LegendPaneView {
     id: string;
@@ -50,6 +56,9 @@ interface LegendRow {
     title: string;
     inputs: InputSchema[];
     values: Record<string, InputValue>;
+    /** Declaration-props schema + values (the settings dialog's "Properties" tab). */
+    props: InputSchema[];
+    propValues: Record<string, InputValue>;
     el: HTMLElement;
     titleEl: HTMLElement;
     statusEl: HTMLElement;
@@ -512,6 +521,9 @@ export class InputsUI {
 
     private positionLegend(lg: HTMLElement, paneId: string): void {
         const bounds = this.paneBoundsOf ? this.paneBoundsOf(paneId) : { top: 0, height: Infinity };
+        // Publish whether this legend's pane sits at the very top of the plot (see
+        // LEGEND_AT_TOP_ATTR) — the price pane normally, or a maximized study pane filling it.
+        lg.toggleAttribute(LEGEND_AT_TOP_ATTR, bounds.top === 0);
         // A pane hidden by a maximize elsewhere collapses to ~0 height — hide its legend entirely
         // (a collapsed strip keeps a small height, so its title still shows). Titles switched
         // off (the settings toggle) hide every pane's container the same way. Restore to 'flex'
@@ -619,12 +631,14 @@ export class InputsUI {
     }
 
     /** Create or update an indicator's legend row (in the legend for its pane). */
-    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean } = {}): void {
+    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; props?: InputSchema[]; propValues?: Record<string, InputValue> } = {}): void {
         const existing = this.rows.get(id);
         if (existing) {
             existing.title = title;
             existing.inputs = inputs;
             existing.values = { ...values };
+            existing.props = opts.props ?? [];
+            existing.propValues = { ...(opts.propValues ?? {}) };
             existing.titleEl.textContent = title;
             if (existing.paneId !== paneId) { // re-routed to a different pane
                 existing.paneId = paneId;
@@ -738,7 +752,7 @@ export class InputsUI {
             controlsEl.appendChild(eye);
             eyeEl = eye;
         }
-        if (inputs.length > 0) {
+        if (inputs.length > 0 || (opts.props ?? []).length > 0) {
             const gear = document.createElement('button');
             gear.type = 'button';
             gear.setAttribute('aria-label', 'Settings');
@@ -780,7 +794,7 @@ export class InputsUI {
         el.appendChild(controlsEl);
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        this.rows.set(id, { id, title, inputs, values: { ...values }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
+        this.rows.set(id, { id, title, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
     }
 
@@ -791,9 +805,11 @@ export class InputsUI {
     }
 
     /** Reflect programmatic input changes (so a re-opened dialog shows current values). */
-    setValues(id: string, values: Record<string, InputValue>): void {
+    setValues(id: string, values: Record<string, InputValue>, props?: Record<string, InputValue>): void {
         const row = this.rows.get(id);
-        if (row) row.values = { ...row.values, ...values };
+        if (!row) return;
+        row.values = { ...row.values, ...values };
+        if (props) row.propValues = { ...row.propValues, ...props };
     }
 
     /**

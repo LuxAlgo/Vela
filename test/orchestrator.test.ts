@@ -97,7 +97,10 @@ class FakeRenderer implements IChartRenderer {
     setIndicatorInputs(_h: IndicatorRenderHandle, _v: Record<string, InputValue>): void {}
     indicatorVisible = new Map<string, boolean>();
     setIndicatorVisible(h: IndicatorRenderHandle, visible: boolean): void { this.indicatorVisible.set(h.id, visible); }
-    onInputChange(_cb: (e: InputChangeEvent) => void): Unsubscribe { return () => {}; }
+    private inputChangeCb: ((e: InputChangeEvent) => void) | null = null;
+    onInputChange(cb: (e: InputChangeEvent) => void): Unsubscribe { this.inputChangeCb = cb; return () => { this.inputChangeCb = null; }; }
+    /** Test helper: simulate a settings-dialog edit (input or declaration prop). */
+    fireInputChange(e: InputChangeEvent): void { this.inputChangeCb?.(e); }
     onRemoveIndicator(cb: (id: string) => void): Unsubscribe { this.removeCb = cb; return () => { this.removeCb = null; }; }
     private toggleVisibleCb: ((id: string, visible: boolean) => void) | null = null;
     onToggleIndicatorVisible(cb: (id: string, visible: boolean) => void): Unsubscribe { this.toggleVisibleCb = cb; return () => { this.toggleVisibleCb = null; }; }
@@ -1940,6 +1943,113 @@ class ForcedOverlayEngine extends MockEngine {
         return { stop: () => {}, update: () => {}, setVisibleRange: () => {}, notifyBars: () => {} };
     }
 }
+
+/** An engine that exposes a declaration-props schema and records what it receives. */
+class PropsEngine extends MockEngine {
+    executeProps: Array<Record<string, InputValue> | undefined> = [];
+    updates: Array<{ inputs: Record<string, InputValue>; props?: Record<string, InputValue> }> = [];
+
+    override prepare(_source: string, instanceId: string): Promise<PreparedScript> {
+        return Promise.resolve({
+            language: 'pine',
+            inputs: [{ key: 'Length', title: 'Length', type: 'int', defval: 14 }],
+            props: [
+                { key: 'initial_capital', title: 'Initial capital', type: 'float', defval: 50000 },
+                { key: 'pyramiding', title: 'Pyramiding', type: 'int', defval: 0 },
+            ],
+            meta: { title: 'Props', overlay: false },
+            reactsToViewport: false,
+            token: { instanceId, overlay: false },
+        });
+    }
+
+    override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        const token = req.prepared.token as { instanceId: string };
+        this.executeProps.push(req.props);
+        const emit = (): void => {
+            handlers.onModel({
+                id: token.instanceId,
+                title: 'Props',
+                overlay: false,
+                paneHint: 'new',
+                series: [],
+                fills: [],
+                backgrounds: [],
+                priceLines: [],
+                inputs: req.prepared.inputs,
+                inputValues: req.inputs ?? {},
+            });
+            handlers.onDone?.();
+        };
+        emit();
+        return {
+            stop: () => {},
+            update: (inputs, props) => {
+                this.updates.push({ inputs, ...(props ? { props } : {}) });
+                emit();
+            },
+            setVisibleRange: () => {},
+            notifyBars: () => {},
+        };
+    }
+}
+
+describe('EngineOrchestrator — declaration props', () => {
+    it('merges schema defaults with add-time overrides and passes them to execute', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new PropsEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('indicator("P")', { props: { initial_capital: 25000 } });
+        await chart.ready();
+        await flush();
+
+        // Schema defaults fill the gaps; the add-time override wins on its key.
+        expect(engine.executeProps[0]).toEqual({ initial_capital: 25000, pyramiding: 0 });
+        // The handle exposes the props schema once prepared.
+        expect(ind.props.map((p) => p.key)).toEqual(['initial_capital', 'pyramiding']);
+        chart.destroy();
+    });
+
+    it('setProps re-runs the session with merged prop overrides', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new PropsEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('indicator("P")');
+        await chart.ready();
+        await flush();
+
+        ind.setProps({ pyramiding: 3 });
+        expect(engine.updates).toHaveLength(1);
+        expect(engine.updates[0]!.props).toEqual({ initial_capital: 50000, pyramiding: 3 });
+        // Inputs travel alongside — the session re-runs with both bags current.
+        expect(engine.updates[0]!.inputs).toEqual({ Length: 14 });
+
+        // setProp (singular) merges on top of the previous overrides.
+        ind.setProp('initial_capital', 10000);
+        expect(engine.updates[1]!.props).toEqual({ initial_capital: 10000, pyramiding: 3 });
+        chart.destroy();
+    });
+
+    it("routes a renderer 'prop' edit to the props bag and an input edit to inputs", async () => {
+        const renderer = new FakeRenderer();
+        const engine = new PropsEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('indicator("P")');
+        await chart.ready();
+        await flush();
+
+        renderer.fireInputChange({ indicatorId: ind.id, key: 'initial_capital', value: 75000, kind: 'prop' });
+        expect(engine.updates[0]!.props).toEqual({ initial_capital: 75000, pyramiding: 0 });
+
+        renderer.fireInputChange({ indicatorId: ind.id, key: 'Length', value: 21 });
+        expect(engine.updates[1]!.inputs).toEqual({ Length: 21 });
+        // An input edit re-runs through update(inputs) — prop overrides are not resent
+        // but stay intact for the NEXT props-driven update.
+        renderer.fireInputChange({ indicatorId: ind.id, key: 'pyramiding', value: 1, kind: 'prop' });
+        expect(engine.updates[2]!.props).toEqual({ initial_capital: 75000, pyramiding: 1 });
+        chart.destroy();
+    });
+});
 
 describe('EngineOrchestrator — force_overlay routing', () => {
     it('stamps force_overlay items with the price pane while own items keep the study pane', async () => {

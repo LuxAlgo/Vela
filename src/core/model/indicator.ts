@@ -104,4 +104,8 @@ export interface IndicatorModel {
     inputs: InputSchema[];
     /** Current input values (defaults merged with any user/add-time overrides). */
     inputValues: Record<string, InputValue>;
+    /** Declaration-props schema (the settings dialog's "Properties" tab). Absent ≡ none. */
+    props?: InputSchema[];
+    /** Current prop values (effective defaults merged with any user/add-time overrides). */
+    propValues?: Record<string, InputValue>;
 }
