@@ -146,6 +146,8 @@ export interface InputChangeEvent {
     indicatorId: string;
     key: string;
     value: InputValue;
+    /** What was edited: a script input (default) or a declaration prop (the "Properties" tab). */
+    kind?: 'input' | 'prop';
 }
 
 export interface VisibleRange {
@@ -260,8 +262,9 @@ export interface IChartRenderer {
     mountIndicator(model: IndicatorModel): IndicatorRenderHandle;
     updateIndicator(handle: IndicatorRenderHandle, patch: ScenePatch): void;
     removeIndicator(handle: IndicatorRenderHandle): void;
-    /** Reflect a programmatic input change in the renderer's settings UI. */
-    setIndicatorInputs(handle: IndicatorRenderHandle, values: Record<string, InputValue>): void;
+    /** Reflect a programmatic input change in the renderer's settings UI. `props`
+     *  (when given) refreshes the declaration-prop values the same way. */
+    setIndicatorInputs(handle: IndicatorRenderHandle, values: Record<string, InputValue>, props?: Record<string, InputValue>): void;
 
     /**
      * Supply a symbol picker so the settings dialog's `input.symbol` control opens the host's own

@@ -6,6 +6,19 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Declaration props: schema, overrides, and a "Properties" settings tab.** A
+  scripting engine can now expose the mutable arguments of a script's declaration
+  call (a strategy's `initial_capital`, `commission_value`, an indicator's
+  `precision`, …) as a props schema (`PreparedScript.props`, announced by
+  `capabilities.props`). Vela threads them end to end: `addIndicator(source,
+  { props })` seeds add-time overrides, the indicator handle gains `props`,
+  `setProp()` and `setProps()` (a prop change replays the whole script, like an
+  input edit), execution requests carry the merged values (`ExecutionRequest.props`,
+  `ExecutionSession.update(inputs, props?)`), and the in-chart settings dialog
+  renders them on a trailing **Properties** tab with the same live-edit /
+  Cancel / Reset-defaults semantics as inputs. Engines without props support are
+  untouched — the tab only appears when the engine publishes a schema.
+
 - **Pine label tooltips.** A label created with a `tooltip` now shows it: hover the
   label (the bubble, marker, or text) and a themed tip opens next to the cursor,
   wrapping long texts.

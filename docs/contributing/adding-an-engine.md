@@ -19,10 +19,11 @@ The core owns everything downstream of the model — pane routing (overlay vs st
 An engine is a small object with four things:
 
 - **A unique language id** — e.g. `'pine'`. This is the registry key the core selects on.
-- **An honest capabilities object** — three booleans the core trusts without re-checking:
+- **An honest capabilities object** — booleans the core trusts without re-checking:
   - `streaming` — can keep a persistent incremental context alive for live ticks (vs a full re-run each time).
   - `visibleRange` — understands viewport-dependent execution (scripts that read "the left/right visible bar time").
   - `inputs` — exposes an inputs schema that drives the renderer's settings dialog.
+  - `props` (optional) — exposes a declaration-props schema (see below) and honors prop overrides on `execute`/`update`.
 - **`prepare`** — a cheap, async parse.
 - **`execute`** — the run.
 
@@ -35,6 +36,7 @@ Capability honesty matters. The core routes on these flags and does not second-g
 It resolves to:
 
 - **An inputs schema** — the typed inputs the script exposes (the renderer turns this into a settings UI).
+- **A declaration-props schema (optional)** — the *mutable arguments of the declaration call itself* (a strategy's `initial_capital`, an indicator's `precision`, …), in the same schema shape as inputs. The renderer shows them on a "Properties" settings tab. Make each entry's `defval` the **effective** default: the value the script declares, else your engine's configured default, else the language's own — the dialog opens on it and "Reset defaults" restores it.
 - **Declaration metadata** — what the script declares about itself (title, overlay vs study intent, and so on).
 - **A static `reactsToViewport` guess** — whether the source references a viewport built-in. This is a *static guess*, detected by scanning the source; it can be refined after the first real run.
 - **An opaque engine-internal token** — whatever the engine wants to read back at execute time (a parsed AST, a compiled function, a handle). The core treats it as a black box and never inspects it.
@@ -99,7 +101,7 @@ given. Instance identity belongs to the core; intra-model identity belongs to yo
 The execution session is how the core drives a running script. It exposes four levers:
 
 - **`stop()`** — tear down; stops any streaming or incremental re-execution.
-- **`update(inputs)`** — re-run (or re-stream) with merged input overrides. An input can restructure output, so this can be a structural change.
+- **`update(inputs, props?)`** — re-run (or re-stream) with merged input overrides. An input can restructure output, so this can be a structural change. When your engine advertises `props`, the second argument (when present) carries the merged declaration-prop overrides — apply both and replay; an engine without props support can ignore it.
 - **`setVisibleRange(range)`** — push a new viewport window. Re-runs viewport-dependent scripts; a no-op for everything else.
 - **`notifyBars(reason?)`** — signal that the core's bars changed. **No reason** = a live tick (forming candle or a new bar). **`'backfill'`** = older history chunks were just prepended and the load is still in progress. **`'complete'`** = the history load finished (fires exactly once per load). What to *do* about each reason is the engine's decision, not the core's — see [*History backfill*](#history-backfill-partial-bars-engine-owned-run-policy).
 - **`getContext(select?)`** *(optional)* — resolve a read-only `EngineContextSnapshot` of the run (phase, bar index, plots, variables, strategy state, trades, warnings). Implement it if your language has host-inspectable state; return **copies only** (never live references), keep it async (the bundled worker engine answers over `postMessage`), and honor `select` so callers can limit extraction. Skipping it is fine — `handle.context()` then resolves `null`, and the core's `script:run` still reports what the model carries (title, plots, cause).

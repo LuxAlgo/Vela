@@ -44,6 +44,14 @@ export interface PreparedScript {
     /** The language that produced this (the engine's `language`). */
     language: string;
     inputs: InputSchema[];
+    /**
+     * Declaration-property schema (a strategy's `initial_capital`, an indicator's
+     * `precision`, …) — the settings dialog renders these on a "Properties" tab.
+     * `defval` is the EFFECTIVE default: the value the script declares, else the
+     * engine's configured default, else the language's own. Absent ≡ the language
+     * has no declaration properties (`capabilities.props` false).
+     */
+    props?: InputSchema[];
     meta: IndicatorMeta;
     /**
      * Whether the script references a viewport built-in (e.g. Pine
@@ -62,6 +70,9 @@ export interface EngineCapabilities {
     visibleRange: boolean;
     /** Exposes an inputs schema (drives the renderer's settings dialog). */
     inputs: boolean;
+    /** Exposes a declaration-props schema (`PreparedScript.props`) and honors prop
+     *  overrides on `execute`/`update`. Absent ≡ false. */
+    props?: boolean;
 }
 
 /** Market context an execution needs. Vela owns the bars; this is the metadata. */
@@ -100,6 +111,9 @@ export interface ExecutionRequest {
      */
     fetchSeries?: FetchSeries;
     inputs?: Record<string, InputValue>;
+    /** Declaration-prop overrides, keyed like `PreparedScript.props`. Only meaningful
+     *  when `capabilities.props`; other engines ignore it. */
+    props?: Record<string, InputValue>;
     visibleRange?: VisibleBarRange;
     mode: 'static' | 'live';
     /**
@@ -173,8 +187,10 @@ export interface ExecutionSession {
     getContext?(select?: ContextSelect): Promise<EngineContextSnapshot | null>;
     /** Tear down (stops any streaming / incremental re-execution). */
     stop(): void;
-    /** Re-run / re-stream with merged input overrides. */
-    update(inputs: Record<string, InputValue>): void;
+    /** Re-run / re-stream with merged input overrides. `props` (when given) merges
+     *  declaration-prop overrides the same way — a props-capable engine re-runs with
+     *  both applied; others may ignore the second argument. */
+    update(inputs: Record<string, InputValue>, props?: Record<string, InputValue>): void;
     /** Update the viewport window (re-runs viewport-dependent scripts; no-op otherwise). */
     setVisibleRange(range: VisibleBarRange): void;
     /** Signal that Vela's bars changed. No reason = live tick; see {@link BarsChangeReason}. */

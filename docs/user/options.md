@@ -283,6 +283,7 @@ The optional second argument to `addIndicator(source, options)`:
 |---|---|---|
 | `language` | string | Which registered engine runs this script. Defaults to the chart's `defaultLanguage`. |
 | `inputs` | `Record<string, InputValue>` | Input overrides, keyed by input title or key. |
+| `props` | `Record<string, InputValue>` | Declaration-property overrides (a strategy's `initial_capital`, an indicator's `precision`, …), keyed like the engine's props schema. Ignored by engines without props support. |
 | `overlay` | boolean | Force overlay vs. separate pane. Default: read from `indicator(overlay=…)`. |
 | `pane` | `'price' \| 'new'` | Explicit pane placement. |
 | `title` | string | Display title override. |

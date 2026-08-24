@@ -1435,7 +1435,7 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI.setLegendActions(this.legendActionsProvider);
         this.inputsUI.setLegendOverviewAction(this.legendOverviewAction);
         this.inputsUI.setOnChange((c) => {
-            for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value });
+            for (const cb of this.inputChangeCbs) cb({ indicatorId: c.indicatorId, key: c.key, value: c.value, ...(c.kind ? { kind: c.kind } : {}) });
         });
         this.inputsUI.setOnRemove((id) => {
             for (const cb of this.removeIndicatorCbs) cb(id);
@@ -1933,6 +1933,7 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
             native: !!model.native,
             ...(model.shorttitle ? { settingsTitle: model.title } : {}),
+            ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
         });
         this.syncTables(model);
         if (model.native?.type === 'volume') {
@@ -1988,8 +1989,8 @@ export class NativeRenderer implements IChartRenderer {
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
-    setIndicatorInputs(handle: IndicatorRenderHandle, values: Record<string, InputValue>): void {
-        this.inputsUI.setValues(handle.id, values);
+    setIndicatorInputs(handle: IndicatorRenderHandle, values: Record<string, InputValue>, props?: Record<string, InputValue>): void {
+        this.inputsUI.setValues(handle.id, values, props);
     }
 
     setSymbolPicker(picker: SymbolPickerFn | null): void {
