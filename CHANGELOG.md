@@ -33,6 +33,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **`barcolor()` respects the candle border setting.** A candle tinted by
+  `barcolor()` no longer gets a forced outline in the up/down direction color:
+  with borders disabled the tinted body renders flat, and with borders enabled an
+  unconfigured border color follows the tint instead of the direction color, so
+  heatmap-style recoloring reads as one solid hue. Explicitly configured border
+  colors still apply.
 - **Label `textalign` works on bubble styles.** Multi-line text inside a label
   bubble now aligns left, center, or right as asked; it was always centered.
 - **Pine tables render with Pine's sizing and visibility rules.** An allocated

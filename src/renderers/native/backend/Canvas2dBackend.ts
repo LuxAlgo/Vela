@@ -477,11 +477,13 @@ export class Canvas2dBackend implements IRenderBackend {
                     ctx.fillStyle = color;
                     ctx.fillRect(g.bodyX, top, g.bodyW, bodyH);
                 }
-                // A barcolored body always gets a border in the direction color (TV
-                // semantics) — that's what keeps the tinted candle readable.
-                if (cs.borderVisible || bc || (fading && cs.bodyVisible)) {
+                // The border strictly follows its visibility setting — barcolor() never
+                // forces one. An unconfigured border color inherits the body color, so a
+                // barcolored body gets a matching tinted border, not a direction-colored
+                // outline.
+                if (cs.borderVisible || (fading && cs.bodyVisible)) {
                     ctx.globalAlpha = this.candleStructureAlpha;
-                    ctx.strokeStyle = cs.borderVisible || bc ? ((up ? cs.borderUpColor : cs.borderDownColor) ?? dir) : color;
+                    ctx.strokeStyle = cs.borderVisible ? ((up ? cs.borderUpColor : cs.borderDownColor) ?? color) : color;
                     ctx.lineWidth = 1;
                     // Inset by half the stroke so the border lands on whole pixels
                     // (crisp) and stays inside the body's snapped footprint.
