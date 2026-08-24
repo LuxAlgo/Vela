@@ -2,6 +2,22 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Restacking an indicator now moves everything it paints.** Reordering an
+  indicator from the object tree (or `seriesOrder`) repositions the whole
+  indicator as one unit — plots, fills, lines, boxes, labels, markers, polylines,
+  linefills, and tables — instead of only its plots. Fills paint at the
+  indicator's own slot (a band raised above the price now tints over the
+  candles), drawings and tables follow their indicator through the stack, and —
+  since new indicators start under the price series — a fresh script's drawings
+  begin behind the candles until you restack it. Tables are painted on the chart
+  canvas now, so they obey the same order and appear in chart screenshots; cell
+  tooltips keep working. Pine `bgcolor()` stays behind everything and
+  `barcolor()` stays with the candles, as before.
+
 ## [v0.6.9]
 
 ### Added
