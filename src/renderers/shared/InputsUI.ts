@@ -52,10 +52,8 @@ export interface LegendPlotValue {
 
 interface LegendRow {
     id: string;
-    /** Legend chip text (may be a compact shorttitle). */
+    /** Display text for the legend chip AND the settings-dialog header (may be a compact shorttitle). */
     title: string;
-    /** Settings-dialog header; falls back to {@link title} when unset. */
-    settingsTitle: string;
     inputs: InputSchema[];
     values: Record<string, InputValue>;
     /** Declaration-props schema + values (the settings dialog's "Properties" tab). */
@@ -633,12 +631,10 @@ export class InputsUI {
     }
 
     /** Create or update an indicator's legend row (in the legend for its pane). */
-    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; settingsTitle?: string; props?: InputSchema[]; propValues?: Record<string, InputValue> } = {}): void {
-        const settingsTitle = opts.settingsTitle ?? title;
+    upsert(id: string, title: string, inputs: InputSchema[], values: Record<string, InputValue>, paneId = 'price', opts: { native?: boolean; beta?: boolean; props?: InputSchema[]; propValues?: Record<string, InputValue> } = {}): void {
         const existing = this.rows.get(id);
         if (existing) {
             existing.title = title;
-            existing.settingsTitle = settingsTitle;
             existing.inputs = inputs;
             existing.values = { ...values };
             existing.props = opts.props ?? [];
@@ -798,7 +794,7 @@ export class InputsUI {
         el.appendChild(controlsEl);
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        this.rows.set(id, { id, title, settingsTitle, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
+        this.rows.set(id, { id, title, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, native: !!opts.native });
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
     }
 

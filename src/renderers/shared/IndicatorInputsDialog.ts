@@ -22,7 +22,8 @@ export interface InputsUIChange {
 /** The slice of a legend row the settings dialog needs. */
 export interface IndicatorDialogRow {
     id: string;
-    settingsTitle: string;
+    /** Dialog header — the same compact text the legend chip shows. */
+    title: string;
     inputs: InputSchema[];
     values: Record<string, InputValue>;
     /** Declaration-props schema + values — rendered on the "Properties" tab. */
@@ -103,7 +104,7 @@ export class IndicatorInputsDialog {
 
         const ui = new Dialog({
             host,
-            title: row.settingsTitle,
+            title: row.title,
             // Non-modal: live-edit dialog — a modal machine locks pointer events on the
             // whole body, killing the chart and the body-portaled popovers.
             modal: false,
