@@ -6,7 +6,7 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry } from './candle-lod';
+import { candleTier, wickWidth, candleGeometry, snapY } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
 import { Batch, type RGBA } from './gl/Batch';
@@ -871,12 +871,14 @@ export class WebGL2Backend implements IRenderBackend {
             if (drawBody) {
                 const oY = coords.priceToY(bar.open, pane.scale, pane.bounds);
                 const cY = coords.priceToY(bar.close, pane.scale, pane.bounds);
-                bodyTop = Math.min(oY, cY);
-                bodyH = Math.max(1, Math.abs(cY - oY));
+                // Both edges snapped to the device grid so the horizontal edges rasterize
+                // crisp (no blended rim); a doji keeps a visible 1-device-px body.
+                bodyTop = snapY(Math.min(oY, cY), coords.dpr);
+                bodyH = Math.max(1 / coords.dpr, snapY(Math.max(oY, cY), coords.dpr) - bodyTop);
             }
             if (cs.wickVisible) {
-                const hY = coords.priceToY(bar.high, pane.scale, pane.bounds);
-                const lY = coords.priceToY(bar.low, pane.scale, pane.bounds);
+                const hY = snapY(coords.priceToY(bar.high, pane.scale, pane.bounds), coords.dpr);
+                const lY = snapY(coords.priceToY(bar.low, pane.scale, pane.bounds), coords.dpr);
                 b.alpha = this.candleStructureAlpha;
                 // barcolor() recolors only the BODY (TV semantics): the wick keeps the
                 // direction color while a body is drawn. At stick-only zoom the stick IS
