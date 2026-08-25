@@ -686,3 +686,55 @@ describe('symbol icons — routed to the OWNING provider (resolveSymbolIcon)', (
         expect(new DataControl({} as MarketDataFeed).symbolIcon('BTCUSDT')).toBeUndefined();
     });
 });
+
+describe('grouped listings (futures roots)', () => {
+    /** A futures-shaped venue: one GROUP row per root, then its continuous members. */
+    function futuresProvider() {
+        const provider: DataProvider = {
+            getBars: (_t, _tf, range) => Promise.resolve(makeBars(range.limit ?? 10)),
+            listSymbols: () =>
+                Promise.resolve([
+                    { ticker: 'ES', type: 'root', group: 'ES', prefix: 'CME' },
+                    { ticker: 'ES1!', type: 'futures', group: 'ES', prefix: 'CME', default: true },
+                    { ticker: 'ES2!', type: 'futures', group: 'ES', prefix: 'CME' },
+                    { ticker: 'NQ', type: 'root', group: 'NQ', prefix: 'CME' },
+                    { ticker: 'NQ1!', type: 'futures', group: 'NQ', prefix: 'CME' }, // no default marked
+                    { ticker: 'NQ2!', type: 'futures', group: 'NQ', prefix: 'CME' },
+                ]),
+        };
+        return provider;
+    }
+
+    async function boot() {
+        const feed = new MultiProviderFeed(new BarStore());
+        feed.registerProvider('lux', futuresProvider());
+        await feed.ready();
+        return feed;
+    }
+
+    it('a bare ROOT resolves to the group default member — roots are listed, never loadable', async () => {
+        const feed = await boot();
+        expect(feed.resolveSymbol('ES')).toEqual({ provider: 'lux', ticker: 'ES1!' });
+    });
+
+    it('the listing-prefix form translates too (CME:ES → the default member)', async () => {
+        const feed = await boot();
+        expect(feed.resolveSymbol('CME:ES')).toEqual({ provider: 'lux', ticker: 'ES1!' });
+    });
+
+    it('the explicit provider-name form translates too (lux:ES)', async () => {
+        const feed = await boot();
+        expect(feed.resolveSymbol('lux:ES')).toEqual({ provider: 'lux', ticker: 'ES1!' });
+    });
+
+    it('no default marked → the FIRST listed member', async () => {
+        const feed = await boot();
+        expect(feed.resolveSymbol('NQ')).toEqual({ provider: 'lux', ticker: 'NQ1!' });
+    });
+
+    it('member tickers pass through untouched', async () => {
+        const feed = await boot();
+        expect(feed.resolveSymbol('ES2!')).toEqual({ provider: 'lux', ticker: 'ES2!' });
+        expect(feed.resolveSymbol('CME:ES2!')).toEqual({ provider: 'lux', ticker: 'ES2!' });
+    });
+});

@@ -14,6 +14,26 @@ export interface SymbolDescriptor {
     /** Instrument class, free-form (e.g. `crypto`, `futures`, `stock`). */
     type?: string;
     /**
+     * The GROUP this row belongs to (futures: the product root — `ES1!` and `ES2!`
+     * carry `group: "ES"`). The group's own row repeats the value in `ticker` with a
+     * distinguishing `type` and is NOT directly loadable — pickers fold members under
+     * it and load the member marked {@link default} when the group itself is picked.
+     */
+    group?: string;
+    /**
+     * The member a picker loads when its whole GROUP is picked. At most one per group;
+     * the agreed fallback for zero-or-many is the group's FIRST listed member, so
+     * providers emit members in deliberate order.
+     */
+    default?: boolean;
+    /**
+     * The provider-side market (product class) serving this symbol, on providers whose
+     * markets differ in session shape (futures: index, grains, energy… hours differ on
+     * one source). Consumers resolving per-market vocabulary (session template,
+     * calendar windows) key on it; absent where the market is unambiguous.
+     */
+    market?: string;
+    /**
      * The instrument's LISTING-venue prefix (`NASDAQ`, `NYSE`, `AMEX`) — a property of the
      * SYMBOL, not of the provider: AAPL is Nasdaq-listed and IBM NYSE-listed even when one
      * provider supplies both tapes. When declared, it is what pickers/legends display, what

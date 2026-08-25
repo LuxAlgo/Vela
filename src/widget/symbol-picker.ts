@@ -7,6 +7,7 @@ import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { tickerIconEl, baseOf } from './symbol-icon';
 import { symbolRanking } from './contributions';
+import { isGroupRow, groupKeyOf, groupMembers, defaultMemberOf } from '../data/symbol-groups';
 
 /** First occurrence wins, keyed by venue+ticker — a ranking hook may inject an entry
  *  that also exists later in the pool; the injected one keeps position AND data. */
@@ -18,6 +19,27 @@ function dedupeSymbols(list: readonly SymbolDescriptor[]): SymbolDescriptor[] {
         if (seen.has(key)) continue;
         seen.add(key);
         out.push(s);
+    }
+    return out;
+}
+
+/**
+ * Fold GROUPED listings (futures roots): walking top-down, drop a MEMBER row whose
+ * group's own row already appeared ABOVE it — the group stands for its members, which
+ * stay reachable through its expander. A member that matched WITHOUT its group (the
+ * query hit `ES2` but not `ES`) keeps its own row: it matched more specifically than
+ * the fold. Order-respecting on purpose — decisions for a row never depend on rows
+ * BELOW it, so growing the list (infinite scroll) appends without reshuffling.
+ * Pure — unit-tested.
+ */
+export function foldGroups(list: readonly SymbolDescriptor[]): SymbolDescriptor[] {
+    const groupsAbove = new Set<string>();
+    const out: SymbolDescriptor[] = [];
+    for (const s of list) {
+        if (isGroupRow(s)) {
+            groupsAbove.add(groupKeyOf(s));
+            out.push(s);
+        } else if (s.group == null || !groupsAbove.has(groupKeyOf(s))) out.push(s);
     }
     return out;
 }
@@ -186,6 +208,21 @@ const CSS = `
 .vela-sp-badge[data-p='binance'] { color: #f0b90b; } /* palette-exempt: venue brand mark */
 .vela-sp-badge[data-p='hyperliquid'] { color: #50d2c1; } /* palette-exempt: venue brand mark */
 .vela-sp-empty { padding: var(--vela-space-3); color: var(--vela-fg-muted); text-align: center; }
+/* Grouped listings (futures roots): the chevron unfolds members inline, indented. */
+.vela-sp-expander {
+    all: unset;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--vela-fg-muted);
+}
+.vela-sp-expander:hover { background: var(--vela-surface-elev); color: var(--vela-fg); }
+.vela-sp-row[data-member] { padding-left: 34px; }
 `;
 
 export interface SymbolPickerOptions {
@@ -215,6 +252,11 @@ export class SymbolPicker {
     private activeTab = 'All';
     private tabs!: HTMLElement;
     private visible = PAGE;
+    /** The last filter pass returned fewer raw rows than asked — the pool is drained
+     *  (checked BEFORE folding: folding shortens pages without meaning exhaustion). */
+    private exhausted = false;
+    /** Group rows currently expanded (venue-scoped keys) — members shown inline. */
+    private readonly expanded = new Set<string>();
     /** The ranked pool cache — `key` fingerprints the raw pool the ranking ran on. */
     private ranked: { key: string; result: SymbolDescriptor[] } | null = null;
     private ranking = false;
@@ -232,7 +274,7 @@ export class SymbolPicker {
         searchRow.append(iconEl('search', doc), this.input);
         this.tabs = doc.createElement('div');
         this.tabs.className = 'vela-sp-tabs';
-        for (const t of ['All', 'Stocks', 'ETFs', 'Crypto', 'Forex', 'Commodities']) {
+        for (const t of ['All', 'Stocks', 'ETFs', 'Crypto', 'Futures', 'Forex', 'Commodities']) {
             const b = doc.createElement('button');
             b.className = 'vela-sp-tab';
             b.textContent = t;
@@ -252,7 +294,7 @@ export class SymbolPicker {
         // superset (same ranking, same order), so appended rows never reshuffle the ones
         // already on screen. A short page (rows < visible) means the pool is exhausted.
         this.list.addEventListener('scroll', () => {
-            if (this.rows.length < this.visible) return;
+            if (this.exhausted) return;
             if (this.list.scrollTop + this.list.clientHeight < this.list.scrollHeight - 200) return;
             this.visible += PAGE;
             this.grow();
@@ -284,14 +326,20 @@ export class SymbolPicker {
             else if (e.key === 'ArrowUp') this.moveHighlight(-1);
             else if (e.key === 'Enter') {
                 const pick = this.rows[this.highlighted];
-                if (pick) this.select(pick.ticker, pick.prefix ?? pick.provider, opts.onSelect);
+                if (pick) this.pick(pick);
                 return;
             } else return;
+            // ArrowLeft/Right stay with the input (caret movement) — groups expand by mouse.
             e.preventDefault();
         });
         this.list.addEventListener('click', (e) => {
-            const row = (e.target as HTMLElement).closest<HTMLElement>('.vela-sp-row');
-            if (row?.dataset.ticker) this.select(row.dataset.ticker, row.dataset.venue, opts.onSelect);
+            const target = e.target as HTMLElement;
+            const row = target.closest<HTMLElement>('.vela-sp-row');
+            if (!row) return;
+            const s = this.rows[Number(row.dataset.i)];
+            if (!s) return;
+            if (target.closest('.vela-sp-expander')) this.toggleExpand(s);
+            else this.pick(s);
         });
     }
 
@@ -311,6 +359,29 @@ export class SymbolPicker {
 
     destroy(): void {
         this.dialog.destroy();
+    }
+
+    /** Route a row activation: a GROUP row loads its default member (the root itself is
+     *  listed, never loadable), any other row loads itself. */
+    private pick(s: SymbolDescriptor): void {
+        const target = isGroupRow(s) ? (defaultMemberOf(this.pool(), s) ?? s) : s;
+        this.select(target.ticker, target.prefix ?? target.provider, this.opts.onSelect);
+    }
+
+    /** Expand/collapse a group row IN PLACE — same query, same page, same scroll; only
+     *  the member rows under the group appear or go. */
+    private toggleExpand(s: SymbolDescriptor): void {
+        const key = groupKeyOf(s);
+        if (!this.expanded.delete(key)) this.expanded.add(key);
+        const scrollTop = this.list.scrollTop;
+        const focus = this.rows[this.highlighted];
+        this.rows = this.computeRows();
+        this.list.replaceChildren();
+        this.rows.forEach((r, i) => this.list.appendChild(this.rowEl(r, i)));
+        const at = focus ? this.rows.indexOf(focus) : -1;
+        this.highlighted = at >= 0 ? at : Math.min(this.highlighted, Math.max(0, this.rows.length - 1));
+        this.renderHighlight();
+        this.list.scrollTop = scrollTop;
     }
 
     private select(ticker: string, venue: string | undefined, onSelect: (symbol: string) => void): void {
@@ -366,7 +437,7 @@ export class SymbolPicker {
     }
 
     private computeRows(): SymbolDescriptor[] {
-        const TAB_TYPES: Record<string, string[]> = { Crypto: ['crypto'], Stocks: ['stock'], ETFs: ['etf'], Forex: ['forex'], Commodities: ['commodity'] };
+        const TAB_TYPES: Record<string, string[]> = { Crypto: ['crypto'], Stocks: ['stock'], ETFs: ['etf'], Futures: ['futures', 'root'], Forex: ['forex'], Commodities: ['commodity'] };
         const all = this.pool();
         const pool =
             this.activeTab === 'All'
@@ -374,7 +445,26 @@ export class SymbolPicker {
                 : all.filter((s) => TAB_TYPES[this.activeTab]?.includes((s.type ?? '').toLowerCase()) || (this.activeTab === 'Crypto' && (s.type ?? '').toLowerCase() === 'futures'));
         // A registered ranking OWNS the empty-query head — the built-in majors pin
         // stands down and the pool's own order shows.
-        return filterSymbols(pool, this.input.value, this.visible, symbolRanking() ? false : TOP_TICKERS);
+        const filtered = filterSymbols(pool, this.input.value, this.visible, symbolRanking() ? false : TOP_TICKERS);
+        this.exhausted = filtered.length < this.visible;
+        const folded = foldGroups(filtered);
+        if (!this.expanded.size) return folded;
+        // Splice each EXPANDED group's members right under its row — every member of the
+        // group (the full pool knows them all, whatever the query matched), minus any
+        // already standing on its own row elsewhere in the list.
+        const keyOf = (s: SymbolDescriptor): string => `${(s.prefix ?? s.provider ?? '').toLowerCase()}:${s.ticker.toUpperCase()}`;
+        const present = new Set(folded.map(keyOf));
+        const out: SymbolDescriptor[] = [];
+        for (const s of folded) {
+            out.push(s);
+            if (!isGroupRow(s) || !this.expanded.has(groupKeyOf(s))) continue;
+            for (const m of groupMembers(all, s)) {
+                if (present.has(keyOf(m))) continue;
+                present.add(keyOf(m));
+                out.push(m);
+            }
+        }
+        return out;
     }
 
     private refresh(): void {
@@ -390,7 +480,7 @@ export class SymbolPicker {
             this.list.appendChild(empty);
             return;
         }
-        for (const s of this.rows) this.list.appendChild(this.rowEl(s));
+        this.rows.forEach((s, i) => this.list.appendChild(this.rowEl(s, i)));
         this.renderHighlight();
     }
 
@@ -398,13 +488,14 @@ export class SymbolPicker {
     private grow(): void {
         const already = this.rows.length;
         this.rows = this.computeRows();
-        for (const s of this.rows.slice(already)) this.list.appendChild(this.rowEl(s));
+        this.rows.slice(already).forEach((s, j) => this.list.appendChild(this.rowEl(s, already + j)));
     }
 
-    private rowEl(s: SymbolDescriptor): HTMLElement {
+    private rowEl(s: SymbolDescriptor, i: number): HTMLElement {
         const doc = this.list.ownerDocument;
         const row = doc.createElement('div');
         row.className = 'vela-sp-row';
+        row.dataset.i = String(i);
         row.dataset.ticker = s.ticker;
         // The venue the user is pointing at travels with the pick — the same ticker can be
         // listed by several providers, and dropping it would silently route to another one.
@@ -422,6 +513,16 @@ export class SymbolPicker {
         d.textContent = s.description ?? (s.type ?? '');
         main.append(t, d);
         row.append(av, main);
+        if (isGroupRow(s)) {
+            // The chevron unfolds the members inline; the row itself LOADS (the default
+            // member) — a root must never be a dead click.
+            row.dataset.group = '1';
+            const expander = doc.createElement('button');
+            expander.className = 'vela-sp-expander';
+            expander.setAttribute('aria-label', 'Show contracts');
+            expander.appendChild(iconEl(this.expanded.has(groupKeyOf(s)) ? 'chevron-down' : 'chevron-right', doc));
+            row.appendChild(expander);
+        } else if (s.group != null && this.expanded.has(groupKeyOf(s))) row.dataset.member = '1';
         if (venue) {
             const badge = doc.createElement('span');
             badge.className = 'vela-sp-badge';
