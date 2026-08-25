@@ -100,7 +100,9 @@ ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size
 // Shrinking never pools the ACTIVE chart: if its slot would leave the layout, it
 // moves into the last surviving slot instead (the other cells keep their order).
 ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also reachable from any cell's chart settings → Canvas → Theme)
-ws.on('cell:active' | 'layout:changed' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
+ws.maximizeCell('sol');  // one cell over the whole grid (null restores) — pure presentation,
+ws.maximizedCell;        //  the other cells keep everything; layout/state changes restore
+ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
 ```
 
 **Rule of thumb:** hold the cell (or its identity), read `cell.chart` at the point of
@@ -122,6 +124,14 @@ handed to `ws.setLayout(...)`.
 
 Splitters between cells resize the grid tracks (double-click a divider for an even
 split).
+
+Each cell also carries its own **view controls**: rest the cursor near the bottom
+center of a chart (the same reveal as the jump-to-latest button) and a small cluster
+appears — zoom out, zoom in, maximize, and reset. Maximize is `maximizeCell` behind a
+button: that one chart takes the whole grid, restore (or a layout switch) brings the
+grid back, and nothing about the hidden charts is lost. Reset re-enables auto price
+scaling and frames the full history — the context menu's "Reset view". On single-cell
+grids the maximize button stays away; zoom and reset remain.
 
 ## Sync links
 

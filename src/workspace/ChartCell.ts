@@ -20,6 +20,7 @@ import { MarketStatusTracker } from '../widget/market-status';
 import { SessionShadingTracker } from '../widget/session-shading';
 import { timeframeMs } from '../widget/timeframe';
 import { Watermark } from '../widget/watermark';
+import { CellControls } from '../widget/cell-controls';
 import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
@@ -144,6 +145,12 @@ export interface CellDeps {
     manifestSettled(): boolean;
     /** Report a pointer-down/focus in this cell (the workspace sets it active). */
     activate(id: string): void;
+    /** Whether the cell clusters offer maximize at all (multi-cell grids only). */
+    canMaximize(): boolean;
+    /** Is this cell the one the workspace currently maximizes over the grid? */
+    isMaximized(id: string): boolean;
+    /** Maximize this cell over the whole grid, or restore the grid when it already is. */
+    toggleMaximize(id: string): void;
     /** The cell's market changed in place (chrome/retention refresh upstream). */
     onMarketChanged(id: string): void;
     /** The cell's price style changed in place (topbar icon/menu refresh upstream). */
@@ -190,6 +197,8 @@ export class ChartCell {
     /** Keeps the pre/post-market shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
     private readonly sessionShading = new SessionShadingTracker((zones) => this.inner?.renderer.set('sessionZones', zones));
     private readonly watermark: Watermark | null;
+    /** Bottom-center hover cluster: zoom in/out, maximize/restore, reset view. */
+    private readonly cellControls: CellControls;
     private readonly contextMenu: ChartContextMenu;
     private readonly offMarket: () => void;
     /** The cell's durable market state — the seed vocabulary plus the venue mirror the
@@ -371,11 +380,15 @@ export class ChartCell {
             if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
         });
         this.syncStatuslineColors();
+        this.cellControls = new CellControls(this.host, {
+            chart: () => this.inner,
+            reset: () => this.resetView(),
+            canMaximize: () => deps.canMaximize(),
+            isMaximized: () => deps.isMaximized(id),
+            toggleMaximize: () => deps.toggleMaximize(id),
+        });
         this.contextMenu = new ChartContextMenu(this.host, {
-            resetView: () => {
-                this.inner?.renderer.set('autoScale', true);
-                this.inner?.setVisibleRangePreset('ALL');
-            },
+            resetView: () => this.resetView(),
             timezone: () => this.deps.timezone(),
             setTimezone: (zone) => this.deps.setTimezone(zone),
             // Right-clicking activates the cell first (capture-phase pointerdown), so the
@@ -802,6 +815,18 @@ export class ChartCell {
         }
     }
 
+    /** Reset this cell's view: re-enable auto scale and frame the full history —
+     *  the same action the chart context menu offers. */
+    resetView(): void {
+        this.inner?.renderer.set('autoScale', true);
+        this.inner?.setVisibleRangePreset('ALL');
+    }
+
+    /** Rebuild the view-controls cluster (the maximize gate or state changed). */
+    refreshControls(): void {
+        this.cellControls.refresh();
+    }
+
     /** Make this cell the active one and put keyboard focus on its chart surface. */
     focus(): void {
         this.deps.activate(this.id);
@@ -1151,6 +1176,7 @@ export class ChartCell {
     destroy(): void {
         this.destroyed = true;
         this.offMarket();
+        this.cellControls.destroy();
         this.contextMenu.destroy();
         this.history.destroy();
         this.marketStatus?.stop();

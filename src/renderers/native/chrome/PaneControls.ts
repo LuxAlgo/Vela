@@ -39,7 +39,7 @@ const ICON_PX = 12;
 
 /** The cluster's scrim pill. It floats over CHART CONTENT (candles of any color), not over a
  *  panel, so it stays a neutral darkening rather than a themed surface. */
-const CLUSTER_PILL = 'rgba(0,0,0,0.28)';
+const CLUSTER_PILL = 'rgba(0,0,0,0.65)';
 
 /** Hover/active states as CSS, so they can never lag behind a pointer or drift from the
  *  tokens (the buttons only carry their per-instance color/opacity inline). */

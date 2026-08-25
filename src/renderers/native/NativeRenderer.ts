@@ -1681,6 +1681,7 @@ export class NativeRenderer implements IChartRenderer {
         this.attributionEl = null;
         this.mountContainer?.style.removeProperty('--vela-toolbar-gutter');
         this.mountContainer?.style.removeProperty('--vela-scale-gutter');
+        this.mountContainer?.style.removeProperty('--vela-bottom-gutter');
         this.mountContainer?.style.removeProperty('--vela-price-pane-top');
         this.mountContainer?.style.removeProperty('--vela-price-pane-bottom');
         this.mountContainer = null;
@@ -3592,6 +3593,11 @@ export class NativeRenderer implements IChartRenderer {
             : dataHeight;
         // Extra collapsed strips below that pane push the button up by exactly their height.
         this.scrollBtnBottomPx = SCROLL_BTN_BOTTOM + Math.max(0, dataHeight - paneBottom);
+        // Publish the same inset as `--vela-bottom-gutter` (time axis + collapsed strips
+        // below the lowest open pane) beside the left/right gutters, so host overlays
+        // anchored to the plot's bottom edge (the workspace's shared attribution mark)
+        // climb over collapsed strips exactly like the renderer's own bottom chrome.
+        this.mountContainer?.style.setProperty('--vela-bottom-gutter', `${TIME_AXIS_H + Math.max(0, dataHeight - paneBottom)}px`);
         // Clear the whole scale gutter (wider when merged own-scale columns are present), not just
         // the single master column — otherwise the button lands inside a multi-column scale.
         this.scrollBtnRightPx = this.rightAxisW + SCROLL_BTN_RIGHT_INSET;
