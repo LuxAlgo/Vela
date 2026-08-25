@@ -43,10 +43,12 @@ export interface PctScale {
 }
 
 /**
- * One raster layer of user drawings interleaved into a pane's series stack: a prepainted
- * plot-sized canvas the backend composites (drawImage / textured quad) immediately BEFORE
- * the series whose z key is `beforeZ` — so its drawings sit under that series and every
- * series above it, but over everything painted earlier (grid, fills, lower series).
+ * One raster layer of drawings interleaved into a pane's series stack — user drawings
+ * slotted by their own z, or an indicator's Pine drawings slotted at their model's z: a
+ * prepainted plot-sized canvas the backend composites (drawImage / textured quad)
+ * immediately BEFORE the series whose z key is `beforeZ` — so its drawings sit under
+ * that series and every series above it, but over everything painted earlier (grid,
+ * fills, lower series).
  */
 export interface DrawingSlice {
     /** The z key of the series this layer paints in front of the grid but behind. */
@@ -200,9 +202,10 @@ export class SceneGraph {
      *  so each indicator arrives behind the candles (and behind older indicators);
      *  `setIndicatorZ`/`bringToFront`/`sendToBack` change it. */
     private readonly seriesZ = new Map<string, number>();
-    /** Per-pane raster layers of user drawings interleaved into the series stack — each is a
+    /** Per-pane raster layers of drawings interleaved into the series stack (each
+     *  indicator's Pine drawings at its model's z, plus in-stack user drawings) — each a
      *  prepainted canvas the backend composites just before the series carrying `beforeZ`.
-     *  Rebuilt by the renderer per data frame; empty when every drawing sits over the stack. */
+     *  Rebuilt by the renderer per data frame. */
     drawingSlices: ReadonlyMap<string, ReadonlyArray<DrawingSlice>> = new Map();
     /** Per-model index offset: the chart bar index of the model's `anchorTime` — its
      *  index-aligned payloads (dense series arrays, `bar_index` drawings) count from that

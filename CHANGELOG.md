@@ -10,6 +10,29 @@ All notable changes to Vela, newest first.
   toolbar now returns to the regular pointer even while the measure ruler or the
   eraser is active; before, those modes stayed on and the click appeared to do
   nothing.
+- **Crisp rendering on fractional display scales.** On displays with a fractional
+  zoom factor (a common Windows setting at 125% or 150%), candles, wicks,
+  gridlines, and every other chart graphic could look slightly blurred: the
+  chart's drawing surface was misaligned with the screen's physical pixels by a
+  fraction of a pixel, which smeared every edge. The surface now snaps to the
+  physical pixel grid, so edges render sharp at any display scale.
+- **Pixel-perfect candle edges.** Candle bodies and wicks now pin their tops and
+  bottoms to whole physical pixels, the same way their sides already snap. A
+  magnified screenshot shows hard one-pixel edges all around a candle instead of
+  a faint blended rim above and below the body.
+### Changed
+
+- **Restacking an indicator now moves everything it paints.** Reordering an
+  indicator from the object tree (or `seriesOrder`) repositions the whole
+  indicator as one unit — plots, fills, lines, boxes, labels, markers, polylines,
+  linefills, and tables — instead of only its plots. Fills paint at the
+  indicator's own slot (a band raised above the price now tints over the
+  candles), drawings and tables follow their indicator through the stack, and —
+  since new indicators start under the price series — a fresh script's drawings
+  begin behind the candles until you restack it. Tables are painted on the chart
+  canvas now, so they obey the same order and appear in chart screenshots; cell
+  tooltips keep working. Pine `bgcolor()` stays behind everything and
+  `barcolor()` stays with the candles, as before.
 
 ## [v0.6.9]
 
