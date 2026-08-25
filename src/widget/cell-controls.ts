@@ -1,7 +1,8 @@
 // Per-cell view controls — a hover cluster pinned to the bottom-center of a workspace
-// cell: zoom out / zoom in / maximize-or-restore / reset view. Revealed by cursor
-// proximity, the same affordance as the renderer's scroll-to-realtime button, and
-// styled like the pane clusters (a neutral scrim pill over chart content).
+// cell: a drag handle to move the chart within the grid, zoom out / zoom in,
+// maximize-or-restore, and reset view. Revealed by cursor proximity, the same
+// affordance as the renderer's scroll-to-realtime button, and styled like the pane
+// clusters (a neutral scrim pill over chart content).
 import { icon } from '../core/icons';
 import { injectStyles } from '../ui/styles';
 import { Glider, ZOOM_IN, ZOOM_OUT } from './glide';
@@ -28,6 +29,8 @@ const CSS = `
 .vela-cc-btn svg{display:block;}
 .vela-cc-btn:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
 .vela-cc-on,.vela-cc-on:hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
+.vela-cc-grip{cursor:grab;touch-action:none;}
+.vela-cc-grip:active{cursor:grabbing;}
 `;
 
 /**
@@ -45,23 +48,38 @@ export interface CellControlsDeps {
     chart(): Vela | null;
     /** Reset the cell's view — the context menu's "Reset view" action. */
     reset(): void;
-    /** Whether maximize applies at all (multi-cell grids only — a lone chart has
-     *  nothing to trade space with, same rule as the pane cluster's maximize). */
-    canMaximize(): boolean;
+    /** Whether the grid holds more than one cell — gates maximize (a lone chart has
+     *  nothing to trade space with, same rule as the pane cluster's maximize) and
+     *  the drag handle (nowhere to move to). */
+    multiCell(): boolean;
     /** Is THIS cell the maximized one? */
     isMaximized(): boolean;
     toggleMaximize(): void;
+    /** Hit-test for the drag handle: the OTHER live cell under a viewport point
+     *  (null over this cell, the chrome, or outside the grid). */
+    dragTargetAt(x: number, y: number): string | null;
+    /** Live highlight of the would-be drop cell while a grip drag is underway
+     *  (null clears — also called on cancel). */
+    previewDrop(id: string | null): void;
+    /** Commit a grip drag: this cell and `targetId` trade slots. */
+    dropOn(targetId: string): void;
 }
 
 /**
  * Owns the cluster DOM inside one cell host. Zooming eases through its own
  * {@link Glider} on THIS cell's chart (the buttons act on the cell they live in,
- * whatever the active cell is); maximize/reset route to the deps.
+ * whatever the active cell is); maximize/reset/drag route to the deps.
  */
 export class CellControls {
     private readonly root: HTMLDivElement;
     private readonly glider: Glider;
     private near = false;
+    /** A grip drag is underway — the proximity reveal must not hide the cluster
+     *  while captured pointer moves sweep across the whole grid. */
+    private dragging = false;
+    /** Mobile: the proximity reveal is meaningless without a cursor — the mobile
+     *  bar's maximize stop replaces the cluster. */
+    private suspended = false;
 
     constructor(
         private readonly host: HTMLElement,
@@ -91,13 +109,17 @@ export class CellControls {
         this.refresh();
     }
 
-    /** Rebuild the buttons (the maximize gate or the maximized state changed). */
+    /** Rebuild the buttons (the multi-cell gate or the maximized state changed). */
     refresh(): void {
         this.root.textContent = '';
+        const multi = this.deps.multiCell();
+        const maximized = multi && this.deps.isMaximized();
+        // The drag handle only exists when there is somewhere to move to: never on a
+        // single-cell grid, and not while this chart covers the grid.
+        if (multi && !maximized) this.root.appendChild(this.makeGrip());
         this.root.appendChild(this.button('minus', 'Zoom out', () => this.glider.zoom(ZOOM_OUT)));
         this.root.appendChild(this.button('plus', 'Zoom in', () => this.glider.zoom(ZOOM_IN)));
-        if (this.deps.canMaximize()) {
-            const maximized = this.deps.isMaximized();
+        if (multi) {
             this.root.appendChild(
                 this.button(maximized ? 'restore' : 'maximize', maximized ? 'Restore layout' : 'Maximize chart', () => this.deps.toggleMaximize(), {
                     // The maximized state reads as an inverse chip (white-on-dark, dark-on-light),
@@ -128,12 +150,67 @@ export class CellControls {
         return b;
     }
 
+    /** The drag handle (2×3 dot grip): press and drag onto another cell to trade
+     *  slots with it. The preview highlight follows the pointer; releasing outside
+     *  any other cell cancels. */
+    private makeGrip(): HTMLButtonElement {
+        const b = this.host.ownerDocument.createElement('button');
+        b.type = 'button';
+        b.title = 'Drag to move chart';
+        b.setAttribute('aria-label', 'Drag to move chart');
+        b.className = 'vela-cc-btn vela-cc-grip';
+        b.innerHTML = icon('grip');
+        b.addEventListener('pointerdown', (e) => this.onGripDown(b, e));
+        return b;
+    }
+
+    private onGripDown(btn: HTMLButtonElement, e: PointerEvent): void {
+        if (e.button !== 0 && e.pointerType === 'mouse') return;
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+            btn.setPointerCapture(e.pointerId);
+        } catch {
+            // a synthetic/already-released pointer can't be captured — the move/up pair below still works
+        }
+        this.dragging = true;
+        let target: string | null = null;
+        const move = (ev: PointerEvent): void => {
+            target = this.deps.dragTargetAt(ev.clientX, ev.clientY);
+            this.deps.previewDrop(target);
+        };
+        const finish = (commit: boolean) => (): void => {
+            this.dragging = false;
+            this.deps.previewDrop(null);
+            btn.removeEventListener('pointermove', move);
+            btn.removeEventListener('pointerup', onUp);
+            btn.removeEventListener('pointercancel', onCancel);
+            if (commit && target != null) this.deps.dropOn(target);
+        };
+        const onUp = finish(true);
+        const onCancel = finish(false);
+        btn.addEventListener('pointermove', move);
+        btn.addEventListener('pointerup', onUp);
+        btn.addEventListener('pointercancel', onCancel);
+    }
+
+    /** Mobile flips the cluster off entirely (and hides it if currently revealed). */
+    setSuspended(on: boolean): void {
+        this.suspended = on;
+        if (on) this.setNear(false);
+    }
+
     private readonly onHostMove = (e: PointerEvent): void => {
+        if (this.suspended) return;
+        if (this.dragging) return; // captured drag moves sweep the grid — keep the cluster up
         const rect = this.host.getBoundingClientRect();
         this.setNear(nearBottomCenter(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height));
     };
 
-    private readonly onHostLeave = (): void => this.setNear(false);
+    private readonly onHostLeave = (): void => {
+        if (this.dragging) return;
+        this.setNear(false);
+    };
 
     private setNear(near: boolean): void {
         if (near === this.near) return;

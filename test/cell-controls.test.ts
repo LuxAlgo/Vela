@@ -70,9 +70,10 @@ function makeEl(doc: unknown, tagName: string): StubEl {
             el.parent = null;
         },
         fire(t, event = {}) {
-            for (const fn of el.listeners.get(t) ?? []) fn({ stopPropagation: () => {}, ...event });
+            for (const fn of [...(el.listeners.get(t) ?? [])]) fn({ stopPropagation: () => {}, preventDefault: () => {}, ...event });
         },
     };
+    (el as unknown as { setPointerCapture(id: number): void }).setPointerCapture = () => {};
     return el;
 }
 
@@ -85,9 +86,12 @@ function makeDeps(over: Partial<CellControlsDeps> = {}): CellControlsDeps {
     return {
         chart: () => null,
         reset: () => {},
-        canMaximize: () => true,
+        multiCell: () => true,
         isMaximized: () => false,
         toggleMaximize: () => {},
+        dragTargetAt: () => null,
+        previewDrop: () => {},
+        dropOn: () => {},
         ...over,
     };
 }
@@ -121,25 +125,26 @@ describe('nearBottomCenter (pure)', () => {
 });
 
 describe('CellControls — button set and gating', () => {
-    it('builds zoom out / zoom in / maximize / reset when maximize applies', () => {
+    it('builds drag / zoom out / zoom in / maximize / reset on a multi-cell grid', () => {
         const host = makeHost();
         new CellControls(host as never, makeDeps());
-        expect(titles(host)).toEqual(['Zoom out', 'Zoom in', 'Maximize chart', 'Reset chart']);
+        expect(titles(host)).toEqual(['Drag to move chart', 'Zoom out', 'Zoom in', 'Maximize chart', 'Reset chart']);
     });
 
-    it('drops the maximize button on single-cell grids (no space to trade)', () => {
+    it('drops the drag handle and maximize on single-cell grids (nowhere to go)', () => {
         const host = makeHost();
-        new CellControls(host as never, makeDeps({ canMaximize: () => false }));
+        new CellControls(host as never, makeDeps({ multiCell: () => false }));
         expect(titles(host)).toEqual(['Zoom out', 'Zoom in', 'Reset chart']);
     });
 
-    it('refresh() flips maximize to restore for the maximized cell', () => {
+    it('refresh() flips maximize to restore for the maximized cell and hides its drag handle', () => {
         const host = makeHost();
         let maximized = false;
         const controls = new CellControls(host as never, makeDeps({ isMaximized: () => maximized }));
-        expect(cluster(host).children[2]!.className).toBe('vela-cc-btn'); // resting state — no chip
+        expect(cluster(host).children[3]!.className).toBe('vela-cc-btn'); // resting state — no chip
         maximized = true;
         controls.refresh();
+        // No drag handle while this chart covers the grid — there is nowhere to move it.
         expect(titles(host)).toEqual(['Zoom out', 'Zoom in', 'Restore layout', 'Reset chart']);
         // The maximized state reads as the inverse "selected" chip (the collapsed-pane idiom).
         expect(cluster(host).children[2]!.className).toBe('vela-cc-btn vela-cc-on');
@@ -160,6 +165,20 @@ describe('CellControls — proximity reveal', () => {
         expect(cluster(host).style.display).toBe('none');
     });
 
+    it('setSuspended(true) hides the cluster and blocks reveals (mobile mode)', () => {
+        const host = makeHost();
+        const controls = new CellControls(host as never, makeDeps());
+        host.fire('pointermove', { clientX: 400, clientY: 554 });
+        expect(cluster(host).style.display).toBe('flex');
+        controls.setSuspended(true); // mode flip hides a revealed cluster immediately
+        expect(cluster(host).style.display).toBe('none');
+        host.fire('pointermove', { clientX: 400, clientY: 554 });
+        expect(cluster(host).style.display).toBe('none'); // no reveal while suspended
+        controls.setSuspended(false);
+        host.fire('pointermove', { clientX: 400, clientY: 554 });
+        expect(cluster(host).style.display).toBe('flex'); // back to desktop behavior
+    });
+
     it('destroy() unhooks the host listeners and removes the cluster', () => {
         const host = makeHost();
         const controls = new CellControls(host as never, makeDeps());
@@ -176,10 +195,43 @@ describe('CellControls — actions', () => {
         const reset = vi.fn();
         const toggleMaximize = vi.fn();
         new CellControls(host as never, makeDeps({ reset, toggleMaximize }));
-        cluster(host).children[2]!.fire('click');
-        expect(toggleMaximize).toHaveBeenCalledTimes(1);
         cluster(host).children[3]!.fire('click');
+        expect(toggleMaximize).toHaveBeenCalledTimes(1);
+        cluster(host).children[4]!.fire('click');
         expect(reset).toHaveBeenCalledTimes(1);
+    });
+
+    it('the drag handle previews the hovered cell and commits the drop on release', () => {
+        const host = makeHost();
+        let over: string | null = null;
+        const previewDrop = vi.fn();
+        const dropOn = vi.fn();
+        new CellControls(host as never, makeDeps({ dragTargetAt: () => over, previewDrop, dropOn }));
+        const grip = cluster(host).children[0]!;
+        expect(grip.title).toBe('Drag to move chart');
+        grip.fire('pointerdown', { button: 0, pointerType: 'mouse', pointerId: 1 });
+        over = 'eth';
+        grip.fire('pointermove', { clientX: 500, clientY: 100 });
+        expect(previewDrop).toHaveBeenLastCalledWith('eth');
+        grip.fire('pointerup');
+        expect(previewDrop).toHaveBeenLastCalledWith(null); // highlight cleared before the commit
+        expect(dropOn).toHaveBeenCalledWith('eth');
+        expect(dropOn).toHaveBeenCalledTimes(1);
+    });
+
+    it('releasing over nothing (or a cancel) commits no move', () => {
+        const host = makeHost();
+        const dropOn = vi.fn();
+        const previewDrop = vi.fn();
+        new CellControls(host as never, makeDeps({ dragTargetAt: () => null, previewDrop, dropOn }));
+        const grip = cluster(host).children[0]!;
+        grip.fire('pointerdown', { button: 0, pointerType: 'mouse', pointerId: 1 });
+        grip.fire('pointermove', { clientX: 10, clientY: 10 });
+        grip.fire('pointerup');
+        grip.fire('pointerdown', { button: 0, pointerType: 'mouse', pointerId: 2 });
+        grip.fire('pointercancel');
+        expect(dropOn).not.toHaveBeenCalled();
+        expect(previewDrop).toHaveBeenLastCalledWith(null);
     });
 
     it('zoom in glides THIS cell toward a right-anchored narrower range', () => {
@@ -197,7 +249,7 @@ describe('CellControls — actions', () => {
             setVisibleRange: (r: { from: number; to: number }) => applied.push(r),
         } as unknown as Vela;
         new CellControls(host as never, makeDeps({ chart: () => chart }));
-        cluster(host).children[1]!.fire('click'); // zoom in
+        cluster(host).children[2]!.fire('click'); // zoom in
         const last = applied[applied.length - 1]!;
         expect(last.to).toBe(1_000_000); // right edge anchored
         expect(last.from).toBeCloseTo(200_000, -3); // span × 0.8

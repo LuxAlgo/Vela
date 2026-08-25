@@ -1488,6 +1488,8 @@ export class NativeRenderer implements IChartRenderer {
                 this.emitPaneAction({ type: 'maximize', paneId, maximized });
             },
         });
+        // Honor a layout mode pushed before mount — mobile keeps the hover clusters away.
+        this.paneControls.setSuspended(this.layoutMode === 'mobile');
 
         this.axisScaleButtons = new AxisScaleButtons(this.plot, theme, {
             panes: () => this.axisScaleViews(),
@@ -2101,6 +2103,9 @@ export class NativeRenderer implements IChartRenderer {
         this.userDrawings?.setLayoutMode(mode);
         this.settingsDialog?.setLayoutMode(mode);
         this.inputsUI?.setLayoutMode(mode);
+        // Hover clusters need a cursor — mobile suppresses them (collapsed panes keep
+        // their expand chips; the shell's own chrome covers pane/chart maximize).
+        this.paneControls?.setSuspended(mode === 'mobile');
         if (this.scrollButton) {
             // A finger needs a larger target than a cursor.
             const px = mode === 'mobile' ? SCROLL_BTN_SIZE_TOUCH : SCROLL_BTN_SIZE;

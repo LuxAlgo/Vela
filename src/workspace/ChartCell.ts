@@ -145,12 +145,19 @@ export interface CellDeps {
     manifestSettled(): boolean;
     /** Report a pointer-down/focus in this cell (the workspace sets it active). */
     activate(id: string): void;
-    /** Whether the cell clusters offer maximize at all (multi-cell grids only). */
-    canMaximize(): boolean;
+    /** Whether the grid holds more than one cell — gates the cluster's maximize
+     *  button and its drag handle (a lone chart has neither use). */
+    multiCell(): boolean;
     /** Is this cell the one the workspace currently maximizes over the grid? */
     isMaximized(id: string): boolean;
     /** Maximize this cell over the whole grid, or restore the grid when it already is. */
     toggleMaximize(id: string): void;
+    /** Drag-handle hit-test: the OTHER live cell under a viewport point (never `id`). */
+    cellDragTarget(id: string, x: number, y: number): string | null;
+    /** Live drop-target highlight while a grip drag is underway (null clears). */
+    previewDropTarget(id: string | null): void;
+    /** Commit a grip drag: the two cells trade slots in the grid. */
+    dropCell(id: string, targetId: string): void;
     /** The cell's market changed in place (chrome/retention refresh upstream). */
     onMarketChanged(id: string): void;
     /** The cell's price style changed in place (topbar icon/menu refresh upstream). */
@@ -197,7 +204,7 @@ export class ChartCell {
     /** Keeps the pre/post-market shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
     private readonly sessionShading = new SessionShadingTracker((zones) => this.inner?.renderer.set('sessionZones', zones));
     private readonly watermark: Watermark | null;
-    /** Bottom-center hover cluster: zoom in/out, maximize/restore, reset view. */
+    /** Bottom-center hover cluster: drag handle, zoom in/out, maximize/restore, reset view. */
     private readonly cellControls: CellControls;
     private readonly contextMenu: ChartContextMenu;
     private readonly offMarket: () => void;
@@ -383,9 +390,12 @@ export class ChartCell {
         this.cellControls = new CellControls(this.host, {
             chart: () => this.inner,
             reset: () => this.resetView(),
-            canMaximize: () => deps.canMaximize(),
+            multiCell: () => deps.multiCell(),
             isMaximized: () => deps.isMaximized(id),
             toggleMaximize: () => deps.toggleMaximize(id),
+            dragTargetAt: (x, y) => deps.cellDragTarget(id, x, y),
+            previewDrop: (target) => deps.previewDropTarget(target),
+            dropOn: (target) => deps.dropCell(id, target),
         });
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => this.resetView(),
@@ -825,6 +835,11 @@ export class ChartCell {
     /** Rebuild the view-controls cluster (the maximize gate or state changed). */
     refreshControls(): void {
         this.cellControls.refresh();
+    }
+
+    /** Mobile flips the per-cell cluster off (the shell's mobile bar replaces it). */
+    setControlsSuspended(on: boolean): void {
+        this.cellControls.setSuspended(on);
     }
 
     /** Make this cell the active one and put keyboard focus on its chart surface. */

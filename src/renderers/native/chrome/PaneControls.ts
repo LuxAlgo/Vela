@@ -67,6 +67,9 @@ export class PaneControls {
     private readonly root: HTMLDivElement;
     private readonly clusters = new Map<string, HTMLDivElement>();
     private hoverPaneId: string | null = null;
+    /** Mobile: hover clusters are meaningless without a cursor — suppressed; a
+     *  collapsed pane's standalone expand chip stays (the only way back up). */
+    private suspended = false;
 
     constructor(private readonly plot: HTMLElement, private theme: VelaTheme, private readonly deps: PaneControlsDeps) {
         ensureStyles();
@@ -83,6 +86,7 @@ export class PaneControls {
 
     /** Reveal the cluster for the pane under the cursor, resolved from the pointer's y in the plot. */
     private readonly onPlotMove = (e: PointerEvent): void => {
+        if (this.suspended) return;
         const rect = this.plot.getBoundingClientRect();
         const y = e.clientY - rect.top;
         let hit: string | null = null;
@@ -146,7 +150,12 @@ export class PaneControls {
         // a lone price pane can't be "expanded", so it gets no button (and thus no cluster).
         if (p.count > 1) {
             cluster.appendChild(
-                this.button(p.maximized ? ICONS.restore : ICONS.maximize, p.maximized ? 'Restore pane' : 'Maximize pane', false, () => this.deps.onToggleMaximize(p.id), { role: 'maximize' }),
+                this.button(p.maximized ? ICONS.restore : ICONS.maximize, p.maximized ? 'Restore pane' : 'Maximize pane', false, () => this.deps.onToggleMaximize(p.id), {
+                    role: 'maximize',
+                    // Same inverse-chip treatment as the collapsed pane's expand toggle: the
+                    // maximized state must read as an active state, not just a swapped glyph.
+                    selected: p.maximized,
+                }),
             );
         }
     }
@@ -190,8 +199,12 @@ export class PaneControls {
             const hovered = id === this.hoverPaneId;
             // An empty cluster (e.g. a lone price pane with no maximize) never shows.
             const hasButtons = cluster.children.length > 0;
-            // A collapsed pane keeps its cluster visible so the expand chip is always reachable.
-            const visible = hasButtons && (hovered || p.collapsed) && p.height > 8;
+            // STATE chips stay visible without hover: a collapsed pane's expand chip (always —
+            // it is the only way back up, mobile included) and a MAXIMIZED pane's restore chip
+            // (desktop only — mobile's own chrome reflects that state), so the isolation state
+            // reads at a glance instead of only under the cursor.
+            const stateChipRole = p.collapsed ? 'collapse' : !this.suspended && p.maximized ? 'maximize' : null;
+            const visible = hasButtons && (hovered || stateChipRole != null) && p.height > 8;
             cluster.style.right = `${rightPx}px`;
             // Center the cluster inside the ~26px collapsed strip (24 = cluster height incl. padding).
             cluster.style.top = p.collapsed
@@ -199,15 +212,15 @@ export class PaneControls {
                 : `${p.top + 4}px`;
             cluster.style.display = visible ? 'flex' : 'none';
             if (!visible) continue;
-            // Without hover only the expand chip shows, standalone: drop the dark pill so the white
+            // Without hover only the state chip shows, standalone: drop the dark pill so the white
             // chip reads on its own. Its siblings stay laid out (visibility:hidden, not display:none)
-            // so the expand chip keeps the exact slot it occupies once the full cluster reveals on hover.
-            const soloExpand = p.collapsed && !hovered;
-            cluster.style.background = soloExpand ? 'transparent' : CLUSTER_PILL;
+            // so the chip keeps the exact slot it occupies once the full cluster reveals on hover.
+            const soloChip = stateChipRole != null && !hovered;
+            cluster.style.background = soloChip ? 'transparent' : CLUSTER_PILL;
             for (const child of cluster.children) {
                 const btn = child as HTMLElement;
                 btn.style.display = 'inline-flex';
-                btn.style.visibility = soloExpand && btn.dataset.role !== 'collapse' ? 'hidden' : 'visible';
+                btn.style.visibility = soloChip && btn.dataset.role !== stateChipRole ? 'hidden' : 'visible';
             }
         }
     }
@@ -216,6 +229,15 @@ export class PaneControls {
     setHoverPane(paneId: string | null): void {
         if (this.hoverPaneId === paneId) return;
         this.hoverPaneId = paneId;
+        this.reposition();
+    }
+
+    /** Mobile suppression: no hover clusters (touch has no cursor; the shell's own
+     *  chrome covers maximize), while collapsed panes keep their expand chips. */
+    setSuspended(on: boolean): void {
+        if (on === this.suspended) return;
+        this.suspended = on;
+        if (on) this.hoverPaneId = null;
         this.reposition();
     }
 
