@@ -359,10 +359,10 @@ export interface LegendCalloutSpec {
 }
 
 /**
- * A contributed LEGEND CALLOUT: a small tinted bubble with a centered icon, always
- * visible right of the indicator's legend title (trailing the whole row while its
- * hover controls are out). When the spec carries `content`, clicking the bubble
- * deploys that panel — below it, flipping above near the bottom screen edge.
+ * A contributed LEGEND CALLOUT: a small tinted bubble with a centered icon, visible
+ * right of the indicator's legend title while the row is idle (hidden while its
+ * hover/selection controls are out). When the spec carries `content`, clicking the
+ * bubble deploys that panel — below it, flipping above near the bottom screen edge.
  *
  * Unlike a legend action's static icon, a callout's whole presentation is resolved
  * per row through `callout` — return `null` to show none (the per-indicator gate),

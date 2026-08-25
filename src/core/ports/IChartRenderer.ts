@@ -85,12 +85,12 @@ export interface LegendCalloutPanel {
 
 /**
  * One host-contributed legend CALLOUT, as the renderer consumes it: a small tinted
- * bubble with a centered icon, always visible beside the indicator's legend title
- * (trailing the whole row while its controls are out). When `content` is present the
- * bubble is clickable and deploys that panel — below the bubble, flipping above when
- * the bottom screen edge is too close. Pure data plus thunks, same rule as
- * {@link LegendActionView}: the shell resolves the plugin descriptor before it
- * reaches the renderer.
+ * bubble with a centered icon, visible beside the indicator's legend title while
+ * the row is idle (hidden while its hover/selection controls are out). When
+ * `content` is present the bubble is clickable and deploys that panel — below the
+ * bubble, flipping above when the bottom screen edge is too close. Pure data plus
+ * thunks, same rule as {@link LegendActionView}: the shell resolves the plugin
+ * descriptor before it reaches the renderer.
  */
 export interface LegendCalloutView {
     id: string;

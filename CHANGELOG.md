@@ -4,6 +4,11 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- **Legend callouts hide while the row is open.** Hovering or selecting an
+  indicator legend now hides its callout bubble instead of sliding it to the
+  end of the row, so the action buttons stay next to the title.
 ### Fixed
 
 - **The Cursor button leaves the ruler and eraser.** Clicking Cursor on the drawing

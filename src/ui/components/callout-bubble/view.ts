@@ -79,6 +79,11 @@ export class CalloutBubble {
         return this.pop?.open ?? false;
     }
 
+    /** Close the deployed panel, if any. The bubble itself stays. */
+    hidePanel(): void {
+        this.pop?.hide();
+    }
+
     destroy(): void {
         this.pop?.destroy();
         this.pop = null;
