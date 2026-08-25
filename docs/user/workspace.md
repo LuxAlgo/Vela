@@ -404,7 +404,9 @@ they work from the very first keystroke, before any click.
   header carries its reorder/collapse/maximize controls. Rows are also draggable — onto a pane to
   move an item there, onto the band between two panes to open a new one, or to any slot in a
   pane's column to set draw order, a drawing under the candles or between two indicators included
-  — with a ghost label and a drop hint while the drag is live. Drawings can be multi-selected
+  — with a ghost label and a drop hint while the drag is live. An indicator's row carries
+  everything the indicator paints: its plots, fills, script drawings and tables all move through
+  the stack together. Drawings can be multi-selected
   (Ctrl/Cmd-click) and bundled into a named group that hides, locks, deletes and drags as one
   block; groups live for as long as the chart and are not persisted. Kept in sync with the
   chart's events.
