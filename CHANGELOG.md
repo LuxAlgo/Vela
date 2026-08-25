@@ -4,6 +4,18 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Crisp rendering on fractional display scales.** On displays with a fractional
+  zoom factor (a common Windows setting at 125% or 150%), candles, wicks,
+  gridlines, and every other chart graphic could look slightly blurred: the
+  chart's drawing surface was misaligned with the screen's physical pixels by a
+  fraction of a pixel, which smeared every edge. The surface now snaps to the
+  physical pixel grid, so edges render sharp at any display scale.
+- **Pixel-perfect candle edges.** Candle bodies and wicks now pin their tops and
+  bottoms to whole physical pixels, the same way their sides already snap. A
+  magnified screenshot shows hard one-pixel edges all around a candle instead of
+  a faint blended rim above and below the body.
 ### Changed
 
 - **Restacking an indicator now moves everything it paints.** Reordering an

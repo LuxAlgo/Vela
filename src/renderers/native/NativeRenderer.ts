@@ -163,6 +163,11 @@ export class NativeRenderer implements IChartRenderer {
     private readonly vpvrRenderer = new VpvrRenderer();
     private resizeObserver: ResizeObserver | null = null;
     private dprMedia: MediaQueryList | null = null;
+    /** Plot size in INTEGER device px, as last reported by the resize observer's
+     *  device-pixel-content-box — the browser's own statement of how many device pixels
+     *  it paints the plot into. `null` until the first report or where the box type is
+     *  unsupported (WebKit); syncSize then falls back to rounding the client rect. */
+    private plotDeviceSize: { width: number; height: number } | null = null;
 
     private readonly coords = new CoordinateSystem();
     private readonly scene = new SceneGraph();
@@ -1494,8 +1499,23 @@ export class NativeRenderer implements IChartRenderer {
             },
         });
 
-        this.resizeObserver = new ResizeObserver(() => this.resize());
+        this.resizeObserver = new ResizeObserver((entries) => {
+            for (const e of entries) {
+                if (e.target !== this.plot) continue;
+                const s = e.devicePixelContentBoxSize?.[0];
+                if (s) this.plotDeviceSize = { width: s.inlineSize, height: s.blockSize };
+            }
+            this.resize();
+        });
         this.resizeObserver.observe(this.wrapper);
+        // Also watch the plot's device-pixel box: it reports the EXACT integer device-pixel
+        // size of the box (fractional dpr and fractional layout already snapped by the
+        // browser), and it fires on zoom/dpr changes the wrapper's content-box misses.
+        try {
+            this.resizeObserver.observe(this.plot, { box: 'device-pixel-content-box' });
+        } catch {
+            // Box type unsupported (WebKit) — syncSize keeps rounding the client rect.
+        }
         this.watchDpr();
         this.syncSize();
     }
@@ -3682,23 +3702,46 @@ export class NativeRenderer implements IChartRenderer {
         // The plot area is inset to the right of the toolbar gutter; the canvases fill the plot
         // sub-container (0-based), so the coordinate system / pointer coords stay unchanged.
         this.plot.style.left = `${this.toolbarGutter}px`;
-        const pw = Math.max(1, w - this.toolbarGutter);
-        const ph = h;
-        this.dataCanvas.width = Math.round(pw * dpr);
-        this.dataCanvas.height = Math.round(ph * dpr);
-        this.backdropCanvas.width = this.dataCanvas.width;
-        this.backdropCanvas.height = this.dataCanvas.height;
-        this.volumeCanvas.width = this.dataCanvas.width;
-        this.volumeCanvas.height = this.dataCanvas.height;
-        for (const l of this.extLayers) { l.canvas.width = this.dataCanvas.width; l.canvas.height = this.dataCanvas.height; }
-        this.vpvrCanvas.width = this.dataCanvas.width;
-        this.vpvrCanvas.height = this.dataCanvas.height;
-        this.chromeCanvas.width = this.dataCanvas.width;
-        this.chromeCanvas.height = this.dataCanvas.height;
-        this.drawingsCanvas.width = this.dataCanvas.width;
-        this.drawingsCanvas.height = this.dataCanvas.height;
-        this.cursorCanvas.width = this.dataCanvas.width;
-        this.cursorCanvas.height = this.dataCanvas.height;
+        // Size the pile from the plot's REAL box, not client sizes: clientWidth/Height are
+        // integer-rounded, and on fractional-dpr displays (Windows 125%/150%) a backing store
+        // rounded from them covers a different number of device pixels than the box it is
+        // displayed in — the compositor then resamples the whole bitmap and every
+        // device-snapped edge feathers by ~1px.
+        const rect = this.plot.getBoundingClientRect();
+        let bw = Math.max(1, Math.round(rect.width * dpr));
+        let bh = Math.max(1, Math.round(rect.height * dpr));
+        // Prefer the observer-reported device-pixel size when it describes the CURRENT box
+        // (within 1 device px of the rect — the browser's snapping can differ from plain
+        // rounding by up to a pixel, which is exactly why its report wins). A stale report
+        // (e.g. right after the toolbar gutter moved the plot) is rejected; the observer
+        // fires again with the fresh box and re-syncs.
+        const dev = this.plotDeviceSize;
+        if (dev && Math.abs(dev.width - rect.width * dpr) <= 1 && Math.abs(dev.height - rect.height * dpr) <= 1) {
+            bw = Math.max(1, dev.width);
+            bh = Math.max(1, dev.height);
+        }
+        // Bitmap px == device px: each canvas gets an explicit CSS size derived from its
+        // backing store, so nothing is rescaled at composite time. The box's fractional
+        // device OFFSET is left alone on purpose: the compositor pixel-snaps a layer's
+        // layout position by itself, but an explicit sub-pixel translate becomes part of
+        // the composite matrix and RESAMPLES the texture — a half-device-pixel translate
+        // blends every horizontal edge 50/50 (measured, not theory). Never "compensate".
+        const pw = bw / dpr;
+        const ph = bh / dpr;
+        const size = (canvas: HTMLCanvasElement): void => {
+            canvas.width = bw;
+            canvas.height = bh;
+            canvas.style.width = `${pw}px`;
+            canvas.style.height = `${ph}px`;
+        };
+        size(this.dataCanvas);
+        size(this.backdropCanvas);
+        size(this.volumeCanvas);
+        for (const l of this.extLayers) size(l.canvas);
+        size(this.vpvrCanvas);
+        size(this.chromeCanvas);
+        size(this.drawingsCanvas);
+        size(this.cursorCanvas);
         // Reserve strips for the price axis (right) + time axis (bottom); the
         // data area drives the coordinate transform so series sit clear of them.
         this.coords.setSize(Math.max(1, pw - this.rightAxisW), Math.max(1, ph - TIME_AXIS_H), dpr);
