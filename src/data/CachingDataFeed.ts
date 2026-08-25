@@ -68,6 +68,29 @@ export class CachingDataFeed implements MarketDataFeed {
     }
 
     /**
+     * Progressive twin of {@link load}: a COLD load streams through the inner feed's
+     * progressive path — batches forwarded verbatim, the FINAL answer cached exactly as
+     * `load` caches — while a cache-covered load answers once through `load` itself (a
+     * warm chart has nothing to stream). Falls back to `load` wholesale when the inner
+     * feed lacks the capability, so callers may prefer this method unconditionally.
+     */
+    async loadProgressive(cfg: MarketConfig, onBatch: (bars: OHLCV[]) => void, opts?: { signal?: AbortSignal }): Promise<OHLCV[] | null> {
+        if (cfg.data && cfg.data.length > 0) return this.inner.load(cfg);
+        if (!this.inner.loadProgressive) return null;
+        const symbol = cfg.symbol ?? 'TEST';
+        const key = cacheKey(symbol, cfg.timeframe ?? '60', cfg.session);
+        const cached = this.store.get(key);
+        const n = cfg.bars ?? 500;
+        const lastCached = cached?.[cached.length - 1];
+        if (cached && lastCached && cached.length >= n - 1 && this.inner.loadRange) return this.load(cfg); // warm: the tail-merge path
+        this.store.retainSymbol(symbol);
+        const bars = await this.inner.loadProgressive(cfg, onBatch, opts);
+        if (bars == null) return null; // the resolved provider turned out incapable
+        this.store.merge(key, dropForming(bars));
+        return bars;
+    }
+
+    /**
      * Cache-backed ranged fetch — the gateway engines use for secondary series
      * (`request.security` HTF/LTF/cross-symbol) and the orchestrator's backward
      * history chunks. Caches per `(provider, symbol, timeframe)` in the shared
