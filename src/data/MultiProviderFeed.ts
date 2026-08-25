@@ -156,6 +156,18 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.cache.load(canonical(cfg, resolved));
     }
 
+    /** Progressive twin of {@link load} — same resolution, the cache streams the batches. */
+    async loadProgressive(cfg: MarketConfig, onBatch: (bars: OHLCV[]) => void, opts?: { signal?: AbortSignal }): Promise<OHLCV[] | null> {
+        if (cfg.data && cfg.data.length > 0) {
+            this.liveBars = cfg.data.map((b) => ({ ...b }));
+            return cfg.data;
+        }
+        const resolved = await this.registry.whenResolvable(rawSymbol(cfg), { default: this.primaryProvider });
+        this.primaryProvider = resolved.provider;
+        this.prefetchSymbolInfo(resolved);
+        return this.cache.loadProgressive(canonical(cfg, resolved), onBatch, opts);
+    }
+
     /**
      * Synchronous per-symbol metadata for engines (Pine `syminfo.*`), served from the cache
      * warmed by load(). Undefined until the prefetch lands (the engine then synthesizes a
@@ -272,6 +284,21 @@ class RegistryFetchFeed implements MarketDataFeed {
         const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
         return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session });
+    }
+
+    async loadProgressive(cfg: MarketConfig, onBatch: (bars: OHLCV[]) => void, opts?: { signal?: AbortSignal }): Promise<OHLCV[] | null> {
+        const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
+        const provider = this.registry.get(name ?? '');
+        if (!provider) return [];
+        if (!provider.getBarsProgressive) return null; // incapable — the caller keeps its own paths
+        try {
+            return await provider.getBarsProgressive(ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session }, onBatch, opts);
+        } catch (e) {
+            // Same fault posture as `safeBars`: a throwing provider empties the chart,
+            // never rejects the load — batches already painted stay painted.
+            console.warn(`[vela] progressive fetch failed for ${ticker} ${cfg.timeframe ?? '60'} — ${e instanceof Error ? e.message : String(e)}`);
+            return [];
+        }
     }
 
     loadRange(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]> {

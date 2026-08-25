@@ -824,6 +824,78 @@ describe('EngineOrchestrator', () => {
         expect(renderer.setBarsCalls).toEqual([{ n: 2000, preserveView: false }]);
     });
 
+    it('a progressive-capable feed paints every snapshot, completes on resolve — and null falls back', async () => {
+        // The streaming source: two growing snapshots, then the final answer resolves.
+        const all = makeBars(120);
+        let emit: ((bars: OHLCV[]) => void) | null = null;
+        let finish: ((bars: OHLCV[]) => void) | null = null;
+        const feed: MarketDataFeed = {
+            load: () => Promise.resolve([]),
+            subscribe: () => () => {},
+            loadProgressive: (_cfg, onBatch) => {
+                emit = onBatch;
+                return new Promise((res) => { finish = res; });
+            },
+        };
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { bars: 120 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
+        await Promise.resolve(); // let loadMarketInner reach the progressive await
+        emit!(all.slice(-40)); // first confirmed snapshot — paints, load resolves
+        await chart.ready();
+        expect(renderer.setBarsCalls).toEqual([{ n: 40, preserveView: false }]);
+        emit!(all.slice(-90)); // deeper snapshot — repaints, viewport preserved
+        expect(renderer.setBarsCalls).toEqual([{ n: 40, preserveView: false }, { n: 90, preserveView: true }]);
+        finish!(all); // convergence — final paint + completion
+        await chart.historyComplete();
+        expect(renderer.setBarsCalls).toEqual([
+            { n: 40, preserveView: false },
+            { n: 90, preserveView: true },
+            { n: 120, preserveView: true },
+        ]);
+
+        // NULL = the resolved provider lacks the capability: the classic single load runs.
+        const fallback = new FakeRenderer();
+        const legacy: MarketDataFeed = {
+            load: () => Promise.resolve(makeBars(30)),
+            subscribe: () => () => {},
+            loadProgressive: () => Promise.resolve(null),
+        };
+        const b = new Vela({} as unknown as HTMLElement, { bars: 30 }, { renderer: fallback, engines: [new MockEngine()], dataFeed: legacy });
+        await b.ready();
+        await b.historyComplete();
+        expect(fallback.setBarsCalls).toEqual([{ n: 30, preserveView: false }]);
+    });
+
+    it('switching markets ABORTS the in-flight progressive stream — the source stops polling', async () => {
+        // An abandoned stream left polling its budget out starves the browser's per-host
+        // connection pool — and the NEXT symbol's very first fetch with it (measured on a
+        // live gateway switch). The bump must reach the source as an abort, promptly.
+        const signals: AbortSignal[] = [];
+        let emit: ((bars: OHLCV[]) => void) | null = null;
+        const feed: MarketDataFeed = {
+            load: () => Promise.resolve(makeBars(20)),
+            subscribe: () => () => {},
+            loadProgressive: (_cfg, onBatch, opts) => {
+                signals.push(opts!.signal!);
+                emit = onBatch;
+                return new Promise(() => {}); // a slow source that never resolves on its own
+            },
+        };
+        const chart = new Vela({} as unknown as HTMLElement, { bars: 100 }, { renderer: new FakeRenderer(), engines: [new MockEngine()], dataFeed: feed });
+        await Promise.resolve();
+        emit!(makeBars(15)); // first paint releases the load pipeline
+        await chart.ready();
+        expect(signals).toHaveLength(1);
+        expect(signals[0]!.aborted).toBe(false);
+        const switching = chart.setMarket({ symbol: 'OTHER' }); // supersede mid-stream
+        await Promise.resolve(); // let the switch reach its own progressive await
+        expect(signals[0]!.aborted).toBe(true); // the old stream was told to stop, promptly
+        expect(signals).toHaveLength(2); // the new market got its own stream + fresh signal
+        expect(signals[1]!.aborted).toBe(false);
+        emit!(makeBars(10)); // the new stream paints — the switch resolves
+        await switching;
+    });
+
     it('the single-request depth boundary: 5000 in one pass, and 5001 still one (a chunk covers it)', async () => {
         const atLimit = new FakeRenderer();
         const a = new Vela({} as unknown as HTMLElement, { bars: 5000 }, { renderer: atLimit, engines: [new MockEngine()], dataFeed: new SizedDataFeed() });

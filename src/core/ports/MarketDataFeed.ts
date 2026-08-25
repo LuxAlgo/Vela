@@ -40,6 +40,14 @@ export interface BarRange {
 export interface MarketDataFeed {
     /** Load the initial history (from a provider or the offline `data` array). */
     load(cfg: MarketConfig): Promise<OHLCV[]>;
+    /**
+     * Progressive load: emit growing snapshots while the source heals a cold symbol,
+     * resolve with the final answer — `DataProvider.getBarsProgressive` semantics
+     * (cumulative, confirmed-from-the-newest-bar snapshots; each extends the last).
+     * Resolves NULL when the resolved source lacks the capability — the caller then
+     * runs its non-progressive paths (single load, deep head + backfill) untouched.
+     */
+    loadProgressive?(cfg: MarketConfig, onBatch: (bars: OHLCV[]) => void, opts?: { signal?: AbortSignal }): Promise<OHLCV[] | null>;
     /** Subscribe to live forming-candle ticks. Returns an unsubscribe fn. */
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe;
     /** Optional symbol metadata for engines that need it; absent/undefined ≡ engine synthesizes. */

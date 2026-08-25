@@ -68,6 +68,23 @@ export interface DataProvider {
      */
     getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]>;
 
+    /**
+     * Progressive variant of {@link getBars}, for sources that HEAL a cold symbol while
+     * answering: instead of holding the load until the whole depth converged, the
+     * provider emits growing snapshots as history lands and the chart paints each one.
+     * Every `onBatch` list (and the resolved final list) is the WHOLE answer so far —
+     * ascending, and CONFIRMED from its newest bar backward: a snapshot is cut at the
+     * newest stretch the SOURCE still owes (its own accounting of unanswered work,
+     * oldest-last), NEVER inferred from bar-time gaps — markets hold real empty
+     * stretches (holidays, quiet sessions) that must flow through immediately. Bars
+     * never move or vanish between snapshots; each extends the previous one. The
+     * resolved value is the final answer. `opts.signal` aborts the stream — the chart
+     * switched away: stop polling PROMPTLY and resolve with whatever is confirmed
+     * (an abandoned load left polling starves the browser's per-host connection pool
+     * and the next symbol with it). Absent ≡ single-answer `getBars` semantics.
+     */
+    getBarsProgressive?(ticker: string, timeframe: string, range: BarRange, onBatch: (bars: OHLCV[]) => void, opts?: { signal?: AbortSignal }): Promise<OHLCV[]>;
+
     /** Provider metadata. Absent ⇒ the registry synthesizes a record from the methods present. */
     info?(): ProviderInfo;
 

@@ -58,7 +58,8 @@ const PREVIEW_BARS = 300;
  * itself only in time-to-first-candle, and nothing downstream can use those first candles
  * anyway — an indicator's first run is held until the whole depth has landed (Pine is
  * causal, so running it per chunk would repaint a different curve each time). Below this
- * line, one request wins outright.
+ * line, one request wins outright. (Feeds with `loadProgressive` never reach this split:
+ * their SOURCE decides what is paintable, snapshot by snapshot.)
  */
 const SINGLE_LOAD_BARS = 5_000;
 /**
@@ -146,6 +147,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     /** Invalidates detached async work (backfill loops, in-flight loads, gap heals):
      *  bumped by init(), setMarket() and destroy(). */
     private generation = 0;
+    /** Aborts the in-flight PROGRESSIVE load's source polling on supersession — an
+     *  abandoned stream left polling to its own budget starves the browser's per-host
+     *  connection pool, and the NEXT symbol's very first fetch with it (measured). */
+    private progressiveAbort: AbortController | null = null;
     /** Awaiters racing a superseded load (setMarket callers) — released on every bump so they never hang. */
     private readonly supersedeWaiters: Array<() => void> = [];
     /** `history:complete` fired for the CURRENT load. Each market load re-arms the cycle
@@ -334,6 +339,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      *  superseded setMarket awaiters so their promises resolve instead of hanging. */
     private bumpGeneration(): number {
         const gen = ++this.generation;
+        this.progressiveAbort?.abort(); // the superseded load's source stops polling promptly
+        this.progressiveAbort = null;
         for (const w of this.supersedeWaiters.splice(0)) w();
         return gen;
     }
@@ -396,7 +403,62 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // Only a DEEP request is worth splitting, and only when a requested initial window
         // does not pin the frame (a chunked load would paint the wrong range, then jump).
         const deep = !market.data?.length && initialRange == null && requested > SINGLE_LOAD_BARS;
-        if (deep && this.feed.loadRange) {
+        // PROGRESSIVE-CAPABLE source first: paint every snapshot it emits while it heals —
+        // first candles in seconds on a cold symbol, depth growing behind them — and
+        // complete when the final answer resolves. The pipeline returns at the FIRST paint
+        // (exactly the deep head + backfill shape below); the remainder streams in,
+        // generation-checked. Snapshots are cumulative and confirmed-from-the-newest-bar
+        // by the port contract, so each paint replaces the series with a superset,
+        // viewport preserved. A NULL resolution means the resolved provider lacks the
+        // capability — no snapshot was emitted, and the classic paths below run untouched.
+        let progressiveServed = false;
+        if (!market.data?.length && initialRange == null && this.feed.loadProgressive) {
+            let painted = false;
+            const paint = (bars: OHLCV[], final: boolean): void => {
+                if (this.generation !== gen || (!final && bars.length === 0)) return;
+                this.setBarSeries(bars, painted ? { preserveView: true } : undefined);
+                if (!painted && bars.length > 0) {
+                    painted = true;
+                    if (opts.firstLoad) this.activateBarLayers();
+                    if (!final) this.historyState = 'backfill';
+                }
+            };
+            const abort = new AbortController();
+            this.progressiveAbort = abort;
+            progressiveServed = await new Promise<boolean>((firstPaint) => {
+                let signaled = false;
+                const signal = (served: boolean): void => {
+                    if (!signaled) {
+                        signaled = true;
+                        firstPaint(served);
+                    }
+                };
+                // Supersession must release THIS wait immediately (the newer switch owns the
+                // chart) — the provider's own resolution can lag its abort by one poll.
+                abort.signal.addEventListener('abort', () => signal(true), { once: true });
+                this.feed
+                    .loadProgressive!(market, (bars) => {
+                        paint(bars, false);
+                        if (painted) signal(true);
+                    }, { signal: abort.signal })
+                    .then((full) => {
+                        if (this.progressiveAbort === abort) this.progressiveAbort = null;
+                        if (full == null) return signal(false); // incapable — classic paths take over
+                        if (this.generation !== gen) return signal(true);
+                        paint(full, true);
+                        this.completeHistory(full.length >= requested ? 'depth' : 'genesis');
+                        signal(true);
+                    })
+                    .catch(() => {
+                        if (this.progressiveAbort === abort) this.progressiveAbort = null;
+                        if (this.generation === gen) this.completeHistory('aborted');
+                        signal(true);
+                    });
+            });
+        }
+        if (progressiveServed) {
+            /* painted above; the final snapshot and completion stream in behind */
+        } else if (deep && this.feed.loadRange) {
             // Paint the newest chunk, stream the rest in behind it. The first chunk is a full
             // CHUNK_BARS, not a token head: at this depth the round trips are what cost, so
             // each one carries as much as the source answers well.
