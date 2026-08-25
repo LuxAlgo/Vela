@@ -75,3 +75,38 @@ describe('price-pane overlay insets (symbol watermark clip)', () => {
         expect(DATA_H + TIME_AXIS_H - top - bottom).toBe(0);
     });
 });
+
+// COLLAPSED_PANE_H in NativeRenderer — the strip a collapsed pane keeps (legend + expand chip).
+const COLLAPSED_PANE_H = 26;
+
+describe('bottom-gutter inset (host overlays above the bottom chrome)', () => {
+    it('with every pane open, the gutter is just the time axis', () => {
+        const { host } = primed((scene) => {
+            scene.ensurePane('rsi', 'study', 1, 1);
+        });
+        expect(host.style.getPropertyValue('--vela-bottom-gutter')).toBe(`${TIME_AXIS_H}px`);
+    });
+
+    it('a collapsed bottom pane pushes the gutter up by its strip', () => {
+        // The regression case: the ONLY study pane collapses — an overlay anchored to
+        // the gutter (the workspace attribution mark) must climb above the strip
+        // instead of overlapping its legend row.
+        const { r, host } = primed((scene) => {
+            scene.ensurePane('rsi', 'study', 1, 1);
+        });
+        r.scene.panes.get('rsi')!.collapsed = true;
+        r.layoutPanes();
+        expect(host.style.getPropertyValue('--vela-bottom-gutter')).toBe(`${TIME_AXIS_H + COLLAPSED_PANE_H}px`);
+    });
+
+    it('a maximized pane fills the plot — the gutter drops back to the time axis', () => {
+        const { r, host } = primed((scene) => {
+            scene.ensurePane('rsi', 'study', 1, 1);
+        });
+        r.scene.panes.get('rsi')!.collapsed = true;
+        r.layoutPanes();
+        r.maximizedPaneId = 'price';
+        r.layoutPanes();
+        expect(host.style.getPropertyValue('--vela-bottom-gutter')).toBe(`${TIME_AXIS_H}px`);
+    });
+});

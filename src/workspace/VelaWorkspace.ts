@@ -134,6 +134,8 @@ export interface WorkspaceEventMap extends Record<string, unknown> {
     'script:run': WorkspaceScriptRun;
     /** The grid switched layouts (cells created/destroyed/restored around it). */
     'layout:changed': { layout: string };
+    /** A cell was maximized over the whole grid, or the grid restored (`id: null`). */
+    'cell:maximized': { id: string | null };
     'cell:created': { id: string };
     'cell:destroyed': { id: string };
     /** The persistable state changed (debounced ~500ms) — re-pull `getState()` if you
@@ -175,6 +177,21 @@ const CSS = `
 /* Mobile: the docked drawing-toolbar column would eat a phone-width grid — the shell's
    drawings drawer + on-chart pill replace it (same policy as the widget's in-chart bar). */
 [data-layout='mobile'] .vela-ws-toolbar { display: none; }
+/* A maximized cell owns the whole grid: the splitter strips have no seams to grab and
+   the active ring would just outline the only visible chart — both are noise here. */
+.vela-ws-grid[data-maximized='1'] .vela-ws-splitter { display: none; }
+.vela-ws-grid[data-maximized='1'] .vela-cell[data-active='1']::after { display: none; }
+/* Drop-target preview while a cell's drag handle is held: a dashed ring + the same
+   soft wash the splitter hover uses, over the chart, inert to the pointer. */
+.vela-cell[data-drop-target='1']::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px dashed var(--vela-fg-bright);
+    background: var(--vela-separator-hover-band);
+    pointer-events: none;
+    z-index: 11;
+}
 `;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
@@ -224,6 +241,9 @@ export class VelaWorkspace {
      *  slots beyond the list get auto identities. Grows, never reorders. */
     private order: string[] = [];
     private activeId: string | null = null;
+    /** The cell maximized over the whole grid (null = normal grid). TRANSIENT view
+     *  state — never persisted; any structural change (layout, applyState) restores. */
+    private maximizedId: string | null = null;
     private cellBackend: NativeBackend = 'auto';
     /** `layout: false` — the grid is pinned to the one-cell layout, the layout picker
      *  and sync switches never render, and `setLayout` no-ops. */
@@ -513,7 +533,11 @@ export class VelaWorkspace {
         // follows the app-wide default a plugin may have set for the attribution corner
         // (`registerRendererDefaults({ attribution })`): the cells read it through their
         // renderer, and the grid reads it here, so one setting covers every surface
-        // instead of leaving this mark behind as the one a host cannot reach.
+        // instead of leaving this mark behind as the one a host cannot reach. It LIVES
+        // inside the bottom-left cell (mountAttributionMark): the offsets ride that
+        // cell's renderer-published gutters, so the mark climbs above collapsed pane
+        // strips exactly like a lone chart's own mark instead of sitting on a strip's
+        // legend row.
         const attribution = rendererDefaults().attribution;
         if (attribution !== false) {
             const background = resolveTheme(opts.theme).background;
@@ -521,8 +545,12 @@ export class VelaWorkspace {
                 typeof attribution === 'string' && attribution.trim()
                     ? createCustomMark(doc, attribution, background)
                     : createAttributionMark(doc, background);
-            Object.assign(mark.style, { left: '12px', bottom: `${TIME_AXIS_H + 10}px`, zIndex: '11' });
-            this.gridEl.appendChild(mark);
+            Object.assign(mark.style, {
+                left: 'calc(var(--vela-toolbar-gutter, 0px) + 12px)',
+                bottom: `calc(var(--vela-bottom-gutter, ${TIME_AXIS_H}px) + 10px)`,
+                zIndex: '11',
+            });
+            this.gridEl.appendChild(mark); // pre-cells fallback host; re-parented by mountAttributionMark
             this.attributionMark = mark; // kept so a live theme swap re-inks it
         }
 
@@ -607,6 +635,9 @@ export class VelaWorkspace {
                           : {}),
                       getContext: () => this.context(),
                       ...(this.drawingsEnabled ? { onDrawingsClick: () => this.openDrawingsDrawer() } : {}),
+                      // Multi-chart only: the stop that isolates the ACTIVE chart (the
+                      // per-cell hover cluster has no cursor to reveal it on mobile).
+                      ...(this.monoLayout ? {} : { onMaximizeClick: () => this.toggleMobileMaximize() }),
                       onMoreClick: () => this.openMoreDrawer(),
                       onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
@@ -875,7 +906,9 @@ export class VelaWorkspace {
             this.pool.clear();
             for (const { id, ...cs } of st.charts.slice(liveCount)) this.pool.set(id, cs);
             this.order = st.charts.map((c) => c.id);
+            this.clearMaximized(); // documents describe the full grid — restore before re-applying
             this.applyGrid(); // re-assert the restored track sizes on the unchanged grid
+            this.refreshCellControls();
             const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.order[0] ?? null);
             if (nextActive === this.activeId) this.projectActiveCell();
             else this.setActiveCell(nextActive);
@@ -905,6 +938,7 @@ export class VelaWorkspace {
         const def = this.monoLayout ? null : ensureLayout(st.layout); // mono: grid stays pinned to '1'
         if (def) this.def = def;
         this.cellBackend = this.backendFor(this.def);
+        this.clearMaximized(); // ditto — the rebuilt grid starts unmaximized
         this.applyGrid();
         this.buildCells();
         this.syncCellPresentation();
@@ -977,6 +1011,7 @@ export class VelaWorkspace {
     setLayout(layout: string | LayoutDefinition): void {
         if (this.destroyed) return;
         if (this.monoLayout) return; // single-chart mode — the grid is pinned to '1'
+        this.clearMaximized(); // a maximized cell is presentation — a layout switch restores first
         const next = this.resolveLayout(layout);
         const nextBackend = this.backendFor(next);
         const rebuildAll = nextBackend !== this.cellBackend;
@@ -1003,12 +1038,81 @@ export class VelaWorkspace {
         this.buildCells();
         this.alignNewCellStyles(preexisting);
         this.syncCellPresentation();
+        this.refreshCellControls(); // the maximize gate follows the cell count
         this.topbar.setLayout(next.id);
         const nextActive = activeAfterLayout(this.activeId, this.order.slice(0, next.cells.length));
         if (nextActive === this.activeId) this.projectActiveCell(); // same slot, maybe a rebuilt cell
         else this.setActiveCell(nextActive);
         this.refreshRetention();
         this.events.emit('layout:changed', { layout: next.id });
+        this.markStateDirty();
+    }
+
+    /** The identity of the cell maximized over the whole grid, or null. */
+    get maximizedCell(): string | null {
+        return this.maximizedId;
+    }
+
+    /**
+     * Maximize one cell over the whole grid, or restore the layout with `null`. Pure
+     * presentation: the other cells stay alive underneath — charts, subscriptions and
+     * state untouched — so restoring is instant. The maximized cell becomes the active
+     * one. Transient view state (also reachable from each cell's bottom-center view
+     * cluster): switching layouts or applying a state document restores the grid.
+     */
+    maximizeCell(id: string | null): void {
+        if (this.destroyed) return;
+        if (id != null && (!this.cellsById.has(id) || this.def.cells.length <= 1)) return;
+        if (id === this.maximizedId) return;
+        this.maximizedId = id;
+        if (id) this.setActiveCell(id);
+        this.applyGrid(); // re-derives the slot geometry, then overlays the maximize presentation
+        this.refreshCellControls();
+        this.syncMobileMaximize();
+        this.events.emit('cell:maximized', { id });
+    }
+
+    /** The mobile bar's maximize stop: one press isolates the ACTIVE chart over the
+     *  grid; while something is already isolated — the chart, or a pane inside it
+     *  (mobile's double-tap) — the press restores that instead. Every branch re-syncs
+     *  the stop on its own (`maximizeCell` directly, `panes.maximize` via its
+     *  synchronous `pane:changed`). */
+    private toggleMobileMaximize(): void {
+        const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
+        if (!cell) return;
+        if (this.maximizedId) this.maximizeCell(null);
+        else if (cell.chart.panes.list().some((p) => p.maximized)) cell.chart.panes.maximize(null);
+        else this.maximizeCell(cell.id);
+    }
+
+    /** Keep the mobile bar's maximize stop truthful: lit (inverse chip, restore
+     *  glyph) while the active chart covers the grid OR one of its panes is
+     *  maximized — the state a double-tap toggles is otherwise invisible on mobile. */
+    private syncMobileMaximize(): void {
+        if (!this.mobileBar) return;
+        const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
+        const paneMax = cell ? cell.chart.panes.list().some((p) => p.maximized) : false;
+        this.mobileBar.setMaximizeActive(this.maximizedId != null || paneMax);
+    }
+
+    /**
+     * Trade the SLOTS of two live cells — the grid arrangement changes, the cells
+     * themselves (charts, indicators, drawings, the active flag) stay untouched.
+     * What each cell's drag handle commits; also callable directly by hosts.
+     */
+    swapCells(a: string, b: string): void {
+        if (this.destroyed || a === b) return;
+        const i = this.order.indexOf(a);
+        const j = this.order.indexOf(b);
+        if (i < 0 || j < 0 || !this.cellsById.has(a) || !this.cellsById.has(b)) return;
+        [this.order[i], this.order[j]] = [this.order[j]!, this.order[i]!];
+        // Auto-flow layouts place row-major by CHILD order — re-append the hosts in
+        // the new slot order (area layouts re-key their gridArea in applyGrid).
+        for (const [k] of this.def.cells.entries()) {
+            const host = this.cellsById.get(this.order[k] ?? '')?.host;
+            if (host) this.gridEl.appendChild(host);
+        }
+        this.applyGrid();
         this.markStateDirty();
     }
 
@@ -1085,6 +1189,7 @@ export class VelaWorkspace {
         this.mobileBar?.renderActions();
         this.mobileBar?.setSymbol(cell.symbol);
         this.mobileBar?.setTimeframe(cell.timeframe);
+        this.syncMobileMaximize(); // the new active cell may hold a maximized pane
         this.drawingPill?.onChart(cell.chart); // the pill mirrors the ACTIVE cell's tool state
         const pushHistory = (): void => this.topbar.setHistoryState(cell.history.canUndo, cell.history.canRedo);
         this.historyUnsub?.();
@@ -1189,7 +1294,85 @@ export class VelaWorkspace {
             const host = this.cellsById.get(this.order[i] ?? '')?.host;
             if (host) host.style.gridArea = perCell[slot.id]?.gridArea ?? '';
         }
+        this.applyMaximizePresentation();
+        this.mountAttributionMark(); // the bottom-left host may have changed (layout/maximize)
         this.splitters.layout();
+    }
+
+    /** Overlay the maximize presentation on the freshly applied grid: EVERY cell spans
+     *  the full track grid — the maximized one on top, the siblings invisible beneath
+     *  it (their charts stay alive — restoring is instant). The siblings must span too:
+     *  left in their slots they would auto-flow into implicit zero-height rows, whose
+     *  gaps steal height from the maximized cell and collapse their renderers to 0.
+     *  The splitter strips and the active ring hide via the `data-maximized` rules. */
+    private applyMaximizePresentation(): void {
+        const maxId = this.maximizedId;
+        if (maxId) this.gridEl.dataset.maximized = '1';
+        else delete this.gridEl.dataset.maximized;
+        for (const [id, cell] of this.cellsById) {
+            const style = cell.host.style;
+            // applyGrid just re-derived each slot's own gridArea — only override while maximized.
+            if (maxId) style.gridArea = '1 / 1 / -1 / -1';
+            style.zIndex = maxId && id === maxId ? '5' : '';
+            style.visibility = maxId && id !== maxId ? 'hidden' : '';
+        }
+    }
+
+    /** Rebuild every cell's view cluster (the maximize gate or state changed). */
+    private refreshCellControls(): void {
+        for (const cell of this.cellsById.values()) cell.refreshControls();
+    }
+
+    /** Drop the transient maximize on a structural change (layout switch, state
+     *  document) — WITH the event, so hosts tracking `cell:maximized` never drift
+     *  from `maximizedCell`. The caller's own grid re-apply paints the restore. */
+    private clearMaximized(): void {
+        if (this.maximizedId == null) return;
+        this.maximizedId = null;
+        this.events.emit('cell:maximized', { id: null });
+    }
+
+    /** The live cell under a viewport point, excluding `excludeId` and any host a
+     *  maximize has hidden — the drag handle's hit-test. */
+    private cellAtPoint(x: number, y: number, excludeId: string): string | null {
+        for (const [id, cell] of this.cellsById) {
+            if (id === excludeId || cell.host.style.visibility === 'hidden') continue;
+            const r = cell.host.getBoundingClientRect();
+            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return id;
+        }
+        return null;
+    }
+
+    /** Mark one cell as the live drop target of a grip drag (null clears all) —
+     *  the `data-drop-target` stylesheet rule paints the dashed preview ring. */
+    private setDropTarget(id: string | null): void {
+        for (const [cid, cell] of this.cellsById) {
+            if (cid === id) cell.host.dataset.dropTarget = '1';
+            else delete cell.host.dataset.dropTarget;
+        }
+    }
+
+    /** The cell whose bottom-left corner the grid's attribution mark floats in — the
+     *  maximized cell while one covers the grid, else the bottom-left slot's cell. */
+    private bottomLeftCell(): ChartCell | undefined {
+        if (this.maximizedId) return this.cellsById.get(this.maximizedId);
+        const grid = occupancyGrid(this.def);
+        const slot = grid[grid.length - 1]?.[0];
+        const idx = this.def.cells.findIndex((c) => (c.area ?? c.id) === slot);
+        return this.cellsById.get(this.order[idx >= 0 ? idx : 0] ?? '');
+    }
+
+    /** Keep the shared attribution mark inside the BOTTOM-LEFT visible cell: its
+     *  offsets ride that cell's renderer-published `--vela-bottom-gutter` /
+     *  `--vela-toolbar-gutter`, so collapsed pane strips push the mark up without any
+     *  bookkeeping here. Re-run after anything that changes which host that is
+     *  (layout switch, maximize, cell rebuild); a destroyed host drops the mark from
+     *  the DOM, and this re-mount brings it back. */
+    private mountAttributionMark(): void {
+        const mark = this.attributionMark;
+        if (!mark) return;
+        const host = this.bottomLeftCell()?.host ?? this.gridEl;
+        if (mark.parentElement !== host) host.appendChild(mark);
     }
 
     /** Create the cells the current layout wants but don't exist yet (pool-first).
@@ -1223,6 +1406,12 @@ export class VelaWorkspace {
                 setTimezone: (zone) => this.setTimezone(zone),
                 context: () => this.context(),
                 activate: (id) => this.setActiveCell(id),
+                multiCell: () => !this.monoLayout && this.def.cells.length > 1,
+                isMaximized: (id) => this.maximizedId === id,
+                toggleMaximize: (id) => this.maximizeCell(this.maximizedId === id ? null : id),
+                cellDragTarget: (id, x, y) => this.cellAtPoint(x, y, id),
+                previewDropTarget: (target) => this.setDropTarget(target),
+                dropCell: (id, target) => this.swapCells(id, target),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onPriceStyleChanged: (id) => this.onCellPriceStyleChanged(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
@@ -1240,6 +1429,7 @@ export class VelaWorkspace {
             // A fresh renderer starts desktop — push the live mode so touch gestures,
             // fullscreen dialogs and the scroll-button sizing apply from the first frame.
             cell.chart.renderer.setLayoutMode(this.layoutCtl.current);
+            cell.setControlsSuspended(this.layoutCtl.current === 'mobile');
             // The shared star set is a workspace pref — every newborn cell inherits it
             // silently (equal-set idempotence keeps the favorites event from echoing).
             if (this.favs.length > 0) cell.chart.drawings.setFavorites(this.favs as never[]);
@@ -1257,6 +1447,7 @@ export class VelaWorkspace {
             const host = this.cellsById.get(this.order[i] ?? '')?.host;
             if (host) this.gridEl.appendChild(host);
         }
+        this.mountAttributionMark(); // fresh hosts exist now — (re)claim the bottom-left one
     }
 
     /** Per-cell chart subscriptions (trigger ② — the chart instance is stable for the
@@ -1345,6 +1536,11 @@ export class VelaWorkspace {
         // A theme picked in ONE cell (its settings dialog's Canvas → Theme) re-skins the
         // WHOLE workspace — shared chrome plus every other cell.
         chart.on('theme:changed', (t) => this.setTheme(t));
+        // Pane collapse/maximize in the ACTIVE cell (double-tap on mobile, API) —
+        // keep the mobile bar's maximize stop truthful.
+        chart.on('pane:changed', () => {
+            if (cell.id === this.activeId) this.syncMobileMaximize();
+        });
         // Mobile: long-press an axis strip → timezone / price-scale sheet (desktop keeps
         // the right-click menu). The press's own pointerdown already activated the cell.
         chart.renderer.onAxisLongPress((e) => {
@@ -1698,6 +1894,7 @@ export class VelaWorkspace {
         for (const cell of this.cellsById.values()) {
             cell.chart.renderer.closeDialogs();
             cell.chart.renderer.setLayoutMode(mode);
+            cell.setControlsSuspended(mode === 'mobile'); // the mobile bar's maximize stop replaces the cluster
         }
         this.syncCellPresentation(); // the legend's overview override is mode-scoped
     }

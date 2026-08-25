@@ -4,29 +4,35 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Per-chart view controls in the multi-chart workspace.** Rest the cursor near
+  the bottom center of any chart and a small cluster of buttons appears — the
+  same reveal as the jump-to-latest button: a drag handle, zoom out, zoom in,
+  maximize, and reset. The drag handle moves the chart within the grid — hold
+  it, sweep onto another chart (a dashed ring previews the target), and release
+  to trade places. Maximize expands that one chart over the whole grid; the
+  other charts keep everything and return instantly with the restore button
+  (switching layouts restores too). Reset re-enables automatic price scaling
+  and frames the full history, like the context menu's "Reset view". On mobile
+  the hover cluster stays out of the way (as do the per-pane hover buttons) —
+  the bottom bar gains a maximize stop instead, which isolates the current
+  chart and lights up as an inverse chip whenever that chart covers the grid
+  or one of its panes is maximized (a double-tap does that); pressing it while
+  lit restores the view. Hosts can drive the same moves from code with
+  `maximizeCell(id)` (and `null` to restore), `maximizedCell`,
+  `swapCells(a, b)`, and the `cell:maximized` event.
+
 ### Changed
 
 - **Legend callouts hide while the row is open.** Hovering or selecting an
   indicator legend now hides its callout bubble instead of sliding it to the
   end of the row, so the action buttons stay next to the title.
-### Fixed
-
-- **The Cursor button leaves the ruler and eraser.** Clicking Cursor on the drawing
-  toolbar now returns to the regular pointer even while the measure ruler or the
-  eraser is active; before, those modes stayed on and the click appeared to do
-  nothing.
-- **Crisp rendering on fractional display scales.** On displays with a fractional
-  zoom factor (a common Windows setting at 125% or 150%), candles, wicks,
-  gridlines, and every other chart graphic could look slightly blurred: the
-  chart's drawing surface was misaligned with the screen's physical pixels by a
-  fraction of a pixel, which smeared every edge. The surface now snaps to the
-  physical pixel grid, so edges render sharp at any display scale.
-- **Pixel-perfect candle edges.** Candle bodies and wicks now pin their tops and
-  bottoms to whole physical pixels, the same way their sides already snap. A
-  magnified screenshot shows hard one-pixel edges all around a candle instead of
-  a faint blended rim above and below the body.
-### Changed
-
+- **A maximized pane now shows its state.** While a pane is maximized, its
+  restore button at the top-right reads as a lit chip (white on the dark theme,
+  dark on the light one) and stays visible without hovering — the same
+  affordance a collapsed pane's expand chip already had — so an isolated pane
+  is recognizable at a glance.
 - **Restacking an indicator now moves everything it paints.** Reordering an
   indicator from the object tree (or `seriesOrder`) repositions the whole
   indicator as one unit — plots, fills, lines, boxes, labels, markers, polylines,
@@ -38,6 +44,29 @@ All notable changes to Vela, newest first.
   canvas now, so they obey the same order and appear in chart screenshots; cell
   tooltips keep working. Pine `bgcolor()` stays behind everything and
   `barcolor()` stays with the candles, as before.
+
+### Fixed
+
+- **The Cursor button leaves the ruler and eraser.** Clicking Cursor on the drawing
+  toolbar now returns to the regular pointer even while the measure ruler or the
+  eraser is active; before, those modes stayed on and the click appeared to do
+  nothing.
+- **The attribution mark stays clear of collapsed panes in a workspace.** In the
+  multi-chart workspace (and the single-chart shell built on it), collapsing an
+  indicator pane at the bottom of the bottom-left chart left the shared
+  attribution mark sitting on top of the collapsed strip's legend row. The mark
+  now climbs above collapsed strips — the same behavior a standalone chart's own
+  mark always had — and follows the maximized chart while one covers the grid.
+- **Crisp rendering on fractional display scales.** On displays with a fractional
+  zoom factor (a common Windows setting at 125% or 150%), candles, wicks,
+  gridlines, and every other chart graphic could look slightly blurred: the
+  chart's drawing surface was misaligned with the screen's physical pixels by a
+  fraction of a pixel, which smeared every edge. The surface now snaps to the
+  physical pixel grid, so edges render sharp at any display scale.
+- **Pixel-perfect candle edges.** Candle bodies and wicks now pin their tops and
+  bottoms to whole physical pixels, the same way their sides already snap. A
+  magnified screenshot shows hard one-pixel edges all around a candle instead of
+  a faint blended rim above and below the body.
 
 ## [v0.6.9]
 
