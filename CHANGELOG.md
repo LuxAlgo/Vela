@@ -6,6 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **The Cursor button leaves the ruler and eraser.** Clicking Cursor on the drawing
+  toolbar now returns to the regular pointer even while the measure ruler or the
+  eraser is active; before, those modes stayed on and the click appeared to do
+  nothing.
 - **Crisp rendering on fractional display scales.** On displays with a fractional
   zoom factor (a common Windows setting at 125% or 150%), candles, wicks,
   gridlines, and every other chart graphic could look slightly blurred: the
