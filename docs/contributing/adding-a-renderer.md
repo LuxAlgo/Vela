@@ -176,7 +176,7 @@ Beyond painting, the renderer owns **presentation chrome** and **coordinate/time
 
 - The per-indicator **legend**.
 - The **settings dialog** for editing inputs (and the input-change events it raises).
-- **Table dashboards** drawn as an overlay.
+- **Table dashboards** (the native renderer paints them into its canvas stack so they follow the indicator's draw order; the shared DOM table overlay remains available for renderers that prefer an overlay).
 - The **coordinate and time resolution** for drawings — converting the model's canonical epoch-millisecond timestamps and prices into screen positions.
 
 ### Reuse the shared, backend-neutral building blocks

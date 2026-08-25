@@ -38,6 +38,34 @@ export interface DrawingPriceRange {
 
 export const EMPTY_DRAWING_SET: DrawingSet = { lines: [], boxes: [], labels: [], polylines: [], linefills: [] };
 
+/** A model shape carrying optional Pine drawing arrays (structurally `IndicatorModel`). */
+export interface DrawingSetSource {
+    lines?: DrawingLine[];
+    boxes?: DrawingBox[];
+    labels?: DrawingLabel[];
+    polylines?: DrawingPolyline[];
+    linefills?: DrawingLinefill[];
+}
+
+/** A model's Pine drawings routed ONE way: its own pane (`overlay` false) or forced onto
+ *  the price pane (`overlay` true, Pine's `force_overlay`) — every consumer of a model's
+ *  drawings splits along this same seam. */
+export function modelDrawingSet(m: DrawingSetSource, overlay: boolean): DrawingSet {
+    const want = (d: { overlay?: boolean }): boolean => Boolean(d.overlay) === overlay;
+    return {
+        lines: (m.lines ?? []).filter(want),
+        boxes: (m.boxes ?? []).filter(want),
+        labels: (m.labels ?? []).filter(want),
+        polylines: (m.polylines ?? []).filter(want),
+        linefills: (m.linefills ?? []).filter(want),
+    };
+}
+
+/** True when the set draws nothing at all. */
+export function drawingSetEmpty(s: DrawingSet): boolean {
+    return !s.lines.length && !s.boxes.length && !s.labels.length && !s.polylines.length && !s.linefills.length;
+}
+
 /** Hover hit-rect of one rendered label that carries a tooltip (canvas coords of the last render). */
 export interface LabelTipRegion {
     left: number;
