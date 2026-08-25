@@ -6,7 +6,7 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry } from './candle-lod';
+import { candleTier, wickWidth, candleGeometry, snapY } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
 import { Batch, type RGBA } from './gl/Batch';
@@ -366,8 +366,8 @@ export class WebGL2Backend implements IRenderBackend {
                     if (this.drawSliceTexture(gl, slices[si]!.canvas)) liveSlices.add(slices[si]!.canvas);
                 }
             };
-            // z-order within the batch (painter's): bg, fills, then the candles + each
-            // indicator's series interleaved by `scene.candleZ`/per-indicator z, then hlines.
+            // z-order within the batch (painter's): bg, then the candles + each indicator's
+            // fills + series interleaved by `scene.candleZ`/per-indicator z, then hlines.
             // (The grid + session highlights live on the renderer's backdrop canvas below.)
             b.alpha = 1;
             // A collapsed pane is a legend-only strip: no plots (legend + separator are chrome).
@@ -380,15 +380,15 @@ export class WebGL2Backend implements IRenderBackend {
                     return sc === pane.scale ? pane : { ...pane, scale: sc };
                 };
                 b.alpha = this.modelAlpha; // indicator models fade in after the intro; candles/grid stay opaque
-                // Own (non-force_overlay) content on each model's pane; force_overlay content
-                // on the price pane against its MASTER scale, whatever pane the indicator owns
-                // (Pine semantics — mirrors the chrome's overlay-drawing routing).
+                // Behind everything: bgcolor spans — Pine keeps the background under every
+                // layer regardless of stacking. Own (non-force_overlay) spans on each
+                // model's pane; force_overlay spans on the price pane (Pine semantics —
+                // mirrors the chrome's overlay-drawing routing). Fills are NOT here: they
+                // paint inside the z loop at their model's slot.
                 for (const m of models) for (const bgSpan of m.backgrounds) if (bgSpan.overlay !== true) this.emitBackground(b, bgSpan, pane, coords);
-                for (const m of models) for (const f of m.fills) if (f.overlay !== true) this.emitFill(b, m, f, effPane(m), coords, i0, i1, scene.offsetOf(m.id));
                 if (isPrice) {
                     for (const m of scene.indicators.values()) {
                         for (const bgSpan of m.backgrounds) if (bgSpan.overlay === true) this.emitBackground(b, bgSpan, pane, coords);
-                        for (const f of m.fills) if (f.overlay === true) this.emitFill(b, m, f, pane, coords, i0, i1, scene.offsetOf(m.id));
                     }
                 }
                 // When the price is hidden, the candle layer is skipped entirely (overlays still draw).
@@ -406,6 +406,10 @@ export class WebGL2Backend implements IRenderBackend {
                     // Model data is index-aligned from the model's ANCHOR bar (offset 0 = whole-chart).
                     const off = scene.offsetOf(m.id);
                     const mp = effPane(m);
+                    // Fills paint at the model's z slot, under its own series — a band between
+                    // two plots sits behind the plot lines, and the whole model moves as one
+                    // unit when its object-tree row is reordered.
+                    for (const f of m.fills) if (f.overlay !== true) this.emitFill(b, m, f, mp, coords, i0, i1, off);
                     for (const s of m.series) if (s.overlay !== true) this.emitSeries(b, s, mp, coords, i0, i1, theme, off);
                 }
                 if (drawCandles && !candleDrawn) {
@@ -413,16 +417,24 @@ export class WebGL2Backend implements IRenderBackend {
                     b.alpha = this.candleStructureAlpha;
                     this.emitPriceSeries(b, scene, i0, i1, coords, pane, theme, barColorMap, dataW);
                 }
-                drawSlicesUpTo(Infinity); // layers bound to a hidden/removed series still paint, at the stack top
                 b.alpha = this.modelAlpha;
-                // force_overlay series from EVERY indicator paint on the price pane, at the top
-                // of its series stack, against the master price scale.
+                // force_overlay content from EVERY indicator paints on the price pane, at the
+                // top of its series stack, against the master price scale — fills first so a
+                // forced band still sits under the forced plot lines.
                 if (isPrice) {
+                    for (const m of scene.indicators.values()) {
+                        const off = scene.offsetOf(m.id);
+                        for (const f of m.fills) if (f.overlay === true) this.emitFill(b, m, f, pane, coords, i0, i1, off);
+                    }
                     for (const m of scene.indicators.values()) {
                         const off = scene.offsetOf(m.id);
                         for (const s of m.series) if (s.overlay === true) this.emitSeries(b, s, pane, coords, i0, i1, theme, off);
                     }
                 }
+                // Stack-top slices: the topmost indicator's drawings, force_overlay drawings,
+                // and layers bound to a hidden/removed series — above the forced series too,
+                // since drawings always paint over their own plots.
+                drawSlicesUpTo(Infinity);
                 for (const m of models) { const mp = effPane(m); for (const pl of m.priceLines) this.emitHline(b, pl, mp, coords, dataW, theme); }
                 b.alpha = 1;
             }
@@ -871,12 +883,14 @@ export class WebGL2Backend implements IRenderBackend {
             if (drawBody) {
                 const oY = coords.priceToY(bar.open, pane.scale, pane.bounds);
                 const cY = coords.priceToY(bar.close, pane.scale, pane.bounds);
-                bodyTop = Math.min(oY, cY);
-                bodyH = Math.max(1, Math.abs(cY - oY));
+                // Both edges snapped to the device grid so the horizontal edges rasterize
+                // crisp (no blended rim); a doji keeps a visible 1-device-px body.
+                bodyTop = snapY(Math.min(oY, cY), coords.dpr);
+                bodyH = Math.max(1 / coords.dpr, snapY(Math.max(oY, cY), coords.dpr) - bodyTop);
             }
             if (cs.wickVisible) {
-                const hY = coords.priceToY(bar.high, pane.scale, pane.bounds);
-                const lY = coords.priceToY(bar.low, pane.scale, pane.bounds);
+                const hY = snapY(coords.priceToY(bar.high, pane.scale, pane.bounds), coords.dpr);
+                const lY = snapY(coords.priceToY(bar.low, pane.scale, pane.bounds), coords.dpr);
                 b.alpha = this.candleStructureAlpha;
                 // barcolor() recolors only the BODY (TV semantics): the wick keeps the
                 // direction color while a body is drawn. At stick-only zoom the stick IS

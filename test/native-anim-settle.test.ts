@@ -111,9 +111,9 @@ describe('syncSize paints synchronously while the Animator owns the frame', () =
         (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
         const { r, paints } = setup();
         let flushes = 0;
-        const canvas = () => ({ width: 0, height: 0 });
+        const canvas = () => ({ width: 0, height: 0, style: {} });
         r.wrapper = { clientWidth: 400, clientHeight: 300 };
-        r.plot = { style: {} };
+        r.plot = { style: {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }) };
         r.backdropCanvas = canvas();
         r.dataCanvas = canvas();
         r.volumeCanvas = canvas();

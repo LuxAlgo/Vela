@@ -7,7 +7,7 @@ import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { percentScaleFor } from '../core/SceneGraph';
 // Re-exported so existing importers (crosshair) can keep sourcing it from here.
 export { percentScaleFor } from '../core/SceneGraph';
-import { DrawingSceneRenderer, type DrawingSet, type LabelTipRegion } from '../../shared/DrawingSceneRenderer';
+import { DrawingSceneRenderer, modelDrawingSet, type DrawingSet } from '../../shared/DrawingSceneRenderer';
 import { renderTradeMarkers } from '../../shared/trade-markers';
 import type { TradeExecution } from '../../../core/model/trades';
 import { paneAxisTicks, formatAxisValue, timeTicks } from './ticks';
@@ -18,25 +18,20 @@ import { tzOffsetMs } from './tz';
 
 /**
  * Renderer-owned chrome layer (canvas2d) on its own canvas, stacked above the
- * geometry layer (L0) and below the cursor layer (L2). It draws the things the
- * geometry backend can't (or shouldn't): Pine drawings (geometry + text TOGETHER,
- * preserving creation-order z-order), the per-pane price axes + labels, the time
- * axis + labels, and the current-price line + chip.
- *
- * It is ALWAYS canvas2d and independent of the geometry backend (canvas2d now,
- * WebGL2 later) — the GPU path never has to rasterize text. It also owns the
- * shared DrawingSceneRenderer, so it computes the drawing price-range that folds
- * into autoscale (`paneDrawingsRange`).
+ * geometry layer (L0) and below the cursor layer (L2). It draws the per-pane price
+ * axes + labels, the time axis + labels, the current-price line + chip, and the
+ * strategy trade markers. Pine drawings do NOT paint here: they prepaint into
+ * interleave slices (IndicatorDrawingSlices) the geometry backend composites at
+ * their model's z slot — this layer only keeps the shared DrawingSceneRenderer to
+ * compute the drawing price-range that folds into autoscale (`paneDrawingsRange`).
  */
 export class ChromeRenderer {
     private canvas: HTMLCanvasElement | null = null;
     private ctx: CanvasRenderingContext2D | null = null;
     // The color for axis tick labels — the host-passed surface text, set each frame in render().
     private axisTextColor = DARK_THEME.textColor;
-    // Shared Pine-drawing renderer (line/box/label/polyline/linefill); widthCache persists.
+    // Shared Pine-drawing renderer, used here for autoscale geometry only; widthCache persists.
     private readonly drawScene = new DrawingSceneRenderer({ timeToLogical: () => 0, barAt: () => null, theme: {} as VelaTheme });
-    // Tooltip hit-rects of every label drawn this frame, in plot coords (rebuilt per render).
-    private labelTips: LabelTipRegion[] = [];
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
@@ -62,8 +57,8 @@ export class ChromeRenderer {
      */
     paneDrawingsRange(ownModels: IndicatorModel[], scene: SceneGraph, isPricePane: boolean, vr: { from: number; to: number }): { min: number; max: number } | null {
         let dr: { min: number; max: number } | null = null;
-        for (const m of ownModels) dr = unionRange(dr, this.drawingsRange(this.ownDrawings(m), vr, scene.offsetOf(m.id)));
-        if (isPricePane) for (const m of scene.indicators.values()) dr = unionRange(dr, this.drawingsRange(this.overlayDrawings(m), vr, scene.offsetOf(m.id)));
+        for (const m of ownModels) dr = unionRange(dr, this.drawingsRange(modelDrawingSet(m, false), vr, scene.offsetOf(m.id)));
+        if (isPricePane) for (const m of scene.indicators.values()) dr = unionRange(dr, this.drawingsRange(modelDrawingSet(m, true), vr, scene.offsetOf(m.id)));
         return dr;
     }
 
@@ -84,7 +79,6 @@ export class ChromeRenderer {
         // The gutters (and their labels) use the surface the host passes (the live chart
         // background); everything data-side keeps the live theme.
         this.axisTextColor = surface?.textColor ?? theme.textColor;
-        this.labelTips = [];
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, fullW, fullH);
         // Paint the price-axis (right) + time-axis (bottom) gutters opaquely so drawings or
@@ -110,20 +104,8 @@ export class ChromeRenderer {
         }
         const pricePane = panes.find((p) => p.kind === 'price') ?? null;
 
-        // ── Pine drawings — above series. Own drawings on each model's pane;
-        //    force_overlay drawings on the price pane (Pine semantics). A merged (own-scale)
-        //    indicator's drawings follow its own scale column. ──
-        for (const pane of panes) {
-            if (pane.collapsed) continue; // collapsed strip: legend only, no drawings/plots
-            for (const m of scene.indicatorsForPane(pane.id)) {
-                const sc = scene.scaleFor(m, pane);
-                const mp = sc === pane.scale ? pane : { ...pane, scale: sc };
-                this.renderDrawings(ctx, coords, this.ownDrawings(m), mp, dataW, scene.offsetOf(m.id));
-            }
-        }
-        if (pricePane) {
-            for (const m of scene.indicators.values()) this.renderDrawings(ctx, coords, this.overlayDrawings(m), pricePane, dataW, scene.offsetOf(m.id));
-        }
+        // Pine drawings paint through the interleave slices at their model's z slot
+        // (IndicatorDrawingSlices), NOT here — the chrome stays axes + markers + chips.
 
         // ── Strategy trade markers — always the PRICE pane, whatever pane the strategy's
         //    plots landed on (a fill price only means something on the price scale), above
@@ -145,27 +127,6 @@ export class ChromeRenderer {
     destroy(): void {
         this.canvas = null;
         this.ctx = null;
-    }
-
-    // ── Pine-drawing helpers (own vs force_overlay routing) ──
-    private ownDrawings(m: IndicatorModel): DrawingSet {
-        return {
-            lines: (m.lines ?? []).filter((d) => !d.overlay),
-            boxes: (m.boxes ?? []).filter((d) => !d.overlay),
-            labels: (m.labels ?? []).filter((d) => !d.overlay),
-            polylines: (m.polylines ?? []).filter((d) => !d.overlay),
-            linefills: (m.linefills ?? []).filter((d) => !d.overlay),
-        };
-    }
-
-    private overlayDrawings(m: IndicatorModel): DrawingSet {
-        return {
-            lines: (m.lines ?? []).filter((d) => d.overlay),
-            boxes: (m.boxes ?? []).filter((d) => d.overlay),
-            labels: (m.labels ?? []).filter((d) => d.overlay),
-            polylines: (m.polylines ?? []).filter((d) => d.overlay),
-            linefills: (m.linefills ?? []).filter((d) => d.overlay),
-        };
     }
 
     private drawingsRange(set: DrawingSet, vr: { from: number; to: number }, indexOffset = 0): { min: number; max: number } | null {
@@ -209,37 +170,6 @@ export class ChromeRenderer {
             Math.max(1.5, coords.bodySpacing() * 0.4),
         );
         ctx.restore();
-    }
-
-    private renderDrawings(ctx: CanvasRenderingContext2D, coords: CoordinateSystem, set: DrawingSet, pane: PaneNode, dataW: number, indexOffset = 0): void {
-        this.drawScene.setSet(set, indexOffset);
-        if (this.drawScene.isEmpty()) return;
-        ctx.save();
-        ctx.translate(0, pane.bounds.top); // pane-relative space (drawings use [0, H])
-        ctx.beginPath();
-        ctx.rect(0, 0, dataW, pane.bounds.height);
-        ctx.clip();
-        this.drawScene.render(
-            ctx,
-            dataW,
-            pane.bounds.height,
-            (l) => coords.logicalToX(l),
-            (price) => coords.priceToY(price, pane.scale, pane.bounds) - pane.bounds.top,
-        );
-        ctx.restore();
-        // Collect this set's label tooltip rects, shifted from pane space into plot space.
-        for (const r of this.drawScene.labelTipRegions()) {
-            this.labelTips.push({ ...r, top: r.top + pane.bounds.top, bottom: r.bottom + pane.bounds.top });
-        }
-    }
-
-    /** Tooltip of the topmost label under a plot-space point, or null. Fed by the last render. */
-    labelTooltipAt(x: number, y: number): string | null {
-        for (let i = this.labelTips.length - 1; i >= 0; i -= 1) {
-            const r = this.labelTips[i]!;
-            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return r.text;
-        }
-        return null;
     }
 
     // ── axes ──

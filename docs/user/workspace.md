@@ -100,7 +100,10 @@ ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size
 // Shrinking never pools the ACTIVE chart: if its slot would leave the layout, it
 // moves into the last surviving slot instead (the other cells keep their order).
 ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also reachable from any cell's chart settings → Canvas → Theme)
-ws.on('cell:active' | 'layout:changed' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
+ws.maximizeCell('sol');  // one cell over the whole grid (null restores) — pure presentation,
+ws.maximizedCell;        //  the other cells keep everything; layout/state changes restore
+ws.swapCells('btc', 'eth'); // the two cells trade SLOTS (arrangement only — cells untouched)
+ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
 ```
 
 **Rule of thumb:** hold the cell (or its identity), read `cell.chart` at the point of
@@ -122,6 +125,25 @@ handed to `ws.setLayout(...)`.
 
 Splitters between cells resize the grid tracks (double-click a divider for an even
 split).
+
+Each cell also carries its own **view controls**: rest the cursor near the bottom
+center of a chart (the same reveal as the jump-to-latest button) and a small cluster
+appears — a drag handle, zoom out, zoom in, maximize, and reset. The drag handle
+(the dotted grip at the left) moves the chart within the grid: hold it, sweep onto
+another chart — a dashed ring previews the target — and release to trade slots
+(`swapCells` behind a gesture; releasing anywhere else cancels). Maximize is
+`maximizeCell` behind a button: that one chart takes the whole grid, restore (or a
+layout switch) brings the grid back, and nothing about the hidden charts is lost.
+Reset re-enables auto price scaling and frames the full history — the context menu's
+"Reset view". On single-cell grids the drag handle and maximize stay away; zoom and
+reset remain.
+
+On **mobile** the hover clusters don't apply (no cursor to reveal them — the per-pane
+hover buttons stay away too, though a collapsed pane keeps its expand chip). The
+mobile bottom bar carries a **maximize stop** instead: one tap isolates the current
+chart over the grid, and the stop lights up as an inverse chip whenever something is
+isolated — the chart itself, or a pane inside it (a double-tap in the plot maximizes
+a pane). Tapping the lit stop restores the view.
 
 ## Sync links
 
@@ -404,7 +426,9 @@ they work from the very first keystroke, before any click.
   header carries its reorder/collapse/maximize controls. Rows are also draggable — onto a pane to
   move an item there, onto the band between two panes to open a new one, or to any slot in a
   pane's column to set draw order, a drawing under the candles or between two indicators included
-  — with a ghost label and a drop hint while the drag is live. Drawings can be multi-selected
+  — with a ghost label and a drop hint while the drag is live. An indicator's row carries
+  everything the indicator paints: its plots, fills, script drawings and tables all move through
+  the stack together. Drawings can be multi-selected
   (Ctrl/Cmd-click) and bundled into a named group that hides, locks, deletes and drags as one
   block; groups live for as long as the chart and are not persisted. Kept in sync with the
   chart's events.

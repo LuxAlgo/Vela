@@ -18,7 +18,7 @@ export const NATIVE_CAPABILITIES: RendererCapabilities = {
     drawings: true,
     userDrawings: true, // interactive drawing tools (toolbar + hit-test + handles)
     drawingDepth: true, // drawings share the series' z space (backend-composited interleave layers)
-    tables: true, // reuses the DOM TableOverlay
+    tables: true, // canvas-painted into the owning indicator's interleave slice
     trades: true, // strategy order-fill markers (arrows + labels + fill-price ticks)
     inputsUI: true, // reuses the DOM InputsUI
 };

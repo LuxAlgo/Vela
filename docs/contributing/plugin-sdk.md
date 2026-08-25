@@ -513,12 +513,12 @@ registerLegendAction({
 
 ## Legend callouts — `registerLegendCallout`
 
-A small tinted **callout bubble** with a centered icon, always visible right of an
-indicator's legend title (it trails the whole row while the hover controls are out).
-Hover shows its tooltip; when the spec carries `content`, clicking deploys a panel of
-text blocks and action buttons — below the bubble, flipping above it near the bottom
-screen edge. The classic use: a live status a user can act on (a market-session badge,
-a "new version available" notice with an Update button).
+A small tinted **callout bubble** with a centered icon, visible right of an
+indicator's legend title while the row is idle (it hides while the hover/selection
+controls are out). Hover shows its tooltip; when the spec carries `content`, clicking
+deploys a panel of text blocks and action buttons — below the bubble, flipping above
+it near the bottom screen edge. The classic use: a live status a user can act on (a
+market-session badge, a "new version available" notice with an Update button).
 
 ```ts
 import { registerLegendCallout } from 'vela/plugin';

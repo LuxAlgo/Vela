@@ -1,5 +1,6 @@
 import type { DataProvider, ProviderInfo, SymbolDescriptor } from '../core/ports/DataProvider';
 import type { Unsubscribe } from '../core/util/types';
+import { isGroupRow, defaultMemberOf } from './symbol-groups';
 
 /** A symbol resolved to a registered provider. */
 export interface Resolved {
@@ -162,21 +163,32 @@ export class ProviderRegistry {
     resolve(raw: string, opts: { default?: string | null; lenient?: boolean } = {}): Resolved | null {
         const { provider, ticker } = this.parse(raw);
         if (provider) {
-            if (this.entries.has(provider)) return { provider, ticker };
+            if (this.entries.has(provider)) {
+                // Even the explicit form translates a GROUP row — `cme:ES` must load
+                // the root's default member, never dead-end on the unloadable listing.
+                const d = this.entries.get(provider)!.byTicker?.get(normTicker(ticker));
+                return { provider, ticker: d != null && isGroupRow(d) ? this.loadableTicker(provider, d) : ticker };
+            }
             // Listing-prefix routing: matched against the DESCRIPTOR's declared prefix, so
             // the verdict comes from the data, never from string similarity. The resolved
             // ticker is the descriptor's spelling (canonical casing for `nyse:ibm` → `IBM`).
             const key = `${provider}:${normTicker(ticker)}`;
             for (const name of this.candidateOrder(opts.default)) {
                 const d = this.entries.get(name)!.prefixIndex?.get(key);
-                if (d) return { provider: name, ticker: d.ticker };
+                if (d) return { provider: name, ticker: this.loadableTicker(name, d) };
             }
             return null;
         }
 
         const norm = normTicker(ticker);
         for (const name of this.candidateOrder(opts.default)) {
-            if (this.entries.get(name)!.index?.has(norm)) return { provider: name, ticker };
+            const e = this.entries.get(name)!;
+            if (e.index?.has(norm)) {
+                const d = e.byTicker?.get(norm);
+                // Group rows are listed, never loadable: a bare root (`ES`) resolves to the
+                // group's default member. Anything else keeps the CALLER's spelling.
+                return { provider: name, ticker: d != null && isGroupRow(d) ? this.loadableTicker(name, d) : ticker };
+            }
         }
 
         // Lenient (primary load only): a SOLE registered provider that cannot be
@@ -190,6 +202,14 @@ export class ProviderRegistry {
             if (e.settled && e.index == null) return { provider: only, ticker };
         }
         return null;
+    }
+
+    /** What a resolved descriptor LOADS: itself — unless it is a GROUP row (listed, never
+     *  served), which loads its default member (single `default`, else first listed). A
+     *  memberless group keeps its own ticker and fails downstream like any unknown symbol. */
+    private loadableTicker(name: string, d: SymbolDescriptor): string {
+        if (!isGroupRow(d)) return d.ticker;
+        return defaultMemberOf(this.entries.get(name)?.descriptors ?? [], d)?.ticker ?? d.ticker;
     }
 
     /**

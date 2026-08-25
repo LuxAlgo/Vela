@@ -43,6 +43,9 @@ const CSS = `
 }
 .vela-mb-item:active { background: var(--vela-hover); }
 .vela-mb-item .vela-icon { font-size: 18px; width: 18px; height: 18px; }
+/* A lit stop (the maximize toggle while something is isolated): the inverse
+   "selected" chip — white on the dark theme, dark on the light one. */
+.vela-mb-item.vela-mb-on, .vela-mb-item.vela-mb-on:active { background: var(--vela-selected-bg); color: var(--vela-selected-fg); }
 /* Left-aligned contributed actions get their own stops (the built-in indicators
    slot) — the wrapper is layout-transparent so each stop flexes like a sibling. */
 .vela-mb-actions { display: contents; }
@@ -70,6 +73,10 @@ export interface MobileBarOptions {
     onIndicatorsClick?: () => void;
     /** Omitted ⇒ no drawings stop (the shell disabled user drawings — `drawings: false`). */
     onDrawingsClick?: () => void;
+    /** Omitted ⇒ no maximize stop (single-chart shells — nothing to isolate). The
+     *  workspace passes a toggle that isolates the active chart over the grid;
+     *  {@link setMaximizeActive} lights the stop while something is isolated. */
+    onMaximizeClick?: () => void;
     onMoreClick: () => void;
     onSettingsClick: () => void;
     /** Live widget context — left-aligned contributed actions (`align: 'left'`)
@@ -81,6 +88,8 @@ export class MobileBar {
     readonly el: HTMLElement;
     private readonly symbolEl: HTMLElement;
     private readonly tfEl: HTMLElement;
+    /** The maximize toggle stop (null when the shell has nothing to isolate). */
+    private readonly maxEl: HTMLButtonElement | null;
     /** Left-aligned contributed actions — filled by {@link renderActions}. */
     private readonly actionsHost: HTMLElement;
     private readonly opts: MobileBarOptions;
@@ -111,10 +120,12 @@ export class MobileBar {
         this.actionsHost.className = 'vela-mb-actions';
         const onDrawings = opts.onDrawingsClick;
         const drawings = onDrawings ? item('vela-mb-drawings', 'Drawings', onDrawings, 'pen') : null;
+        const onMaximize = opts.onMaximizeClick;
+        this.maxEl = onMaximize ? item('vela-mb-maximize', 'Maximize chart', onMaximize, 'maximize') : null;
         const more = item('vela-mb-more', 'More', opts.onMoreClick, 'kebab');
         const settings = item('vela-mb-settings', 'Chart settings', opts.onSettingsClick, 'gear');
 
-        this.el.append(this.symbolEl, this.tfEl, ...(indicators ? [indicators] : []), this.actionsHost, ...(drawings ? [drawings] : []), more, settings);
+        this.el.append(this.symbolEl, this.tfEl, ...(indicators ? [indicators] : []), this.actionsHost, ...(drawings ? [drawings] : []), ...(this.maxEl ? [this.maxEl] : []), more, settings);
         host.appendChild(this.el);
         this.renderActions();
     }
@@ -150,6 +161,15 @@ export class MobileBar {
 
     setTimeframe(tf: string): void {
         this.tfEl.textContent = timeframeLabel(tf);
+    }
+
+    /** Light the maximize stop while something is isolated (a chart over the grid,
+     *  or a maximized pane inside the active chart) — inverse chip + restore glyph. */
+    setMaximizeActive(on: boolean): void {
+        if (!this.maxEl) return;
+        this.maxEl.classList.toggle('vela-mb-on', on);
+        this.maxEl.setAttribute('aria-label', on ? 'Restore layout' : 'Maximize chart');
+        this.maxEl.replaceChildren(iconEl(on ? 'restore' : 'maximize', this.el.ownerDocument));
     }
 
     destroy(): void {
