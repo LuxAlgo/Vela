@@ -41,6 +41,8 @@ A provider's symbol descriptors may declare a **listing prefix** (`prefix: 'NASD
 - **Display.** Every label derives from the data, never from what was typed: the legend venue chip reads `NASDAQ`, picker rows badge the listing venue, and the picker commits (and the workspace persists) the canonical `NASDAQ:AAPL` form.
 - **Compatibility.** An explicit provider name always keeps routing (`myequities:AAPL` still resolves — persisted documents don't break); it simply re-displays canonically. Symbols without a declared prefix behave exactly as before — the provider name is their prefix.
 
+Descriptors may also form **groups** (futures roots): a group row (`ticker: 'ES'`, `group: 'ES'`) folded over member rows (`ES1!`, `ES2!`, same `group`). The symbol search shows the group as one row — its chevron unfolds the members — and picking the group (or typing `ES` / `CME:ES`) loads the member marked `default` (none or several marked: the first listed). The root itself is never loaded.
+
 ## How a bare symbol resolves
 
 When you don't name a provider, Vela picks one:
