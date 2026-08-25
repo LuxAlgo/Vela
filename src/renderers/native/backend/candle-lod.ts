@@ -36,6 +36,18 @@ export function candleTier(spacing: number): CandleTier {
     return 'full';
 }
 
+/**
+ * Snap a CSS-px Y coordinate to the device-pixel grid — the vertical counterpart of
+ * candleGeometry's X snapping, applied to candle body tops/bottoms and wick ends.
+ * An edge on a whole device pixel rasterizes as one hard step; a fractional one
+ * leaves a blended anti-aliasing row that reads as a darker rim on the body. The
+ * cost is up to half a device pixel of true position — invisible at any zoom.
+ * Shared by both backends so canvas2d and WebGL2 land candles on the same rows.
+ */
+export function snapY(yCss: number, dpr: number): number {
+    return Math.round(yCss * dpr) / dpr;
+}
+
 /** Wick + body layout of one candle, in CSS px, with every edge on the device-pixel grid. */
 export interface CandleGeometry {
     /** Wick left edge / width. */

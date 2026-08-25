@@ -31,7 +31,6 @@ import { isLineLikeSeries } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
 import { AxisScaleButtons, type AxisScaleView } from './chrome/AxisScaleButtons';
-import { TableOverlay } from '../shared/TableOverlay';
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
 import { CoordinateSystem, type PaneBounds, type PriceScale } from './core/CoordinateSystem';
@@ -49,6 +48,7 @@ import { AXIS_MASTER_W, AXIS_MERGED_W } from './chrome/axisLayout';
 import { CrosshairRenderer } from './chrome/CrosshairRenderer';
 import { SettingsDialog } from './chrome/SettingsDialog';
 import { UserDrawingController } from './drawings/UserDrawingController';
+import { IndicatorDrawingSlices, mergeSlices } from './drawings/IndicatorDrawingSlices';
 import { createProjector } from './drawings/Projector';
 import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
@@ -163,6 +163,11 @@ export class NativeRenderer implements IChartRenderer {
     private readonly vpvrRenderer = new VpvrRenderer();
     private resizeObserver: ResizeObserver | null = null;
     private dprMedia: MediaQueryList | null = null;
+    /** Plot size in INTEGER device px, as last reported by the resize observer's
+     *  device-pixel-content-box — the browser's own statement of how many device pixels
+     *  it paints the plot into. `null` until the first report or where the box type is
+     *  unsupported (WebKit); syncSize then falls back to rounding the client rect. */
+    private plotDeviceSize: { width: number; height: number } | null = null;
 
     private readonly coords = new CoordinateSystem();
     private readonly scene = new SceneGraph();
@@ -170,6 +175,8 @@ export class NativeRenderer implements IChartRenderer {
     private backendMode: NativeBackend = 'auto';
     private glowAmount = 0; // WebGL2 neon-glow intensity (canvas2d ignores it)
     private readonly chrome = new ChromeRenderer();
+    /** Prepaints each indicator's Pine drawings into interleave slices at the model's z. */
+    private readonly indicatorSlices = new IndicatorDrawingSlices();
     /** Hover tooltips for Pine labels (canvas hit-rects collected by the chrome layer). */
     private labelTooltip: LabelTooltip | null = null;
     private readonly crosshairLayer = new CrosshairRenderer();
@@ -305,7 +312,6 @@ export class NativeRenderer implements IChartRenderer {
     private readonly toggleVisibleCbs = new Set<(id: string, visible: boolean) => void>();
     private readonly moveIndicatorCbs = new Set<(id: string, target: MoveTarget) => void>();
     private readonly priceStyleCbs = new Set<(style: PriceStyle) => void>();
-    private readonly tableOverlays = new Map<string, TableOverlay>();
 
     constructor(opts?: RendererDisplayOptions) {
         if (opts) {
@@ -584,9 +590,8 @@ export class NativeRenderer implements IChartRenderer {
      * hidden) on clear so a re-show picks up the current theme.
      */
     setLoading(loading: boolean): void {
-        // Tables are the one series-independent content: corner-anchored DOM, so an emptied
-        // chart doesn't take them along — hide them for the load, restore with the bars.
-        for (const overlay of this.tableOverlays.values()) overlay.setVisible(!loading);
+        // Tables need no special handling here: they paint through the interleave slices,
+        // and the backend paints nothing on an emptied (bar-less) chart.
         if (!loading || !this.wrapper) {
             this.loadingEl?.remove();
             this.loadingEl = null;
@@ -1386,9 +1391,10 @@ export class NativeRenderer implements IChartRenderer {
         this.plot.addEventListener('pointerleave', this.onScrollProximityLeave);
 
         // Pine label tooltips: hover a label that carries one and a themed tip opens.
+        // The hit-rects are collected by the slice prepainter (drawings paint there now).
         this.labelTooltip = new LabelTooltip(this.plot, {
             theme: () => this.chromeTheme(),
-            lookup: (x, y) => this.chrome.labelTooltipAt(x, y),
+            lookup: (x, y) => this.indicatorSlices.labelTooltipAt(x, y),
         });
 
         // User-drawings layer (paints L1.5 plus the interleave layers the geometry backend
@@ -1493,8 +1499,23 @@ export class NativeRenderer implements IChartRenderer {
             },
         });
 
-        this.resizeObserver = new ResizeObserver(() => this.resize());
+        this.resizeObserver = new ResizeObserver((entries) => {
+            for (const e of entries) {
+                if (e.target !== this.plot) continue;
+                const s = e.devicePixelContentBoxSize?.[0];
+                if (s) this.plotDeviceSize = { width: s.inlineSize, height: s.blockSize };
+            }
+            this.resize();
+        });
         this.resizeObserver.observe(this.wrapper);
+        // Also watch the plot's device-pixel box: it reports the EXACT integer device-pixel
+        // size of the box (fractional dpr and fractional layout already snapped by the
+        // browser), and it fires on zoom/dpr changes the wrapper's content-box misses.
+        try {
+            this.resizeObserver.observe(this.plot, { box: 'device-pixel-content-box' });
+        } catch {
+            // Box type unsupported (WebKit) — syncSize keeps rounding the client rect.
+        }
         this.watchDpr();
         this.syncSize();
     }
@@ -1632,8 +1653,6 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI?.destroy();
         this.paneControls?.destroy();
         this.axisScaleButtons?.destroy();
-        for (const overlay of this.tableOverlays.values()) overlay.destroy();
-        this.tableOverlays.clear();
         this.resizeObserver?.disconnect();
         this.resizeObserver = null;
         this.dprMedia?.removeEventListener('change', this.onDprChange);
@@ -1779,7 +1798,6 @@ export class NativeRenderer implements IChartRenderer {
     ensurePane(pane: Pane): void {
         this.scene.ensurePane(pane.id, pane.kind, pane.order, pane.heightWeight ?? (pane.kind === 'price' ? 3 : 1));
         this.layoutPanes();
-        this.repositionTables();
         // A new pane changes the count, so the lone price pane's maximize button appears.
         this.paneControls?.refresh();
         this.scheduler.invalidate(InvalidateLevel.Full);
@@ -1804,10 +1822,8 @@ export class NativeRenderer implements IChartRenderer {
         if (!model.ownScale) this.scene.dropIndicatorScale(handle.id);
         this.inputsUI.setPane(handle.id, paneId);
         this.refreshAnchorOffset(model);
-        this.syncTables(model); // re-anchor any table overlay to the new pane
         this.refreshAxisWidth();
         this.layoutPanes();
-        this.repositionTables();
         this.paneControls?.refresh();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
@@ -1815,7 +1831,6 @@ export class NativeRenderer implements IChartRenderer {
     orderPanes(orderedIds: string[]): void {
         this.scene.orderPanes(orderedIds);
         this.layoutPanes();
-        this.repositionTables();
         this.paneControls?.refresh();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
@@ -1825,7 +1840,6 @@ export class NativeRenderer implements IChartRenderer {
         if (!pane || pane.collapsed === collapsed) return;
         pane.collapsed = collapsed;
         this.layoutPanes();
-        this.repositionTables();
         this.paneControls?.refresh();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
@@ -1834,7 +1848,6 @@ export class NativeRenderer implements IChartRenderer {
         if (paneId !== null && !this.scene.panes.has(paneId)) paneId = null;
         this.maximizedPaneId = paneId;
         this.layoutPanes();
-        this.repositionTables();
         this.paneControls?.refresh();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
@@ -1939,7 +1952,6 @@ export class NativeRenderer implements IChartRenderer {
             native: !!model.native,
             ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
         });
-        this.syncTables(model);
         if (model.native?.type === 'volume') {
             this.volumeActive = true; // the volume layer follows the indicator's presence
             this.volumeHidden = false;
@@ -1966,7 +1978,6 @@ export class NativeRenderer implements IChartRenderer {
             }
         }
         applyPatch(model, patch);
-        this.syncTables(model);
         this.scheduler.invalidate(InvalidateLevel.Light);
     }
 
@@ -1986,8 +1997,6 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.forgetAnchorOffset(handle.id);
         this.scene.dropIndicatorScale(handle.id);
         this.inputsUI.remove(handle.id);
-        this.tableOverlays.get(handle.id)?.destroy();
-        this.tableOverlays.delete(handle.id);
         this.refreshAxisWidth();
         this.paneControls?.refresh();
         this.scheduler.invalidate(InvalidateLevel.Full);
@@ -2040,8 +2049,6 @@ export class NativeRenderer implements IChartRenderer {
         }
         if (!visible) {
             this.scene.indicators.delete(handle.id); // keep the z key (forgetIndicatorZ NOT called) so show preserves order
-            this.tableOverlays.get(handle.id)?.destroy();
-            this.tableOverlays.delete(handle.id);
         }
         this.inputsUI.setVisible(handle.id, visible);
         this.scheduler.invalidate(InvalidateLevel.Full);
@@ -2562,7 +2569,6 @@ export class NativeRenderer implements IChartRenderer {
     /** Relayout + repaint + refresh the hover buttons after a collapse/maximize/order change. */
     private afterPaneLayoutChange(): void {
         this.layoutPanes();
-        this.repositionTables();
         this.paneControls?.refresh();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
@@ -2650,7 +2656,6 @@ export class NativeRenderer implements IChartRenderer {
         above.heightWeight = next.above;
         below.heightWeight = next.below;
         this.layoutPanes();
-        this.repositionTables();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -2666,7 +2671,6 @@ export class NativeRenderer implements IChartRenderer {
         above.heightWeight = half;
         below.heightWeight = half;
         this.layoutPanes();
-        this.repositionTables();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -3003,9 +3007,13 @@ export class NativeRenderer implements IChartRenderer {
             && (liveActual.high !== this.liveEaseHigh || liveActual.low !== this.liveEaseLow || liveActual.close !== this.liveEaseClose);
         if (easeLive && liveActual) this.bars[li] = { ...liveActual, high: this.liveEaseHigh, low: this.liveEaseLow, close: this.liveEaseClose };
 
-        // Interleave layers: the drawings whose z sits inside a pane's series stack, prepainted
-        // so the backend can composite them mid-stack (under the candles, between indicators).
-        this.scene.drawingSlices = this.userDrawings?.prepareSlices(this.scene.orderedPanes().map((p) => p.id)) ?? new Map();
+        // Interleave layers: each indicator's Pine drawings at that indicator's z slot, plus
+        // the user drawings whose z sits inside a pane's series stack — prepainted so the
+        // backend can composite them mid-stack (under the candles, between indicators).
+        this.scene.drawingSlices = mergeSlices(
+            this.indicatorSlices.prepare(this.scene, this.coords, this.theme, this.dataCanvas),
+            this.userDrawings?.prepareSlices(this.scene.orderedPanes().map((p) => p.id)) ?? new Map(),
+        );
         this.backdropRenderer.render(this.scene, this.coords, this.theme, gridAlpha); // L-2, under every layer canvas
         this.backend.render(this.scene, this.coords, this.theme);
         this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
@@ -3529,29 +3537,6 @@ export class NativeRenderer implements IChartRenderer {
         return maxVol;
     }
 
-    /** Create/update/destroy an indicator's DOM table overlay (anchored off real pane geometry). */
-    private syncTables(model: IndicatorModel): void {
-        const tables = model.tables ?? [];
-        let overlay = this.tableOverlays.get(model.id);
-        if (tables.length === 0) {
-            if (overlay) {
-                overlay.destroy();
-                this.tableOverlays.delete(model.id);
-            }
-            return;
-        }
-        if (!overlay) {
-            overlay = new TableOverlay(this.plot, this.theme, (id) => this.paneBoundsFor(id));
-            overlay.setVisible(this.loadingEl === null); // born mid-load ⇒ born hidden
-            this.tableOverlays.set(model.id, overlay);
-        }
-        overlay.update(tables);
-    }
-
-    private repositionTables(): void {
-        for (const overlay of this.tableOverlays.values()) overlay.reposition();
-    }
-
     private layoutPanes(): void {
         const panes = this.scene.orderedPanes();
         const dataHeight = this.coords.height;
@@ -3717,23 +3702,46 @@ export class NativeRenderer implements IChartRenderer {
         // The plot area is inset to the right of the toolbar gutter; the canvases fill the plot
         // sub-container (0-based), so the coordinate system / pointer coords stay unchanged.
         this.plot.style.left = `${this.toolbarGutter}px`;
-        const pw = Math.max(1, w - this.toolbarGutter);
-        const ph = h;
-        this.dataCanvas.width = Math.round(pw * dpr);
-        this.dataCanvas.height = Math.round(ph * dpr);
-        this.backdropCanvas.width = this.dataCanvas.width;
-        this.backdropCanvas.height = this.dataCanvas.height;
-        this.volumeCanvas.width = this.dataCanvas.width;
-        this.volumeCanvas.height = this.dataCanvas.height;
-        for (const l of this.extLayers) { l.canvas.width = this.dataCanvas.width; l.canvas.height = this.dataCanvas.height; }
-        this.vpvrCanvas.width = this.dataCanvas.width;
-        this.vpvrCanvas.height = this.dataCanvas.height;
-        this.chromeCanvas.width = this.dataCanvas.width;
-        this.chromeCanvas.height = this.dataCanvas.height;
-        this.drawingsCanvas.width = this.dataCanvas.width;
-        this.drawingsCanvas.height = this.dataCanvas.height;
-        this.cursorCanvas.width = this.dataCanvas.width;
-        this.cursorCanvas.height = this.dataCanvas.height;
+        // Size the pile from the plot's REAL box, not client sizes: clientWidth/Height are
+        // integer-rounded, and on fractional-dpr displays (Windows 125%/150%) a backing store
+        // rounded from them covers a different number of device pixels than the box it is
+        // displayed in — the compositor then resamples the whole bitmap and every
+        // device-snapped edge feathers by ~1px.
+        const rect = this.plot.getBoundingClientRect();
+        let bw = Math.max(1, Math.round(rect.width * dpr));
+        let bh = Math.max(1, Math.round(rect.height * dpr));
+        // Prefer the observer-reported device-pixel size when it describes the CURRENT box
+        // (within 1 device px of the rect — the browser's snapping can differ from plain
+        // rounding by up to a pixel, which is exactly why its report wins). A stale report
+        // (e.g. right after the toolbar gutter moved the plot) is rejected; the observer
+        // fires again with the fresh box and re-syncs.
+        const dev = this.plotDeviceSize;
+        if (dev && Math.abs(dev.width - rect.width * dpr) <= 1 && Math.abs(dev.height - rect.height * dpr) <= 1) {
+            bw = Math.max(1, dev.width);
+            bh = Math.max(1, dev.height);
+        }
+        // Bitmap px == device px: each canvas gets an explicit CSS size derived from its
+        // backing store, so nothing is rescaled at composite time. The box's fractional
+        // device OFFSET is left alone on purpose: the compositor pixel-snaps a layer's
+        // layout position by itself, but an explicit sub-pixel translate becomes part of
+        // the composite matrix and RESAMPLES the texture — a half-device-pixel translate
+        // blends every horizontal edge 50/50 (measured, not theory). Never "compensate".
+        const pw = bw / dpr;
+        const ph = bh / dpr;
+        const size = (canvas: HTMLCanvasElement): void => {
+            canvas.width = bw;
+            canvas.height = bh;
+            canvas.style.width = `${pw}px`;
+            canvas.style.height = `${ph}px`;
+        };
+        size(this.dataCanvas);
+        size(this.backdropCanvas);
+        size(this.volumeCanvas);
+        for (const l of this.extLayers) size(l.canvas);
+        size(this.vpvrCanvas);
+        size(this.chromeCanvas);
+        size(this.drawingsCanvas);
+        size(this.cursorCanvas);
         // Reserve strips for the price axis (right) + time axis (bottom); the
         // data area drives the coordinate transform so series sit clear of them.
         this.coords.setSize(Math.max(1, pw - this.rightAxisW), Math.max(1, ph - TIME_AXIS_H), dpr);
@@ -3741,7 +3749,6 @@ export class NativeRenderer implements IChartRenderer {
         // bar/price, so drop it (LWC hides the crosshair until the next move).
         this.scene.crosshair = null;
         this.layoutPanes();
-        this.repositionTables();
         this.userDrawings?.onResize(); // dismiss the settings popup on a resize
         if (!this.didInitialFit && this.coords.barCount > 0) {
             this.fitContent();
