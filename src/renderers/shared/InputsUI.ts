@@ -81,8 +81,8 @@ interface LegendRow {
     controlsEl: HTMLElement;
     /** Host-contributed action buttons (inside `controlsEl`, before ✕) — rebuilt on demand. */
     extrasEl: HTMLElement;
-    /** Host-contributed callout bubbles: right of the title when idle, trailing the whole
-     *  row while the controls are out (see syncRowActions) — rebuilt on demand. */
+    /** Host-contributed callout bubbles: right of the title when idle, hidden while the
+     *  row is open (hovered/selected — see syncRowActions) — rebuilt on demand. */
     calloutsEl: HTMLElement;
     /** The live bubble instances in {@link calloutsEl} (kept so their panels die with the row). */
     callouts: CalloutBubble[];
@@ -120,6 +120,15 @@ const CLOSE_SVG = iconAt('close', LEGEND_ICON_PX);
 const FOLD_SVG = iconAt('chevron-up', LEGEND_ICON_PX);
 const UNFOLD_SVG = iconAt('chevron-down', LEGEND_ICON_PX);
 const OVERVIEW_SVG = iconAt('objects', LEGEND_ICON_PX);
+
+/**
+ * Display of a legend row's callout-bubble cluster: beside the title while idle,
+ * hidden while the row is open (hovered/selected) so the action buttons stay
+ * glued to the title.
+ */
+export function legendCalloutsDisplay(open: boolean, hasCallouts: boolean): 'inline-flex' | 'none' {
+    return !open && hasCallouts ? 'inline-flex' : 'none';
+}
 
 /**
  * Per-indicator legend chrome (title + gear + remove) as a DOM overlay on the
@@ -361,7 +370,7 @@ export class InputsUI {
         row.callouts = [];
         row.calloutsEl.replaceChildren();
         const views = this.legendCallouts?.(row.id) ?? [];
-        row.calloutsEl.style.display = views.length > 0 ? 'inline-flex' : 'none';
+        row.calloutsEl.style.display = legendCalloutsDisplay(row.highlighted, views.length > 0);
         for (const view of views) {
             const bubble = new CalloutBubble({
                 icon: view.icon,
@@ -772,7 +781,7 @@ export class InputsUI {
         }
         el.appendChild(titleWrap);
         // Contributed callout bubbles (registerLegendCallout) — a title companion while
-        // the row is idle; syncRowActions trails them after the controls when it opens.
+        // the row is idle; syncRowActions hides them while the controls are out.
         const calloutsEl = document.createElement('span');
         calloutsEl.style.cssText = `display:none;align-items:center;gap:4px;flex:none;margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;`;
         el.appendChild(calloutsEl);
@@ -966,15 +975,15 @@ export class InputsUI {
         row.controlsEl.style.display = open || row.hidden ? 'inline-flex' : 'none';
         // The status indicator steps aside while the controls are out — moved after the
         // action cluster (its title-side margin rides along) — and returns to the title's
-        // side when the row closes. The callout bubbles ride the same shuffle, trailing
-        // the whole open row ("right of the legend"), back beside the title on close.
+        // side when the row closes. Callout bubbles hide for the same window so they
+        // don't shove the buttons aside or jump to the end of the row.
         if (open) {
             row.el.appendChild(row.statusEl);
-            row.el.appendChild(row.calloutsEl);
+            for (const bubble of row.callouts) bubble.hidePanel();
         } else {
             row.el.insertBefore(row.statusEl, row.valuesEl);
-            row.el.insertBefore(row.calloutsEl, row.statusEl);
         }
+        row.calloutsEl.style.display = legendCalloutsDisplay(open, row.callouts.length > 0);
         for (const child of Array.from(row.controlsEl.children)) {
             if (!(child instanceof HTMLElement) || child === row.eyeEl) continue;
             if (child === row.extrasEl) {

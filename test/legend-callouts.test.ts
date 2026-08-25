@@ -1,5 +1,6 @@
-// Legend callout contributions (src/widget/contributions.ts) and the callout-bubble
-// controller's pure projection rules (src/ui/components/callout-bubble/controller.ts).
+// Legend callout contributions (src/widget/contributions.ts), the callout-bubble
+// controller's pure projection rules (src/ui/components/callout-bubble/controller.ts),
+// and the legend-row display rule (src/renderers/shared/InputsUI.ts).
 // DOM-free — node env; the bubble's rendering and the deployed panel are proven in the
 // browser (the view is a thin projection over these).
 import { describe, it, expect } from 'vitest';
@@ -12,6 +13,7 @@ import {
     type LegendIndicatorInfo,
 } from '../src/widget/contributions';
 import { calloutPanelRows, closesPanel, type CalloutPanelItem } from '../src/ui/components/callout-bubble';
+import { legendCalloutsDisplay } from '../src/renderers/shared/InputsUI';
 
 describe('legend callout contributions', () => {
     it('registers, order-sorts, replaces by id, and unregisters', () => {
@@ -93,6 +95,15 @@ describe('legend callout contributions', () => {
         expect(views).toHaveLength(1);
         expect(views[0]!.content).toBeUndefined();
         unregisterLegendCallout('plain');
+    });
+});
+
+describe('legend callout row display', () => {
+    it('shows beside the title while idle and hides while the row is open', () => {
+        expect(legendCalloutsDisplay(false, true)).toBe('inline-flex');
+        expect(legendCalloutsDisplay(true, true)).toBe('none');
+        expect(legendCalloutsDisplay(false, false)).toBe('none');
+        expect(legendCalloutsDisplay(true, false)).toBe('none');
     });
 });
 

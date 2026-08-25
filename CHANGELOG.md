@@ -25,6 +25,9 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Legend callouts hide while the row is open.** Hovering or selecting an
+  indicator legend now hides its callout bubble instead of sliding it to the
+  end of the row, so the action buttons stay next to the title.
 - **A maximized pane now shows its state.** While a pane is maximized, its
   restore button at the top-right reads as a lit chip (white on the dark theme,
   dark on the light one) and stays visible without hovering — the same
@@ -44,6 +47,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **The Cursor button leaves the ruler and eraser.** Clicking Cursor on the drawing
+  toolbar now returns to the regular pointer even while the measure ruler or the
+  eraser is active; before, those modes stayed on and the click appeared to do
+  nothing.
 - **The attribution mark stays clear of collapsed panes in a workspace.** In the
   multi-chart workspace (and the single-chart shell built on it), collapsing an
   indicator pane at the bottom of the bottom-left chart left the shared

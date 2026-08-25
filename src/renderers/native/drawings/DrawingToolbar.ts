@@ -204,7 +204,7 @@ export class DrawingToolbar {
         this.root.replaceChildren();
         this.groupCells.clear();
         this.groupIcons.clear();
-        this.cursorBtn = this.makeButton(CURSOR_ICON, 'Cursor', () => this.onArm(null));
+        this.cursorBtn = this.makeButton(CURSOR_ICON, 'Cursor', () => this.onCursorClick());
         this.root.appendChild(this.cursorBtn);
         if (this.def.groups.length > 0) this.root.appendChild(this.divider());
         for (const g of this.def.groups) {
@@ -318,6 +318,15 @@ export class DrawingToolbar {
         this.magnetCell = cell;
         this.magnetIcon = icon;
         return cell;
+    }
+
+    /** Cursor returns to select/idle: an active measure/eraser mode exits through its own
+     *  toggle callback (disarming a tool via `onArm(null)` alone can't — the host treats a
+     *  null arm as a no-op side effect of entering those modes), then the tool disarms. */
+    private onCursorClick(): void {
+        if (this.measureActive) this.onMeasure();
+        if (this.eraserActive) this.onEraser();
+        this.onArm(null);
     }
 
     /** Clicking the icon arms the group's last-used tool (it does NOT open the flyout). */
