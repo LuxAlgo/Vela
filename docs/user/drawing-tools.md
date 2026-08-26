@@ -111,10 +111,11 @@ Shortcuts stand down while a text field (e.g. a label editor) is focused, so typ
 hijacked.
 
 Three mouse shortcuts complement these, and need no selection first: **middle-click** a drawing
-to delete it, **right-click** while placing a drawing or measuring to cancel it and return to the
-pointer — even in stay-in-drawing-mode, and without opening the chart's context menu for that
-click — and **Shift+click** an empty spot to start the [measure ruler](#the-toolbar) at that
-point (the magnet still snaps the start).
+to delete it, **right-click** while a drawing tool, the ruler, or the eraser is active — placing
+or merely armed — to cancel it and return to the pointer (even in stay-in-drawing-mode, and
+without opening the chart's context menu for that click; persistent toggles like the magnet and
+stay-in-drawing-mode itself are untouched), and **Shift+click** an empty spot to start the
+[measure ruler](#the-toolbar) at that point (the magnet still snaps the start).
 ## Depth: anywhere in the stack
 
 A new drawing starts **just under the price** — the candles read on top of it, the way they read

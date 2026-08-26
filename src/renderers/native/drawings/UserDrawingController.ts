@@ -649,20 +649,28 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return this.interaction.cursorAt(x, y);
     }
 
-    /** Right-click while placing a drawing or measuring: cancel the in-progress
-     *  gesture and revert to the pointer — an explicit escape, so it disarms even
-     *  in stay-in-drawing-mode (where Escape would leave a drawing tool armed).
-     *  Returns whether the press was consumed; false lets the host's context menu
-     *  open normally. */
+    /** Right-click: an explicit escape back to the pointer. Cancels an in-progress
+     *  placement or measurement, and also plain-disarms an armed-but-idle drawing
+     *  tool or the eraser — so a right-click ALWAYS reverts to the pointer, even in
+     *  stay-in-drawing-mode (where Escape would leave a drawing tool armed).
+     *  Persistent toggles (magnet, stay-mode, favorites) are untouched. Returns
+     *  whether the press was consumed; false lets the host's context menu open
+     *  normally. */
     cancelPlacement(): boolean {
-        if (this.measureMode) {
-            this.withModeIntent(() => this.exitMeasure());
+        if (this.measureMode || this.eraserMode) {
+            this.withModeIntent(() => (this.measureMode ? this.exitMeasure() : this.exitEraser()));
             return true;
         }
-        if (!this.interaction.isPlacing()) return false;
-        this.interaction.cancel(); // emits tool-finished → the core disarms (stay-mode/brush excepted)
-        if (this.activeTool != null) this.emit({ kind: 'arm', type: null });
-        return true;
+        if (this.interaction.isPlacing()) {
+            this.interaction.cancel(); // emits tool-finished → the core disarms (stay-mode/brush excepted)
+            if (this.activeTool != null) this.emit({ kind: 'arm', type: null });
+            return true;
+        }
+        if (this.activeTool != null) {
+            this.emit({ kind: 'arm', type: null }); // armed, no anchor yet — just disarm
+            return true;
+        }
+        return false;
     }
 
     /** Double-click over a drawing → suppress the chart's view reset (single-click already

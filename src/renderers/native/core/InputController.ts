@@ -54,8 +54,10 @@ export interface InputControllerDeps {
     drawingsMeasureStart?(x: number, y: number, snap: SnapMode): boolean;
     /** Middle-click: delete the drawing under the cursor. True when one was removed. */
     drawingsDeleteAt?(x: number, y: number): boolean;
-    /** Right-click: cancel an in-progress drawing placement or measure ruler (and revert
-     *  to the pointer). True when consumed — the companion contextmenu is then suppressed. */
+    /** Right-click: cancel/disarm whatever non-persistent tool is active — an in-progress
+     *  placement, an armed-but-idle drawing tool, the measure ruler, or the eraser — and
+     *  revert to the pointer. True when consumed — the companion contextmenu is then
+     *  suppressed. */
     drawingsCancelPlacement?(): boolean;
     /** A claimed press began. `snap` = effective magnet mode; `shift` = additive (multi-) select. */
     drawingsPointerDown?(x: number, y: number, snap: SnapMode, shift: boolean): void;
@@ -352,9 +354,10 @@ export class InputController {
             return;
         }
         if (e.button === 2) {
-            // Right-click cancels an in-progress placement or measure ruler (reverting
-            // to the pointer). The flag lets the contextmenu companion suppress the
-            // host's chart menu for THIS press only — a plain right-click still opens it.
+            // Right-click cancels/disarms the active tool — placement, armed drawing
+            // tool, ruler, or eraser — reverting to the pointer. The flag lets the
+            // contextmenu companion suppress the host's chart menu for THIS press
+            // only — a plain right-click still opens it.
             this.rightCancelled = this.deps.drawingsCancelPlacement?.() ?? false;
             if (this.rightCancelled) e.preventDefault();
             return;
