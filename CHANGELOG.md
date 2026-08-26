@@ -32,7 +32,9 @@ All notable changes to Vela, newest first.
   scroll up compresses the visible span, scroll down expands it, each notch a
   gentle step (about ×1.1) around the window's center. It follows the same
   `axisDrag` renderer feature as the drag, and a double-click still resets the
-  scale to automatic.
+  scale to automatic. The axis' A (auto) chip reflects the switch the moment it
+  happens — going manual on the first notch, lighting back up on reset — even
+  with the cursor perfectly still.
 
 - **Indicator input and prop edits survive a reload — as deltas.** Changing an
   indicator's settings used to live only in the running instance: a reload put

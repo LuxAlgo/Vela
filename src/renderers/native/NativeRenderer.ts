@@ -2500,6 +2500,10 @@ export class NativeRenderer implements IChartRenderer {
         this.scaleDragHeight = res.height;
         this.scaleDragStart = { ...res.holder.scale };
         res.holder.manualScale = { ...res.holder.scale };
+        // The A (auto) chip must drop the moment the scale freezes — a wheel rescale
+        // (or a stationary grab) changes the state with the cursor still, so the
+        // hover-move re-sync never fires on its own.
+        this.axisScaleButtons?.reposition();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -2535,6 +2539,7 @@ export class NativeRenderer implements IChartRenderer {
         const res = this.resolveScaleHolder(x, y);
         if (!res) return;
         res.holder.manualScale = null;
+        this.axisScaleButtons?.reposition(); // relight the A chip under a still cursor
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
