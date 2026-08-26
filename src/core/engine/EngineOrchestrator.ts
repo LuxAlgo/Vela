@@ -1239,6 +1239,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         record.pendingCause = 'inputs';
         if (record.session) record.session.update(record.inputValues);
         else if (record.native && !record.hidden) record.native.instance.setInputs(record.inputValues);
+        this.events.emit('indicator:inputs', { id });
+    }
+
+    /** IndicatorController: the CURRENT stored input values (defaults merged with edits). */
+    inputValuesOf(id: string): Record<string, InputValue> {
+        return { ...this.registry.get(id)?.inputValues };
+    }
+
+    /** IndicatorController: the CURRENT declaration-prop overrides. */
+    propValuesOf(id: string): Record<string, InputValue> {
+        return { ...this.registry.get(id)?.propValues };
     }
 
     /** IndicatorController: re-run an indicator with merged declaration-prop overrides.
@@ -1254,6 +1265,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (!record.hidden) this.setLoading(record, true);
         record.pendingCause = 'inputs';
         record.session.update(record.inputValues, record.propValues);
+        this.events.emit('indicator:inputs', { id });
     }
 
     /** IndicatorController: tear down an indicator and (if now empty) its pane. */
