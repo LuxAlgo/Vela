@@ -8,6 +8,8 @@ import { TypedEventBus } from '../events/EventBus';
 export interface IndicatorController {
     getIndicatorContext(id: string, select?: ContextSelect): Promise<EngineContextSnapshot | null>;
     applyInputs(id: string, values: Record<string, InputValue>): void;
+    inputValuesOf(id: string): Record<string, InputValue>;
+    propValuesOf(id: string): Record<string, InputValue>;
     applyProps(id: string, values: Record<string, InputValue>): void;
     removeIndicator(id: string): void;
     setVisible(id: string, visible: boolean): void;
@@ -46,6 +48,14 @@ export class IndicatorHandleImpl implements IndicatorHandle {
 
     get visible(): boolean {
         return this.visibleState;
+    }
+
+    inputValues(): Record<string, InputValue> {
+        return this.controller.inputValuesOf(this.id);
+    }
+
+    propValues(): Record<string, InputValue> {
+        return this.controller.propValuesOf(this.id);
     }
 
     setInput(key: string, value: InputValue): void {

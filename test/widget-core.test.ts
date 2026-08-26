@@ -2,6 +2,7 @@
 // indicator-manifest resolution (src/widget/indicators.ts). DOM-free — node env.
 import { describe, it, expect, vi } from 'vitest';
 import { parseTimeframe, timeframeMs, timeframeLabel, favoriteTimeframeChips } from '../src/widget/timeframe';
+import { inputDeltas } from '../src/core/model/inputs';
 import { indicatorLedger, resolveIndicators } from '../src/widget/indicators';
 import { fmtPrice, fmtChange, decimalsFor } from '../src/widget/format';
 import { tzMenuLabel, tzButtonLabel } from '../src/widget/timezones';
@@ -266,10 +267,10 @@ describe('filterSymbols', () => {
 });
 
 describe('indicatorLedger', () => {
-    const base = { present: [], instanceNames: [], pendingManifest: null, manifestSettled: true, volumePending: false };
+    const base = { present: [], instanceEntries: [], pendingManifest: null, manifestSettled: true, volumePending: false };
 
     it('reports the LIVE sets once settled — empty means "the user removed everything"', () => {
-        expect(indicatorLedger({ ...base, present: ['volume', 'vpvr'], instanceNames: ['RSI'] })).toEqual({ manifest: ['RSI'], natives: ['volume', 'vpvr'] });
+        expect(indicatorLedger({ ...base, present: ['volume', 'vpvr'], instanceEntries: ['RSI'] })).toEqual({ manifest: ['RSI'], natives: ['volume', 'vpvr'] });
         // The resurrection bug this helper pins down: pending leftovers must NOT shadow
         // a deliberately emptied live set.
         expect(indicatorLedger({ ...base, pendingManifest: ['Old'] })).toEqual({ manifest: [], natives: [] });
@@ -286,6 +287,27 @@ describe('indicatorLedger', () => {
         expect(indicatorLedger({ ...base, volumePending: true, present: ['volume'] })).toEqual({ manifest: [], natives: ['volume'] });
         // After the first load the registry is the whole truth: no intent padding.
         expect(indicatorLedger({ ...base, volumePending: false, present: ['vpvr'] })).toEqual({ manifest: [], natives: ['vpvr'] });
+    });
+});
+
+describe('indicatorLedger value entries (input/prop persistence)', () => {
+    const base = { present: [], instanceEntries: [], pendingManifest: null, manifestSettled: true, volumePending: false };
+
+    it('DELTA-carrying entries ride the ledger next to bare names', () => {
+        const entries = ['EMA', { name: 'RSI', inputs: { len: 21 } }, { name: 'Strat', props: { initial_capital: 5000 } }];
+        expect(indicatorLedger({ ...base, instanceEntries: entries }).manifest).toEqual(entries);
+    });
+
+    it('inputDeltas keeps only deviations from the declaration defaults', () => {
+        const schema = [
+            { key: 'len', title: 'Length', type: 'int', defval: 14 },
+            { key: 'src', title: 'Source', type: 'source', defval: 'close' },
+            { key: 'on', title: 'On', type: 'bool', defval: false },
+        ] as never;
+        expect(inputDeltas(schema, { len: 21, src: 'close', on: false })).toEqual({ len: 21 });
+        expect(inputDeltas(schema, { len: 14, src: 'close' })).toBeUndefined();
+        expect(inputDeltas(schema, { on: true })).toEqual({ on: true });
+        expect(inputDeltas(schema, { ghost: 1 } as never)).toBeUndefined(); // undeclared keys never persist
     });
 });
 

@@ -74,3 +74,18 @@ export interface InputSchema {
     when?: InputWhen;
     tooltip?: string;
 }
+
+/**
+ * The DELTAS of a value bag against its schema's declaration defaults — what state
+ * persistence stores (a default that later changes in the script must not stay frozen
+ * in every saved document). Structural comparison (arrays/objects by JSON); keys the
+ * schema does not declare are ignored. `undefined` = nothing deviates.
+ */
+export function inputDeltas(schema: readonly InputSchema[], values: Record<string, InputValue>): Record<string, InputValue> | undefined {
+    const out: Record<string, InputValue> = {};
+    for (const s of schema) {
+        const v = values[s.key];
+        if (v !== undefined && JSON.stringify(v) !== JSON.stringify(s.defval)) out[s.key] = v;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+}

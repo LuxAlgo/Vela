@@ -151,6 +151,9 @@ export type * from './core/model';
 export { stableSeriesId } from './core/model';
 // Evaluate an input's `when` gate the way the settings dialog does (host-built inputs UIs).
 export { inputVisible } from './core/model';
+// Diff a value bag against its schema's declaration defaults — what state-persistence
+// handlers store (deltas only; defaults are never frozen into documents).
+export { inputDeltas } from './core/model';
 // The semantic palette (fixed brand/meaning colors, never theme-dependent) so plugin
 // output — default plot colors, layer inks — matches core affordances exactly.
 export * from './core/palette';

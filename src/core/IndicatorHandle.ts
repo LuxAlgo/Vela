@@ -28,6 +28,12 @@ export interface IndicatorHandle {
     readonly props: readonly InputSchema[];
     /** Whether the indicator is currently shown (vs hidden). Hidden indicators stop computing. */
     readonly visible: boolean;
+    /** The CURRENT stored input values (declaration defaults merged with every edit so
+     *  far) — what state persistence diffs against the schema's `defval`s. */
+    inputValues(): Record<string, InputValue>;
+    /** The CURRENT stored declaration-prop values (overrides only — props keep no
+     *  merged defaults; absent keys mean the declaration value). */
+    propValues(): Record<string, InputValue>;
     setInput(key: string, value: InputValue): void;
     setInputs(values: Record<string, InputValue>): void;
     /** Override one declaration prop and re-run (a prop change replays the whole script). */
