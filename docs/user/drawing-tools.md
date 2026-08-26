@@ -280,7 +280,7 @@ Every chart exposes a `chart.drawings` control surface (a sibling of `chart.rend
 even on a renderer that can't paint drawings.
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 
 const chart = new Vela('#chart', { data: bars });
 await chart.ready();

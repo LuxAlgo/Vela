@@ -8,9 +8,9 @@ Vela is a small **core** plus three independently swappable **layers** — data 
 
 The **neutral model** — bars, series, pane overlays, drawings, inputs, update patches — is the only thing that crosses a port. No backend-specific type ever leaks across. That opacity is what makes each layer swappable. What ships is the native renderer and the provider-backed, cache-wrapped data feed — both plain **swappable defaults**. No scripting engine ships at all: you install one (Pine Script: `@luxalgo/vela-pinets`) or write one against the port — see [Scripting engines](./scripting-engines.md).
 
-> Vela installs **from source**; the `'vela'` imports in these snippets refer to the local workspace package (see [installation.md](./installation.md)).
+> These snippets import from the npm package `@luxalgo/vela` (see [installation.md](./installation.md)).
 
-The higher-level shell is documented on its own page: [the workspace](./workspace.md) (`vela/workspace` — one chart with `layout: false`, or a multi-chart grid with one shared chrome and sync links). It exposes the state surface — `getState()` / `applyState()` / `state:changed` over one shared document format — which is also what its `persist` option writes.
+The higher-level shell is documented on its own page: [the workspace](./workspace.md) (`@luxalgo/vela/workspace` — one chart with `layout: false`, or a multi-chart grid with one shared chrome and sync links). It exposes the state surface — `getState()` / `applyState()` / `state:changed` over one shared document format — which is also what its `persist` option writes.
 
 ---
 
@@ -64,7 +64,7 @@ const chart = new Vela('#chart', { data: myBars, timeframe: '1h' })
 A minimal end-to-end setup — construct over data, register a scripting engine (here the Pine addon), add an indicator, then await the first render:
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 import { PineEngine } from '@luxalgo/vela-pinets';
 
 const chart = new Vela('#chart', { data: myBars, timeframe: '1h', theme: 'dark' });
@@ -204,7 +204,7 @@ failure removes it again — no dead legend row), and never rejects.
 
 #### Across a grid
 
-`vela/workspace` relays the same event with the cell it came from, so one subscription covers
+`@luxalgo/vela/workspace` relays the same event with the cell it came from, so one subscription covers
 every cell — including cells a later layout change creates:
 
 ```js
@@ -313,8 +313,8 @@ registering the one that resolves the chart symbol fires the parked initial load
 Register the provider that resolves the chart symbol, then wait for both the index and the initial load:
 
 ```js
-import { Vela } from 'vela';
-import { BinanceProvider } from 'vela/providers/binance';
+import { Vela } from '@luxalgo/vela';
+import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 
 const chart = new Vela('#chart', { symbol: 'BTCUSDT', timeframe: '1h' });
 

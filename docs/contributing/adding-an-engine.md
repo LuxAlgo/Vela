@@ -1,8 +1,8 @@
 # Adding a Scripting Engine
 
-Scripting engines are one of Vela's three swappable **layers** (alongside [data providers](./adding-a-data-provider.md) and [renderers](./adding-a-renderer.md)). This page explains what an engine is, the small surface you implement, and the rules the core uses to drive it. It is conceptual — for the exact field shapes, read the `ScriptingEngine` port (exported from the root entry and from `vela/plugin`).
+Scripting engines are one of Vela's three swappable **layers** (alongside [data providers](./adding-a-data-provider.md) and [renderers](./adding-a-renderer.md)). This page explains what an engine is, the small surface you implement, and the rules the core uses to drive it. It is conceptual — for the exact field shapes, read the `ScriptingEngine` port (exported from the root entry and from `@luxalgo/vela/plugin`).
 
-Everything an engine builds against ships on the **`vela/plugin`** subpath — the port types, the model vocabulary, the id helper, the semantic palette — which is why **no engine lives in this repo**: Vela bundles none, and every one is a separate package or host module. See [*Building an engine as its own package*](#building-an-engine-as-its-own-package) below; to *consume* an existing engine rather than write one, see [Scripting engines](../user/scripting-engines.md).
+Everything an engine builds against ships on the **`@luxalgo/vela/plugin`** subpath — the port types, the model vocabulary, the id helper, the semantic palette — which is why **no engine lives in this repo**: Vela bundles none, and every one is a separate package or host module. See [*Building an engine as its own package*](#building-an-engine-as-its-own-package) below; to *consume* an existing engine rather than write one, see [Scripting engines](../user/scripting-engines.md).
 
 > The engine port is stable in shape but still evolving.
 
@@ -188,7 +188,7 @@ Pine engines ship as a separate package built exactly this way (`@luxalgo/vela-p
 the reference implementation; its own repo also because of licensing — its runtime
 dependency is AGPL while Vela is Apache-2.0).
 
-Everything you need comes from **`vela/plugin`**:
+Everything you need comes from **`@luxalgo/vela/plugin`**:
 
 - the **`ScriptingEngine` port types** — the port itself, `PreparedScript`,
   `ExecutionRequest` / `ExecutionHandlers` / `ExecutionSession`, `EngineContextSnapshot`,
@@ -196,7 +196,7 @@ Everything you need comes from **`vela/plugin`**:
 - the **model vocabulary** — `OHLCV`, `IndicatorModel`, the series / scene / drawing
   specs your `onModel` payloads are made of, plus `InputSchema` for `prepare`;
 - **`stableSeriesId`** — the identity contract above (a *value* import, and the reason
-  to depend on `vela/plugin` rather than retyping shapes);
+  to depend on `@luxalgo/vela/plugin` rather than retyping shapes);
 - the **semantic palette** — Vela's fixed meaning-colors (`ACCENT`, `BULLISH`, …), so
   your default plot colors match what the rest of the chart means by them.
 
@@ -204,7 +204,7 @@ Ground rules for the package itself:
 
 - **Your language runtime is your dependency, not Vela's.** Declare it as your own
   (peer) dependency; Vela's core never imports it and never learns it exists.
-- **Import Vela values from subpaths** (`vela/plugin`); type-only imports are erased at
+- **Import Vela values from subpaths** (`@luxalgo/vela/plugin`); type-only imports are erased at
   build time and may name any entry. Keep `@luxalgo/vela` itself a peer/external in
   your build — never bundle a second Vela, which would duplicate the SDK registries.
 - **Transport is your concern, not the port's.** If you offer a worker form, the
@@ -220,7 +220,7 @@ Register engines by **language id**, four ways:
 - **Bulk at construction** — pass engines in the dependency object; each is registered under its own `language`.
 - **A `registerEngine(language, engine)` call** — register (or replace) one after construction.
 - **The widget's `engines` option** — lazy factories, one instance made per chart (re)build: `engines: { pine: () => new PineWorkerEngine() }`. Note these register through `registerEngine` *after* construction, so they do **not** seed `defaultLanguage` (below): with the widget, a non-`'pine'` language needs the `defaultLanguage` option or a per-indicator `language`.
-- **The app-level default: `registerDefaultEngine(language, factory)`** (`vela/plugin`) — every widget and workspace cell built afterwards registers `factory()` on its chart automatically, one instance per chart. A per-instance `engines` option wins for the same language; the bare `Vela` chart never reads this registry. This is the path an enabler-style integration takes (call once, before constructing anything); the `defaultLanguage` caveat above applies to it the same way.
+- **The app-level default: `registerDefaultEngine(language, factory)`** (`@luxalgo/vela/plugin`) — every widget and workspace cell built afterwards registers `factory()` on its chart automatically, one instance per chart. A per-instance `engines` option wins for the same language; the bare `Vela` chart never reads this registry. This is the path an enabler-style integration takes (call once, before constructing anything); the `defaultLanguage` caveat above applies to it the same way.
 
 Re-registering a language is **last-wins**, and applies to *future* indicators only — already-running sessions keep their engine.
 
@@ -256,4 +256,4 @@ Whichever path you choose, if the resolved language has no registered engine, yo
 
 - [Adding a Renderer](./adding-a-renderer.md) — the layer that paints the neutral model.
 - [Adding a Data Provider](./adding-a-data-provider.md) — the feed that owns bars and backs `fetchSeries`.
-- [Plugin SDK](./plugin-sdk.md) — the rest of the `vela/plugin` surface (chart types, renderer layers, widget contributions).
+- [Plugin SDK](./plugin-sdk.md) — the rest of the `@luxalgo/vela/plugin` surface (chart types, renderer layers, widget contributions).

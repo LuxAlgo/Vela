@@ -1,6 +1,6 @@
 # Adding a UI-kit component
 
-`vela/ui` is a **headless-first** component kit: every component splits into a
+`@luxalgo/vela/ui` is a **headless-first** component kit: every component splits into a
 framework-agnostic **controller** (behavior, no DOM) and a thin vanilla **view**
 (DOM projection over the design tokens). Overlay chrome — menu, dialog, drawer,
 tooltip — wraps a [Zag.js](https://zagjs.com) state machine. Form primitives

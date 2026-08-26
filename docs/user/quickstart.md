@@ -10,7 +10,7 @@ The fastest path uses **offline data** — an array of bars you already have. No
 - **Step 2** registers an engine so scripts can run.
 - **Step 3** adds an indicator from source.
 
-> The `from 'vela'` imports below refer to the local workspace package — see [installation.md](./installation.md) for setup.
+> Install the package first: `npm install @luxalgo/vela` (see [installation.md](./installation.md)).
 
 ---
 
@@ -19,7 +19,7 @@ The fastest path uses **offline data** — an array of bars you already have. No
 Give Vela a container (an element or a CSS selector) and some options. Pass your own bars via `data` to stay fully offline.
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 
 const chart = new Vela('#chart', {
   data: myBars,      // OHLCV[] you already have — no provider, no network
@@ -91,7 +91,7 @@ await chart.ready();
 ## Full example
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 import { PineEngine } from '@luxalgo/vela-pinets';
 
 const chart = new Vela('#chart', { data: myBars, timeframe: '1h', theme: 'dark' });

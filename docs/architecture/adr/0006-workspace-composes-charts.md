@@ -23,7 +23,7 @@ programmatic seams.
 ## Decision
 
 **`VelaWorkspace` composes ordinary, unmodified charts.** The core stays single-chart;
-the new `vela/workspace` subpath owns the grid. The enabling work landed as core
+the new `@luxalgo/vela/workspace` subpath owns the grid. The enabling work landed as core
 capabilities that are useful stand-alone, not as workspace special cases:
 `chart.setMarket()` switches a market **in place** (indicators, drawings, config, and
 subscriptions survive; `market:changed` carries `prev`), the bar cache gained

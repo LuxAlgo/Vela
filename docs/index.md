@@ -2,7 +2,7 @@
 
 Vela is a modern charting library built around a small, robust **core** wrapped by three independently-extensible **layers**: **Data providers** feed market data in, **Scripting engines** execute indicators, and **Renderers** draw the result. The core owns the canonical data and orchestrates everything; each layer plugs in behind a single narrow port, so you can swap any one of them — a different data source, a different scripting language, a different drawing backend — without touching the others or the core.
 
-On top of the core, Vela ships two more things: a **shell** (`vela/workspace` — the batteries-included chart app, one chart or a grid: topbar, pickers, status line, bottom bar, object tree, keyboard-first UX) and a **plugin SDK** (`vela/plugin` — chart types, renderer layers, native indicators, widget actions) that lets external packages extend both.
+On top of the core, Vela ships two more things: a **shell** (`@luxalgo/vela/workspace` — the batteries-included chart app, one chart or a grid: topbar, pickers, status line, bottom bar, object tree, keyboard-first UX) and a **plugin SDK** (`@luxalgo/vela/plugin` — chart types, renderer layers, native indicators, widget actions) that lets external packages extend both.
 
 ## The one mental model
 
@@ -34,7 +34,7 @@ Each layer ships with a **bundled default backend** that you can replace. One nu
 
 - **Renderers** — the **native renderer** is the default and only bundled backend (WebGL2, with a canvas2d fallback). The `IChartRenderer` port accepts custom classes.
 - **Scripting engines** — **none is bundled.** Vela defines the port and ships no engine: install one as an addon (Pine Script: [`@luxalgo/vela-pinets`](user/scripting-engines.md), in-process and Web-Worker forms) or write your own against the port. Nothing is auto-wired either: a bare chart shows candles, drawings and native indicators only, and running a script without a matching engine raises an actionable error.
-- **Data providers** — the default feed is a **multi-provider registry** with built-in closed-bar caching, but **no provider is bundled**. Register one with `chart.data.registerProvider(...)` (e.g. the from-scratch Binance provider at `vela/providers/binance`); registering it fires the chart's parked initial load. Offline `data` needs no provider.
+- **Data providers** — the default feed is a **multi-provider registry** with built-in closed-bar caching, but **no provider is bundled**. Register one with `chart.data.registerProvider(...)` (e.g. the from-scratch Binance provider at `@luxalgo/vela/providers/binance`); registering it fires the chart's parked initial load. Offline `data` needs no provider.
 
 ## How these docs are organized
 

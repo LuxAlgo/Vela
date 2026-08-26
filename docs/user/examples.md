@@ -2,14 +2,14 @@
 
 Two runnable examples ship with Vela, plus an interactive playground. **Both examples use offline OHLCV** — no network, no API key — so they run anywhere out of the box.
 
-> These snippets import from `'vela'`, the local from-source workspace package — see [installation.md](./installation.md).
+> These snippets import from the npm package `@luxalgo/vela` (see [installation.md](./installation.md)).
 
 ## Orientation snippet
 
 The shape of every example is the same: create a chart over offline data, register a scripting engine, add an indicator. Vela ships no engine — these examples use the Pine addon (`npm i @luxalgo/vela-pinets pinets`; see [Scripting engines](./scripting-engines.md)).
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 import { PineEngine } from '@luxalgo/vela-pinets';
 
 const chart = new Vela('#chart', { data: myBars, timeframe: '1h', live: false, theme: 'dark' });
@@ -29,9 +29,9 @@ Everything in one place — a provider-backed, live chart with a custom theme, t
 **Construct** with the full option set:
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 import { PineEngine } from '@luxalgo/vela-pinets';
-import { BinanceProvider } from 'vela/providers/binance';
+import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 
 // A full custom theme — all seven fields are required.
 const theme = {
