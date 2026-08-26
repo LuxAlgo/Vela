@@ -101,6 +101,11 @@ const TIME_SCALE_K = 0.004;
 // Wheel-zoom sensitivity: barSpacing scales by e^(-deltaY·k) per notch. A typical
 // mouse-wheel notch (deltaY ≈ 100) is a clearly visible step.
 const WHEEL_ZOOM_K = 0.004;
+// Wheel-over-the-price-axis rescale: each notch acts as a small axis DRAG — deltaY is
+// mapped to drag pixels at this ratio, so a notch (deltaY ≈ 100) reads as a ~25px pull
+// (span ×~1.10). Deliberately slower than the time wheel-zoom: the scale is a fine
+// adjustment, not a navigation gesture.
+const WHEEL_PRICE_DRAG_PX = 0.25;
 
 /** Which strip a gesture started over — the data plot, the right price axis, the bottom
  *  time axis, a sub-pane separator (drag to resize the panes above/below it), or one of
@@ -180,9 +185,9 @@ export function pinchPinnedRightOffset(anchorLogical: number, barCount: number, 
  * Translates pointer/wheel gestures into ViewportState + scale changes. A press in
  * the data area pans (`rightOffset`, instant) and — in manual-scale mode — also pans
  * the price window vertically; a press on the right price-axis strip rescales that
- * pane vertically; a press on the bottom time-axis strip zooms horizontally
- * (`barSpacing`); the wheel zooms (eased + anchored); a flick releases with inertia;
- * a double-click resets. The renderer owns the animation loop + the scale math — this
+ * pane vertically (the wheel over that strip does the same, gently); a press on the
+ * bottom time-axis strip zooms horizontally (`barSpacing`); the wheel zooms (eased +
+ * anchored); a flick releases with inertia; a double-click resets. The renderer owns the animation loop + the scale math — this
  * just classifies the gesture and emits intents.
  */
 export class InputController {
@@ -688,6 +693,16 @@ export class InputController {
     private readonly onWheel = (e: WheelEvent): void => {
         e.preventDefault();
         this.deps.drawingsClearTransient?.(); // a finished ruler vanishes on zoom/pan
+        const { x, y } = this.local(e);
+        // Over the right price-axis strip the wheel rescales THAT scale, like a slow
+        // axis drag: scroll down expands the span (zoom out), scroll up compresses it
+        // (zoom in). Each notch is an independent micro-drag (grab, rescale, release),
+        // so consecutive notches compound from the live window.
+        if (this.regionAt(x, y) === 'price' && e.deltaY !== 0) {
+            this.deps.beginPriceScale(x, y);
+            this.deps.priceScaleBy(e.deltaY * WHEEL_PRICE_DRAG_PX);
+            return;
+        }
         const coords = this.deps.getCoords();
         const vp = coords.getViewport();
         // A horizontal-dominant gesture (trackpad two-finger swipe / tilt wheel) and
@@ -698,10 +713,9 @@ export class InputController {
             this.deps.apply({ barSpacing: vp.barSpacing, rightOffset: wheelPanRightOffset(vp.rightOffset, pan, coords.pxPerBar()) });
             return;
         }
-        const cursorX = this.local(e).x;
         // Holding Ctrl/Cmd overrides the sticky right-edge anchor → zoom toward the cursor's bar.
         const rightEdge = this.rightEdgeZoom && !(e.ctrlKey || e.metaKey);
-        const anchor = wheelZoomAnchor(coords, cursorX, rightEdge);
+        const anchor = wheelZoomAnchor(coords, x, rightEdge);
         // Smooth multiplicative zoom; scroll up (deltaY<0) zooms in.
         const target = clampBarSpacing(vp.barSpacing * Math.exp(-e.deltaY * WHEEL_ZOOM_K));
         this.deps.zoomTo(target, anchor.logical, anchor.x);
