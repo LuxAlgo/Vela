@@ -15,6 +15,21 @@ All notable changes to Vela, newest first.
   bar scrolls out of view it stops pulling its price into the scale — previously
   a far-away anchor price kept flattening the candles from off-screen. Extended
   lines that do cross the window still scale into view by their anchor prices.
+### Added
+
+- **Indicator input and prop edits survive a reload — as deltas.** Changing an
+  indicator's settings used to live only in the running instance: a reload put
+  every script back on its declaration defaults. The saved document now stores
+  each instance's deviations, and only those, so a default that later changes
+  in the script is never frozen into old documents. The ledger's manifest
+  entries grow a value-carrying form — the bare name when everything sits on
+  defaults, else `{ name, inputs?, props? }`. Restores thread those values
+  through every add path, and a removal captures the current deltas first so
+  undo/redo resurrection comes back with the values the user last saw.
+  `IndicatorHandle` exposes `inputValues()` / `propValues()`, the orchestrator
+  emits `indicator:inputs` on every value change (which now marks the document
+  dirty, so input edits autosave like adds and removes always did), and
+  `inputDeltas` joins the plugin SDK for state-persistence handlers.
 
 ## [v0.6.10]
 

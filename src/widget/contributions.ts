@@ -6,6 +6,7 @@ import type { Vela } from '../Vela';
 import type { LegendActionView, LegendCalloutView } from '../core/ports/IChartRenderer';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { SymbolDescriptor } from '../core/ports/DataProvider';
+import type { InputValue } from '../core/model/inputs';
 import { TOPBAR_BUILTIN_IDS } from './topbar-composition';
 
 /** The runtime surface an action's `when`/`run` receives. */
@@ -58,6 +59,10 @@ export interface ExternalIndicatorEntry {
     script: string;
     /** Engine language (default: the chart's default engine). */
     language?: string;
+    /** Input-value overrides applied at add time (what a persistence handler restores). */
+    inputs?: Record<string, InputValue>;
+    /** Declaration-prop overrides applied at add time. */
+    props?: Record<string, InputValue>;
 }
 
 /** Where an action is projected. */

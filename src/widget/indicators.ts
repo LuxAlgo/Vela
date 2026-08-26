@@ -5,6 +5,7 @@
 //   [{ "name": "EMA 20", "script": "...pine source...", "language": "pine",
 //      "enabled": true }, ...]
 // An entry may carry `"url"` instead of `"script"` — the source is fetched lazily.
+import type { InputValue } from '../core/model/inputs';
 
 export interface IndicatorManifestEntry {
     name: string;
@@ -88,14 +89,24 @@ export async function resolveIndicators(
     return out;
 }
 
+/**
+ * One persisted manifest-instance entry: the bare NAME when every value sits on its
+ * declaration default, else the name plus the DELTAS (see `inputDeltas`) — a default
+ * that later changes in the script must never stay frozen in saved documents.
+ */
+export type LedgerManifestEntry = string | { name: string; inputs?: Record<string, InputValue>; props?: Record<string, InputValue> };
+
+/** The entry's manifest NAME, whichever shape it travels as. */
+export const ledgerEntryName = (e: LedgerManifestEntry): string => (typeof e === 'string' ? e : e.name);
+
 /** Everything {@link indicatorLedger} needs to decide what a state snapshot reports. */
 export interface LedgerInputs {
     /** Native types present on the chart RIGHT NOW (`chart.presentNativeIndicators()` — sync). */
     present: readonly string[];
-    /** Names of the live manifest instances (the shell's own synchronous array). */
-    instanceNames: readonly string[];
+    /** The live manifest instances (the shell's own synchronous array), values included. */
+    instanceEntries: readonly LedgerManifestEntry[];
     /** A restored ledger's manifest half, until it materializes (null once consumed). */
-    pendingManifest: readonly string[] | null;
+    pendingManifest: readonly LedgerManifestEntry[] | null;
     /**
      * The manifest can no longer change the instance set — it resolved, or the shell was
      * built without an `indicators` option so nothing will ever resolve. Until then the
@@ -119,11 +130,11 @@ export interface LedgerInputs {
  * never be repainted as "empty because nothing loaded yet" — that resurrection was the
  * bug this helper exists to pin down.
  */
-export function indicatorLedger(i: LedgerInputs): { manifest: string[]; natives: string[] } {
+export function indicatorLedger(i: LedgerInputs): { manifest: LedgerManifestEntry[]; natives: string[] } {
     const natives = [...i.present];
     if (i.volumePending && !natives.includes('volume')) natives.push('volume');
     return {
-        manifest: i.manifestSettled ? [...i.instanceNames] : [...(i.pendingManifest ?? i.instanceNames)],
+        manifest: i.manifestSettled ? [...i.instanceEntries] : [...(i.pendingManifest ?? i.instanceEntries)],
         natives,
     };
 }
