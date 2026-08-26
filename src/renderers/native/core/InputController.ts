@@ -48,13 +48,14 @@ export interface InputControllerDeps {
     // ── user drawings (optional) — let the drawings layer claim a gesture before pan ──
     /** True when a press at (x,y) belongs to the drawings layer (armed tool, or over a drawing). */
     drawingsClaim?(x: number, y: number): boolean;
-    /** Shift+press on empty plot: arm the measure ruler AND start it at (x,y). True when it started
-     *  (the drawings layer then owns the rest of the gesture). */
-    drawingsMeasureStart?(x: number, y: number): boolean;
+    /** Shift+press on empty plot: arm the measure ruler AND start it at (x,y). `snap` is
+     *  the effective magnet. True when it started (the drawings layer then owns the rest
+     *  of the gesture). */
+    drawingsMeasureStart?(x: number, y: number, snap: SnapMode): boolean;
     /** Middle-click: delete the drawing under the cursor. True when one was removed. */
     drawingsDeleteAt?(x: number, y: number): boolean;
-    /** Right-click: cancel an in-progress drawing placement (and revert to the pointer).
-     *  True when consumed — the companion contextmenu is then suppressed. */
+    /** Right-click: cancel an in-progress drawing placement or measure ruler (and revert
+     *  to the pointer). True when consumed — the companion contextmenu is then suppressed. */
     drawingsCancelPlacement?(): boolean;
     /** A claimed press began. `snap` = effective magnet mode; `shift` = additive (multi-) select. */
     drawingsPointerDown?(x: number, y: number, snap: SnapMode, shift: boolean): void;
@@ -65,8 +66,9 @@ export interface InputControllerDeps {
     drawingsCursor?(x: number, y: number): string | null;
     /** The sticky magnet mode set on the toolbar (off/weak/strong) — Ctrl/Cmd overrides it to strong. */
     drawingsSnapMode?(): SnapMode;
-    /** A claimed gesture ended. */
-    drawingsPointerUp?(x: number, y: number): void;
+    /** A claimed gesture ended. `snap` = effective magnet (the measure ruler finishes on
+     *  release when the press was a drag). */
+    drawingsPointerUp?(x: number, y: number, snap: SnapMode): void;
     /** Double-click — open a drawing's settings. Returns true when one was hit (suppresses reset). */
     drawingsDblClick?(x: number, y: number): boolean;
     /** Clear a finished transient overlay (the ruler) — fired on any press / wheel before pan/zoom. */
@@ -350,9 +352,9 @@ export class InputController {
             return;
         }
         if (e.button === 2) {
-            // Right-click cancels an in-progress placement (reverting to the pointer).
-            // The flag lets the contextmenu companion suppress the host's chart menu
-            // for THIS press only — a plain right-click still opens it.
+            // Right-click cancels an in-progress placement or measure ruler (reverting
+            // to the pointer). The flag lets the contextmenu companion suppress the
+            // host's chart menu for THIS press only — a plain right-click still opens it.
             this.rightCancelled = this.deps.drawingsCancelPlacement?.() ?? false;
             if (this.rightCancelled) e.preventDefault();
             return;
@@ -386,7 +388,7 @@ export class InputController {
         }
         // Shift+press on the empty plot starts the measure ruler in one gesture (a press
         // over a drawing keeps the additive-select meaning of shift, via the claim above).
-        if (e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y)) {
+        if (e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y, this.snapMode(e))) {
             this.region = 'drawing';
             this.capture(e.pointerId);
             return;
@@ -602,7 +604,7 @@ export class InputController {
         // chart and must not double as a click/tap on release.
         const tapRelease = this.dragging && !this.moved && (!wasTouch || Math.hypot(x - this.startX, y - this.startY) <= TOUCH_TAP_SLOP);
         if (this.dragging && this.region === 'drawing') {
-            this.deps.drawingsPointerUp?.(x, y);
+            this.deps.drawingsPointerUp?.(x, y, this.snapMode(e));
         } else if (tapRelease && this.region === 'data') {
             this.deps.onClick(x, y);
         } else if (this.dragging && this.region === 'data') {
@@ -653,7 +655,7 @@ export class InputController {
         if (e.pointerType === 'touch') this.touches.delete(e.pointerId);
         this.cancelLongPress();
         if (!this.dragging) return;
-        if (this.region === 'drawing' && !Number.isNaN(this.cursorX)) this.deps.drawingsPointerUp?.(this.cursorX, this.cursorY);
+        if (this.region === 'drawing' && !Number.isNaN(this.cursorX)) this.deps.drawingsPointerUp?.(this.cursorX, this.cursorY, this.snapMode(e));
         if (this.region === 'crosshair' || e.pointerType === 'touch') this.deps.onPointerMove(null, null);
         this.endGesture(e);
     };

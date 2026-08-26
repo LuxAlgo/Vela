@@ -6,6 +6,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **The measure ruler follows the magnet, and a right-click cancels it.** While
+  measuring, weak and strong magnet snap the ruler's endpoints to the nearest
+  candle the same way they snap drawing anchors (Ctrl/Cmd still forces strong). A
+  right-click — or Escape — discards an in-progress measurement and returns to
+  the pointer without opening the chart's context menu.
+
 - **Extended lines no longer squeeze the price scale when nothing of them is in
   view.** A line contributes its anchor prices (`y1`/`y2`) to the automatic price
   scale only while some painted part of it — the anchor segment or its `extend`
