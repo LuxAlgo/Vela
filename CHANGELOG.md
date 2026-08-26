@@ -2,6 +2,20 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Extended lines no longer squeeze the price scale when nothing of them is in
+  view.** A line contributes its anchor prices (`y1`/`y2`) to the automatic price
+  scale only while some painted part of it — the anchor segment or its `extend`
+  projection — actually crosses the visible bars, and the projection itself never
+  contributes values of its own. In particular a vertical line (both points on
+  the same bar, the common `extend.both` idiom) extends along itself, so once its
+  bar scrolls out of view it stops pulling its price into the scale — previously
+  a far-away anchor price kept flattening the candles from off-screen. Extended
+  lines that do cross the window still scale into view by their anchor prices.
+
 ## [v0.6.10]
 
 ### Added
