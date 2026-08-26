@@ -4,24 +4,31 @@
 
   <h1>Vela</h1>
 
+  <p><strong>Fast, extensible financial charts for the web.</strong><br>
+  Headless core · native WebGL2 renderer · batteries-included workspace · plugin SDK</p>
+
   [![npm version][npm-version-img]][npm-link]
   [![Downloads][npm-downloads-img]][npm-link]
   [![License][license-img]][license-link]
+
+  <p>
+    <a href="https://luxalgo.com/vela">Homepage</a> ·
+    <a href="#quick-start">Quick start</a> ·
+    <a href="docs/index.md">Documentation</a> ·
+    <a href="#extending-plugin-sdk">Plugin SDK</a> ·
+    <a href="CHANGELOG.md">Changelog</a> ·
+    <a href="#license-and-attribution">License</a>
+  </p>
 
 </div>
 
 <!-- markdownlint-enable no-inline-html -->
 
-[Homepage][homepage] | [Documentation](docs/index.md) | [Changelog](CHANGELOG.md)
-
-Vela is a fast, extensible financial charting library for the web. It ships its own
-native canvas renderer (WebGL2 with a canvas2d fallback), a headless core you can drive
-entirely from code, a batteries-included chart app, and a plugin SDK for custom chart
-types and renderer layers.
-
-Use it as a one-line full chart app, or compose the headless core into your own product.
-Every layer (data providers, scripting engines, renderers) plugs in behind a public port
-and can be swapped without touching the rest.
+Vela renders interactive financial charts with its own native renderer (WebGL2, with a
+canvas2d fallback) and keeps the chart itself headless: drive it entirely from code, or
+drop in the workspace for a complete chart app in one call. Every layer (data providers,
+scripting engines, renderers) plugs in behind a public port and can be swapped without
+touching the rest.
 
 ## What's in the box
 
