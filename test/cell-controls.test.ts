@@ -3,7 +3,7 @@
 // is a MINIMAL stub (element tree, listeners, inline style); real rendering and the
 // workspace's maximize presentation are proven in the browser.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { CellControls, nearBottomCenter, CELL_CONTROLS_PROXIMITY_PX, type CellControlsDeps } from '../src/widget/cell-controls';
+import { CellControls, nearBottomCenter, plotCenterX, CELL_CONTROLS_PROXIMITY_PX, CLUSTER_LEFT_CSS, type CellControlsDeps } from '../src/widget/cell-controls';
 import type { Vela } from '../src/Vela';
 
 interface StubEl {
@@ -105,7 +105,7 @@ afterEach(() => {
 
 describe('nearBottomCenter (pure)', () => {
     it('is true at the cluster spot and within the proximity radius', () => {
-        // 800×600 cell: the cluster centers at (400, 600 − 34 − 12) = (400, 554).
+        // 800×600 cell, no gutters: the cluster centers at (400, 600 − 34 − 12) = (400, 554).
         expect(nearBottomCenter(400, 554, 800, 600)).toBe(true);
         expect(nearBottomCenter(400 + CELL_CONTROLS_PROXIMITY_PX, 554, 800, 600)).toBe(true); // radius inclusive
         expect(nearBottomCenter(400, 554 - CELL_CONTROLS_PROXIMITY_PX, 800, 600)).toBe(true);
@@ -122,9 +122,33 @@ describe('nearBottomCenter (pure)', () => {
         expect(nearBottomCenter(200, 254, 400, 300)).toBe(true); // half-size cell, its own bottom-center
         expect(nearBottomCenter(400, 554, 400, 300)).toBe(false); // the big cell's spot is outside a small cell
     });
+
+    it('centers on the plot, not the full cell, when a scale gutter is reserved', () => {
+        // 800px cell, 64px price axis: plot center at (800 − 64) / 2 = 368.
+        const scale = 64;
+        const cx = plotCenterX(800, 0, scale);
+        expect(cx).toBe(368);
+        expect(nearBottomCenter(cx, 554, 800, 600, CELL_CONTROLS_PROXIMITY_PX, { scale })).toBe(true);
+        expect(nearBottomCenter(cx + CELL_CONTROLS_PROXIMITY_PX, 554, 800, 600, CELL_CONTROLS_PROXIMITY_PX, { scale })).toBe(true);
+        // The old full-cell right edge (400 + 120 = 520) is now outside the radius.
+        expect(nearBottomCenter(520, 554, 800, 600, CELL_CONTROLS_PROXIMITY_PX, { scale })).toBe(false);
+        expect(nearBottomCenter(520, 554, 800, 600)).toBe(true); // without a gutter, the old spot still holds
+    });
+
+    it('shifts right by half the toolbar gutter (drawings dock on the left)', () => {
+        expect(plotCenterX(800, 44, 64)).toBe(390); // (800 + 44 − 64) / 2
+    });
 });
 
 describe('CellControls — button set and gating', () => {
+    it('pins left to the plot center (scale gutter), not the full cell', () => {
+        const host = makeHost();
+        new CellControls(host as never, makeDeps());
+        expect(cluster(host).style.left).toBe(CLUSTER_LEFT_CSS);
+        expect(cluster(host).style.left).toContain('--vela-scale-gutter');
+        expect(cluster(host).style.transform).toBe('translateX(-50%)');
+    });
+
     it('builds drag / zoom out / zoom in / maximize / reset on a multi-cell grid', () => {
         const host = makeHost();
         new CellControls(host as never, makeDeps());
