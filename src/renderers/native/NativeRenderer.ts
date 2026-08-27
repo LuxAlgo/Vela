@@ -1363,13 +1363,13 @@ export class NativeRenderer implements IChartRenderer {
             resetView: () => this.resetView(),
             // User drawings claim a gesture before pan when armed / over a drawing.
             drawingsClaim: (x, y) => this.userDrawings?.claim(x, y) ?? false,
-            drawingsMeasureStart: (x, y) => this.userDrawings?.beginMeasureAt(x, y) ?? false,
+            drawingsMeasureStart: (x, y, snap) => this.userDrawings?.beginMeasureAt(x, y, snap) ?? false,
             drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
             drawingsCancelPlacement: () => this.userDrawings?.cancelPlacement() ?? false,
             drawingsSnapMode: () => this.snapMode,
             drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
             drawingsPointerMove: (x, y, snap, shift) => this.userDrawings?.pointerMove(x, y, snap, shift),
-            drawingsPointerUp: (x, y) => this.userDrawings?.pointerUp(x, y),
+            drawingsPointerUp: (x, y, snap) => this.userDrawings?.pointerUp(x, y, snap),
             drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? null,
             drawingsDblClick: (x, y) => this.userDrawings?.dblClick(x, y) ?? false,
             drawingsClearTransient: () => this.userDrawings?.clearTransient(),
@@ -2504,6 +2504,10 @@ export class NativeRenderer implements IChartRenderer {
         this.scaleDragHeight = res.height;
         this.scaleDragStart = { ...res.holder.scale };
         res.holder.manualScale = { ...res.holder.scale };
+        // The A (auto) chip must drop the moment the scale freezes — a wheel rescale
+        // (or a stationary grab) changes the state with the cursor still, so the
+        // hover-move re-sync never fires on its own.
+        this.axisScaleButtons?.reposition();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -2539,6 +2543,7 @@ export class NativeRenderer implements IChartRenderer {
         const res = this.resolveScaleHolder(x, y);
         if (!res) return;
         res.holder.manualScale = null;
+        this.axisScaleButtons?.reposition(); // relight the A chip under a still cursor
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 

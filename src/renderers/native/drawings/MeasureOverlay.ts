@@ -40,31 +40,41 @@ export class MeasureOverlay {
         return this.state === 'finished';
     }
 
-    /** A press: begin the measurement, or finish it on the second click. */
-    down(x: number, y: number): void {
+    /** A press: begin the measurement, or finish it on the second click.
+     *  `x,y` are the raw cursor (drag-slop vs click-move-click). `gx,gy` are the
+     *  graphic endpoints — magnet-snapped when the magnet is on, else the same as `x,y`. */
+    down(x: number, y: number, gx = x, gy = y): void {
         if (this.state === 'measuring') {
-            this.end = { x, y };
+            this.end = { x: gx, y: gy };
             this.state = 'finished';
             return;
         }
-        this.start = { x, y };
-        this.end = { x, y };
+        this.start = { x: gx, y: gy };
+        this.end = { x: gx, y: gy };
         this.pressX = x;
         this.pressY = y;
         this.state = 'measuring';
     }
 
+    /** Size the in-progress ruler. `x,y` are the graphic (magnet-snapped) cursor. */
     move(x: number, y: number): void {
         if (this.state === 'measuring') this.end = { x, y };
     }
 
     /** A release: finish if the press was actually dragged (press-drag-release), else wait
-     *  for the second click (click-move-click). */
-    up(x: number, y: number): void {
+     *  for the second click (click-move-click). `x,y` are the raw cursor (slop); `gx,gy`
+     *  are the graphic end (magnet-snapped when the magnet is on). */
+    up(x: number, y: number, gx = x, gy = y): void {
         if (this.state === 'measuring' && Math.hypot(x - this.pressX, y - this.pressY) > DRAG_SLOP) {
-            this.end = { x, y };
+            this.end = { x: gx, y: gy };
             this.state = 'finished';
         }
+    }
+
+    /** Current graphic endpoints in media pixels, or null when idle. */
+    points(): { start: { x: number; y: number }; end: { x: number; y: number } } | null {
+        if (!this.start || !this.end) return null;
+        return { start: this.start, end: this.end };
     }
 
     clear(): void {
