@@ -80,6 +80,21 @@ function fontSizePx(size: BoxTextSize): number {
 }
 
 /**
+ * Whether any painted part of a line — anchor segment plus its `extend`
+ * projection — crosses the visible bar window `[lo, hi]` (logical x). A vertical
+ * line (x1 == x2) extends along itself, so extend adds no horizontal coverage.
+ */
+function lineCoversWindow(a: number, b: number, extend: DrawingExtend, lo: number, hi: number): boolean {
+    const minX = Math.min(a, b);
+    const maxX = Math.max(a, b);
+    if (a === b) return a >= lo && a <= hi;
+    if (extend === 'both') return true;
+    if (extend === 'left') return maxX >= lo;
+    if (extend === 'right') return minX <= hi;
+    return maxX >= lo && minX <= hi;
+}
+
+/**
  * Backend-agnostic renderer for all Pine drawing objects (line/box/label/
  * polyline/linefill) — shared verbatim by the lightweight-charts `DrawingLayer`
  * primitive and the native renderer. The caller supplies a canvas2d context plus
@@ -159,7 +174,12 @@ export class DrawingSceneRenderer {
 
         for (const ln of this.set.lines) {
             if (ln.invisible) continue;
-            if (!visible(this.logicalOf(ln.xloc, ln.x1), this.logicalOf(ln.xloc, ln.x2), ln.extend)) continue;
+            // A line folds its ANCHOR prices (y1/y2) while some painted part of it
+            // crosses the window: the extension widens WHERE the line is, but its
+            // projected values never define the scale. A vertical line (x1 == x2)
+            // extends along itself — no horizontal coverage beyond its own bar — so
+            // one anchored off-screen contributes nothing (it paints nothing here).
+            if (!lineCoversWindow(this.logicalOf(ln.xloc, ln.x1), this.logicalOf(ln.xloc, ln.x2), ln.extend, lo, hi)) continue;
             fold(ln.y1);
             fold(ln.y2);
         }

@@ -840,16 +840,18 @@ describe('EngineOrchestrator', () => {
         const renderer = new FakeRenderer();
         const chart = new Vela({} as unknown as HTMLElement, { bars: 120 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
         await Promise.resolve(); // let loadMarketInner reach the progressive await
-        emit!(all.slice(-40)); // first confirmed snapshot — paints, load resolves
+        emit!(all.slice(-40)); // below the first-paint threshold — held, the frame it would set is unusable
+        expect(renderer.setBarsCalls).toEqual([]);
+        emit!(all.slice(-100)); // deep enough to carry the framing — paints, load resolves
         await chart.ready();
-        expect(renderer.setBarsCalls).toEqual([{ n: 40, preserveView: false }]);
-        emit!(all.slice(-90)); // deeper snapshot — repaints, viewport preserved
-        expect(renderer.setBarsCalls).toEqual([{ n: 40, preserveView: false }, { n: 90, preserveView: true }]);
+        expect(renderer.setBarsCalls).toEqual([{ n: 100, preserveView: false }]);
+        emit!(all.slice(-110)); // deeper snapshot — repaints, viewport preserved
+        expect(renderer.setBarsCalls).toEqual([{ n: 100, preserveView: false }, { n: 110, preserveView: true }]);
         finish!(all); // convergence — final paint + completion
         await chart.historyComplete();
         expect(renderer.setBarsCalls).toEqual([
-            { n: 40, preserveView: false },
-            { n: 90, preserveView: true },
+            { n: 100, preserveView: false },
+            { n: 110, preserveView: true },
             { n: 120, preserveView: true },
         ]);
 
@@ -864,6 +866,24 @@ describe('EngineOrchestrator', () => {
         await b.ready();
         await b.historyComplete();
         expect(fallback.setBarsCalls).toEqual([{ n: 30, preserveView: false }]);
+    });
+
+    it('a progressive FINAL answer below the first-paint threshold still paints — a genesis symbol has no more', async () => {
+        // Every snapshot stays under the threshold: nothing paints until the source
+        // resolves — and the resolution paints whatever depth actually exists.
+        const renderer = new FakeRenderer();
+        const feed: MarketDataFeed = {
+            load: () => Promise.resolve([]),
+            subscribe: () => () => {},
+            loadProgressive: (_cfg, onBatch) => {
+                onBatch(makeBars(20)); // held — a frame set from this would be unusable
+                return Promise.resolve(makeBars(30)); // all the history there is
+            },
+        };
+        const chart = new Vela({} as unknown as HTMLElement, { bars: 500 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
+        await chart.ready();
+        await chart.historyComplete();
+        expect(renderer.setBarsCalls).toEqual([{ n: 30, preserveView: false }]);
     });
 
     it('switching markets ABORTS the in-flight progressive stream — the source stops polling', async () => {
@@ -883,7 +903,7 @@ describe('EngineOrchestrator', () => {
         };
         const chart = new Vela({} as unknown as HTMLElement, { bars: 100 }, { renderer: new FakeRenderer(), engines: [new MockEngine()], dataFeed: feed });
         await Promise.resolve();
-        emit!(makeBars(15)); // first paint releases the load pipeline
+        emit!(makeBars(100)); // first paint releases the load pipeline
         await chart.ready();
         expect(signals).toHaveLength(1);
         expect(signals[0]!.aborted).toBe(false);
@@ -892,7 +912,7 @@ describe('EngineOrchestrator', () => {
         expect(signals[0]!.aborted).toBe(true); // the old stream was told to stop, promptly
         expect(signals).toHaveLength(2); // the new market got its own stream + fresh signal
         expect(signals[1]!.aborted).toBe(false);
-        emit!(makeBars(10)); // the new stream paints — the switch resolves
+        emit!(makeBars(100)); // the new stream paints — the switch resolves
         await switching;
     });
 

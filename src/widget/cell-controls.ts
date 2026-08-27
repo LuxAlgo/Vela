@@ -1,8 +1,9 @@
-// Per-cell view controls — a hover cluster pinned to the bottom-center of a workspace
-// cell: a drag handle to move the chart within the grid, zoom out / zoom in,
-// maximize-or-restore, and reset view. Revealed by cursor proximity, the same
-// affordance as the renderer's scroll-to-realtime button, and styled like the pane
-// clusters (a neutral scrim pill over chart content).
+// Per-cell view controls — a hover cluster pinned to the bottom-center of a
+// workspace cell's PRICE PLOT (the candles, not the price-scale gutter): a drag
+// handle to move the chart within the grid, zoom out / zoom in, maximize-or-
+// restore, and reset view. Revealed by cursor proximity, the same affordance as
+// the renderer's scroll-to-realtime button, and styled like the pane clusters
+// (a neutral scrim pill over chart content).
 import { icon } from '../core/icons';
 import { injectStyles } from '../ui/styles';
 import { Glider, ZOOM_IN, ZOOM_OUT } from './glide';
@@ -23,6 +24,14 @@ const CLUSTER_H = 24;
  *  rather than a themed surface (same value as the pane clusters). */
 const CLUSTER_PILL = 'rgba(0,0,0,0.65)';
 
+/**
+ * CSS `left` that centers the cluster on the plot (candles), not the full cell.
+ * `--vela-toolbar-gutter` / `--vela-scale-gutter` are published on the mount
+ * container (the cell host) by the renderer.
+ */
+export const CLUSTER_LEFT_CSS =
+    'calc((100% + var(--vela-toolbar-gutter, 0px) - var(--vela-scale-gutter, 0px)) / 2)';
+
 const STYLE_ID = 'vela-cell-controls';
 const CSS = `
 .vela-cc-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:none;border-radius:var(--vela-radius-sm);background:transparent;line-height:0;font-size:12px;color:var(--vela-fg-muted);cursor:pointer;}
@@ -33,12 +42,27 @@ const CSS = `
 .vela-cc-grip:active{cursor:grabbing;}
 `;
 
+/** Horizontal center of the plot (candles) in cell-local x — the scale gutter
+ *  is the price axis, the toolbar gutter is the drawings dock. PURE. */
+export function plotCenterX(width: number, toolbarGutter = 0, scaleGutter = 0): number {
+    return (width + toolbarGutter - scaleGutter) / 2;
+}
+
 /**
- * Is the pointer near the cluster's resting spot (bottom-center of the cell)? PURE —
- * `x`/`y` are cell-local coordinates, `width`/`height` the cell's size.
+ * Is the pointer near the cluster's resting spot (bottom-center of the plot)?
+ * PURE — `x`/`y` are cell-local coordinates, `width`/`height` the cell's size.
+ * Pass the renderer gutters so the hotspot tracks the visual center when a
+ * price axis (or drawings toolbar) is reserved.
  */
-export function nearBottomCenter(x: number, y: number, width: number, height: number, proximityPx = CELL_CONTROLS_PROXIMITY_PX): boolean {
-    const cx = width / 2;
+export function nearBottomCenter(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    proximityPx = CELL_CONTROLS_PROXIMITY_PX,
+    gutters: { toolbar?: number; scale?: number } = {},
+): boolean {
+    const cx = plotCenterX(width, gutters.toolbar ?? 0, gutters.scale ?? 0);
     const cy = height - CONTROLS_BOTTOM_PX - CLUSTER_H / 2;
     return Math.hypot(x - cx, y - cy) <= proximityPx;
 }
@@ -90,7 +114,7 @@ export class CellControls {
         this.root = host.ownerDocument.createElement('div');
         Object.assign(this.root.style, {
             position: 'absolute',
-            left: '50%',
+            left: CLUSTER_LEFT_CSS,
             bottom: `${CONTROLS_BOTTOM_PX}px`,
             transform: 'translateX(-50%)',
             zIndex: '6',
@@ -200,11 +224,22 @@ export class CellControls {
         if (on) this.setNear(false);
     }
 
+    /** Live renderer gutters on the cell host (0 when unpublished — a test stub). */
+    private hostGutters(): { toolbar: number; scale: number } {
+        const view = this.host.ownerDocument.defaultView;
+        if (!view) return { toolbar: 0, scale: 0 };
+        const cs = view.getComputedStyle(this.host);
+        return {
+            toolbar: Number.parseFloat(cs.getPropertyValue('--vela-toolbar-gutter')) || 0,
+            scale: Number.parseFloat(cs.getPropertyValue('--vela-scale-gutter')) || 0,
+        };
+    }
+
     private readonly onHostMove = (e: PointerEvent): void => {
         if (this.suspended) return;
         if (this.dragging) return; // captured drag moves sweep the grid — keep the cluster up
         const rect = this.host.getBoundingClientRect();
-        this.setNear(nearBottomCenter(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height));
+        this.setNear(nearBottomCenter(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height, CELL_CONTROLS_PROXIMITY_PX, this.hostGutters()));
     };
 
     private readonly onHostLeave = (): void => {

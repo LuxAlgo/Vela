@@ -194,6 +194,39 @@ describe('DrawingInteraction: placing', () => {
     });
 });
 
+describe('DrawingInteraction: snapCursor (measure-ruler magnet)', () => {
+    it('strong magnet returns the snapped pixel and sets the ring', () => {
+        const h = harness(null);
+        // (13, 88) → raw {time:13, price:12} → snapped {10, 10} → pixel (10, 90)
+        expect(h.it.snapCursor(13, 88, 'strong')).toEqual({ x: 10, y: 90 });
+        expect(h.it.snapMarker()).toEqual({ point: { time: 10, price: 10 }, paneId: 'price' });
+    });
+
+    it('off magnet returns the raw pixel and shows no ring', () => {
+        const h = harness(null);
+        expect(h.it.snapCursor(13, 88, 'off')).toEqual({ x: 13, y: 88 });
+        expect(h.it.snapMarker()).toBeNull();
+    });
+
+    it('weak magnet snaps only within the cursor radius', () => {
+        const near = harness(null);
+        expect(near.it.snapCursor(11, 89, 'weak')).toEqual({ x: 10, y: 90 });
+        expect(near.it.snapMarker()).toEqual({ point: { time: 10, price: 10 }, paneId: 'price' });
+
+        const far = harness(null);
+        expect(far.it.snapCursor(15, 85, 'weak')).toEqual({ x: 15, y: 85 });
+        expect(far.it.snapMarker()).toBeNull();
+    });
+
+    it('clearSnapMarker drops the ring', () => {
+        const h = harness(null);
+        h.it.snapCursor(13, 88, 'strong');
+        expect(h.it.snapMarker()).not.toBeNull();
+        h.it.clearSnapMarker();
+        expect(h.it.snapMarker()).toBeNull();
+    });
+});
+
 describe('DrawingInteraction: Shift angle snap (45° steps)', () => {
     // fake projector is linear (x = time, y = 100 − price), so pixel angles map 1:1 to
     // time/price deltas: horizontal = equal prices, 45° = |Δtime| == |Δprice|.

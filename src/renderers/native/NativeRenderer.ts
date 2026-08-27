@@ -1363,13 +1363,13 @@ export class NativeRenderer implements IChartRenderer {
             resetView: () => this.resetView(),
             // User drawings claim a gesture before pan when armed / over a drawing.
             drawingsClaim: (x, y) => this.userDrawings?.claim(x, y) ?? false,
-            drawingsMeasureStart: (x, y) => this.userDrawings?.beginMeasureAt(x, y) ?? false,
+            drawingsMeasureStart: (x, y, snap) => this.userDrawings?.beginMeasureAt(x, y, snap) ?? false,
             drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
             drawingsCancelPlacement: () => this.userDrawings?.cancelPlacement() ?? false,
             drawingsSnapMode: () => this.snapMode,
             drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
             drawingsPointerMove: (x, y, snap, shift) => this.userDrawings?.pointerMove(x, y, snap, shift),
-            drawingsPointerUp: (x, y) => this.userDrawings?.pointerUp(x, y),
+            drawingsPointerUp: (x, y, snap) => this.userDrawings?.pointerUp(x, y, snap),
             drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? null,
             drawingsDblClick: (x, y) => this.userDrawings?.dblClick(x, y) ?? false,
             drawingsClearTransient: () => this.userDrawings?.clearTransient(),
@@ -1732,15 +1732,19 @@ export class NativeRenderer implements IChartRenderer {
                 if (this.hoverLogical != null) this.hoverLogical += shift;
             }
         }
-        // Full bar replacement re-frames the view (matches LWC's fitContent on
-        // every setData) — so a symbol/timeframe switch doesn't keep stale zoom.
-        // `preserveView` keeps the current viewport: the series is right-anchored,
-        // so extending it with older bars in place leaves the visible bars unchanged
-        // (used when swapping the quick preview for the full history). Still fit the
-        // first time, even with preserveView, so there's always an initial frame.
+        // Full bar replacement re-frames the view — a symbol/timeframe switch must not
+        // keep a PAN aimed at another market's time range. The ZOOM is a user
+        // preference rather than market state, so the re-frame keeps the current bar
+        // spacing and only re-anchors the newest bars; the very first frame has no
+        // zoom to keep and fits instead. `preserveView` keeps the whole viewport: the
+        // series is right-anchored, so extending it with older bars in place leaves
+        // the visible bars unchanged (used when swapping the quick preview for the
+        // full history). Still fit the first time, even with preserveView, so there's
+        // always an initial frame.
         const skipFit = opts?.preserveView === true && this.didInitialFit;
         if (this.coords.width > 0 && !skipFit) {
-            this.fitContent();
+            if (this.didInitialFit) this.reframeKeepZoom();
+            else this.fitContent();
             this.didInitialFit = true;
         }
         if (!this.introPlayed && this.bars.length > 0) {
@@ -2500,6 +2504,10 @@ export class NativeRenderer implements IChartRenderer {
         this.scaleDragHeight = res.height;
         this.scaleDragStart = { ...res.holder.scale };
         res.holder.manualScale = { ...res.holder.scale };
+        // The A (auto) chip must drop the moment the scale freezes — a wheel rescale
+        // (or a stationary grab) changes the state with the cursor still, so the
+        // hover-move re-sync never fires on its own.
+        this.axisScaleButtons?.reposition();
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -2535,6 +2543,7 @@ export class NativeRenderer implements IChartRenderer {
         const res = this.resolveScaleHolder(x, y);
         if (!res) return;
         res.holder.manualScale = null;
+        this.axisScaleButtons?.reposition(); // relight the A chip under a still cursor
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
@@ -3310,6 +3319,21 @@ export class NativeRenderer implements IChartRenderer {
         const visibleBars = Math.min(n, 200);
         const rightOffset = 6;
         const v = this.clampViewport(w / ((visibleBars + rightOffset) * this.coords.spacingScale), rightOffset);
+        this.coords.setViewport(v);
+        this.targetBarSpacing = v.barSpacing;
+    }
+
+    /** Re-frame after a series replacement (a symbol/timeframe switch): keep the user's
+     *  zoom (bar spacing), re-anchor the newest bars at the default right offset.
+     *  `clampViewport`'s fit-all-bars floor deliberately does NOT apply — a progressive
+     *  head may still be backfilling toward the previous depth, and raising the spacing
+     *  to its temporary bar count would lose the zoom this exists to keep. */
+    private reframeKeepZoom(): void {
+        this.animator?.stop(); // a hard re-frame cancels any in-flight gesture
+        this.panVelocity = 0;
+        for (const pane of this.scene.panes.values()) pane.manualScale = null; // re-frame ⇒ autoscale resumes
+        for (const sl of this.scene.indicatorScales.values()) sl.manualScale = null;
+        const v: ViewportState = { barSpacing: clampBarSpacing(this.coords.getViewport().barSpacing), rightOffset: defaultViewport().rightOffset };
         this.coords.setViewport(v);
         this.targetBarSpacing = v.barSpacing;
     }

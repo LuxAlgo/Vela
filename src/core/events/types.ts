@@ -39,6 +39,8 @@ export interface VelaEventMap extends Record<string, unknown> {
   "load:end": { symbol: string; timeframe: string; bars: number };
   "indicator:added": { id: string };
   "indicator:removed": { id: string };
+  /** An indicator's stored input/prop VALUES changed (settings dialog, `setInputs`) — what state persistence listens to. */
+  "indicator:inputs": { id: string };
   "indicator:error": { id: string; error: Error };
   /** No registered provider can serve the chart symbol — the load is PARKED, not failed:
    *  it resumes by itself if a capable provider registers later. */

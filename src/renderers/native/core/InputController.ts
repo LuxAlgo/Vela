@@ -48,13 +48,16 @@ export interface InputControllerDeps {
     // ── user drawings (optional) — let the drawings layer claim a gesture before pan ──
     /** True when a press at (x,y) belongs to the drawings layer (armed tool, or over a drawing). */
     drawingsClaim?(x: number, y: number): boolean;
-    /** Shift+press on empty plot: arm the measure ruler AND start it at (x,y). True when it started
-     *  (the drawings layer then owns the rest of the gesture). */
-    drawingsMeasureStart?(x: number, y: number): boolean;
+    /** Shift+press on empty plot: arm the measure ruler AND start it at (x,y). `snap` is
+     *  the effective magnet. True when it started (the drawings layer then owns the rest
+     *  of the gesture). */
+    drawingsMeasureStart?(x: number, y: number, snap: SnapMode): boolean;
     /** Middle-click: delete the drawing under the cursor. True when one was removed. */
     drawingsDeleteAt?(x: number, y: number): boolean;
-    /** Right-click: cancel an in-progress drawing placement (and revert to the pointer).
-     *  True when consumed — the companion contextmenu is then suppressed. */
+    /** Right-click: cancel/disarm whatever non-persistent tool is active — an in-progress
+     *  placement, an armed-but-idle drawing tool, the measure ruler, or the eraser — and
+     *  revert to the pointer. True when consumed — the companion contextmenu is then
+     *  suppressed. */
     drawingsCancelPlacement?(): boolean;
     /** A claimed press began. `snap` = effective magnet mode; `shift` = additive (multi-) select. */
     drawingsPointerDown?(x: number, y: number, snap: SnapMode, shift: boolean): void;
@@ -65,8 +68,9 @@ export interface InputControllerDeps {
     drawingsCursor?(x: number, y: number): string | null;
     /** The sticky magnet mode set on the toolbar (off/weak/strong) — Ctrl/Cmd overrides it to strong. */
     drawingsSnapMode?(): SnapMode;
-    /** A claimed gesture ended. */
-    drawingsPointerUp?(x: number, y: number): void;
+    /** A claimed gesture ended. `snap` = effective magnet (the measure ruler finishes on
+     *  release when the press was a drag). */
+    drawingsPointerUp?(x: number, y: number, snap: SnapMode): void;
     /** Double-click — open a drawing's settings. Returns true when one was hit (suppresses reset). */
     drawingsDblClick?(x: number, y: number): boolean;
     /** Clear a finished transient overlay (the ruler) — fired on any press / wheel before pan/zoom. */
@@ -97,6 +101,11 @@ const TIME_SCALE_K = 0.004;
 // Wheel-zoom sensitivity: barSpacing scales by e^(-deltaY·k) per notch. A typical
 // mouse-wheel notch (deltaY ≈ 100) is a clearly visible step.
 const WHEEL_ZOOM_K = 0.004;
+// Wheel-over-the-price-axis rescale: each notch acts as a small axis DRAG — deltaY is
+// mapped to drag pixels at this ratio, so a notch (deltaY ≈ 100) reads as a ~25px pull
+// (span ×~1.10). Deliberately slower than the time wheel-zoom: the scale is a fine
+// adjustment, not a navigation gesture.
+const WHEEL_PRICE_DRAG_PX = 0.25;
 
 /** Which strip a gesture started over — the data plot, the right price axis, the bottom
  *  time axis, a sub-pane separator (drag to resize the panes above/below it), or one of
@@ -176,9 +185,9 @@ export function pinchPinnedRightOffset(anchorLogical: number, barCount: number, 
  * Translates pointer/wheel gestures into ViewportState + scale changes. A press in
  * the data area pans (`rightOffset`, instant) and — in manual-scale mode — also pans
  * the price window vertically; a press on the right price-axis strip rescales that
- * pane vertically; a press on the bottom time-axis strip zooms horizontally
- * (`barSpacing`); the wheel zooms (eased + anchored); a flick releases with inertia;
- * a double-click resets. The renderer owns the animation loop + the scale math — this
+ * pane vertically (the wheel over that strip does the same, gently); a press on the
+ * bottom time-axis strip zooms horizontally (`barSpacing`); the wheel zooms (eased +
+ * anchored); a flick releases with inertia; a double-click resets. The renderer owns the animation loop + the scale math — this
  * just classifies the gesture and emits intents.
  */
 export class InputController {
@@ -350,9 +359,10 @@ export class InputController {
             return;
         }
         if (e.button === 2) {
-            // Right-click cancels an in-progress placement (reverting to the pointer).
-            // The flag lets the contextmenu companion suppress the host's chart menu
-            // for THIS press only — a plain right-click still opens it.
+            // Right-click cancels/disarms the active tool — placement, armed drawing
+            // tool, ruler, or eraser — reverting to the pointer. The flag lets the
+            // contextmenu companion suppress the host's chart menu for THIS press
+            // only — a plain right-click still opens it.
             this.rightCancelled = this.deps.drawingsCancelPlacement?.() ?? false;
             if (this.rightCancelled) e.preventDefault();
             return;
@@ -386,7 +396,7 @@ export class InputController {
         }
         // Shift+press on the empty plot starts the measure ruler in one gesture (a press
         // over a drawing keeps the additive-select meaning of shift, via the claim above).
-        if (e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y)) {
+        if (e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y, this.snapMode(e))) {
             this.region = 'drawing';
             this.capture(e.pointerId);
             return;
@@ -602,7 +612,7 @@ export class InputController {
         // chart and must not double as a click/tap on release.
         const tapRelease = this.dragging && !this.moved && (!wasTouch || Math.hypot(x - this.startX, y - this.startY) <= TOUCH_TAP_SLOP);
         if (this.dragging && this.region === 'drawing') {
-            this.deps.drawingsPointerUp?.(x, y);
+            this.deps.drawingsPointerUp?.(x, y, this.snapMode(e));
         } else if (tapRelease && this.region === 'data') {
             this.deps.onClick(x, y);
         } else if (this.dragging && this.region === 'data') {
@@ -653,7 +663,7 @@ export class InputController {
         if (e.pointerType === 'touch') this.touches.delete(e.pointerId);
         this.cancelLongPress();
         if (!this.dragging) return;
-        if (this.region === 'drawing' && !Number.isNaN(this.cursorX)) this.deps.drawingsPointerUp?.(this.cursorX, this.cursorY);
+        if (this.region === 'drawing' && !Number.isNaN(this.cursorX)) this.deps.drawingsPointerUp?.(this.cursorX, this.cursorY, this.snapMode(e));
         if (this.region === 'crosshair' || e.pointerType === 'touch') this.deps.onPointerMove(null, null);
         this.endGesture(e);
     };
@@ -683,6 +693,16 @@ export class InputController {
     private readonly onWheel = (e: WheelEvent): void => {
         e.preventDefault();
         this.deps.drawingsClearTransient?.(); // a finished ruler vanishes on zoom/pan
+        const { x, y } = this.local(e);
+        // Over the right price-axis strip the wheel rescales THAT scale, like a slow
+        // axis drag: scroll down expands the span (zoom out), scroll up compresses it
+        // (zoom in). Each notch is an independent micro-drag (grab, rescale, release),
+        // so consecutive notches compound from the live window.
+        if (this.regionAt(x, y) === 'price' && e.deltaY !== 0) {
+            this.deps.beginPriceScale(x, y);
+            this.deps.priceScaleBy(e.deltaY * WHEEL_PRICE_DRAG_PX);
+            return;
+        }
         const coords = this.deps.getCoords();
         const vp = coords.getViewport();
         // A horizontal-dominant gesture (trackpad two-finger swipe / tilt wheel) and
@@ -693,10 +713,9 @@ export class InputController {
             this.deps.apply({ barSpacing: vp.barSpacing, rightOffset: wheelPanRightOffset(vp.rightOffset, pan, coords.pxPerBar()) });
             return;
         }
-        const cursorX = this.local(e).x;
         // Holding Ctrl/Cmd overrides the sticky right-edge anchor → zoom toward the cursor's bar.
         const rightEdge = this.rightEdgeZoom && !(e.ctrlKey || e.metaKey);
-        const anchor = wheelZoomAnchor(coords, cursorX, rightEdge);
+        const anchor = wheelZoomAnchor(coords, x, rightEdge);
         // Smooth multiplicative zoom; scroll up (deltaY<0) zooms in.
         const target = clampBarSpacing(vp.barSpacing * Math.exp(-e.deltaY * WHEEL_ZOOM_K));
         this.deps.zoomTo(target, anchor.logical, anchor.x);
