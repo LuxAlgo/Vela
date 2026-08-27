@@ -17,6 +17,22 @@ All notable changes to Vela, newest first.
   lines that do cross the window still scale into view by their anchor prices.
 ### Added
 
+- **Magnifier drawing tool — see a finer timeframe inside an area.** Drag a
+  rectangle over the chart (Measurements group) and its interior redraws the
+  same market at a lower timeframe, in the chart's own style and colors —
+  candles subdivide into finer candles, a line chart magnifies into a finer
+  line, and Heikin Ashi stays Heikin Ashi — at their true time and price
+  positions. The timeframe chip riding the rectangle's bottom-left corner is
+  itself a dropdown: click it to switch, or use the same pick on the drawing's
+  toolbar — both offer only timeframes below the chart's own. Auto picks a
+  sensible subdivision of the chart's timeframe (a 1-hour chart magnifies into
+  15-minute candles); the up/down colors and the border style stay editable
+  when you want the inset to stand apart. The finer bars load in the
+  background and the area keeps up with live data; if the area is too wide
+  for the chosen timeframe, or the chart is already at the finest one, the
+  tool says so inside the rectangle instead of guessing. Like every drawing
+  it moves, resizes, clones, and persists with the document.
+
 - **Indicator input and prop edits survive a reload — as deltas.** Changing an
   indicator's settings used to live only in the running instance: a reload put
   every script back on its declaration defaults. The saved document now stores

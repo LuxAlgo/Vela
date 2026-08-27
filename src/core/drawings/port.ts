@@ -1,6 +1,7 @@
 import type { Unsubscribe } from '../util/types';
 import type { DrawingTypeKey, SerializedDrawing } from './Drawing';
 import type { SnapMode } from './geometry';
+import type { DrawingSeriesGateway } from './series';
 import type { ToolbarDefinition } from './toolbar';
 
 /**
@@ -85,6 +86,10 @@ export interface IDrawingsRendererPort {
      *  renderer keeps owning the mutual exclusion (with armed tools too) and reports
      *  every actual change back through the `mode` intent. Optional. */
     setMode?(mode: DrawingMode): void;
+    /** Hand the renderer the core's series gateway so data-driven drawings can read bars
+     *  of a finer timeframe (exposed to them as `Projector.seriesInRange`). Optional — a
+     *  renderer without it simply never resolves lower-timeframe series. */
+    setSeriesGateway?(gateway: DrawingSeriesGateway): void;
     /** Open a drawing's settings popup (selecting it too) — the programmatic twin of a click on it. */
     openSettings(id: string): void;
     /** Display another chart's in-progress placement as a GHOST at reduced opacity

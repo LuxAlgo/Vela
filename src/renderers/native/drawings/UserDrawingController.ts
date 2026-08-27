@@ -4,6 +4,7 @@ import type {
     DrawingIntent,
     DrawingMode,
     DrawingPoint,
+    DrawingSeriesGateway,
     DrawingTypeKey,
     IDrawingsRendererPort,
     Projector,
@@ -11,7 +12,7 @@ import type {
     SnapMode,
     ToolbarDefinition,
 } from '../../../core/drawings';
-import { deserializeDrawing, resetDrawingSettings, Callout, TextLabel } from '../../../core/drawings';
+import { deserializeDrawing, getDrawingType, resetDrawingSettings, Callout, Magnifier, TextLabel } from '../../../core/drawings';
 import type { Unsubscribe } from '../../../core/util/types';
 import { contrastColor, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { withAlpha } from '../core/chartConfig';
@@ -55,6 +56,11 @@ export interface UserDrawingDeps {
     /** Ask the renderer for a data-layer repaint — needed when a drawing that paints INSIDE the
      *  series stack changed, since its pixels live in the backend composite, not on this layer. */
     requestDataPaint(): void;
+    /** The chart's active series look — price style plus the RESOLVED series colors — so
+     *  content that mirrors the series (the magnifier's inset) matches it exactly. */
+    seriesLook(): { style: string; upColor: string; downColor: string; lineColor: string };
+    /** One chart bar in ms (the chart's own timeframe) — pickers drop choices at/above it. */
+    chartBarMs(): number;
     /** Snap a data point to the nearest candle (time + OHLC), per magnet `mode` + the cursor pixel. */
     snap(point: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }): DrawingPoint;
     /** Set the sticky magnet mode (driven by the toolbar's 3-state button). */
@@ -104,6 +110,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private intentCb: ((i: DrawingIntent) => void) | null = null;
     /** Another chart's in-progress placement, mirrored here as a ghost (drawings sync). */
     private externalGhost: Drawing | null = null;
+    /** Core-pushed series gateway (finer-timeframe bars for data-driven drawings). */
+    private seriesGw: DrawingSeriesGateway | null = null;
+    private seriesGwUnsub: Unsubscribe | null = null;
     /** Last draft fingerprint reported upstream — gates the per-render emission to actual changes. */
     private lastDraftKey: string | null = null;
     private readonly measure = new MeasureOverlay(); // transient ruler — not a persistent drawing
@@ -136,7 +145,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         private readonly deps: UserDrawingDeps,
     ) {
         this.ctx = canvas.getContext('2d');
-        this.popup = new DrawingSettingsPopup(overlayHost, deps.theme());
+        this.popup = new DrawingSettingsPopup(overlayHost, deps.theme(), () => deps.chartBarMs());
         this.toolbar = new DrawingToolbar(
             toolbarHost,
             deps.theme(),
@@ -197,6 +206,24 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private syncToolbarGutter(): void {
         const shown = this.toolbarVisible && !this.mobileLayout;
         this.deps.setToolbarGutter(shown ? (this.toolbarCollapsed ? TOOLBAR_COLLAPSED_WIDTH : TOOLBAR_WIDTH) : 0);
+    }
+
+    /** Core push: the series gateway data-driven drawings read finer-timeframe bars
+     *  through (surfaced to them as `Projector.seriesInRange`). A landed background
+     *  fetch repaints both this layer and the interleave slices under the series. */
+    setSeriesGateway(gateway: DrawingSeriesGateway): void {
+        this.seriesGwUnsub?.();
+        this.seriesGw = gateway;
+        this.seriesGwUnsub = gateway.onUpdate(() => {
+            this.invalidateSlices();
+            this.render();
+            this.deps.requestDataPaint();
+        });
+    }
+
+    /** The pushed series gateway, or null before the core provides one. */
+    get seriesGateway(): DrawingSeriesGateway | null {
+        return this.seriesGw;
     }
 
     /** Core push: mirror (or clear) another chart's in-progress placement as a ghost. */
@@ -335,7 +362,35 @@ export class UserDrawingController implements IDrawingsRendererPort {
     /** Should the drawing layer win this press (vs pan)? */
     claim(x: number, y: number): boolean {
         if (this.measureMode || this.eraserMode) return true; // these modes capture their clicks (no pan)
+        if (this.magnifierChipAt(x, y)) return true; // the chip is a dropdown trigger, never a pan start
         return this.interaction.claim(x, y);
+    }
+
+    /** The topmost visible (unlocked) magnifier whose timeframe chip contains (x, y) —
+     *  the chip's rect is what the painter measured last frame. */
+    private magnifierChipAt(x: number, y: number): Magnifier | null {
+        for (let i = this.drawings.length - 1; i >= 0; i -= 1) {
+            const d = this.drawings[i]!;
+            if (!(d instanceof Magnifier) || !d.visible || d.locked) continue;
+            const r = d.chipRect;
+            if (r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return d;
+        }
+        return null;
+    }
+
+    /** Open the on-chart chip's timeframe menu; the pick patches the drawing like a
+     *  settings-popup edit (same intent, same undo step). */
+    private openMagnifierChipMenu(drawing: Magnifier): void {
+        const rect = drawing.chipRect;
+        if (!rect) return;
+        const id = drawing.id;
+        this.popup.openMagnifierTimeframeMenu(rect, drawing.magnifier.timeframe, (value) => {
+            const d = this.drawings.find((x) => x.id === id);
+            if (!(d instanceof Magnifier)) return;
+            d.applySettings({ 'magnifier.timeframe': value });
+            this.render();
+            this.emit({ kind: 'edit', doc: d.serialize() });
+        });
     }
 
     /** Delete the (unlocked) drawing under the cursor. True when one was removed.
@@ -383,6 +438,15 @@ export class UserDrawingController implements IDrawingsRendererPort {
             if (this.measure.isFinished()) this.withModeIntent(() => this.exitMeasure(false));
             this.render();
             return;
+        }
+        // The magnifier's timeframe chip swallows its press: it opens the pick menu instead
+        // of selecting/dragging the drawing under it (no tool armed — placement wins then).
+        if (this.activeTool == null) {
+            const chipOwner = this.magnifierChipAt(x, y);
+            if (chipOwner) {
+                this.openMagnifierChipMenu(chipOwner);
+                return;
+            }
         }
         this.interaction.down(x, y, snap, shift); // the popup self-dismisses on any outside press
     }
@@ -640,6 +704,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     /** Cursor hint while hovering — `'pointer'` over a drawing/handle, else null. */
     cursorAt(x: number, y: number): string | null {
         if (this.eraserMode) return 'pointer'; // signal "click to delete" while erasing
+        if (this.activeTool == null && this.magnifierChipAt(x, y)) return 'pointer'; // the chip is clickable
         return this.interaction.cursorAt(x, y);
     }
 
@@ -811,6 +876,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
             if (!sctx) continue;
             sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             sctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+            this.painter.seriesLook = this.deps.seriesLook();
             this.painter.paintAll(sctx, drawings, proj, theme, EMPTY_TARGETS);
             const slices = out.get(paneId) ?? [];
             slices.push({ beforeZ, canvas });
@@ -844,6 +910,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         // Front (non-interleaved) drawings paint fully here; the ones interleaved into the series
         // stack painted their bodies on the backend layers, so only their handles come back on top
         // — buried under the candles they'd be unusable.
+        this.painter.seriesLook = this.deps.seriesLook();
         this.painter.paintAll(ctx, this.drawings.filter((d) => !this.isInterleaved(d)), proj, this.deps.theme(), targets);
         this.painter.paintHighlights(ctx, this.drawings.filter((d) => this.isInterleaved(d)), proj, handleIdsFor(targets));
         this.layoutTextEditor();
@@ -854,6 +921,12 @@ export class UserDrawingController implements IDrawingsRendererPort {
         // Every placing change re-renders (deps.changed), so this catches each anchor
         // click, cursor move and cancel; the fingerprint gate drops the no-change frames.
         this.emitDraft(ghost);
+        // Armed-tool placement prompt (a type's `placementHint`): a bottom-center pill
+        // telling the user what gesture to perform; it clears once placement starts.
+        if (this.activeTool && !ghost) {
+            const hint = getDrawingType(this.activeTool)?.placementHint;
+            if (hint) this.painter.paintPlacementHint(ctx, hint, this.deps.theme(), proj.width, proj.height);
+        }
         // While placing, show control circles on the points clicked so far (so the user
         // sees where each anchor — e.g. a pitchfork's pivot — landed before it completes).
         const markers = this.interaction.placingMarkers(proj);
@@ -870,6 +943,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.closeTextEditor();
         this.popup.destroy();
         this.toolbar.destroy();
+        this.seriesGwUnsub?.();
+        this.seriesGwUnsub = null;
+        this.seriesGw = null;
         this.intentCb = null;
         this.drawings = [];
     }

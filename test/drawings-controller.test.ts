@@ -407,6 +407,19 @@ describe('DrawingController — editing foundation', () => {
         expect(ctrl.all()[0]!.zIndex).toBeGreaterThan(40); // clears the raised indicator, not just other drawings
     });
 
+    it('a series-covering tool (magnifier) starts ABOVE the whole series stack', () => {
+        const { port, ctrl } = setup();
+        port.stackRange = (paneId: string) => (paneId === 'price' ? { front: 40, back: -6, price: 0 } : { front: 0, back: 0 });
+        const d = ctrl.add('magnifier', {
+            anchors: [
+                { time: 0, price: 1 },
+                { time: 1, price: 2 },
+            ],
+        })!;
+        // Its opaque inset replaces the candles' pixels — under the stack it would be buried.
+        expect(d.zIndex).toBeGreaterThan(40);
+    });
+
     it('without a price key a new drawing starts just under the pane\'s top series (a study pane)', () => {
         const { port, ctrl } = setup();
         port.stackRange = () => ({ front: 3, back: 1 });
@@ -540,7 +553,7 @@ describe('buildToolbar grouping', () => {
         expect(measureGroup?.tools.map((t) => t.type)).toEqual(expect.arrayContaining(['datepricerange', 'position']));
         // Long/Short Position is the group's default (tools[0] arms when the button is clicked directly).
         expect(measureGroup?.tools[0]?.type).toBe('position');
-        expect(measureGroup?.sections?.find((s) => s.label === 'Measurements')?.tools.map((t) => t.type)).toEqual(['position', 'datepricerange']);
+        expect(measureGroup?.sections?.find((s) => s.label === 'Measurements')?.tools.map((t) => t.type)).toEqual(['position', 'datepricerange', 'magnifier']);
     });
     it('explicit groups resolve type keys + drop unknown ones', () => {
         const { definition } = buildToolbar({
