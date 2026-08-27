@@ -50,6 +50,32 @@ All notable changes to Vela, newest first.
   dirty, so input edits autosave like adds and removes always did), and
   `inputDeltas` joins the plugin SDK for state-persistence handlers.
 
+### Changed
+
+- **Switching the market keeps your zoom.** Changing the symbol or timeframe
+  used to re-fit the view from scratch. The chart now keeps the bar spacing you
+  had chosen and re-anchors the newest bars at the right edge — only the pan
+  resets, since the previous position pointed at another market's time range.
+  The very first chart still opens with the classic fit.
+
+### Fixed
+
+- **Extended lines no longer squeeze the price scale when nothing of them is in
+  view.** A line contributes its anchor prices (`y1`/`y2`) to the automatic price
+  scale only while some painted part of it — the anchor segment or its `extend`
+  projection — actually crosses the visible bars, and the projection itself never
+  contributes values of its own. In particular a vertical line (both points on
+  the same bar, the common `extend.both` idiom) extends along itself, so once its
+  bar scrolls out of view it stops pulling its price into the scale — previously
+  a far-away anchor price kept flattening the candles from off-screen. Extended
+  lines that do cross the window still scale into view by their anchor prices.
+- **Progressively loaded symbols no longer open zoomed onto a handful of
+  candles.** On data sources that stream history in while it heals, the first
+  painted snapshot could carry only a few bars — and the view was framed onto
+  them, leaving a few giant candles that later data never re-framed. The first
+  paint now waits until the snapshot is deep enough to carry the framing (the
+  complete answer always paints, however deep it is).
+
 ## [v0.6.10]
 
 ### Added
