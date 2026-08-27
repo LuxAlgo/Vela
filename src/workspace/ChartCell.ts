@@ -223,7 +223,7 @@ export class ChartCell {
     /** Keeps the pre/post-market shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
     private readonly sessionShading = new SessionShadingTracker((zones) => this.inner?.renderer.set('sessionZones', zones));
     private readonly watermark: Watermark | null;
-    /** Bottom-center hover cluster: drag handle, zoom in/out, maximize/restore, reset view. */
+    /** Bottom-center hover cluster, pinned to the price plot: drag handle, zoom in/out, maximize/restore, reset view. */
     private readonly cellControls: CellControls;
     private readonly contextMenu: ChartContextMenu;
     private readonly offMarket: () => void;

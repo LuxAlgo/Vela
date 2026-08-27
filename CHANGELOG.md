@@ -25,6 +25,11 @@ All notable changes to Vela, newest first.
   bar scrolls out of view it stops pulling its price into the scale — previously
   a far-away anchor price kept flattening the candles from off-screen. Extended
   lines that do cross the window still scale into view by their anchor prices.
+- **Multi-chart view controls sit on the candles.** The hover cluster that
+  zooms, resets, and moves a chart now centers on the price plot — the area
+  where the candles live — instead of the full cell, so the price scale on
+  the right no longer pulls it off-center.
+
 ### Added
 
 - **Scroll the price axis to rescale it.** The mouse wheel over the right
