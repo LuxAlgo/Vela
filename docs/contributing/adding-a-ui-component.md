@@ -1,6 +1,6 @@
 # Adding a UI-kit component
 
-`vela/ui` is a **headless-first** component kit: every component splits into a
+`@luxalgo/vela/ui` is a **headless-first** component kit: every component splits into a
 framework-agnostic **controller** (behavior, no DOM) and a thin vanilla **view**
 (DOM projection over the design tokens). Overlay chrome — menu, dialog, drawer,
 tooltip — wraps a [Zag.js](https://zagjs.com) state machine. Form primitives
@@ -26,7 +26,7 @@ components/<name>/
 
 ## 1 — controller.ts (Zag overlay)
 
-Wrap the machine and map Vela-level options to machine props. Export an explicit
+Wrap the machine and map Vela™-level options to machine props. Export an explicit
 interface for the return type (TypeScript can't name Zag's inferred types portably):
 
 ```ts

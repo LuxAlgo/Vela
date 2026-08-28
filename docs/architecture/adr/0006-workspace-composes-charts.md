@@ -4,7 +4,7 @@
 
 ## Context
 
-Vela was single-chart: `VelaWidget` wraps ONE core `Vela` instance in a full chrome
+Vela™ was single-chart: `VelaWidget` wraps ONE core `Vela` instance in a full chrome
 (topbar, pickers, drawing toolbar, object tree, bottombar, keymap). Multi-chart
 layouts (2–16 cells, presets + splitters) had to arrive with a hard product
 constraint: **everything outside the charts stays shared** — one topbar, one symbol
@@ -23,7 +23,7 @@ programmatic seams.
 ## Decision
 
 **`VelaWorkspace` composes ordinary, unmodified charts.** The core stays single-chart;
-the new `vela/workspace` subpath owns the grid. The enabling work landed as core
+the new `@luxalgo/vela/workspace` subpath owns the grid. The enabling work landed as core
 capabilities that are useful stand-alone, not as workspace special cases:
 `chart.setMarket()` switches a market **in place** (indicators, drawings, config, and
 subscriptions survive; `market:changed` carries `prev`), the bar cache gained

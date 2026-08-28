@@ -1,6 +1,6 @@
 # Adding a Data Provider
 
-This page is for engineers adding a new **market-data source** to Vela. There are two extension points, from simplest to most powerful:
+This page is for engineers adding a new **market-data source** to Vela™. There are two extension points, from simplest to most powerful:
 
 1. **A `DataProvider`** — implement one method, register it with `chart.data.registerProvider(name, provider)`, and the chart's provider registry routes symbols to it. This is what you want almost always.
 2. **A `MarketDataFeed`** — replace the *entire* data layer (registry, caching, routing) with your own, injected via `deps.dataFeed`. Advanced; only when you need full control.
@@ -23,7 +23,7 @@ One method is **required**; the rest are **progressive** — present them when y
 
 #### Optional
 
-- **`listSymbols()`** — enumerate the symbols you serve, as `{ ticker, description?, type?, prefix? }[]`. This builds the **eager index** at registration that lets a **bare** symbol (no `provider:` prefix) resolve to you, and powers autocomplete. Without it, your provider is reachable **only** by an explicit `name:SYMBOL` prefix. Declare `prefix` when the symbol's **listing venue** is its identity (`NASDAQ` for AAPL, `NYSE` for IBM — a property of the symbol, not of your provider): it is what `NASDAQ:AAPL` strings resolve against and what every label displays, TradingView-style. Leave it out where the provider *is* the identity (crypto, fx). **Grouped listings** (futures roots): emit one **group row** per root — `group` repeated in `ticker` (`{ ticker: 'ES', group: 'ES', … }`) — then its members carrying the same `group` with their own tickers, in deliberate order, one marked `default: true`. The picker folds members under the group row (a chevron unfolds them) and a group pick — clicked, or typed as `ES` / `CME:ES` — loads the `default` member (none or several marked ⇒ the **first listed**). The group row itself is listed, never loadable. Declare `market` when sibling markets of one source differ in session shape (futures product classes): consumers resolving per-market vocabulary key on it.
+- **`listSymbols()`** — enumerate the symbols you serve, as `{ ticker, description?, type?, prefix? }[]`. This builds the **eager index** at registration that lets a **bare** symbol (no `provider:` prefix) resolve to you, and powers autocomplete. Without it, your provider is reachable **only** by an explicit `name:SYMBOL` prefix. Declare `prefix` when the symbol's **listing venue** is its identity (`NASDAQ` for AAPL, `NYSE` for IBM — a property of the symbol, not of your provider): it is what `NASDAQ:AAPL` strings resolve against and what every label displays. Leave it out where the provider *is* the identity (crypto, fx). **Grouped listings** (futures roots): emit one **group row** per root — `group` repeated in `ticker` (`{ ticker: 'ES', group: 'ES', … }`) — then its members carrying the same `group` with their own tickers, in deliberate order, one marked `default: true`. The picker folds members under the group row (a chevron unfolds them) and a group pick — clicked, or typed as `ES` / `CME:ES` — loads the `default` member (none or several marked ⇒ the **first listed**). The group row itself is listed, never loadable. Declare `market` when sibling markets of one source differ in session shape (futures product classes): consumers resolving per-market vocabulary key on it.
 - **`getSymbolInfo(ticker)`** — per-symbol metadata an engine may read (Pine `syminfo.*`). Absent ⇒ the engine synthesizes a fallback.
 - **`resolveSymbolIcon(descriptor)`** — the icon URL for one of your symbols; the provider owns the knowledge of where its asset class's icons live (the bundled crypto providers predefine the Ledger crypto-icon CDN). Called lazily per RENDERED row — cheap and synchronous. Return `undefined` for "no icon" (the shells show a colored-initials badge; a URL that 404s degrades the same way). Serve CORS-clean images (`Access-Control-Allow-Origin`) or drawing them taints the canvas and breaks the PNG export.
 - **`getCalendar(ticker, range)`** — the RESOLVED market calendar over `[from, to)`: ascending epoch-ms `[start, end)` pairs of open market time, **holidays and DST already applied by your source**. `range.session` selects the window set (`'regular'` default, `'extended'` = the full tape). This is the single market-time truth: the widget's market-status badge (open / pre / post / closed / holiday) and session-anchored consumers read these windows and never recompute a holiday themselves. Absent ⇒ no calendar (the right answer for continuous markets — crypto, most fx): the badge stays "Market Open" and consumers fall back to their own anchoring.
@@ -45,7 +45,7 @@ Every bar you return — from `getBars` or a live `onBar` — follows the same n
 ### Registering it
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 
 const chart = new Vela('#chart', { symbol: 'BTCUSDT', timeframe: '1h' });
 chart.data.registerProvider('binance', new MyBinanceProvider());

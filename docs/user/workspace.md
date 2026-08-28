@@ -1,6 +1,6 @@
 # The workspace (multi-chart)
 
-`vela/workspace` is the multi-chart shell: a grid of full Vela charts behind **one
+`@luxalgo/vela/workspace` is the multi-chart shell: a grid of full Vela™ charts behind **one
 shared data feed**, wrapped in **one shared chrome** — topbar (symbol / timeframe /
 style / **layout** dropdowns, indicator picker, alerts), one drawing toolbar, object
 tree, data window, bottom bar, one keyboard map — that always **reflects and acts on the
@@ -8,9 +8,9 @@ ACTIVE cell**. Cells are switched in place (`setMarket` under the hood), so indi
 drawings, and your subscriptions survive every symbol/timeframe change.
 
 ```ts
-import { VelaWorkspace } from 'vela/workspace';
-import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine — see ./scripting-engines.md
-import { BinanceProvider } from 'vela/providers/binance';
+import { VelaWorkspace } from '@luxalgo/vela/workspace';
+import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela™ ships no engine — see ./scripting-engines.md
+import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {
     layout: '4', // '1' | '2h' | '2v' | '4' | '8' | picker ids ('g3x2') | a registerLayout() id
@@ -112,7 +112,7 @@ layout (`cell:destroyed`). Host code that tracks cells should **follow
 `cell:created`/`cell:destroyed`** rather than snapshot `ws.cells()` once: a later
 `setLayout` (or a restored document) mints cells that a one-time snapshot never sees.
 
-Layouts live in a registry (`registerLayout` from `vela/workspace`), and the topbar's
+Layouts live in a registry (`registerLayout` from `@luxalgo/vela/workspace`), and the topbar's
 **layout dropdown** composes them on a 4×4 grid canvas: hover previews the full
 *columns × rows* rectangle from the top-left (the table-insert idiom); a click
 applies it immediately. Rectangles matching a classic preset (`1`, `2h`, `2v`, `4`,
@@ -120,7 +120,7 @@ applies it immediately. Rectangles matching a classic preset (`1`, `2h`, `2v`, `
 2 columns) that resolves without registration (persisted picks restore across boots).
 Plugin layouts the canvas cannot express (bespoke `areas`) list as labeled rows under
 the canvas, so `registerLayout` contributions keep appearing automatically. In code,
-the same composition is `layoutForGrid(rows, cols)` (exported from `vela/workspace`),
+the same composition is `layoutForGrid(rows, cols)` (exported from `@luxalgo/vela/workspace`),
 handed to `ws.setLayout(...)`.
 
 Splitters between cells resize the grid tracks (double-click a divider for an even
@@ -270,7 +270,7 @@ ones late-apply when they resolve). Writes are debounced ~500ms and flushed on
 **The default adapter is localStorage** — the same default as the widget, so
 `persist: true` survives reloads out of the box. An in-memory, session-lived adapter
 stays available for state that must NOT outlive the page
-(`import { memoryStorageAdapter } from 'vela/workspace'`). Any backend fits through
+(`import { memoryStorageAdapter } from '@luxalgo/vela/workspace'`). Any backend fits through
 this interface (one contract for both shells):
 
 ```ts
@@ -285,7 +285,7 @@ interface VelaStorage {
 Example — a REST-backed store (per-user server-side workspaces):
 
 ```ts
-import { VelaWorkspace, type VelaStorage } from 'vela/workspace';
+import { VelaWorkspace, type VelaStorage } from '@luxalgo/vela/workspace';
 
 const restStorage: VelaStorage = {
     async get(key) {
@@ -352,7 +352,7 @@ silently reorder them).
 | `maxWebglCells` | `8` | Above this many cells, every cell uses canvas2d (uniform look inside the browser's WebGL budget; `glow` unavailable there). |
 | `alertCap` | `50` | Alerts the topbar bell keeps (oldest drop beyond it). |
 
-Contributed actions/attachments (`vela/plugin`) work unchanged — `ctx.chart` resolves
+Contributed actions/attachments (`@luxalgo/vela/plugin`) work unchanged — `ctx.chart` resolves
 to the ACTIVE cell's chart; grid-aware plugins additionally get `ctx.cells`,
 `ctx.activeCellId`, and `ctx.setActiveCell(id)`.
 
@@ -463,7 +463,7 @@ option is pure opt-in, and a shell without it behaves exactly as before.
 new VelaWorkspace('#chart', {
     topbar: {
         // right undeclared ⇒ default right side (actions, alerts, panels, screenshot)
-        left: ['symbol', 'timeframes', 'style', 'vela-pro.indicator-menu.open', 'undo-redo'],
+        left: ['symbol', 'timeframes', 'style', 'my-plugin.indicator-menu.open', 'undo-redo'],
     },
 });
 ```
@@ -488,7 +488,7 @@ The rules that make it predictable:
 
 - **An explicit list is that side's complete contract.** Ids not listed do not render
   there — including contributed actions, when the side has no `'actions'` slot. It also
-  **freezes** the side: chrome a future Vela release adds will not appear for a curating
+  **freezes** the side: chrome a future Vela™ release adds will not appear for a curating
   host (the deliberate trade-off of describing what IS there).
 - **Hiding an entry removes its other entry points too**: the mobile counterpart (the
   more-drawer's undo/redo/screenshot buttons, alerts and panel rows, the mobile-bar
@@ -569,7 +569,7 @@ Three levels, shallow to deep:
    [`registerWidgetAction`](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction);
    the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `Popover`, `Switch`,
    `Select`, `NumberInput`, `TextField`, `ColorField` / `buildColorPicker`,
-   `KeymapManager`) are exported from `vela/ui` for building your own panels against
+   `KeymapManager`) are exported from `@luxalgo/vela/ui` for building your own panels against
    the headless core. Form controls share `md` (settings dialogs: 34px fields, hover
    steppers, chip colors) and a compact `sm` size so a host panel can match either
    surface.
