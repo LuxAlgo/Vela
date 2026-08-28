@@ -2,7 +2,7 @@
 
 <div align="center">
 
-  <h1>Vela</h1>
+  <img src=".github/banner.png" alt="Vela™ — fast, extensible financial charts for the web" width="100%">
 
   <p><strong>Fast, extensible financial charts for the web.</strong><br>
   Headless core · native WebGL2 renderer · batteries-included workspace · plugin SDK</p>
@@ -24,7 +24,7 @@
 
 <!-- markdownlint-enable no-inline-html -->
 
-Vela renders interactive financial charts with its own native renderer (WebGL2, with a
+Vela™ renders interactive financial charts with its own native renderer (WebGL2, with a
 canvas2d fallback) and keeps the chart itself headless: drive it entirely from code, or
 drop in the workspace for a complete chart app in one call. Every layer (data providers,
 scripting engines, renderers) plugs in behind a public port and can be swapped without
@@ -95,11 +95,11 @@ providers, to `window.Vela`.
 
 ## Indicators
 
-Vela runs indicator scripts through pluggable engines and **ships none**. Install the
+Vela™ runs indicator scripts through pluggable engines and **ships none**. Install the
 addon for the language you want, or write one against the public `ScriptingEngine` port.
 Pine Script lives in [`@luxalgo/vela-pinets`](https://github.com/LuxAlgo/Vela-pinets)
 (`npm i @luxalgo/vela-pinets pinets`), which is **AGPL-3.0** because the PineTS runtime it
-executes is. Vela itself stays Apache-2.0 and carries no Pine code:
+executes is. Vela™ itself stays Apache-2.0 and carries no Pine code:
 
 ```ts
 import { PineEngine } from '@luxalgo/vela-pinets';
@@ -171,16 +171,16 @@ npm run build        # tsup → dist/
 
 ## License and attribution
 
-Vela is licensed under the **Apache License, Version 2.0** (see [LICENSE](LICENSE)).
+Vela™ is licensed under the **Apache License, Version 2.0** (see [LICENSE](LICENSE)).
 The [NOTICE](NOTICE) file adds an **attribution requirement**, and redistributions must
 include it per Apache-2.0 §4(d):
 
-- Every chart renders a small **Vela attribution watermark** — the project logomark,
+- Every chart renders a small **Vela™ attribution watermark** — the project logomark,
   linking to the [project page][homepage] — enabled by default. You may restyle or
   reposition it to fit your design.
 - You may turn the watermark off (`chart.renderer.set('attribution', false)`) **only if**
   an equivalent visible attribution is shown elsewhere on the same page or screen, where
-  your users can see it: the name "Vela" linking to the project page.
+  your users can see it: the name "Vela™" linking to the project page.
 - Removing, hiding, or obscuring the attribution without providing that equivalent
   notice is not permitted.
 
