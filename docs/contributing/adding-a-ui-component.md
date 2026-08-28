@@ -26,7 +26,7 @@ components/<name>/
 
 ## 1 — controller.ts (Zag overlay)
 
-Wrap the machine and map Vela-level options to machine props. Export an explicit
+Wrap the machine and map Vela™-level options to machine props. Export an explicit
 interface for the return type (TypeScript can't name Zag's inferred types portably):
 
 ```ts

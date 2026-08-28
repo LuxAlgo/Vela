@@ -1,6 +1,6 @@
 # Contributor Workflow
 
-This page describes how to make a change in Vela and how to know it is finished. Start from [setup.md](./setup.md) if you have not built the project yet.
+This page describes how to make a change in Vela™ and how to know it is finished. Start from [setup.md](./setup.md) if you have not built the project yet.
 
 ## The quality gate is the definition of done
 
@@ -39,9 +39,9 @@ These rules are enforced by lint as an import ACL with named exception buckets. 
 `npm run playground` serves `playground/` with vite on `http://localhost:5190` (no build step;
 changes hot-reload on save). The index page links the two surfaces:
 
-- **`/widget.html`** (`playground/widget.ts`) — mounts the **Vela widget** straight from `src/`.
+- **`/widget.html`** (`playground/widget.ts`) — mounts the **Vela™ widget** straight from `src/`.
   It registers the Binance provider (public API, no key, no server) and the page's own
-  `demo-engine.ts` — a tiny `ScriptingEngine` implementation, since Vela bundles none — with a
+  `demo-engine.ts` — a tiny `ScriptingEngine` implementation, since Vela™ bundles none — with a
   starter indicator manifest and a "Code" topbar entry that runs a script on demand. Use
   `window.widget` from the browser console to poke at the live instance.
 - **`/workspace.html`** (`playground/workspace.ts`) — mounts the multi-chart **VelaWorkspace**
@@ -49,7 +49,7 @@ changes hot-reload on save). The index page links the two surfaces:
 
 ## Where to make a change, by layer
 
-Vela is a **core** plus three swappable **layers**, each reached through a single narrow **port**: **data providers** (`MarketDataFeed`), **scripting engines** (`ScriptingEngine`), and **renderers** (`IChartRenderer`). The only thing that crosses a port is the **neutral model**; no backend-specific type ever does. For how the core and the three layers fit together, see the [architecture overview](../architecture/overview.md).
+Vela™ is a **core** plus three swappable **layers**, each reached through a single narrow **port**: **data providers** (`MarketDataFeed`), **scripting engines** (`ScriptingEngine`), and **renderers** (`IChartRenderer`). The only thing that crosses a port is the **neutral model**; no backend-specific type ever does. For how the core and the three layers fit together, see the [architecture overview](../architecture/overview.md).
 
 The shape of almost every change is the same: **implement a port, then register or inject the implementation.** Only the composition root wires the defaults.
 

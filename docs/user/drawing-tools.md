@@ -1,6 +1,6 @@
 # Drawing tools
 
-Vela ships an interactive **drawing-tools** layer: a docked toolbar and ~66 on-chart
+Vela™ ships an interactive **drawing-tools** layer: a docked toolbar and ~66 on-chart
 tools — trend lines, channels, Fibonacci, harmonic patterns, annotations, and more — that a user
 draws, edits, and keeps on the chart. Drawings are anchored in **data space** (time + price), so
 they stay locked to the bars across pan, zoom, timeframe changes, and reload — the same durability

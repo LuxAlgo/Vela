@@ -1,6 +1,6 @@
 # Installation
 
-Vela is published on npm as [`@luxalgo/vela`](https://www.npmjs.com/package/@luxalgo/vela).
+Vela™ is published on npm as [`@luxalgo/vela`](https://www.npmjs.com/package/@luxalgo/vela).
 
 ## Install from npm
 
@@ -38,7 +38,7 @@ resolve `@luxalgo/vela` to that same global, so the library is never loaded twic
 
 ## What you install vs. what you supply
 
-Vela is built around swappable **layers**. The core is small; you opt into the parts you need.
+Vela™ is built around swappable **layers**. The core is small; you opt into the parts you need.
 
 | Piece | Status | Notes |
 |---|---|---|

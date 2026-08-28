@@ -1,14 +1,14 @@
 # Adding a Scripting Engine
 
-Scripting engines are one of Vela's three swappable **layers** (alongside [data providers](./adding-a-data-provider.md) and [renderers](./adding-a-renderer.md)). This page explains what an engine is, the small surface you implement, and the rules the core uses to drive it. It is conceptual — for the exact field shapes, read the `ScriptingEngine` port (exported from the root entry and from `@luxalgo/vela/plugin`).
+Scripting engines are one of Vela™'s three swappable **layers** (alongside [data providers](./adding-a-data-provider.md) and [renderers](./adding-a-renderer.md)). This page explains what an engine is, the small surface you implement, and the rules the core uses to drive it. It is conceptual — for the exact field shapes, read the `ScriptingEngine` port (exported from the root entry and from `@luxalgo/vela/plugin`).
 
-Everything an engine builds against ships on the **`@luxalgo/vela/plugin`** subpath — the port types, the model vocabulary, the id helper, the semantic palette — which is why **no engine lives in this repo**: Vela bundles none, and every one is a separate package or host module. See [*Building an engine as its own package*](#building-an-engine-as-its-own-package) below; to *consume* an existing engine rather than write one, see [Scripting engines](../user/scripting-engines.md).
+Everything an engine builds against ships on the **`@luxalgo/vela/plugin`** subpath — the port types, the model vocabulary, the id helper, the semantic palette — which is why **no engine lives in this repo**: Vela™ bundles none, and every one is a separate package or host module. See [*Building an engine as its own package*](#building-an-engine-as-its-own-package) below; to *consume* an existing engine rather than write one, see [Scripting engines](../user/scripting-engines.md).
 
 > The engine port is stable in shape but still evolving.
 
 ## What an engine is
 
-An engine turns **source in some language** into a **neutral drawable model** — the same indicator model every renderer knows how to paint. **Vela bundles none**: every engine is a separate package or host module implementing this port. `@luxalgo/vela-pinets` (Pine Script, in-process and Web-Worker forms) is the reference implementation; `playground/demo-engine.ts` in this repo is a ~300-line one you can read in a sitting.
+An engine turns **source in some language** into a **neutral drawable model** — the same indicator model every renderer knows how to paint. **Vela™ bundles none**: every engine is a separate package or host module implementing this port. `@luxalgo/vela-pinets` (Pine Script, in-process and Web-Worker forms) is the reference implementation; `playground/demo-engine.ts` in this repo is a ~300-line one you can read in a sitting.
 
 The core never learns the language, the runtime, or how the source was evaluated. It hands the engine source text plus market context and gets back a stream of neutral models. That opacity is the whole point: it is what lets one chart run one language today and another tomorrow without touching the core.
 
@@ -186,7 +186,7 @@ From the engine runtime's point of view, calling `fetchSeries` looks identical i
 An engine **does not live in this repo** — the whole authoring surface is public, and the
 Pine engines ship as a separate package built exactly this way (`@luxalgo/vela-pinets`,
 the reference implementation; its own repo also because of licensing — its runtime
-dependency is AGPL while Vela is Apache-2.0).
+dependency is AGPL while Vela™ is Apache-2.0).
 
 Everything you need comes from **`@luxalgo/vela/plugin`**:
 
@@ -197,16 +197,16 @@ Everything you need comes from **`@luxalgo/vela/plugin`**:
   specs your `onModel` payloads are made of, plus `InputSchema` for `prepare`;
 - **`stableSeriesId`** — the identity contract above (a *value* import, and the reason
   to depend on `@luxalgo/vela/plugin` rather than retyping shapes);
-- the **semantic palette** — Vela's fixed meaning-colors (`ACCENT`, `BULLISH`, …), so
+- the **semantic palette** — Vela™'s fixed meaning-colors (`ACCENT`, `BULLISH`, …), so
   your default plot colors match what the rest of the chart means by them.
 
 Ground rules for the package itself:
 
-- **Your language runtime is your dependency, not Vela's.** Declare it as your own
-  (peer) dependency; Vela's core never imports it and never learns it exists.
-- **Import Vela values from subpaths** (`@luxalgo/vela/plugin`); type-only imports are erased at
+- **Your language runtime is your dependency, not Vela™'s.** Declare it as your own
+  (peer) dependency; Vela™'s core never imports it and never learns it exists.
+- **Import Vela™ values from subpaths** (`@luxalgo/vela/plugin`); type-only imports are erased at
   build time and may name any entry. Keep `@luxalgo/vela` itself a peer/external in
-  your build — never bundle a second Vela, which would duplicate the SDK registries.
+  your build — never bundle a second Vela™, which would duplicate the SDK registries.
 - **Transport is your concern, not the port's.** If you offer a worker form, the
   inlining/spawning machinery is your build's business; the port sees the same
   `ScriptingEngine` either way.

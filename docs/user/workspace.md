@@ -1,6 +1,6 @@
 # The workspace (multi-chart)
 
-`@luxalgo/vela/workspace` is the multi-chart shell: a grid of full Vela charts behind **one
+`@luxalgo/vela/workspace` is the multi-chart shell: a grid of full Vela™ charts behind **one
 shared data feed**, wrapped in **one shared chrome** — topbar (symbol / timeframe /
 style / **layout** dropdowns, indicator picker, alerts), one drawing toolbar, object
 tree, data window, bottom bar, one keyboard map — that always **reflects and acts on the
@@ -9,7 +9,7 @@ drawings, and your subscriptions survive every symbol/timeframe change.
 
 ```ts
 import { VelaWorkspace } from '@luxalgo/vela/workspace';
-import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela ships no engine — see ./scripting-engines.md
+import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // Vela™ ships no engine — see ./scripting-engines.md
 import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 
 const ws = new VelaWorkspace('#app', {
@@ -488,7 +488,7 @@ The rules that make it predictable:
 
 - **An explicit list is that side's complete contract.** Ids not listed do not render
   there — including contributed actions, when the side has no `'actions'` slot. It also
-  **freezes** the side: chrome a future Vela release adds will not appear for a curating
+  **freezes** the side: chrome a future Vela™ release adds will not appear for a curating
   host (the deliberate trade-off of describing what IS there).
 - **Hiding an entry removes its other entry points too**: the mobile counterpart (the
   more-drawer's undo/redo/screenshot buttons, alerts and panel rows, the mobile-bar

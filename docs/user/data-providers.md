@@ -6,7 +6,7 @@ No provider is bundled. A symbol-backed chart fetches nothing until you register
 
 ```js
 import { Vela } from '@luxalgo/vela';
-import { PineEngine } from '@luxalgo/vela-pinets'; // the Pine Script addon — Vela ships no engine
+import { PineEngine } from '@luxalgo/vela-pinets'; // the Pine Script addon — Vela™ ships no engine
 import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 
 const chart = new Vela('#chart', { symbol: 'BTCUSDT', timeframe: '1h' })
@@ -31,7 +31,7 @@ A symbol can name its provider with a prefix, or stay bare:
 | `SYMBOL.EXT` | `BTCUSDT.P` | resolved like `SYMBOL`; the `.EXT` is passed through to the provider |
 | `PROVIDER:SYMBOL.EXT` | `BINANCE:BTCUSDT.P` | the named provider, ticker `BTCUSDT.P` |
 
-The `.EXT` suffix is **opaque to Vela** — the provider owns its meaning (Binance reads `.P` as a perpetual future). Vela only uses it for the cache key and display.
+The `.EXT` suffix is **opaque to Vela™** — the provider owns its meaning (Binance reads `.P` as a perpetual future). Vela™ only uses it for the cache key and display.
 
 ## Listing prefixes (`NASDAQ:AAPL`)
 
@@ -45,7 +45,7 @@ Descriptors may also form **groups** (futures roots): a group row (`ticker: 'ES'
 
 ## How a bare symbol resolves
 
-When you don't name a provider, Vela picks one:
+When you don't name a provider, Vela™ picks one:
 
 1. An explicit prefix always wins: a registered **provider name** immediately, else a declared **listing prefix** once the provider's index is built.
 2. A bare symbol routes to the **first provider, in registration order, whose index contains it.** Each provider is indexed (via its symbol list) when it registers.

@@ -1,4 +1,4 @@
-# Vela plugin SDK
+# Vela™ plugin SDK
 
 Everything importable from **`@luxalgo/vela/plugin`**. Three extension seams: **chart types**
 (data + transform side), **renderer layers** (paint side), and **native indicators**
@@ -474,7 +474,7 @@ The contract, in five rules:
   cell context's `addIndicator`/`addNativeIndicator` are muted on their own too — so
   an **async** restore (fetch a source, then add) also stays out of the undo/redo
   timeline. It is only called for keys the document actually carries.
-- **The payload is opaque to Vela and untrusted by you.** The codec round-trips `ext`
+- **The payload is opaque to Vela™ and untrusted by you.** The codec round-trips `ext`
   entries verbatim — including keys whose plugin is not loaded this session, so a
   plugin-less reload never loses your state — and validates nothing inside them:
   your `restore` must.
@@ -612,7 +612,7 @@ registerSidePanel({
 
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 
-Vela bundles no engine — you install one (`@luxalgo/vela-pinets` for Pine Script) or write
+Vela™ bundles no engine — you install one (`@luxalgo/vela-pinets` for Pine Script) or write
 one against the port. Engines are **per-chart instances**
 (`chart.registerEngine('pine', new PineEngine())`, or the widget's
 `engines: { pine: () => … }` factories). Two things ship here:

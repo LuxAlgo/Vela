@@ -1,6 +1,6 @@
 # Boundaries and Invariants
 
-Vela's swappability is not a convention — it is enforced. This page lists the non-negotiable invariants that keep the core independent of any backend, the rules that govern the engine registry and capability declarations, and the mechanical enforcement that catches violations before they ship.
+Vela™'s swappability is not a convention — it is enforced. This page lists the non-negotiable invariants that keep the core independent of any backend, the rules that govern the engine registry and capability declarations, and the mechanical enforcement that catches violations before they ship.
 
 For the shape these rules protect see [overview.md](overview.md); for the contracts they constrain see [modules.md](modules.md).
 
@@ -10,7 +10,7 @@ Three invariants make the core backend-agnostic:
 
 - **No backend-specific type crosses a port.** Only the neutral model travels across a port boundary. A backend's internal types stay inside that backend. This opacity is what lets any layer be replaced.
 - **The core imports almost no concrete backend.** The core depends only on the ports and the neutral model, with one deliberate, narrow exception: `DataControl` imports the concrete `MultiProviderFeed` and does an `instanceof` check on it to expose registry-only convenience methods (`registerProvider`, `symbols`, `capabilities`) when the default feed is in use. This exception is not lint-enforced. Outside of it, the core never names a renderer, an engine, or a feed implementation.
-- **Only the composition root imports backends.** The Vela class and the package barrels — the main entry point and the browser bundle (which re-exports the optional renderer and the built-in providers) — are the only places that import concrete backends and wire the defaults. Everything else stays on the abstract side of the ports.
+- **Only the composition root imports backends.** The Vela™ class and the package barrels — the main entry point and the browser bundle (which re-exports the optional renderer and the built-in providers) — are the only places that import concrete backends and wire the defaults. Everything else stays on the abstract side of the ports.
 
 Together these mean: to understand what the core does, you never have to read a backend; to swap a backend, you never have to touch the core.
 
@@ -18,7 +18,7 @@ Together these mean: to understand what the core does, you never have to read a 
 
 These boundaries are enforced by lint, not by discipline. An **import access-control list** governs which parts of the codebase may import which dependencies:
 
-- a scripting-language toolchain may not be imported **anywhere** — Vela ships no engine, so no part of this codebase links one (the ACL bans `pinets` outright; the Pine engines live in the separate `@luxalgo/vela-pinets` package, which is AGPL-3.0 and must not pull that license onto this Apache-2.0 one);
+- a scripting-language toolchain may not be imported **anywhere** — Vela™ ships no engine, so no part of this codebase links one (the ACL bans `pinets` outright; the Pine engines live in the separate `@luxalgo/vela-pinets` package, which is AGPL-3.0 and must not pull that license onto this Apache-2.0 one);
 - a custom renderer's charting dependency belongs in **its own renderer folder** (never in core);
 - the renderer must **never** import a scripting toolchain either.
 

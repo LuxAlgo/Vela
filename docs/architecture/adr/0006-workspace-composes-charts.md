@@ -4,7 +4,7 @@
 
 ## Context
 
-Vela was single-chart: `VelaWidget` wraps ONE core `Vela` instance in a full chrome
+Vela™ was single-chart: `VelaWidget` wraps ONE core `Vela` instance in a full chrome
 (topbar, pickers, drawing toolbar, object tree, bottombar, keymap). Multi-chart
 layouts (2–16 cells, presets + splitters) had to arrive with a hard product
 constraint: **everything outside the charts stays shared** — one topbar, one symbol

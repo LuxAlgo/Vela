@@ -1,6 +1,6 @@
 # Adding a Data Provider
 
-This page is for engineers adding a new **market-data source** to Vela. There are two extension points, from simplest to most powerful:
+This page is for engineers adding a new **market-data source** to Vela™. There are two extension points, from simplest to most powerful:
 
 1. **A `DataProvider`** — implement one method, register it with `chart.data.registerProvider(name, provider)`, and the chart's provider registry routes symbols to it. This is what you want almost always.
 2. **A `MarketDataFeed`** — replace the *entire* data layer (registry, caching, routing) with your own, injected via `deps.dataFeed`. Advanced; only when you need full control.

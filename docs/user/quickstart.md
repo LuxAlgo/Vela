@@ -1,6 +1,6 @@
 # Quickstart
 
-Vela is a modern, layer-based charting library. This page gets a candlestick chart on screen, then adds a scripting engine and an indicator.
+Vela™ is a modern, layer-based charting library. This page gets a candlestick chart on screen, then adds a scripting engine and an indicator.
 
 The fastest path uses **offline data** — an array of bars you already have. No network call, no API key, nothing to configure.
 
@@ -16,7 +16,7 @@ The fastest path uses **offline data** — an array of bars you already have. No
 
 ## Step 1 — Create a chart
 
-Give Vela a container (an element or a CSS selector) and some options. Pass your own bars via `data` to stay fully offline.
+Give Vela™ a container (an element or a CSS selector) and some options. Pass your own bars via `data` to stay fully offline.
 
 ```js
 import { Vela } from '@luxalgo/vela';
@@ -38,7 +38,7 @@ That is the whole first step. Candles paint immediately — **no engine required
 
 ## Step 2 — Register a scripting engine
 
-Indicators run on a **scripting engine**, and **Vela ships none**. Install the one you need and register it under its language id. Pine Script lives in the `@luxalgo/vela-pinets` addon:
+Indicators run on a **scripting engine**, and **Vela™ ships none**. Install the one you need and register it under its language id. Pine Script lives in the `@luxalgo/vela-pinets` addon:
 
 ```bash
 npm install @luxalgo/vela-pinets pinets
@@ -57,7 +57,7 @@ const chart = new Vela('#chart', { data: myBars, timeframe: '1h' })
   .registerEngine('pine', new PineEngine());
 ```
 
-This is deliberate: the bare chart stays lightweight, you only pull in an engine when you actually script — and Vela's own license stays clean of whatever a runtime brings with it. Calling `addIndicator` with no engine for that language throws an actionable error.
+This is deliberate: the bare chart stays lightweight, you only pull in an engine when you actually script — and Vela™'s own license stays clean of whatever a runtime brings with it. Calling `addIndicator` with no engine for that language throws an actionable error.
 
 > The addon also exports `PineWorkerEngine`, the same Pine semantics off the main thread. See [Scripting engines](./scripting-engines.md) for both, the licensing note, and how to write an engine of your own.
 

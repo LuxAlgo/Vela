@@ -4,7 +4,7 @@
 
 ## Context
 
-Vela is built as a robust core surrounded by three independently swappable layers — data providers, scripting engines, and renderers — each reached through a single narrow **port**. For those layers to be genuinely interchangeable, the core cannot speak any layer's private dialect. If a renderer's geometry types, or a scripting engine's internal output shape, or a provider's payload format leaked across a port, the core would silently become coupled to that one backend, and "swappable" would be a fiction.
+Vela™ is built as a robust core surrounded by three independently swappable layers — data providers, scripting engines, and renderers — each reached through a single narrow **port**. For those layers to be genuinely interchangeable, the core cannot speak any layer's private dialect. If a renderer's geometry types, or a scripting engine's internal output shape, or a provider's payload format leaked across a port, the core would silently become coupled to that one backend, and "swappable" would be a fiction.
 
 We needed one shared vocabulary that every layer reads and writes, and that hides each backend's internals from everything on the other side of the boundary.
 
@@ -14,7 +14,7 @@ Define a single **neutral model** as the only thing that crosses a port. It desc
 
 Time in the neutral model is canonical **epoch milliseconds**; each renderer converts to its own time representation at its own boundary. Element identity in the model is **content-addressed and stable** across re-runs of identical source, so a live tick patches the exact existing series or drawing rather than recreating it.
 
-Every port is defined in terms of this model: providers emit neutral bars, engines emit a neutral (unrouted) indicator model, and renderers consume neutral models and return opaque handles. The renderers themselves are swappable defaults: the native renderer is the default (WebGL2 with a canvas2d fallback), and a secondary/parity renderer adapter is available as an alternative option — both consume the same neutral model, so neither is privileged and Vela is not built on top of either.
+Every port is defined in terms of this model: providers emit neutral bars, engines emit a neutral (unrouted) indicator model, and renderers consume neutral models and return opaque handles. The renderers themselves are swappable defaults: the native renderer is the default (WebGL2 with a canvas2d fallback), and a secondary/parity renderer adapter is available as an alternative option — both consume the same neutral model, so neither is privileged and Vela™ is not built on top of either.
 
 ## Consequences / Trade-offs
 

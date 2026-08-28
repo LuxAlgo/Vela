@@ -1,6 +1,6 @@
 # Testing
 
-Vela is tested in **two tiers**. They cover different things and run in different places; both matter.
+Vela™ is tested in **two tiers**. They cover different things and run in different places; both matter.
 
 - **Tier 1 — Node unit tests** (vitest, fast): the bulk of the suite.
 - **Tier 2 — browser smoke test** (playground, end-to-end): real indicators through a real renderer.

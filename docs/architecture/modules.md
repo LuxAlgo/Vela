@@ -1,6 +1,6 @@
 # Modules and Composition
 
-Vela's structure is defined by three **ports** and one **composition root**. The ports are *contracts*, not files — they describe what a layer must be able to do, independent of how (or where) it does it. This page describes each contract conceptually, the default backend that satisfies it, and how the pieces bind together.
+Vela™'s structure is defined by three **ports** and one **composition root**. The ports are *contracts*, not files — they describe what a layer must be able to do, independent of how (or where) it does it. This page describes each contract conceptually, the default backend that satisfies it, and how the pieces bind together.
 
 For the big picture see [overview.md](overview.md); for how a request flows through these pieces see [data-flow.md](data-flow.md).
 
@@ -43,7 +43,7 @@ The renderer also owns presentation chrome (legend, settings dialog, table dashb
 
 ## The composition root
 
-The **composition root** is the single place that knows concrete defaults. It is the Vela class plus the package entry point, and it is the *only* code allowed to import concrete backends and wire them together. Everything else depends on ports.
+The **composition root** is the single place that knows concrete defaults. It is the Vela™ class plus the package entry point, and it is the *only* code allowed to import concrete backends and wire them together. Everything else depends on ports.
 
 This is what keeps the core clean: the core never names a backend, so the knowledge of "which renderer, which feed, which engines by default" lives in exactly one place. Swapping a default, or adding a new backend, is a deliberate change to the composition root and its import allowlist — never an incidental dependency that leaks into the core.
 
@@ -52,7 +52,7 @@ This is what keeps the core clean: the core never names a backend, so the knowle
 Each layer ships with a **swappable default** — a working implementation of its port, chosen by the composition root unless you override it.
 
 - **Data feed** → a **provider-backed feed**, wrapped in an in-memory **caching decorator**. You get cached history and live ticks out of the box.
-- **Scripting engine** → **none**. This is the one layer with no bundled default: Vela defines the port and ships no runtime, so the package carries no language toolchain and no third-party license with it. Engines arrive as separate packages — Pine Script in [`@luxalgo/vela-pinets`](../user/scripting-engines.md), which exports an in-process form and a Web-Worker form (the worker holds its persistent streaming session inside the worker: a live tick ships one bar across the message boundary and the script re-executes incrementally) — or as host code written against the port.
+- **Scripting engine** → **none**. This is the one layer with no bundled default: Vela™ defines the port and ships no runtime, so the package carries no language toolchain and no third-party license with it. Engines arrive as separate packages — Pine Script in [`@luxalgo/vela-pinets`](../user/scripting-engines.md), which exports an in-process form and a Web-Worker form (the worker holds its persistent streaming session inside the worker: a live tick ships one bar across the message boundary and the script re-executes incrementally) — or as host code written against the port.
 - **Renderer** → the **native renderer** (WebGL2 with a canvas2d fallback), the only bundled backend; the `IChartRenderer` port accepts custom classes.
 
 ## The caching decorator

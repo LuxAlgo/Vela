@@ -1,12 +1,12 @@
 # Examples
 
-Two runnable examples ship with Vela, plus an interactive playground. **Both examples use offline OHLCV** — no network, no API key — so they run anywhere out of the box.
+Two runnable examples ship with Vela™, plus an interactive playground. **Both examples use offline OHLCV** — no network, no API key — so they run anywhere out of the box.
 
 > These snippets import from the npm package `@luxalgo/vela` (see [installation.md](./installation.md)).
 
 ## Orientation snippet
 
-The shape of every example is the same: create a chart over offline data, register a scripting engine, add an indicator. Vela ships no engine — these examples use the Pine addon (`npm i @luxalgo/vela-pinets pinets`; see [Scripting engines](./scripting-engines.md)).
+The shape of every example is the same: create a chart over offline data, register a scripting engine, add an indicator. Vela™ ships no engine — these examples use the Pine addon (`npm i @luxalgo/vela-pinets pinets`; see [Scripting engines](./scripting-engines.md)).
 
 ```js
 import { Vela } from '@luxalgo/vela';

@@ -47,6 +47,9 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Dropdown menus no longer fly in from the top of the page.** Opening a
+  timeframe, style, or other menu now fades in at the trigger instead of
+  sliding down from off-screen.
 - **The Cursor button leaves the ruler and eraser.** Clicking Cursor on the drawing
   toolbar now returns to the regular pointer even while the measure ruler or the
   eraser is active; before, those modes stayed on and the click appeared to do

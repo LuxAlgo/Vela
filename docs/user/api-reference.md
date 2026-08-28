@@ -1,10 +1,10 @@
 # API Reference
 
-This is a hand-written, conceptual reference for the Vela public surface — what each piece is for and how the pieces bind. A generated type reference (from the source declarations) may be added later; for now this prose is the source of truth.
+This is a hand-written, conceptual reference for the Vela™ public surface — what each piece is for and how the pieces bind. A generated type reference (from the source declarations) may be added later; for now this prose is the source of truth.
 
 ## The mental model
 
-Vela is a small **core** plus three independently swappable **layers** — data providers, scripting engines, and renderers — each reached through a single narrow **port**.
+Vela™ is a small **core** plus three independently swappable **layers** — data providers, scripting engines, and renderers — each reached through a single narrow **port**.
 
 The **neutral model** — bars, series, pane overlays, drawings, inputs, update patches — is the only thing that crosses a port. No backend-specific type ever leaks across. That opacity is what makes each layer swappable. What ships is the native renderer and the provider-backed, cache-wrapped data feed — both plain **swappable defaults**. No scripting engine ships at all: you install one (Pine Script: `@luxalgo/vela-pinets`) or write one against the port — see [Scripting engines](./scripting-engines.md).
 
@@ -28,7 +28,7 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 
 | Method | What it does |
 |---|---|
-| `registerEngine(language, engine)` | Register a scripting engine under a language id so `addIndicator` can run that language. **Vela ships none** — install an addon or write one ([Scripting engines](./scripting-engines.md)). Re-registering a language replaces it (affects future indicators only). Returns the chart for chaining. |
+| `registerEngine(language, engine)` | Register a scripting engine under a language id so `addIndicator` can run that language. **Vela™ ships none** — install an addon or write one ([Scripting engines](./scripting-engines.md)). Re-registering a language replaces it (affects future indicators only). Returns the chart for chaining. |
 | `addIndicator(source, options?)` | Run an indicator script over the chart's market data and render it. Returns an **`IndicatorHandle` synchronously**; values fill in asynchronously. See [options.md](./options.md) for per-indicator options. |
 | `addNativeIndicator(type, options?)` | Add a core-computed (non-scripting) **native indicator** by registered `type`. Returns an `IndicatorHandle` (same lifecycle: legend row, eye/remove, events). **Single-instance per type** — a second call returns the existing handle. The built-in types are `'volume'` (auto-added) and `'vpvr'` (the visible-range volume profile); plugin chart types can register more. `options.inputs` seeds inputs. Native renderer only; an unregistered type returns a fail-soft handle that never mounts. |
 | `runScript(source, options?)` | Execute a script and resolve its **first computed run** — the data-out door for editors, consoles and dashboards. Resolves `{ ok: true, run }` with the [`ScriptRun`](#capturing-what-a-script-computes) itself, plus `onUpdate(cb)` to follow later runs and `remove()` to take it off the chart; `{ ok: false, error }` on a compile/runtime failure, which removes the script again (no dead legend row). Never rejects. Prefer it over `runIndicator` — same injection semantics, but it hands you the data instead of a handle to go fetch from. |
