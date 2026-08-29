@@ -12,7 +12,7 @@ export {
     type TopbarComposition,
     type ResolvedTopbarComposition,
 } from './topbar-composition';
-export { Statusline } from './statusline';
+export { Statusline, type StatuslineMenuHooks, type StatuslinePart } from './statusline';
 export { Watermark } from './watermark';
 export { Bottombar, RANGE_PRESETS, type BottombarOptions, type RangePreset } from './bottombar';
 export { SymbolPicker, filterSymbols, type SymbolPickerOptions } from './symbol-picker';
