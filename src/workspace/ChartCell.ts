@@ -646,7 +646,7 @@ export class ChartCell {
                     kind: 'select' as const,
                     label: 'Bars to fetch',
                     id: 'bars',
-                    options: ['500', '1000', '2000', '5000', '10000', '20000', '50000', '80000', '100000'],
+                    options: ['500', '1000', '2000', '5000', '10000', '20000', '50000', '60000', '80000', '100000'],
                     get: () => String(this.state.bars ?? 1000),
                     set: (v: string) => {
                         this.state.bars = Number(v);
