@@ -69,6 +69,15 @@ const SINGLE_LOAD_BARS = 5_000;
  * stalls silently and lands as a single main-thread-freezing parse).
  */
 const CHUNK_BARS = 10_000;
+/**
+ * A progressive source's FIRST paint waits until the snapshot carries at least this many
+ * bars (or the full ask, whichever is smaller): the first paint is also the frame the
+ * renderer sizes the view against, and a cold source's confirmed head can be a handful
+ * of bars — framing onto those shows a few giant candles that later snapshots (painted
+ * view-preserved) never fix. The FINAL answer always paints, whatever its depth: a
+ * genesis-era symbol may simply have fewer bars than this.
+ */
+const FIRST_PAINT_BARS = 100;
 
 /**
  * A live bar more than this many intervals ahead of the last one signals MISSED bars (a throttled
@@ -416,6 +425,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             let painted = false;
             const paint = (bars: OHLCV[], final: boolean): void => {
                 if (this.generation !== gen || (!final && bars.length === 0)) return;
+                if (!painted && !final && bars.length < Math.min(requested, FIRST_PAINT_BARS)) return; // hold the framing paint until it can carry the view
+
                 this.setBarSeries(bars, painted ? { preserveView: true } : undefined);
                 if (!painted && bars.length > 0) {
                     painted = true;
@@ -1239,6 +1250,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         record.pendingCause = 'inputs';
         if (record.session) record.session.update(record.inputValues);
         else if (record.native && !record.hidden) record.native.instance.setInputs(record.inputValues);
+        this.events.emit('indicator:inputs', { id });
+    }
+
+    /** IndicatorController: the CURRENT stored input values (defaults merged with edits). */
+    inputValuesOf(id: string): Record<string, InputValue> {
+        return { ...this.registry.get(id)?.inputValues };
+    }
+
+    /** IndicatorController: the CURRENT declaration-prop overrides. */
+    propValuesOf(id: string): Record<string, InputValue> {
+        return { ...this.registry.get(id)?.propValues };
     }
 
     /** IndicatorController: re-run an indicator with merged declaration-prop overrides.
@@ -1254,6 +1276,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (!record.hidden) this.setLoading(record, true);
         record.pendingCause = 'inputs';
         record.session.update(record.inputValues, record.propValues);
+        this.events.emit('indicator:inputs', { id });
     }
 
     /** IndicatorController: tear down an indicator and (if now empty) its pane. */

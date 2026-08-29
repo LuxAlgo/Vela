@@ -87,7 +87,7 @@ If any condition fails, the core uses the static re-run path: it pokes the engin
 3. **Restart consumers** — engine sessions are re-executed over the new bars (their next `ExecutionRequest` carries the new market), native indicators restart with a fresh context, the active chart-type data engine is rebuilt, and the live subscription re-targets.
 4. **Announce** — `market:changed` fires with the previous identity, so hosts can re-key per-symbol state (drawing documents, watchlists).
 
-What deliberately survives: panes and indicator records (legend rows, inputs, pane placement), user drawings, the renderer's cosmetic config, and every event subscription. Old sessions are never poked with the new market's bars — bar/viewport notifications are held during the switch, and the re-execution that follows is what computes over the new data.
+What deliberately survives: panes and indicator records (legend rows, inputs, pane placement), user drawings, the renderer's cosmetic config, the zoom (the view keeps its bar spacing and only re-anchors the newest bars at the right edge — the previous pan pointed at another market's time range), and every event subscription. Old sessions are never poked with the new market's bars — bar/viewport notifications are held during the switch, and the re-execution that follows is what computes over the new data.
 
 ## Causal, stateful execution
 

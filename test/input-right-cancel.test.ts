@@ -97,3 +97,51 @@ describe('right-click drawing cancel', () => {
         expect(h.contextmenu().stopped).toBe(false);
     });
 });
+
+describe('Shift+click measure start forwards the magnet mode', () => {
+    function measureHarness(snap: 'off' | 'weak' | 'strong') {
+        const cs = new CoordinateSystem();
+        cs.setSize(800, 200, 1);
+        cs.setBars([1000, 2000, 3000, 4000, 5000]);
+        cs.setViewport({ barSpacing: 50, rightOffset: 2 });
+        const deps = {
+            getCoords: () => cs,
+            apply: vi.fn(),
+            zoomTo: vi.fn(),
+            fling: vi.fn(),
+            onPointerMove: vi.fn(),
+            onClick: vi.fn(),
+            beginPriceScale: vi.fn(),
+            priceScaleBy: vi.fn(),
+            beginPricePan: () => false,
+            pricePanBy: vi.fn(),
+            resetPriceScale: vi.fn(),
+            dataDblClick: vi.fn(),
+            paneSeparatorAt: () => false,
+            beginPaneResize: vi.fn(),
+            paneResizeBy: vi.fn(),
+            resetPaneSize: vi.fn(),
+            resetView: vi.fn(),
+            drawingsSnapMode: () => snap,
+            drawingsMeasureStart: vi.fn(() => true),
+        } satisfies InputControllerDeps;
+        const ctl = new InputController(deps);
+        const el = fakeElement();
+        ctl.attach(el as unknown as HTMLElement);
+        return { deps, el };
+    }
+
+    it('passes the sticky magnet mode into the measure-start callback', () => {
+        const h = measureHarness('strong');
+        const e = { button: 0, pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 100, timeStamp: 0, shiftKey: true, ctrlKey: false, metaKey: false, preventDefault() {} };
+        h.el.fire('pointerdown', e);
+        expect(h.deps.drawingsMeasureStart).toHaveBeenCalledWith(100, 100, 'strong');
+    });
+
+    it('Ctrl/Cmd on the same press forces strong even when the magnet is off', () => {
+        const h = measureHarness('off');
+        const e = { button: 0, pointerId: 1, pointerType: 'mouse', clientX: 40, clientY: 50, timeStamp: 0, shiftKey: true, ctrlKey: true, metaKey: false, preventDefault() {} };
+        h.el.fire('pointerdown', e);
+        expect(h.deps.drawingsMeasureStart).toHaveBeenCalledWith(40, 50, 'strong');
+    });
+});

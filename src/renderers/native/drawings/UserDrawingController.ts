@@ -350,11 +350,13 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     /** Shift+press on the empty plot: arm the measure ruler AND start it at (x, y) in one
      *  gesture — the equivalent of clicking the toolbar's Measure button, then pressing.
-     *  Returns false when a mode/tool is already active (the normal press path owns it). */
-    beginMeasureAt(x: number, y: number): boolean {
+     *  `snap` is the effective magnet (sticky mode, or Ctrl/Cmd-forced strong). Returns
+     *  false when a mode/tool is already active (the normal press path owns it). */
+    beginMeasureAt(x: number, y: number, snap: SnapMode = 'off'): boolean {
         if (this.measureMode || this.eraserMode || this.activeTool != null) return false;
         this.withModeIntent(() => this.toggleMeasure());
-        this.measure.down(x, y);
+        const g = this.interaction.snapCursor(x, y, snap);
+        this.measure.down(x, y, g.x, g.y);
         this.render();
         return true;
     }
@@ -378,7 +380,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
             return;
         }
         if (this.measureMode) {
-            this.measure.down(x, y);
+            const g = this.interaction.snapCursor(x, y, snap);
+            this.measure.down(x, y, g.x, g.y);
             // 2nd click finishes → disarm (reported as a mode change), keep the ruler shown.
             if (this.measure.isFinished()) this.withModeIntent(() => this.exitMeasure(false));
             this.render();
@@ -393,7 +396,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
             return;
         }
         if (this.measureMode) {
-            this.measure.move(x, y); // click-move-click: the cursor sizes the ruler with no button down
+            const g = this.interaction.snapCursor(x, y, snap);
+            this.measure.move(g.x, g.y); // click-move-click: the cursor sizes the ruler with no button down
             this.render();
             return;
         }
@@ -413,13 +417,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
         }
     }
 
-    pointerUp(x: number, y: number): void {
+    pointerUp(x: number, y: number, snap: SnapMode = 'off'): void {
         if (this.eraserMode) {
             this.erasing = false;
             return;
         }
         if (this.measureMode) {
-            this.measure.up(x, y); // press-drag-release finishes the ruler in one gesture
+            const g = this.interaction.snapCursor(x, y, snap);
+            this.measure.up(x, y, g.x, g.y); // press-drag-release finishes the ruler in one gesture
             if (this.measure.isFinished()) this.withModeIntent(() => this.exitMeasure(false));
             this.render();
             return;
@@ -468,6 +473,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     /** Leave ruler mode. `clearGraphic` keeps a just-finished measurement on screen (false). */
     private exitMeasure(clearGraphic = true): void {
         this.measureMode = false;
+        this.interaction.clearSnapMarker();
         if (clearGraphic) this.measure.clear();
         this.toolbar.setMeasureActive(false);
         this.render();
@@ -643,15 +649,28 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return this.interaction.cursorAt(x, y);
     }
 
-    /** Right-click while placing: cancel the in-progress drawing and revert to the
-     *  pointer — the gesture is an explicit escape, so it disarms even in
-     *  stay-in-drawing-mode (where Escape would leave the tool armed). Returns whether
-     *  the press was consumed; false lets the host's context menu open normally. */
+    /** Right-click: an explicit escape back to the pointer. Cancels an in-progress
+     *  placement or measurement, and also plain-disarms an armed-but-idle drawing
+     *  tool or the eraser — so a right-click ALWAYS reverts to the pointer, even in
+     *  stay-in-drawing-mode (where Escape would leave a drawing tool armed).
+     *  Persistent toggles (magnet, stay-mode, favorites) are untouched. Returns
+     *  whether the press was consumed; false lets the host's context menu open
+     *  normally. */
     cancelPlacement(): boolean {
-        if (!this.interaction.isPlacing()) return false;
-        this.interaction.cancel(); // emits tool-finished → the core disarms (stay-mode/brush excepted)
-        if (this.activeTool != null) this.emit({ kind: 'arm', type: null });
-        return true;
+        if (this.measureMode || this.eraserMode) {
+            this.withModeIntent(() => (this.measureMode ? this.exitMeasure() : this.exitEraser()));
+            return true;
+        }
+        if (this.interaction.isPlacing()) {
+            this.interaction.cancel(); // emits tool-finished → the core disarms (stay-mode/brush excepted)
+            if (this.activeTool != null) this.emit({ kind: 'arm', type: null });
+            return true;
+        }
+        if (this.activeTool != null) {
+            this.emit({ kind: 'arm', type: null }); // armed, no anchor yet — just disarm
+            return true;
+        }
+        return false;
     }
 
     /** Double-click over a drawing → suppress the chart's view reset (single-click already
@@ -679,6 +698,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 return true;
             }
             if (this.interaction.cancel()) return true;
+            if (this.measureMode) {
+                this.withModeIntent(() => this.exitMeasure());
+                return true;
+            }
             if (this.selectedIds.size) {
                 this.clearSelection();
                 return true;

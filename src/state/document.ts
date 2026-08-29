@@ -80,8 +80,10 @@ export interface CellState {
     rendererConfig?: unknown;
     /** The user-drawings document (`drawings.toJSON()`). */
     drawings?: unknown;
-    /** The indicator ledger: manifest entries by name + present native types. */
-    indicators?: { manifest: string[]; natives: string[] };
+    /** The indicator ledger: manifest entries + present native types. A manifest entry
+     *  is the bare NAME when every value sits on its declaration default, else the
+     *  name plus the input/prop DELTAS (defaults are never frozen into documents). */
+    indicators?: { manifest: PersistedManifestEntry[]; natives: string[] };
     /** Third-party per-chart state, by namespaced key (`'vendor.feature'`) — written and
      *  read by registered state-persistence handlers (`registerStatePersistence`, scope
      *  `'cell'`). Values are OPAQUE here: the codec preserves entries verbatim — a key
@@ -89,6 +91,9 @@ export interface CellState {
      *  validates its own payload at restore. JSON-serializable values only. */
     ext?: Record<string, unknown>;
 }
+
+/** One persisted manifest-instance entry (see `CellState.indicators`). */
+export type PersistedManifestEntry = string | { name: string; inputs?: Record<string, unknown>; props?: Record<string, unknown> };
 
 /** One entry of the document's `charts` array: a chart's state plus its cell IDENTITY. */
 export interface ChartState extends CellState {
@@ -223,7 +228,21 @@ function sanitizeCell(raw: unknown): CellState | null {
     if (c.drawings != null && typeof c.drawings === 'object') out.drawings = c.drawings;
     const ind = c.indicators as Record<string, unknown> | undefined;
     if (ind != null && typeof ind === 'object') {
-        const manifest = Array.isArray(ind.manifest) ? ind.manifest.filter((n): n is string => typeof n === 'string') : [];
+        // Bare names pass as-is; object entries keep only a string name and plain-object
+        // value bags (the add path validates individual values against the schema).
+        const manifest: PersistedManifestEntry[] = Array.isArray(ind.manifest)
+            ? ind.manifest.flatMap((n): PersistedManifestEntry[] => {
+                  if (typeof n === 'string') return [n];
+                  if (n != null && typeof n === 'object' && typeof (n as { name?: unknown }).name === 'string') {
+                      const e = n as { name: string; inputs?: unknown; props?: unknown };
+                      const bag = (v: unknown): Record<string, unknown> | undefined => (v != null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
+                      const inputs = bag(e.inputs);
+                      const props = bag(e.props);
+                      return [inputs || props ? { name: e.name, ...(inputs ? { inputs } : {}), ...(props ? { props } : {}) } : e.name];
+                  }
+                  return [];
+              })
+            : [];
         const natives = Array.isArray(ind.natives) ? ind.natives.filter((n): n is string => typeof n === 'string') : [];
         out.indicators = { manifest, natives };
     }

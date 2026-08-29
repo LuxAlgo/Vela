@@ -76,6 +76,11 @@ describe('sanitizeState (the applyState gate)', () => {
                 null, // unusable entry → dropped
                 { symbol: 'GHOST' }, // ID-LESS entry → dropped
                 { id: 'c3', indicators: { manifest: ['EMA', 42], natives: 'volume' } }, // non-strings filtered
+                ,
+                {
+                    id: 'c4', // VALUE-carrying entries: name required, value bags must be plain objects
+                    indicators: { manifest: [{ name: 'RSI', inputs: { len: 21 }, props: 'oops' }, { name: 'MACD', inputs: [1, 2] }, { inputs: { x: 1 } }], natives: [] },
+                },
             ],
         });
         expect(doc).toEqual({
@@ -86,6 +91,8 @@ describe('sanitizeState (the applyState gate)', () => {
             charts: [
                 { id: 'c1', symbol: 'BTCUSDT' },
                 { id: 'c3', indicators: { manifest: ['EMA'], natives: [] } },
+                // bad bags dropped (an all-default entry collapses to the bare name); nameless entries vanish
+                { id: 'c4', indicators: { manifest: [{ name: 'RSI', inputs: { len: 21 } }, 'MACD'], natives: [] } },
             ],
         });
     });
