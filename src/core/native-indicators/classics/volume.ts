@@ -64,6 +64,7 @@ const cmf: ClassicIndicatorSpec = {
 const chaikinOscillator: ClassicIndicatorSpec = {
     type: 'chaikin-oscillator',
     title: 'Chaikin Oscillator',
+    shortTitle: 'Chaikin Osc',
     overlay: false,
     inputs: [lengthInput(3, 'fastLength', 'Fast length'), lengthInput(10, 'slowLength', 'Slow length'), colorInput()],
     compute: (bars, inputs) => {
@@ -101,6 +102,7 @@ const eom: ClassicIndicatorSpec = {
 const forceIndex: ClassicIndicatorSpec = {
     type: 'force-index',
     title: 'Force Index',
+    shortTitle: 'FI',
     overlay: false,
     inputs: [lengthInput(13), colorInput()],
     compute: (bars, inputs) => {
@@ -180,7 +182,7 @@ function volumeIndex(bars: readonly OHLCV[], when: (vol: number, prevVol: number
 const nvi: ClassicIndicatorSpec = {
     type: 'negative-volume-index',
     title: 'Negative Volume Index',
-    shortTitle: 'NVI',
+    shortTitle: 'Negative Volume Index',
     overlay: false,
     inputs: [lengthInput(255, 'signalLength', 'Signal length'), colorInput()],
     compute: (bars, inputs) => {
@@ -197,7 +199,7 @@ const nvi: ClassicIndicatorSpec = {
 const pvi: ClassicIndicatorSpec = {
     type: 'positive-volume-index',
     title: 'Positive Volume Index',
-    shortTitle: 'PVI',
+    shortTitle: 'Positive Volume Index',
     overlay: false,
     inputs: [lengthInput(255, 'signalLength', 'Signal length'), colorInput()],
     compute: (bars, inputs) => {
@@ -231,6 +233,7 @@ const pvt: ClassicIndicatorSpec = {
 const volumeOscillator: ClassicIndicatorSpec = {
     type: 'volume-oscillator',
     title: 'Volume Oscillator',
+    shortTitle: 'Vol Osc',
     overlay: false,
     inputs: [lengthInput(5, 'fastLength', 'Fast length'), lengthInput(10, 'slowLength', 'Slow length'), colorInput()],
     compute: (bars, inputs) => {
@@ -272,7 +275,7 @@ const pvo: ClassicIndicatorSpec = {
 const vfi: ClassicIndicatorSpec = {
     type: 'volume-flow-indicator',
     title: 'Volume Flow Indicator',
-    shortTitle: 'VFI',
+    shortTitle: 'Volume Flow Indicator',
     overlay: false,
     inputs: [
         lengthInput(130),
@@ -315,7 +318,7 @@ const vfi: ClassicIndicatorSpec = {
 const intradayIntensity: ClassicIndicatorSpec = {
     type: 'intraday-intensity',
     title: 'Intraday Intensity',
-    shortTitle: 'II%',
+    shortTitle: 'Intraday Intensity',
     overlay: false,
     inputs: [lengthInput(21), colorInput()],
     compute: (bars, inputs) => {

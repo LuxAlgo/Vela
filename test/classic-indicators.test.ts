@@ -108,6 +108,89 @@ describe('classic catalog registration', () => {
         expect(types.length).toBeGreaterThanOrEqual(70);
     });
 
+    it('legend short titles match the library declarations', () => {
+        // Second argument of each published `indicator("…", "…")` in the LuxAlgo library.
+        const libraryShort: Record<string, string> = {
+            'percent-b': '%B',
+            '52-week-high-low': '52W H/L',
+            'accumulation-distribution': 'A/D',
+            aroon: 'Aroon',
+            'average-directional-index': 'ADX',
+            'average-true-range': 'ATR',
+            'awesome-oscillator': 'AO',
+            'balance-of-power': 'BOP',
+            bandwidth: 'BandWidth',
+            'bollinger-bands': 'BB',
+            'chaikin-money-flow': 'CMF',
+            'chaikin-oscillator': 'Chaikin Osc',
+            'chaikin-volatility': 'CHV',
+            'chandelier-exit': 'CE',
+            'chande-kroll-stop': 'CKS',
+            'chande-momentum-oscillator': 'CMO',
+            'choppiness-index': 'CHOP',
+            'commodity-channel-index': 'CCI',
+            'connors-rsi': 'CRSI',
+            'coppock-curve': 'Coppock',
+            'detrended-price-oscillator': 'DPO',
+            'donchian-channels': 'DC',
+            'ease-of-movement': 'EOM',
+            'elder-ray': 'Elder Ray',
+            'fisher-transform': 'Fisher',
+            'force-index': 'FI',
+            'gator-oscillator': 'Gator Oscillator',
+            'historical-volatility': 'HV',
+            'intraday-intensity': 'Intraday Intensity',
+            'keltner-channels': 'KC',
+            'klinger-oscillator': 'KVO',
+            'know-sure-thing': 'KST',
+            'linear-regression': 'LinReg',
+            macd: 'MACD',
+            'ma-envelope': 'MA Env',
+            'mass-index': 'MI',
+            'money-flow-index': 'MFI',
+            'moving-average': 'MA',
+            'negative-volume-index': 'Negative Volume Index',
+            'on-balance-volume': 'OBV',
+            'parabolic-sar': 'SAR',
+            ppo: 'PPO',
+            pvo: 'PVO',
+            'pivot-points': 'Pivots',
+            'positive-volume-index': 'Positive Volume Index',
+            'price-volume-trend': 'PVT',
+            'rate-of-change': 'ROC',
+            rsi: 'RSI',
+            'relative-vigor-index': 'RVGI',
+            'relative-volatility-index': 'RVI',
+            rma: 'RMA',
+            'schaff-trend-cycle': 'Schaff Trend Cycle',
+            'smi-ergodic': 'SMIE',
+            'standard-deviation': 'StdDev',
+            stochastic: 'Stoch',
+            'stochastic-rsi': 'Stoch RSI',
+            supertrend: 'SuperTrend',
+            trix: 'TRIX',
+            'true-strength-index': 'TSI',
+            'ttm-squeeze': 'TTM Squeeze',
+            'ulcer-index': 'Ulcer Index',
+            'ultimate-oscillator': 'UO',
+            vidya: 'VIDYA',
+            'volume-flow-indicator': 'Volume Flow Indicator',
+            'volume-oscillator': 'Vol Osc',
+            'vortex-indicator': 'VI',
+            vwap: 'VWAP',
+            'williams-alligator': 'Alligator',
+            'williams-fractal': 'Fractals',
+            'williams-percent-r': '%R',
+            zigzag: 'ZigZag',
+            zlema: 'ZLEMA',
+        };
+        for (const spec of classicSpecs) {
+            const expected = libraryShort[spec.type];
+            expect(expected, spec.type).toBeDefined();
+            expect(spec.shortTitle ?? spec.title, spec.type).toBe(expected);
+        }
+    });
+
     it('every spec declares defaults for each of its inputs', () => {
         for (const spec of classicSpecs) {
             const desc = classicDescriptor(spec);

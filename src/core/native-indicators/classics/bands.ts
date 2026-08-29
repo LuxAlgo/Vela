@@ -67,7 +67,7 @@ const percentB: ClassicIndicatorSpec = {
 const bandwidth: ClassicIndicatorSpec = {
     type: 'bandwidth',
     title: 'Bollinger Bands Width',
-    shortTitle: 'BBW',
+    shortTitle: 'BandWidth',
     overlay: false,
     inputs: [...BB_INPUTS, colorInput()],
     compute: (bars, inputs) => {
@@ -181,7 +181,7 @@ const chandeKroll: ClassicIndicatorSpec = {
 const supertrend: ClassicIndicatorSpec = {
     type: 'supertrend',
     title: 'SuperTrend',
-    shortTitle: 'ST',
+    shortTitle: 'SuperTrend',
     overlay: true,
     inputs: [
         { key: 'atrLength', title: 'ATR length', type: 'int', defval: 10, min: 1, max: 500, step: 1 },
@@ -250,7 +250,7 @@ const alligator: ClassicIndicatorSpec = {
 const gator: ClassicIndicatorSpec = {
     type: 'gator-oscillator',
     title: 'Gator Oscillator',
-    shortTitle: 'Gator',
+    shortTitle: 'Gator Oscillator',
     overlay: false,
     inputs: [],
     compute: (bars) => {

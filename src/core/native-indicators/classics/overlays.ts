@@ -24,7 +24,7 @@ function periodKey(anchor: Anchor, time: number): number {
 const parabolicSar: ClassicIndicatorSpec = {
     type: 'parabolic-sar',
     title: 'Parabolic SAR',
-    shortTitle: 'PSAR',
+    shortTitle: 'SAR',
     overlay: true,
     inputs: [
         { key: 'start', title: 'Start', type: 'float', defval: 0.02, min: 0.001, max: 1, step: 0.001 },

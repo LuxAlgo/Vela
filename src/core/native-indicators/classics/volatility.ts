@@ -37,6 +37,7 @@ const historicalVolatility: ClassicIndicatorSpec = {
 const chaikinVolatility: ClassicIndicatorSpec = {
     type: 'chaikin-volatility',
     title: 'Chaikin Volatility',
+    shortTitle: 'CHV',
     overlay: false,
     inputs: [lengthInput(10, 'emaLength', 'EMA length'), lengthInput(10, 'rocLength', 'RoC length'), colorInput()],
     compute: (bars, inputs) => {
@@ -51,6 +52,7 @@ const chaikinVolatility: ClassicIndicatorSpec = {
 const massIndex: ClassicIndicatorSpec = {
     type: 'mass-index',
     title: 'Mass Index',
+    shortTitle: 'MI',
     overlay: false,
     inputs: [lengthInput(25), colorInput()],
     compute: (bars, inputs) => {

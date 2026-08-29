@@ -378,7 +378,7 @@ const tsi: ClassicIndicatorSpec = {
 const smiErgodic: ClassicIndicatorSpec = {
     type: 'smi-ergodic',
     title: 'SMI Ergodic Oscillator',
-    shortTitle: 'SMI',
+    shortTitle: 'SMIE',
     overlay: false,
     inputs: [lengthInput(5, 'shortLength', 'Short length'), lengthInput(20, 'longLength', 'Long length'), lengthInput(5, 'signalLength', 'Signal length')],
     compute: (bars, inputs) => {
@@ -399,7 +399,7 @@ const smiErgodic: ClassicIndicatorSpec = {
 const stc: ClassicIndicatorSpec = {
     type: 'schaff-trend-cycle',
     title: 'Schaff Trend Cycle',
-    shortTitle: 'STC',
+    shortTitle: 'Schaff Trend Cycle',
     overlay: false,
     inputs: [lengthInput(10, 'cycleLength', 'Cycle length'), lengthInput(23, 'fastLength', 'Fast length'), lengthInput(50, 'slowLength', 'Slow length')],
     compute: (bars, inputs) => {
@@ -460,6 +460,7 @@ const kst: ClassicIndicatorSpec = {
 const coppock: ClassicIndicatorSpec = {
     type: 'coppock-curve',
     title: 'Coppock Curve',
+    shortTitle: 'Coppock',
     overlay: false,
     inputs: [
         lengthInput(10, 'wmaLength', 'WMA length'),
@@ -498,7 +499,7 @@ const dpo: ClassicIndicatorSpec = {
 const rocSpec: ClassicIndicatorSpec = {
     type: 'rate-of-change',
     title: 'Rate of Change',
-    shortTitle: 'RoC',
+    shortTitle: 'ROC',
     overlay: false,
     inputs: [lengthInput(9), sourceInput(), colorInput()],
     compute: (bars, inputs) => ({
