@@ -161,8 +161,13 @@ export class DrawingSceneRenderer {
     priceRange(from: number, to: number): DrawingPriceRange | null {
         const lo = Math.min(from, to);
         const hi = Math.max(from, to);
+        // Painted-part coverage: the anchor span plus the side(s) `extend` projects
+        // toward. A one-sided extension paints nothing on its other side, so a window
+        // entirely there must not inherit the drawing's prices.
         const visible = (a: number, b: number, extend: DrawingExtend): boolean => {
-            if (extend !== 'none') return true;
+            if (extend === 'both') return true;
+            if (extend === 'left') return Math.max(a, b) >= lo;
+            if (extend === 'right') return Math.min(a, b) <= hi;
             return Math.max(a, b) >= lo && Math.min(a, b) <= hi;
         };
         let min = Infinity;

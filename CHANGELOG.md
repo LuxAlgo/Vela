@@ -2,6 +2,20 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Extended boxes no longer squeeze the price scale from off-screen.** A box
+  drawn with a one-sided extension (`extend.right` or `extend.left`) contributes
+  its prices to the automatic price scale only while some painted part of it —
+  the anchor span or the side its extension actually covers — crosses the
+  visible bars. Previously any extended box counted everywhere on the time
+  axis, so an indicator keeping a box near the latest bars (a common
+  order-block idiom) flattened the candles in every earlier window the moment
+  you scrolled back in history. Boxes extended toward the window, and
+  `extend.both` boxes, still scale into view as before.
+
 ## [v0.6.11]
 
 ### Fixed
