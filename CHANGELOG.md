@@ -2,9 +2,19 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.6.11]
 
 ### Fixed
+
+- **The measure ruler follows the magnet, and a right-click always returns to
+  the pointer.** While measuring, weak and strong magnet snap the ruler's
+  endpoints to the nearest candle the same way they snap drawing anchors
+  (Ctrl/Cmd still forces strong). A right-click now cancels whatever
+  non-persistent tool is active — an in-progress placement or measurement, an
+  armed drawing tool that hasn't placed an anchor yet, or the eraser — and
+  returns to the pointer without opening the chart's context menu (Escape still
+  cancels a measurement too). Persistent toggles — the magnet, stay-in-drawing
+  mode, favorites — are untouched.
 
 - **Extended lines no longer squeeze the price scale when nothing of them is in
   view.** A line contributes its anchor prices (`y1`/`y2`) to the automatic price
@@ -15,6 +25,11 @@ All notable changes to Vela, newest first.
   bar scrolls out of view it stops pulling its price into the scale — previously
   a far-away anchor price kept flattening the candles from off-screen. Extended
   lines that do cross the window still scale into view by their anchor prices.
+- **Multi-chart view controls sit on the candles.** The hover cluster that
+  zooms, resets, and moves a chart now centers on the price plot — the area
+  where the candles live — instead of the full cell, so the price scale on
+  the right no longer pulls it off-center.
+
 ### Added
 
 - **Magnifier drawing tool — see a finer timeframe inside an area.** Drag a
@@ -33,6 +48,15 @@ All notable changes to Vela, newest first.
   tool says so inside the rectangle instead of guessing. Like every drawing
   it moves, resizes, clones, and persists with the document.
 
+- **Scroll the price axis to rescale it.** The mouse wheel over the right
+  price-axis strip now zooms that pane's scale the same way dragging it does —
+  scroll up compresses the visible span, scroll down expands it, each notch a
+  gentle step (about ×1.1) around the window's center. It follows the same
+  `axisDrag` renderer feature as the drag, and a double-click still resets the
+  scale to automatic. The axis' A (auto) chip reflects the switch the moment it
+  happens — going manual on the first notch, lighting back up on reset — even
+  with the cursor perfectly still.
+
 - **Indicator input and prop edits survive a reload — as deltas.** Changing an
   indicator's settings used to live only in the running instance: a reload put
   every script back on its declaration defaults. The saved document now stores
@@ -46,6 +70,32 @@ All notable changes to Vela, newest first.
   emits `indicator:inputs` on every value change (which now marks the document
   dirty, so input edits autosave like adds and removes always did), and
   `inputDeltas` joins the plugin SDK for state-persistence handlers.
+
+### Changed
+
+- **Switching the market keeps your zoom.** Changing the symbol or timeframe
+  used to re-fit the view from scratch. The chart now keeps the bar spacing you
+  had chosen and re-anchors the newest bars at the right edge — only the pan
+  resets, since the previous position pointed at another market's time range.
+  The very first chart still opens with the classic fit.
+
+### Fixed
+
+- **Extended lines no longer squeeze the price scale when nothing of them is in
+  view.** A line contributes its anchor prices (`y1`/`y2`) to the automatic price
+  scale only while some painted part of it — the anchor segment or its `extend`
+  projection — actually crosses the visible bars, and the projection itself never
+  contributes values of its own. In particular a vertical line (both points on
+  the same bar, the common `extend.both` idiom) extends along itself, so once its
+  bar scrolls out of view it stops pulling its price into the scale — previously
+  a far-away anchor price kept flattening the candles from off-screen. Extended
+  lines that do cross the window still scale into view by their anchor prices.
+- **Progressively loaded symbols no longer open zoomed onto a handful of
+  candles.** On data sources that stream history in while it heals, the first
+  painted snapshot could carry only a few bars — and the view was framed onto
+  them, leaving a few giant candles that later data never re-framed. The first
+  paint now waits until the snapshot is deep enough to carry the framing (the
+  complete answer always paints, however deep it is).
 
 ## [v0.6.10]
 
@@ -92,6 +142,9 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Dropdown menus no longer fly in from the top of the page.** Opening a
+  timeframe, style, or other menu now fades in at the trigger instead of
+  sliding down from off-screen.
 - **The Cursor button leaves the ruler and eraser.** Clicking Cursor on the drawing
   toolbar now returns to the regular pointer even while the measure ruler or the
   eraser is active; before, those modes stayed on and the click appeared to do

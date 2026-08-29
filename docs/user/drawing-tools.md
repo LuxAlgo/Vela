@@ -1,6 +1,6 @@
 # Drawing tools
 
-Vela ships an interactive **drawing-tools** layer: a docked toolbar and ~67 on-chart
+Vela™ ships an interactive **drawing-tools** layer: a docked toolbar and ~67 on-chart
 tools — trend lines, channels, Fibonacci, harmonic patterns, annotations, and more — that a user
 draws, edits, and keeps on the chart. Drawings are anchored in **data space** (time + price), so
 they stay locked to the bars across pan, zoom, timeframe changes, and reload — the same durability
@@ -31,10 +31,13 @@ right, so the bar never overlaps candles, the legend, or the axes).
   - **Measure** — a transient ruler (click–move–click) that reports the price/%/bar delta. It is
     not saved as a drawing; it clears on the next press, pan, or zoom. **Shift+click** an empty
     spot starts a measurement right there, no toolbar trip needed (press-drag-release works too).
+    The magnet snaps both endpoints; a **right-click** or **Escape** cancels an
+    in-progress measurement and returns to the pointer (no context menu for that click).
   - **Eraser** — click a drawing to delete it, or press-and-drag across several to wipe them.
   - **Magnet** — a 3-state snap toggle: **off → weak → strong**. *Strong* always snaps a new
-    anchor to the nearest candle's time + OHLC; *weak* snaps only when a candle point is within a
-    few pixels of the cursor. Holding **Ctrl/Cmd** is a momentary *strong* override.
+    drawing anchor **or measure-ruler endpoint** to the nearest candle's time + OHLC; *weak* snaps
+    only when a candle point is within a few pixels of the cursor. Holding **Ctrl/Cmd** is a
+    momentary *strong* override.
   - **Stay in drawing mode** — an on/off toggle (pen with a lock, under the magnet). When on,
     finishing a drawing leaves the tool armed so you can keep placing the same tool without
     re-picking it; when off, most tools disarm after one placement (the brush family always stays
@@ -102,15 +105,17 @@ When a drawing is selected (or hovered), with focus on the chart:
 | Copy / Paste / Duplicate | `Ctrl/Cmd + C` / `V` / `D` |
 | Delete | `Delete` or `Backspace` |
 | Nudge | Arrow keys (1px; `Shift` + arrow = 10px) |
-| Cancel placement / clear selection | `Escape` |
+| Cancel placement / measure / clear selection | `Escape` |
 
 Shortcuts stand down while a text field (e.g. a label editor) is focused, so typing is never
 hijacked.
 
 Three mouse shortcuts complement these, and need no selection first: **middle-click** a drawing
-to delete it, **right-click** while placing a drawing to cancel it and return to the pointer —
-even in stay-in-drawing-mode, and without opening the chart's context menu for that click — and
-**Shift+click** an empty spot to start the [measure ruler](#the-toolbar) at that exact point.
+to delete it, **right-click** while a drawing tool, the ruler, or the eraser is active — placing
+or merely armed — to cancel it and return to the pointer (even in stay-in-drawing-mode, and
+without opening the chart's context menu for that click; persistent toggles like the magnet and
+stay-in-drawing-mode itself are untouched), and **Shift+click** an empty spot to start the
+[measure ruler](#the-toolbar) at that point (the magnet still snaps the start).
 ## Depth: anywhere in the stack
 
 A new drawing starts **just under the price** — the candles read on top of it, the way they read
@@ -283,7 +288,7 @@ Every chart exposes a `chart.drawings` control surface (a sibling of `chart.rend
 even on a renderer that can't paint drawings.
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 
 const chart = new Vela('#chart', { data: bars });
 await chart.ready();

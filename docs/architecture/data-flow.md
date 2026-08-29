@@ -1,6 +1,6 @@
 # Data Flow
 
-This page traces how data moves through Vela, from loading the first bar to keeping an indicator live. The throughline is simple: **the core owns the data and orchestrates every step**, and **the neutral model is the only thing that crosses a port.**
+This page traces how data moves through Vela™, from loading the first bar to keeping an indicator live. The throughline is simple: **the core owns the data and orchestrates every step**, and **the neutral model is the only thing that crosses a port.**
 
 For the structural picture see [overview.md](overview.md); for the contracts involved see [modules.md](modules.md).
 
@@ -87,10 +87,10 @@ If any condition fails, the core uses the static re-run path: it pokes the engin
 3. **Restart consumers** — engine sessions are re-executed over the new bars (their next `ExecutionRequest` carries the new market), native indicators restart with a fresh context, the active chart-type data engine is rebuilt, and the live subscription re-targets.
 4. **Announce** — `market:changed` fires with the previous identity, so hosts can re-key per-symbol state (drawing documents, watchlists).
 
-What deliberately survives: panes and indicator records (legend rows, inputs, pane placement), user drawings, the renderer's cosmetic config, and every event subscription. Old sessions are never poked with the new market's bars — bar/viewport notifications are held during the switch, and the re-execution that follows is what computes over the new data.
+What deliberately survives: panes and indicator records (legend rows, inputs, pane placement), user drawings, the renderer's cosmetic config, the zoom (the view keeps its bar spacing and only re-anchors the newest bars at the right edge — the previous pan pointed at another market's time range), and every event subscription. Old sessions are never poked with the new market's bars — bar/viewport notifications are held during the switch, and the re-execution that follows is what computes over the new data.
 
 ## Causal, stateful execution
 
-Scripts in Vela are **causal and stateful**: a value at a bar can depend on every bar before it. Because of that, the engine always runs over the **full history**, never just the visible window.
+Scripts in Vela™ are **causal and stateful**: a value at a bar can depend on every bar before it. Because of that, the engine always runs over the **full history**, never just the visible window.
 
 This is why the viewport is not an execution scope. A viewport change changes *what a viewport-aware script computes* (for instance, a calculation that references the visible range), but it never narrows the set of bars the engine runs over. Correctness depends on the engine always seeing the whole causal chain.

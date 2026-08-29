@@ -5,9 +5,9 @@
 No provider is bundled. A symbol-backed chart fetches nothing until you register a provider — registering the one that resolves the chart symbol is what **fires the initial load**.
 
 ```js
-import { Vela } from 'vela';
-import { PineEngine } from '@luxalgo/vela-pinets'; // the Pine Script addon — Vela ships no engine
-import { BinanceProvider } from 'vela/providers/binance';
+import { Vela } from '@luxalgo/vela';
+import { PineEngine } from '@luxalgo/vela-pinets'; // the Pine Script addon — Vela™ ships no engine
+import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 
 const chart = new Vela('#chart', { symbol: 'BTCUSDT', timeframe: '1h' })
   .registerEngine('pine', new PineEngine());
@@ -31,13 +31,13 @@ A symbol can name its provider with a prefix, or stay bare:
 | `SYMBOL.EXT` | `BTCUSDT.P` | resolved like `SYMBOL`; the `.EXT` is passed through to the provider |
 | `PROVIDER:SYMBOL.EXT` | `BINANCE:BTCUSDT.P` | the named provider, ticker `BTCUSDT.P` |
 
-The `.EXT` suffix is **opaque to Vela** — the provider owns its meaning (Binance reads `.P` as a perpetual future). Vela only uses it for the cache key and display.
+The `.EXT` suffix is **opaque to Vela™** — the provider owns its meaning (Binance reads `.P` as a perpetual future). Vela™ only uses it for the cache key and display.
 
 ## Listing prefixes (`NASDAQ:AAPL`)
 
 A provider's symbol descriptors may declare a **listing prefix** (`prefix: 'NASDAQ'`) — the venue the instrument is *listed* on, which is a property of the **symbol**, not of the provider: one equities provider serves both Nasdaq-listed `AAPL` and NYSE-listed `IBM`. When declared:
 
-- **Resolution.** `NASDAQ:AAPL` routes to the provider whose descriptor declares that prefix for that ticker. Matching is **strict** (TradingView parity): `NYSE:AAPL` resolves to **nothing** — no auto-correction — and the load parks with the usual console warning. The prefix is case-insensitive, and the resolved ticker takes the descriptor's spelling (`nyse:ibm` → `IBM`).
+- **Resolution.** `NASDAQ:AAPL` routes to the provider whose descriptor declares that prefix for that ticker. Matching is **strict**: `NYSE:AAPL` resolves to **nothing** — no auto-correction — and the load parks with the usual console warning. The prefix is case-insensitive, and the resolved ticker takes the descriptor's spelling (`nyse:ibm` → `IBM`).
 - **Display.** Every label derives from the data, never from what was typed: the legend venue chip reads `NASDAQ`, picker rows badge the listing venue, and the picker commits (and the workspace persists) the canonical `NASDAQ:AAPL` form.
 - **Compatibility.** An explicit provider name always keeps routing (`myequities:AAPL` still resolves — persisted documents don't break); it simply re-displays canonically. Symbols without a declared prefix behave exactly as before — the provider name is their prefix.
 
@@ -45,7 +45,7 @@ Descriptors may also form **groups** (futures roots): a group row (`ticker: 'ES'
 
 ## How a bare symbol resolves
 
-When you don't name a provider, Vela picks one:
+When you don't name a provider, Vela™ picks one:
 
 1. An explicit prefix always wins: a registered **provider name** immediately, else a declared **listing prefix** once the provider's index is built.
 2. A bare symbol routes to the **first provider, in registration order, whose index contains it.** Each provider is indexed (via its symbol list) when it registers.
@@ -93,30 +93,30 @@ Registering or replacing a provider on a chart that was given a **custom feed** 
 
 ## The bundled Binance provider
 
-`vela/providers/binance` is a from-scratch Binance provider (no third-party SDK). It serves spot and USDT-margined perpetual futures (`SYMBOL.P`), paginates past Binance's 1000-candle cap, falls back from `api.binance.com` to `api.binance.us`, and aggregates timeframes Binance doesn't serve natively (e.g. `45`, `180`). No API key. Live ticks stream from a native **kline WebSocket** (spot `stream.binance.com`, perpetuals `fstream.binance.com`), with an automatic **poll fallback** if the socket can't deliver — e.g. where Binance futures streams are geo-restricted — and for aggregated timeframes that have no native stream.
+`@luxalgo/vela/providers/binance` is a from-scratch Binance provider (no third-party SDK). It serves spot and USDT-margined perpetual futures (`SYMBOL.P`), paginates past Binance's 1000-candle cap, falls back from `api.binance.com` to `api.binance.us`, and aggregates timeframes Binance doesn't serve natively (e.g. `45`, `180`). No API key. Live ticks stream from a native **kline WebSocket** (spot `stream.binance.com`, perpetuals `fstream.binance.com`), with an automatic **poll fallback** if the socket can't deliver — e.g. where Binance futures streams are geo-restricted — and for aggregated timeframes that have no native stream.
 
 ```js
-import { BinanceProvider } from 'vela/providers/binance';
+import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 chart.data.registerProvider('binance', new BinanceProvider());
 // BTCUSDT, ETHUSDT, … (spot) and BTCUSDT.P, ETHUSDT.P, … (perpetuals)
 ```
 
 ## The bundled Coinbase provider
 
-`vela/providers/coinbase` is a from-scratch Coinbase Exchange provider (no third-party SDK, no API key). It serves spot products (`BTC-USD`, `ETH-EUR`, …), paginates past the 300-candle cap, aggregates timeframes Coinbase doesn't serve natively, and folds weekly/monthly from daily. Live candles are built from the `ticker` WebSocket stream (Coinbase has no native kline stream) with a periodic REST re-seed, plus the standard poll fallback.
+`@luxalgo/vela/providers/coinbase` is a from-scratch Coinbase Exchange provider (no third-party SDK, no API key). It serves spot products (`BTC-USD`, `ETH-EUR`, …), paginates past the 300-candle cap, aggregates timeframes Coinbase doesn't serve natively, and folds weekly/monthly from daily. Live candles are built from the `ticker` WebSocket stream (Coinbase has no native kline stream) with a periodic REST re-seed, plus the standard poll fallback.
 
 ```js
-import { CoinbaseProvider } from 'vela/providers/coinbase';
+import { CoinbaseProvider } from '@luxalgo/vela/providers/coinbase';
 chart.data.registerProvider('coinbase', new CoinbaseProvider());
 // BTC-USD, ETH-USD, ETH-BTC, …
 ```
 
 ## The bundled Hyperliquid provider
 
-`vela/providers/hyperliquid` is a from-scratch [Hyperliquid](https://hyperliquid.xyz) provider (no third-party SDK, no API key). It serves USD-margined perpetuals — **bare coins** like `BTC`, `ETH` (not `BTCUSDT`) — and spot pairs (`PURR/USDC`), and aggregates timeframes Hyperliquid doesn't serve natively (e.g. `45`, `180`, `360`). **Live ticks come from a real WebSocket candle stream**, with the same automatic poll fallback as Binance if a stream can't deliver.
+`@luxalgo/vela/providers/hyperliquid` is a from-scratch [Hyperliquid](https://hyperliquid.xyz) provider (no third-party SDK, no API key). It serves USD-margined perpetuals — **bare coins** like `BTC`, `ETH` (not `BTCUSDT`) — and spot pairs (`PURR/USDC`), and aggregates timeframes Hyperliquid doesn't serve natively (e.g. `45`, `180`, `360`). **Live ticks come from a real WebSocket candle stream**, with the same automatic poll fallback as Binance if a stream can't deliver.
 
 ```js
-import { HyperliquidProvider } from 'vela/providers/hyperliquid';
+import { HyperliquidProvider } from '@luxalgo/vela/providers/hyperliquid';
 chart.data.registerProvider('hyperliquid', new HyperliquidProvider());
 // new Vela('#chart', { symbol: 'BTC', timeframe: '1h' })  → perps
 // or 'HYPERLIQUID:ETH', 'PURR/USDC', …

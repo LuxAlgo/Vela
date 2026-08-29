@@ -58,7 +58,7 @@ Available on every renderer:
 | `animPan` | boolean | `true` | Inertial pan glide; takes effect on the next interaction. |
 | `intro` | `'settle' \| 'grow' \| false` | `'settle'` | Reveal animation on first paint. Setting it replays the intro (handy for comparing styles from the console). |
 | `zoomAnchor` | `'right' \| 'cursor'` | `'right'` | Wheel-zoom anchor: pin the right edge / latest bar, or the bar under the cursor. Affects the next wheel-zoom. Holding `Shift` (or a horizontal/trackpad swipe) makes the wheel **pan through history** instead of zooming. |
-| `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; double-clicking an axis strip resets it. |
+| `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; scrolling the wheel over the price-axis strip rescales the same way, gently (scroll up compresses the span, down expands it); double-clicking an axis strip resets it. |
 | `paneResize` | boolean | `true` | Drag the separator between panes to resize them; double-clicking a separator restores the two adjacent panes to an even split. |
 | `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. `Ctrl`/`Cmd` chords are left untouched for the host's own shortcuts (the widget's pan/zoom glides, the browser's `Ctrl`+`0`, …). When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
 | `historyChords` | boolean | `true` | The drawings layer answers `Ctrl`/`Cmd`+`Z` / `Y` itself (drawing undo/redo). A host that owns a **unified** history — drawings plus its own app actions in one timeline, like the widget — sets it to `false` so the chords bubble up to the host's keymap instead of being consumed in-chart. Copy/paste/duplicate/delete/nudge keys are unaffected. |
@@ -87,7 +87,7 @@ Available on every renderer:
 
 | Feature | Type | Default | Notes |
 |---|---|---|---|
-| `attribution` | The in-chart attribution mark (bottom-left logomark linking to the Vela project). **On by default.** Disabling it is allowed only when an equivalent visible attribution is displayed elsewhere on the page — see the repository's `NOTICE` file. |
+| `attribution` | boolean | `true` | The in-chart attribution mark (bottom-left logomark linking to the Vela™ project). Disabling it is allowed only when an equivalent visible attribution is displayed elsewhere on the page (see the repository's [`NOTICE`](../../NOTICE) file). |
 | `settings` | boolean | `false` | An in-chart gear button + dialog to edit a curated slice of the rich config (colors, fonts, scale, timezone) with export/import. |
 
 > **Pane controls.** Hovering a pane reveals a small button cluster in its top-right corner: move

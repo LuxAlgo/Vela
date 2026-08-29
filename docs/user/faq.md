@@ -2,7 +2,7 @@
 
 ## I see candles but my indicator doesn't show — what's wrong?
 
-You almost certainly haven't registered a scripting engine. **Vela ships none** — a bare chart is candles, drawings and native indicators only. Install an engine and register it before (or any time before) you add an indicator:
+You almost certainly haven't registered a scripting engine. **Vela™ ships none** — a bare chart is candles, drawings and native indicators only. Install an engine and register it before (or any time before) you add an indicator:
 
 ```js
 import { PineEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
@@ -11,7 +11,7 @@ chart.registerEngine('pine', new PineEngine());
 
 Calling `addIndicator` for a language with no registered engine throws an actionable error rather than silently doing nothing. See [Scripting engines](./scripting-engines.md) and [quickstart.md](./quickstart.md).
 
-## Can I use Vela fully offline, with no API key?
+## Can I use Vela™ fully offline, with no API key?
 
 Yes — pass your own bars via the `data` option. No network call, no key, nothing to configure:
 
@@ -72,12 +72,12 @@ time + price, so restored drawings land on the right bars regardless of the curr
 Construct with `drawings: false` (or call `chart.drawings.showToolbar(false)`). The bar disappears,
 but the whole `chart.drawings` API keeps working headlessly.
 
-## Can I remove the in-chart Vela logo?
+## Can I remove the in-chart Vela™ logo?
 
-The bottom-left mark is Vela's **attribution notice** (see the repository's `NOTICE`
+The bottom-left mark is Vela™'s **attribution notice** (see the repository's `NOTICE`
 file, per Apache-2.0 §4(d)). It renders by default on every chart. You may turn it off —
 `chart.renderer.set('attribution', false)` — **only if** you display an equivalent
-visible attribution ("Vela" linking to the project page) elsewhere on the same page or
+visible attribution ("Vela™" linking to the project page) elsewhere on the same page or
 screen. Removing the attribution entirely is not permitted by the license.
 
 ## How stable is the API?

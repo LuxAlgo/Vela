@@ -88,6 +88,24 @@ export class DrawingInteraction {
         return snapped;
     }
 
+    /**
+     * Resolve a cursor pixel through the magnet and return the snapped pixel — the same
+     * conversion drawing placement uses. Updates the snap-ring marker. The measure
+     * ruler goes through this so its endpoints follow weak/strong/Ctrl magnet too.
+     */
+    snapCursor(x: number, y: number, mode: SnapMode): { x: number; y: number } {
+        const proj = this.deps.projector();
+        const paneId = proj.paneIdAtY(y) ?? 'price';
+        const point = this.resolve(x, y, paneId, mode);
+        const sy = proj.yOf(point.price, paneId);
+        return { x: proj.xOf(point.time), y: sy ?? y };
+    }
+
+    /** Drop the snap-ring marker (a transient mode ended without going through `up`). */
+    clearSnapMarker(): void {
+        this.snapAt = null;
+    }
+
     /** Resolve a pixel to a data point with the segment angle locked to 45° steps around
      *  `pivot` (Shift held on a line tool). Works in PIXEL space — the user reasons about
      *  the angle they see, not about time/price units. The magnet is bypassed: snapping

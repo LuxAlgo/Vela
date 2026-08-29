@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Vela is a modern charting library built around one deliberate shape: a **robust core** surrounded by **three independently-extensible layers**. The core does the orchestration; each layer plugs in through a single narrow port. Nothing in the core knows about any concrete backend — it depends only on the ports and on a shared **neutral model**.
+Vela™ is a modern charting library built around one deliberate shape: a **robust core** surrounded by **three independently-extensible layers**. The core does the orchestration; each layer plugs in through a single narrow port. Nothing in the core knows about any concrete backend — it depends only on the ports and on a shared **neutral model**.
 
 This page explains that shape, why it holds together, and how you extend it.
 
@@ -16,7 +16,7 @@ Each layer is reached through exactly one narrow contract. The core depends on t
 
 ```mermaid
 flowchart TB
-    subgraph Core["Vela Core (orchestrator)"]
+    subgraph Core["Vela™ Core (orchestrator)"]
         BARS["Canonical bar array<br/>+ orchestration loop"]
     end
 
@@ -77,7 +77,7 @@ The bundled defaults are all **swappable defaults**, never load-bearing assumpti
 
 - the **native renderer** (default; WebGL2 with a canvas2d fallback),
 - the **provider-backed, cache-wrapped data feed**,
-- and — for the engine layer — **nothing at all**. No scripting engine ships with Vela: the port is the product, and you install an addon (Pine Script: `@luxalgo/vela-pinets`) or write your own. See [Scripting engines](../user/scripting-engines.md).
+- and — for the engine layer — **nothing at all**. No scripting engine ships with Vela™: the port is the product, and you install an addon (Pine Script: `@luxalgo/vela-pinets`) or write your own. See [Scripting engines](../user/scripting-engines.md).
 
 An engine's **declared capabilities** — not its packaging — decide how the core routes it: an engine that declares `streaming` gets the live persistent-session path, one that doesn't gets static re-runs poked per bar change. Two engines for the same language can differ there (a main-thread one and a worker-backed one need not be capability-equivalent), and the core never guesses: it takes each declaration at face value. See [modules.md](modules.md) for the layer's defaults and [data-flow.md](data-flow.md) for how that choice drives routing.
 
@@ -95,6 +95,6 @@ The details differ slightly per layer (engines are selected per-indicator by lan
 
 ## Capability negotiation
 
-The ports are narrow, but backends differ in what they can actually do. Vela resolves that difference through **declared capabilities** rather than feature-sniffing. Each backend tells the core, up front, what it supports — for engines, things like whether they can stream; for renderers, things like which presentation features they can draw — and the core trusts those flags and routes accordingly. Only an engine that declares it can stream, for example, ever takes the live-streaming path.
+The ports are narrow, but backends differ in what they can actually do. Vela™ resolves that difference through **declared capabilities** rather than feature-sniffing. Each backend tells the core, up front, what it supports — for engines, things like whether they can stream; for renderers, things like which presentation features they can draw — and the core trusts those flags and routes accordingly. Only an engine that declares it can stream, for example, ever takes the live-streaming path.
 
 That trust is load-bearing: a backend that declares a capability it doesn't truly have produces silently wrong output, because the core takes it at its word. The full set of declared flags and the **capability honesty** invariant that governs them live with the other core invariants in [boundaries.md](boundaries.md), alongside the import boundaries and registry semantics the core relies on.

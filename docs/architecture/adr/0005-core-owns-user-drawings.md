@@ -4,7 +4,7 @@
 
 ## Context
 
-Vela has two kinds of on-chart drawings. A scripting **engine** emits lines/boxes/labels as
+Vela™ has two kinds of on-chart drawings. A scripting **engine** emits lines/boxes/labels as
 *output* — those are part of the neutral model and flow through the renderer port like any other
 content ([0001](./0001-neutral-model-as-cross-layer-currency.md)). Separately, a **user** draws and
 edits interactive tools (trend lines, channels, Fibonacci, patterns, annotations, …) with a

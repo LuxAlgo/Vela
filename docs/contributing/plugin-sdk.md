@@ -1,6 +1,6 @@
-# Vela plugin SDK
+# Vela™ plugin SDK
 
-Everything importable from **`vela/plugin`**. Three extension seams: **chart types**
+Everything importable from **`@luxalgo/vela/plugin`**. Three extension seams: **chart types**
 (data + transform side), **renderer layers** (paint side), and **native indicators**
 (core-computed indicators with their own layers) — plus the authoring surface for
 **scripting engines**, which register per chart rather than into a registry. All
@@ -13,7 +13,7 @@ A chart type is a new *price style*: an id that becomes valid for the style drop
 `renderer.set('priceStyle', id)`, and extended tickers.
 
 ```ts
-import { registerChartType, type SeriesDataEngine, type SeriesDataEngineHost } from 'vela/plugin';
+import { registerChartType, type SeriesDataEngine, type SeriesDataEngineHost } from '@luxalgo/vela/plugin';
 
 registerChartType({
     id: 'mytype',
@@ -84,7 +84,7 @@ repainted from the shared paint cycle. **The layer id doubles as its data channe
 a chart type's `host.pushData` feeds the layer named like it with no extra wiring.
 
 ```ts
-import { registerRendererLayer } from 'vela/plugin';
+import { registerRendererLayer } from '@luxalgo/vela/plugin';
 
 registerRendererLayer({
     id: 'mytype',                    // = the `setNativeData` channel it receives
@@ -148,7 +148,7 @@ Two per-frame levers beyond the basic contract:
 ## Native indicators — `registerNativeIndicator`
 
 Core-computed indicators (no script engine) with renderer-drawn layers — the built-in
-volume and VPVR ride this seam. See `NativeIndicator` types in `vela/plugin`.
+volume and VPVR ride this seam. See `NativeIndicator` types in `@luxalgo/vela/plugin`.
 
 A native whose visuals come entirely from a bespoke renderer layer (its `type` equals a
 registered layer id) can override the axis of the pane it OWNS by emitting **`paneAxis`**
@@ -171,7 +171,7 @@ Contribute UI as **data descriptors** (never DOM) — the widget projects them i
 chrome; a future React view projects the same descriptors.
 
 ```ts
-import { registerWidgetAction, registerIcon } from 'vela/plugin';
+import { registerWidgetAction, registerIcon } from '@luxalgo/vela/plugin';
 
 registerIcon('rocket', '<svg …>…</svg>'); // optional, inline SVG (stroke currentColor)
 
@@ -243,7 +243,7 @@ gesture, custom key handling. It mounts once per widget with the same `WidgetCon
 returns a disposer the widget runs at destroy:
 
 ```ts
-import { registerWidgetAttachment } from 'vela/plugin';
+import { registerWidgetAttachment } from '@luxalgo/vela/plugin';
 
 registerWidgetAttachment({
     id: 'mytool.overlay',
@@ -311,8 +311,8 @@ contributions above — **no shell option needed**:
   from `topbar.left` — same effect (no button, no mobile stop, no `/`, no dialog).
 
 ```ts
-import { registerWidgetAction, registerWidgetAttachment } from 'vela/plugin';
-import { Dialog } from 'vela/ui';
+import { registerWidgetAction, registerWidgetAttachment } from '@luxalgo/vela/plugin';
+import { Dialog } from '@luxalgo/vela/ui';
 
 // One menu per shell: the attachment owns the lifecycle, the action opens it.
 const menus = new WeakMap<HTMLElement, Dialog>();
@@ -366,7 +366,7 @@ The shells' symbol-search dialog displays the providers' AGGREGATED symbol index
 plugin (or host) can own its display order — one hook, last registration wins:
 
 ```ts
-import { registerSymbolRanking } from 'vela/plugin';
+import { registerSymbolRanking } from '@luxalgo/vela/plugin';
 
 registerSymbolRanking(async (pool) => {
     const top = await fetchTopSymbols();               // may be async — a server-driven list
@@ -405,7 +405,7 @@ written to storage in `persist` mode). A plugin can put its own state INTO that 
 namespaced key and says how its entry is written and read back:
 
 ```ts
-import { registerStatePersistence } from 'vela/plugin';
+import { registerStatePersistence } from '@luxalgo/vela/plugin';
 
 // Per-chart state (scope 'cell'): one entry per chart, following the chart through
 // layout switches, the dormant pool, and shell-to-shell document moves.
@@ -474,7 +474,7 @@ The contract, in five rules:
   cell context's `addIndicator`/`addNativeIndicator` are muted on their own too — so
   an **async** restore (fetch a source, then add) also stays out of the undo/redo
   timeline. It is only called for keys the document actually carries.
-- **The payload is opaque to Vela and untrusted by you.** The codec round-trips `ext`
+- **The payload is opaque to Vela™ and untrusted by you.** The codec round-trips `ext`
   entries verbatim — including keys whose plugin is not loaded this session, so a
   plugin-less reload never loses your state — and validates nothing inside them:
   your `restore` must.
@@ -490,7 +490,7 @@ An icon button on every indicator's **legend row**, revealed with the built-in c
 host editor.
 
 ```ts
-import { registerLegendAction, registerIcon } from 'vela/plugin';
+import { registerLegendAction, registerIcon } from '@luxalgo/vela/plugin';
 
 registerLegendAction({
     id: 'mytool.open-source',
@@ -521,7 +521,7 @@ it near the bottom screen edge. The classic use: a live status a user can act on
 market-session badge, a "new version available" notice with an Update button).
 
 ```ts
-import { registerLegendCallout } from 'vela/plugin';
+import { registerLegendCallout } from '@luxalgo/vela/plugin';
 
 registerLegendCallout({
     id: 'mytool.status',
@@ -565,7 +565,7 @@ The shell owns that chrome and hands `mount` the panel's **body** to fill; the c
 never reaches into the widget's DOM:
 
 ```ts
-import { registerSidePanel, registerIcon } from 'vela/plugin';
+import { registerSidePanel, registerIcon } from '@luxalgo/vela/plugin';
 
 registerIcon('flow', '<svg …>…</svg>');
 
@@ -612,7 +612,7 @@ registerSidePanel({
 
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 
-Vela bundles no engine — you install one (`@luxalgo/vela-pinets` for Pine Script) or write
+Vela™ bundles no engine — you install one (`@luxalgo/vela-pinets` for Pine Script) or write
 one against the port. Engines are **per-chart instances**
 (`chart.registerEngine('pine', new PineEngine())`, or the widget's
 `engines: { pine: () => … }` factories). Two things ship here:
