@@ -23,6 +23,7 @@ import { MultiProviderFeed } from './data/MultiProviderFeed';
 import { registerBuiltinChartTypes } from './chart-types/builtins';
 import { registerVolume } from './core/native-indicators/volume';
 import { registerVpvr } from './core/native-indicators/vpvr';
+import { registerClassicIndicators } from './core/native-indicators/classics';
 
 /** Outcome of {@link Vela.runIndicator}: success carries the live handle, failure the error. */
 export interface RunIndicatorResult {
@@ -64,6 +65,7 @@ export class Vela {
         registerBuiltinChartTypes(); // built-in chart types through the public SDK registry (idempotent)
         registerVolume(); // register the built-in native indicators (idempotent)
         registerVpvr();
+        registerClassicIndicators();
         const element = resolveElement(container);
         const theme = resolveTheme(options.theme);
         // Resolve animations: boolean toggles all; object configures each; default = zoom on, pan on.
