@@ -77,7 +77,7 @@ const ws = new VelaWorkspace("#workspace", {
   // (no `height` here: the grid sizes its cells)
 
   // ── The rest of the SHELL options, at their defaults ──────────────────────────────
-  // timeframes: ['1', '5', '15', '60', '240', 'D', 'W'], // topbar timeframe presets
+  // timeframes: ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M'], // topbar timeframe presets
   // timezone: 'Etc/UTC',            // display timezone (IANA), one zone for every cell
   // statusline: true,               // chrome: the per-cell status line
   // watermark: true,                // chrome: the per-cell symbol watermark

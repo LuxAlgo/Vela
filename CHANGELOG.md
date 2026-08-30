@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.6.12]
 
 ### Fixed
 
@@ -15,7 +15,14 @@ All notable changes to Vela, newest first.
   order-block idiom) flattened the candles in every earlier window the moment
   you scrolled back in history. Boxes extended toward the window, and
   `extend.both` boxes, still scale into view as before.
+
 ### Added
+
+- **30-minute and monthly presets in the timeframe picker.** The default
+  timeframe list is now `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1D`, `1W`, `1M`.
+  Hosts passing their own `timeframes` option are unaffected. The offline feed
+  also ticks at the right cadence for monthly bars instead of falling back to
+  hourly.
 
 - **Right-click the status line to shape it.** The in-chart status line now opens
   an action menu on right-click with a toggle for each of its elements — the new
@@ -1248,22 +1255,22 @@ labels?, qty?, colors? })` — hide the units, the order-id line, or the quantit
   lives in the **`@luxalgo/vela-pinets`** addon, which implements the same public
   `ScriptingEngine` port with identical semantics:
 
-  ```diff
-  - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
-  + import { Vela } from '@luxalgo/vela';
-  + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
-  ```
+    ```diff
+    - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
+    + import { Vela } from '@luxalgo/vela';
+    + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
+    ```
 
-  Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
-  option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
-  Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
+    Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
+    option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
+    Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
 
-  The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
-  Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
-  ACL now bans the import outright, so the obligation is taken on only by an application
-  that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
-  (~515 KB minified), and the engine layer becomes the one layer with no bundled default
-  at all. See [Scripting engines](docs/user/scripting-engines.md).
+    The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
+    Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
+    ACL now bans the import outright, so the obligation is taken on only by an application
+    that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
+    (~515 KB minified), and the engine layer becomes the one layer with no bundled default
+    at all. See [Scripting engines](docs/user/scripting-engines.md).
 
 ### Added
 
