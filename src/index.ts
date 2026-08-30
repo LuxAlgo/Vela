@@ -48,6 +48,9 @@ export type {
     DrawingIntent,
     DrawingMode,
     IDrawingsRendererPort,
+    DrawingSeriesBar,
+    DrawingSeriesState,
+    DrawingSeriesGateway,
 } from './core/drawings';
 
 // Public types

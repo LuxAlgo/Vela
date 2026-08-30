@@ -74,6 +74,7 @@ import { Shark } from './types/Shark';
 import { Cypher } from './types/Cypher';
 import { DatePriceRange } from './types/DatePriceRange';
 import { PositionTool } from './types/PositionTool';
+import { Magnifier } from './types/Magnifier';
 
 /** What a drawing type contributes to the toolbar + factory (renderer-neutral). */
 export interface DrawingTypeMeta {
@@ -84,6 +85,13 @@ export interface DrawingTypeMeta {
     /** Inline SVG markup for the toolbar button — no DOM, renderer paints it. */
     icon: string;
     defaultStyle: DrawingStyle;
+    /** The tool's body REPLACES the series pixels inside its area (an opaque inset): a fresh
+     *  instance then starts ABOVE the pane's series stack instead of just under the candles —
+     *  under them its content would be buried. The user can still reorder it afterwards. */
+    coversSeries?: boolean;
+    /** One short sentence prompting the placement gesture, shown by the renderer at the
+     *  bottom of the chart while the tool is armed and no placement has started yet. */
+    placementHint?: string;
     /** Build an instance from a (partial) serialized record. Serves create + deserialize. */
     create(init: Partial<SerializedDrawing> & { paneId: string }): Drawing;
 }
@@ -921,6 +929,24 @@ registerDrawingType({
     icon: POSITION_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new PositionTool(init),
+});
+
+// ── magnifier (lower-timeframe inset) ──
+const MAGNIFIER_ICON = svg24(
+    '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.3 15.3 5.2 5.2"/><path d="M8 12.5v-3M10.5 13.5v-5.5M13 12v-2"/>',
+);
+
+registerDrawingType({
+    type: 'magnifier',
+    group: 'measure',
+    label: 'Magnifier',
+    icon: MAGNIFIER_ICON,
+    // An empty border color means the THEME's contrast ink (white on dark, black on
+    // light), resolved at paint time so it follows theme switches; a user pick wins.
+    defaultStyle: { lineColor: '', lineWidth: 1, lineStyle: 'solid' },
+    coversSeries: true, // the inset's backdrop must sit over the base candles it replaces
+    placementHint: 'Drag an area on the chart to view it at a lower timeframe',
+    create: (init) => new Magnifier(init),
 });
 
 // ── anchored VWAP ──
