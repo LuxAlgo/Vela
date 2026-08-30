@@ -12,6 +12,9 @@ import {
     MachFigure,
     FixedRangeVolumeProfile,
     PositionTool,
+    Magnifier,
+    MAGNIFIER_TIMEFRAME_OPTIONS,
+    magnifierTimeframeLabel,
     effectiveFillColor,
 } from '../../../core/drawings';
 import { icon, svg24, svg24Solid } from '../../../core/icons';
@@ -95,9 +98,23 @@ export class DrawingSettingsPopup {
     private theme: VelaTheme;
     private onClose: (() => void) | null = null;
 
-    constructor(private readonly host: HTMLElement, theme: VelaTheme) {
+    constructor(
+        private readonly host: HTMLElement,
+        theme: VelaTheme,
+        /** One chart bar in ms — timeframe pickers drop the choices at/above it. */
+        private readonly chartBarMs: () => number = () => 0,
+    ) {
         this.theme = theme;
         this.settingsDialog = new DrawingSettingsDialog(host, theme);
+    }
+
+    /** The magnifier timeframe choices strictly below the chart's own bar duration
+     *  (`auto` rides along while at least one concrete lower step exists). */
+    private lowerTimeframeOptions(): Array<{ value: string; label: string; ms: number }> {
+        const chartMs = this.chartBarMs();
+        if (!(chartMs > 0)) return [...MAGNIFIER_TIMEFRAME_OPTIONS];
+        const lower = MAGNIFIER_TIMEFRAME_OPTIONS.filter((o) => o.ms > 0 && o.ms < chartMs);
+        return lower.length > 0 ? [MAGNIFIER_TIMEFRAME_OPTIONS[0]!, ...lower] : [];
     }
 
     setTheme(theme: VelaTheme): void {
@@ -156,7 +173,26 @@ export class DrawingSettingsPopup {
             const sz = (drawing as unknown as { size?: string }).size ?? 'normal';
             bar.appendChild(this.dropdown('Icon size', STAMP_SIZE_OPTIONS, sz, (s) => stampSizeIcon(s), (v) => actions.patch({ size: v }), { label: sizeLabel }));
         }
-        if (paths.has('style.lineColor')) bar.appendChild(this.colorButton('Line color', BRUSH_ICON, drawing.style.lineColor || DEFAULT_DRAWING_COLOR, (v) => actions.patch({ 'style.lineColor': v })));
+        // Magnifier: the lower-timeframe pick is the tool's one behavior control — it leads the
+        // bar (text-only: the label IS the glyph); the inset candles' up/down colors ride along.
+        // Only timeframes strictly below the chart's are offered; unset colors show the theme's
+        // series colors (the inset follows the chart series until the user recolors it).
+        if (paths.has('magnifier.timeframe') && drawing instanceof Magnifier) {
+            const options = this.lowerTimeframeOptions();
+            if (options.length > 0) {
+                bar.appendChild(
+                    this.dropdown('Lower timeframe', options.map((o) => o.value), drawing.magnifier.timeframe, () => '', (v) => actions.patch({ 'magnifier.timeframe': v }), {
+                        label: (v) => magnifierTimeframeLabel(String(v)),
+                        labelInTrigger: true,
+                    }),
+                );
+            }
+            bar.appendChild(this.colorButton('Up candles', BUCKET_ICON, drawing.magnifier.upColor || t.upColor, (v) => actions.patch({ 'magnifier.upColor': v })));
+            bar.appendChild(this.colorButton('Down candles', BUCKET_ICON, drawing.magnifier.downColor || t.downColor, (v) => actions.patch({ 'magnifier.downColor': v })));
+        }
+        // The magnifier's unset border means the theme's contrast ink — the swatch shows that
+        // effective color (same idea as effectiveFillColor below), not the generic blue default.
+        if (paths.has('style.lineColor')) bar.appendChild(this.colorButton('Line color', BRUSH_ICON, drawing.style.lineColor || (drawing instanceof Magnifier ? contrastColor(this.theme.background) : DEFAULT_DRAWING_COLOR), (v) => actions.patch({ 'style.lineColor': v })));
         if (paths.has('style.lineWidth')) {
             // A marker-width field (floor above the hairline ladder, e.g. the
             // highlighter's 4–60) can't live in the 1–4 dropdown — a free numeric
@@ -514,7 +550,7 @@ export class DrawingSettingsPopup {
 
     /** Host-anchored floating shell (stays inside the chart). Content is filled after
      *  construction so `fill` can close over the live `Popover` without hitting TDZ. */
-    private hostFloat(anchor: HTMLElement, opts: { align?: 'start' | 'end'; zIndex: number; padding: string; fill: (el: HTMLElement, pop: Popover) => void }): Popover {
+    private hostFloat(anchor: HTMLElement, opts: { align?: 'start' | 'end'; zIndex: number; padding: string; onClose?: () => void; fill: (el: HTMLElement, pop: Popover) => void }): Popover {
         const t = this.theme;
         const pop = new Popover({
             trigger: anchor,
@@ -530,6 +566,7 @@ export class DrawingSettingsPopup {
             onClose: () => {
                 if (this.menuPop === pop) { this.menuPop = null; this.menuOwner = null; }
                 if (this.colorPop === pop) { this.colorPop = null; this.colorOwner = null; }
+                opts.onClose?.();
             },
         });
         const el = pop.el;
@@ -547,6 +584,52 @@ export class DrawingSettingsPopup {
         opts.fill(el, pop);
         pop.show();
         return pop;
+    }
+
+    /**
+     * A standalone timeframe menu for the magnifier's ON-CHART chip. The chip lives on
+     * canvas, so a transient invisible anchor is dropped at its pixel rect for the popover
+     * to position against, and removed again when the menu closes. Independent of the
+     * quick toolbar — the chip works without selecting the drawing first.
+     */
+    openMagnifierTimeframeMenu(rect: { x: number; y: number; w: number; h: number }, current: string, onPick: (value: string) => void): void {
+        ensureStyles();
+        closeOpenPopovers();
+        const options = this.lowerTimeframeOptions();
+        const anchor = document.createElement('div');
+        anchor.style.cssText = `position:absolute;left:${rect.x}px;top:${rect.y}px;width:${rect.w}px;height:${rect.h}px;pointer-events:none;`;
+        this.host.appendChild(anchor);
+        this.menuPop = this.hostFloat(anchor, {
+            zIndex: 26,
+            padding: '4px',
+            onClose: () => anchor.remove(),
+            fill: (menu, pop) => {
+                if (options.length === 0) {
+                    // The chart is already at the finest offered step — say so instead of
+                    // presenting an empty (or lying) list.
+                    const note = document.createElement('div');
+                    note.style.cssText = 'padding:6px 10px;opacity:0.65;white-space:nowrap;';
+                    note.textContent = 'No lower timeframe available';
+                    menu.appendChild(note);
+                    return;
+                }
+                for (const o of options) {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'vela-dpop-item';
+                    item.dataset.active = o.value === current ? '1' : '0';
+                    item.style.cssText = 'display:flex;align-items:center;min-width:88px;padding:5px 10px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;font-variant-numeric:tabular-nums;';
+                    item.textContent = o.label;
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        pop.hide();
+                        onPick(o.value);
+                    });
+                    menu.appendChild(item);
+                }
+            },
+        });
+        this.menuOwner = anchor;
     }
 
     /** A floating list of one-shot actions (icon + label rows) opened by the kebab. */
@@ -673,10 +756,15 @@ export class DrawingSettingsPopup {
         let cur = current;
         const paint = (v: string | number): void => {
             b.replaceChildren();
-            const ic = document.createElement('span');
-            ic.style.cssText = 'display:flex;';
-            ic.innerHTML = sized(render(v));
-            b.appendChild(ic);
+            const glyph = render(v);
+            if (glyph) {
+                // An empty glyph means a text-only control (e.g. the magnifier's timeframe) —
+                // the trigger then shows just the label + chevron.
+                const ic = document.createElement('span');
+                ic.style.cssText = 'display:flex;';
+                ic.innerHTML = sized(glyph);
+                b.appendChild(ic);
+            }
             if (opts.label && opts.labelInTrigger) {
                 const tx = document.createElement('span');
                 tx.textContent = opts.label(v);
@@ -728,10 +816,13 @@ export class DrawingSettingsPopup {
                     item.className = 'vela-dpop-item';
                     item.dataset.active = active ? '1' : '0';
                     item.style.cssText = `display:flex;align-items:center;gap:8px;${label ? 'min-width:118px;' : ''}padding:5px 8px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;`;
-                    const ic = document.createElement('span');
-                    ic.style.cssText = 'display:flex;flex:none;width:22px;justify-content:center;';
-                    ic.innerHTML = sized(render(v), 18);
-                    item.appendChild(ic);
+                    const glyph = render(v);
+                    if (glyph) {
+                        const ic = document.createElement('span');
+                        ic.style.cssText = 'display:flex;flex:none;width:22px;justify-content:center;';
+                        ic.innerHTML = sized(glyph, 18);
+                        item.appendChild(ic);
+                    }
                     if (label) {
                         const tx = document.createElement('span');
                         tx.textContent = label(v);

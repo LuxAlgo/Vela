@@ -71,7 +71,7 @@ const PATTERN_TYPES: DrawingTypeKey[] = ['xabcd', 'abcd', 'headshoulders'];
 const ELLIOTT_TYPES: DrawingTypeKey[] = ['elliottimpulse', 'elliottcorrection'];
 const HARMONIC_TYPES: DrawingTypeKey[] = ['gartley', 'bat', 'butterfly', 'crab', 'shark', 'cypher'];
 
-const MEASUREMENT_TYPES: DrawingTypeKey[] = ['position', 'datepricerange'];
+const MEASUREMENT_TYPES: DrawingTypeKey[] = ['position', 'datepricerange', 'magnifier'];
 const VOLUME_TYPES: DrawingTypeKey[] = ['anchoredvwap', 'fixedrangevp'];
 
 const BRUSH_TYPES: DrawingTypeKey[] = ['freehand', 'highlighter'];
