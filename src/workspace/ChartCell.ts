@@ -26,7 +26,15 @@ import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, ledgerEntryName, type LedgerManifestEntry, type ResolvedIndicator } from '../widget/indicators';
 import { inputDeltas, type InputValue } from '../core/model/inputs';
-import { legendActionsProviderFor, legendCalloutsProviderFor, resolveEngines, statePersistenceHandlers, type CellStateContext, type ExternalIndicatorEntry, type WidgetContext } from '../widget/contributions';
+import {
+    legendActionsProviderFor,
+    legendCalloutsProviderFor,
+    resolveEngines,
+    statePersistenceHandlers,
+    type CellStateContext,
+    type ExternalIndicatorEntry,
+    type WidgetContext,
+} from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { normalizeTimezone } from '../core/timezones';
@@ -174,7 +182,6 @@ export interface CellDeps {
     toast(message: string, kind: 'info' | 'success' | 'error', durationMs?: number): void;
 }
 
-
 /** One live manifest/external instance and, when it deviates from declaration
  *  defaults, the values it was restored with or dropped holding. */
 interface CellInstance {
@@ -270,7 +277,14 @@ export class ChartCell {
         // The canonical symbol form: pre-prefix pooled/persisted states carried the venue
         // in `provider` beside a bare symbol — weld them back together once, at boot.
         const symbol = prefixedSymbol(seed);
-        this.state = { symbol, provider: parseSymbol(symbol ?? '').provider ?? undefined, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars, session: normalizeSession(seed.session) };
+        this.state = {
+            symbol,
+            provider: parseSymbol(symbol ?? '').provider ?? undefined,
+            timeframe: seed.timeframe,
+            priceStyle: seed.priceStyle,
+            bars: seed.bars,
+            session: normalizeSession(seed.session),
+        };
         const doc = gridHost.ownerDocument;
         this.host = doc.createElement('div');
         this.host.className = 'vela-cell';
@@ -639,7 +653,7 @@ export class ChartCell {
                     kind: 'select' as const,
                     label: 'Bars to fetch',
                     id: 'bars',
-                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
+                    options: ['500', '1000', '2000', '5000', '10000', '20000', '50000', '60000', '80000', '100000'],
                     get: () => String(this.state.bars ?? 1000),
                     set: (v: string) => {
                         this.state.bars = Number(v);
@@ -671,11 +685,34 @@ export class ChartCell {
                 id: 'status-line',
                 rows: [
                     { kind: 'heading', label: 'Status line', id: 'parts' },
-                    { kind: 'toggle', label: 'Symbol logo', id: 'logo', get: () => sl.partVisible('logo'), set: (v: boolean) => this.setStatuslinePart('logo', v) },
-                    { kind: 'toggle', label: 'Symbol name', id: 'name', get: () => sl.partVisible('name'), set: (v: boolean) => this.setStatuslinePart('name', v) },
-                    { kind: 'toggle', label: 'Market status', id: 'market', get: () => sl.partVisible('market'), set: (v: boolean) => this.setStatuslinePart('market', v) },
-                    { kind: 'toggle', label: 'OHLC values', id: 'ohlc', get: () => sl.partVisible('ohlc'), set: (v: boolean) => this.setStatuslinePart('ohlc', v) },
-                    { kind: 'toggle', label: 'Bar change values', id: 'change', get: () => sl.partVisible('change'), set: (v: boolean) => this.setStatuslinePart('change', v) },
+                    {
+                        kind: 'toggle',
+                        label: 'Symbol name',
+                        id: 'name',
+                        get: () => sl.partVisible('name'),
+                        set: (v: boolean) => this.setStatuslinePart('name', v),
+                    },
+                    {
+                        kind: 'toggle',
+                        label: 'Market status',
+                        id: 'market',
+                        get: () => sl.partVisible('market'),
+                        set: (v: boolean) => this.setStatuslinePart('market', v),
+                    },
+                    {
+                        kind: 'toggle',
+                        label: 'OHLC values',
+                        id: 'ohlc',
+                        get: () => sl.partVisible('ohlc'),
+                        set: (v: boolean) => this.setStatuslinePart('ohlc', v),
+                    },
+                    {
+                        kind: 'toggle',
+                        label: 'Bar change values',
+                        id: 'change',
+                        get: () => sl.partVisible('change'),
+                        set: (v: boolean) => this.setStatuslinePart('change', v),
+                    },
                     { kind: 'heading', label: 'Indicators', id: 'indicators' },
                     {
                         kind: 'toggle',
@@ -933,7 +970,8 @@ export class ChartCell {
             if (this.manifest.length > 0) {
                 for (const item of led.manifest) {
                     const entry = this.manifest.find((e) => e.name === ledgerEntryName(item));
-                    if (entry) this.addManifestInstance(entry, { record: false, ...(typeof item === 'object' ? { inputs: item.inputs, props: item.props } : {}) });
+                    if (entry)
+                        this.addManifestInstance(entry, { record: false, ...(typeof item === 'object' ? { inputs: item.inputs, props: item.props } : {}) });
                 }
                 this.pendingManifestNames = null;
             } else if (!this.deps.manifestSettled()) {
@@ -987,11 +1025,17 @@ export class ChartCell {
      * a persistence handler's `restore` runs silently, a user-driven call records.
      */
     addExternalIndicator(entry: ExternalIndicatorEntry): void {
-        this.addManifestInstance({ ...entry, enabled: true }, { external: true, ...(entry.inputs ? { inputs: entry.inputs } : {}), ...(entry.props ? { props: entry.props } : {}) });
+        this.addManifestInstance(
+            { ...entry, enabled: true },
+            { external: true, ...(entry.inputs ? { inputs: entry.inputs } : {}), ...(entry.props ? { props: entry.props } : {}) },
+        );
     }
 
     /** Add ONE instance of a manifest entry (repeatable — duplicates are legitimate). */
-    addManifestInstance(entry: ResolvedIndicator, opts: { record?: boolean; external?: boolean; inputs?: Record<string, InputValue>; props?: Record<string, InputValue> } = {}): void {
+    addManifestInstance(
+        entry: ResolvedIndicator,
+        opts: { record?: boolean; external?: boolean; inputs?: Record<string, InputValue>; props?: Record<string, InputValue> } = {},
+    ): void {
         if (this.destroyed) return;
         const values = opts.inputs || opts.props ? { inputs: opts.inputs, props: opts.props } : undefined;
         const it: CellInstance = { entry, handle: this.addToChart(entry, values), ...(opts.external ? { external: true } : {}), ...(values ? { values } : {}) };
@@ -1201,7 +1245,7 @@ export class ChartCell {
         // Identity from the live config; depth (`bars`) stays the cell's own durable
         // budget — in range mode the config carries the chip's transient fetch budget.
         const live = this.inner?.market;
-        const ext = this.inner ? this.dehydrateExt() : (Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined);
+        const ext = this.inner ? this.dehydrateExt() : Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined;
         return {
             ...this.state,
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
@@ -1219,12 +1263,14 @@ export class ChartCell {
             // manifest — their plugin persists them via the `ext` seam instead.
             indicators: indicatorLedger({
                 present: this.inner ? this.inner.presentNativeIndicators() : [],
-                instanceEntries: this.instances.filter((it) => !it.external).map((it) => {
-                    // LIVE deltas from the handle; a handle-less instance (add failed)
-                    // keeps whatever values it was restored with.
-                    const d = it.handle ? instanceDeltas(it.handle) : it.values;
-                    return d ? { name: it.entry.name, ...d } : it.entry.name;
-                }),
+                instanceEntries: this.instances
+                    .filter((it) => !it.external)
+                    .map((it) => {
+                        // LIVE deltas from the handle; a handle-less instance (add failed)
+                        // keeps whatever values it was restored with.
+                        const d = it.handle ? instanceDeltas(it.handle) : it.values;
+                        return d ? { name: it.entry.name, ...d } : it.entry.name;
+                    }),
                 pendingManifest: this.pendingManifestNames,
                 manifestSettled: this.deps.manifestSettled(),
                 volumePending: this.volumeMayBePending && this.volumeIntent,
