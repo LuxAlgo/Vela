@@ -1340,6 +1340,202 @@ describe('EngineOrchestrator — loading placeholder + legend status', () => {
     });
 });
 
+/**
+ * An engine the test drives by hand: `prepare` declares the configured meta, `execute`
+ * only captures the handlers — the test emits each model via {@link emit}. Static-only
+ * (streaming: false), so the session shape is identical on live and non-live charts.
+ */
+class HandDrivenEngine implements ScriptingEngine {
+    readonly language = 'pine';
+    readonly capabilities: EngineCapabilities = { streaming: false, visibleRange: false, inputs: true };
+    prepareMeta = { title: 'My Overlay', overlay: true };
+    private sinks: Record<string, ExecutionHandlers> = {};
+    prepare(_source: string, instanceId: string): Promise<PreparedScript> {
+        return Promise.resolve({ language: 'pine', inputs: [], meta: { ...this.prepareMeta }, reactsToViewport: false, token: { instanceId } });
+    }
+    execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        this.sinks[(req.prepared.token as { instanceId: string }).instanceId] = handlers;
+        return { stop: () => {}, update: () => {}, setVisibleRange: () => {}, notifyBars: () => {} };
+    }
+    emit(id: string, model: IndicatorModel): void {
+        this.sinks[id]?.onModel(model);
+    }
+}
+
+/** The fabricated shape an engine run over ZERO bars produces: the script body never
+ *  executed, so the metadata is defaults (generic title, overlay: false) and there is
+ *  no output of any kind. */
+function emptyRunModel(id: string): IndicatorModel {
+    return { id, title: 'Indicator', overlay: false, paneHint: 'new', series: [], fills: [], backgrounds: [], priceLines: [], inputs: [], inputValues: {} };
+}
+
+/** A feed whose INITIAL load resolves empty (auth race / transient failure); the test
+ *  pushes live bars by hand afterwards. */
+class EmptyThenLiveFeed implements MarketDataFeed {
+    push: ((bar: OHLCV) => void) | null = null;
+    load(): Promise<OHLCV[]> { return Promise.resolve([]); }
+    subscribe(_cfg: unknown, onBar: (bar: OHLCV) => void): Unsubscribe {
+        this.push = onBar;
+        return () => { this.push = null; };
+    }
+}
+
+function realOverlayModel(id: string, overlay: boolean, title = 'My Overlay'): IndicatorModel {
+    return {
+        id, title, overlay, paneHint: overlay ? 'price' : 'new',
+        series: [{ id: `${id}:line:out#0`, title: 'Out', paneId: 'unrouted', kind: 'line', points: [{ time: 1_700_000_000_000, value: 1 }], style: { color: '#fff', width: 1, lineStyle: 'solid' } }],
+        fills: [], backgrounds: [], priceLines: [], inputs: [], inputValues: {},
+    };
+}
+
+describe('EngineOrchestrator — a no-output first model never finalizes routing', () => {
+    it('keeps the prepared pane + loading state when the first run produced no output on a bar-less chart; the later real model lands normally', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new HandDrivenEngine();
+        // The chart's own initial load resolved EMPTY — the only window where a run can
+        // produce nothing because the script never executed.
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new EmptyThenLiveFeed() });
+        const added: string[] = [];
+        chart.on('indicator:added', (e) => added.push(e.id));
+
+        const ind = chart.addIndicator('//@version=5\nindicator("My Overlay", overlay=true)\nplot(close)');
+        await chart.ready();
+        await flush();
+
+        // The prepared placeholder sits on the price pane with the declared title.
+        const mountsFor = (): IndicatorModel[] => renderer.mountedModels.filter((m) => m.id === ind.id);
+        expect(mountsFor()[0]?.paneId).toBe('price');
+        expect(mountsFor()[0]?.title).toBe('My Overlay');
+
+        // The first run resolved over zero bars: fabricated metadata, no output.
+        engine.emit(ind.id, emptyRunModel(ind.id));
+        await flush();
+
+        // Nothing moved, nothing announced: still the placeholder on price, no study
+        // pane exists, the spinner stays, and inspect() still excludes the record.
+        expect(mountsFor()).toHaveLength(1);
+        expect(mountsFor()[0]?.paneId).toBe('price');
+        expect(mountsFor()[0]?.title).toBe('My Overlay');
+        expect(renderer.panes.every((p) => p.id === 'price')).toBe(true);
+        expect(chart.panes.list().map((p) => p.id)).toEqual(['price']);
+        expect(renderer.statuses[renderer.statuses.length - 1]).toEqual({ id: ind.id, status: 'loading' });
+        expect(added).toHaveLength(0);
+        expect(chart.inspect().indicators).toHaveLength(0);
+
+        // Bars arrived and the session re-ran for real: the model mounts on price with
+        // its series, announced exactly once.
+        engine.emit(ind.id, realOverlayModel(ind.id, true));
+        await flush();
+        const last = mountsFor()[mountsFor().length - 1];
+        expect(last?.paneId).toBe('price');
+        expect(last?.title).toBe('My Overlay');
+        expect(last?.series).toHaveLength(1);
+        expect(renderer.statuses[renderer.statuses.length - 1]).toEqual({ id: ind.id, status: 'idle' });
+        expect(added).toEqual([ind.id]);
+        expect(chart.inspect().indicators).toHaveLength(1);
+        expect(chart.inspect().totals.series).toBe(1);
+    });
+
+    it('the one-shot self-heal still moves a REAL first model that disagrees with the prepare-time guess', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new HandDrivenEngine(); // prepare says overlay:true — the wrong static guess
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const added: string[] = [];
+        chart.on('indicator:added', (e) => added.push(e.id));
+
+        const ind = chart.addIndicator('//@version=5\nindicator("My Overlay", overlay=true)\nplot(close)');
+        await chart.ready();
+        await flush();
+        expect(renderer.mountedModels.find((m) => m.id === ind.id)?.paneId).toBe('price');
+
+        // The first REAL model (it has output) says non-overlay: the re-route must fire.
+        engine.emit(ind.id, realOverlayModel(ind.id, false));
+        await flush();
+        const last = renderer.mountedModels[renderer.mountedModels.length - 1];
+        expect(last?.id).toBe(ind.id);
+        expect(last?.paneId).toBe(`pane-${ind.id}`);
+        expect(renderer.statuses[renderer.statuses.length - 1]).toEqual({ id: ind.id, status: 'idle' });
+        expect(added).toEqual([ind.id]);
+        // The indicator lives on its study pane only — no price-pane residue.
+        expect(chart.panes.list().find((p) => p.id === 'price')?.indicators).toHaveLength(0);
+        expect(chart.panes.list().find((p) => p.id === `pane-${ind.id}`)?.indicators.map((i) => i.id)).toEqual([ind.id]);
+    });
+
+    it('an output-free run over REAL bars still completes the load: spinner stops, indicator announced', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new HandDrivenEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const added: string[] = [];
+        chart.on('indicator:added', (e) => added.push(e.id));
+
+        const ind = chart.addIndicator('//@version=5\nindicator("My Overlay", overlay=true)\nalertcondition(close > open)');
+        await chart.ready();
+        await flush();
+        expect(renderer.statuses[renderer.statuses.length - 1]).toEqual({ id: ind.id, status: 'loading' });
+
+        // The script RAN (the chart has bars) — it just plots nothing (e.g. alerts only).
+        // Loading ends with the run, not with output.
+        engine.emit(ind.id, { ...emptyRunModel(ind.id), title: 'My Overlay', overlay: true, paneHint: 'price' });
+        await flush();
+        expect(renderer.statuses[renderer.statuses.length - 1]).toEqual({ id: ind.id, status: 'idle' });
+        expect(added).toEqual([ind.id]);
+        expect(chart.inspect().indicators).toHaveLength(1);
+        expect(chart.inspect().totals.series).toBe(0);
+        const last = renderer.mountedModels[renderer.mountedModels.length - 1];
+        expect(last?.id).toBe(ind.id);
+        expect(last?.paneId).toBe('price'); // stays on its declared pane
+    });
+
+    it('late bars end-to-end: an empty initial load, then bars — the indicator ends on price with its plots', async () => {
+        // The feed resolves the INITIAL load empty (auth race / transient failure) and
+        // only later pushes live bars — the workspace-restore window users actually hit.
+        // A pinets-shaped engine: every run derives its model from the CURRENT bars —
+        // over zero bars the fabricated empty shape, over real bars the declared one.
+        class ZeroBarEngine extends HandDrivenEngine {
+            override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+                const id = (req.prepared.token as { instanceId: string }).instanceId;
+                const run = (): void => {
+                    const bars = req.getBars?.() ?? req.bars;
+                    handlers.onModel(bars.length === 0 ? emptyRunModel(id) : realOverlayModel(id, true));
+                    handlers.onDone?.();
+                };
+                run();
+                return { stop: () => {}, update: run, setVisibleRange: run, notifyBars: run };
+            }
+        }
+        const renderer = new FakeRenderer();
+        const engine = new ZeroBarEngine();
+        const feed = new EmptyThenLiveFeed();
+        const chart = new Vela({} as unknown as HTMLElement, { live: true, volume: false }, { renderer, engines: [engine], dataFeed: feed });
+        const added: string[] = [];
+        chart.on('indicator:added', (e) => added.push(e.id));
+
+        const ind = chart.addIndicator('//@version=5\nindicator("My Overlay", overlay=true)\nplot(close)');
+        await chart.ready();
+        await flush();
+
+        // The empty first run left the placeholder untouched: price pane, still loading.
+        const mountsFor = (): IndicatorModel[] => renderer.mountedModels.filter((m) => m.id === ind.id);
+        expect(mountsFor()).toHaveLength(1);
+        expect(mountsFor()[0]?.paneId).toBe('price');
+        expect(added).toHaveLength(0);
+        expect(renderer.statuses[renderer.statuses.length - 1]).toEqual({ id: ind.id, status: 'loading' });
+
+        // Bars arrive; the session re-runs over them.
+        for (const b of makeBars(3)) feed.push!(b);
+        await flush();
+
+        const last = mountsFor()[mountsFor().length - 1];
+        expect(last?.paneId).toBe('price');
+        expect(last?.title).toBe('My Overlay');
+        expect(last?.series).toHaveLength(1);
+        expect(added).toEqual([ind.id]);
+        expect(renderer.statuses[renderer.statuses.length - 1]).toEqual({ id: ind.id, status: 'idle' });
+        expect(chart.inspect().totals.series).toBe(1);
+        expect(chart.panes.list().map((p) => p.id)).toEqual(['price']);
+    });
+});
+
 /** MockEngine that additionally captures every ExecutionRequest (market metadata / fetchSeries). */
 class RequestCaptureEngine extends MockEngine {
     requests: ExecutionRequest[] = [];

@@ -1505,8 +1505,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                     // consumed cause must not leak into the next model.
                     const first = !record.announced;
                     const cause = record.pendingCause ?? 'history';
+                    // A deferred (output-free while loading) model counts as no run at all:
+                    // the pending cause stays for the real run, and no events fire.
+                    if (!this.applyModel(id, model)) return;
                     record.pendingCause = undefined;
-                    this.applyModel(id, model);
                     this.emitContextChanged(id); // throttled — streamed ticks collapse to ~1/s
                     this.emitScriptRun(id, cause, first);
                 },
@@ -1843,10 +1845,30 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * Apply an emitted model. First emission mounts (and routes the pane); a pending
      * structural change (after an input edit) remounts idempotently; everything else
      * (live tick / viewport re-run) value-patches.
+     *
+     * Returns false when the model was DEFERRED — an output-free model arriving while
+     * the record is still loading and the chart has no bars (see below); every other
+     * outcome, including the hidden drop, returns true so the caller's event semantics
+     * stay unchanged.
      */
-    private applyModel(id: string, model: IndicatorModel): void {
+    private applyModel(id: string, model: IndicatorModel): boolean {
         const record = this.registry.get(id);
-        if (!record || record.hidden) return; // a model arriving for a just-hidden indicator is dropped
+        if (!record || record.hidden) return true; // a model arriving for a just-hidden indicator is dropped
+
+        // While the CHART ITSELF has no bars, an output-free model is the signature of a
+        // run over zero bars (empty initial load: auth race, unresolved symbol, transient
+        // feed failure) — an engine may then fabricate default metadata (generic title,
+        // overlay: false) because the script body never executed. Letting it through
+        // while loading would finalize pane routing off fabricated flags and clear the
+        // spinner, stranding the indicator on the wrong pane with a value patch (no
+        // title, no pane, unmounted series ids) as its only future. Keep the prepared
+        // placeholder up and the one-shot pane re-route unconsumed; the session re-runs
+        // when bars arrive and the first REAL model still routes. The bars check keeps
+        // the guard narrow on purpose: loading ends when the run completes, not when it
+        // produces output — a script that ran over real bars and legitimately emitted
+        // nothing visual (e.g. alerts only) still clears its spinner and announces.
+        if (record.loading && this.bars.length === 0 && !EngineOrchestrator.modelHasOutput(model)) return false;
+
         const handle = this.handles.get(id);
 
         if (!record.renderHandle) {
@@ -1857,7 +1879,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             record.renderHandle = this.renderer.mountIndicator(model);
             record.pendingStructural = false;
             this.announce(record, handle);
-            return;
+            return true;
         }
 
         let paneId = record.model?.paneId ?? 'price';
@@ -1892,6 +1914,25 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         }
         if (record.loading) this.setLoading(record, false);
         this.announce(record, handle);
+        return true;
+    }
+
+    /** True when the model carries ANY executed output — series, drawings, bar colors, or trades. */
+    private static modelHasOutput(model: IndicatorModel): boolean {
+        return (
+            model.series.length > 0 ||
+            model.fills.length > 0 ||
+            model.backgrounds.length > 0 ||
+            model.priceLines.length > 0 ||
+            (model.lines?.length ?? 0) > 0 ||
+            (model.boxes?.length ?? 0) > 0 ||
+            (model.labels?.length ?? 0) > 0 ||
+            (model.polylines?.length ?? 0) > 0 ||
+            (model.linefills?.length ?? 0) > 0 ||
+            (model.tables?.length ?? 0) > 0 ||
+            (model.barColors?.length ?? 0) > 0 ||
+            (model.trades?.length ?? 0) > 0
+        );
     }
 
     private routePane(id: string, model: IndicatorModel, options: AddIndicatorOptions): string {
