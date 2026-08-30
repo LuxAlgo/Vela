@@ -17,7 +17,13 @@ import type { StrategyTrade } from '../model/strategy';
 import type { VelaEventMap } from '../events/types';
 import { TypedEventBus } from '../events/EventBus';
 import { IndicatorRegistry, type IndicatorRecord } from './IndicatorRegistry';
-import { getNativeIndicator, nativeIndicatorDescriptors, type NativeIndicatorContext, type NativeIndicatorInfo, type NativeIndicatorOutput } from '../native-indicators/NativeIndicator';
+import {
+    getNativeIndicator,
+    nativeIndicatorDescriptors,
+    type NativeIndicatorContext,
+    type NativeIndicatorInfo,
+    type NativeIndicatorOutput,
+} from '../native-indicators/NativeIndicator';
 import { LiveSession } from './LiveSession';
 import { IndicatorHandleImpl, type IndicatorController } from './IndicatorHandleImpl';
 import { inspectModels, type SceneInspection } from './inspect';
@@ -70,16 +76,6 @@ const SINGLE_LOAD_BARS = 5_000;
  * stalls silently and lands as a single main-thread-freezing parse).
  */
 const CHUNK_BARS = 10_000;
-/**
- * A progressive source's FIRST paint waits until the snapshot carries at least this many
- * bars (or the full ask, whichever is smaller): the first paint is also the frame the
- * renderer sizes the view against, and a cold source's confirmed head can be a handful
- * of bars — framing onto those shows a few giant candles that later snapshots (painted
- * view-preserved) never fix. The FINAL answer always paints, whatever its depth: a
- * genesis-era symbol may simply have fewer bars than this.
- */
-const FIRST_PAINT_BARS = 100;
-
 /**
  * A live bar more than this many intervals ahead of the last one signals MISSED bars (a throttled
  * background tab, a socket reconnect, system sleep) → backfill. 1.5 tolerates timestamp drift and
@@ -336,8 +332,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 if (record.session && record.prepared?.reactsToViewport) {
                     record.pendingCause = 'viewport';
                     record.session.setVisibleRange(window);
-                }
-                else if (record.native?.descriptor.reactsToViewport) record.native.instance.onViewport({ from: window.left, to: window.right });
+                } else if (record.native?.descriptor.reactsToViewport) record.native.instance.onViewport({ from: window.left, to: window.right });
             }
             // An active chart-type data engine streams in newly-visible data as the user scrolls.
             if (this.activeEngineStyle) this.typeEngines.get(this.activeEngineStyle)?.onViewport?.({ from: window.left, to: window.right });
@@ -434,8 +429,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             let painted = false;
             const paint = (bars: OHLCV[], final: boolean): void => {
                 if (this.generation !== gen || (!final && bars.length === 0)) return;
-                if (!painted && !final && bars.length < Math.min(requested, FIRST_PAINT_BARS)) return; // hold the framing paint until it can carry the view
-
+                // Paint from the FIRST bars — no minimum hold: any confirmed head beats a
+                // blank chart. The old hold (100, then 20) kept monthly charts of short-
+                // lived contracts — whose whole history is smaller than any threshold —
+                // blank for the provider's entire poll budget (~90 s measured). Empty
+                // non-final batches are already skipped above; the FINAL answer paints
+                // whatever depth exists.
                 this.setBarSeries(bars, painted ? { preserveView: true } : undefined);
                 if (!painted && bars.length > 0) {
                     painted = true;
@@ -456,11 +455,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 // Supersession must release THIS wait immediately (the newer switch owns the
                 // chart) — the provider's own resolution can lag its abort by one poll.
                 abort.signal.addEventListener('abort', () => signal(true), { once: true });
-                this.feed
-                    .loadProgressive!(market, (bars) => {
+                this.feed.loadProgressive!(
+                    market,
+                    (bars) => {
                         paint(bars, false);
                         if (painted) signal(true);
-                    }, { signal: abort.signal })
+                    },
+                    { signal: abort.signal },
+                )
                     .then((full) => {
                         if (this.progressiveAbort === abort) this.progressiveAbort = null;
                         if (full == null) return signal(false); // incapable — classic paths take over
@@ -568,7 +570,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      *  an in-flight `setMarket` immediately (the config mutates before the load). */
     marketSnapshot(): MarketSnapshot {
         const m = this.config.market;
-        return { symbol: m.symbol, provider: parseSymbol(m.symbol ?? '').provider ?? undefined, timeframe: m.timeframe, bars: m.bars, session: m.session, offline: m.data !== undefined };
+        return {
+            symbol: m.symbol,
+            provider: parseSymbol(m.symbol ?? '').provider ?? undefined,
+            timeframe: m.timeframe,
+            bars: m.bars,
+            session: m.session,
+            offline: m.data !== undefined,
+        };
     }
 
     /**
@@ -698,10 +707,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             } else {
                 // Reload through the shared pipeline. The race lets a superseded caller resolve
                 // promptly (e.g. a parked load on an unresolvable symbol) instead of hanging.
-                await Promise.race([
-                    this.loadMarket(gen, { firstLoad: false }),
-                    new Promise<void>((resolve) => this.supersedeWaiters.push(resolve)),
-                ]);
+                await Promise.race([this.loadMarket(gen, { firstLoad: false }), new Promise<void>((resolve) => this.supersedeWaiters.push(resolve))]);
             }
             if (this.generation !== gen) return; // superseded — the newer switch owns the chart
         } finally {
@@ -1009,7 +1015,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         }
     }
 
-        private onBar(bar: OHLCV): void {
+    private onBar(bar: OHLCV): void {
         if (this.healing) {
             this.healBuffer.push(bar); // replayed once the backfill lands (ordering preserved)
             return;
@@ -1021,11 +1027,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // provider serves `getBars({ from })`. Within the cooldown a discontinuity is accepted
         // as a real market gap (an empty interval on an illiquid symbol) — no refetch loop.
         const last = this.rawBars[this.rawBars.length - 1];
-        if (
-            last && this.canHeal() &&
-            bar.time > last.time + this.barIntervalMs() * GAP_FACTOR &&
-            Date.now() - this.lastHealAt > HEAL_COOLDOWN_MS
-        ) {
+        if (last && this.canHeal() && bar.time > last.time + this.barIntervalMs() * GAP_FACTOR && Date.now() - this.lastHealAt > HEAL_COOLDOWN_MS) {
             this.healBuffer.push(bar);
             void this.healGap(last.time);
             return;
@@ -1235,7 +1237,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * Resolve a descriptor's support for the current symbol: no `isSupported` ⇒ always supported;
      * an `isSupported` but no symbol set ⇒ can't decide, treat as unsupported; a throw ⇒ unsupported.
      */
-    private async isNativeSupported(descriptor: { isSupported?(symbol: string, data: DataControl): boolean | Promise<boolean> }, symbol: string | null): Promise<boolean> {
+    private async isNativeSupported(
+        descriptor: { isSupported?(symbol: string, data: DataControl): boolean | Promise<boolean> },
+        symbol: string | null,
+    ): Promise<boolean> {
         if (!descriptor.isSupported) return true;
         if (!symbol) return false;
         try {
@@ -1430,7 +1435,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.viewportUnsub?.();
         this.paneActionUnsub?.();
         // native instances free their own caches/timers in stop()
-        for (const record of this.registry.all()) { record.session?.stop(); record.native?.instance.stop(); }
+        for (const record of this.registry.all()) {
+            record.session?.stop();
+            record.native?.instance.stop();
+        }
         for (const engine of this.typeEngines.values()) engine.stop(); // chart-type data engines (SDK)
         this.typeEngines.clear();
         this.activeEngineStyle = null;
@@ -1491,8 +1499,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (!record || !record.engine || !record.prepared || record.hidden) return;
         // Stream only when the chart is live, the script is NOT viewport-dependent, and the
         // engine can stream. Viewport scripts + non-streaming engines take the static path.
-        const mode: 'static' | 'live' =
-            this.config.live && !record.prepared.reactsToViewport && record.engine.capabilities.streaming ? 'live' : 'static';
+        const mode: 'static' | 'live' = this.config.live && !record.prepared.reactsToViewport && record.engine.capabilities.streaming ? 'live' : 'static';
         record.session = record.engine.execute(
             {
                 prepared: record.prepared,
@@ -1560,7 +1567,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 data: this.dataControl,
                 emit: (out) => this.applyModel(id, this.buildNativeModel(record, out)),
                 pushData: (data) => this.renderer.setNativeData?.(record.native!.type, data),
-                setStatus: (status) => { if (record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status); },
+                setStatus: (status) => {
+                    if (record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status);
+                },
             };
             record.native.instance.start(ctx, record.inputValues);
         } catch (err) {
