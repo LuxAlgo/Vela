@@ -20,6 +20,27 @@ All notable changes to Vela, newest first.
   still ends with the run, not with output: a script that runs over real bars
   and simply draws nothing (alerts only, for example) finishes loading as
   before.
+- **Extended boxes no longer squeeze the price scale from off-screen.** A box
+  drawn with a one-sided extension (`extend.right` or `extend.left`) contributes
+  its prices to the automatic price scale only while some painted part of it —
+  the anchor span or the side its extension actually covers — crosses the
+  visible bars. Previously any extended box counted everywhere on the time
+  axis, so an indicator keeping a box near the latest bars (a common
+  order-block idiom) flattened the candles in every earlier window the moment
+  you scrolled back in history. Boxes extended toward the window, and
+  `extend.both` boxes, still scale into view as before.
+### Added
+
+- **Right-click the status line to shape it.** The in-chart status line now opens
+  an action menu on right-click with a toggle for each of its elements — the new
+  symbol logo toggle (also in the settings dialog's Status line tab), the symbol
+  name, the market status badge, the OHLC values, and the bar change — plus a
+  hide/show for the chart's price series itself, the same switch as the object
+  tree's eye. Hiding the symbol name also hides the venue and timeframe beside it,
+  since the three read as one label. The line also behaves like the indicator
+  legend rows around it: hovering outlines it, and while the chart is hidden it
+  dims, drops its OHLC and change readouts, and shows an eye button that brings
+  the chart back — everything returns exactly as configured.
 
 ## [v0.6.11]
 
@@ -50,6 +71,22 @@ All notable changes to Vela, newest first.
   the right no longer pulls it off-center.
 
 ### Added
+
+- **Magnifier drawing tool — see a finer timeframe inside an area.** Drag a
+  rectangle over the chart (Measurements group) and its interior redraws the
+  same market at a lower timeframe, in the chart's own style and colors —
+  candles subdivide into finer candles, a line chart magnifies into a finer
+  line, and Heikin Ashi stays Heikin Ashi — at their true time and price
+  positions. The timeframe chip riding the rectangle's bottom-left corner is
+  itself a dropdown: click it to switch, or use the same pick on the drawing's
+  toolbar — both offer only timeframes below the chart's own. Auto picks a
+  sensible subdivision of the chart's timeframe (a 1-hour chart magnifies into
+  15-minute candles); the up/down colors and the border style stay editable
+  when you want the inset to stand apart. The finer bars load in the
+  background and the area keeps up with live data; if the area is too wide
+  for the chosen timeframe, or the chart is already at the finest one, the
+  tool says so inside the rectangle instead of guessing. Like every drawing
+  it moves, resizes, clones, and persists with the document.
 
 - **Scroll the price axis to rescale it.** The mouse wheel over the right
   price-axis strip now zooms that pane's scale the same way dragging it does —

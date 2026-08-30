@@ -23,6 +23,7 @@ import { IndicatorHandleImpl, type IndicatorController } from './IndicatorHandle
 import { inspectModels, type SceneInspection } from './inspect';
 import { presetToRange, type VisibleRangePreset } from '../visible-range';
 import { DrawingController } from '../drawings/DrawingController';
+import { DrawingSeriesService } from './DrawingSeriesService';
 import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
 import { timeframeToMs } from '../../data/timeframe';
@@ -230,7 +231,15 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.barTransform = barTransformFor(initialStyle);
         // User drawings: owns the model + tool/selection state, drives the renderer's
         // drawings port (inert when the renderer lacks the `userDrawings` capability).
-        this.drawings = new DrawingController(this.renderer, this.events, config.drawings);
+        // The series service backs data-driven drawings that read a finer timeframe:
+        // it rides the feed's cache-backed ranged fetch, same path as `request.security`.
+        const drawingSeries = new DrawingSeriesService({
+            fetchBars: (tf, range) => this.fetchSeries(this.config.market.symbol ?? '', tf, range),
+            canFetch: () => !!this.feed.loadRange && !this.config.market.data?.length && !!this.config.market.symbol,
+            chartTimeframe: () => this.config.market.timeframe ?? '60',
+            marketKey: () => `${this.config.market.symbol ?? ''}|${this.config.market.session ?? ''}`,
+        });
+        this.drawings = new DrawingController(this.renderer, this.events, config.drawings, drawingSeries);
         // A symbol nothing can serve leaves the load PARKED; publish it so a host can say so
         // instead of showing a blank chart forever (it still resumes if a provider registers).
         // A parked load also ends the loading state — nothing is coming, and an endless
