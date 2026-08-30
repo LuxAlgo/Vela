@@ -6,6 +6,20 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **An indicator added before its chart has bars no longer strands in a wrong,
+  empty sub pane.** When the initial bar load resolves empty (a slow feed, an
+  authentication race, an unresolved symbol) and a script indicator is added in
+  that window — typically by a host restoring a saved layout — its first run
+  produces nothing. That empty first result used to be taken as the script's
+  real output: the indicator was moved off its declared pane into a new sub
+  pane with a generic "Indicator" legend title, and it stayed there with no
+  plots even after the data arrived. While the chart itself is still without
+  bars, such a result now keeps the indicator loading on the pane its
+  declaration asked for, and the first run over real data places, titles, and
+  announces it exactly as if the data had been there from the start. Loading
+  still ends with the run, not with output: a script that runs over real bars
+  and simply draws nothing (alerts only, for example) finishes loading as
+  before.
 - **Extended boxes no longer squeeze the price scale from off-screen.** A box
   drawn with a one-sided extension (`extend.right` or `extend.left`) contributes
   its prices to the automatic price scale only while some painted part of it —
