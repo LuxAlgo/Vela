@@ -121,6 +121,8 @@ export { HeadShoulders } from './types/HeadShoulders';
 export { MeasureBox, formatDuration } from './types/MeasureBox';
 export { DatePriceRange } from './types/DatePriceRange';
 export { PositionTool, DIRECTION_OPTIONS, type PositionLevelMode } from './types/PositionTool';
+export { Magnifier, MAGNIFIER_TIMEFRAME_OPTIONS, magnifierTimeframeLabel, type MagnifierStyle } from './types/Magnifier';
+export type { DrawingSeriesBar, DrawingSeriesState, DrawingSeriesGateway } from './series';
 export {
     registerDrawingType,
     getDrawingType,

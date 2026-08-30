@@ -1,7 +1,7 @@
 # Adding a Drawing Tool
 
 This guide is for an engineer adding a new **interactive drawing tool** (a trend line, a Fibonacci
-variant, a pattern, an annotation, …) to Vela's core drawings model. These are the tools a user
+variant, a pattern, an annotation, …) to Vela™'s core drawings model. These are the tools a user
 places with the toolbar — distinct from the lines/boxes a scripting **engine** emits as output. For
 the user-facing catalogue see [Drawing tools](../user/drawing-tools.md); for *why* this model lives
 in the core, see [ADR 0005](../architecture/adr/0005-core-owns-user-drawings.md).

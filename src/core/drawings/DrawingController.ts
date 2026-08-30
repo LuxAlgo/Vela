@@ -3,6 +3,7 @@ import type { IChartRenderer } from '../ports/IChartRenderer';
 import type { TypedEventBus } from '../events/EventBus';
 import type { VelaEventMap } from '../events/types';
 import type { IDrawingsRendererPort, DrawingIntent, DrawingMode } from './port';
+import type { DrawingSeriesGateway } from './series';
 import type { DrawingsOption } from './toolbar';
 import { getDrawingType } from './registry';
 import { buildToolbar } from './toolbar';
@@ -58,6 +59,7 @@ export class DrawingController {
         renderer: IChartRenderer,
         private readonly events: TypedEventBus<VelaEventMap>,
         option: DrawingsOption | undefined,
+        seriesGateway?: DrawingSeriesGateway,
     ) {
         this.enabled = !!renderer.capabilities.userDrawings && !!renderer.userDrawingsPort;
         this.port = this.enabled ? renderer.userDrawingsPort! : null;
@@ -65,6 +67,7 @@ export class DrawingController {
             const { definition, visible } = buildToolbar(option);
             this.port.setToolbar(definition);
             this.port.showToolbar(visible);
+            if (seriesGateway) this.port.setSeriesGateway?.(seriesGateway);
             this.subs.push(this.port.onDrawingIntent((i) => this.onIntent(i)));
             this.subs.push(this.store.onChange(() => this.sync()));
         }
@@ -193,7 +196,7 @@ export class DrawingController {
             style,
             text: init.text,
             props: init.props,
-            zIndex: init.zIndex ?? this.startZ(init.paneId ?? 'price'),
+            zIndex: init.zIndex ?? this.startZ(type, init.paneId ?? 'price'),
         });
         if (!d) return null;
         this.history.record(this.store.serialize());
@@ -283,10 +286,14 @@ export class DrawingController {
      *  (falling back to just under the pane's top series where there is no price — a study
      *  pane). Half a key down never ties a series; drawings tying each other paint in insertion
      *  order, so consecutive new drawings still stack newest-in-front. Undefined without a
-     *  shared z space — the store then places it over the other drawings, its own layer's top. */
-    private startZ(paneId: string): number | undefined {
+     *  shared z space — the store then places it over the other drawings, its own layer's top.
+     *  A type that COVERS the series (an opaque inset, `coversSeries`) instead starts just
+     *  above the whole stack — under the candles its content would be buried. */
+    private startZ(type: DrawingTypeKey, paneId: string): number | undefined {
         const range = this.port?.stackRange?.(paneId);
-        return range ? (range.price ?? range.front) - 0.5 : undefined;
+        if (!range) return undefined;
+        if (getDrawingType(type)?.coversSeries) return range.front + 0.5;
+        return (range.price ?? range.front) - 0.5;
     }
 
     /** Programmatically select drawings (host UI → chart): shows the on-chart handles + toolbar.
@@ -457,7 +464,7 @@ export class DrawingController {
                 const style = last ? { ...i.doc.style, ...last } : i.doc.style;
                 const d = deserializeDrawing({ ...i.doc, id: this.store.nextId(), style });
                 if (!d) return;
-                if (!d.zIndex) d.zIndex = this.startZ(d.paneId) ?? 0; // a freshly placed drawing starts under the price
+                if (!d.zIndex) d.zIndex = this.startZ(d.type, d.paneId) ?? 0; // a freshly placed drawing starts under the price (or over the stack when it covers the series)
                 this.history.record(before);
                 this.store.add(d);
                 this.captureStyle(d.id);

@@ -1,16 +1,16 @@
 # API Reference
 
-This is a hand-written, conceptual reference for the Vela public surface — what each piece is for and how the pieces bind. A generated type reference (from the source declarations) may be added later; for now this prose is the source of truth.
+This is a hand-written, conceptual reference for the Vela™ public surface — what each piece is for and how the pieces bind. A generated type reference (from the source declarations) may be added later; for now this prose is the source of truth.
 
 ## The mental model
 
-Vela is a small **core** plus three independently swappable **layers** — data providers, scripting engines, and renderers — each reached through a single narrow **port**.
+Vela™ is a small **core** plus three independently swappable **layers** — data providers, scripting engines, and renderers — each reached through a single narrow **port**.
 
 The **neutral model** — bars, series, pane overlays, drawings, inputs, update patches — is the only thing that crosses a port. No backend-specific type ever leaks across. That opacity is what makes each layer swappable. What ships is the native renderer and the provider-backed, cache-wrapped data feed — both plain **swappable defaults**. No scripting engine ships at all: you install one (Pine Script: `@luxalgo/vela-pinets`) or write one against the port — see [Scripting engines](./scripting-engines.md).
 
-> Vela installs **from source**; the `'vela'` imports in these snippets refer to the local workspace package (see [installation.md](./installation.md)).
+> These snippets import from the npm package `@luxalgo/vela` (see [installation.md](./installation.md)).
 
-The higher-level shell is documented on its own page: [the workspace](./workspace.md) (`vela/workspace` — one chart with `layout: false`, or a multi-chart grid with one shared chrome and sync links). It exposes the state surface — `getState()` / `applyState()` / `state:changed` over one shared document format — which is also what its `persist` option writes.
+The higher-level shell is documented on its own page: [the workspace](./workspace.md) (`@luxalgo/vela/workspace` — one chart with `layout: false`, or a multi-chart grid with one shared chrome and sync links). It exposes the state surface — `getState()` / `applyState()` / `state:changed` over one shared document format — which is also what its `persist` option writes.
 
 ---
 
@@ -28,7 +28,7 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 
 | Method | What it does |
 |---|---|
-| `registerEngine(language, engine)` | Register a scripting engine under a language id so `addIndicator` can run that language. **Vela ships none** — install an addon or write one ([Scripting engines](./scripting-engines.md)). Re-registering a language replaces it (affects future indicators only). Returns the chart for chaining. |
+| `registerEngine(language, engine)` | Register a scripting engine under a language id so `addIndicator` can run that language. **Vela™ ships none** — install an addon or write one ([Scripting engines](./scripting-engines.md)). Re-registering a language replaces it (affects future indicators only). Returns the chart for chaining. |
 | `addIndicator(source, options?)` | Run an indicator script over the chart's market data and render it. Returns an **`IndicatorHandle` synchronously**; values fill in asynchronously. See [options.md](./options.md) for per-indicator options. |
 | `addNativeIndicator(type, options?)` | Add a core-computed (non-scripting) **native indicator** by registered `type`. Returns an `IndicatorHandle` (same lifecycle: legend row, eye/remove, events). **Single-instance per type** — a second call returns the existing handle. The built-in types are `'volume'` (auto-added) and `'vpvr'` (the visible-range volume profile); plugin chart types can register more. `options.inputs` seeds inputs. Native renderer only; an unregistered type returns a fail-soft handle that never mounts. |
 | `runScript(source, options?)` | Execute a script and resolve its **first computed run** — the data-out door for editors, consoles and dashboards. Resolves `{ ok: true, run }` with the [`ScriptRun`](#capturing-what-a-script-computes) itself, plus `onUpdate(cb)` to follow later runs and `remove()` to take it off the chart; `{ ok: false, error }` on a compile/runtime failure, which removes the script again (no dead legend row). Never rejects. Prefer it over `runIndicator` — same injection semantics, but it hands you the data instead of a handle to go fetch from. |
@@ -64,7 +64,7 @@ const chart = new Vela('#chart', { data: myBars, timeframe: '1h' })
 A minimal end-to-end setup — construct over data, register a scripting engine (here the Pine addon), add an indicator, then await the first render:
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 import { PineEngine } from '@luxalgo/vela-pinets';
 
 const chart = new Vela('#chart', { data: myBars, timeframe: '1h', theme: 'dark' });
@@ -204,7 +204,7 @@ failure removes it again — no dead legend row), and never rejects.
 
 #### Across a grid
 
-`vela/workspace` relays the same event with the cell it came from, so one subscription covers
+`@luxalgo/vela/workspace` relays the same event with the cell it came from, so one subscription covers
 every cell — including cells a later layout change creates:
 
 ```js
@@ -313,8 +313,8 @@ registering the one that resolves the chart symbol fires the parked initial load
 Register the provider that resolves the chart symbol, then wait for both the index and the initial load:
 
 ```js
-import { Vela } from 'vela';
-import { BinanceProvider } from 'vela/providers/binance';
+import { Vela } from '@luxalgo/vela';
+import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 
 const chart = new Vela('#chart', { symbol: 'BTCUSDT', timeframe: '1h' });
 

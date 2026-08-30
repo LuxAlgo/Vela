@@ -1,10 +1,10 @@
 # Architecture Decision Records
 
-This directory holds the **Architecture Decision Records (ADRs)** for Vela — the durable record of *why* the library is shaped the way it is.
+This directory holds the **Architecture Decision Records (ADRs)** for Vela™ — the durable record of *why* the library is shaped the way it is.
 
 An ADR captures a single architectural decision: the forces that pushed on it, the choice that was made, the trade-offs accepted, and — most importantly — the **invariant** the decision creates. Invariants are the rules the rest of the codebase relies on. When you are evaluating whether a decision still holds, read the ADR and ask: *is the invariant still true, and is it still worth its cost?*
 
-Vela is a new, modern charting library: a robust **core** surrounded by three independently swappable **layers** — data providers, scripting engines, and renderers. Most ADRs here exist to keep those layers genuinely independent.
+Vela™ is a new, modern charting library: a robust **core** surrounded by three independently swappable **layers** — data providers, scripting engines, and renderers. Most ADRs here exist to keep those layers genuinely independent.
 
 > These ADRs describe the architecture as it stands today; revisit them as the design evolves.
 

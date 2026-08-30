@@ -1,8 +1,8 @@
 # Adding a Renderer
 
-This guide is for an engineer building a new **renderer** for Vela. It is conceptual: it explains what a renderer is responsible for, the contract it implements, and how it binds into a running chart. It does not walk source files — those move. For the native renderer's internal machinery, see the optional [deep dive](#deep-dive-native-renderer-internals-optional) at the end.
+This guide is for an engineer building a new **renderer** for Vela™. It is conceptual: it explains what a renderer is responsible for, the contract it implements, and how it binds into a running chart. It does not walk source files — those move. For the native renderer's internal machinery, see the optional [deep dive](#deep-dive-native-renderer-internals-optional) at the end.
 
-The renderer is the **output layer** of Vela's core-plus-three-layers design, reached through the `IChartRenderer` port. The core hands it a backend-neutral scene; the renderer turns that scene into pixels and pointer interaction, and feeds user interaction back to the core. For how the core, the three layers, and the neutral model fit together, see the [architecture overview](../architecture/overview.md).
+The renderer is the **output layer** of Vela™'s core-plus-three-layers design, reached through the `IChartRenderer` port. The core hands it a backend-neutral scene; the renderer turns that scene into pixels and pointer interaction, and feeds user interaction back to the core. For how the core, the three layers, and the neutral model fit together, see the [architecture overview](../architecture/overview.md).
 
 See also: [Adding an Engine](./adding-an-engine.md) · [Adding a Data Provider](./adding-a-data-provider.md).
 
@@ -181,7 +181,7 @@ Beyond painting, the renderer owns **presentation chrome** and **coordinate/time
 
 ### Reuse the shared, backend-neutral building blocks
 
-Do not reimplement the cross-cutting pieces. Vela ships **backend-neutral building blocks** you assemble into your renderer:
+Do not reimplement the cross-cutting pieces. Vela™ ships **backend-neutral building blocks** you assemble into your renderer:
 
 - The **inputs / settings UI**.
 - The **table overlay**.
@@ -202,7 +202,7 @@ There are two ways a renderer reaches a chart:
 
 The **recommended third-party path is implement-the-port + pass the class**: build a class that satisfies the renderer port (constructor `(opts?: RendererDisplayOptions)`), then hand it to `renderer` (or inject an instance via `deps.renderer`). You never patch the core; you hand it your implementation.
 
-The default is the **native renderer** (WebGL2 with a canvas2d fallback), built in and zero-install. Vela is not built on top of it: it is simply an implementation of the `IChartRenderer` port, and your renderer is its peer.
+The default is the **native renderer** (WebGL2 with a canvas2d fallback), built in and zero-install. Vela™ is not built on top of it: it is simply an implementation of the `IChartRenderer` port, and your renderer is its peer.
 
 ---
 

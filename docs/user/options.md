@@ -30,8 +30,8 @@ How the chart obtains its candles.
 A fetching chart pairs these market options with a registered provider — the display flags ride along in the same object, and registering the provider fires the parked initial load.
 
 ```js
-import { Vela } from 'vela';
-import { BinanceProvider } from 'vela/providers/binance';
+import { Vela } from '@luxalgo/vela';
+import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 
 const chart = new Vela('#chart', {
   symbol: 'BTCUSDT',        // bare = first registered provider that lists it; 'binance:BTCUSDT' pins
@@ -185,7 +185,8 @@ new VelaWorkspace('#chart', {
 
       // ══ Widget & workspace tabs (shell-contributed) ═══════════════
       'status-line',                         // the whole Status line tab
-      'status-line.parts',                   //   Status line group (the four rows below)
+      'status-line.parts',                   //   Status line group (the five rows below)
+      'status-line.logo',                    //     Symbol logo
       'status-line.name',                    //     Symbol name
       'status-line.market',                  //     Market status
       'status-line.ohlc',                    //     OHLC values

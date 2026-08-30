@@ -1,6 +1,6 @@
 # Drawing tools
 
-Vela ships an interactive **drawing-tools** layer: a docked toolbar and ~66 on-chart
+Vela™ ships an interactive **drawing-tools** layer: a docked toolbar and ~67 on-chart
 tools — trend lines, channels, Fibonacci, harmonic patterns, annotations, and more — that a user
 draws, edits, and keeps on the chart. Drawings are anchored in **data space** (time + price), so
 they stay locked to the bars across pan, zoom, timeframe changes, and reload — the same durability
@@ -122,7 +122,9 @@ A new drawing starts **just under the price** — the candles read on top of it,
 on top of the indicators — so it behaves like annotation on the chart's background: a zone, a
 session band, a shaded area you see *through* the candles rather than across them. From there it
 can take **any position in the pane's draw order**: over everything, between two indicators, or
-at the very back.
+at the very back. (The one exception is a tool whose body *replaces* the series pixels inside its
+area — the Magnifier's opaque inset — which starts **above** the whole stack instead, since under
+the candles its content would be buried; it can still be reordered afterwards.)
 
 - **From the object tree.** Each pane is one column, read top to bottom as front to back: its
   drawings, its indicators and (in the main pane) the price series, all together. Drag a drawing
@@ -153,7 +155,7 @@ drawings among themselves, and the tree keeps them in one block above the series
 
 ## Tool catalogue
 
-**66 tools across 9 groups.** The **Type key** is the string you pass to
+**67 tools across 9 groups.** The **Type key** is the string you pass to
 `chart.drawings.setTool('…')` or [`chart.drawings.add('…')`](#driving-drawings-from-code). Eraser,
 Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable types, so they have no key.
 
@@ -275,6 +277,7 @@ whether it falls in that pattern's ideal Fibonacci band.
 |---|---|---|
 | Date & Price Range | `datepricerange` | A box reporting the time span + price/% change it covers. |
 | Long/Short Position | `position` | An entry/stop/target box: click the entry, then drag in the profit direction (up for a long, down for a short). Shows risk:reward, percentages, dollar loss, and position size from your risk % and account balance (size is editable and back-solves the risk %). The gear panel has a long/short switch (mirrors the levels across the entry), exact level values in price or points, and per-label display toggles; zone colors and label styling sit on the quick bar. |
+| Magnifier | `magnifier` | A press-drag-release rectangle whose interior shows the same market at a **lower timeframe**, rendered in the chart's own price style *and colors* (candles, bars, line, area, Heikin Ashi; custom chart types fall back to candles) at true time/price positions. The timeframe chip on the rectangle's bottom-left corner is a dropdown — click it to switch — and the same pick leads the quick bar, beside the up/down color overrides and the border style; **Auto** subdivides the chart's timeframe, and both pickers offer only timeframes below the chart's own. The finer bars load in the background and follow live data; when the chart is already at the finest timeframe, or the area needs more bars than the tool will fetch, a notice inside the rectangle says so. Needs a market with a ranged data source (offline `data` arrays have nothing to fetch). |
 
 ---
 
@@ -285,7 +288,7 @@ Every chart exposes a `chart.drawings` control surface (a sibling of `chart.rend
 even on a renderer that can't paint drawings.
 
 ```js
-import { Vela } from 'vela';
+import { Vela } from '@luxalgo/vela';
 
 const chart = new Vela('#chart', { data: bars });
 await chart.ready();

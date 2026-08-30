@@ -2,6 +2,39 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.12]
+
+### Fixed
+
+- **Extended boxes no longer squeeze the price scale from off-screen.** A box
+  drawn with a one-sided extension (`extend.right` or `extend.left`) contributes
+  its prices to the automatic price scale only while some painted part of it —
+  the anchor span or the side its extension actually covers — crosses the
+  visible bars. Previously any extended box counted everywhere on the time
+  axis, so an indicator keeping a box near the latest bars (a common
+  order-block idiom) flattened the candles in every earlier window the moment
+  you scrolled back in history. Boxes extended toward the window, and
+  `extend.both` boxes, still scale into view as before.
+
+### Added
+
+- **30-minute and monthly presets in the timeframe picker.** The default
+  timeframe list is now `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1D`, `1W`, `1M`.
+  Hosts passing their own `timeframes` option are unaffected. The offline feed
+  also ticks at the right cadence for monthly bars instead of falling back to
+  hourly.
+
+- **Right-click the status line to shape it.** The in-chart status line now opens
+  an action menu on right-click with a toggle for each of its elements — the new
+  symbol logo toggle (also in the settings dialog's Status line tab), the symbol
+  name, the market status badge, the OHLC values, and the bar change — plus a
+  hide/show for the chart's price series itself, the same switch as the object
+  tree's eye. Hiding the symbol name also hides the venue and timeframe beside it,
+  since the three read as one label. The line also behaves like the indicator
+  legend rows around it: hovering outlines it, and while the chart is hidden it
+  dims, drops its OHLC and change readouts, and shows an eye button that brings
+  the chart back — everything returns exactly as configured.
+
 ## [v0.6.11]
 
 ### Fixed
@@ -31,6 +64,22 @@ All notable changes to Vela, newest first.
   the right no longer pulls it off-center.
 
 ### Added
+
+- **Magnifier drawing tool — see a finer timeframe inside an area.** Drag a
+  rectangle over the chart (Measurements group) and its interior redraws the
+  same market at a lower timeframe, in the chart's own style and colors —
+  candles subdivide into finer candles, a line chart magnifies into a finer
+  line, and Heikin Ashi stays Heikin Ashi — at their true time and price
+  positions. The timeframe chip riding the rectangle's bottom-left corner is
+  itself a dropdown: click it to switch, or use the same pick on the drawing's
+  toolbar — both offer only timeframes below the chart's own. Auto picks a
+  sensible subdivision of the chart's timeframe (a 1-hour chart magnifies into
+  15-minute candles); the up/down colors and the border style stay editable
+  when you want the inset to stand apart. The finer bars load in the
+  background and the area keeps up with live data; if the area is too wide
+  for the chosen timeframe, or the chart is already at the finest one, the
+  tool says so inside the rectangle instead of guessing. Like every drawing
+  it moves, resizes, clones, and persists with the document.
 
 - **Scroll the price axis to rescale it.** The mouse wheel over the right
   price-axis strip now zooms that pane's scale the same way dragging it does —
@@ -126,6 +175,9 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Dropdown menus no longer fly in from the top of the page.** Opening a
+  timeframe, style, or other menu now fades in at the trigger instead of
+  sliding down from off-screen.
 - **The Cursor button leaves the ruler and eraser.** Clicking Cursor on the drawing
   toolbar now returns to the regular pointer even while the measure ruler or the
   eraser is active; before, those modes stayed on and the click appeared to do
@@ -1203,22 +1255,22 @@ labels?, qty?, colors? })` — hide the units, the order-id line, or the quantit
   lives in the **`@luxalgo/vela-pinets`** addon, which implements the same public
   `ScriptingEngine` port with identical semantics:
 
-  ```diff
-  - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
-  + import { Vela } from '@luxalgo/vela';
-  + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
-  ```
+    ```diff
+    - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
+    + import { Vela } from '@luxalgo/vela';
+    + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
+    ```
 
-  Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
-  option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
-  Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
+    Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
+    option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
+    Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
 
-  The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
-  Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
-  ACL now bans the import outright, so the obligation is taken on only by an application
-  that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
-  (~515 KB minified), and the engine layer becomes the one layer with no bundled default
-  at all. See [Scripting engines](docs/user/scripting-engines.md).
+    The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
+    Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
+    ACL now bans the import outright, so the obligation is taken on only by an application
+    that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
+    (~515 KB minified), and the engine layer becomes the one layer with no bundled default
+    at all. See [Scripting engines](docs/user/scripting-engines.md).
 
 ### Added
 

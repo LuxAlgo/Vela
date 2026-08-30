@@ -1,6 +1,6 @@
 # Debugging
 
-Most Vela bugs reduce to one question: **is it the engine or the renderer?** The tooling is built to answer that quickly, then to drill into whichever side is at fault.
+Most Vela™ bugs reduce to one question: **is it the engine or the renderer?** The tooling is built to answer that quickly, then to drill into whichever side is at fault.
 
 ## Step 1 — isolate the engine, offline
 

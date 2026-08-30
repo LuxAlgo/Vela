@@ -1,8 +1,8 @@
-# Vela
+# Vela™
 
-Vela is a modern charting library built around a small, robust **core** wrapped by three independently-extensible **layers**: **Data providers** feed market data in, **Scripting engines** execute indicators, and **Renderers** draw the result. The core owns the canonical data and orchestrates everything; each layer plugs in behind a single narrow port, so you can swap any one of them — a different data source, a different scripting language, a different drawing backend — without touching the others or the core.
+Vela™ is a modern charting library built around a small, robust **core** wrapped by three independently-extensible **layers**: **Data providers** feed market data in, **Scripting engines** execute indicators, and **Renderers** draw the result. The core owns the canonical data and orchestrates everything; each layer plugs in behind a single narrow port, so you can swap any one of them — a different data source, a different scripting language, a different drawing backend — without touching the others or the core.
 
-On top of the core, Vela ships two more things: a **shell** (`vela/workspace` — the batteries-included chart app, one chart or a grid: topbar, pickers, status line, bottom bar, object tree, keyboard-first UX) and a **plugin SDK** (`vela/plugin` — chart types, renderer layers, native indicators, widget actions) that lets external packages extend both.
+On top of the core, Vela™ ships two more things: a **shell** (`@luxalgo/vela/workspace` — the batteries-included chart app, one chart or a grid: topbar, pickers, status line, bottom bar, object tree, keyboard-first UX) and a **plugin SDK** (`@luxalgo/vela/plugin` — chart types, renderer layers, native indicators, widget actions) that lets external packages extend both.
 
 ## The one mental model
 
@@ -14,7 +14,7 @@ The core holds the canonical bar array, loads and streams primary data, routes i
 
 ```mermaid
 flowchart TB
-    subgraph core["Vela Core"]
+    subgraph core["Vela™ Core"]
         direction TB
         C["Core<br/>(owns canonical data +<br/>orchestration)"]
     end
@@ -33,8 +33,8 @@ Every layer is reached through a port, and every layer is swappable. The arrows 
 Each layer ships with a **bundled default backend** that you can replace. One nuance to know up front: only the **renderer** is *auto-wired* — neither a scripting engine nor a data provider is selected automatically (you register the ones you need).
 
 - **Renderers** — the **native renderer** is the default and only bundled backend (WebGL2, with a canvas2d fallback). The `IChartRenderer` port accepts custom classes.
-- **Scripting engines** — **none is bundled.** Vela defines the port and ships no engine: install one as an addon (Pine Script: [`@luxalgo/vela-pinets`](user/scripting-engines.md), in-process and Web-Worker forms) or write your own against the port. Nothing is auto-wired either: a bare chart shows candles, drawings and native indicators only, and running a script without a matching engine raises an actionable error.
-- **Data providers** — the default feed is a **multi-provider registry** with built-in closed-bar caching, but **no provider is bundled**. Register one with `chart.data.registerProvider(...)` (e.g. the from-scratch Binance provider at `vela/providers/binance`); registering it fires the chart's parked initial load. Offline `data` needs no provider.
+- **Scripting engines** — **none is bundled.** Vela™ defines the port and ships no engine: install one as an addon (Pine Script: [`@luxalgo/vela-pinets`](user/scripting-engines.md), in-process and Web-Worker forms) or write your own against the port. Nothing is auto-wired either: a bare chart shows candles, drawings and native indicators only, and running a script without a matching engine raises an actionable error.
+- **Data providers** — the default feed is a **multi-provider registry** with built-in closed-bar caching, but **no provider is bundled**. Register one with `chart.data.registerProvider(...)` (e.g. the from-scratch Binance provider at `@luxalgo/vela/providers/binance`); registering it fires the chart's parked initial load. Offline `data` needs no provider.
 
 ## How these docs are organized
 
@@ -42,7 +42,7 @@ The documentation is grouped by what you are trying to do.
 
 - **User** — get a chart rendering and drive it from your app: [Quickstart](user/quickstart.md), [The workspace](user/workspace.md) (single chart or a multi-chart grid), [Options](user/options.md), [API reference](user/api-reference.md), [Drawing tools](user/drawing-tools.md), [Renderer features](user/renderer-features.md), [Data providers](user/data-providers.md), [Scripting engines](user/scripting-engines.md), [Examples](user/examples.md), [FAQ](user/faq.md).
 - **Architecture** — understand the core, the three layers, the neutral model, and how data flows: [Overview](architecture/overview.md), [Data flow](architecture/data-flow.md), and the [decision records](architecture/adr/README.md).
-- **Contributing** — set up the project and extend Vela: the [plugin SDK](contributing/plugin-sdk.md) (chart types, renderer layers, widget actions — no fork needed), or extend a layer behind its port in-repo: add a [renderer](contributing/adding-a-renderer.md), an [engine](contributing/adding-an-engine.md), a [data provider](contributing/adding-a-data-provider.md), a [drawing tool](contributing/adding-a-drawing-tool.md), or a [UI-kit component](contributing/adding-a-ui-component.md).
+- **Contributing** — set up the project and extend Vela™: the [plugin SDK](contributing/plugin-sdk.md) (chart types, renderer layers, widget actions — no fork needed), or extend a layer behind its port in-repo: add a [renderer](contributing/adding-a-renderer.md), an [engine](contributing/adding-an-engine.md), a [data provider](contributing/adding-a-data-provider.md), a [drawing tool](contributing/adding-a-drawing-tool.md), or a [UI-kit component](contributing/adding-a-ui-component.md).
 
 ## Reading paths
 

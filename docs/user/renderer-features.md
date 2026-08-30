@@ -87,7 +87,7 @@ Available on every renderer:
 
 | Feature | Type | Default | Notes |
 |---|---|---|---|
-| `attribution` | The in-chart attribution mark (bottom-left logomark linking to the Vela project). **On by default.** Disabling it is allowed only when an equivalent visible attribution is displayed elsewhere on the page — see the repository's `NOTICE` file. |
+| `attribution` | boolean | `true` | The in-chart attribution mark (bottom-left logomark linking to the Vela™ project). Disabling it is allowed only when an equivalent visible attribution is displayed elsewhere on the page (see the repository's [`NOTICE`](../../NOTICE) file). |
 | `settings` | boolean | `false` | An in-chart gear button + dialog to edit a curated slice of the rich config (colors, fonts, scale, timezone) with export/import. |
 
 > **Pane controls.** Hovering a pane reveals a small button cluster in its top-right corner: move

@@ -1,6 +1,6 @@
 # Scripting engines
 
-**Vela ships no scripting engine.** It defines the `ScriptingEngine` port, owns the bars,
+**Vela™ ships no scripting engine.** It defines the `ScriptingEngine` port, owns the bars,
 and routes whatever an engine produces onto panes — but the language runtime itself is
 always something you plug in. A bare chart draws candles, drawings and native indicators;
 `addIndicator()` without a matching engine raises an actionable error.
@@ -47,7 +47,7 @@ blocks `blob:`, host the worker file yourself and pass
 Both engines report `{ streaming: true, visibleRange: true, inputs: true }` — live
 incremental re-execution, viewport-dependent scripts, and an inputs schema that drives
 the settings dialog. `request.security` (HTF/LTF/cross-symbol, extended-ticker aware)
-resolves through Vela's own cached data feed: the engine never fetches market data.
+resolves through Vela™'s own cached data feed: the engine never fetches market data.
 
 ### In the widget and the workspace
 
@@ -86,7 +86,7 @@ An explicit `engines` entry still wins for its language.
 
 ### Script tag / CDN
 
-The addon publishes browser globals next to Vela's. **Load order is the contract** —
+The addon publishes browser globals next to Vela™'s. **Load order is the contract** —
 `vela.global.js` first, because the addon resolves `@luxalgo/vela` to the page's
 `window.Vela` rather than bundling a second copy of the library:
 
@@ -102,7 +102,7 @@ The addon publishes browser globals next to Vela's. **Load order is the contract
 ### Licensing
 
 `pinets` is **AGPL-3.0**, so `@luxalgo/vela-pinets` is AGPL-3.0 too. That is precisely
-why it is a separate package: Vela itself stays **Apache-2.0** and contains no Pine code.
+why it is a separate package: Vela™ itself stays **Apache-2.0** and contains no Pine code.
 Installing the addon brings the AGPL obligations into *your* deployment — decide that
 deliberately. If you cannot take them on, write an engine for the language you need
 against the port instead.
@@ -110,12 +110,12 @@ against the port instead.
 ## Writing your own engine
 
 The port is small — `prepare()` (parse a script: inputs + declaration metadata, no market
-data) and `execute()` (return a session handle; emit models through the handlers). Vela
+data) and `execute()` (return a session handle; emit models through the handlers). Vela™
 owns the bars and passes them in; the engine never fetches candles.
 
 [**Adding an engine**](../contributing/adding-an-engine.md) is the full contract, and
 `playground/demo-engine.ts` in this repo is a ~300-line working engine you can read in
-one sitting — the one the Vela playground itself runs.
+one sitting — the one the Vela™ playground itself runs.
 
 ## Related
 
