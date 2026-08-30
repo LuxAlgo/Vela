@@ -840,15 +840,17 @@ describe('EngineOrchestrator', () => {
         const renderer = new FakeRenderer();
         const chart = new Vela({} as unknown as HTMLElement, { bars: 120 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
         await Promise.resolve(); // let loadMarketInner reach the progressive await
-        emit!(all.slice(-10)); // the very FIRST bars paint — no minimum hold, any head beats a blank chart
+        emit!(all.slice(-10)); // below the 20-bar first-paint hold — held, the frame it would set is unusable
+        expect(renderer.setBarsCalls).toEqual([]);
+        emit!(all.slice(-40)); // deep enough to carry the framing — paints, load resolves
         await chart.ready();
-        expect(renderer.setBarsCalls).toEqual([{ n: 10, preserveView: false }]);
+        expect(renderer.setBarsCalls).toEqual([{ n: 40, preserveView: false }]);
         emit!(all.slice(-110)); // deeper snapshot — repaints, viewport preserved
-        expect(renderer.setBarsCalls).toEqual([{ n: 10, preserveView: false }, { n: 110, preserveView: true }]);
+        expect(renderer.setBarsCalls).toEqual([{ n: 40, preserveView: false }, { n: 110, preserveView: true }]);
         finish!(all); // convergence — final paint + completion
         await chart.historyComplete();
         expect(renderer.setBarsCalls).toEqual([
-            { n: 10, preserveView: false },
+            { n: 40, preserveView: false },
             { n: 110, preserveView: true },
             { n: 120, preserveView: true },
         ]);
@@ -866,25 +868,22 @@ describe('EngineOrchestrator', () => {
         expect(fallback.setBarsCalls).toEqual([{ n: 30, preserveView: false }]);
     });
 
-    it('a tiny progressive stream paints its first bars AND its final depth — a genesis symbol has no more', async () => {
-        // No minimum hold: the first snapshot paints immediately, and the resolution
-        // repaints (view preserved) whatever depth actually exists.
+    it('a progressive FINAL answer below the first-paint hold still paints — a genesis symbol has no more', async () => {
+        // Every snapshot stays under the hold: nothing paints until the source
+        // resolves — and the resolution paints whatever depth actually exists.
         const renderer = new FakeRenderer();
         const feed: MarketDataFeed = {
             load: () => Promise.resolve([]),
             subscribe: () => () => {},
             loadProgressive: (_cfg, onBatch) => {
-                onBatch(makeBars(10)); // paints immediately — the first bars are the frame
+                onBatch(makeBars(10)); // held — a frame set from this would be unusable
                 return Promise.resolve(makeBars(15)); // all the history there is
             },
         };
         const chart = new Vela({} as unknown as HTMLElement, { bars: 500 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
         await chart.ready();
         await chart.historyComplete();
-        expect(renderer.setBarsCalls).toEqual([
-            { n: 10, preserveView: false },
-            { n: 15, preserveView: true },
-        ]);
+        expect(renderer.setBarsCalls).toEqual([{ n: 15, preserveView: false }]);
     });
 
     it('switching markets ABORTS the in-flight progressive stream — the source stops polling', async () => {
