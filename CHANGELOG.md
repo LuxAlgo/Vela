@@ -2,6 +2,19 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.13]
+
+### Changed
+
+- **Charts paint from the very first bars of a progressive load.** The minimum
+  bar-count hold before the first paint is removed (it was 100, briefly 20): as
+  soon as the first snapshot carries any bars at all they are drawn, and deeper
+  snapshots repaint with the viewport preserved. Monthly charts of short-lived
+  contracts — whose whole history holds fewer bars than any threshold — used to
+  sit blank until the data source's polling budget ran out (up to ~90 s) before
+  showing anything. The final answer still paints whatever depth exists,
+  exactly as before.
+
 ## [v0.6.12]
 
 ### Fixed

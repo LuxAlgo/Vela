@@ -77,20 +77,6 @@ const SINGLE_LOAD_BARS = 5_000;
  */
 const CHUNK_BARS = 10_000;
 /**
- * A progressive source's FIRST paint waits until the snapshot carries at least this many
- * bars (or the full ask, whichever is smaller): the first paint is also the frame the
- * renderer sizes the view against, and a cold source's confirmed head can be a handful
- * of bars — framing onto those shows a few giant candles that later snapshots (painted
- * view-preserved) never fix. The FINAL answer always paints, whatever its depth: a
- * genesis-era symbol may simply have fewer bars than this.
- *
- * 20, not the original 100: on MONTHLY charts the whole contract often holds fewer than
- * 100 bars, so the hold never released and the chart sat blank until the provider's poll
- * budget ran out (~90 s measured). Twenty bars frame a readable view on every timeframe.
- */
-const FIRST_PAINT_BARS = 1;
-
-/**
  * A live bar more than this many intervals ahead of the last one signals MISSED bars (a throttled
  * background tab, a socket reconnect, system sleep) → backfill. 1.5 tolerates timestamp drift and
  * variable-length periods (a 31-day month on the ~30-day 'M' interval) without false positives.
@@ -443,8 +429,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             let painted = false;
             const paint = (bars: OHLCV[], final: boolean): void => {
                 if (this.generation !== gen || (!final && bars.length === 0)) return;
-                if (!painted && !final && bars.length < Math.min(requested, FIRST_PAINT_BARS)) return; // hold the framing paint until it can carry the view
-
+                // Paint from the FIRST bars — no minimum hold: any confirmed head beats a
+                // blank chart. The old hold (100, then 20) kept monthly charts of short-
+                // lived contracts — whose whole history is smaller than any threshold —
+                // blank for the provider's entire poll budget (~90 s measured). Empty
+                // non-final batches are already skipped above; the FINAL answer paints
+                // whatever depth exists.
                 this.setBarSeries(bars, painted ? { preserveView: true } : undefined);
                 if (!painted && bars.length > 0) {
                     painted = true;
