@@ -77,8 +77,12 @@ const CHUNK_BARS = 10_000;
  * of bars — framing onto those shows a few giant candles that later snapshots (painted
  * view-preserved) never fix. The FINAL answer always paints, whatever its depth: a
  * genesis-era symbol may simply have fewer bars than this.
+ *
+ * 20, not the original 100: on MONTHLY charts the whole contract often holds fewer than
+ * 100 bars, so the hold never released and the chart sat blank until the provider's poll
+ * budget ran out (~90 s measured). Twenty bars frame a readable view on every timeframe.
  */
-const FIRST_PAINT_BARS = 100;
+const FIRST_PAINT_BARS = 20;
 
 /**
  * A live bar more than this many intervals ahead of the last one signals MISSED bars (a throttled
