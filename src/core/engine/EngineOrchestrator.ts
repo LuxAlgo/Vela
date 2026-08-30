@@ -77,6 +77,17 @@ const SINGLE_LOAD_BARS = 5_000;
  */
 const CHUNK_BARS = 10_000;
 /**
+ * A progressive source's FIRST paint waits for at least this many bars (or the full ask,
+ * whichever is smaller): the first paint is the frame the renderer sizes the view against,
+ * and framing onto a 2-3 bar head draws a few giant candles that later view-preserved
+ * repaints never fix. The FINAL answer always paints whatever exists — a genesis-era
+ * symbol may simply have fewer bars than this. The number's history: 100 starved short
+ * monthly contracts for the provider's whole poll budget (~90 s measured); briefly 1
+ * (no hold), which framed unusable slivers; 20 frames a readable view on every timeframe
+ * now that the server converges small monthlies in seconds.
+ */
+const FIRST_PAINT_BARS = 20;
+/**
  * A live bar more than this many intervals ahead of the last one signals MISSED bars (a throttled
  * background tab, a socket reconnect, system sleep) → backfill. 1.5 tolerates timestamp drift and
  * variable-length periods (a 31-day month on the ~30-day 'M' interval) without false positives.
@@ -429,12 +440,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             let painted = false;
             const paint = (bars: OHLCV[], final: boolean): void => {
                 if (this.generation !== gen || (!final && bars.length === 0)) return;
-                // Paint from the FIRST bars — no minimum hold: any confirmed head beats a
-                // blank chart. The old hold (100, then 20) kept monthly charts of short-
-                // lived contracts — whose whole history is smaller than any threshold —
-                // blank for the provider's entire poll budget (~90 s measured). Empty
-                // non-final batches are already skipped above; the FINAL answer paints
-                // whatever depth exists.
+                if (!painted && !final && bars.length < Math.min(requested, FIRST_PAINT_BARS)) return; // hold the framing paint until it can carry the view
+
                 this.setBarSeries(bars, painted ? { preserveView: true } : undefined);
                 if (!painted && bars.length > 0) {
                     painted = true;
