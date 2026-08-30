@@ -185,7 +185,8 @@ new VelaWorkspace('#chart', {
 
       // ══ Widget & workspace tabs (shell-contributed) ═══════════════
       'status-line',                         // the whole Status line tab
-      'status-line.parts',                   //   Status line group (the four rows below)
+      'status-line.parts',                   //   Status line group (the five rows below)
+      'status-line.logo',                    //     Symbol logo
       'status-line.name',                    //     Symbol name
       'status-line.market',                  //     Market status
       'status-line.ohlc',                    //     OHLC values

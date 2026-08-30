@@ -1,4 +1,4 @@
-import type { Projector, DrawingPoint } from '../../../core/drawings';
+import type { Projector, DrawingPoint, DrawingSeriesState } from '../../../core/drawings';
 import type { CoordinateSystem, PriceScale, PaneBounds } from '../core/CoordinateSystem';
 
 /** A pane's live price window + pixel extent (the subset the projector needs). */
@@ -31,6 +31,7 @@ export function createProjector(
     paneOf: (paneId: string) => PaneView | null,
     paneIdAtY: (y: number) => string | null,
     barsInRange?: (from: number, to: number) => ReadonlyArray<ProjectorBar>,
+    seriesInRange?: (timeframe: string, from: number, to: number) => DrawingSeriesState,
 ): Projector {
     return {
         xOf: (time: number): number => coords.timeToX(time),
@@ -52,6 +53,7 @@ export function createProjector(
         },
         barsBetween: (t1: number, t2: number): number => Math.abs(coords.timeToLogical(t2) - coords.timeToLogical(t1)),
         barsInRange: barsInRange ? (from: number, to: number): ReadonlyArray<ProjectorBar> => barsInRange(from, to) : undefined,
+        seriesInRange,
         width: coords.width,
         height: coords.height,
     };

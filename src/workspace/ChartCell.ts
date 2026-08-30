@@ -406,6 +406,13 @@ export class ChartCell {
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '', (sym) => this.inner?.data.symbolIcon(sym)) : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
+        // The status line's right-click menu: part toggles route through the cell so the
+        // style link mirrors them; the chart toggle is the object tree's same eye seam.
+        this.statusline?.attachMenu({
+            setPart: (part, visible) => this.setStatuslinePart(part, visible),
+            chartVisible: () => this.inner?.renderer.get('candleVisible') !== false,
+            setChartVisible: (visible) => this.inner?.renderer.set('candleVisible', visible),
+        });
         this.marketStatus = this.statusline ? new MarketStatusTracker((s) => this.statusline?.setMarketStatus(s)) : null;
         // The venue chip above is provisional (persisted/typed prefix): once the shared
         // feed's indexes settle, re-derive it from the DATA — a cell restored as
@@ -764,7 +771,7 @@ export class ChartCell {
         const sl = this.statusline;
         return {
             parts: sl
-                ? { name: sl.partVisible('name'), market: sl.partVisible('market'), ohlc: sl.partVisible('ohlc'), change: sl.partVisible('change') }
+                ? { logo: sl.partVisible('logo'), name: sl.partVisible('name'), market: sl.partVisible('market'), ohlc: sl.partVisible('ohlc'), change: sl.partVisible('change') }
                 : null,
             indicatorTitles: this.indicatorTitlesOn,
             indicatorValues: this.indicatorValuesOn,

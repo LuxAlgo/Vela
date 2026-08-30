@@ -1,9 +1,11 @@
 import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
-import { SegmentDrawing, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
+import { SegmentDrawing, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
 import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE, uprightLineAngle } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
 import { withAlpha } from '../../../core/color';
+import { barTransformFor } from '../../../core/price-styles/BarTransform';
+import type { OHLCV } from '../../../core/model/ohlcv';
 import { valueDecimals } from '../chrome/ticks';
 
 const HANDLE_RADIUS = 4.5; // px radius of the round drag handles
@@ -51,6 +53,18 @@ export function handleIdsFor(targets: PaintTargets): ReadonlySet<string> {
 export class DrawingPainter {
     /** The current `paintAll` call's interaction state, visible to the per-type painters. */
     private targets: PaintTargets = {};
+
+    /** The chart's active series LOOK — style + resolved series colors — pushed by the
+     *  controller before each paint. The magnifier's inset mirrors both: candles/bars/line/
+     *  area restyle the paint (bar-transform styles like Heikin Ashi transform the fetched
+     *  bars; unknown/custom styles fall back to candles), and the colors default to the main
+     *  series' own so the inset reads as a finer copy of the chart. */
+    seriesLook: { style: string; upColor: string; downColor: string; lineColor: string } = {
+        style: 'candles',
+        upColor: BULLISH,
+        downColor: BEARISH,
+        lineColor: BULLISH,
+    };
 
     /** Paint every visible drawing, then selection handles for the targeted ones.
      *  Each drawing is clipped to its own pane's rect (and skipped entirely while that pane
@@ -103,6 +117,10 @@ export class DrawingPainter {
         // placing (two vertical guides + a connecting line) rather than the finished shape.
         if (ghost instanceof RegressionChannel || ghost instanceof FixedRangeVolumeProfile) {
             this.paintTimeSpanGhost(ctx, ghost, proj);
+        } else if (ghost instanceof Magnifier) {
+            // Outline only while dragging — the finished shape fetches series data, and a
+            // placement preview must never kick fetches on every cursor move.
+            this.paintMagnifierGhost(ctx, ghost, proj, theme);
         } else this.paintOne(ctx, ghost, proj, theme);
         ctx.globalAlpha = 1;
     }
@@ -239,6 +257,10 @@ export class DrawingPainter {
         if (d instanceof FixedRangeVolumeProfile) {
             this.paintFixedRangeVp(ctx, d, proj, theme);
             this.paintLabel(ctx, d, proj, theme);
+            return;
+        }
+        if (d instanceof Magnifier) {
+            this.paintMagnifier(ctx, d, proj, theme);
             return;
         }
         if (d instanceof PatternDrawing) {
@@ -756,6 +778,291 @@ export class DrawingPainter {
             ctx.fillText(txt, bx + pad, by);
             ctx.textBaseline = 'alphabetic';
         }
+    }
+
+    /** Placement preview for the magnifier: a dashed rectangle outline only — no backdrop and
+     *  no series read, so dragging the area open never kicks a fetch per cursor move. */
+    private paintMagnifierGhost(ctx: CanvasRenderingContext2D, d: Magnifier, proj: Projector, theme: VelaTheme): void {
+        const r = d.rect(proj);
+        if (!r) return;
+        ctx.save();
+        ctx.strokeStyle = d.style.lineColor || contrastColor(theme.background);
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(Math.min(r.x1, r.x2), Math.min(r.y1, r.y2), Math.abs(r.x2 - r.x1), Math.abs(r.y2 - r.y1));
+        ctx.restore();
+    }
+
+    /** Paint a magnifier: an opaque theme-background inset whose interior shows the chart's
+     *  market at a finer timeframe — candles at their true time/price positions, clipped to
+     *  the rectangle. Bars come through `Projector.seriesInRange` (cache read; `loading` and
+     *  `unavailable` states paint a short notice instead). The lower-timeframe candles shift
+     *  half a chart bar LEFT of their raw time pixel so each chart candle's visual cell —
+     *  centered on its open time — subdivides in place. */
+    private paintMagnifier(ctx: CanvasRenderingContext2D, d: Magnifier, proj: Projector, theme: VelaTheme): void {
+        const r = d.rect(proj);
+        const a = d.anchors[0];
+        const b = d.anchors[1];
+        if (!r || !a || !b) return;
+        const x0 = Math.min(r.x1, r.x2);
+        const x1 = Math.max(r.x1, r.x2);
+        const y0 = Math.min(r.y1, r.y2);
+        const y1 = Math.max(r.y1, r.y2);
+        const w = x1 - x0;
+        const h = y1 - y0;
+
+        // Opaque backdrop: the finer candles must read on their own, not blend over the base ones.
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = theme.background;
+        ctx.fillRect(x0, y0, w, h);
+        ctx.restore();
+
+        const from = Math.min(a.time, b.time);
+        const to = Math.max(a.time, b.time);
+        // One chart bar in ms, recovered through the projector (drawings know no bar pitch).
+        const chartBars = proj.barsBetween ? proj.barsBetween(from, to) : 0;
+        const chartMs = chartBars > 0 ? (to - from) / chartBars : 0;
+        // The request extends one chart bar right: the half-pitch left shift below pulls
+        // bars from just past the right edge INTO the rectangle.
+        const res =
+            proj.seriesInRange && chartMs > 0 && w > 1 && h > 1
+                ? proj.seriesInRange(d.magnifier.timeframe, from, to + chartMs)
+                : undefined;
+
+        // `loading` may carry best-effort partial bars (previously fetched overlapping
+        // windows) — paint them so a resize keeps its content while the widened fetch runs.
+        let seriesBars = res?.state === 'ready' || res?.state === 'loading' ? (res.bars ?? []) : [];
+        if (res && (res.state === 'ready' || res.state === 'loading') && seriesBars.length > 0) {
+            // The inset mirrors the CHART's series look: bar-transform styles (Heikin Ashi,
+            // and any registered type that declares one) transform the raw fetched bars;
+            // line/area/bars restyle the paint; unknown/custom styles fall back to candles.
+            // Colors default to the main series' own; a user-picked color wins.
+            const look = this.seriesLook;
+            const transform = look.style !== 'candles' ? barTransformFor(look.style) : null;
+            if (transform) seriesBars = transform.full(seriesBars as readonly OHLCV[]);
+            const mode: 'candles' | 'bars' | 'line' | 'area' =
+                look.style === 'bars' ? 'bars' : look.style === 'line' || look.style === 'baseline' ? 'line' : look.style === 'area' ? 'area' : 'candles';
+            const halfPitch = (proj.xOf(from + chartMs) - proj.xOf(from)) / 2;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x0, y0, w, h);
+            ctx.clip();
+            if (mode === 'line' || mode === 'area') {
+                this.paintMagnifierLine(ctx, d, proj, seriesBars, res.barMs, halfPitch, y1, mode === 'area', d.magnifier.upColor || look.lineColor);
+            } else {
+                this.paintMagnifierBars(ctx, d, proj, seriesBars, res.barMs, halfPitch, x0, x1, mode, d.magnifier.upColor || look.upColor, d.magnifier.downColor || look.downColor);
+            }
+            ctx.restore();
+        } else if (res) {
+            const notice =
+                res.state === 'loading'
+                    ? 'Loading…'
+                    : res.state === 'ready'
+                      ? 'No lower-timeframe data'
+                      : res.reason === 'too-wide'
+                        ? 'Area too wide for this timeframe'
+                        : res.reason === 'none-lower'
+                          ? 'No lower timeframe available'
+                          : res.reason === 'not-lower'
+                            ? 'Pick a timeframe below the chart'
+                            : 'No data source';
+            this.paintMagnifierNotice(ctx, notice, x0, y0, w, h, theme);
+        }
+
+        // Border on top of the inset content. An unset border color means the theme's
+        // contrast ink (white on dark, black on light), resolved per paint so it follows
+        // theme switches live — a user-picked color always wins.
+        ctx.save();
+        ctx.strokeStyle = d.style.lineColor || contrastColor(theme.background);
+        ctx.lineWidth = d.style.lineWidth || 1;
+        ctx.setLineDash(dashPattern(d.style.lineStyle, d.style.lineWidth || 1));
+        ctx.strokeRect(x0, y0, w, h);
+        ctx.restore();
+
+        // Timeframe chip: OUTSIDE the inset, riding the bottom-left corner (inside the
+        // bottom edge only when the rectangle touches the pane's bottom and there is no room
+        // below). Chart-background fill so it reads as chrome, not as data. The chip is a
+        // live dropdown trigger — a caret marks it clickable, and its painted rect is stored
+        // on the drawing for the interaction layer to hit-test.
+        if (w > 44) {
+            const label = magnifierTimeframeLabel(res?.state === 'ready' || res?.state === 'loading' ? res.timeframe : d.magnifier.timeframe);
+            const chipH = 17;
+            const gap = 4;
+            const pane = proj.paneRect?.(d.paneId);
+            const paneBottom = pane ? pane.top + pane.height : proj.height;
+            const below = y1 + gap + chipH <= paneBottom;
+            const chipY = below ? y1 + gap : y1 - gap - chipH;
+            ctx.save();
+            ctx.font = `10px ${theme.fontFamily}`;
+            const tw = ctx.measureText(label).width;
+            const caretW = 11; // room for the dropdown caret after the label
+            const chipW = tw + 12 + caretW;
+            roundRect(ctx, x0, chipY, chipW, chipH, 3);
+            ctx.fillStyle = theme.background;
+            ctx.fill();
+            ctx.strokeStyle = withAlpha(theme.textColor, 0.28);
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            ctx.stroke();
+            ctx.fillStyle = theme.textColor;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, x0 + 6, chipY + chipH / 2 + 0.5);
+            // Caret: a small ∨ chevron marking the chip as a dropdown.
+            const cxr = x0 + 6 + tw + 5;
+            const cyr = chipY + chipH / 2;
+            ctx.strokeStyle = withAlpha(theme.textColor, 0.7);
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(cxr, cyr - 1.5);
+            ctx.lineTo(cxr + 2.5, cyr + 1.5);
+            ctx.lineTo(cxr + 5, cyr - 1.5);
+            ctx.stroke();
+            ctx.restore();
+            d.chipRect = { x: x0, y: chipY, w: chipW, h: chipH };
+        } else {
+            d.chipRect = null;
+        }
+    }
+
+    /** The magnifier's candle/bar loop: each bar's cell spans its open→close time (shifted left
+     *  by half a chart bar). Candles: wick always, body once the cell is wide enough to carry
+     *  one. OHLC bars: the high–low spine with open/close ticks once the cell has the room. */
+    private paintMagnifierBars(
+        ctx: CanvasRenderingContext2D,
+        d: Magnifier,
+        proj: Projector,
+        bars: ReadonlyArray<{ time: number; open: number; high: number; low: number; close: number }>,
+        barMs: number,
+        halfPitch: number,
+        x0: number,
+        x1: number,
+        mode: 'candles' | 'bars',
+        upColor: string,
+        downColor: string,
+    ): void {
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1;
+        for (const bar of bars) {
+            const cx0 = proj.xOf(bar.time) - halfPitch;
+            const cx1 = proj.xOf(bar.time + barMs) - halfPitch;
+            if (cx1 < x0 || cx0 > x1) continue;
+            const yHigh = proj.yOf(bar.high, d.paneId);
+            const yLow = proj.yOf(bar.low, d.paneId);
+            const yOpen = proj.yOf(bar.open, d.paneId);
+            const yClose = proj.yOf(bar.close, d.paneId);
+            if (yHigh == null || yLow == null || yOpen == null || yClose == null) continue;
+            const color = bar.close >= bar.open ? upColor : downColor;
+            const cellW = cx1 - cx0;
+            const cx = (cx0 + cx1) / 2;
+            ctx.strokeStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(cx, yHigh);
+            ctx.lineTo(cx, yLow);
+            ctx.stroke();
+            if (cellW < 3) continue; // too narrow for a body / ticks — the spine carries the bar
+            if (mode === 'bars') {
+                const tick = Math.max(1, cellW * 0.35);
+                ctx.beginPath();
+                ctx.moveTo(cx - tick, yOpen);
+                ctx.lineTo(cx, yOpen);
+                ctx.moveTo(cx, yClose);
+                ctx.lineTo(cx + tick, yClose);
+                ctx.stroke();
+            } else {
+                const bw = Math.max(1, cellW * 0.7);
+                ctx.fillStyle = color;
+                ctx.fillRect(cx - bw / 2, Math.min(yOpen, yClose), bw, Math.max(1, Math.abs(yClose - yOpen)));
+            }
+        }
+    }
+
+    /** The magnifier's line/area rendering: a close polyline through each cell's center (same
+     *  half-chart-bar shift as the candles), with an optional translucent fill down to the
+     *  rectangle's bottom edge for the area style. Colored like the chart's own line series. */
+    private paintMagnifierLine(
+        ctx: CanvasRenderingContext2D,
+        d: Magnifier,
+        proj: Projector,
+        bars: ReadonlyArray<{ time: number; close: number }>,
+        barMs: number,
+        halfPitch: number,
+        yBottom: number,
+        area: boolean,
+        color: string,
+    ): void {
+        const pts: Array<[number, number]> = [];
+        for (const bar of bars) {
+            const y = proj.yOf(bar.close, d.paneId);
+            if (y == null) continue;
+            pts.push([proj.xOf(bar.time + barMs / 2) - halfPitch, y]);
+        }
+        if (pts.length < 2) return;
+        if (area) {
+            ctx.beginPath();
+            ctx.moveTo(pts[0]![0], yBottom);
+            for (const [px, py] of pts) ctx.lineTo(px, py);
+            ctx.lineTo(pts[pts.length - 1]![0], yBottom);
+            ctx.closePath();
+            ctx.fillStyle = withAlpha(color, 0.15);
+            ctx.fill();
+        }
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(pts[0]![0], pts[0]![1]);
+        for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i]![0], pts[i]![1]);
+        ctx.stroke();
+    }
+
+    /** Centered muted notice inside the magnifier rect (loading / unavailable states). */
+    private paintMagnifierNotice(
+        ctx: CanvasRenderingContext2D,
+        text: string,
+        x0: number,
+        y0: number,
+        w: number,
+        h: number,
+        theme: VelaTheme,
+    ): void {
+        if (w < 60 || h < 20) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0, y0, w, h);
+        ctx.clip();
+        ctx.font = `11px ${theme.fontFamily}`;
+        ctx.fillStyle = withAlpha(theme.textColor, 0.55);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, x0 + w / 2, y0 + h / 2);
+        ctx.restore();
+    }
+
+    /** A bottom-center pill prompting the armed tool's placement gesture (e.g. the magnifier's
+     *  "drag an area"). Painted by the drawings layer while the tool is armed and no placement
+     *  is in progress; chart-background fill so it reads as chrome over any content. */
+    paintPlacementHint(ctx: CanvasRenderingContext2D, text: string, theme: VelaTheme, width: number, height: number): void {
+        ctx.save();
+        ctx.font = `11px ${theme.fontFamily}`;
+        const tw = ctx.measureText(text).width;
+        const pillW = tw + 24;
+        const pillH = 24;
+        const x = (width - pillW) / 2;
+        const y = height - pillH - 14;
+        roundRect(ctx, x, y, pillW, pillH, pillH / 2);
+        ctx.fillStyle = theme.background;
+        ctx.fill();
+        ctx.strokeStyle = withAlpha(theme.textColor, 0.28);
+        ctx.lineWidth = 1;
+        ctx.setLineDash([]);
+        ctx.stroke();
+        ctx.fillStyle = theme.textColor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, width / 2, y + pillH / 2 + 0.5);
+        ctx.restore();
     }
 
     /** Paint a fixed-range volume profile: horizontal histogram rows (up/down split) anchored to

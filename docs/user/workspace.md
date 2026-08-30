@@ -414,10 +414,16 @@ they work from the very first keystroke, before any click.
   in the right-hand cluster. The whole bar is composable — see
   [Composing the topbar](#composing-the-topbar).
 - **Status line** — symbol + OHLC and change of the hovered bar (resting on the latest
-  live bar), stacked above the renderer's indicator legend. In multi-cell grids it
-  stays on one row — segments that don't fit the cell hide instead of wrapping (bar
-  change first, then venue/timeframe, then the market badge; the logo + ticker always
-  stay).
+  live bar), stacked above the renderer's indicator legend and dressed like its rows:
+  hovering outlines the chip, and while the chart's price series is hidden the line
+  dims, drops its value readouts, and shows an eye that brings the chart back.
+  Right-clicking it opens an action menu with a
+  toggle per element (logo, name, market status, OHLC, bar change — the same toggles
+  as the settings dialog's Status line tab; hiding the name also hides the
+  venue/timeframe beside it) plus hide/show for the chart's price series. In
+  multi-cell grids it stays on one row — segments that don't fit the cell hide instead
+  of wrapping (bar change first, then venue/timeframe, then the market badge; the logo
+  + ticker always stay).
 - **Object tree** — a docked panel grouping every item under the pane it belongs to. Each pane is
   one column read top to bottom as front to back: its drawings, its indicators and, in the main
   pane, the price series, all in draw order — new indicators and new drawings both start under
