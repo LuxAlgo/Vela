@@ -2,6 +2,21 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Right-click the status line to shape it.** The in-chart status line now opens
+  an action menu on right-click with a toggle for each of its elements — the new
+  symbol logo toggle (also in the settings dialog's Status line tab), the symbol
+  name, the market status badge, the OHLC values, and the bar change — plus a
+  hide/show for the chart's price series itself, the same switch as the object
+  tree's eye. Hiding the symbol name also hides the venue and timeframe beside it,
+  since the three read as one label. The line also behaves like the indicator
+  legend rows around it: hovering outlines it, and while the chart is hidden it
+  dims, drops its OHLC and change readouts, and shows an eye button that brings
+  the chart back — everything returns exactly as configured.
+
 ## [v0.6.11]
 
 ### Fixed
