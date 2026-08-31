@@ -27,6 +27,12 @@ ${STATIC_DECLS}
 .vela-ui *, .vela-ui-layer * { box-sizing: border-box; }
 /* Text ENTRY is the one exception: selection is part of editing. */
 .vela-ui :is(input, textarea), .vela-ui-layer :is(input, textarea) { user-select: text; -webkit-user-select: text; }
+/* iOS Safari zooms the page when a focused field is under 16px, and often
+   keeps that zoom after the field blurs or a dialog closes. The shell's
+   mobile size class is the honest gate — not a media query — so an embedded
+   chart on a wide desktop still gets the rule when it is in the phone layout.
+   Scoped to the kit root so a host page's own [data-layout] is never touched. */
+.vela-ui[data-layout='mobile'] :is(input, textarea, select) { font-size: 16px; }
 .vela-icon { display: inline-flex; align-items: center; flex: none; }
 .vela-icon svg { display: block; }
 `;

@@ -11,6 +11,11 @@ All notable changes to Vela, newest first.
   active chart. They now download every visible chart in its grid slot, with
   the seams between them. A maximized cell still exports that one chart, and
   a single-chart workspace is unchanged.
+- **Opening the symbol search on a phone no longer zooms the page.** iOS
+  Safari enlarges the view when a focused field is under 16px and often
+  leaves it there after you pick a symbol. Mobile text fields are now 16px,
+  so the tap does not zoom. The search bar and market tabs also stay pinned
+  while you scroll the results.
 
 ## [v0.6.14]
 
