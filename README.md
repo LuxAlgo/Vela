@@ -105,7 +105,7 @@ executes is. Vela™ itself stays Apache-2.0 and carries no Pine code:
 import { PineEngine } from '@luxalgo/vela-pinets';
 
 chart.registerEngine('pine', new PineEngine());
-chart.addIndicator(`//@version=5
+chart.addIndicator(`//@version=6
 indicator("EMA 20", overlay=true)
 plot(ta.ema(close, 20), color=color.orange, linewidth=2)`);
 ```
