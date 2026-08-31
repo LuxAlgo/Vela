@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **A price gap stays visible at every zoom level.** When the two candles on
+  either side of a large price jump landed in the same pixel column on a far
+  zoom-out, that column rendered as one solid stick bridging the empty price
+  range between them. The zoomed-out view now keeps the gap open and paints
+  each side separately, each with its own up/down color.
+
 ## [v0.6.14]
 
 ### Changed
