@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **A multi-chart screenshot now captures the whole layout.** The camera
+  button, its keyboard chord, and the mobile drawer used to export only the
+  active chart. They now download every visible chart in its grid slot, with
+  the seams between them. A maximized cell still exports that one chart, and
+  a single-chart workspace is unchanged.
+
 ## [v0.6.14]
 
 ### Changed
