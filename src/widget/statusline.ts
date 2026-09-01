@@ -180,24 +180,27 @@ export type StatuslineReadout = 'ohlc' | 'value';
 
 /** The market session states the status badge can wear. Crypto venues trade
  *  continuously and stay 'open'; the full vocabulary is ready for providers that
- *  carry a session model (equities RTH/ETH, exchange holidays). */
-export type MarketStatus = 'open' | 'pre' | 'post' | 'closed' | 'holiday';
+ *  carry a session model (equities RTH/ETH, exchange holidays). Overnight roll
+ *  tapes wear the single 'extended' state — they have no pre/post split. */
+export type MarketStatus = 'open' | 'pre' | 'post' | 'extended' | 'closed' | 'holiday';
 
 const MARKET_LABELS: Record<MarketStatus, string> = {
     open: 'Market Open',
     pre: 'Pre-Market',
     post: 'Post-Market',
+    extended: 'Extended Hours',
     closed: 'Market Closed',
     holiday: 'Market Holiday',
 };
 
 /** Session ink: open wears the theme's up color; the other sessions are meaning
- *  constants from the palette (amber pre, sky post, gray closed/holiday). The badge
- *  circle is the same ink at a 20% wash. */
+ *  constants from the palette (amber pre, sky post and extended, gray closed/holiday).
+ *  The badge circle is the same ink at a 20% wash. */
 const MARKET_INKS: Record<MarketStatus, string> = {
     open: 'var(--vela-up)',
     pre: SESSION_PRE,
     post: SESSION_POST,
+    extended: SESSION_POST,
     closed: SESSION_OFF,
     holiday: SESSION_OFF,
 };

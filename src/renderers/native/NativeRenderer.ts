@@ -406,8 +406,9 @@ export class NativeRenderer implements IChartRenderer {
                 this.scene.highlights = sanitizeHighlights(value);
                 break;
             case 'sessionZones':
-                // Pre/post-market bands from the host's market calendar; painted with the
-                // config's session colors. Null ⇒ the market has no session structure.
+                // Session bands from the host's market calendar (pre/post or the single
+                // extended phase); painted with the config's session colors. Null ⇒ the
+                // market has no session structure.
                 this.scene.sessionZones = sanitizeSessionZones(value);
                 break;
             case 'gridlines':
@@ -729,7 +730,7 @@ export class NativeRenderer implements IChartRenderer {
                 };
             })(),
             series: { style: this.scene.priceStyle, baseline: this.scene.baselineValue, spacing: this.coords.spacingScale },
-            sessions: { premarketColor: s.sessions.premarketColor, postmarketColor: s.sessions.postmarketColor },
+            sessions: { premarketColor: s.sessions.premarketColor, postmarketColor: s.sessions.postmarketColor, extendedColor: s.sessions.extendedColor },
         };
     }
 
@@ -844,7 +845,7 @@ export class NativeRenderer implements IChartRenderer {
             baselineLevel: next.baseline.baselineLevel,
         };
         // session shading
-        s.sessions = { premarketColor: next.sessions.premarketColor, postmarketColor: next.sessions.postmarketColor };
+        s.sessions = { premarketColor: next.sessions.premarketColor, postmarketColor: next.sessions.postmarketColor, extendedColor: next.sessions.extendedColor };
         // series
         this.setPriceStyle(next.series.style);
         // Re-read the active style's candle override: setPriceStyle no-ops when the style
@@ -3907,10 +3908,11 @@ function sanitizeHighlights(value: unknown): HighlightArea[] {
     return out.sort((a, b) => a.from - b.from);
 }
 
-/** Coerce arbitrary input into clean pre/post session bands, or null (no session structure). */
+/** Coerce arbitrary input into clean session bands (pre/post or the single extended
+ *  phase), or null (no session structure). */
 function sanitizeSessionZones(value: unknown): SessionZones | null {
     if (value == null || typeof value !== 'object') return null;
-    const v = value as { pre?: unknown; post?: unknown };
+    const v = value as { pre?: unknown; post?: unknown; extended?: unknown };
     const windows = (raw: unknown): Array<readonly [number, number]> => {
         if (!Array.isArray(raw)) return [];
         const out: Array<readonly [number, number]> = [];
@@ -3922,7 +3924,7 @@ function sanitizeSessionZones(value: unknown): SessionZones | null {
         }
         return out.sort((a, b) => a[0] - b[0]);
     };
-    return { pre: windows(v.pre), post: windows(v.post) };
+    return { pre: windows(v.pre), post: windows(v.post), extended: windows(v.extended) };
 }
 
 /** Whether a value is one of the supported price-series styles (built-ins + SDK-registered). */

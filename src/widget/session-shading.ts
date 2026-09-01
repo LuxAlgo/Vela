@@ -1,7 +1,9 @@
-// Session-zone expansion + tracker behind the pre/post-market chart shading. The bands
-// are computed LOCALLY from the symbol's declared session vocabulary (`syminfo.session`,
-// e.g. `0930-1600`, optional `session_extended`, e.g. `0400-2000`, both in the market's
-// `timezone`) — the same timestamps the time axis already understands — so shading is
+// Session-zone expansion + tracker behind the session chart shading (pre/post-market on
+// day-split tapes, one extended-hours phase on overnight roll tapes). The bands are
+// computed LOCALLY from the symbol's declared session vocabulary (`syminfo.session`,
+// e.g. `0930-1600`, optional `session_extended`, e.g. `0400-2000` or overnight
+// `1700-1600`, both in the market's `timezone`) — the same timestamps the time axis
+// already understands — so shading is
 // synchronous: it paints the moment symbol info is known and follows any pan/zoom depth
 // with zero network round trips. Holiday precision is deliberately NOT this feature's
 // job: a non-trading day has no bars, so its (unshaded) hours collapse out of the bar
@@ -15,10 +17,14 @@ import type { SymbolInfo } from '../core/ports/MarketDataFeed';
 import type { CalendarWindow } from './market-status';
 import { timeframeMs } from './timeframe';
 
-/** The `sessionZones` feature payload: `[start, end)` epoch-ms bands per phase. */
+/** The `sessionZones` feature payload: `[start, end)` epoch-ms bands per phase.
+ *  Day-split tapes populate `pre`/`post`; overnight roll tapes (the extended window
+ *  wraps midnight) have no same-day split and populate the single `extended` phase
+ *  instead. */
 export interface SessionZonesUpdate {
     pre: CalendarWindow[];
     post: CalendarWindow[];
+    extended: CalendarWindow[];
 }
 
 /** One `[start, end)` window as minutes into the market's civil day. */
@@ -28,10 +34,14 @@ interface DayWindow {
 }
 
 /** A symbol's session structure, as declared by its metadata — enough to expand
- *  pre/post bands over any time range without asking the provider anything else. */
+ *  session bands over any time range without asking the provider anything else. */
 export interface SessionSpec {
     regular: DayWindow;
+    /** With `overnight`, `end < start`: the tape wraps midnight (evening → next day). */
     extended: DayWindow;
+    /** Roll markets (`1700-1600`): one continuous extended phase, no same-day pre/post
+     *  split exists. */
+    overnight: boolean;
     timezone: string;
 }
 
@@ -39,14 +49,16 @@ const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
 
 /** Parse an `HHMM-HHMM` vocabulary into civil-day minutes. Overnight windows
- *  (`start >= end`) don't describe a same-day pre/post split — rejected. */
-function parseWindow(text: unknown): DayWindow | null {
+ *  (`start >= end` — a tape that wraps midnight) only make sense for the extended
+ *  spelling on roll markets; callers opt in via `allowOvernight`. */
+function parseWindow(text: unknown, allowOvernight = false): DayWindow | null {
     if (typeof text !== 'string') return null;
     const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(text);
     if (!m) return null;
     const start = Number(m[1]) * 60 + Number(m[2]);
     const end = Number(m[3]) * 60 + Number(m[4]); // `2400` = end of day
-    if (start >= end || end > 1440) return null;
+    if (end > 1440 || start >= 1440) return null;
+    if (start >= end && !allowOvernight) return null;
     return { start, end };
 }
 
@@ -54,8 +66,11 @@ function parseWindow(text: unknown): DayWindow | null {
  * The session structure on a symbol's metadata, or null when it has none (continuous
  * markets, missing metadata). Recognized keys: `session` (regular hours, required),
  * `session_extended` (the full tape's bounds — must contain the regular window to
- * mean anything), `timezone`. Without an extended vocabulary the full civil day
- * bounds the bands; hours no bar ever occupies collapse out of the bar axis.
+ * mean anything), `timezone`. An OVERNIGHT extended spelling (`1700-1600` — roll
+ * markets, the trading day runs evening-to-evening) marks the spec `overnight`:
+ * one continuous extended phase instead of a pre/post split. Without an extended
+ * vocabulary the full civil day bounds the bands; hours no bar ever occupies collapse
+ * out of the bar axis.
  */
 export function parseSessionSpec(si: SymbolInfo | undefined): SessionSpec | null {
     const session = si?.['session'];
@@ -64,9 +79,16 @@ export function parseSessionSpec(si: SymbolInfo | undefined): SessionSpec | null
     if (!regular) return null;
     const tz = si?.['timezone'];
     const timezone = typeof tz === 'string' && tz !== '' ? tz : 'Etc/UTC';
-    const ext = parseWindow(si?.['session_extended']);
+    const ext = parseWindow(si?.['session_extended'], true);
+    if (ext && ext.start >= ext.end) {
+        // Overnight tape: valid when the evening opens after the regular close and the
+        // same-day tail reaches at least that close — the regular window then sits
+        // wholly inside the wrapped span.
+        if (ext.start >= regular.end && ext.end >= regular.end) return { regular, extended: ext, overnight: true, timezone };
+        return { regular, extended: { start: 0, end: 1440 }, overnight: false, timezone };
+    }
     const extended = ext && ext.start <= regular.start && ext.end >= regular.end ? ext : { start: 0, end: 1440 };
-    return { regular, extended, timezone };
+    return { regular, extended, overnight: false, timezone };
 }
 
 const dtfCache = new Map<string, Intl.DateTimeFormat | null>();
@@ -117,35 +139,62 @@ function civilParts(dtf: Intl.DateTimeFormat, ms: number): CivilParts {
     };
 }
 
+/** Sort + join touching/overlapping bands (the evening head and the next civil day's
+ *  continuation meet at midnight) so an overnight session paints as one seamless wash. */
+function mergeAbutting(bands: CalendarWindow[]): CalendarWindow[] {
+    const sorted = [...bands].sort((a, b) => a[0] - b[0]);
+    const out: Array<[number, number]> = [];
+    for (const [s, e] of sorted) {
+        if (e <= s) continue;
+        const last = out[out.length - 1];
+        if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+        else out.push([s, e]);
+    }
+    return out;
+}
+
 /**
- * Expand a session spec into concrete pre/post bands over `[from, to]`, Mon–Fri in the
- * market's timezone. Per civil day, one offset sample at NOON anchors the minute marks:
- * DST transitions land in the small hours, so the noon offset is the day's prevailing
- * one for every session edge. Iterating in 24 h steps and de-duplicating by civil date
- * absorbs the 23/25 h transition days.
+ * Expand a session spec into concrete session bands over `[from, to]` in the market's
+ * timezone. Day-split tapes emit pre/post per weekday; overnight roll tapes emit the
+ * single `extended` phase — Sun–Thu evening heads (Friday has none), each trading day's
+ * continuation up to the regular open, and the post-close tail — merged across midnight
+ * into seamless bands. Per civil day, one offset sample at NOON anchors the minute
+ * marks: DST transitions land in the small hours, so the noon offset is the day's
+ * prevailing one for every session edge. Iterating in 24 h steps and de-duplicating by
+ * civil date absorbs the 23/25 h transition days.
  */
 export function expandSessionZones(spec: SessionSpec, from: number, to: number): SessionZonesUpdate {
     const pre: CalendarWindow[] = [];
     const post: CalendarWindow[] = [];
+    const extended: CalendarWindow[] = [];
     const dtf = civilFormatter(spec.timezone);
-    if (!dtf || !Number.isFinite(from) || !Number.isFinite(to)) return { pre, post };
+    if (!dtf || !Number.isFinite(from) || !Number.isFinite(to)) return { pre, post, extended };
     const seen = new Set<number>();
     for (let cursor = from - DAY_MS; cursor < to + DAY_MS; cursor += DAY_MS) {
         const civil = civilParts(dtf, cursor);
         const key = civil.year * 10_000 + civil.month * 100 + civil.day;
         if (!Number.isFinite(key) || seen.has(key)) continue;
         seen.add(key);
-        if (civil.weekday === 'Sat' || civil.weekday === 'Sun') continue;
+        const sunday = civil.weekday === 'Sun';
+        if (civil.weekday === 'Sat' || (sunday && !spec.overnight)) continue;
         // Civil midnight spelled as UTC; the noon offset turns civil minutes into epochs.
         const naive = Date.UTC(civil.year, civil.month - 1, civil.day);
         const noonGuess = naive + 720 * MINUTE_MS;
         const atNoon = civilParts(dtf, noonGuess);
         const offset = Date.UTC(atNoon.year, atNoon.month - 1, atNoon.day, atNoon.hour, atNoon.minute) - noonGuess;
         const at = (minutes: number): number => naive + minutes * MINUTE_MS - offset;
+        if (spec.overnight) {
+            if (!sunday) {
+                extended.push([at(0), at(spec.regular.start)]);
+                if (spec.regular.end < spec.extended.end) extended.push([at(spec.regular.end), at(spec.extended.end)]);
+            }
+            if (civil.weekday !== 'Fri') extended.push([at(spec.extended.start), at(1440)]);
+            continue;
+        }
         if (spec.extended.start < spec.regular.start) pre.push([at(spec.extended.start), at(spec.regular.start)]);
         if (spec.regular.end < spec.extended.end) post.push([at(spec.regular.end), at(spec.extended.end)]);
     }
-    return { pre, post };
+    return { pre, post, extended: mergeAbutting(extended) };
 }
 
 /** Recompute coverage reaches this far beyond the visible span on each side, so
@@ -221,10 +270,10 @@ export class SessionShadingTracker {
             return;
         }
         if (this.session !== 'extended' || !this.intraday) {
-            // No pre/post bars on screen: the regular tape collapses those hours out of
-            // the bar axis, and a daily+ bar aggregates its whole day — either way a
-            // band would land on the wrong pixels. Keep the structure known, shade nothing.
-            if (force) this.onZones({ pre: [], post: [] });
+            // No extended-hours bars on screen: the regular tape collapses those hours
+            // out of the bar axis, and a daily+ bar aggregates its whole day — either way
+            // a band would land on the wrong pixels. Keep the structure known, shade nothing.
+            if (force) this.onZones({ pre: [], post: [], extended: [] });
             return;
         }
         const from = Math.min(range.from, range.to);

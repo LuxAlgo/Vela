@@ -2,6 +2,25 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Overnight extended sessions now shade as one session, and the status
+  badge says so.** Markets whose extended session runs through midnight —
+  the trading day opens in the evening and closes the next afternoon — were
+  painted with the pre-market wash before the regular open and the
+  post-market wash after the close, a split that doesn't exist for them, with
+  the color flipping at midnight in the middle of the session; the Sunday
+  evening open wasn't shaded at all. Those markets now paint one continuous
+  extended-hours wash across the whole overnight (Sunday evening included),
+  with its own color in the Trading session settings, and the status badge
+  reads "Extended Hours" instead of "Pre-Market" / "Post-Market". Markets
+  with a same-day pre/post split keep their colors and badges unchanged.
+  Session shading edges also now fall exactly between two candles — the last
+  one inside the session and the first one outside — instead of cutting
+  through a candle.
+
 ## [v0.6.14]
 
 ### Changed
