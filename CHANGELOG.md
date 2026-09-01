@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Chart screenshots now include the corner attribution mark.** The mark in
+  the bottom-left corner of the plot — Vela's own or the custom one a host
+  supplies — appeared on screen but was missing from the PNG the screenshot
+  export produced. Exports now show it exactly where the chart does; charts
+  with the mark disabled export unchanged.
+
 ## [v0.6.14]
 
 ### Changed

@@ -122,6 +122,9 @@ export function createCustomMark(doc: Document, html: string, background: string
     });
     el.style.color = attributionMarkColor(background);
     el.innerHTML = html;
+    // A mark visible on screen belongs in the PNG export too — the renderer rasterizes
+    // every `data-vela-screenshot` overlay (a hidden mark is skipped by the rasterizer).
+    el.dataset.velaScreenshot = '1';
     return el;
 }
 
@@ -142,6 +145,9 @@ export function createAttributionMark(doc: Document, background: string): HTMLAn
         cursor: 'pointer',
     });
     applyAttributionMarkTheme(a, background);
+    // Same screenshot opt-in as the custom mark: the attribution the NOTICE file asks
+    // hosts to keep visible must survive into exported PNGs as well.
+    a.dataset.velaScreenshot = '1';
     const symbol = doc.createElement('span');
     symbol.className = 'vela-attr-symbol';
     symbol.setAttribute('aria-hidden', 'true');
