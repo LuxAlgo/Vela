@@ -913,6 +913,11 @@ export class ChartCell {
         this.inner?.renderer.focus();
     }
 
+    /** Raster of this cell's chart (same pixels as the PNG download), or null. */
+    screenshotCanvas(): HTMLCanvasElement | null {
+        return this.inner?.renderer.screenshotCanvas() ?? null;
+    }
+
     /** Download this cell's chart as a PNG (named after its market). */
     downloadScreenshot(): void {
         const url = this.inner?.renderer.screenshot();

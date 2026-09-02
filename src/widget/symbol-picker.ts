@@ -121,6 +121,17 @@ export function filterSymbols(list: readonly SymbolDescriptor[], query: string, 
 
 const STYLE_ID = 'vela-widget-symbolpicker';
 const CSS = `
+/* Search + market tabs stay pinned while the result list scrolls underneath
+   (mobile fullscreen: the dialog body is the scroller). Negative margin eats
+   the body's padding so scrolled rows cannot peek around the island. */
+.vela-sp-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--vela-surface);
+    margin: calc(-1 * var(--vela-space-4)) calc(-1 * var(--vela-space-4)) 0;
+    padding: var(--vela-space-4) var(--vela-space-4) 0;
+}
 .vela-sp-searchrow {
     display: flex;
     align-items: center;
@@ -143,7 +154,7 @@ const CSS = `
     text-transform: uppercase;
 }
 .vela-sp-input::placeholder { text-transform: none; }
-.vela-sp-tabs { display: flex; gap: 14px; margin: 12px 2px 6px; border-bottom: 1px solid var(--vela-border); padding-bottom: 8px; }
+.vela-sp-tabs { display: flex; gap: 14px; margin: 12px 2px 0; border-bottom: 1px solid var(--vela-border); padding-bottom: 8px; }
 /* Mobile (fullscreen dialog): the asset-class strip scrolls sideways instead of
    overflowing the body, and the result list stops capping itself — the body owns
    the scrolling in the fullscreen presentation. */
@@ -276,6 +287,8 @@ export class SymbolPicker {
         searchRow.append(iconEl('search', doc), this.input);
         this.tabs = doc.createElement('div');
         this.tabs.className = 'vela-sp-tabs';
+        const sticky = doc.createElement('div');
+        sticky.className = 'vela-sp-sticky';
         for (const t of ['All', 'Stocks', 'ETFs', 'Crypto', 'Futures', 'Forex', 'Commodities']) {
             const b = doc.createElement('button');
             b.className = 'vela-sp-tab';
@@ -289,6 +302,7 @@ export class SymbolPicker {
             });
             this.tabs.appendChild(b);
         }
+        sticky.append(searchRow, this.tabs);
         this.list = doc.createElement('div');
         this.list.className = 'vela-sp-list';
         // Infinite scroll: nearing the bottom grows the page and APPENDS the new rows —
@@ -306,7 +320,7 @@ export class SymbolPicker {
             title: 'Symbol Search',
             host: opts.host,
             closeOnInteractOutside: true,
-            content: (body) => body.append(searchRow, this.tabs, this.list),
+            content: (body) => body.append(sticky, this.list),
             onOpenChange: (open) => {
                 if (open) {
                     this.input.value = this.seed.toUpperCase();
@@ -317,6 +331,10 @@ export class SymbolPicker {
                         this.input.focus();
                         this.input.setSelectionRange(this.input.value.length, this.input.value.length);
                     }, 0);
+                } else {
+                    // Every close path (pick, Escape, X, outside tap) — a field still
+                    // focused when it leaves the screen keeps iOS's focus-zoom alive.
+                    this.input.blur();
                 }
                 opts.onOpenChange?.(open);
             },
@@ -365,7 +383,7 @@ export class SymbolPicker {
     }
 
     close(): void {
-        this.dialog.hide();
+        this.dialog.hide(); // onOpenChange(false) blurs the field (iOS focus-zoom)
     }
 
     destroy(): void {
