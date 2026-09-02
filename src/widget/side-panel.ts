@@ -6,6 +6,11 @@
 //
 // Width is a per-panel choice: fixed by default, or `resizable` — a drag handle on the panel's
 // inner edge, clamped to [minWidth, maxWidth], double-click back to the declared width.
+// Placement is too: docked (the default, a column beside the chart) or `overlay` — the panel
+// floats over the chart's right edge and the chart keeps its width, for panels wide enough
+// that a docked column would crush the plot (an editor). A floating panel carries a PIN in
+// its header: pinned, it docks as a column after all; the choice is the user's and persists
+// with the dock state.
 import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 
@@ -60,6 +65,22 @@ const CSS = `
 }
 .vela-panel-close .vela-icon { width: 16px; height: 16px; }
 .vela-panel-close:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+/* The pin: same footprint as the close button it sits beside; filled + bright once pinned. */
+.vela-panel-pin {
+    all: unset;
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    color: var(--vela-fg-muted);
+}
+.vela-panel-pin .vela-icon { width: 15px; height: 15px; }
+.vela-panel-pin:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-panel-pin[data-on='1'] { color: var(--vela-fg-bright); }
 .vela-panel-body { flex: 1; overflow: auto; padding: 8px; }
 .vela-panel-body::-webkit-scrollbar { width: 8px; }
 .vela-panel-body::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
@@ -84,8 +105,23 @@ const CSS = `
     width: 1px;
     background: transparent;
 }
+/* The same hover ink as the workspace grid splitters and the canvas pane separators, so
+   every draggable seam in the shell reads as one family. */
 .vela-panel-resizer:hover::after,
-.vela-panel-resizer[data-dragging]::after { background: var(--vela-accent); }
+.vela-panel-resizer[data-dragging]::after { background: var(--vela-separator-hover-line); }
+/* An OVERLAY panel floats over the chart's right edge instead of taking a column: the
+   chart keeps its width and layout (the dock host is position:relative — the anchoring the
+   mobile rule below relies on too). Same z-order as that mobile overlay, above the chart's
+   own DOM overlays; the shadow separates it from the plot it covers. */
+.vela-panel[data-overlay] {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    max-width: 100%;
+    z-index: 25;
+    box-shadow: var(--vela-shadow);
+}
 /* Mobile: a 280px column would crush a phone-width chart — the panel overlays the
    chart area instead (its flex parent is position:relative), full-bleed, closed by
    the same header ✕. Width dragging is a pointer affordance; off on mobile. */
@@ -107,6 +143,10 @@ export interface SidePanelOptions {
     resizable?: boolean;
     minWidth?: number;
     maxWidth?: number;
+    /** Float over the chart's right edge instead of docking beside it — the chart keeps
+     *  its width. Docked when false/omitted. A floating panel gets a header pin the user
+     *  can dock it with (see {@link SidePanel.onPlacementChange}). */
+    overlay?: boolean;
 }
 
 /**
@@ -134,6 +174,9 @@ export class SidePanel {
     /** Notified when the USER settles a new width (drag release, or double-click reset) — never on
      *  a programmatic {@link setWidth}, so restoring a persisted width raises no change. */
     onWidthChange: ((px: number) => void) | null = null;
+    /** Notified when the USER pins or unpins a floating panel (`overlay` is the NEW placement) —
+     *  never on a programmatic {@link setOverlay}, for the same reason as widths. */
+    onPlacementChange: ((overlay: boolean) => void) | null = null;
     protected readonly body: HTMLElement;
     private readonly heading: HTMLElement;
     private readonly slot: HTMLElement;
@@ -141,6 +184,10 @@ export class SidePanel {
     private readonly minWidth: number;
     private readonly maxWidth: number;
     private widthPx: number;
+    /** Declared `overlay` — the panel CAN float; {@link overlay} says whether it does right now. */
+    private readonly floatable: boolean;
+    private overlayOn: boolean;
+    private readonly pin: HTMLButtonElement | null = null;
 
     /** `modifier` is the panel's own class, carrying its content styles (e.g. `vela-ot`). */
     constructor(host: HTMLElement, title: string, modifier: string, opts: SidePanelOptions = {}) {
@@ -155,6 +202,9 @@ export class SidePanel {
         this.el = doc.createElement('div');
         this.el.className = `vela-panel ${modifier}`;
         this.el.hidden = true;
+        this.floatable = opts.overlay === true;
+        this.overlayOn = this.floatable;
+        if (this.overlayOn) this.el.dataset.overlay = '1';
         this.el.style.setProperty('--vela-panel-w', `${this.widthPx}px`);
         const header = doc.createElement('div');
         header.className = 'vela-panel-header';
@@ -171,7 +221,18 @@ export class SidePanel {
         close.appendChild(iconEl('close', doc));
         close.title = 'Close';
         close.addEventListener('click', () => this.toggle(false));
-        header.append(this.heading, this.slot, close);
+        // The pin exists only on a panel that can float: pressed, it docks the panel as a
+        // column (the chart makes room); released, the panel floats again.
+        if (this.floatable) {
+            this.pin = doc.createElement('button');
+            this.pin.className = 'vela-panel-pin';
+            this.pin.addEventListener('click', () => {
+                this.setOverlay(!this.overlayOn);
+                this.onPlacementChange?.(this.overlayOn);
+            });
+            this.refreshPin();
+        }
+        header.append(this.heading, this.slot, ...(this.pin ? [this.pin] : []), close);
         this.body = doc.createElement('div');
         this.body.className = 'vela-panel-body';
         this.el.append(header, this.body);
@@ -219,6 +280,32 @@ export class SidePanel {
         if (next === this.widthPx) return;
         this.widthPx = next;
         this.el.style.setProperty('--vela-panel-w', `${next}px`);
+    }
+
+    /** Whether the panel floats over the chart right now (false for every docked panel). */
+    get overlay(): boolean {
+        return this.overlayOn;
+    }
+
+    /** Float or dock the panel. Only a panel declared `overlay` can float — on any other this is
+     *  a no-op. Silent — {@link onPlacementChange} reports the user's pin clicks only. */
+    setOverlay(overlay: boolean): void {
+        if (!this.floatable || overlay === this.overlayOn) return;
+        this.overlayOn = overlay;
+        if (overlay) this.el.dataset.overlay = '1';
+        else delete this.el.dataset.overlay;
+        this.refreshPin();
+    }
+
+    private refreshPin(): void {
+        if (!this.pin) return;
+        const pinned = !this.overlayOn;
+        const doc = this.pin.ownerDocument;
+        this.pin.replaceChildren(iconEl(pinned ? 'pin-filled' : 'pin', doc));
+        this.pin.dataset.on = pinned ? '1' : '0';
+        this.pin.title = pinned ? 'Unpin — float over the chart' : 'Pin beside the chart';
+        this.pin.setAttribute('aria-label', this.pin.title);
+        this.pin.setAttribute('aria-pressed', pinned ? 'true' : 'false');
     }
 
     destroy(): void {

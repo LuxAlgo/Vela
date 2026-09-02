@@ -447,7 +447,10 @@ they work from the very first keystroke, before any click.
   ([`registerSidePanel`](../contributing/plugin-sdk.md#side-panels--registersidepanel)): every
   panel gets a toggle in the topbar's panel group, one panel shows at a time, and a panel that
   declares itself resizable has a drag handle on its inner edge (double-click returns it to its
-  declared width). Which panel is open and the widths you dragged are part of the saved state.
+  declared width). A panel may also declare itself an overlay: it then floats over the chart's
+  right edge instead of shrinking the chart, and a pin in its header docks it as a column
+  whenever you prefer that. Which panel is open, the widths you dragged and the panels you
+  pinned are part of the saved state.
 - **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
   the active chart's timeframe, **fetches the depth its window needs**, and frames it:
   `1D`→1m, `7D`→5m, `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing

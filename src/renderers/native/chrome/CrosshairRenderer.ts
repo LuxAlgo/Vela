@@ -2,10 +2,9 @@ import type { VelaTheme } from '../../../core/options';
 import type { LineStyle } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { formatAxisValue } from './ticks';
+import { formatAxisValue, formatTimeStamp } from './ticks';
 import { readableText } from '../backend/gl/color';
 import { percentScaleFor } from './ChromeRenderer';
-import { zonedDate } from './tz';
 
 /**
  * Renderer-owned crosshair layer (chrome). Lives on its OWN transparent canvas
@@ -89,7 +88,7 @@ export class CrosshairRenderer {
             this.chip(ctx, dataW + 1, ch.y, formatAxisValue(pane.scale, pane.bounds.height, price, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat), chipBg, 'left', false, theme.background);
         }
         // time chip on the bottom axis
-        this.chip(ctx, x, dataH + 1, formatStamp(coords.logicalToTime(logical), scene.timezone), chipBg, 'center', true, theme.background);
+        this.chip(ctx, x, dataH + 1, formatTimeStamp(coords.logicalToTime(logical), scene.timezone, coords.barInterval), chipBg, 'center', true, theme.background);
     }
 
     destroy(): void {
@@ -141,7 +140,7 @@ export class CrosshairRenderer {
                 this.chip(ctx, dataW + 1, ext.y, formatAxisValue(pane.scale, pane.bounds.height, ext.price, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat), chipBg, 'left', false, theme.background);
             }
         }
-        this.chip(ctx, x, dataH + 1, formatStamp(ext.time, scene.timezone), chipBg, 'center', true, theme.background);
+        this.chip(ctx, x, dataH + 1, formatTimeStamp(ext.time, scene.timezone, coords.barInterval), chipBg, 'center', true, theme.background);
         ctx.globalAlpha = 1;
     }
 
@@ -176,10 +175,4 @@ function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {
     if (style === 'dashed') ctx.setLineDash([6, 4]);
     else if (style === 'dotted') ctx.setLineDash([2, 3]);
     else ctx.setLineDash([]);
-}
-
-function formatStamp(ms: number, timeZone: string): string {
-    const d = zonedDate(ms, timeZone);
-    const pad = (n: number): string => (n < 10 ? `0${n}` : String(n));
-    return `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }

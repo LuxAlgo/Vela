@@ -1,7 +1,7 @@
 import type { LineStyle } from '../../../core/model/series';
 import { chartTypes, settingsRowValueKeys, type SettingsRowDescriptor } from '../../../chart-types/registry';
 import { withAlpha } from '../../../core/color';
-import { ACCENT, BEARISH, BULLISH, CROSSHAIR, SERIES_LINE, SLATE, WARNING } from '../../../core/palette';
+import { ACCENT, BEARISH, BULLISH, CHIP_PLATE, CROSSHAIR, SERIES_LINE, WARNING } from '../../../core/palette';
 import type { PriceStyle } from '../../../core/options';
 import type { ScaleMode } from './SceneGraph';
 
@@ -166,7 +166,7 @@ export function defaultChartStyle(): ChartStyle {
         gridHorz: { visible: true, color: null },
         borderColor: null,
         separatorColor: null,
-        crosshair: { color: CROSSHAIR, width: 1, style: 'dashed', opacity: 0.4, labelBackground: SLATE },
+        crosshair: { color: CROSSHAIR, width: 1, style: 'dashed', opacity: 0.4, labelBackground: CHIP_PLATE },
         candle: {
             bodyVisible: true,
             borderVisible: false,

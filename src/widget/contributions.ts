@@ -161,6 +161,11 @@ export interface SidePanelDescriptor {
     resizable?: boolean;
     minWidth?: number;
     maxWidth?: number;
+    /** Float over the chart's right edge instead of docking beside it: the chart keeps its
+     *  width and layout, and the panel covers its right-hand part (default false — a docked
+     *  column that shrinks the chart). For panels wide enough that a column would crush
+     *  the plot. The dock stays exclusive either way. */
+    overlay?: boolean;
     mount(ctx: WidgetContext, body: HTMLElement, header: SidePanelHeader): SidePanelHandle | void;
 }
 

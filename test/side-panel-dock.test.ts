@@ -19,6 +19,7 @@ interface StubEl {
     listeners: Map<string, Array<(e: unknown) => void>>;
     append(...nodes: StubEl[]): void;
     appendChild(node: StubEl): StubEl;
+    replaceChildren(...nodes: StubEl[]): void;
     setAttribute(name: string, value: string): void;
     addEventListener(type: string, fn: (e: unknown) => void): void;
     setPointerCapture(id: number): void;
@@ -48,6 +49,7 @@ function stubDoc(): { doc: unknown; root: StubEl } {
                 listeners: new Map(),
                 append: (...nodes) => void el.children.push(...nodes),
                 appendChild: (node) => (el.children.push(node), node),
+                replaceChildren: (...nodes) => void el.children.splice(0, el.children.length, ...nodes),
                 setAttribute: () => {},
                 addEventListener: (type, fn) => void el.listeners.set(type, [...(el.listeners.get(type) ?? []), fn]),
                 setPointerCapture: () => {},
@@ -134,6 +136,52 @@ describe('SidePanel width', () => {
     });
 });
 
+describe('SidePanel placement', () => {
+    it('docks by default; `overlay` marks the element so the shell floats it over the chart', () => {
+        const { root } = stubDoc();
+        const docked = new SidePanel(root as never, 'Docked', 'x-docked', { resizable: true });
+        expect((docked.el as unknown as StubEl).dataset.overlay).toBeUndefined();
+        expect(docked.overlay).toBe(false);
+        expect(find(docked.el as never, 'vela-panel-pin')).toBeUndefined(); // nothing to pin
+        const floating = new SidePanel(root as never, 'Floating', 'x-floating', { width: 800, resizable: true, overlay: true });
+        expect((floating.el as unknown as StubEl).dataset.overlay).toBe('1');
+        expect(floating.overlay).toBe(true);
+        // Width policy is independent of placement — an overlay still resizes and clamps.
+        expect(floating.width).toBe(640);
+        expect(find(floating.el as never, 'vela-panel-resizer')).toBeDefined();
+    });
+
+    it('the pin docks a floating panel and reports the user’s choice; setOverlay is silent', () => {
+        const { root } = stubDoc();
+        const panel = new SidePanel(root as never, 'Floating', 'x-floating', { overlay: true });
+        const seen: boolean[] = [];
+        panel.onPlacementChange = (overlay) => seen.push(overlay);
+        const pin = find(panel.el as never, 'vela-panel-pin')!;
+        expect(pin).toBeDefined();
+        expect(pin.dataset.on).toBe('0');
+
+        pin.fire('click'); // pin → docked column
+        expect(panel.overlay).toBe(false);
+        expect((panel.el as unknown as StubEl).dataset.overlay).toBeUndefined();
+        expect(pin.dataset.on).toBe('1');
+        pin.fire('click'); // unpin → floats again
+        expect(panel.overlay).toBe(true);
+        expect(seen).toEqual([false, true]);
+
+        panel.setOverlay(false); // a restore: applied, not reported
+        expect(panel.overlay).toBe(false);
+        expect(seen).toEqual([false, true]);
+    });
+
+    it('a docked panel cannot be floated from code — only a declared overlay can', () => {
+        const { root } = stubDoc();
+        const docked = new SidePanel(root as never, 'Docked', 'x-docked');
+        docked.setOverlay(true);
+        expect(docked.overlay).toBe(false);
+        expect((docked.el as unknown as StubEl).dataset.overlay).toBeUndefined();
+    });
+});
+
 describe('registerSidePanel', () => {
     it('sorts by order, replaces by id, and unregisters through the disposer', () => {
         const mount = (): void => {};
@@ -162,6 +210,7 @@ describe('PanelDock', () => {
         buttons: () => SidePanelButton[];
         active: Map<string, boolean>;
         changed: () => number;
+        root: StubEl;
     } {
         const { root } = stubDoc();
         let buttons: SidePanelButton[] = [];
@@ -179,7 +228,7 @@ describe('PanelDock', () => {
         const b = new SidePanel(root as never, 'B', 'x-b', { resizable: true });
         d.addBuiltIn({ id: 'a', title: 'A', icon: 'ia', order: 10, panel: a });
         d.addBuiltIn({ id: 'b', title: 'B', icon: 'ib', order: 20, panel: b });
-        return { dock: d, panels: { a, b }, buttons: () => buttons, active, changed: () => changes };
+        return { dock: d, panels: { a, b }, buttons: () => buttons, active, changed: () => changes, root };
     }
 
     it('projects one button per panel, in dock order', () => {
@@ -222,6 +271,35 @@ describe('PanelDock', () => {
         expect(changed()).toBeGreaterThan(0);
     });
 
+    it('persists the floating panels the user pinned, applies them on restore, and remembers them for late panels', () => {
+        const { dock: d, root, changed } = dock();
+        const off = registerSidePanel({ id: 'x', title: 'X', icon: 'ix', overlay: true, mount: () => {} });
+        d.refresh();
+        const pin = find(root, 'vela-panel-x')!.children.find((c) => c.className === 'vela-panel-header')!.children.find((c) => c.className === 'vela-panel-pin')!;
+        const before = changed();
+        pin.fire('click');
+        expect(d.getState()).toEqual({ pinned: ['x'] });
+        expect(changed()).toBe(before + 1);
+        pin.fire('click');
+        expect(d.getState()).toBeNull();
+
+        // A restore applies the list wholesale — and its absence unpins.
+        d.applyState({ pinned: ['x'] });
+        expect(find(root, 'vela-panel-x')!.dataset.overlay).toBeUndefined();
+        d.applyState({ open: 'a' });
+        expect(find(root, 'vela-panel-x')!.dataset.overlay).toBe('1');
+
+        // A pinned id naming a panel that registers later applies when it docks.
+        off();
+        d.refresh();
+        d.applyState({ pinned: ['late'] });
+        registerSidePanel({ id: 'late', title: 'Late', icon: 'il', overlay: true, mount: () => {} });
+        d.refresh();
+        expect(find(root, 'vela-panel-late')!.dataset.overlay).toBeUndefined();
+        unregisterSidePanel('late');
+        d.refresh();
+    });
+
     it('restores a document: widths apply, the named panel opens, the others close', () => {
         const { dock: d, panels } = dock();
         d.toggle('a');
@@ -256,16 +334,18 @@ describe('PanelDock', () => {
     });
 
     it('mounts contributed panels with their body, rebinds them, and keeps them open across a refresh', () => {
-        const { dock: d, buttons } = dock();
+        const { dock: d, buttons, root } = dock();
         const onChart = vi.fn();
         const mount = vi.fn((_ctx: WidgetContext, body: HTMLElement) => {
             body.appendChild(body.ownerDocument.createElement('div'));
             return { onChart };
         });
-        const off = registerSidePanel({ id: 'x', title: 'X', icon: 'ix', width: 320, resizable: true, mount });
+        const off = registerSidePanel({ id: 'x', title: 'X', icon: 'ix', width: 320, resizable: true, overlay: true, mount });
         d.refresh();
         expect(buttons().map((b) => b.id)).toEqual(['a', 'b', 'x']); // default order lands last
         expect(mount).toHaveBeenCalledTimes(1);
+        // The descriptor's placement reaches the panel the dock builds.
+        expect(find(root, 'vela-panel-x')!.dataset.overlay).toBe('1');
 
         const chart = {} as never;
         d.onChart(chart);
@@ -331,12 +411,14 @@ describe('sanitizeState — panels', () => {
     const base = { version: 1, layout: '1', charts: [] };
 
     it('keeps a usable dock state', () => {
-        const st = sanitizeState({ ...base, panels: { open: 'objects', widths: { objects: 320 } } });
-        expect(st?.panels).toEqual({ open: 'objects', widths: { objects: 320 } });
+        const st = sanitizeState({ ...base, panels: { open: 'objects', widths: { objects: 320 }, pinned: ['editor'] } });
+        expect(st?.panels).toEqual({ open: 'objects', widths: { objects: 320 }, pinned: ['editor'] });
     });
 
     it('drops malformed fields rather than throwing', () => {
         expect(sanitizeState({ ...base, panels: { open: 42, widths: { a: 'wide', b: -5, c: 0, d: 260 } } })?.panels).toEqual({ widths: { d: 260 } });
+        expect(sanitizeState({ ...base, panels: { pinned: ['x', 7, '', 'x', null] } })?.panels).toEqual({ pinned: ['x'] });
+        expect(sanitizeState({ ...base, panels: { pinned: 'x' } })?.panels).toBeUndefined();
         expect(sanitizeState({ ...base, panels: 'nope' })?.panels).toBeUndefined();
         expect(sanitizeState({ ...base, panels: { open: '', widths: {} } })?.panels).toBeUndefined();
     });
