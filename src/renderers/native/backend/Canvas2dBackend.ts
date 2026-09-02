@@ -6,7 +6,7 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry, snapY } from './candle-lod';
+import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
 
@@ -508,10 +508,11 @@ export class Canvas2dBackend implements IRenderBackend {
     }
 
     /**
-     * Sub-pixel LOD: bucket every bar sharing a rounded pixel column into ONE
-     * high-low stick, so draw cost is bounded by screen width (not bar count) when
-     * zoomed far out. The bucket's color follows its first-open→last-close
-     * direction (a barcolor() on the head bar still wins).
+     * Sub-pixel LOD: bars sharing a rounded pixel column collapse into high-low
+     * sticks (one per contiguous coverage run — see {@link aggregateCandleColumns}),
+     * so draw cost is bounded by screen width (not bar count) when zoomed far out
+     * and a price gap inside the column stays a void. Each stick's color follows
+     * its first-open→last-close direction (a barcolor() on the head bar still wins).
      */
     private drawCandlesAggregated(
         ctx: CanvasRenderingContext2D,
@@ -524,44 +525,16 @@ export class Canvas2dBackend implements IRenderBackend {
         down: string,
         barColors: ReadonlyMap<number, string>,
     ): void {
-        let px = NaN;
-        let lo = Infinity;
-        let hi = -Infinity;
-        let openV = 0;
-        let closeV = 0;
-        let headTime = 0;
-        let active = false;
-        const flush = (): void => {
-            if (!active) return;
-            const color = barColors.get(headTime) ?? (closeV >= openV ? up : down);
-            const hY = coords.priceToY(hi, pane.scale, pane.bounds);
-            const lY = coords.priceToY(lo, pane.scale, pane.bounds);
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1;
+        const yOf = (price: number): number => coords.priceToY(price, pane.scale, pane.bounds);
+        ctx.lineWidth = 1;
+        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf)) {
+            const x = s.x + 0.5;
+            ctx.strokeStyle = barColors.get(s.headTime) ?? (s.close >= s.open ? up : down);
             ctx.beginPath();
-            ctx.moveTo(px, hY);
-            ctx.lineTo(px, lY);
+            ctx.moveTo(x, yOf(s.hi));
+            ctx.lineTo(x, yOf(s.lo));
             ctx.stroke();
-        };
-        for (let i = i0; i <= i1; i += 1) {
-            const b = bars[i];
-            if (!b || b.high <= b.low) continue;
-            const x = Math.round(coords.logicalToX(i)) + 0.5;
-            if (!active || x !== px) {
-                flush();
-                px = x;
-                lo = b.low;
-                hi = b.high;
-                openV = b.open;
-                headTime = b.time;
-                active = true;
-            } else {
-                if (b.low < lo) lo = b.low;
-                if (b.high > hi) hi = b.high;
-            }
-            closeV = b.close;
         }
-        flush();
     }
 
     private drawSeries(ctx: CanvasRenderingContext2D, spec: SeriesSpec, pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number, theme: VelaTheme, off = 0): void {

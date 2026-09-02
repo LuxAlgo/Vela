@@ -169,6 +169,9 @@ describe('filterSymbols', () => {
         expect(filterSymbols(list, 'bitcoin').map((s) => s.ticker)).toEqual(['BTCUSDT', 'WBTCUSDT']);
         // BTCUSDT matches via its description ("TetherUS" contains "eth") — ranked after the prefix hit.
         expect(filterSymbols(list, 'ETH').map((s) => s.ticker)).toEqual(['ETHUSDT', 'BTCUSDT']);
+        // The picker stores typed queries in uppercase; matching stays case-insensitive.
+        expect(filterSymbols(list, 'btcusdt').map((s) => s.ticker)).toEqual(filterSymbols(list, 'BTCUSDT').map((s) => s.ticker));
+        expect(filterSymbols(list, 'BtC').map((s) => s.ticker)).toEqual(filterSymbols(list, 'BTC').map((s) => s.ticker));
     });
 
     it('empty query returns the head of the list; limit caps results', () => {
