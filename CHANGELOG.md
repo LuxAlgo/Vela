@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Symbol search shows letters in uppercase.** Typed queries and ticker names
+  in the results list display in uppercase — the same case a letter typed on
+  the chart already seeds the dialog with. Descriptions, tabs, and the
+  placeholder stay mixed case.
+
 ## [v0.6.14]
 
 ### Changed
