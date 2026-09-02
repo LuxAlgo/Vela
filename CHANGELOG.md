@@ -11,6 +11,12 @@ All notable changes to Vela, newest first.
   supplies — appeared on screen but was missing from the PNG the screenshot
   export produced. Exports now show it exactly where the chart does; charts
   with the mark disabled export unchanged.
+### Changed
+
+- **Symbol search shows letters in uppercase.** Typed queries and ticker names
+  in the results list display in uppercase — the same case a letter typed on
+  the chart already seeds the dialog with. Descriptions, tabs, and the
+  placeholder stay mixed case.
 
 ## [v0.6.14]
 
