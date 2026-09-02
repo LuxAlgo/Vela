@@ -58,8 +58,8 @@ export const CROSSHAIR = '#9aa0ad';
 export const SLATE_DEEP = '#1e293b';
 export const SLATE = '#475569';
 
-/** The crosshair's axis chips: the dark chart surface itself, so the chip reads as a cut-out
- *  of the axis with only its white ink standing out rather than as a floating plate. */
+/** The crosshair's axis chips: a fixed mid gray, brighter than the dark chart surface so the
+ *  chip stands off the axis on both themes while its white ink stays readable. */
 export const CHIP_PLATE = '#595959';
 
 /** Strategy trade markers — entry arrows per position side, and the exits' shared violet.
