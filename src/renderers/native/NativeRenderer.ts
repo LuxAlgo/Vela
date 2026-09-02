@@ -1118,9 +1118,10 @@ export class NativeRenderer implements IChartRenderer {
      * opts in with a `data-vela-screenshot` attribute on the mount container's
      * subtree (the widget marks its status line, and its symbol watermark with
      * `"under"` — drawn beneath the canvases, where it sits on screen). Only the
-     * crosshair (L2) is intentionally excluded.
+     * crosshair (L2) is intentionally excluded. {@link screenshot} is this canvas
+     * as a PNG data URL.
      */
-    screenshot(): string | null {
+    screenshotCanvas(): HTMLCanvasElement | null {
         if (!this.dataCanvas) return null;
         this.computeScales();
         this.paintData();
@@ -1149,7 +1150,11 @@ export class NativeRenderer implements IChartRenderer {
                 if (el.getAttribute('data-vela-screenshot') !== 'under') rasterizeOverlay(ctx, el, frame);
             }
         }
-        return out.toDataURL('image/png');
+        return out;
+    }
+
+    screenshot(): string | null {
+        return this.screenshotCanvas()?.toDataURL('image/png') ?? null;
     }
 
     /**

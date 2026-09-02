@@ -381,7 +381,8 @@ The shell is keyboard-first (bindings act on the **active cell**):
 - Type a **letter** anywhere on a chart → the symbol search opens, seeded with it.
 - Type a **digit** → the timeframe entry opens (`15`, `4h`, `D`, `3M`, … — a bare
   number is minutes, a bare letter means one unit).
-- `alt+S` → download a PNG screenshot. `?` → the shortcuts panel.
+- `alt+S` → download a PNG of the visible layout (every chart, or the
+  maximized one). `?` → the shortcuts panel.
 - `mod+↑/↓` glide-zoom, `mod+←/→` glide-pan with the exact feel and limits of a drag
   (toward now it rests on the newest candle plus the usual empty space). `alt+T` arms
   the trend line tool; `alt+H` / `alt+V` drop a horizontal / vertical line at the
