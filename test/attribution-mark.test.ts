@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { attributionMarkColor } from '../src/renderers/native/chrome/AttributionMark';
+import { attributionMarkColor, createAttributionMark, createCustomMark } from '../src/renderers/native/chrome/AttributionMark';
 import { LUXALGO_SYMBOL_SVG, LUXALGO_WORDMARK_SVG } from '../src/renderers/native/chrome/luxalgo-logos';
+
+/** The DOM subset the mark builders touch — tests run in a plain node environment. */
+function stubDocument(): Document {
+    const makeEl = (): Record<string, unknown> => ({
+        className: '',
+        id: '',
+        textContent: '',
+        innerHTML: '',
+        style: { setProperty: () => undefined },
+        dataset: {},
+        setAttribute: () => undefined,
+        append: () => undefined,
+        appendChild: () => undefined,
+    });
+    return {
+        getElementById: () => null,
+        createElement: () => makeEl(),
+        head: { appendChild: () => undefined },
+    } as unknown as Document;
+}
 
 describe('attributionMarkColor', () => {
     it('is white on dark chart backgrounds', () => {
@@ -25,6 +45,20 @@ describe('attributionMarkColor', () => {
         // one crossover only — never white → gray → black
         const flips = inks.filter((ink, i) => i > 0 && ink !== inks[i - 1]).length;
         expect(flips).toBe(1);
+    });
+});
+
+describe('attribution mark screenshot opt-in', () => {
+    // The PNG export rasterizes only overlays tagged `data-vela-screenshot`; a mark
+    // that loses the tag silently vanishes from every exported chart.
+    it('the built-in mark opts into the PNG export', () => {
+        const mark = createAttributionMark(stubDocument(), '#151619');
+        expect(mark.dataset.velaScreenshot).toBe('1');
+    });
+
+    it('a host-supplied custom mark opts in the same way', () => {
+        const mark = createCustomMark(stubDocument(), 'ACME', '#151619');
+        expect(mark.dataset.velaScreenshot).toBe('1');
     });
 });
 

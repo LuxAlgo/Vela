@@ -140,7 +140,9 @@ const CSS = `
     border: none;
     font-size: 14px;
     outline: none;
+    text-transform: uppercase;
 }
+.vela-sp-input::placeholder { text-transform: none; }
 .vela-sp-tabs { display: flex; gap: 14px; margin: 12px 2px 6px; border-bottom: 1px solid var(--vela-border); padding-bottom: 8px; }
 /* Mobile (fullscreen dialog): the asset-class strip scrolls sideways instead of
    overflowing the body, and the result list stops capping itself — the body owns
@@ -190,7 +192,7 @@ const CSS = `
     font-weight: 700;
 }
 .vela-sp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.vela-sp-ticker { font-weight: 700; color: var(--vela-fg-bright); font-size: 14px; }
+.vela-sp-ticker { font-weight: 700; color: var(--vela-fg-bright); font-size: 14px; text-transform: uppercase; }
 .vela-sp-desc { color: var(--vela-fg-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-sp-badge {
     flex: none;
@@ -307,7 +309,7 @@ export class SymbolPicker {
             content: (body) => body.append(searchRow, this.tabs, this.list),
             onOpenChange: (open) => {
                 if (open) {
-                    this.input.value = this.seed;
+                    this.input.value = this.seed.toUpperCase();
                     this.seed = '';
                     this.refresh();
                     // Focus after the machine settles its own focus management.
@@ -320,7 +322,16 @@ export class SymbolPicker {
             },
         });
 
-        this.input.addEventListener('input', () => this.refresh());
+        this.input.addEventListener('input', () => {
+            const next = this.input.value.toUpperCase();
+            if (this.input.value !== next) {
+                const start = this.input.selectionStart;
+                const end = this.input.selectionEnd;
+                this.input.value = next;
+                if (start != null && end != null) this.input.setSelectionRange(start, end);
+            }
+            this.refresh();
+        });
         this.input.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowDown') this.moveHighlight(1);
             else if (e.key === 'ArrowUp') this.moveHighlight(-1);

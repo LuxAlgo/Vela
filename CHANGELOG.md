@@ -11,6 +11,18 @@ All notable changes to Vela, newest first.
   zoom-out, that column rendered as one solid stick bridging the empty price
   range between them. The zoomed-out view now keeps the gap open and paints
   each side separately, each with its own up/down color.
+- **Chart screenshots now include the corner attribution mark.** The mark in
+  the bottom-left corner of the plot — Vela's own or the custom one a host
+  supplies — appeared on screen but was missing from the PNG the screenshot
+  export produced. Exports now show it exactly where the chart does; charts
+  with the mark disabled export unchanged.
+
+### Changed
+
+- **Symbol search shows letters in uppercase.** Typed queries and ticker names
+  in the results list display in uppercase — the same case a letter typed on
+  the chart already seeds the dialog with. Descriptions, tabs, and the
+  placeholder stay mixed case.
 
 ## [v0.6.14]
 
