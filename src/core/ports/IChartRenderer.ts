@@ -414,6 +414,11 @@ export interface IChartRenderer {
      * rasterize its surface omits it). DOM overlays may not be included.
      */
     screenshot?(): string | null;
+    /**
+     * Raster of the current chart onto a canvas (optional). Same pixels as
+     * {@link screenshot}, for hosts that composite several charts into one image.
+     */
+    screenshotCanvas?(): HTMLCanvasElement | null;
 
     /**
      * Snapshot the renderer's full cosmetic configuration as a serializable,

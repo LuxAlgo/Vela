@@ -71,6 +71,7 @@ import {
     type TrackSizes,
 } from './layouts';
 import { SplitterLayer, evenTracks } from './splitters';
+import { compositeLayoutScreenshot, tilesFromCellRects, triggerPngDownload, type LayoutShotTile } from './screenshot';
 
 /**
  * The workspace options: the widget's chart vocabulary + the shared shell surface + the
@@ -456,7 +457,7 @@ export class VelaWorkspace {
             ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
             onUndoClick: () => this.active.history.undo(),
             onRedoClick: () => this.active.history.redo(),
-            onScreenshotClick: () => this.active.downloadScreenshot(),
+            onScreenshotClick: () => this.downloadScreenshot(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             timeframe: '60',
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
@@ -524,6 +525,10 @@ export class VelaWorkspace {
         this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
         this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
         this.dock.refresh();
+        // The dock's own slice of the boot document (open panel, dragged widths, pinned
+        // placements) — the sync-storage twin of what `applyState` does for a late document.
+        // Panels that are not registered yet keep their entry until they dock.
+        if (boot?.panels) this.dock.applyState(boot.panels);
         this.root.appendChild(main);
         this.toastHost = new Toast(this.gridEl);
 
@@ -550,6 +555,7 @@ export class VelaWorkspace {
                 bottom: `calc(var(--vela-bottom-gutter, ${TIME_AXIS_H}px) + 10px)`,
                 zIndex: '11',
             });
+            mark.dataset.velaScreenshot = '1';
             this.gridEl.appendChild(mark); // pre-cells fallback host; re-parented by mountAttributionMark
             this.attributionMark = mark; // kept so a live theme swap re-inks it
         }
@@ -726,6 +732,60 @@ export class VelaWorkspace {
      *  the point of use; the durable identity to hold is the cell (or its id). */
     get chart(): Vela {
         return this.active.chart;
+    }
+
+    /**
+     * PNG data URL of the visible layout: every live cell in its grid slot, or the
+     * maximized cell alone. Same pixels the screenshot button downloads. A single
+     * visible cell returns that cell's own chart export (the one-chart case).
+     */
+    screenshot(): string | null {
+        const cells = this.shotCells();
+        if (cells.length === 0) return null;
+        if (cells.length === 1) return cells[0]!.chart.renderer.screenshot();
+        return this.compositeLayoutShot(cells);
+    }
+
+    /** Download {@link screenshot} as a PNG. A multi-cell layout is named
+     *  `vela-layout.png`; one visible cell keeps `${symbol}-${timeframe}.png`. */
+    downloadScreenshot(): void {
+        const cells = this.shotCells();
+        if (cells.length <= 1) {
+            (cells[0] ?? this.active).downloadScreenshot();
+            return;
+        }
+        const url = this.compositeLayoutShot(cells);
+        if (!url) return;
+        triggerPngDownload(this.root.ownerDocument, url, 'vela-layout.png');
+    }
+
+    /** Live cells the screenshot should include — maximized siblings are `hidden`. */
+    private shotCells(): ChartCell[] {
+        return this.cells().filter((c) => c.host.style.visibility !== 'hidden');
+    }
+
+    /** Place every cell's raster onto one canvas the size of the grid. */
+    private compositeLayoutShot(cells: ChartCell[]): string | null {
+        const gridEl = this.gridEl;
+        const grid = gridEl.getBoundingClientRect();
+        const win = gridEl.ownerDocument.defaultView;
+        const dpr = win?.devicePixelRatio ?? 1;
+        const gapColor = win ? win.getComputedStyle(gridEl).backgroundColor : '';
+        const tiles: LayoutShotTile[] = [];
+        for (const cell of cells) {
+            const source = cell.screenshotCanvas();
+            if (!source) continue;
+            const r = cell.host.getBoundingClientRect();
+            const place = tilesFromCellRects(grid, [{ left: r.left, top: r.top, width: r.width, height: r.height }])[0];
+            if (!place) continue;
+            tiles.push({ source, ...place });
+        }
+        return compositeLayoutScreenshot(gridEl.ownerDocument, {
+            width: grid.width,
+            height: grid.height,
+            dpr,
+            gapColor: gapColor || '#000000',
+        }, tiles);
     }
 
     setActiveCell(id: string | null): void {
@@ -1952,7 +2012,7 @@ export class VelaWorkspace {
             host: this.root,
             ...(has('undo-redo') ? { onUndo: () => this.active.history.undo(), onRedo: () => this.active.history.redo() } : {}),
             ...(has('screenshot')
-                ? { onScreenshot: this.screenshotOverride ? () => this.runOverride(this.screenshotOverride!) : () => this.active.downloadScreenshot() }
+                ? { onScreenshot: this.screenshotOverride ? () => this.runOverride(this.screenshotOverride!) : () => this.downloadScreenshot() }
                 : {}),
             canUndo: () => this.active.history.canUndo,
             canRedo: () => this.active.history.canRedo,
@@ -2072,9 +2132,9 @@ export class VelaWorkspace {
             this.keymap.register({
                 id: 'chart.screenshot',
                 keys: 'mod+alt+s',
-                label: ov ? ov.label : 'Download a chart screenshot',
+                label: ov ? ov.label : 'Download a screenshot of the layout',
                 category: 'Chart',
-                run: ov ? () => this.runOverride(ov) : () => this.active.downloadScreenshot(),
+                run: ov ? () => this.runOverride(ov) : () => this.downloadScreenshot(),
             });
         }
         this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: 'Reset view (all history)', category: 'Chart', run: () => this.active.chart.setVisibleRangePreset('ALL') });

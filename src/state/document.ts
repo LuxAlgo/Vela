@@ -50,11 +50,13 @@ export interface TrackSizes {
  * The docked side panels — a SHELL-level pref (one dock serves every cell of a workspace).
  * `open` is the single panel showing (the dock is exclusive); `widths` holds only the columns
  * the user actually resized, by panel id, so a panel's declared width stays in charge until
- * then. Absent altogether in documents written before the dock existed.
+ * then; `pinned` lists the floating (overlay) panels the user pinned as columns. Absent
+ * altogether in documents written before the dock existed.
  */
 export interface PanelsState {
     open?: string;
     widths?: Record<string, number>;
+    pinned?: string[];
 }
 
 /** Per-chart (per-cell) state: the market, the display prefs, the content documents,
@@ -281,7 +283,11 @@ function sanitizePanels(raw: unknown): PanelsState | null {
         }
         if (Object.keys(widths).length > 0) out.widths = widths;
     }
-    return out.open || out.widths ? out : null;
+    if (Array.isArray(p.pinned)) {
+        const pinned = p.pinned.filter((id): id is string => typeof id === 'string' && id !== '');
+        if (pinned.length > 0) out.pinned = [...new Set(pinned)];
+    }
+    return out.open || out.widths || out.pinned ? out : null;
 }
 
 function sanitizeTrackSizes(raw: unknown): Record<string, TrackSizes> | null {

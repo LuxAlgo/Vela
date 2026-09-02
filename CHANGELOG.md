@@ -2,6 +2,80 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.15]
+
+### Added
+
+- **Side panels can float over the chart.** A contributed side panel may now
+  declare `overlay: true` (`registerSidePanel`) to open over the chart's right
+  edge instead of docking beside it — the chart keeps its width and layout, and
+  the panel covers whatever sits under it. Meant for panels wide enough that a
+  docked column would crush the plot, such as a code editor. A floating panel
+  shows a pin in its header: press it to dock the panel as a column beside the
+  chart, press again to let it float — your choice is remembered with the rest
+  of the layout. Resizing, the double-click reset and width persistence behave
+  the same in both placements; docking stays the default.
+
+### Changed
+
+- **Panel resize handles highlight in the theme's own ink.** Hovering or dragging
+  a side panel's edge now shows the same neutral line the workspace grid
+  splitters and pane separators use (light on a dark theme, dark on a light one)
+  instead of the accent blue.
+- **The crosshair's time label spells out the date.** Hovering a bar now
+  labels the time axis with the weekday, day, month, and year — for example
+  `Sun 30 Aug '26 19:00` — instead of a bare month-day and clock, so a stamp
+  reads unambiguously however far back you scroll. On daily and longer
+  timeframes the clock is omitted and only the date shows. The time and
+  price chips also sit on a brighter, warmer gray so they stand off the
+  axis more clearly.
+- **Symbol search shows letters in uppercase.** Typed queries and ticker names
+  in the results list display in uppercase — the same case a letter typed on
+  the chart already seeds the dialog with. Descriptions, tabs, and the
+  placeholder stay mixed case.
+
+### Fixed
+
+- **Side panels come back the way you left them.** With the default
+  (localStorage) persistence, the open side panel and the widths you had dragged
+  were saved but not restored on the next load — the column always started
+  closed. They are restored at start-up now, along with the new pinned
+  placements.
+- **Overnight extended sessions now shade as one session, and the status
+  badge says so.** Markets whose extended session runs through midnight —
+  the trading day opens in the evening and closes the next afternoon — were
+  painted with the pre-market wash before the regular open and the
+  post-market wash after the close, a split that doesn't exist for them, with
+  the color flipping at midnight in the middle of the session; the Sunday
+  evening open wasn't shaded at all. Those markets now paint one continuous
+  extended-hours wash across the whole overnight (Sunday evening included),
+  with its own color in the Trading session settings, and the status badge
+  reads "Extended Hours" instead of "Pre-Market" / "Post-Market". Markets
+  with a same-day pre/post split keep their colors and badges unchanged.
+  Session shading edges also now fall exactly between two candles — the last
+  one inside the session and the first one outside — instead of cutting
+  through a candle.
+- **A multi-chart screenshot now captures the whole layout.** The camera
+  button, its keyboard chord, and the mobile drawer used to export only the
+  active chart. They now download every visible chart in its grid slot, with
+  the seams between them. A maximized cell still exports that one chart, and
+  a single-chart workspace is unchanged.
+- **Opening the symbol search on a phone no longer zooms the page.** iOS
+  Safari enlarges the view when a focused field is under 16px and often
+  leaves it there after you pick a symbol. Mobile text fields are now 16px,
+  so the tap does not zoom. The search bar and market tabs also stay pinned
+  while you scroll the results.
+- **A price gap stays visible at every zoom level.** When the two candles on
+  either side of a large price jump landed in the same pixel column on a far
+  zoom-out, that column rendered as one solid stick bridging the empty price
+  range between them. The zoomed-out view now keeps the gap open and paints
+  each side separately, each with its own up/down color.
+- **Chart screenshots now include the corner attribution mark.** The mark in
+  the bottom-left corner of the plot — Vela's own or the custom one a host
+  supplies — appeared on screen but was missing from the PNG the screenshot
+  export produced. Exports now show it exactly where the chart does; charts
+  with the mark disabled export unchanged.
+
 ## [v0.6.14]
 
 ### Changed

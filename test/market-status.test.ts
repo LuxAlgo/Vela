@@ -45,6 +45,12 @@ describe('deriveMarketStatus', () => {
         const noMonday = week([11, 12, 13, 14]);
         expect(deriveMarketStatus(D(10, 16), noMonday, 'Not/AZone')).toBe('closed');
     });
+
+    it('an overnight roll tape reports extended, never pre/post', () => {
+        expect(deriveMarketStatus(D(11, 9), FULL_WEEK, NY, true)).toBe('extended');
+        expect(deriveMarketStatus(D(11, 21), FULL_WEEK, NY, true)).toBe('extended');
+        expect(deriveMarketStatus(D(11, 18), FULL_WEEK, NY, true)).toBe('open');
+    });
 });
 
 describe('nextStatusBoundary', () => {
@@ -100,6 +106,21 @@ describe('MarketStatusTracker', () => {
         // The close passes — the armed boundary timer re-derives into post-market.
         await vi.advanceTimersByTimeAsync(120_000);
         expect(statuses).toEqual(['open', 'post']);
+        tracker.stop();
+    });
+
+    it('a symbol with an overnight extended vocabulary badges extended instead of pre', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(D(11, 9)); // Tue 05:00 ET — inside the extended tape, open ahead
+        const provider: FakeProvider = {
+            getCalendar: (_t, range) => Promise.resolve(range.session === 'regular' ? FULL_WEEK.regular : FULL_WEEK.extended),
+        };
+        const statuses: string[] = [];
+        const tracker = new MarketStatusTracker((s) => statuses.push(s));
+        const rollSi = { ticker: 'ROLL', session: '0930-1600', session_extended: '2000-1900', timezone: NY };
+        tracker.track(fakeData(provider, rollSi), 'ROLL');
+        await vi.advanceTimersByTimeAsync(1);
+        expect(statuses).toEqual(['extended']);
         tracker.stop();
     });
 

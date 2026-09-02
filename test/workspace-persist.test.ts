@@ -16,6 +16,7 @@ const fullDoc: WorkspaceState = {
     timeframeFavorites: ['15', '60', 'D'],
     sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true, drawings: true, style: true },
     trackSizes: { '4': { cols: [1.4, 0.6], rows: [1, 1] } },
+    panels: { open: 'objects', widths: { objects: 320 }, pinned: ['vendor.editor'] },
     charts: [
         {
             id: 'c1',

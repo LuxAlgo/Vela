@@ -12,6 +12,19 @@ export function clipHighlightRect(x1: number, x2: number, left: number, right: n
 }
 
 /**
+ * The logical SLOT boundary a session-band edge lands on. Bars belong to a band by
+ * their open time (`[from, to)` semantics), so an edge must sit BETWEEN the last bar
+ * inside and the first bar outside — never through a candle body. `logical` is the
+ * edge timestamp's fractional bar index: an exact bar open (integer) yields that bar's
+ * own slot start; a timestamp between opens (a gap, or mid-bar) yields the boundary
+ * before the next bar — which is the same pixel from either side, so adjacent bands
+ * meet seamlessly across barless stretches like a maintenance halt.
+ */
+export function bandEdgeSlot(logical: number): number {
+    return Math.ceil(logical) - 0.5;
+}
+
+/**
  * The backdrop layer (L-2): session highlights + the axis gridlines, on their own
  * canvas at the very BOTTOM of the canvas pile. The grid used to be painted inside the
  * data canvas, but SDK layer canvases can slot BELOW that canvas (an indicator
@@ -56,7 +69,9 @@ export class BackdropRenderer {
     }
 
     /** Renderer-owned session highlight bands: full-height (all panes), behind the grid.
-     *  Session-zone washes (pre/post-market) paint first, host highlights on top. */
+     *  Session-zone washes paint first (edges snapped to bar-slot boundaries so a band
+     *  never cuts a candle in two), host highlights on top (continuous time mapping —
+     *  hosts may paint sub-bar spans). */
     private drawHighlights(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem): void {
         const sessions = scene.sessionHighlightBands();
         if (sessions.length > 0) {
@@ -65,16 +80,15 @@ export class BackdropRenderer {
             // and none in right-side whitespace beyond the current bar.
             const left = Math.max(0, coords.logicalToX(-0.5));
             const right = Math.min(coords.width, coords.logicalToX(coords.barCount - 0.5));
-            this.drawHighlightSet(ctx, sessions, coords, left, right);
+            this.drawHighlightSet(ctx, sessions, coords, left, right, true);
         }
-        this.drawHighlightSet(ctx, scene.highlights, coords, 0, coords.width);
+        this.drawHighlightSet(ctx, scene.highlights, coords, 0, coords.width, false);
     }
 
-    private drawHighlightSet(ctx: CanvasRenderingContext2D, bands: ReturnType<SceneGraph['sessionHighlightBands']>, coords: CoordinateSystem, left: number, right: number): void {
+    private drawHighlightSet(ctx: CanvasRenderingContext2D, bands: ReturnType<SceneGraph['sessionHighlightBands']>, coords: CoordinateSystem, left: number, right: number, snapToSlots: boolean): void {
+        const edgeX = (ms: number): number => (snapToSlots ? coords.logicalToX(bandEdgeSlot(coords.timeToLogical(ms))) : coords.timeToX(ms));
         for (const band of bands) {
-            const x1 = coords.timeToX(band.from);
-            const x2 = coords.timeToX(band.to);
-            const rect = clipHighlightRect(x1, x2, left, right);
+            const rect = clipHighlightRect(edgeX(band.from), edgeX(band.to), left, right);
             if (!rect) continue;
             ctx.fillStyle = band.color;
             ctx.fillRect(rect.x, 0, rect.width, coords.height);

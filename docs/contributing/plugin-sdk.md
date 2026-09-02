@@ -578,6 +578,7 @@ registerSidePanel({
     resizable: true,             // drag the inner edge; double-click returns to `width`
     minWidth: 240,
     maxWidth: 560,
+    overlay: false,              // true floats the panel OVER the chart (with a pin to dock it)
     mount: (ctx, body, header) => {
         const list = document.createElement('div');
         body.appendChild(list);                       // `body` is the panel's scrolling area
@@ -601,6 +602,14 @@ registerSidePanel({
 - **Width is a per-panel choice.** Omit `resizable` for a fixed column; with it, the drag is
   clamped to `[minWidth, maxWidth]` (defaults 200/640) and the width the user settles on is
   saved with the shell's state document, under the panel id.
+- **Placement is a per-panel choice too.** A panel docks by default — a column beside the
+  chart, which shrinks to make room. With `overlay: true` the panel floats over the chart's
+  right edge instead: the chart keeps its width and layout, and the panel covers whatever
+  sits under it. Pick it for panels wide enough that a column would crush the plot (a code
+  editor). A floating panel's header carries a **pin**: pressed, the panel docks as a column
+  after all (the chart makes room), released, it floats again — the user's choice, saved with
+  the shell's state next to the widths. Resizing and width persistence work the same way in
+  both placements.
 - **The dock is exclusive.** Opening a panel closes the one showing — the chart keeps its
   width, and only one column is ever docked. `onOpen` is where a lazy panel renders.
 - **`onChart` is the rebind hook**, not a one-shot: the widget hands over a new chart instance

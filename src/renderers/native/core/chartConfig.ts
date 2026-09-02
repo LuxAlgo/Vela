@@ -1,7 +1,7 @@
 import type { LineStyle } from '../../../core/model/series';
 import { chartTypes, settingsRowValueKeys, type SettingsRowDescriptor } from '../../../chart-types/registry';
 import { withAlpha } from '../../../core/color';
-import { ACCENT, BEARISH, BULLISH, CROSSHAIR, SERIES_LINE, SLATE, WARNING } from '../../../core/palette';
+import { ACCENT, BEARISH, BULLISH, CHIP_PLATE, CROSSHAIR, SERIES_LINE, WARNING } from '../../../core/palette';
 import type { PriceStyle } from '../../../core/options';
 import type { ScaleMode } from './SceneGraph';
 
@@ -121,16 +121,21 @@ export interface BaselineSeriesStyle {
     baselineLevel: number;
 }
 
-/** Session-zone shading (the `sessionZones` feature): the wash painted over
- *  pre-market and post-market time bands. Alpha belongs in the color itself. */
+/** Session-zone shading (the `sessionZones` feature): the washes painted over
+ *  pre-market and post-market time bands on day-split tapes, and the single
+ *  extended-hours band on overnight roll tapes. Alpha belongs in the
+ *  color itself. */
 export interface SessionShadeStyle {
     premarketColor: string;
     postmarketColor: string;
+    extendedColor: string;
 }
 
-/** Default session washes — faint enough to sit behind candles and gridlines. */
+/** Default session washes — faint enough to sit behind candles and gridlines. The
+ *  extended-hours wash (overnight roll tapes) defaults to the after-hours blue. */
 export const PREMARKET_SHADE = withAlpha(WARNING, 0.08);
 export const POSTMARKET_SHADE = withAlpha(ACCENT, 0.08);
+export const EXTENDED_SHADE = POSTMARKET_SHADE;
 
 export interface ChartStyle {
     /** Per-chart-type settings (plugin SDK sections), keyed by type id then row key. */
@@ -161,7 +166,7 @@ export function defaultChartStyle(): ChartStyle {
         gridHorz: { visible: true, color: null },
         borderColor: null,
         separatorColor: null,
-        crosshair: { color: CROSSHAIR, width: 1, style: 'dashed', opacity: 0.4, labelBackground: SLATE },
+        crosshair: { color: CROSSHAIR, width: 1, style: 'dashed', opacity: 0.4, labelBackground: CHIP_PLATE },
         candle: {
             bodyVisible: true,
             borderVisible: false,
@@ -184,7 +189,7 @@ export function defaultChartStyle(): ChartStyle {
             width: 2,
             baselineLevel: BASELINE_LEVEL_DEFAULT,
         },
-        sessions: { premarketColor: PREMARKET_SHADE, postmarketColor: POSTMARKET_SHADE },
+        sessions: { premarketColor: PREMARKET_SHADE, postmarketColor: POSTMARKET_SHADE, extendedColor: EXTENDED_SHADE },
     };
 }
 
@@ -285,11 +290,14 @@ export interface ChartConfig {
          *  center-to-center pitch (and the crosshair step) without changing body width. 1 = default. */
         spacing: number;
     };
-    /** Session-zone shading — the washes painted over the pre/post-market bands a host
-     *  pushes through the `sessionZones` feature (no bands ⇒ the colors are dormant). */
+    /** Session-zone shading — the washes painted over the session bands a host pushes
+     *  through the `sessionZones` feature: pre/post-market on day-split tapes, the
+     *  single extended-hours phase on overnight roll tapes (no bands ⇒ the colors are
+     *  dormant). */
     sessions: {
         premarketColor: string;
         postmarketColor: string;
+        extendedColor: string;
     };
     /** Draw-order keys — what paints in front of what. The candles' own key plus one per
      *  indicator id; user drawings persist their keys in the drawings document, in the same
@@ -621,6 +629,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
         sessions: {
             premarketColor: isColor(sessions.premarketColor) ? sessions.premarketColor : base.sessions.premarketColor,
             postmarketColor: isColor(sessions.postmarketColor) ? sessions.postmarketColor : base.sessions.postmarketColor,
+            extendedColor: isColor(sessions.extendedColor) ? sessions.extendedColor : base.sessions.extendedColor,
         },
         stacking: {
             candles: isNum(stacking.candles) ? stacking.candles : base.stacking.candles,

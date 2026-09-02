@@ -54,6 +54,8 @@ export class PanelDock {
     private readonly entries: Entry[] = [];
     /** Widths the USER settled, by panel id — the only ones worth persisting. */
     private readonly widths = new Map<string, number>();
+    /** Floating panels the USER pinned as columns, by id — remembered for late registrations too. */
+    private pinned = new Set<string>();
     /** A restored `open` naming a panel that has not registered yet: honored when it docks. */
     private pendingOpen: string | null = null;
     private chart: Vela | null = null;
@@ -85,6 +87,7 @@ export class PanelDock {
                 resizable: desc.resizable,
                 minWidth: desc.minWidth,
                 maxWidth: desc.maxWidth,
+                overlay: desc.overlay,
             });
             const entry: Entry = {
                 id: desc.id,
@@ -139,7 +142,8 @@ export class PanelDock {
         const open = this.openId;
         if (open) out.open = open;
         if (this.widths.size > 0) out.widths = Object.fromEntries(this.widths);
-        return out.open || out.widths ? out : null;
+        if (this.pinned.size > 0) out.pinned = [...this.pinned];
+        return out.open || out.widths || out.pinned ? out : null;
     }
 
     /**
@@ -148,7 +152,8 @@ export class PanelDock {
      * a document that predates the dock has no `panels` field at all, so the shell never calls
      * this and the default (everything closed) stands. An `open` naming a panel that has not
      * registered yet is held until it docks (a plugin loaded after the restore), unless the user
-     * opens something in the meantime.
+     * opens something in the meantime. `pinned` is the whole list of floating panels the user
+     * docked — its absence means none is, so every floatable panel floats again.
      */
     applyState(state: PanelsState | undefined): void {
         if (!state) return;
@@ -158,6 +163,8 @@ export class PanelDock {
                 this.entries.find((e) => e.id === id)?.panel.setWidth(px);
             }
         }
+        this.pinned = new Set(state.pinned ?? []);
+        for (const entry of this.entries) entry.panel.setOverlay(!this.pinned.has(entry.id));
         for (const entry of this.entries) entry.panel.toggle(entry.id === state.open);
         this.pendingOpen = state.open && !this.entries.some((e) => e.id === state.open) ? state.open : null;
     }
@@ -173,6 +180,7 @@ export class PanelDock {
         this.entries.sort((a, b) => a.order - b.order);
         const stored = this.widths.get(entry.id);
         if (stored !== undefined) entry.panel.setWidth(stored);
+        if (this.pinned.has(entry.id)) entry.panel.setOverlay(false);
         entry.panel.onOpenChange = (open) => {
             if (open) {
                 for (const other of this.entries) if (other !== entry) other.panel.toggle(false);
@@ -184,6 +192,11 @@ export class PanelDock {
         };
         entry.panel.onWidthChange = (px) => {
             this.widths.set(entry.id, px);
+            this.deps.changed?.();
+        };
+        entry.panel.onPlacementChange = (overlay) => {
+            if (overlay) this.pinned.delete(entry.id);
+            else this.pinned.add(entry.id);
             this.deps.changed?.();
         };
         if (this.pendingOpen === entry.id) entry.panel.toggle(true);

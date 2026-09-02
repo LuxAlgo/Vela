@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { logPriceTicks, valueDecimals, priceTicks, tickDecimals, axisDecimals, formatPriceLabel, formatAxisValue } from '../src/renderers/native/chrome/ticks';
+import { logPriceTicks, valueDecimals, priceTicks, tickDecimals, axisDecimals, formatPriceLabel, formatAxisValue, formatTimeStamp } from '../src/renderers/native/chrome/ticks';
 
 describe('native ticks · logPriceTicks', () => {
     it('places 1/2/5 per decade over a wide (multi-decade) range', () => {
@@ -88,5 +88,32 @@ describe('native ticks · formatPriceLabel / formatAxisValue', () => {
 
     it('indexed mode ignores the tick size (plain number to 2 decimals)', () => {
         expect(formatAxisValue({ min: 100, max: 110 }, 600, 105, { baseline: 100, indexed: true }, 0.01)).toBe('105.00');
+    });
+});
+
+describe('native ticks · formatTimeStamp (crosshair time chip)', () => {
+    const HOUR = 3_600_000;
+    const DAY = 24 * HOUR;
+    const sun30Aug26_19h = Date.UTC(2026, 7, 30, 19, 0); // a Sunday
+
+    it('reads weekday, day, short month, two-digit year and hh:mm on intraday bars', () => {
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', HOUR)).toBe("Sun 30 Aug '26 19:00");
+        expect(formatTimeStamp(Date.UTC(2031, 0, 3, 9, 5), 'UTC', 60_000)).toBe("Fri 3 Jan '31 09:05");
+    });
+
+    it('drops hh:mm on daily and coarser bars', () => {
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', DAY)).toBe("Sun 30 Aug '26");
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', 7 * DAY)).toBe("Sun 30 Aug '26");
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', 12 * HOUR)).toBe("Sun 30 Aug '26 19:00");
+    });
+
+    it('zero-pads the year and renders the wall clock in the chosen time zone', () => {
+        expect(formatTimeStamp(Date.UTC(2005, 11, 31, 23, 30), 'UTC', HOUR)).toBe("Sat 31 Dec '05 23:30");
+        // 23:30 UTC on Dec 31 is already Jan 1 in Tokyo (UTC+9) — date, weekday and year roll.
+        expect(formatTimeStamp(Date.UTC(2005, 11, 31, 23, 30), 'Asia/Tokyo', HOUR)).toBe("Sun 1 Jan '06 08:30");
+    });
+
+    it('treats an unknown bar interval (no bars yet) as intraday', () => {
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', 0)).toBe("Sun 30 Aug '26 19:00");
     });
 });
