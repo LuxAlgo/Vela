@@ -17,7 +17,7 @@ import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import { Statusline, statuslineInkOf, type StatuslinePart } from '../widget/statusline';
 import { MarketStatusTracker } from '../widget/market-status';
-import { SessionShadingTracker } from '../widget/session-shading';
+import { SessionShadingTracker, parseSessionSpec } from '../widget/session-shading';
 import { timeframeMs } from '../widget/timeframe';
 import { Watermark } from '../widget/watermark';
 import { CellControls } from '../widget/cell-controls';
@@ -219,6 +219,9 @@ export class ChartCell {
     activeRangeId: string | null = null;
     /** Latched verdict of {@link sessionAvailable} (async metadata, sticky per symbol). */
     private sessionAvailableFlag = false;
+    /** Latched: the symbol's extended tape wraps midnight (an overnight roll market) —
+     *  one extended-hours shading phase instead of the pre/post split. */
+    private sessionOvernightFlag = false;
 
     private inner: Vela | null;
     /** The live app theme — seeded from deps, updated on `theme:changed` (the base the
@@ -227,7 +230,7 @@ export class ChartCell {
     private readonly statusline: Statusline | null;
     /** Keeps this cell's market badge on the symbol's real calendar (see {@link MarketStatusTracker}). */
     private readonly marketStatus: MarketStatusTracker | null;
-    /** Keeps the pre/post-market shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
+    /** Keeps the session shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
     private readonly sessionShading = new SessionShadingTracker((zones) => this.inner?.renderer.set('sessionZones', zones));
     private readonly watermark: Watermark | null;
     /** Bottom-center hover cluster, pinned to the price plot: drag handle, zoom in/out, maximize/restore, reset view. */
@@ -564,8 +567,10 @@ export class ChartCell {
         void chart.data.symbolInfo(symbol).then((si) => {
             if (this.inner !== chart) return;
             const available = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
-            if (available !== this.sessionAvailableFlag) {
+            const overnight = parseSessionSpec(si)?.overnight === true;
+            if (available !== this.sessionAvailableFlag || overnight !== this.sessionOvernightFlag) {
                 this.sessionAvailableFlag = available;
+                this.sessionOvernightFlag = overnight;
                 this.deps.onMarketChanged(this.id); // re-project the shared bottombar toggle
                 this.pushSettingsSections(); // the Trading session group follows the symbol
             }
@@ -589,13 +594,13 @@ export class ChartCell {
 
     /** The session-shade colors live in the renderer CONFIG (persisted with it, edited
      *  live by the dialog swatch) — the cell only proxies them into its settings rows. */
-    private sessionShadeColor(key: 'premarketColor' | 'postmarketColor'): string {
+    private sessionShadeColor(key: 'premarketColor' | 'postmarketColor' | 'extendedColor'): string {
         const cfg = this.inner?.renderer.getConfig() as { sessions?: Record<string, unknown> } | null | undefined;
         const v = cfg?.sessions?.[key];
         return typeof v === 'string' ? v : '';
     }
 
-    private setSessionShadeColor(key: 'premarketColor' | 'postmarketColor', color: string): void {
+    private setSessionShadeColor(key: 'premarketColor' | 'postmarketColor' | 'extendedColor', color: string): void {
         this.inner?.renderer.applyConfig({ sessions: { [key]: color } });
         this.deps.onStateDirty(); // the colors persist with the renderer config document
     }
@@ -603,16 +608,43 @@ export class ChartCell {
     /**
      * (Re)contribute this cell's settings-dialog sections: status line parts, the
      * per-cell fetch depth, the watermark toggle, and — only while the cell's symbol
-     * HAS sessions — the Trading session group (RTH/ETH switch + the pre/post-market
-     * shading colors) inside the Symbol tab. Bars/watermark/titles are persistable
-     * cell state; a depth-only reload is silent, so mark dirty here. Re-run whenever
-     * a gate changes (the dialog reads the sections on open).
+     * HAS sessions — the Trading session group (RTH/ETH switch + the session shading
+     * colors: pre/post-market on day-split tapes, one extended-hours swatch on
+     * overnight roll markets) inside the Symbol tab. Bars/watermark/titles are
+     * persistable cell state; a depth-only reload is silent, so mark dirty here.
+     * Re-run whenever a gate changes (the dialog reads the sections on open).
      */
     private pushSettingsSections(): void {
         const chart = this.inner;
         if (!chart) return;
         const rth = 'Regular hours (RTH)';
         const eth = 'Extended hours (ETH)';
+        const shadeRows = this.sessionOvernightFlag
+            ? [
+                  {
+                      kind: 'color' as const,
+                      label: 'Extended hours',
+                      id: 'extended-color',
+                      get: () => this.sessionShadeColor('extendedColor'),
+                      set: (v: string) => this.setSessionShadeColor('extendedColor', v),
+                  },
+              ]
+            : [
+                  {
+                      kind: 'color' as const,
+                      label: 'Pre-market',
+                      id: 'premarket-color',
+                      get: () => this.sessionShadeColor('premarketColor'),
+                      set: (v: string) => this.setSessionShadeColor('premarketColor', v),
+                  },
+                  {
+                      kind: 'color' as const,
+                      label: 'Post-market',
+                      id: 'postmarket-color',
+                      get: () => this.sessionShadeColor('postmarketColor'),
+                      set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
+                  },
+              ];
         // The `id` fields are the sections' stable visibility ids (`settings.hidden`,
         // docs/user/options.md) — same reserved ids as the widget's sections.
         const sessionSection = {
@@ -628,20 +660,7 @@ export class ChartCell {
                     get: () => (this.session === 'extended' ? eth : rth),
                     set: (v: string) => this.setSession(v === eth ? 'extended' : 'regular'),
                 },
-                {
-                    kind: 'color' as const,
-                    label: 'Pre-market',
-                    id: 'premarket-color',
-                    get: () => this.sessionShadeColor('premarketColor'),
-                    set: (v: string) => this.setSessionShadeColor('premarketColor', v),
-                },
-                {
-                    kind: 'color' as const,
-                    label: 'Post-market',
-                    id: 'postmarket-color',
-                    get: () => this.sessionShadeColor('postmarketColor'),
-                    set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
-                },
+                ...shadeRows,
             ],
         };
         const advanced = {

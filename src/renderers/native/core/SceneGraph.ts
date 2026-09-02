@@ -20,13 +20,16 @@ export interface HighlightArea {
     color: string;
 }
 
-/** Pre/post-market time bands (the `sessionZones` feature): `[start, end)` epoch-ms
- *  pairs a host derives from its market calendar. The renderer shades them with the
- *  config's session colors (`ChartStyle.sessions`), behind grid + data — null means
- *  the market has no session structure at all (continuous venues). */
+/** Session time bands (the `sessionZones` feature): `[start, end)` epoch-ms pairs a
+ *  host derives from its market calendar. Day-split tapes populate `pre`/`post`;
+ *  overnight roll tapes populate the single `extended` phase instead. The
+ *  renderer shades them with the config's session colors (`ChartStyle.sessions`),
+ *  behind grid + data — null means the market has no session structure at all
+ *  (continuous venues). */
 export interface SessionZones {
     pre: ReadonlyArray<readonly [number, number]>;
     post: ReadonlyArray<readonly [number, number]>;
+    extended: ReadonlyArray<readonly [number, number]>;
 }
 
 /** Price-axis display mode: absolute price, percent change vs a visible baseline, or
@@ -225,13 +228,15 @@ export class SceneGraph {
         return this.orderedCache;
     }
 
-    /** The session zones resolved into colored bands (pre/post-market washes from the
-     *  config's session colors) — consumed by the same painting path as {@link highlights}. */
+    /** The session zones resolved into colored bands (pre/post-market or extended-hours
+     *  washes from the config's session colors) — consumed by the same painting path as
+     *  {@link highlights}. */
     sessionHighlightBands(): HighlightArea[] {
         if (!this.sessionZones) return [];
         const out: HighlightArea[] = [];
         for (const [from, to] of this.sessionZones.pre) out.push({ from, to, color: this.style.sessions.premarketColor });
         for (const [from, to] of this.sessionZones.post) out.push({ from, to, color: this.style.sessions.postmarketColor });
+        for (const [from, to] of this.sessionZones.extended) out.push({ from, to, color: this.style.sessions.extendedColor });
         return out;
     }
 
