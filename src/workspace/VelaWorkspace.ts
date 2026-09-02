@@ -525,6 +525,10 @@ export class VelaWorkspace {
         this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
         this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
         this.dock.refresh();
+        // The dock's own slice of the boot document (open panel, dragged widths, pinned
+        // placements) — the sync-storage twin of what `applyState` does for a late document.
+        // Panels that are not registered yet keep their entry until they dock.
+        if (boot?.panels) this.dock.applyState(boot.panels);
         this.root.appendChild(main);
         this.toastHost = new Toast(this.gridEl);
 

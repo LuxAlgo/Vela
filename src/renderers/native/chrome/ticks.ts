@@ -5,6 +5,7 @@
  *    DST/session-aware ticks are a later refinement — see the plan's risk list).
  */
 import type { PctScale } from '../core/SceneGraph';
+import { zonedDate } from './tz';
 
 export function priceTicks(min: number, max: number, target = 6): number[] {
     if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return [];
@@ -226,7 +227,21 @@ const STEP_LADDER = [
 ];
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const pad2 = (n: number): string => (n < 10 ? `0${n}` : String(n));
+
+/**
+ * The crosshair's time-axis chip: `Sun 30 Aug '26 19:00`. Always the full calendar date
+ * (weekday, day, month, two-digit year) so the stamp is unambiguous however far the view
+ * is scrolled; the wall-clock time is appended only when bars are intraday — on a daily
+ * or coarser bar the hh:mm would just echo the bar's open and add noise.
+ */
+export function formatTimeStamp(ms: number, timeZone: string, barIntervalMs: number): string {
+    const d = zonedDate(ms, timeZone);
+    const date = `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} '${pad2(d.getUTCFullYear() % 100)}`;
+    if (barIntervalMs >= DAY) return date;
+    return `${date} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+}
 
 function pickStep(targetMs: number): number {
     for (const step of STEP_LADDER) if (step >= targetMs) return step;

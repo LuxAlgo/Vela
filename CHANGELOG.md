@@ -4,8 +4,25 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Side panels can float over the chart.** A contributed side panel may now
+  declare `overlay: true` (`registerSidePanel`) to open over the chart's right
+  edge instead of docking beside it — the chart keeps its width and layout, and
+  the panel covers whatever sits under it. Meant for panels wide enough that a
+  docked column would crush the plot, such as a code editor. A floating panel
+  shows a pin in its header: press it to dock the panel as a column beside the
+  chart, press again to let it float — your choice is remembered with the rest
+  of the layout. Resizing, the double-click reset and width persistence behave
+  the same in both placements; docking stays the default.
+
 ### Fixed
 
+- **Side panels come back the way you left them.** With the default
+  (localStorage) persistence, the open side panel and the widths you had dragged
+  were saved but not restored on the next load — the column always started
+  closed. They are restored at start-up now, along with the new pinned
+  placements.
 - **Overnight extended sessions now shade as one session, and the status
   badge says so.** Markets whose extended session runs through midnight —
   the trading day opens in the evening and closes the next afternoon — were
@@ -22,6 +39,17 @@ All notable changes to Vela, newest first.
   through a candle.
 ### Changed
 
+- **Panel resize handles highlight in the theme's own ink.** Hovering or dragging
+  a side panel's edge now shows the same neutral line the workspace grid
+  splitters and pane separators use (light on a dark theme, dark on a light one)
+  instead of the accent blue.
+- **The crosshair's time label spells out the date.** Hovering a bar now
+  labels the time axis with the weekday, day, month, and year — for example
+  `Sun 30 Aug '26 19:00` — instead of a bare month-day and clock, so a stamp
+  reads unambiguously however far back you scroll. On daily and longer
+  timeframes the clock is omitted and only the date shows. The time and
+  price chips also sit on a brighter, warmer gray so they stand off the
+  axis more clearly.
 - **Symbol search shows letters in uppercase.** Typed queries and ticker names
   in the results list display in uppercase — the same case a letter typed on
   the chart already seeds the dialog with. Descriptions, tabs, and the
