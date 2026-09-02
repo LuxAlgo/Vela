@@ -6,7 +6,7 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry, snapY } from './candle-lod';
+import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
 import { Batch, type RGBA } from './gl/Batch';
@@ -928,44 +928,19 @@ export class WebGL2Backend implements IRenderBackend {
     }
 
     /**
-     * Sub-pixel LOD (mirrors Canvas2dBackend.drawCandlesAggregated): bucket bars
-     * sharing a rounded pixel column into one high-low stick → draw cost bounded by
-     * screen width, not bar count. Bucket color follows first-open→last-close.
+     * Sub-pixel LOD (mirrors Canvas2dBackend.drawCandlesAggregated): bars sharing a
+     * rounded pixel column collapse into high-low sticks — one per contiguous
+     * coverage run (see {@link aggregateCandleColumns}), so a price gap inside the
+     * column stays a void. Draw cost stays bounded by screen width, not bar count;
+     * stick color follows its own first-open→last-close.
      */
     private emitCandlesAggregated(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, up: string, down: string, barColors: ReadonlyMap<number, string>): void {
-        let px = NaN;
-        let lo = Infinity;
-        let hi = -Infinity;
-        let openV = 0;
-        let closeV = 0;
-        let headTime = 0;
-        let active = false;
-        const flush = (): void => {
-            if (!active) return;
-            const c = parseColor(barColors.get(headTime) ?? (closeV >= openV ? up : down));
-            const hY = coords.priceToY(hi, pane.scale, pane.bounds);
-            const lY = coords.priceToY(lo, pane.scale, pane.bounds);
-            b.rect(px - 0.5, hY, 1, lY - hY, c);
-        };
-        for (let i = i0; i <= i1; i += 1) {
-            const bar = bars[i];
-            if (!bar || bar.high <= bar.low) continue;
-            const x = Math.round(coords.logicalToX(i));
-            if (!active || x !== px) {
-                flush();
-                px = x;
-                lo = bar.low;
-                hi = bar.high;
-                openV = bar.open;
-                headTime = bar.time;
-                active = true;
-            } else {
-                if (bar.low < lo) lo = bar.low;
-                if (bar.high > hi) hi = bar.high;
-            }
-            closeV = bar.close;
+        const yOf = (price: number): number => coords.priceToY(price, pane.scale, pane.bounds);
+        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf)) {
+            const c = parseColor(barColors.get(s.headTime) ?? (s.close >= s.open ? up : down));
+            const hY = yOf(s.hi);
+            b.rect(s.x - 0.5, hY, 1, yOf(s.lo) - hY, c);
         }
-        flush();
     }
 
     private emitSeries(b: Batch, spec: SeriesSpec, pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number, theme: VelaTheme, off = 0): void {

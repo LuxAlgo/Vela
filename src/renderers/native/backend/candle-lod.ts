@@ -9,6 +9,8 @@
  *   high-low stick, so draw cost stays bounded by screen width when zoomed far out
  *   (true LOD) instead of growing with the bar count.
  */
+import type { OHLCV } from '../../../core/model/ohlcv';
+
 export type CandleTier = 'full' | 'wick' | 'aggregate';
 
 /** Below this spacing a candle has no body (wick-only). */
@@ -83,4 +85,109 @@ export function candleGeometry(xCss: number, spacing: number, dpr: number, bodyS
         bodyW: bodyDev / dpr,
         center: (wickLeftDev + wickDev / 2) / dpr,
     };
+}
+
+/** One aggregate-tier stick: a contiguous run of price coverage inside one pixel column. */
+export interface AggregatedStick {
+    /** The rounded CSS-px column shared by the stick's bars (canvas2d strokes at `x + 0.5`). */
+    x: number;
+    hi: number;
+    lo: number;
+    /** The stick's FIRST bar — the barcolor() lookup key and the direction's open. */
+    headTime: number;
+    open: number;
+    /** The stick's LAST bar's close (direction = `close >= open`, as everywhere). */
+    close: number;
+}
+
+/** One in-progress coverage interval of the current column (price space, index-tracked). */
+interface Coverage {
+    lo: number;
+    hi: number;
+    headIdx: number;
+    headTime: number;
+    open: number;
+    lastIdx: number;
+    close: number;
+}
+
+/**
+ * Aggregate-tier bucketing shared by both backends: bars whose centers round to the
+ * same pixel column collapse into high-low sticks. Coverage is kept as the UNION of
+ * the bars' true high-low ranges — one stick per contiguous run — instead of one
+ * min-to-max span, so a PRICE GAP between bars sharing the column (the bars around
+ * an overnight jump, once zoomed far out) stays a visible void instead of being
+ * painted over as a solid connection. Runs whose separation is under one pixel
+ * (`yOf` measures it) merge anyway: an invisible void isn't worth a second stick, and
+ * ordinary contiguous data keeps producing exactly one stick per column. Each stick
+ * carries its own first-open/last-close direction and its head bar's time, so
+ * barcolor() and up/down coloring follow the run that actually holds those bars.
+ */
+export function aggregateCandleColumns(
+    bars: ArrayLike<OHLCV | undefined>,
+    i0: number,
+    i1: number,
+    xOf: (index: number) => number,
+    yOf: (price: number) => number,
+): AggregatedStick[] {
+    const out: AggregatedStick[] = [];
+    let col = NaN;
+    let intervals: Coverage[] = []; // sorted by `lo`; typically length 1
+    const flush = (): void => {
+        if (intervals.length === 0) return;
+        // Coalesce runs whose void is sub-pixel — it cannot render anyway.
+        const merged: Coverage[] = [intervals[0]!];
+        for (let k = 1; k < intervals.length; k += 1) {
+            const prev = merged[merged.length - 1]!;
+            const next = intervals[k]!;
+            if (Math.abs(yOf(prev.hi) - yOf(next.lo)) < 1) {
+                prev.hi = next.hi;
+                if (next.headIdx < prev.headIdx) {
+                    prev.headIdx = next.headIdx;
+                    prev.headTime = next.headTime;
+                    prev.open = next.open;
+                }
+                if (next.lastIdx > prev.lastIdx) {
+                    prev.lastIdx = next.lastIdx;
+                    prev.close = next.close;
+                }
+            } else {
+                merged.push(next);
+            }
+        }
+        for (const iv of merged) out.push({ x: col, hi: iv.hi, lo: iv.lo, headTime: iv.headTime, open: iv.open, close: iv.close });
+        intervals = [];
+    };
+    for (let i = i0; i <= i1; i += 1) {
+        const b = bars[i];
+        if (!b || b.high <= b.low) continue;
+        const x = Math.round(xOf(i));
+        if (x !== col) {
+            flush();
+            col = x;
+        }
+        // Merge the bar's range into every overlapping interval (usually zero or one).
+        let lo = b.low;
+        let hi = b.high;
+        let headIdx = i;
+        let headTime = b.time;
+        let open = b.open;
+        for (let k = intervals.length - 1; k >= 0; k -= 1) {
+            const iv = intervals[k]!;
+            if (iv.lo > hi || iv.hi < lo) continue;
+            if (iv.lo < lo) lo = iv.lo;
+            if (iv.hi > hi) hi = iv.hi;
+            if (iv.headIdx < headIdx) {
+                headIdx = iv.headIdx;
+                headTime = iv.headTime;
+                open = iv.open;
+            }
+            intervals.splice(k, 1);
+        }
+        let insertAt = 0;
+        while (insertAt < intervals.length && intervals[insertAt]!.lo < lo) insertAt += 1;
+        intervals.splice(insertAt, 0, { lo, hi, headIdx, headTime, open, lastIdx: i, close: b.close });
+    }
+    flush();
+    return out;
 }
