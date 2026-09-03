@@ -150,6 +150,12 @@ Two per-frame levers beyond the basic contract:
 Core-computed indicators (no script engine) with renderer-drawn layers — the built-in
 volume and VPVR ride this seam. See `NativeIndicator` types in `@luxalgo/vela/plugin`.
 
+A type is **single-instance** by default: a second `addNativeIndicator` of the same type
+returns the existing handle. Set `multiInstance: true` on the descriptor when a chart may
+carry several instances (a study users stack at different settings); every add then
+creates a fresh instance. A type that pushes a bespoke layer payload through `pushData`
+must stay single-instance — the renderer's native layer is keyed by type.
+
 A native whose visuals come entirely from a bespoke renderer layer (its `type` equals a
 registered layer id) can override the axis of the pane it OWNS by emitting **`paneAxis`**
 on its output: such content is not value-mapped (the layer paints in pixel bands), so a

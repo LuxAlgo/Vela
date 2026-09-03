@@ -121,17 +121,12 @@ export function filterSymbols(list: readonly SymbolDescriptor[], query: string, 
 
 const STYLE_ID = 'vela-widget-symbolpicker';
 const CSS = `
-/* Search + market tabs stay pinned while the result list scrolls underneath
-   (mobile fullscreen: the dialog body is the scroller). Negative margin eats
-   the body's padding so scrolled rows cannot peek around the island. */
-.vela-sp-sticky {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: var(--vela-surface);
-    margin: calc(-1 * var(--vela-space-4)) calc(-1 * var(--vela-space-4)) 0;
-    padding: var(--vela-space-4) var(--vela-space-4) 0;
-}
+/* The dialog body is flush (a flex column): search + market tabs are a fixed head
+   and the result list is the ONLY scroller, in both layouts. A sticky head over a
+   scrolling padded body is not an option — browsers pin sticky boxes to the
+   scroller's content box, so the head lands one padding below the top and covers
+   the first row. */
+.vela-sp-head { flex: none; padding: var(--vela-space-4) var(--vela-space-4) 0; }
 .vela-sp-searchrow {
     display: flex;
     align-items: center;
@@ -156,12 +151,13 @@ const CSS = `
 .vela-sp-input::placeholder { text-transform: none; }
 .vela-sp-tabs { display: flex; gap: 14px; margin: 12px 2px 0; border-bottom: 1px solid var(--vela-border); padding-bottom: 8px; }
 /* Mobile (fullscreen dialog): the asset-class strip scrolls sideways instead of
-   overflowing the body, and the result list stops capping itself — the body owns
-   the scrolling in the fullscreen presentation. */
+   overflowing the body, and the result list stops capping itself — it fills the
+   rest of the screen. The bottom inset (+ safe area) is the kit's: every mobile
+   dialog body carries it, flush or not, so the list adds none of its own. */
 [data-layout='mobile'] .vela-sp-tabs { overflow-x: auto; scrollbar-width: none; gap: 6px; }
 [data-layout='mobile'] .vela-sp-tabs::-webkit-scrollbar { display: none; }
 [data-layout='mobile'] .vela-sp-tab { flex: none; padding: 7px 10px; }
-[data-layout='mobile'] .vela-sp-list { max-height: none; }
+[data-layout='mobile'] .vela-sp-list { flex: 1 1 auto; max-height: none; margin-bottom: 0; }
 .vela-sp-tab {
     all: unset;
     padding: 3px 10px;
@@ -173,7 +169,12 @@ const CSS = `
 }
 .vela-sp-tab:hover { color: var(--vela-fg); }
 .vela-sp-tab[data-active] { background: var(--vela-selected-bg); color: var(--vela-selected-fg); }
-.vela-sp-list { margin-top: var(--vela-space-2); max-height: 46vh; overflow: auto; }
+.vela-sp-list {
+    min-height: 0;
+    margin: var(--vela-space-2) var(--vela-space-4) var(--vela-space-4);
+    max-height: 46vh;
+    overflow: auto;
+}
 .vela-sp-list::-webkit-scrollbar { width: 8px; }
 .vela-sp-list::-webkit-scrollbar-thumb {
     background: var(--vela-scroll);
@@ -287,8 +288,8 @@ export class SymbolPicker {
         searchRow.append(iconEl('search', doc), this.input);
         this.tabs = doc.createElement('div');
         this.tabs.className = 'vela-sp-tabs';
-        const sticky = doc.createElement('div');
-        sticky.className = 'vela-sp-sticky';
+        const head = doc.createElement('div');
+        head.className = 'vela-sp-head';
         for (const t of ['All', 'Stocks', 'ETFs', 'Crypto', 'Futures', 'Forex', 'Commodities']) {
             const b = doc.createElement('button');
             b.className = 'vela-sp-tab';
@@ -302,7 +303,7 @@ export class SymbolPicker {
             });
             this.tabs.appendChild(b);
         }
-        sticky.append(searchRow, this.tabs);
+        head.append(searchRow, this.tabs);
         this.list = doc.createElement('div');
         this.list.className = 'vela-sp-list';
         // Infinite scroll: nearing the bottom grows the page and APPENDS the new rows —
@@ -320,7 +321,8 @@ export class SymbolPicker {
             title: 'Symbol Search',
             host: opts.host,
             closeOnInteractOutside: true,
-            content: (body) => body.append(sticky, this.list),
+            flush: true,
+            content: (body) => body.append(head, this.list),
             onOpenChange: (open) => {
                 if (open) {
                     this.input.value = this.seed.toUpperCase();
