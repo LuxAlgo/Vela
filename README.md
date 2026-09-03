@@ -32,6 +32,10 @@ touching the rest.
 
 ## What's in the box
 
+<p align="center">
+  <img src=".github/vela-layout.png" alt="Vela package layout" width="100%">
+</p>
+
 - **`@luxalgo/vela`**: the headless chart. Data model, engines, drawings, providers,
   native renderer.
 - **`@luxalgo/vela/workspace`**: the full chart app. One chart or a grid of them under
