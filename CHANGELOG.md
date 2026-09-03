@@ -4,6 +4,25 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **A built-in catalog of classic indicators.** The indicators dialog now ships
+  more than seventy standard technical-analysis studies out of the box — moving
+  averages (SMA/EMA/WMA/RMA/VWMA, ZLEMA, VIDYA, envelopes, linear regression),
+  bands and channels (Bollinger Bands with %B and Width, Keltner, Donchian,
+  SuperTrend, Chandelier Exit, Williams Alligator), momentum oscillators (RSI,
+  Stochastic and Stochastic RSI, MACD, CCI, Awesome Oscillator, TSI, TRIX,
+  Fisher Transform, Schaff Trend Cycle, Ultimate Oscillator and more), trend
+  and volatility studies (ADX, Aroon, Vortex, ATR, Historical Volatility,
+  Choppiness Index), volume studies (OBV, Accumulation/Distribution, Chaikin
+  Money Flow, Money Flow Index, Klinger, volume oscillators — bars without a
+  volume report show gaps, never fake zeros), and price-anchored specials
+  (Parabolic SAR, VWAP, Pivot Points, 52 Week High/Low, ZigZag, Williams
+  Fractal). Every study computes from the chart's own bars — no scripting
+  engine needed — and gets the full indicator treatment: its own pane or a
+  price overlay, legend row, a settings dialog with typed inputs and colors,
+  and persistence across reloads.
+
 ### Fixed
 
 - **The custom color chooser stays open while you pick.** Pressing `+` in a color
