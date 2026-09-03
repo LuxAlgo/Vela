@@ -52,11 +52,15 @@ export const SERIES_LINE = '#3b82f6';
 /** Crosshair ink: a cool gray that stays legible over both candles and empty surface. */
 export const CROSSHAIR = '#9aa0ad';
 
-/** Fixed slate plates for canvas chrome that floats over chart content of any color
- *  (crosshair value chips, info badges) — they cannot follow the theme surface and stay
- *  readable. `SLATE_DEEP` is the plate, `SLATE` its border. */
+/** Fixed slate plates for canvas badges that float over chart content of any color (info
+ *  badges on drawings) — they cannot follow the theme surface and stay readable.
+ *  `SLATE_DEEP` is the plate, `SLATE` its border. */
 export const SLATE_DEEP = '#1e293b';
 export const SLATE = '#475569';
+
+/** The crosshair's axis chips: a fixed mid gray, brighter than the dark chart surface so the
+ *  chip stands off the axis on both themes while its white ink stays readable. */
+export const CHIP_PLATE = '#595959';
 
 /** Strategy trade markers — entry arrows per position side, and the exits' shared violet.
  *  The entry pair deliberately reuses the accent blue / bearish red (the reference palette

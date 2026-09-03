@@ -66,7 +66,7 @@ const ws = new VelaWorkspace('#chart', {
     // ── The rest of the SHELL options, at their defaults ──────────────────────────────
     // indicators: async () => (await fetch('/my/manifest.json')).json(), // the manifest can also
     //                                 //  be an ASYNC LOADER (filesystem, authenticated API, …)
-    // timeframes: ['1', '5', '15', '60', '240', 'D', 'W'], // topbar timeframe presets
+    // timeframes: ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M'], // topbar timeframe presets
     // timezone: 'Etc/UTC',            // display timezone (IANA), switchable from the bottom bar
     // statusline: true,               // chrome: the status line
     // watermark: true,                // chrome: the symbol watermark behind the candles

@@ -68,8 +68,24 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
 
     const recentRow = document.createElement('div');
     recentRow.style.cssText = 'display:flex;align-items:center;gap:5px;flex-wrap:wrap;border-top:1px solid var(--vela-border);padding-top:9px;';
+    // Swatches get their own wrapper so re-rendering them never detaches the native
+    // color input — the browser closes its chooser the moment its input leaves the DOM.
+    const recentSwatches = document.createElement('div');
+    recentSwatches.style.cssText = 'display:contents;';
+    const add = document.createElement('label');
+    add.style.cssText = `width:17px;height:17px;border-radius:var(--vela-radius-sm);border:1px dashed var(--vela-border-strong);cursor:pointer;display:flex;align-items:center;justify-content:center;color:${theme.textColor};font:14px ${theme.fontFamily};position:relative;`;
+    add.textContent = '+';
+    const customInput = document.createElement('input');
+    customInput.type = 'color';
+    customInput.value = curHex;
+    customInput.style.cssText = 'position:absolute;inset:0;opacity:0;cursor:pointer;';
+    // `input` streams while the chooser is open (preview); `change` is the committed pick.
+    customInput.addEventListener('input', () => previewHex(customInput.value));
+    customInput.addEventListener('change', () => pickHex(customInput.value, true));
+    add.appendChild(customInput);
+    recentRow.append(recentSwatches, add);
     const renderRecents = (): void => {
-        recentRow.replaceChildren();
+        recentSwatches.replaceChildren();
         for (const c of recents) {
             const sw = document.createElement('button');
             sw.type = 'button';
@@ -78,18 +94,8 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
                 e.stopPropagation();
                 pickHex(c);
             });
-            recentRow.appendChild(sw);
+            recentSwatches.appendChild(sw);
         }
-        const add = document.createElement('label');
-        add.style.cssText = `width:17px;height:17px;border-radius:var(--vela-radius-sm);border:1px dashed var(--vela-border-strong);cursor:pointer;display:flex;align-items:center;justify-content:center;color:${theme.textColor};font:14px ${theme.fontFamily};position:relative;`;
-        add.textContent = '+';
-        const input = document.createElement('input');
-        input.type = 'color';
-        input.value = curHex;
-        input.style.cssText = 'position:absolute;inset:0;opacity:0;cursor:pointer;';
-        input.addEventListener('input', () => pickHex(input.value, true));
-        add.appendChild(input);
-        recentRow.appendChild(add);
     };
 
     const opLabel = document.createElement('div');
@@ -131,13 +137,17 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
     function emit(): void {
         onChange(combineColor(curHex, curAlpha));
     }
-    function pickHex(hex: string, custom = false): void {
+    function previewHex(hex: string): void {
         curHex = splitColor(hex).hex6;
-        addRecent(curHex);
         paintSelection();
         paintOpacity();
-        if (custom) renderRecents();
         emit();
+    }
+    function pickHex(hex: string, custom = false): void {
+        previewHex(hex);
+        addRecent(curHex);
+        customInput.value = curHex;
+        if (custom) renderRecents();
     }
 
     renderRecents();

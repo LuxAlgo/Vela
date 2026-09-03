@@ -6,6 +6,8 @@
  * same invariant Pine drawings get from `xloc:'bar_time'`.
  */
 
+import type { DrawingSeriesState } from './series';
+
 /** A drawing anchor in DATA space (epoch-ms time + data-space price). */
 export interface DrawingPoint {
     /** Epoch ms — resolved to a fractional logical bar index by the time scale. */
@@ -69,6 +71,14 @@ export interface Projector {
      * then degrade gracefully to an anchor-only fallback.
      */
     barsInRange?(from: number, to: number): ReadonlyArray<{ time: number; open: number; high: number; low: number; close: number; volume?: number }>;
+    /**
+     * Bars of a FINER timeframe than the chart's, for the same symbol — the async sibling
+     * of {@link barsInRange} (see {@link DrawingSeriesGateway}): a cache read that reports
+     * `loading` while the background fetch runs, after which the renderer repaints.
+     * Optional: renderers without a series gateway omit it, and such drawings degrade to
+     * an anchors-only rendering.
+     */
+    seriesInRange?(timeframe: string, from: number, to: number): DrawingSeriesState;
     /** Plot width in media px (excludes the right price-axis strip). */
     readonly width: number;
     /** Plot height in media px (excludes the bottom time-axis strip). */

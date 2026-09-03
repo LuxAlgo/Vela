@@ -6,7 +6,10 @@ import type { OHLCV } from '../core/model/ohlcv';
 import { injectStyles } from '../ui/styles';
 import { Tooltip } from '../ui/components/tooltip';
 import { CalloutBubble } from '../ui/components/callout-bubble';
+import { Menu } from '../ui/components/menu';
+import { segmentVisibility, statuslineMenuItems, type StatuslinePart } from './statusline-model';
 import { SESSION_PRE, SESSION_POST, SESSION_OFF } from '../core/palette';
+import { iconAt } from '../core/icons';
 import { fmtPrice, fmtChange, decimalsFor } from './format';
 import { timeframeLabel } from './timeframe';
 import { tickerIconEl } from './symbol-icon';
@@ -41,7 +44,13 @@ const CSS = `
     padding: 2px 7px;
     margin-left: -7px;
 }
-.vela-statusline:hover { background: var(--vela-bg); }
+/* Hovering opens the chip the same way a legend row opens: solid chart background
+ * plus the same inset neutral outline the indicator rows wear (InputsUI's
+ * setRowHighlighted) — the two columns read as one family. */
+.vela-statusline:hover { background: var(--vela-bg); box-shadow: inset 0 0 0 1px var(--vela-border); }
+/* Chart hidden (the price series' eye — renderer 'candleVisible'): the line dims to
+ * the same 0.5 wash a hidden indicator's legend row wears. */
+.vela-statusline.vela-sl-chart-hidden { opacity: 0.5; }
 .vela-statusline .vela-sl-avatar {
     width: 18px;
     height: 18px;
@@ -66,6 +75,24 @@ const CSS = `
  * these are the pre-ink fallbacks only. */
 .vela-statusline .vela-sl-change[data-dir='up'] { color: var(--vela-up); }
 .vela-statusline .vela-sl-change[data-dir='down'] { color: var(--vela-down); }
+/* The show-chart eye — out only while the chart is hidden (syncParts drives display),
+ * replacing the value readout it took away. Same footprint as a legend action button. */
+.vela-statusline .vela-sl-eye {
+    align-self: center;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--vela-fg-muted);
+    cursor: pointer;
+    line-height: 0;
+    flex: none;
+}
+.vela-statusline .vela-sl-eye:hover { color: var(--vela-fg); background: color-mix(in srgb, var(--vela-fg) 12%, transparent); }
 /* Stack the TOP pane's legend below the status line (lower study panes stay put).
  * The renderer marks whichever legend sits at the plot's top edge — the price pane
  * normally, or a maximized study pane filling the plot — so the legend never merges
@@ -153,24 +180,27 @@ export type StatuslineReadout = 'ohlc' | 'value';
 
 /** The market session states the status badge can wear. Crypto venues trade
  *  continuously and stay 'open'; the full vocabulary is ready for providers that
- *  carry a session model (equities RTH/ETH, exchange holidays). */
-export type MarketStatus = 'open' | 'pre' | 'post' | 'closed' | 'holiday';
+ *  carry a session model (equities RTH/ETH, exchange holidays). Overnight roll
+ *  tapes wear the single 'extended' state — they have no pre/post split. */
+export type MarketStatus = 'open' | 'pre' | 'post' | 'extended' | 'closed' | 'holiday';
 
 const MARKET_LABELS: Record<MarketStatus, string> = {
     open: 'Market Open',
     pre: 'Pre-Market',
     post: 'Post-Market',
+    extended: 'Extended Hours',
     closed: 'Market Closed',
     holiday: 'Market Holiday',
 };
 
 /** Session ink: open wears the theme's up color; the other sessions are meaning
- *  constants from the palette (amber pre, sky post, gray closed/holiday). The badge
- *  circle is the same ink at a 20% wash. */
+ *  constants from the palette (amber pre, sky post and extended, gray closed/holiday).
+ *  The badge circle is the same ink at a 20% wash. */
 const MARKET_INKS: Record<MarketStatus, string> = {
     open: 'var(--vela-up)',
     pre: SESSION_PRE,
     post: SESSION_POST,
+    extended: SESSION_POST,
     closed: SESSION_OFF,
     holiday: SESSION_OFF,
 };
@@ -222,8 +252,17 @@ export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [s
     }
 }
 
-/** The status line's toggleable segments (the settings dialog's Status line tab). */
-export type StatuslinePart = 'name' | 'market' | 'ohlc' | 'change';
+export { segmentVisibility, statuslineMenuItems, type StatuslinePart } from './statusline-model';
+
+/** Host hooks behind the right-click action menu. Part toggles route through the host
+ *  (never straight into {@link Statusline.setPartVisible}) so its persistence and
+ *  style-link mirroring follow; the chart toggle reaches the renderer the host owns. */
+export interface StatuslineMenuHooks {
+    setPart: (part: StatuslinePart, visible: boolean) => void;
+    /** Whether the main price series is currently painted (the renderer's `candleVisible`). */
+    chartVisible: () => boolean;
+    setChartVisible: (visible: boolean) => void;
+}
 
 export class Statusline {
     readonly el: HTMLElement;
@@ -234,9 +273,17 @@ export class Statusline {
     /** The badge itself — a kit callout bubble (the same element as {@link marketEl}). */
     private readonly marketBubble: CalloutBubble;
     private marketTip!: Tooltip;
+    /** The show-chart eye — visible only while the chart is hidden. */
+    private readonly eyeEl: HTMLButtonElement;
+    private eyeTip!: Tooltip;
     private avatarEl: HTMLElement;
     private metaEl!: HTMLElement;
-    private readonly parts = { name: true, market: true, ohlc: true, change: true };
+    private readonly parts: Record<StatuslinePart, boolean> = { logo: true, name: true, market: true, ohlc: true, change: true };
+    /** The right-click action menu — present once a host wires it via {@link attachMenu}. */
+    private menu: Menu | null = null;
+    private menuHooks: StatuslineMenuHooks | null = null;
+    /** Mirror of the renderer's `candleVisible` — see {@link setChartHidden}. */
+    private chartHidden = false;
     private lastBar: BarLike | null = null;
     private hoverBar: BarLike | null = null;
     private unsubs: Array<() => void> = [];
@@ -291,11 +338,25 @@ export class Statusline {
         this.ohlcEl.className = 'vela-sl-ohlc';
         this.changeEl = doc.createElement('span');
         this.changeEl.className = 'vela-sl-change';
-        this.el.append(this.avatarEl, this.symbolEl, this.metaEl, this.marketEl, this.ohlcEl, this.changeEl);
+        // Show-chart eye: takes the value readout's place while the chart is hidden
+        // (same glyph the legend rows wear on a hidden indicator). syncParts drives it.
+        this.eyeEl = doc.createElement('button');
+        this.eyeEl.type = 'button';
+        this.eyeEl.className = 'vela-sl-eye';
+        this.eyeEl.innerHTML = iconAt('eye-off', 14);
+        this.eyeEl.setAttribute('aria-label', 'Show chart');
+        this.eyeEl.style.display = 'none';
+        this.eyeEl.addEventListener('click', (e) => {
+            e.stopPropagation(); // never bubbles into the chip's own handlers
+            this.menuHooks?.setChartVisible(true);
+            this.setChartHidden(false);
+        });
+        this.el.append(this.avatarEl, this.symbolEl, this.metaEl, this.marketEl, this.ohlcEl, this.changeEl, this.eyeEl);
         host.appendChild(this.el);
-        // The tooltip portals to the nearest `.vela-ui` ancestor for theme tokens — resolve
-        // it AFTER the statusline is in the DOM. Content follows setMarketStatus.
+        // The tooltips portal to the nearest `.vela-ui` ancestor for theme tokens — resolve
+        // them AFTER the statusline is in the DOM. The badge's content follows setMarketStatus.
         this.marketTip = new Tooltip(this.marketEl, { content: MARKET_LABELS.open, placement: 'bottom' });
+        this.eyeTip = new Tooltip(this.eyeEl, { content: 'Show chart', placement: 'bottom' });
         this.setMarketStatus('open'); // crypto trades continuously (no session model yet)
         this.render();
     }
@@ -306,6 +367,7 @@ export class Statusline {
         const fresh = tickerIconEl(this.el.ownerDocument, baseOfTicker(ticker), ticker, 'vela-sl-avatar', this.iconFor?.(symbol));
         this.avatarEl.replaceWith(fresh);
         this.avatarEl = fresh;
+        this.syncParts(); // the fresh avatar must inherit a hidden logo part
         this.fit();
     }
 
@@ -335,21 +397,26 @@ export class Statusline {
 
     /** Project the parts config onto the segments (the baseline fit() prunes from). */
     private syncParts(): void {
-        this.symbolEl.style.display = this.parts.name ? '' : 'none';
-        this.marketEl.style.display = this.parts.market ? '' : 'none';
-        this.ohlcEl.style.display = this.parts.ohlc ? '' : 'none';
-        this.changeEl.style.display = this.parts.change ? '' : 'none';
+        const seg = segmentVisibility(this.parts, this.chartHidden);
+        this.avatarEl.style.display = seg.avatar ? '' : 'none';
+        this.symbolEl.style.display = seg.symbol ? '' : 'none';
+        this.metaEl.style.display = seg.meta ? '' : 'none';
+        this.marketEl.style.display = seg.market ? '' : 'none';
+        this.ohlcEl.style.display = seg.ohlc ? '' : 'none';
+        this.changeEl.style.display = seg.change ? '' : 'none';
+        this.eyeEl.style.display = seg.eye ? 'inline-flex' : 'none';
     }
 
     /** Hide overflowing segments until the row fits its max-width (fit mode only). */
     private fit(): void {
         if (!this.fitMode) return;
         this.syncParts(); // start from the full (parts-allowed) row, then prune
+        const seg = segmentVisibility(this.parts, this.chartHidden);
         const order: Array<[HTMLElement, boolean]> = [
-            [this.ohlcEl, this.parts.ohlc],
-            [this.changeEl, this.parts.change],
-            [this.metaEl, true],
-            [this.marketEl, this.parts.market],
+            [this.ohlcEl, seg.ohlc],
+            [this.changeEl, seg.change],
+            [this.metaEl, seg.meta],
+            [this.marketEl, seg.market],
         ];
         for (const [el, shown] of order) {
             if (this.el.scrollWidth <= this.el.clientWidth) break;
@@ -372,7 +439,6 @@ export class Statusline {
         this.render();
     }
 
-    /** Show/hide one part (the settings dialog's Status line tab drives these). */
     /** The "· BINANCE · 1h" segment after the symbol — venue first, then resolution. */
     setMeta(timeframe: string, provider: string): void {
         this.metaEl.textContent = `${provider ? `· ${provider.toUpperCase()} ` : ''}· ${timeframeLabel(timeframe)}`;
@@ -393,6 +459,9 @@ export class Statusline {
         this.marketTip.setContent(MARKET_LABELS[status]);
     }
 
+    /** Show/hide one part — the settings dialog's Status line tab and the right-click
+     *  menu both drive these. 'name' owns the venue/timeframe meta too (see
+     *  {@link segmentVisibility}). */
     setPartVisible(part: StatuslinePart, visible: boolean): void {
         this.parts[part] = visible;
         this.syncParts();
@@ -401,6 +470,61 @@ export class Statusline {
 
     partVisible(part: StatuslinePart): boolean {
         return this.parts[part];
+    }
+
+    /** Mirror the chart's (price series') visibility: dim the whole line like a hidden
+     *  indicator's legend row, drop the value readout (OHLC + bar change — values of a
+     *  series that isn't painted), and put the show-chart eye out in its place. The
+     *  parts config is untouched, so showing the chart restores the readout exactly as
+     *  configured. Idempotent; {@link render} re-syncs it from the live renderer, so
+     *  toggles made elsewhere (the object tree's eye) converge too. */
+    setChartHidden(hidden: boolean): void {
+        if (hidden === this.chartHidden) return;
+        this.chartHidden = hidden;
+        this.el.classList.toggle('vela-sl-chart-hidden', hidden);
+        this.syncParts();
+        this.fit();
+    }
+
+    /** Wire the right-click action menu: one checkable toggle per part plus hide/show
+     *  for the chart itself. The menu is built once; later calls just swap the hooks. */
+    attachMenu(hooks: StatuslineMenuHooks): void {
+        this.menuHooks = hooks;
+        if (this.menu) return;
+        this.menu = new Menu({
+            host: this.host,
+            items: [],
+            placement: 'bottom-start',
+            // Pointer-anchored action menu — checked state reads as a leading ✓ (the
+            // same shape as the chart's own context menu).
+            checkmarks: true,
+            onSelect: (id) => this.runMenuItem(id),
+        });
+        this.el.addEventListener('contextmenu', this.onContextMenu);
+    }
+
+    private readonly onContextMenu = (e: MouseEvent): void => {
+        if (!this.menu || !this.menuHooks) return;
+        // This right-click is the status line's — keep the chart's own context menu closed.
+        e.preventDefault();
+        e.stopPropagation();
+        const chartVisible = this.menuHooks.chartVisible();
+        this.setChartHidden(!chartVisible); // opportunistic re-sync with the live renderer
+        this.menu.setItems(statuslineMenuItems(this.parts, chartVisible));
+        this.menu.openAt(e.clientX, e.clientY);
+    };
+
+    private runMenuItem(id: string): void {
+        const hooks = this.menuHooks;
+        if (!hooks) return;
+        if (id.startsWith('part:')) {
+            const part = id.slice('part:'.length) as StatuslinePart;
+            hooks.setPart(part, !this.parts[part]);
+        } else if (id === 'chart') {
+            const next = !hooks.chartVisible();
+            hooks.setChartVisible(next);
+            this.setChartHidden(!next);
+        }
     }
 
     /** (Re)bind to a chart instance — called after every widget rebuild. */
@@ -425,7 +549,11 @@ export class Statusline {
         this.detach();
         this.fitRO?.disconnect();
         this.fitRO = null;
+        this.el.removeEventListener('contextmenu', this.onContextMenu);
+        this.menu?.destroy();
+        this.menu = null;
         this.marketTip.destroy();
+        this.eyeTip.destroy();
         this.marketBubble.destroy();
         this.host.classList.remove('vela-has-statusline', 'vela-sl-fit-host'); // the legend shift leaves with the line
         this.el.remove();
@@ -437,6 +565,10 @@ export class Statusline {
     }
 
     private render(): void {
+        // Chart visibility has no change event of its own — re-derive it from the live
+        // renderer on every readout refresh (bar ticks, crosshair moves), so a toggle
+        // made anywhere (the object tree's eye) reaches the status line.
+        if (this.menuHooks) this.setChartHidden(!this.menuHooks.chartVisible());
         const bar = this.hoverBar ?? this.lastBar;
         if (!bar) {
             this.ohlcEl.replaceChildren();

@@ -102,6 +102,16 @@ export class RendererControl {
     }
 
     /**
+     * Raster of the current chart onto a canvas (same pixels as {@link screenshot}),
+     * or null if the renderer has no canvas export. Silent — a host compositing
+     * several charts skips a renderer that cannot contribute.
+     */
+    screenshotCanvas(): HTMLCanvasElement | null {
+        if (typeof this.renderer.screenshotCanvas === 'function') return this.renderer.screenshotCanvas();
+        return null;
+    }
+
+    /**
      * The active renderer's full cosmetic config as a serializable, versioned JSON
      * document — persist it (templates, saved settings) and feed it back to
      * `applyConfig`. Returns null if the renderer has no rich config (warns).

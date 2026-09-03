@@ -72,6 +72,7 @@ export type DrawingTypeKey =
     | 'goldensupersonic'
     | 'datepricerange'
     | 'position'
+    | 'magnifier'
     | 'xabcd'
     | 'abcd'
     | 'elliottimpulse'

@@ -23,6 +23,150 @@ All notable changes to Vela, newest first.
   price overlay, legend row, a settings dialog with typed inputs and colors,
   and persistence across reloads.
 
+### Fixed
+
+- **The custom color chooser stays open while you pick.** Pressing `+` in a color
+  picker opens the browser's own color chooser; clicking or dragging on its
+  gradient used to slam it shut after the first change, so you could only ever
+  land one step away from where you started. The chooser now stays open until
+  you dismiss it, the chart previews every color you hover through, and only the
+  color you settle on is added to the recents row. Picking a swatch also updates
+  the chooser's starting color, so `+` opens on what is currently selected.
+
+## [v0.6.15]
+
+### Added
+
+- **Side panels can float over the chart.** A contributed side panel may now
+  declare `overlay: true` (`registerSidePanel`) to open over the chart's right
+  edge instead of docking beside it — the chart keeps its width and layout, and
+  the panel covers whatever sits under it. Meant for panels wide enough that a
+  docked column would crush the plot, such as a code editor. A floating panel
+  shows a pin in its header: press it to dock the panel as a column beside the
+  chart, press again to let it float — your choice is remembered with the rest
+  of the layout. Resizing, the double-click reset and width persistence behave
+  the same in both placements; docking stays the default.
+
+### Changed
+
+- **Panel resize handles highlight in the theme's own ink.** Hovering or dragging
+  a side panel's edge now shows the same neutral line the workspace grid
+  splitters and pane separators use (light on a dark theme, dark on a light one)
+  instead of the accent blue.
+- **The crosshair's time label spells out the date.** Hovering a bar now
+  labels the time axis with the weekday, day, month, and year — for example
+  `Sun 30 Aug '26 19:00` — instead of a bare month-day and clock, so a stamp
+  reads unambiguously however far back you scroll. On daily and longer
+  timeframes the clock is omitted and only the date shows. The time and
+  price chips also sit on a brighter, warmer gray so they stand off the
+  axis more clearly.
+- **Symbol search shows letters in uppercase.** Typed queries and ticker names
+  in the results list display in uppercase — the same case a letter typed on
+  the chart already seeds the dialog with. Descriptions, tabs, and the
+  placeholder stay mixed case.
+
+### Fixed
+
+- **Side panels come back the way you left them.** With the default
+  (localStorage) persistence, the open side panel and the widths you had dragged
+  were saved but not restored on the next load — the column always started
+  closed. They are restored at start-up now, along with the new pinned
+  placements.
+- **Overnight extended sessions now shade as one session, and the status
+  badge says so.** Markets whose extended session runs through midnight —
+  the trading day opens in the evening and closes the next afternoon — were
+  painted with the pre-market wash before the regular open and the
+  post-market wash after the close, a split that doesn't exist for them, with
+  the color flipping at midnight in the middle of the session; the Sunday
+  evening open wasn't shaded at all. Those markets now paint one continuous
+  extended-hours wash across the whole overnight (Sunday evening included),
+  with its own color in the Trading session settings, and the status badge
+  reads "Extended Hours" instead of "Pre-Market" / "Post-Market". Markets
+  with a same-day pre/post split keep their colors and badges unchanged.
+  Session shading edges also now fall exactly between two candles — the last
+  one inside the session and the first one outside — instead of cutting
+  through a candle.
+- **A multi-chart screenshot now captures the whole layout.** The camera
+  button, its keyboard chord, and the mobile drawer used to export only the
+  active chart. They now download every visible chart in its grid slot, with
+  the seams between them. A maximized cell still exports that one chart, and
+  a single-chart workspace is unchanged.
+- **Opening the symbol search on a phone no longer zooms the page.** iOS
+  Safari enlarges the view when a focused field is under 16px and often
+  leaves it there after you pick a symbol. Mobile text fields are now 16px,
+  so the tap does not zoom. The search bar and market tabs also stay pinned
+  while you scroll the results.
+- **A price gap stays visible at every zoom level.** When the two candles on
+  either side of a large price jump landed in the same pixel column on a far
+  zoom-out, that column rendered as one solid stick bridging the empty price
+  range between them. The zoomed-out view now keeps the gap open and paints
+  each side separately, each with its own up/down color.
+- **Chart screenshots now include the corner attribution mark.** The mark in
+  the bottom-left corner of the plot — Vela's own or the custom one a host
+  supplies — appeared on screen but was missing from the PNG the screenshot
+  export produced. Exports now show it exactly where the chart does; charts
+  with the mark disabled export unchanged.
+
+## [v0.6.14]
+
+### Changed
+
+- **The first paint of a progressive load now waits for 20 bars instead
+  of 100.** The first paint is the frame the view is sized against, so a
+  2-3 bar head would draw a few giant candles; but the old 100-bar hold kept
+  monthly charts of short-lived contracts — whose whole history holds fewer
+  bars — blank until the data source's polling budget ran out (up to ~90 s).
+  Twenty bars frame a readable view on every timeframe, deeper snapshots
+  repaint with the viewport preserved, and the final answer still paints
+  whatever depth exists.
+
+## [v0.6.12]
+
+### Fixed
+
+- **An indicator added before its chart has bars no longer strands in a wrong,
+  empty sub pane.** When the initial bar load resolves empty (a slow feed, an
+  authentication race, an unresolved symbol) and a script indicator is added in
+  that window — typically by a host restoring a saved layout — its first run
+  produces nothing. That empty first result used to be taken as the script's
+  real output: the indicator was moved off its declared pane into a new sub
+  pane with a generic "Indicator" legend title, and it stayed there with no
+  plots even after the data arrived. While the chart itself is still without
+  bars, such a result now keeps the indicator loading on the pane its
+  declaration asked for, and the first run over real data places, titles, and
+  announces it exactly as if the data had been there from the start. Loading
+  still ends with the run, not with output: a script that runs over real bars
+  and simply draws nothing (alerts only, for example) finishes loading as
+  before.
+- **Extended boxes no longer squeeze the price scale from off-screen.** A box
+  drawn with a one-sided extension (`extend.right` or `extend.left`) contributes
+  its prices to the automatic price scale only while some painted part of it —
+  the anchor span or the side its extension actually covers — crosses the
+  visible bars. Previously any extended box counted everywhere on the time
+  axis, so an indicator keeping a box near the latest bars (a common
+  order-block idiom) flattened the candles in every earlier window the moment
+  you scrolled back in history. Boxes extended toward the window, and
+  `extend.both` boxes, still scale into view as before.
+
+### Added
+
+- **30-minute and monthly presets in the timeframe picker.** The default
+  timeframe list is now `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1D`, `1W`, `1M`.
+  Hosts passing their own `timeframes` option are unaffected. The offline feed
+  also ticks at the right cadence for monthly bars instead of falling back to
+  hourly.
+
+- **Right-click the status line to shape it.** The in-chart status line now opens
+  an action menu on right-click with a toggle for each of its elements — the new
+  symbol logo toggle (also in the settings dialog's Status line tab), the symbol
+  name, the market status badge, the OHLC values, and the bar change — plus a
+  hide/show for the chart's price series itself, the same switch as the object
+  tree's eye. Hiding the symbol name also hides the venue and timeframe beside it,
+  since the three read as one label. The line also behaves like the indicator
+  legend rows around it: hovering outlines it, and while the chart is hidden it
+  dims, drops its OHLC and change readouts, and shows an eye button that brings
+  the chart back — everything returns exactly as configured.
+
 ## [v0.6.11]
 
 ### Fixed
@@ -52,6 +196,22 @@ All notable changes to Vela, newest first.
   the right no longer pulls it off-center.
 
 ### Added
+
+- **Magnifier drawing tool — see a finer timeframe inside an area.** Drag a
+  rectangle over the chart (Measurements group) and its interior redraws the
+  same market at a lower timeframe, in the chart's own style and colors —
+  candles subdivide into finer candles, a line chart magnifies into a finer
+  line, and Heikin Ashi stays Heikin Ashi — at their true time and price
+  positions. The timeframe chip riding the rectangle's bottom-left corner is
+  itself a dropdown: click it to switch, or use the same pick on the drawing's
+  toolbar — both offer only timeframes below the chart's own. Auto picks a
+  sensible subdivision of the chart's timeframe (a 1-hour chart magnifies into
+  15-minute candles); the up/down colors and the border style stay editable
+  when you want the inset to stand apart. The finer bars load in the
+  background and the area keeps up with live data; if the area is too wide
+  for the chosen timeframe, or the chart is already at the finest one, the
+  tool says so inside the rectangle instead of guessing. Like every drawing
+  it moves, resizes, clones, and persists with the document.
 
 - **Scroll the price axis to rescale it.** The mouse wheel over the right
   price-axis strip now zooms that pane's scale the same way dragging it does —
@@ -1227,22 +1387,22 @@ labels?, qty?, colors? })` — hide the units, the order-id line, or the quantit
   lives in the **`@luxalgo/vela-pinets`** addon, which implements the same public
   `ScriptingEngine` port with identical semantics:
 
-  ```diff
-  - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
-  + import { Vela } from '@luxalgo/vela';
-  + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
-  ```
+    ```diff
+    - import { Vela, PineWorkerEngine } from '@luxalgo/vela';
+    + import { Vela } from '@luxalgo/vela';
+    + import { PineWorkerEngine } from '@luxalgo/vela-pinets'; // npm i @luxalgo/vela-pinets pinets
+    ```
 
-  Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
-  option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
-  Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
+    Registration is unchanged (`chart.registerEngine('pine', …)`, the shells' `engines`
+    option, `registerDefaultEngine`), so a one-line import swap is the whole migration.
+    Script-tag users load `vela-pinets.global.js` **after** `vela.global.js`.
 
-  The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
-  Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
-  ACL now bans the import outright, so the obligation is taken on only by an application
-  that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
-  (~515 KB minified), and the engine layer becomes the one layer with no bundled default
-  at all. See [Scripting engines](docs/user/scripting-engines.md).
+    The reason is licensing: the Pine runtime is AGPL-3.0, and shipping it here meant an
+    Apache-2.0 library whose most-used feature dragged copyleft obligations behind it. The
+    ACL now bans the import outright, so the obligation is taken on only by an application
+    that installs the addon. Side effects: `vela.global.js` drops from ~3.5 MB to ~1.0 MB
+    (~515 KB minified), and the engine layer becomes the one layer with no bundled default
+    at all. See [Scripting engines](docs/user/scripting-engines.md).
 
 ### Added
 

@@ -6,6 +6,7 @@
 // the pre-calendar behavior.
 import type { DataControl } from '../core/DataControl';
 import type { MarketStatus } from './statusline';
+import { parseSessionSpec } from './session-shading';
 
 /** One `[start, end)` open window, epoch ms — the `getCalendar` wire shape. */
 export type CalendarWindow = readonly [number, number];
@@ -38,17 +39,22 @@ function isWeekday(ms: number, tz: string): boolean {
 /**
  * The market status at `now` given resolved windows:
  *  - inside a regular window → `open`;
- *  - inside the extended tape but outside regular hours → `pre` when the day's regular
- *    open still lies ahead within the SAME extended window, `post` otherwise;
+ *  - inside the extended tape but outside regular hours → `extended` on overnight roll
+ *    tapes (no same-day pre/post split exists); otherwise `pre` when the
+ *    day's regular open still lies ahead within the SAME extended window, `post`
+ *    otherwise;
  *  - otherwise closed — spelled `holiday` when a WEEKDAY (market tz) carries no
  *    extended window at all (a skipped trading day), plain `closed` for nights and
  *    weekends. A window "belongs" to the civil day its start falls on.
  */
-export function deriveMarketStatus(now: number, w: MarketWindows, tz: string): MarketStatus {
+export function deriveMarketStatus(now: number, w: MarketWindows, tz: string, overnight = false): MarketStatus {
     const within = (ws: ReadonlyArray<CalendarWindow>): CalendarWindow | undefined => ws.find(([s, e]) => now >= s && now < e);
     if (within(w.regular)) return 'open';
     const ext = within(w.extended);
-    if (ext) return w.regular.some(([s]) => s >= now && s < ext[1]) ? 'pre' : 'post';
+    if (ext) {
+        if (overnight) return 'extended';
+        return w.regular.some(([s]) => s >= now && s < ext[1]) ? 'pre' : 'post';
+    }
     if (isWeekday(now, tz)) {
         const today = civilDate(now, tz);
         if (today !== '' && !w.extended.some(([s]) => civilDate(s, tz) === today)) return 'holiday';
@@ -130,7 +136,10 @@ export class MarketStatusTracker {
             return;
         }
         const w: MarketWindows = { regular, extended };
-        this.onStatus(deriveMarketStatus(now, w, tz));
+        // Roll tapes (overnight `session_extended`) badge the single extended-hours
+        // state — pre/post is a day-split vocabulary they don't have.
+        const overnight = parseSessionSpec(si)?.overnight === true;
+        this.onStatus(deriveMarketStatus(now, w, tz, overnight));
         const boundary = nextStatusBoundary(now, w);
         const delay = Math.min(boundary != null ? boundary - now : MAX_TIMER_MS, MAX_TIMER_MS);
         this.arm(my, data, symbol, Math.max(delay, MIN_TIMER_MS));

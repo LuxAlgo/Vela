@@ -17,12 +17,19 @@ import type { StrategyTrade } from '../model/strategy';
 import type { VelaEventMap } from '../events/types';
 import { TypedEventBus } from '../events/EventBus';
 import { IndicatorRegistry, type IndicatorRecord } from './IndicatorRegistry';
-import { getNativeIndicator, nativeIndicatorDescriptors, type NativeIndicatorContext, type NativeIndicatorInfo, type NativeIndicatorOutput } from '../native-indicators/NativeIndicator';
+import {
+    getNativeIndicator,
+    nativeIndicatorDescriptors,
+    type NativeIndicatorContext,
+    type NativeIndicatorInfo,
+    type NativeIndicatorOutput,
+} from '../native-indicators/NativeIndicator';
 import { LiveSession } from './LiveSession';
 import { IndicatorHandleImpl, type IndicatorController } from './IndicatorHandleImpl';
 import { inspectModels, type SceneInspection } from './inspect';
 import { presetToRange, type VisibleRangePreset } from '../visible-range';
 import { DrawingController } from '../drawings/DrawingController';
+import { DrawingSeriesService } from './DrawingSeriesService';
 import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
 import { timeframeToMs } from '../../data/timeframe';
@@ -70,15 +77,16 @@ const SINGLE_LOAD_BARS = 5_000;
  */
 const CHUNK_BARS = 10_000;
 /**
- * A progressive source's FIRST paint waits until the snapshot carries at least this many
- * bars (or the full ask, whichever is smaller): the first paint is also the frame the
- * renderer sizes the view against, and a cold source's confirmed head can be a handful
- * of bars — framing onto those shows a few giant candles that later snapshots (painted
- * view-preserved) never fix. The FINAL answer always paints, whatever its depth: a
- * genesis-era symbol may simply have fewer bars than this.
+ * A progressive source's FIRST paint waits for at least this many bars (or the full ask,
+ * whichever is smaller): the first paint is the frame the renderer sizes the view against,
+ * and framing onto a 2-3 bar head draws a few giant candles that later view-preserved
+ * repaints never fix. The FINAL answer always paints whatever exists — a genesis-era
+ * symbol may simply have fewer bars than this. The number's history: 100 starved short
+ * monthly contracts for the provider's whole poll budget (~90 s measured); briefly 1
+ * (no hold), which framed unusable slivers; 20 frames a readable view on every timeframe
+ * now that the server converges small monthlies in seconds.
  */
-const FIRST_PAINT_BARS = 100;
-
+const FIRST_PAINT_BARS = 20;
 /**
  * A live bar more than this many intervals ahead of the last one signals MISSED bars (a throttled
  * background tab, a socket reconnect, system sleep) → backfill. 1.5 tolerates timestamp drift and
@@ -230,7 +238,15 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.barTransform = barTransformFor(initialStyle);
         // User drawings: owns the model + tool/selection state, drives the renderer's
         // drawings port (inert when the renderer lacks the `userDrawings` capability).
-        this.drawings = new DrawingController(this.renderer, this.events, config.drawings);
+        // The series service backs data-driven drawings that read a finer timeframe:
+        // it rides the feed's cache-backed ranged fetch, same path as `request.security`.
+        const drawingSeries = new DrawingSeriesService({
+            fetchBars: (tf, range) => this.fetchSeries(this.config.market.symbol ?? '', tf, range),
+            canFetch: () => !!this.feed.loadRange && !this.config.market.data?.length && !!this.config.market.symbol,
+            chartTimeframe: () => this.config.market.timeframe ?? '60',
+            marketKey: () => `${this.config.market.symbol ?? ''}|${this.config.market.session ?? ''}`,
+        });
+        this.drawings = new DrawingController(this.renderer, this.events, config.drawings, drawingSeries);
         // A symbol nothing can serve leaves the load PARKED; publish it so a host can say so
         // instead of showing a blank chart forever (it still resumes if a provider registers).
         // A parked load also ends the loading state — nothing is coming, and an endless
@@ -327,8 +343,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 if (record.session && record.prepared?.reactsToViewport) {
                     record.pendingCause = 'viewport';
                     record.session.setVisibleRange(window);
-                }
-                else if (record.native?.descriptor.reactsToViewport) record.native.instance.onViewport({ from: window.left, to: window.right });
+                } else if (record.native?.descriptor.reactsToViewport) record.native.instance.onViewport({ from: window.left, to: window.right });
             }
             // An active chart-type data engine streams in newly-visible data as the user scrolls.
             if (this.activeEngineStyle) this.typeEngines.get(this.activeEngineStyle)?.onViewport?.({ from: window.left, to: window.right });
@@ -447,11 +462,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 // Supersession must release THIS wait immediately (the newer switch owns the
                 // chart) — the provider's own resolution can lag its abort by one poll.
                 abort.signal.addEventListener('abort', () => signal(true), { once: true });
-                this.feed
-                    .loadProgressive!(market, (bars) => {
+                this.feed.loadProgressive!(
+                    market,
+                    (bars) => {
                         paint(bars, false);
                         if (painted) signal(true);
-                    }, { signal: abort.signal })
+                    },
+                    { signal: abort.signal },
+                )
                     .then((full) => {
                         if (this.progressiveAbort === abort) this.progressiveAbort = null;
                         if (full == null) return signal(false); // incapable — classic paths take over
@@ -559,7 +577,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      *  an in-flight `setMarket` immediately (the config mutates before the load). */
     marketSnapshot(): MarketSnapshot {
         const m = this.config.market;
-        return { symbol: m.symbol, provider: parseSymbol(m.symbol ?? '').provider ?? undefined, timeframe: m.timeframe, bars: m.bars, session: m.session, offline: m.data !== undefined };
+        return {
+            symbol: m.symbol,
+            provider: parseSymbol(m.symbol ?? '').provider ?? undefined,
+            timeframe: m.timeframe,
+            bars: m.bars,
+            session: m.session,
+            offline: m.data !== undefined,
+        };
     }
 
     /**
@@ -689,10 +714,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             } else {
                 // Reload through the shared pipeline. The race lets a superseded caller resolve
                 // promptly (e.g. a parked load on an unresolvable symbol) instead of hanging.
-                await Promise.race([
-                    this.loadMarket(gen, { firstLoad: false }),
-                    new Promise<void>((resolve) => this.supersedeWaiters.push(resolve)),
-                ]);
+                await Promise.race([this.loadMarket(gen, { firstLoad: false }), new Promise<void>((resolve) => this.supersedeWaiters.push(resolve))]);
             }
             if (this.generation !== gen) return; // superseded — the newer switch owns the chart
         } finally {
@@ -1000,7 +1022,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         }
     }
 
-        private onBar(bar: OHLCV): void {
+    private onBar(bar: OHLCV): void {
         if (this.healing) {
             this.healBuffer.push(bar); // replayed once the backfill lands (ordering preserved)
             return;
@@ -1012,11 +1034,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // provider serves `getBars({ from })`. Within the cooldown a discontinuity is accepted
         // as a real market gap (an empty interval on an illiquid symbol) — no refetch loop.
         const last = this.rawBars[this.rawBars.length - 1];
-        if (
-            last && this.canHeal() &&
-            bar.time > last.time + this.barIntervalMs() * GAP_FACTOR &&
-            Date.now() - this.lastHealAt > HEAL_COOLDOWN_MS
-        ) {
+        if (last && this.canHeal() && bar.time > last.time + this.barIntervalMs() * GAP_FACTOR && Date.now() - this.lastHealAt > HEAL_COOLDOWN_MS) {
             this.healBuffer.push(bar);
             void this.healGap(last.time);
             return;
@@ -1226,7 +1244,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * Resolve a descriptor's support for the current symbol: no `isSupported` ⇒ always supported;
      * an `isSupported` but no symbol set ⇒ can't decide, treat as unsupported; a throw ⇒ unsupported.
      */
-    private async isNativeSupported(descriptor: { isSupported?(symbol: string, data: DataControl): boolean | Promise<boolean> }, symbol: string | null): Promise<boolean> {
+    private async isNativeSupported(
+        descriptor: { isSupported?(symbol: string, data: DataControl): boolean | Promise<boolean> },
+        symbol: string | null,
+    ): Promise<boolean> {
         if (!descriptor.isSupported) return true;
         if (!symbol) return false;
         try {
@@ -1421,7 +1442,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.viewportUnsub?.();
         this.paneActionUnsub?.();
         // native instances free their own caches/timers in stop()
-        for (const record of this.registry.all()) { record.session?.stop(); record.native?.instance.stop(); }
+        for (const record of this.registry.all()) {
+            record.session?.stop();
+            record.native?.instance.stop();
+        }
         for (const engine of this.typeEngines.values()) engine.stop(); // chart-type data engines (SDK)
         this.typeEngines.clear();
         this.activeEngineStyle = null;
@@ -1482,8 +1506,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (!record || !record.engine || !record.prepared || record.hidden) return;
         // Stream only when the chart is live, the script is NOT viewport-dependent, and the
         // engine can stream. Viewport scripts + non-streaming engines take the static path.
-        const mode: 'static' | 'live' =
-            this.config.live && !record.prepared.reactsToViewport && record.engine.capabilities.streaming ? 'live' : 'static';
+        const mode: 'static' | 'live' = this.config.live && !record.prepared.reactsToViewport && record.engine.capabilities.streaming ? 'live' : 'static';
         record.session = record.engine.execute(
             {
                 prepared: record.prepared,
@@ -1505,8 +1528,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                     // consumed cause must not leak into the next model.
                     const first = !record.announced;
                     const cause = record.pendingCause ?? 'history';
+                    // A deferred (output-free while loading) model counts as no run at all:
+                    // the pending cause stays for the real run, and no events fire.
+                    if (!this.applyModel(id, model)) return;
                     record.pendingCause = undefined;
-                    this.applyModel(id, model);
                     this.emitContextChanged(id); // throttled — streamed ticks collapse to ~1/s
                     this.emitScriptRun(id, cause, first);
                 },
@@ -1549,7 +1574,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 data: this.dataControl,
                 emit: (out) => this.applyModel(id, this.buildNativeModel(record, out)),
                 pushData: (data) => this.renderer.setNativeData?.(record.native!.type, data),
-                setStatus: (status) => { if (record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status); },
+                setStatus: (status) => {
+                    if (record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status);
+                },
             };
             record.native.instance.start(ctx, record.inputValues);
         } catch (err) {
@@ -1843,10 +1870,30 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * Apply an emitted model. First emission mounts (and routes the pane); a pending
      * structural change (after an input edit) remounts idempotently; everything else
      * (live tick / viewport re-run) value-patches.
+     *
+     * Returns false when the model was DEFERRED — an output-free model arriving while
+     * the record is still loading and the chart has no bars (see below); every other
+     * outcome, including the hidden drop, returns true so the caller's event semantics
+     * stay unchanged.
      */
-    private applyModel(id: string, model: IndicatorModel): void {
+    private applyModel(id: string, model: IndicatorModel): boolean {
         const record = this.registry.get(id);
-        if (!record || record.hidden) return; // a model arriving for a just-hidden indicator is dropped
+        if (!record || record.hidden) return true; // a model arriving for a just-hidden indicator is dropped
+
+        // While the CHART ITSELF has no bars, an output-free model is the signature of a
+        // run over zero bars (empty initial load: auth race, unresolved symbol, transient
+        // feed failure) — an engine may then fabricate default metadata (generic title,
+        // overlay: false) because the script body never executed. Letting it through
+        // while loading would finalize pane routing off fabricated flags and clear the
+        // spinner, stranding the indicator on the wrong pane with a value patch (no
+        // title, no pane, unmounted series ids) as its only future. Keep the prepared
+        // placeholder up and the one-shot pane re-route unconsumed; the session re-runs
+        // when bars arrive and the first REAL model still routes. The bars check keeps
+        // the guard narrow on purpose: loading ends when the run completes, not when it
+        // produces output — a script that ran over real bars and legitimately emitted
+        // nothing visual (e.g. alerts only) still clears its spinner and announces.
+        if (record.loading && this.bars.length === 0 && !EngineOrchestrator.modelHasOutput(model)) return false;
+
         const handle = this.handles.get(id);
 
         if (!record.renderHandle) {
@@ -1857,7 +1904,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             record.renderHandle = this.renderer.mountIndicator(model);
             record.pendingStructural = false;
             this.announce(record, handle);
-            return;
+            return true;
         }
 
         let paneId = record.model?.paneId ?? 'price';
@@ -1892,6 +1939,25 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         }
         if (record.loading) this.setLoading(record, false);
         this.announce(record, handle);
+        return true;
+    }
+
+    /** True when the model carries ANY executed output — series, drawings, bar colors, or trades. */
+    private static modelHasOutput(model: IndicatorModel): boolean {
+        return (
+            model.series.length > 0 ||
+            model.fills.length > 0 ||
+            model.backgrounds.length > 0 ||
+            model.priceLines.length > 0 ||
+            (model.lines?.length ?? 0) > 0 ||
+            (model.boxes?.length ?? 0) > 0 ||
+            (model.labels?.length ?? 0) > 0 ||
+            (model.polylines?.length ?? 0) > 0 ||
+            (model.linefills?.length ?? 0) > 0 ||
+            (model.tables?.length ?? 0) > 0 ||
+            (model.barColors?.length ?? 0) > 0 ||
+            (model.trades?.length ?? 0) > 0
+        );
     }
 
     private routePane(id: string, model: IndicatorModel, options: AddIndicatorOptions): string {

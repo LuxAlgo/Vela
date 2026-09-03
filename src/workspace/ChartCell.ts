@@ -17,7 +17,7 @@ import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import { Statusline, statuslineInkOf, type StatuslinePart } from '../widget/statusline';
 import { MarketStatusTracker } from '../widget/market-status';
-import { SessionShadingTracker } from '../widget/session-shading';
+import { SessionShadingTracker, parseSessionSpec } from '../widget/session-shading';
 import { timeframeMs } from '../widget/timeframe';
 import { Watermark } from '../widget/watermark';
 import { CellControls } from '../widget/cell-controls';
@@ -26,7 +26,15 @@ import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, ledgerEntryName, type LedgerManifestEntry, type ResolvedIndicator } from '../widget/indicators';
 import { inputDeltas, type InputValue } from '../core/model/inputs';
-import { legendActionsProviderFor, legendCalloutsProviderFor, resolveEngines, statePersistenceHandlers, type CellStateContext, type ExternalIndicatorEntry, type WidgetContext } from '../widget/contributions';
+import {
+    legendActionsProviderFor,
+    legendCalloutsProviderFor,
+    resolveEngines,
+    statePersistenceHandlers,
+    type CellStateContext,
+    type ExternalIndicatorEntry,
+    type WidgetContext,
+} from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { normalizeTimezone } from '../core/timezones';
@@ -174,7 +182,6 @@ export interface CellDeps {
     toast(message: string, kind: 'info' | 'success' | 'error', durationMs?: number): void;
 }
 
-
 /** One live manifest/external instance and, when it deviates from declaration
  *  defaults, the values it was restored with or dropped holding. */
 interface CellInstance {
@@ -212,6 +219,9 @@ export class ChartCell {
     activeRangeId: string | null = null;
     /** Latched verdict of {@link sessionAvailable} (async metadata, sticky per symbol). */
     private sessionAvailableFlag = false;
+    /** Latched: the symbol's extended tape wraps midnight (an overnight roll market) —
+     *  one extended-hours shading phase instead of the pre/post split. */
+    private sessionOvernightFlag = false;
 
     private inner: Vela | null;
     /** The live app theme — seeded from deps, updated on `theme:changed` (the base the
@@ -220,7 +230,7 @@ export class ChartCell {
     private readonly statusline: Statusline | null;
     /** Keeps this cell's market badge on the symbol's real calendar (see {@link MarketStatusTracker}). */
     private readonly marketStatus: MarketStatusTracker | null;
-    /** Keeps the pre/post-market shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
+    /** Keeps the session shading on the symbol's real calendar (see {@link SessionShadingTracker}). */
     private readonly sessionShading = new SessionShadingTracker((zones) => this.inner?.renderer.set('sessionZones', zones));
     private readonly watermark: Watermark | null;
     /** Bottom-center hover cluster, pinned to the price plot: drag handle, zoom in/out, maximize/restore, reset view. */
@@ -270,7 +280,14 @@ export class ChartCell {
         // The canonical symbol form: pre-prefix pooled/persisted states carried the venue
         // in `provider` beside a bare symbol — weld them back together once, at boot.
         const symbol = prefixedSymbol(seed);
-        this.state = { symbol, provider: parseSymbol(symbol ?? '').provider ?? undefined, timeframe: seed.timeframe, priceStyle: seed.priceStyle, bars: seed.bars, session: normalizeSession(seed.session) };
+        this.state = {
+            symbol,
+            provider: parseSymbol(symbol ?? '').provider ?? undefined,
+            timeframe: seed.timeframe,
+            priceStyle: seed.priceStyle,
+            bars: seed.bars,
+            session: normalizeSession(seed.session),
+        };
         const doc = gridHost.ownerDocument;
         this.host = doc.createElement('div');
         this.host.className = 'vela-cell';
@@ -392,6 +409,13 @@ export class ChartCell {
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '', (sym) => this.inner?.data.symbolIcon(sym)) : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
+        // The status line's right-click menu: part toggles route through the cell so the
+        // style link mirrors them; the chart toggle is the object tree's same eye seam.
+        this.statusline?.attachMenu({
+            setPart: (part, visible) => this.setStatuslinePart(part, visible),
+            chartVisible: () => this.inner?.renderer.get('candleVisible') !== false,
+            setChartVisible: (visible) => this.inner?.renderer.set('candleVisible', visible),
+        });
         this.marketStatus = this.statusline ? new MarketStatusTracker((s) => this.statusline?.setMarketStatus(s)) : null;
         // The venue chip above is provisional (persisted/typed prefix): once the shared
         // feed's indexes settle, re-derive it from the DATA — a cell restored as
@@ -543,8 +567,10 @@ export class ChartCell {
         void chart.data.symbolInfo(symbol).then((si) => {
             if (this.inner !== chart) return;
             const available = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
-            if (available !== this.sessionAvailableFlag) {
+            const overnight = parseSessionSpec(si)?.overnight === true;
+            if (available !== this.sessionAvailableFlag || overnight !== this.sessionOvernightFlag) {
                 this.sessionAvailableFlag = available;
+                this.sessionOvernightFlag = overnight;
                 this.deps.onMarketChanged(this.id); // re-project the shared bottombar toggle
                 this.pushSettingsSections(); // the Trading session group follows the symbol
             }
@@ -568,13 +594,13 @@ export class ChartCell {
 
     /** The session-shade colors live in the renderer CONFIG (persisted with it, edited
      *  live by the dialog swatch) — the cell only proxies them into its settings rows. */
-    private sessionShadeColor(key: 'premarketColor' | 'postmarketColor'): string {
+    private sessionShadeColor(key: 'premarketColor' | 'postmarketColor' | 'extendedColor'): string {
         const cfg = this.inner?.renderer.getConfig() as { sessions?: Record<string, unknown> } | null | undefined;
         const v = cfg?.sessions?.[key];
         return typeof v === 'string' ? v : '';
     }
 
-    private setSessionShadeColor(key: 'premarketColor' | 'postmarketColor', color: string): void {
+    private setSessionShadeColor(key: 'premarketColor' | 'postmarketColor' | 'extendedColor', color: string): void {
         this.inner?.renderer.applyConfig({ sessions: { [key]: color } });
         this.deps.onStateDirty(); // the colors persist with the renderer config document
     }
@@ -582,16 +608,43 @@ export class ChartCell {
     /**
      * (Re)contribute this cell's settings-dialog sections: status line parts, the
      * per-cell fetch depth, the watermark toggle, and — only while the cell's symbol
-     * HAS sessions — the Trading session group (RTH/ETH switch + the pre/post-market
-     * shading colors) inside the Symbol tab. Bars/watermark/titles are persistable
-     * cell state; a depth-only reload is silent, so mark dirty here. Re-run whenever
-     * a gate changes (the dialog reads the sections on open).
+     * HAS sessions — the Trading session group (RTH/ETH switch + the session shading
+     * colors: pre/post-market on day-split tapes, one extended-hours swatch on
+     * overnight roll markets) inside the Symbol tab. Bars/watermark/titles are
+     * persistable cell state; a depth-only reload is silent, so mark dirty here.
+     * Re-run whenever a gate changes (the dialog reads the sections on open).
      */
     private pushSettingsSections(): void {
         const chart = this.inner;
         if (!chart) return;
         const rth = 'Regular hours (RTH)';
         const eth = 'Extended hours (ETH)';
+        const shadeRows = this.sessionOvernightFlag
+            ? [
+                  {
+                      kind: 'color' as const,
+                      label: 'Extended hours',
+                      id: 'extended-color',
+                      get: () => this.sessionShadeColor('extendedColor'),
+                      set: (v: string) => this.setSessionShadeColor('extendedColor', v),
+                  },
+              ]
+            : [
+                  {
+                      kind: 'color' as const,
+                      label: 'Pre-market',
+                      id: 'premarket-color',
+                      get: () => this.sessionShadeColor('premarketColor'),
+                      set: (v: string) => this.setSessionShadeColor('premarketColor', v),
+                  },
+                  {
+                      kind: 'color' as const,
+                      label: 'Post-market',
+                      id: 'postmarket-color',
+                      get: () => this.sessionShadeColor('postmarketColor'),
+                      set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
+                  },
+              ];
         // The `id` fields are the sections' stable visibility ids (`settings.hidden`,
         // docs/user/options.md) — same reserved ids as the widget's sections.
         const sessionSection = {
@@ -607,20 +660,7 @@ export class ChartCell {
                     get: () => (this.session === 'extended' ? eth : rth),
                     set: (v: string) => this.setSession(v === eth ? 'extended' : 'regular'),
                 },
-                {
-                    kind: 'color' as const,
-                    label: 'Pre-market',
-                    id: 'premarket-color',
-                    get: () => this.sessionShadeColor('premarketColor'),
-                    set: (v: string) => this.setSessionShadeColor('premarketColor', v),
-                },
-                {
-                    kind: 'color' as const,
-                    label: 'Post-market',
-                    id: 'postmarket-color',
-                    get: () => this.sessionShadeColor('postmarketColor'),
-                    set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
-                },
+                ...shadeRows,
             ],
         };
         const advanced = {
@@ -632,7 +672,7 @@ export class ChartCell {
                     kind: 'select' as const,
                     label: 'Bars to fetch',
                     id: 'bars',
-                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
+                    options: ['500', '1000', '2000', '5000', '10000', '20000', '50000', '60000', '80000', '100000'],
                     get: () => String(this.state.bars ?? 1000),
                     set: (v: string) => {
                         this.state.bars = Number(v);
@@ -664,10 +704,34 @@ export class ChartCell {
                 id: 'status-line',
                 rows: [
                     { kind: 'heading', label: 'Status line', id: 'parts' },
-                    { kind: 'toggle', label: 'Symbol name', id: 'name', get: () => sl.partVisible('name'), set: (v: boolean) => this.setStatuslinePart('name', v) },
-                    { kind: 'toggle', label: 'Market status', id: 'market', get: () => sl.partVisible('market'), set: (v: boolean) => this.setStatuslinePart('market', v) },
-                    { kind: 'toggle', label: 'OHLC values', id: 'ohlc', get: () => sl.partVisible('ohlc'), set: (v: boolean) => this.setStatuslinePart('ohlc', v) },
-                    { kind: 'toggle', label: 'Bar change values', id: 'change', get: () => sl.partVisible('change'), set: (v: boolean) => this.setStatuslinePart('change', v) },
+                    {
+                        kind: 'toggle',
+                        label: 'Symbol name',
+                        id: 'name',
+                        get: () => sl.partVisible('name'),
+                        set: (v: boolean) => this.setStatuslinePart('name', v),
+                    },
+                    {
+                        kind: 'toggle',
+                        label: 'Market status',
+                        id: 'market',
+                        get: () => sl.partVisible('market'),
+                        set: (v: boolean) => this.setStatuslinePart('market', v),
+                    },
+                    {
+                        kind: 'toggle',
+                        label: 'OHLC values',
+                        id: 'ohlc',
+                        get: () => sl.partVisible('ohlc'),
+                        set: (v: boolean) => this.setStatuslinePart('ohlc', v),
+                    },
+                    {
+                        kind: 'toggle',
+                        label: 'Bar change values',
+                        id: 'change',
+                        get: () => sl.partVisible('change'),
+                        set: (v: boolean) => this.setStatuslinePart('change', v),
+                    },
                     { kind: 'heading', label: 'Indicators', id: 'indicators' },
                     {
                         kind: 'toggle',
@@ -726,7 +790,7 @@ export class ChartCell {
         const sl = this.statusline;
         return {
             parts: sl
-                ? { name: sl.partVisible('name'), market: sl.partVisible('market'), ohlc: sl.partVisible('ohlc'), change: sl.partVisible('change') }
+                ? { logo: sl.partVisible('logo'), name: sl.partVisible('name'), market: sl.partVisible('market'), ohlc: sl.partVisible('ohlc'), change: sl.partVisible('change') }
                 : null,
             indicatorTitles: this.indicatorTitlesOn,
             indicatorValues: this.indicatorValuesOn,
@@ -868,6 +932,11 @@ export class ChartCell {
         this.inner?.renderer.focus();
     }
 
+    /** Raster of this cell's chart (same pixels as the PNG download), or null. */
+    screenshotCanvas(): HTMLCanvasElement | null {
+        return this.inner?.renderer.screenshotCanvas() ?? null;
+    }
+
     /** Download this cell's chart as a PNG (named after its market). */
     downloadScreenshot(): void {
         const url = this.inner?.renderer.screenshot();
@@ -925,7 +994,8 @@ export class ChartCell {
             if (this.manifest.length > 0) {
                 for (const item of led.manifest) {
                     const entry = this.manifest.find((e) => e.name === ledgerEntryName(item));
-                    if (entry) this.addManifestInstance(entry, { record: false, ...(typeof item === 'object' ? { inputs: item.inputs, props: item.props } : {}) });
+                    if (entry)
+                        this.addManifestInstance(entry, { record: false, ...(typeof item === 'object' ? { inputs: item.inputs, props: item.props } : {}) });
                 }
                 this.pendingManifestNames = null;
             } else if (!this.deps.manifestSettled()) {
@@ -979,11 +1049,17 @@ export class ChartCell {
      * a persistence handler's `restore` runs silently, a user-driven call records.
      */
     addExternalIndicator(entry: ExternalIndicatorEntry): void {
-        this.addManifestInstance({ ...entry, enabled: true }, { external: true, ...(entry.inputs ? { inputs: entry.inputs } : {}), ...(entry.props ? { props: entry.props } : {}) });
+        this.addManifestInstance(
+            { ...entry, enabled: true },
+            { external: true, ...(entry.inputs ? { inputs: entry.inputs } : {}), ...(entry.props ? { props: entry.props } : {}) },
+        );
     }
 
     /** Add ONE instance of a manifest entry (repeatable — duplicates are legitimate). */
-    addManifestInstance(entry: ResolvedIndicator, opts: { record?: boolean; external?: boolean; inputs?: Record<string, InputValue>; props?: Record<string, InputValue> } = {}): void {
+    addManifestInstance(
+        entry: ResolvedIndicator,
+        opts: { record?: boolean; external?: boolean; inputs?: Record<string, InputValue>; props?: Record<string, InputValue> } = {},
+    ): void {
         if (this.destroyed) return;
         const values = opts.inputs || opts.props ? { inputs: opts.inputs, props: opts.props } : undefined;
         const it: CellInstance = { entry, handle: this.addToChart(entry, values), ...(opts.external ? { external: true } : {}), ...(values ? { values } : {}) };
@@ -1193,7 +1269,7 @@ export class ChartCell {
         // Identity from the live config; depth (`bars`) stays the cell's own durable
         // budget — in range mode the config carries the chip's transient fetch budget.
         const live = this.inner?.market;
-        const ext = this.inner ? this.dehydrateExt() : (Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined);
+        const ext = this.inner ? this.dehydrateExt() : Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined;
         return {
             ...this.state,
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
@@ -1211,12 +1287,14 @@ export class ChartCell {
             // manifest — their plugin persists them via the `ext` seam instead.
             indicators: indicatorLedger({
                 present: this.inner ? this.inner.presentNativeIndicators() : [],
-                instanceEntries: this.instances.filter((it) => !it.external).map((it) => {
-                    // LIVE deltas from the handle; a handle-less instance (add failed)
-                    // keeps whatever values it was restored with.
-                    const d = it.handle ? instanceDeltas(it.handle) : it.values;
-                    return d ? { name: it.entry.name, ...d } : it.entry.name;
-                }),
+                instanceEntries: this.instances
+                    .filter((it) => !it.external)
+                    .map((it) => {
+                        // LIVE deltas from the handle; a handle-less instance (add failed)
+                        // keeps whatever values it was restored with.
+                        const d = it.handle ? instanceDeltas(it.handle) : it.values;
+                        return d ? { name: it.entry.name, ...d } : it.entry.name;
+                    }),
                 pendingManifest: this.pendingManifestNames,
                 manifestSettled: this.deps.manifestSettled(),
                 volumePending: this.volumeMayBePending && this.volumeIntent,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { expandSessionZones, parseSessionSpec, SessionShadingTracker, type SessionZonesUpdate } from '../src/widget/session-shading';
-import { clipHighlightRect } from '../src/renderers/native/backdrop/BackdropRenderer';
+import { bandEdgeSlot, clipHighlightRect } from '../src/renderers/native/backdrop/BackdropRenderer';
+import { barTimeToLogical } from '../src/renderers/native/core/bar-time';
 import type { DataControl } from '../src/core/DataControl';
 import type { SymbolInfo } from '../src/core/ports/MarketDataFeed';
 
@@ -15,13 +16,38 @@ const US_EQUITIES = {
     timezone: 'America/New_York',
 };
 
+/** An overnight roll market: the trading day ROLLS at the 17:00 evening open, so the
+ *  extended tape wraps midnight. */
+const OVERNIGHT_MARKET = {
+    ticker: 'ROLL',
+    session: '0830-1515',
+    session_extended: '1700-1600',
+    timezone: 'America/Chicago',
+};
+
 describe('parseSessionSpec', () => {
     it('reads the regular + extended vocabulary and the market timezone', () => {
         expect(parseSessionSpec(US_EQUITIES)).toEqual({
             regular: { start: 9 * 60 + 30, end: 16 * 60 },
             extended: { start: 4 * 60, end: 20 * 60 },
+            overnight: false,
             timezone: 'America/New_York',
         });
+    });
+
+    it('reads an overnight extended vocabulary as a wrap-around roll tape', () => {
+        expect(parseSessionSpec(OVERNIGHT_MARKET)).toEqual({
+            regular: { start: 8 * 60 + 30, end: 15 * 60 + 15 },
+            extended: { start: 17 * 60, end: 16 * 60 },
+            overnight: true,
+            timezone: 'America/Chicago',
+        });
+    });
+
+    it('ignores an overnight extended window whose tail does not reach the regular close', () => {
+        const spec = parseSessionSpec({ ...OVERNIGHT_MARKET, session_extended: '1700-1200' });
+        expect(spec?.extended).toEqual({ start: 0, end: 1440 });
+        expect(spec?.overnight).toBe(false);
     });
 
     it('reports no session structure for continuous markets and missing metadata', () => {
@@ -90,7 +116,36 @@ describe('expandSessionZones', () => {
 
     it('emits nothing for a bogus timezone rather than misplacing bands', () => {
         const zones = expandSessionZones({ ...spec, timezone: 'Not/AZone' }, 0, 7 * DAY);
-        expect(zones).toEqual({ pre: [], post: [] });
+        expect(zones).toEqual({ pre: [], post: [], extended: [] });
+    });
+});
+
+describe('expandSessionZones — overnight roll tapes', () => {
+    const spec = parseSessionSpec(OVERNIGHT_MARKET)!;
+
+    it('shades the whole overnight as ONE extended band, seamless across midnight', () => {
+        // Mon 2024-03-04, CST (UTC-6). The Sunday 17:00 CT evening open runs unbroken
+        // into Monday's 08:30 CT regular open: 23:00 UTC Sun 3rd → 14:30 UTC Mon 4th.
+        const zones = expandSessionZones(spec, Date.UTC(2024, 2, 3, 12), Date.UTC(2024, 2, 5, 23));
+        expect(zones.pre).toEqual([]);
+        expect(zones.post).toEqual([]);
+        expect(zones.extended).toContainEqual([Date.UTC(2024, 2, 3, 23), Date.UTC(2024, 2, 4, 14, 30)]);
+        // Monday's own evening rolls into Tuesday the same way.
+        expect(zones.extended).toContainEqual([Date.UTC(2024, 2, 4, 23), Date.UTC(2024, 2, 5, 14, 30)]);
+    });
+
+    it('shades the post-close tail up to the tape end (15:15–16:00 CT)', () => {
+        const zones = expandSessionZones(spec, Date.UTC(2024, 2, 4), Date.UTC(2024, 2, 5));
+        expect(zones.extended).toContainEqual([Date.UTC(2024, 2, 4, 21, 15), Date.UTC(2024, 2, 4, 22)]);
+    });
+
+    it('emits no Friday evening and nothing on Saturday', () => {
+        // Fri 2024-03-01 closes at 16:00 CT (22:00 UTC); the next band is Sunday's
+        // 17:00 CT evening open (23:00 UTC Mar 3). Nothing may land in between.
+        const zones = expandSessionZones(spec, Date.UTC(2024, 1, 29), Date.UTC(2024, 2, 4));
+        const gapFrom = Date.UTC(2024, 2, 1, 22);
+        const gapTo = Date.UTC(2024, 2, 3, 23);
+        expect(zones.extended.some(([s, e]) => s < gapTo && e > gapFrom)).toBe(false);
     });
 });
 
@@ -119,7 +174,7 @@ describe('SessionShadingTracker', () => {
             const tracker = new SessionShadingTracker((zones) => updates.push(zones));
             tracker.track(data, 'AAPL', { session: 'extended', timeframe, range: { from: monday, to: monday + 30 * DAY } });
             await new Promise((r) => setTimeout(r, 0));
-            expect(updates[updates.length - 1]).toEqual({ pre: [], post: [] });
+            expect(updates[updates.length - 1]).toEqual({ pre: [], post: [], extended: [] });
             tracker.stop();
         }
     });
@@ -137,6 +192,20 @@ describe('SessionShadingTracker', () => {
             tracker.stop();
         }
     });
+
+    it('reports the single extended phase for overnight roll tapes', async () => {
+        const data = { symbolInfo: () => Promise.resolve<SymbolInfo>(OVERNIGHT_MARKET) } as unknown as DataControl;
+        const monday = Date.UTC(2024, 2, 4);
+        const updates: Array<SessionZonesUpdate | null> = [];
+        const tracker = new SessionShadingTracker((zones) => updates.push(zones));
+        tracker.track(data, 'ROLL', { session: 'extended', timeframe: '15', range: { from: monday, to: monday + DAY } });
+        await new Promise((r) => setTimeout(r, 0));
+        const zones = updates[updates.length - 1]!;
+        expect(zones.extended.length).toBeGreaterThan(0);
+        expect(zones.pre).toEqual([]);
+        expect(zones.post).toEqual([]);
+        tracker.stop();
+    });
 });
 
 describe('session highlight history bounds', () => {
@@ -145,5 +214,28 @@ describe('session highlight history bounds', () => {
         expect(clipHighlightRect(150, 300, 20, 200)).toEqual({ x: 150, width: 50 });
         expect(clipHighlightRect(-100, 10, 20, 200)).toBeNull();
         expect(clipHighlightRect(210, 300, 20, 200)).toBeNull();
+    });
+});
+
+describe('session band edges land BETWEEN candles, never through one', () => {
+    // Five bars at a 15-unit pitch with a gap (a maintenance halt): 0, 15, 30 — halt — 105, 120.
+    const times = [0, 15, 30, 105, 120];
+    const edge = (ms: number): number => bandEdgeSlot(barTimeToLogical(ms, times, 15));
+
+    it('an edge on an exact bar open sits at that bar slot start', () => {
+        // A band starting at 15 owns bar 1 wholly: the edge is the 0/1 slot boundary.
+        expect(edge(15)).toBe(0.5);
+        // A band ENDING at 105 excludes bar 3: same boundary from the other side.
+        expect(edge(105)).toBe(2.5);
+    });
+
+    it('an edge inside a bar gap resolves to the boundary after the last bar inside', () => {
+        // A band ending at 60 (inside the halt, no bar there) still owns bar 2 wholly.
+        expect(edge(60)).toBe(2.5);
+    });
+
+    it('an edge between bar opens owns the NEXT bar (bars belong by open time)', () => {
+        // A band starting at 7 does not own bar 0 (opened at 0, before the band).
+        expect(edge(7)).toBe(0.5);
     });
 });

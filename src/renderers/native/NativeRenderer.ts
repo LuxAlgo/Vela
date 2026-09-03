@@ -58,7 +58,7 @@ import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './cor
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint } from './core/chartConfig';
 import { BackdropRenderer } from './backdrop/BackdropRenderer';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
@@ -406,8 +406,9 @@ export class NativeRenderer implements IChartRenderer {
                 this.scene.highlights = sanitizeHighlights(value);
                 break;
             case 'sessionZones':
-                // Pre/post-market bands from the host's market calendar; painted with the
-                // config's session colors. Null ⇒ the market has no session structure.
+                // Session bands from the host's market calendar (pre/post or the single
+                // extended phase); painted with the config's session colors. Null ⇒ the
+                // market has no session structure.
                 this.scene.sessionZones = sanitizeSessionZones(value);
                 break;
             case 'gridlines':
@@ -729,7 +730,7 @@ export class NativeRenderer implements IChartRenderer {
                 };
             })(),
             series: { style: this.scene.priceStyle, baseline: this.scene.baselineValue, spacing: this.coords.spacingScale },
-            sessions: { premarketColor: s.sessions.premarketColor, postmarketColor: s.sessions.postmarketColor },
+            sessions: { premarketColor: s.sessions.premarketColor, postmarketColor: s.sessions.postmarketColor, extendedColor: s.sessions.extendedColor },
         };
     }
 
@@ -844,7 +845,7 @@ export class NativeRenderer implements IChartRenderer {
             baselineLevel: next.baseline.baselineLevel,
         };
         // session shading
-        s.sessions = { premarketColor: next.sessions.premarketColor, postmarketColor: next.sessions.postmarketColor };
+        s.sessions = { premarketColor: next.sessions.premarketColor, postmarketColor: next.sessions.postmarketColor, extendedColor: next.sessions.extendedColor };
         // series
         this.setPriceStyle(next.series.style);
         // Re-read the active style's candle override: setPriceStyle no-ops when the style
@@ -1117,9 +1118,10 @@ export class NativeRenderer implements IChartRenderer {
      * opts in with a `data-vela-screenshot` attribute on the mount container's
      * subtree (the widget marks its status line, and its symbol watermark with
      * `"under"` — drawn beneath the canvases, where it sits on screen). Only the
-     * crosshair (L2) is intentionally excluded.
+     * crosshair (L2) is intentionally excluded. {@link screenshot} is this canvas
+     * as a PNG data URL.
      */
-    screenshot(): string | null {
+    screenshotCanvas(): HTMLCanvasElement | null {
         if (!this.dataCanvas) return null;
         this.computeScales();
         this.paintData();
@@ -1148,7 +1150,11 @@ export class NativeRenderer implements IChartRenderer {
                 if (el.getAttribute('data-vela-screenshot') !== 'under') rasterizeOverlay(ctx, el, frame);
             }
         }
-        return out.toDataURL('image/png');
+        return out;
+    }
+
+    screenshot(): string | null {
+        return this.screenshotCanvas()?.toDataURL('image/png') ?? null;
     }
 
     /**
@@ -1408,6 +1414,23 @@ export class NativeRenderer implements IChartRenderer {
             seriesBoundaries: (paneId) => this.scene.seriesBoundaries(paneId),
             priceZ: (paneId) => (paneId === PRICE_PANE_ID ? this.scene.candleZ : null),
             requestDataPaint: () => this.scheduler.invalidate(InvalidateLevel.Light),
+            // The look the price series ACTUALLY paints with: candle colors resolved through
+            // the per-style override, line/area colors through their configured styles — so
+            // series-mirroring content (the magnifier inset) matches the chart exactly.
+            seriesLook: () => {
+                const st = this.scene.style;
+                const paint = effectiveCandlePaint(st.candle, this.scene.candleOverride, this.theme.upColor, this.theme.downColor);
+                const barsUp = st.bars.upColor ?? this.theme.upColor;
+                const barsDown = st.bars.downColor ?? this.theme.downColor;
+                const style = this.scene.priceStyle;
+                return {
+                    style,
+                    upColor: style === 'bars' ? barsUp : paint.up,
+                    downColor: style === 'bars' ? barsDown : paint.down,
+                    lineColor: style === 'area' ? (st.area.lineColor ?? this.theme.upColor) : (st.line.color ?? this.theme.upColor),
+                };
+            },
+            chartBarMs: () => this.coords.barInterval,
             snap: (pt, paneId, mode, cursorPx) => this.snapToCandle(pt, paneId, mode, cursorPx),
             setSnapMode: (mode) => this.setSnapMode(mode),
             setToolbarGutter: (px) => this.setToolbarGutter(px),
@@ -3048,6 +3071,9 @@ export class NativeRenderer implements IChartRenderer {
             },
             (y) => this.paneNodeAtY(y)?.id ?? null,
             (from, to) => this.barsInTimeRange(from, to),
+            this.userDrawings?.seriesGateway
+                ? (tf, from, to) => this.userDrawings!.seriesGateway!.seriesInRange(tf, from, to)
+                : undefined,
         );
     }
 
@@ -3887,10 +3913,11 @@ function sanitizeHighlights(value: unknown): HighlightArea[] {
     return out.sort((a, b) => a.from - b.from);
 }
 
-/** Coerce arbitrary input into clean pre/post session bands, or null (no session structure). */
+/** Coerce arbitrary input into clean session bands (pre/post or the single extended
+ *  phase), or null (no session structure). */
 function sanitizeSessionZones(value: unknown): SessionZones | null {
     if (value == null || typeof value !== 'object') return null;
-    const v = value as { pre?: unknown; post?: unknown };
+    const v = value as { pre?: unknown; post?: unknown; extended?: unknown };
     const windows = (raw: unknown): Array<readonly [number, number]> => {
         if (!Array.isArray(raw)) return [];
         const out: Array<readonly [number, number]> = [];
@@ -3902,7 +3929,7 @@ function sanitizeSessionZones(value: unknown): SessionZones | null {
         }
         return out.sort((a, b) => a[0] - b[0]);
     };
-    return { pre: windows(v.pre), post: windows(v.post) };
+    return { pre: windows(v.pre), post: windows(v.post), extended: windows(v.extended) };
 }
 
 /** Whether a value is one of the supported price-series styles (built-ins + SDK-registered). */

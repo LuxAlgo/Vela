@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DrawingSceneRenderer, EMPTY_DRAWING_SET, type DrawingSet } from '../src/renderers/shared/DrawingSceneRenderer';
-import type { DrawingLine } from '../src/core/model/drawings';
+import type { DrawingBox, DrawingLine } from '../src/core/model/drawings';
 import type { VelaTheme } from '../src/core/options';
 
 /**
@@ -88,5 +88,78 @@ describe('extended lines and autoscale (priceRange)', () => {
             expect(rangeOf(point, 500, 600)).toBeNull();
             expect(rangeOf(point, 0, 50)).toBeNull();
         }
+    });
+});
+
+function box(over: Partial<DrawingBox>): DrawingBox {
+    return {
+        id: 'bx',
+        paneId: 'price',
+        xloc: 'bar_index',
+        extend: 'none',
+        left: 100,
+        top: 6,
+        right: 110,
+        bottom: 5,
+        bgColor: '#0f04',
+        borderColor: '#0f0',
+        borderWidth: 1,
+        borderStyle: 'solid',
+        textSize: 'auto',
+        hAlign: 'center',
+        vAlign: 'center',
+        wrap: false,
+        fontFamily: 'default',
+        bold: false,
+        italic: false,
+        ...over,
+    };
+}
+
+function boxRangeOf(bx: DrawingBox, from: number, to: number) {
+    const set: DrawingSet = { ...EMPTY_DRAWING_SET, boxes: [bx] };
+    const r = new DrawingSceneRenderer({ timeToLogical: () => 0, barAt: () => null, theme });
+    r.setSet(set);
+    return r.priceRange(from, to);
+}
+
+/**
+ * Boxes and autoscale: a box folds its top/bottom while some painted part of it —
+ * anchor span plus its `extend` projection — crosses the visible bar window. An
+ * `extend.right` box paints nothing LEFT of its anchors, so a window entirely
+ * before it must not inherit its prices (the box would otherwise squeeze every
+ * earlier window's pane toward wherever it sits).
+ */
+describe('extended boxes and autoscale (priceRange)', () => {
+    it('folds top/bottom while the anchor span is in view — extended or not', () => {
+        for (const extend of ['none', 'left', 'right', 'both'] as const) {
+            const r = boxRangeOf(box({ extend }), 90, 120);
+            expect(r).not.toBeNull();
+            expect(r!.min).toBe(5);
+            expect(r!.max).toBe(6);
+        }
+    });
+
+    it('extend.both keeps folding with OFF-SCREEN anchors — the projection crosses every window', () => {
+        for (const window of [[500, 600], [0, 50]] as const) {
+            const r = boxRangeOf(box({ extend: 'both' }), window[0], window[1]);
+            expect(r).not.toBeNull();
+            expect(r!.min).toBe(5);
+            expect(r!.max).toBe(6);
+        }
+    });
+
+    it('extend.left / extend.right fold only on the side the projection covers', () => {
+        // Anchors at bars 100..110; extend.right paints over [100, ∞).
+        expect(boxRangeOf(box({ extend: 'right' }), 500, 600)).not.toBeNull();
+        expect(boxRangeOf(box({ extend: 'right' }), 0, 50)).toBeNull();
+        // extend.left paints over (-∞, 110].
+        expect(boxRangeOf(box({ extend: 'left' }), 0, 50)).not.toBeNull();
+        expect(boxRangeOf(box({ extend: 'left' }), 500, 600)).toBeNull();
+    });
+
+    it('unextended off-screen boxes stay excluded (regression baseline)', () => {
+        expect(boxRangeOf(box({}), 500, 600)).toBeNull();
+        expect(boxRangeOf(box({}), 0, 50)).toBeNull();
     });
 });
