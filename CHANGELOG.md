@@ -2,6 +2,18 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **The custom color chooser stays open while you pick.** Pressing `+` in a color
+  picker opens the browser's own color chooser; clicking or dragging on its
+  gradient used to slam it shut after the first change, so you could only ever
+  land one step away from where you started. The chooser now stays open until
+  you dismiss it, the chart previews every color you hover through, and only the
+  color you settle on is added to the recents row. Picking a swatch also updates
+  the chooser's starting color, so `+` opens on what is currently selected.
+
 ## [v0.6.15]
 
 ### Added
