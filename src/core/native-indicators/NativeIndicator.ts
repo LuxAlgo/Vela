@@ -101,6 +101,13 @@ export interface NativeIndicatorDescriptor {
     readonly reactsToViewport?: boolean;
     /** Marks the type as beta — surfaced in the catalog so a host "add indicator" UI can badge it. */
     readonly beta?: boolean;
+    /**
+     * Allow several instances of this type on one chart — every add creates a new one (a study
+     * like a moving average is typically stacked at different lengths). Absent ⇒ SINGLE instance
+     * per type: a second add returns the existing handle. A type that pushes a bespoke layer
+     * payload through `pushData` must stay single-instance (the layer is keyed by type).
+     */
+    readonly multiInstance?: boolean;
     inputsSchema(): InputSchema[];
     defaultInputs(): Record<string, InputValue>;
     create(): NativeIndicator;
@@ -113,8 +120,8 @@ export interface NativeIndicatorDescriptor {
 
 /**
  * One entry in the "add native indicator" catalog: the type's static metadata plus its live state
- * on a specific chart — whether it applies to the current symbol (`supported`) and whether an
- * instance is already present (`present`, since natives are single-instance per type). Produced by
+ * on a specific chart — whether it applies to the current symbol (`supported`) and whether at
+ * least one instance is already present (`present`). Produced by
  * `chart.availableNativeIndicators()`.
  */
 export interface NativeIndicatorInfo {
@@ -122,8 +129,11 @@ export interface NativeIndicatorInfo {
     readonly title: string;
     /** Applies to the current symbol (a type may need data the provider lacks). */
     readonly supported: boolean;
-    /** An instance is already on the chart (a second add is a no-op). */
+    /** At least one instance is on the chart. For a single-instance type a second add is a no-op;
+     *  a `multiInstance` type adds another instance regardless. */
     readonly present: boolean;
+    /** The type allows several instances per chart (see `NativeIndicatorDescriptor.multiInstance`). */
+    readonly multiInstance?: boolean;
     /** The type is flagged beta (for a badge in the picker). */
     readonly beta?: boolean;
 }

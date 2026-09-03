@@ -2,13 +2,14 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.6.16]
 
 ### Added
 
 - **A built-in catalog of classic indicators.** The indicators dialog now ships
   more than seventy standard technical-analysis studies out of the box — moving
-  averages (SMA/EMA/WMA/RMA/VWMA, ZLEMA, VIDYA, envelopes, linear regression),
+  averages (Simple and Exponential as their own studies, a switchable
+  SMA/EMA/WMA/RMA/VWMA study, ZLEMA, VIDYA, envelopes, linear regression),
   bands and channels (Bollinger Bands with %B and Width, Keltner, Donchian,
   SuperTrend, Chandelier Exit, Williams Alligator), momentum oscillators (RSI,
   Stochastic and Stochastic RSI, MACD, CCI, Awesome Oscillator, TSI, TRIX,
@@ -21,7 +22,9 @@ All notable changes to Vela, newest first.
   Fractal). Every study computes from the chart's own bars — no scripting
   engine needed — and gets the full indicator treatment: its own pane or a
   price overlay, legend row, a settings dialog with typed inputs and colors,
-  and persistence across reloads.
+  and persistence across reloads. Studies stack: pick the same one again to
+  add another instance (a 20 and a 200 moving average side by side), each
+  with its own settings and its own row in the indicators dialog.
 
 ### Fixed
 
@@ -32,6 +35,12 @@ All notable changes to Vela, newest first.
   you dismiss it, the chart previews every color you hover through, and only the
   color you settle on is added to the recents row. Picking a swatch also updates
   the chooser's starting color, so `+` opens on what is currently selected.
+- **The first result in the symbol search is no longer clipped.** Since the search
+  bar and market tabs started staying pinned, they sat a few pixels too low and
+  covered the top of the first row and its highlight. The row now shows in full,
+  with its usual spacing under the tabs. On a phone, the result list scrolls on
+  its own under the pinned search bar, and browsing past the first hundred
+  results loads more as you scroll, as it does on desktop.
 
 ## [v0.6.15]
 

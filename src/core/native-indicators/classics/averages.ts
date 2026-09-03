@@ -1,3 +1,4 @@
+import type { InputSchema } from '../../model/inputs';
 import { SERIES_LINE } from '../../palette';
 import type { ClassicIndicatorSpec } from './define';
 import { num, str } from './define';
@@ -8,6 +9,29 @@ import { sourceValues, volumes, sma, ema, rma, wma, vwma, linreg, change, map, z
 
 const MA_KINDS = ['SMA', 'EMA', 'WMA', 'RMA', 'VWMA'] as const;
 
+const offsetInput: InputSchema = { key: 'offset', title: 'Offset', type: 'int', defval: 0, min: -500, max: 500, step: 1 };
+
+/** A single-kind average: the same inputs as the generic study minus the type picker. */
+function fixedAverage(type: string, title: string, shortTitle: 'SMA' | 'EMA', smooth: (src: number[], len: number) => number[]): ClassicIndicatorSpec {
+    return {
+        type,
+        title,
+        shortTitle,
+        overlay: true,
+        inputs: [lengthInput(20), sourceInput(), offsetInput, colorInput()],
+        compute: (bars, inputs) => {
+            const len = num(inputs, 'length', 20);
+            let values = smooth(sourceValues(bars, str(inputs, 'source', 'Close')), len);
+            const offset = Math.trunc(num(inputs, 'offset', 0));
+            if (offset !== 0) values = shift(values, offset);
+            return { plots: [{ key: shortTitle.toLowerCase(), title: shortTitle, values, color: str(inputs, 'color', SERIES_LINE), width: 2 }] };
+        },
+    };
+}
+
+const simpleMa = fixedAverage('sma', 'Simple Moving Average', 'SMA', sma);
+const exponentialMa = fixedAverage('ema', 'Exponential Moving Average', 'EMA', ema);
+
 const movingAverage: ClassicIndicatorSpec = {
     type: 'moving-average',
     title: 'Moving Average',
@@ -17,7 +41,7 @@ const movingAverage: ClassicIndicatorSpec = {
         { key: 'maType', title: 'Type', type: 'string', defval: 'SMA', options: MA_KINDS },
         lengthInput(20),
         sourceInput(),
-        { key: 'offset', title: 'Offset', type: 'int', defval: 0, min: -500, max: 500, step: 1 },
+        offsetInput,
         colorInput(),
     ],
     compute: (bars, inputs) => {
@@ -172,4 +196,4 @@ const linearRegression: ClassicIndicatorSpec = {
     }),
 };
 
-export const averageSpecs: ClassicIndicatorSpec[] = [movingAverage, smoothedMa, zlema, vidya, maEnvelope, linearRegression];
+export const averageSpecs: ClassicIndicatorSpec[] = [simpleMa, exponentialMa, movingAverage, smoothedMa, zlema, vidya, maEnvelope, linearRegression];

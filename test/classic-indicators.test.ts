@@ -133,6 +133,7 @@ describe('classic catalog registration', () => {
             'coppock-curve': 'Coppock',
             'detrended-price-oscillator': 'DPO',
             'donchian-channels': 'DC',
+            ema: 'EMA',
             'ease-of-movement': 'EOM',
             'elder-ray': 'Elder Ray',
             'fisher-transform': 'Fisher',
@@ -163,6 +164,7 @@ describe('classic catalog registration', () => {
             'relative-volatility-index': 'RVI',
             rma: 'RMA',
             'schaff-trend-cycle': 'Schaff Trend Cycle',
+            sma: 'SMA',
             'smi-ergodic': 'SMIE',
             'standard-deviation': 'StdDev',
             stochastic: 'Stoch',
@@ -199,6 +201,33 @@ describe('classic catalog registration', () => {
                 expect(defaults[input.key], `${spec.type}:${input.key}`).toBe(input.defval);
             }
         }
+    });
+
+    it('every study allows several instances per chart (users stack a study at different settings)', () => {
+        for (const spec of classicSpecs) {
+            expect(classicDescriptor(spec).multiInstance, spec.type).toBe(true);
+        }
+    });
+
+    it('ships dedicated Simple and Exponential Moving Average studies', () => {
+        const bars = Array.from({ length: 60 }, (_, i) => bar(100 + i, i));
+        const byType = new Map(classicSpecs.map((s) => [s.type, s] as const));
+        const smaSpec = byType.get('sma')!;
+        const emaSpec = byType.get('ema')!;
+        expect(smaSpec.title).toBe('Simple Moving Average');
+        expect(emaSpec.title).toBe('Exponential Moving Average');
+        expect(smaSpec.inputs.map((i) => i.key)).toEqual(['length', 'source', 'offset', 'color']);
+        expect(emaSpec.inputs.map((i) => i.key)).toEqual(['length', 'source', 'offset', 'color']);
+        const closes = bars.map((b) => b.close);
+        const smaOut = smaSpec.compute(bars, classicDescriptor(smaSpec).defaultInputs()).plots[0]!;
+        const emaOut = emaSpec.compute(bars, classicDescriptor(emaSpec).defaultInputs()).plots[0]!;
+        expect(smaOut.title).toBe('SMA');
+        expect(emaOut.title).toBe('EMA');
+        expect(smaOut.values).toEqual(sma(closes, 20));
+        expect(emaOut.values).toEqual(ema(closes, 20));
+        // The offset shifts the line without changing its values.
+        const shifted = smaSpec.compute(bars, { ...classicDescriptor(smaSpec).defaultInputs(), offset: 2 }).plots[0]!;
+        expect(shifted.values[30]).toBe(smaOut.values[28]);
     });
 
     it('every compute yields bar-aligned plot arrays on synthetic bars', () => {

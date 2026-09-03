@@ -37,11 +37,9 @@ const ws = new VelaWorkspace('#chart', {
     providers: { binance: () => new BinanceProvider() },
     engines: { demo: () => new DemoEngine() }, // swap for `pine: () => new PineWorkerEngine()` (see the header)
     defaultLanguage: 'demo', // scripts added without a `language` run on the engine above
-    indicators: [
-        { name: 'EMA 20', enabled: false, script: DEMO_SCRIPTS.ema, language: 'demo' }, // library-only:
-        { name: 'Bollinger Bands', enabled: false, script: DEMO_SCRIPTS.bands, language: 'demo' }, //  pick them
-        { name: 'RSI 14', enabled: false, script: DEMO_SCRIPTS.rsi, language: 'demo' }, //  from the dialog
-    ],
+    // No script manifest: the indicators dialog lists the built-in catalog only. Scripts
+    // reach the chart through the Code panel below (or an `indicators` manifest — see the
+    // commented option further down).
 
     // ── The rest of the CHART options, at their defaults — uncomment to play ─────────
     // bars: 1000,                     // history depth to load (paints progressively: newest window first)
@@ -64,6 +62,8 @@ const ws = new VelaWorkspace('#chart', {
     // alertCap: 50,                   // alerts the topbar bell keeps (oldest drop beyond it)
 
     // ── The rest of the SHELL options, at their defaults ──────────────────────────────
+    // indicators: [{ name: 'My script', script: DEMO_SCRIPTS.ema, language: 'demo' }], // a script
+    //                                 //  manifest: rows the dialog lists next to the built-in catalog
     // indicators: async () => (await fetch('/my/manifest.json')).json(), // the manifest can also
     //                                 //  be an ASYNC LOADER (filesystem, authenticated API, …)
     // timeframes: ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M'], // topbar timeframe presets

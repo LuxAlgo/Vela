@@ -153,9 +153,10 @@ export class Vela {
 
     /**
      * Add a built-in NATIVE indicator (core-computed, no scripting engine) by registered `type` —
-     * e.g. `'vpvr'`. It becomes a first-class indicator (legend row, settings, hide, remove,
-     * events) and is single-instance per type (a second call returns the existing handle). Returns
-     * a fail-soft handle for an unregistered type. Native renderer only.
+     * e.g. `'vpvr'` or `'sma'`. It becomes a first-class indicator (legend row, settings, hide,
+     * remove, events). Layer-backed types (`'volume'`, `'vpvr'`) are single-instance — a second
+     * call returns the existing handle; the classic studies allow several instances, so each call
+     * adds one more. Returns a fail-soft handle for an unregistered type. Native renderer only.
      */
     addNativeIndicator(type: string, options?: { inputs?: Record<string, InputValue> }): IndicatorHandle {
         return this.orchestrator.addNativeIndicator(type, options);
@@ -163,17 +164,19 @@ export class Vela {
 
     /**
      * The catalog of built-in native indicators with their live state on this chart — each entry's
-     * `type`, `title`, whether it `supported`s the current symbol, and whether it's already `present`
-     * (native indicators are single-instance per type, so a second `addNativeIndicator` is a no-op).
-     * Lets a host "add indicator" UI list them, gate unsupported ones, and avoid duplicates. Async
-     * because support may probe the provider (a type may need data the symbol lacks).
+     * `type`, `title`, whether it `supported`s the current symbol, whether it's already `present`,
+     * and whether it allows several instances (`multiInstance`; otherwise a second
+     * `addNativeIndicator` is a no-op). Lets a host "add indicator" UI list them, gate unsupported
+     * ones, and de-duplicate the single-instance ones. Async because support may probe the
+     * provider (a type may need data the symbol lacks).
      */
     availableNativeIndicators(): Promise<NativeIndicatorInfo[]> {
         return this.orchestrator.availableNativeIndicators();
     }
 
     /**
-     * The native-indicator types PRESENT on the chart right now — the synchronous slice of
+     * The native-indicator types PRESENT on the chart right now, one entry per instance (a
+     * multi-instance type repeats) — the synchronous slice of
      * {@link availableNativeIndicators} (only support probing is async; presence never is).
      * Persistence snapshots read this: an unload-time flush must see an add/remove that
      * happened microseconds ago, which an async catalog mirror cannot guarantee.

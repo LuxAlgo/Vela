@@ -208,6 +208,8 @@ export function classicDescriptor(spec: ClassicIndicatorSpec): NativeIndicatorDe
         ...(spec.shortTitle != null ? { shortTitle: spec.shortTitle } : {}),
         paneHint: spec.overlay ? 'price' : 'new',
         overlay: spec.overlay,
+        // Studies stack (a 20 and a 200 moving average side by side) — unlike the layer-backed natives.
+        multiInstance: true,
         inputsSchema: () => spec.inputs,
         defaultInputs: () => Object.fromEntries(spec.inputs.map((i) => [i.key, i.defval])),
         create: () => new ClassicIndicator(spec),
