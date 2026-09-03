@@ -8,7 +8,7 @@
 // `npm i @luxalgo/vela-pinets pinets` and `engines: { pine: () => new PineWorkerEngine() }`.
 import { VelaWorkspace } from "../src/workspace";
 import { BinanceProvider } from "../src/data/providers/binance";
-import { DemoEngine, DEMO_SCRIPTS } from "./demo-engine";
+import { DemoEngine } from "./demo-engine";
 import { playgroundStorage } from "./persistence";
 
 const ws = new VelaWorkspace("#workspace", {
@@ -28,26 +28,7 @@ const ws = new VelaWorkspace("#workspace", {
   providers: { binance: () => new BinanceProvider() },
   engines: { demo: () => new DemoEngine() }, // ONE instance per cell (a worker engine would get a thread each)
   defaultLanguage: "demo", // scripts added without a `language` run on the engine above
-  indicators: [
-    {
-      name: "EMA 20",
-      enabled: false,
-      script: DEMO_SCRIPTS.ema,
-      language: "demo",
-    }, // library-only:
-    {
-      name: "Bollinger Bands",
-      enabled: false,
-      script: DEMO_SCRIPTS.bands,
-      language: "demo",
-    }, //  pick them
-    {
-      name: "RSI 14",
-      enabled: false,
-      script: DEMO_SCRIPTS.rsi,
-      language: "demo",
-    }, //  from the dialog
-  ],
+  // No script manifest: the indicators dialog lists the built-in catalog only.
   live: true,
   theme: "dark",
   autofocus: true, // the workspace IS the page — shortcuts work from the first keystroke
