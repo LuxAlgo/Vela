@@ -20,6 +20,9 @@ export interface IndicatorHandle {
      *  (core-computed) indicator — there is no script to show. What a host editor
      *  opens when a legend action asks for "the code behind this row". */
     readonly source?: string;
+    /** The registered type of a NATIVE (core-computed) indicator — `undefined` for a
+     *  script indicator. The two are exclusive: a handle has a `source` or a `nativeType`. */
+    readonly nativeType?: string;
     /** Inputs parsed from the Pine source (populated once the script is prepared). */
     readonly inputs: readonly InputSchema[];
     /** Declaration-props schema (a strategy's `initial_capital`, an indicator's

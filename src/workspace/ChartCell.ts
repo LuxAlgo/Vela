@@ -1017,15 +1017,19 @@ export class ChartCell {
         this.refreshNativeCatalog();
     }
 
-    /** The picker's library rows: supported natives first (A→Z by title — registration order
-     *  follows the catalog's families, which is meaningless to the reader), then the manifest
-     *  in the host's own order. */
+    /** The supported natives in picker order: A→Z by title — registration order follows
+     *  the catalog's families, which is meaningless to the reader. This is the library
+     *  index space the picker hands back, so `libraryRows` and `addFromLibrary` MUST both
+     *  read it — indexing the unsorted catalog on add would land on a different study. */
+    private supportedNatives(): CellNativeInfo[] {
+        return this.nativeCatalog.filter((n) => n.supported).sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }));
+    }
+
+    /** The picker's library rows: supported natives first (see {@link supportedNatives}),
+     *  then the manifest in the host's own order. */
     libraryRows(): Array<{ name: string; language?: string; category?: string; native?: boolean; nativeType?: string; beta?: boolean }> {
         return [
-            ...this.nativeCatalog
-                .filter((n) => n.supported)
-                .sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }))
-                .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
+            ...this.supportedNatives().map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
             ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
         ];
     }
@@ -1040,7 +1044,7 @@ export class ChartCell {
 
     /** Add by picker LIBRARY index (natives precede the manifest — mirrors libraryRows). */
     addFromLibrary(index: number): void {
-        const natives = this.nativeCatalog.filter((n) => n.supported);
+        const natives = this.supportedNatives();
         if (index < natives.length) this.addNative(natives[index]!.type);
         else {
             const entry = this.manifest[index - natives.length];

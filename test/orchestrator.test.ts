@@ -502,8 +502,51 @@ describe('EngineOrchestrator', () => {
             const summary = chart.inspect().indicators.find((s) => s.id === h1.id);
             expect(summary?.native).toBe(true);
             expect(summary?.nativeType).toBe('test-native');
+            // The handle tells which native type it is (scripts carry `source` instead).
+            expect(h1.nativeType).toBe('test-native');
+            expect(h1.source).toBeUndefined();
         } finally {
             unregisterNativeIndicator('test-native');
+        }
+    });
+
+    it('addNativeIndicator: a multiInstance type creates a fresh instance per add, each mounted and removable on its own', async () => {
+        const instances: TestNativeIndicator[] = [];
+        const multiDescriptor: NativeIndicatorDescriptor = {
+            ...testNativeDescriptor, type: 'test-multi', title: 'Multi Native', multiInstance: true,
+            create: () => { const n = new TestNativeIndicator(); instances.push(n); return n; },
+        };
+        registerNativeIndicator(multiDescriptor);
+        try {
+            const renderer = new FakeRenderer();
+            const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+            const h1 = chart.addNativeIndicator('test-multi');
+            const h2 = chart.addNativeIndicator('test-multi', { inputs: { len: 20 } });
+            await chart.ready();
+            await flush();
+
+            // Two distinct instances, both started and mounted, each with its own inputs.
+            expect(h2).not.toBe(h1);
+            expect(h2.id).not.toBe(h1.id);
+            expect(instances).toHaveLength(2);
+            expect(instances.every((n) => n.calls.start === 1)).toBe(true);
+            expect(renderer.mountedModels.filter((m) => m.native?.type === 'test-multi').map((m) => m.id).sort()).toEqual([h1.id, h2.id].sort());
+            expect(h1.inputValues()).toEqual({ len: 5 });
+            expect(h2.inputValues()).toEqual({ len: 20 });
+            // Presence is per instance; the catalog flags the type.
+            expect(chart.presentNativeIndicators()).toEqual(['test-multi', 'test-multi']);
+            const info = (await chart.availableNativeIndicators()).find((i) => i.type === 'test-multi');
+            expect(info?.present).toBe(true);
+            expect(info?.multiInstance).toBe(true);
+
+            // Removing one leaves the sibling untouched.
+            h1.remove();
+            expect(instances[0]!.calls.stop).toBe(1);
+            expect(instances[1]!.calls.stop).toBe(0);
+            expect(chart.presentNativeIndicators()).toEqual(['test-multi']);
+            expect(chart.indicators().map((h) => h.id)).toEqual([h2.id]);
+        } finally {
+            unregisterNativeIndicator('test-multi');
         }
     });
 

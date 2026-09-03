@@ -203,6 +203,12 @@ describe('classic catalog registration', () => {
         }
     });
 
+    it('every study allows several instances per chart (users stack a study at different settings)', () => {
+        for (const spec of classicSpecs) {
+            expect(classicDescriptor(spec).multiInstance, spec.type).toBe(true);
+        }
+    });
+
     it('ships dedicated Simple and Exponential Moving Average studies', () => {
         const bars = Array.from({ length: 60 }, (_, i) => bar(100 + i, i));
         const byType = new Map(classicSpecs.map((s) => [s.type, s] as const));

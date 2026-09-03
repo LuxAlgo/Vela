@@ -1189,17 +1189,21 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     /**
      * Add a NATIVE (core-computed, no Pine engine) indicator by registered type — a first-class
      * indicator that shares the registry, handle, legend, settings, and lifecycle events. SINGLE
-     * INSTANCE per type: a second add returns the existing handle. Unknown type ⇒ a fail-soft handle
-     * that never mounts (mirrors addIndicator). Built-in types: `'volume'`, `'vpvr'`.
+     * INSTANCE per type unless the descriptor opts into `multiInstance`: a second add of a
+     * single-instance type returns the existing handle; a multi-instance type gets a fresh
+     * instance every time. Unknown type ⇒ a fail-soft handle that never mounts (mirrors
+     * addIndicator). Built-in single-instance types: `'volume'`, `'vpvr'`.
      */
     addNativeIndicator(type: string, options: { inputs?: Record<string, InputValue> } = {}): IndicatorHandle {
-        const existing = this.registry.all().find((r) => r.native?.type === type);
-        if (existing) return this.handles.get(existing.id) ?? new IndicatorHandleImpl(existing.id, existing.title, this);
-
         const descriptor = getNativeIndicator(type);
+        if (!descriptor?.multiInstance) {
+            const existing = this.registry.all().find((r) => r.native?.type === type);
+            if (existing) return this.handles.get(existing.id) ?? new IndicatorHandleImpl(existing.id, existing.title, this, undefined, type);
+        }
+
         const id = this.registry.nextId('native');
         const title = descriptor?.title ?? type;
-        const handle = new IndicatorHandleImpl(id, title, this);
+        const handle = new IndicatorHandleImpl(id, title, this, undefined, type);
         this.handles.set(id, handle);
         if (!descriptor) {
             console.warn(`[vela] addNativeIndicator("${type}") — no native indicator registered for this type.`);
@@ -1212,13 +1216,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         return handle;
     }
 
-    /**
-     * The catalog of registered native-indicator types with their live state on THIS chart: each
-     * entry's `supported` (applies to the current symbol) and `present` (already added — a second
-     * add is a no-op). Powers a host "add native indicator" menu that can gate + de-duplicate. Async
-     * because a descriptor's `isSupported` may probe the provider for a required capability.
-     */
-    /** The native types present on the chart — SYNC (registry state; no support probe). */
+    /** The native types present on the chart, one entry per INSTANCE in registry order (a
+     *  multi-instance type repeats) — SYNC (registry state; no support probe). */
     presentNativeIndicators(): string[] {
         return this.registry
             .all()
@@ -1226,6 +1225,13 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             .filter((t): t is string => !!t);
     }
 
+    /**
+     * The catalog of registered native-indicator types with their live state on THIS chart: each
+     * entry's `supported` (applies to the current symbol) and `present` (at least one instance
+     * added — a second add of a single-instance type is a no-op). Powers a host "add native
+     * indicator" menu that can gate + de-duplicate. Async because a descriptor's `isSupported` may
+     * probe the provider for a required capability.
+     */
     async availableNativeIndicators(): Promise<NativeIndicatorInfo[]> {
         const symbol = this.qualifiedSymbol();
         const present = new Set(this.presentNativeIndicators());
@@ -1236,6 +1242,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 supported: await this.isNativeSupported(d, symbol),
                 present: present.has(d.type),
                 beta: d.beta,
+                ...(d.multiInstance ? { multiInstance: true } : {}),
             })),
         );
     }

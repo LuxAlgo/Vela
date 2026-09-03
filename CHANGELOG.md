@@ -22,7 +22,9 @@ All notable changes to Vela, newest first.
   Fractal). Every study computes from the chart's own bars — no scripting
   engine needed — and gets the full indicator treatment: its own pane or a
   price overlay, legend row, a settings dialog with typed inputs and colors,
-  and persistence across reloads.
+  and persistence across reloads. Studies stack: pick the same one again to
+  add another instance (a 20 and a 200 moving average side by side), each
+  with its own settings and its own row in the indicators dialog.
 
 ### Fixed
 
