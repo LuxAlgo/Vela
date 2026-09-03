@@ -250,9 +250,9 @@ export class ChartCell {
     /** Volume intent: the seed's ledger, else the workspace `volume` option — a
      *  rehydrated ledger overwrites it (see {@link applyIndicatorLedger}). */
     private volumeIntent: boolean;
-    /** Sync mirror of the chart's present native types — the removal handler diffs
-     *  against it to identify (and record) whichever type was just removed. */
-    private presentNatives: string[] = [];
+    /** Sync mirror of the chart's native instances (id + type) — the removal handler
+     *  looks the removed id up here to learn which type an undo must re-add. */
+    private presentNatives: Array<{ id: string; type: string }> = [];
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
     /** Last symbol we toasted "no provider serves this" for — once per symbol (the
@@ -479,18 +479,23 @@ export class ChartCell {
                     redo: () => this.dropInstance(snapshot),
                 });
             } else {
-                // A native indicator left the registry — whichever type vanished from the
-                // sync presence list is the one an undo must restore. This is the SINGLE
-                // recording site for native removals (picker, legend ✕, object tree).
-                const now = this.inner?.presentNativeIndicators() ?? [];
-                for (const type of this.presentNatives.filter((t) => !now.includes(t))) {
+                // A native indicator left the registry — the sync mirror still knows its
+                // type, which is what an undo must re-add. This is the SINGLE recording
+                // site for native removals (picker, legend ✕, object tree). The redo
+                // removes the instance the undo created, never "the one of that type" —
+                // a multi-instance type may have siblings on the chart.
+                const gone = this.presentNatives.find((n) => n.id === id);
+                if (gone) {
+                    const { type } = gone;
+                    let revived: IndicatorHandle | null = null;
                     this.history.push({
                         undo: () => {
-                            this.inner?.addNativeIndicator(type);
+                            revived = this.inner?.addNativeIndicator(type) ?? null;
                             this.refreshNativeCatalog();
                         },
                         redo: () => {
-                            this.inner?.addNativeIndicator(type).remove();
+                            revived?.remove();
+                            revived = null;
                             this.refreshNativeCatalog();
                         },
                     });
@@ -830,9 +835,9 @@ export class ChartCell {
         return typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
     }
 
-    /** Manifest instances + present natives — the topbar indicator count. */
+    /** Manifest instances + native instances — the topbar indicator count. */
     get indicatorCount(): number {
-        return this.instances.length + this.nativeCatalog.filter((n) => n.present).length;
+        return this.instances.length + (this.inner ? this.nativeHandles().length : this.presentNatives.length);
     }
 
     /** Switch this cell's market in place (the chart instance survives). The projection
@@ -982,14 +987,18 @@ export class ChartCell {
         if (!chart) return;
         this.volumeIntent = led.natives.includes('volume');
         this.history.silently(() => {
-            const present = chart.presentNativeIndicators();
-            for (const type of led.natives) {
-                if (!present.includes(type)) chart.addNativeIndicator(type);
+            // Converge as a MULTISET: a multi-instance type is listed once per instance.
+            // Existing instances are kept while the ledger still owes their type; the
+            // surplus goes, the shortfall is added.
+            const owed = new Map<string, number>();
+            for (const type of led.natives) owed.set(type, (owed.get(type) ?? 0) + 1);
+            for (const h of this.nativeHandles()) {
+                const type = h.nativeType!;
+                const n = owed.get(type) ?? 0;
+                if (n > 0) owed.set(type, n - 1);
+                else h.remove();
             }
-            for (const type of present) {
-                // addNativeIndicator on a present type returns the EXISTING handle.
-                if (!led.natives.includes(type)) chart.addNativeIndicator(type).remove();
-            }
+            for (const [type, n] of owed) for (let i = 0; i < n; i++) chart.addNativeIndicator(type);
             for (const it of [...this.instances]) this.dropInstance(it);
             if (this.manifest.length > 0) {
                 for (const item of led.manifest) {
@@ -1008,18 +1017,23 @@ export class ChartCell {
         this.refreshNativeCatalog();
     }
 
-    /** The picker's library rows: supported natives first, then the manifest. */
+    /** The picker's library rows: supported natives first (A→Z by title — registration order
+     *  follows the catalog's families, which is meaningless to the reader), then the manifest
+     *  in the host's own order. */
     libraryRows(): Array<{ name: string; language?: string; category?: string; native?: boolean; nativeType?: string; beta?: boolean }> {
         return [
-            ...this.nativeCatalog.filter((n) => n.supported).map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
+            ...this.nativeCatalog
+                .filter((n) => n.supported)
+                .sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }))
+                .map((n) => ({ name: n.title, category: 'Vela', native: true, nativeType: n.type, beta: n.beta })),
             ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
         ];
     }
 
-    /** The picker's on-chart rows: present natives first, then live instances. */
+    /** The picker's on-chart rows: native instances first, then live script instances. */
     onChartRows(): Array<{ name: string; language?: string; native?: boolean; nativeType?: string }> {
         return [
-            ...this.nativeCatalog.filter((n) => n.present).map((n) => ({ name: n.title, native: true, nativeType: n.type })),
+            ...this.nativeHandles().map((h) => ({ name: h.title, native: true, nativeType: h.nativeType })),
             ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
         ];
     }
@@ -1034,11 +1048,11 @@ export class ChartCell {
         }
     }
 
-    /** Remove by picker ON-CHART index (present natives precede instances). */
+    /** Remove by picker ON-CHART index (native instances precede script instances — mirrors onChartRows). */
     removeFromChart(index: number): void {
-        const present = this.nativeCatalog.filter((n) => n.present);
-        if (index < present.length) this.removeNative(present[index]!.type);
-        else this.removeInstance(index - present.length);
+        const natives = this.nativeHandles();
+        if (index < natives.length) this.removeNative(natives[index]!);
+        else this.removeInstance(index - natives.length);
     }
 
     /**
@@ -1109,35 +1123,47 @@ export class ChartCell {
         this.deps.onIndicatorsChanged(this.id);
     }
 
-    /** Add a native indicator (single-instance per type — the core dedupes). */
+    /** Add a native indicator. A multi-instance type gets a fresh instance every time; a
+     *  single-instance type already on the chart hands back its existing one — nothing
+     *  changed, so nothing enters the undo timeline. */
     addNative(type: string): void {
-        this.inner?.addNativeIndicator(type);
+        const chart = this.inner;
+        if (!chart) return;
+        const before = new Set(chart.indicators().map((h) => h.id));
+        let added: IndicatorHandle | null = chart.addNativeIndicator(type);
         this.syncPresentNatives();
         this.refreshNativeCatalog();
+        if (before.has(added.id)) return;
         this.history.push({
             undo: () => {
-                this.inner?.addNativeIndicator(type).remove();
+                added?.remove();
+                added = null;
                 this.refreshNativeCatalog();
             },
             redo: () => {
-                this.inner?.addNativeIndicator(type);
+                added = this.inner?.addNativeIndicator(type) ?? null;
                 this.refreshNativeCatalog();
             },
         });
     }
 
-    private removeNative(type: string): void {
-        // addNativeIndicator on a present type returns the EXISTING handle. The undo
-        // entry is recorded by the indicator:removed handler — the single site shared
-        // with the legend ✕ and the object tree.
-        this.inner?.addNativeIndicator(type).remove();
+    private removeNative(handle: IndicatorHandle): void {
+        // The undo entry is recorded by the indicator:removed handler — the single site
+        // shared with the legend ✕ and the object tree.
+        handle.remove();
         this.refreshNativeCatalog();
     }
 
-    /** Sync mirror of the chart's present native types — the removal handler diffs
-     *  against it to identify (and record) whichever type was just removed. */
+    /** The chart's native instances, insertion order — the picker's on-chart rows and
+     *  the removal index space (script instances follow them). */
+    private nativeHandles(): IndicatorHandle[] {
+        return this.inner?.indicators().filter((h) => h.nativeType !== undefined) ?? [];
+    }
+
+    /** Sync mirror of the chart's native instances — the removal handler looks the
+     *  removed id up here (the registry has already forgotten it) to record its type. */
     private syncPresentNatives(): void {
-        this.presentNatives = this.inner?.presentNativeIndicators() ?? [];
+        this.presentNatives = this.nativeHandles().map((h) => ({ id: h.id, type: h.nativeType! }));
     }
 
     /** Refresh the native catalog (supported/present flags) for this cell's market. */
