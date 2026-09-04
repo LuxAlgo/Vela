@@ -380,7 +380,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.loadingUp = true;
         this.renderer.setLoading?.(true);
         const m = this.config.market;
-        this.events.emit('load:start', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', firstLoad });
+        this.events.emit('load:start', {
+            symbol: m.symbol ?? 'TEST',
+            timeframe: m.timeframe ?? '60',
+            ...(m.session !== undefined ? { session: m.session } : {}),
+            firstLoad,
+        });
     }
 
     /** Leave the loading state (first bars painted, or a load that ended with none) —
@@ -390,7 +395,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.loadingUp = false;
         this.renderer.setLoading?.(false);
         const m = this.config.market;
-        this.events.emit('load:end', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', bars: this.bars.length });
+        this.events.emit('load:end', {
+            symbol: m.symbol ?? 'TEST',
+            timeframe: m.timeframe ?? '60',
+            ...(m.session !== undefined ? { session: m.session } : {}),
+            bars: this.bars.length,
+        });
     }
 
     /**
@@ -629,7 +639,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             else if (next.visibleRange) this.renderer.setVisibleRange(next.visibleRange);
             return;
         }
-        const prev = { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60' };
+        const prev = {
+            symbol: m.symbol ?? 'TEST',
+            timeframe: m.timeframe ?? '60',
+            ...(m.session !== undefined ? { session: m.session } : {}),
+        };
         // A SESSION-ONLY flip (RTH↔ETH) changes WHICH bars exist but not the time axis:
         // the user's zoom/position carries over to the reload — captured here, before the
         // quiesce below discards it — unless the caller framed a window of its own. Any
@@ -748,7 +762,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         }
         this.startLive(); // stopped above on every path, depth-only included
         if (identityChanged) {
-            this.events.emit('market:changed', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', prev });
+            this.events.emit('market:changed', {
+                symbol: m.symbol ?? 'TEST',
+                timeframe: m.timeframe ?? '60',
+                ...(m.session !== undefined ? { session: m.session } : {}),
+                prev,
+            });
         }
     }
 

@@ -87,6 +87,25 @@ afterEach(() => {
 });
 
 describe('MarketStatusTracker', () => {
+    it('forwards the exact explicit session id to the calendar provider', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(D(11, 18));
+        const sessions: Array<string | undefined> = [];
+        const provider: FakeProvider = {
+            getCalendar: (_ticker, range) => {
+                sessions.push(range.session);
+                return Promise.resolve([[D(11, 17), D(11, 19)]]);
+            },
+        };
+        const statuses: string[] = [];
+        const tracker = new MarketStatusTracker((status) => statuses.push(status));
+        tracker.track(fakeData(provider, { ticker: 'CUSTOM' }), 'CUSTOM', { explicit: true, session: 'Asia-AM' });
+        await vi.advanceTimersByTimeAsync(1);
+        expect(sessions).toEqual(['Asia-AM']);
+        expect(statuses).toEqual(['open']);
+        tracker.stop();
+    });
+
     it('derives the status from the provider calendar and re-derives at the boundary', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(D(11, 19, 59)); // Tue 15:59 ET — one minute before the close

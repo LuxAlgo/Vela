@@ -1,6 +1,6 @@
 import type { Drawing, DrawingIntent, DrawingPoint, DrawingStyle, DrawingTypeKey, FreeAxis, Projector, SnapMode } from '../../../core/drawings';
 import { createDrawing } from '../../../core/drawings';
-import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
+import { drawingsIntersectingRect, plotRect, topDrawingAt, HIT_TOLERANCE, type PixelRect } from './DrawingHitTester';
 
 /** Pixels of motion before a press counts as a drag (vs a click → open settings). */
 const DRAG_SLOP = 3;
@@ -38,7 +38,8 @@ export interface InteractionDeps {
 type State =
     | { kind: 'idle' }
     | { kind: 'placing'; draft: Drawing; need: number; cursor: DrawingPoint | null }
-    | { kind: 'pressed'; id: string; handle: number; grab: DrawingPoint; orig: DrawingPoint[]; px: number; py: number; moved: boolean };
+    | { kind: 'pressed'; id: string; handle: number; grab: DrawingPoint; orig: DrawingPoint[]; px: number; py: number; moved: boolean }
+    | { kind: 'marquee'; x1: number; y1: number; x2: number; y2: number; active: boolean; additive: boolean; baseIds: string[] };
 
 /**
  * The single user-drawing interaction state machine: arm → place (click anchors,
@@ -133,6 +134,56 @@ export class DrawingInteraction {
     claim(x: number, y: number): boolean {
         if (this.deps.activeTool() != null || this.state.kind !== 'idle') return true;
         return this.hitAt(x, y) != null;
+    }
+
+    /** Begin an empty-plot marquee. The visual remains pending until InputController clears its drag slop. */
+    startMarquee(x: number, y: number, additive: boolean): boolean {
+        if (this.deps.activeTool() != null || this.state.kind !== 'idle') return false;
+        this.snapAt = null;
+        this.state = { kind: 'marquee', x1: x, y1: y, x2: x, y2: y, active: false, additive, baseIds: [...this.deps.selectedIds()] };
+        return true;
+    }
+
+    /** Advance a marquee after the input layer has classified the press as a drag. */
+    moveMarquee(x: number, y: number): void {
+        if (this.state.kind !== 'marquee') return;
+        this.state.x2 = x;
+        this.state.y2 = y;
+        this.state.active = true;
+        this.deps.changed();
+    }
+
+    /** The clipped, normalized marquee to paint, or null while it is still inside click slop. */
+    marqueeRect(): PixelRect | null {
+        if (this.state.kind !== 'marquee' || !this.state.active) return null;
+        return plotRect(this.state.x1, this.state.y1, this.state.x2, this.state.y2, this.deps.projector());
+    }
+
+    /** Commit one replacement selection. Additive marquee unions the pointer-down snapshot without toggling. */
+    finishMarquee(x: number, y: number): boolean {
+        if (this.state.kind !== 'marquee' || !this.state.active) return false;
+        this.state.x2 = x;
+        this.state.y2 = y;
+        const proj = this.deps.projector();
+        const rect = plotRect(this.state.x1, this.state.y1, x, y, proj);
+        const hits = rect ? drawingsIntersectingRect(this.deps.drawings(), rect, proj) : [];
+        const existing = new Set(this.deps.drawings().map((d) => d.id));
+        const ids = this.state.additive
+            ? [...new Set([...this.state.baseIds.filter((id) => existing.has(id)), ...hits])]
+            : hits;
+        this.state = { kind: 'idle' };
+        this.deps.emit({ kind: 'select', ids });
+        this.deps.changed();
+        return true;
+    }
+
+    /** Cancel a marquee without changing selection. */
+    cancelMarquee(): boolean {
+        if (this.state.kind !== 'marquee') return false;
+        const hadVisual = this.state.active;
+        this.state = { kind: 'idle' };
+        if (hadVisual) this.deps.changed();
+        return true;
     }
 
     /** A cursor hint for hovering (pointer over a drawing/handle), or null off any drawing. */
@@ -272,9 +323,10 @@ export class DrawingInteraction {
         }
     }
 
-    /** Cancel an in-progress placement or drag (Escape). Returns whether anything was cancelled. */
+    /** Cancel an in-progress placement, drag, or marquee (Escape). Returns whether anything was cancelled. */
     cancel(): boolean {
         this.snapAt = null;
+        if (this.state.kind === 'marquee') return this.cancelMarquee();
         if (this.state.kind === 'placing') {
             const type = this.state.draft.type;
             this.state = { kind: 'idle' };

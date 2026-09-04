@@ -3,6 +3,7 @@ import { paneAxisTicks, formatAxisValue, formatPct, timeTicks } from '../src/ren
 import { tzOffsetMs, zonedDate } from '../src/renderers/native/chrome/tz';
 import { keyToAction } from '../src/renderers/native/core/KeyboardController';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
+import type { SceneGraph } from '../src/renderers/native/core/SceneGraph';
 
 describe('percent-scale ticks + labels (item 14a)', () => {
     it('formatPct signs and fixes to 2 decimals', () => {
@@ -193,5 +194,25 @@ describe('NativeRenderer new feature defaults + setters (items 9, 11, 14)', () =
         expect(hs.map((h) => h.from)).toEqual([100, 300]);
         expect(hs[0]!.color).toMatch(/rgba\(/); // default fill
         expect(hs[1]!.color).toBe('#abc');
+    });
+
+    it('session zones preserve validated per-band colors alongside legacy phase bands', () => {
+        const r = new NativeRenderer();
+        r.applyFeature('sessionZones', {
+            pre: [[100, 200]],
+            post: [],
+            extended: [],
+            bands: [
+                { from: 500, to: 600, color: '#custom' },
+                { from: 300, to: 400, color: 'rgba(1, 2, 3, 0.1)' },
+                { from: 700, to: 700, color: '#drop' },
+            ],
+        });
+        const scene = (r as unknown as { scene: SceneGraph }).scene;
+        expect(scene.sessionHighlightBands()).toEqual([
+            { from: 100, to: 200, color: scene.style.sessions.premarketColor },
+            { from: 300, to: 400, color: 'rgba(1, 2, 3, 0.1)' },
+            { from: 500, to: 600, color: '#custom' },
+        ]);
     });
 });

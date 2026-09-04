@@ -7,12 +7,22 @@
 // layout change — its state then round-trips through the workspace pool, so shrinking
 // 4 → 2 → 4 restores the third and fourth exactly, indicators and drawings included).
 import { Vela } from '../Vela';
-import { normalizeSession, type MarketSession, type NativeBackend, type VelaOptions, type VelaTheme } from '../core/options';
+import {
+    normalizeSession,
+    normalizeSessionDefinitions,
+    resolveMarketSession,
+    type MarketSession,
+    type MarketSessionDefinition,
+    type NativeBackend,
+    type VelaOptions,
+    type VelaTheme,
+} from '../core/options';
 import type { OHLCV } from '../core/model/ohlcv';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
 import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
+import type { DataControl } from '../core/DataControl';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import { Statusline, statuslineInkOf, type StatuslinePart } from '../widget/statusline';
@@ -24,7 +34,7 @@ import { CellControls } from '../widget/cell-controls';
 import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
-import { indicatorLedger, ledgerEntryName, type LedgerManifestEntry, type ResolvedIndicator } from '../widget/indicators';
+import { indicatorLedger, indicatorLedgersEqual, ledgerEntryName, type LedgerManifestEntry, type ResolvedIndicator } from '../widget/indicators';
 import { inputDeltas, type InputValue } from '../core/model/inputs';
 import {
     legendActionsProviderFor,
@@ -35,10 +45,27 @@ import {
     type ExternalIndicatorEntry,
     type WidgetContext,
 } from '../widget/contributions';
-import { prefixedSymbol, type CellState } from '../state/document';
+import { jsonStateEqual, prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { normalizeTimezone } from '../core/timezones';
 import { applyPlotOverlayTokens } from '../ui';
+import type { MotionPreferenceSource } from '../renderers/shared/motion';
+
+const LEGACY_SESSION_CHOICES = [
+    { id: 'regular', label: 'Regular hours (RTH)' },
+    { id: 'extended', label: 'Extended hours (ETH)' },
+] as const satisfies ReadonlyArray<Pick<MarketSessionDefinition, 'id' | 'label'>>;
+
+function normalizeLegacySession(value: unknown): 'regular' | 'extended' | undefined {
+    const id = normalizeSession(value);
+    if (id === 'regular') return 'regular';
+    if (id === 'extended') return 'extended';
+    return undefined;
+}
+
+function sessionChoiceSignature(choices: ReadonlyArray<Pick<MarketSessionDefinition, 'id' | 'label'>>): string {
+    return JSON.stringify(choices.map(({ id, label }) => [id, label]));
+}
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
  *  The SAME vocabulary as the widget's chart options: the workspace's top-level chart
@@ -51,7 +78,12 @@ export interface CellSeed {
     priceStyle?: string;
     bars?: number;
     /** Trading session to show (markets that have one; `regular` is the default). */
-    session?: string;
+    session?: MarketSession;
+    /** Explicit per-cell session catalog. `undefined` derives the legacy choices from
+     * symbol metadata; an empty list deliberately disables the session surface. */
+    sessions?: readonly MarketSessionDefinition[];
+    /** IANA market timezone for explicit session windows. */
+    sessionTimezone?: string;
     /** Offline bars for this cell — replaces the provider (boot-only). */
     data?: OHLCV[];
     /** Initial visible window (boot-only). */
@@ -64,17 +96,21 @@ export type PooledCellState = CellState;
 
 /** What a cell BOOTS from: a pooled state (restored slot) or an options seed — plus
  *  the boot-only extras a pooled state never carries (offline bars, initial window). */
-export type CellBoot = PooledCellState & Pick<CellSeed, 'data' | 'visibleRange'>;
+export type CellBoot = PooledCellState & Pick<CellSeed, 'data' | 'visibleRange' | 'sessions' | 'sessionTimezone'>;
 
 /** The per-cell SEED the workspace's top-level chart options provide — same words as
  *  the widget; `cells[id]` spreads over this. */
-export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'bars' | 'priceStyle' | 'session' | 'data' | 'visibleRange'>): CellSeed {
+export function seedDefaults(
+    opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'bars' | 'priceStyle' | 'session' | 'sessions' | 'sessionTimezone' | 'data' | 'visibleRange'>,
+): CellSeed {
     return {
         symbol: opts.symbol,
         timeframe: opts.timeframe,
         bars: opts.bars,
         priceStyle: opts.priceStyle,
         session: opts.session,
+        sessions: opts.sessions,
+        sessionTimezone: opts.sessionTimezone,
         data: opts.data,
         visibleRange: opts.visibleRange,
     };
@@ -127,6 +163,8 @@ export interface CellNativeInfo {
 export interface CellDeps {
     /** THE shared market-data feed (one registry, one cache, for every cell). */
     feed: MarketDataFeed;
+    /** Workspace-shared system motion preference (one media-query listener total). */
+    motionPreference?: MotionPreferenceSource;
     /** Scripting-engine factories — instantiated PER CELL (a worker engine per cell). */
     engines: Record<string, () => ScriptingEngine>;
     /** The workspace's top-level chart options every cell's chart starts from. */
@@ -217,8 +255,13 @@ export class ChartCell {
     lastCrossPrice: number | null = null;
     /** The bottombar range chip this cell is framed on (null = none). */
     activeRangeId: string | null = null;
-    /** Latched verdict of {@link sessionAvailable} (async metadata, sticky per symbol). */
+    /** Latched verdict of {@link sessionAvailable} (async in metadata mode). */
     private sessionAvailableFlag = false;
+    private sessionChoices: ReadonlyArray<Pick<MarketSessionDefinition, 'id' | 'label'>> = [];
+    /** `undefined` selects the backward-compatible metadata adapter; an array, including
+     * empty, is the authoritative host catalog. */
+    private readonly explicitSessions: readonly MarketSessionDefinition[] | undefined;
+    private readonly explicitSessionTimezone: string | undefined;
     /** Latched: the symbol's extended tape wraps midnight (an overnight roll market) —
      *  one extended-hours shading phase instead of the pre/post split. */
     private sessionOvernightFlag = false;
@@ -239,7 +282,7 @@ export class ChartCell {
     private readonly offMarket: () => void;
     /** The cell's durable market state — the seed vocabulary plus the venue mirror the
      *  persisted document carries (`provider` = the symbol's parsed prefix). */
-    private state: CellSeed & Pick<CellState, 'provider'>;
+    private state: CellState;
     private manifest: readonly ResolvedIndicator[] = [];
     /** A restored ledger's manifest entry NAMES, waiting for the manifest to resolve
      *  (a pool/persisted cell can be built before the shared manifest has loaded). */
@@ -277,6 +320,13 @@ export class ChartCell {
         private readonly deps: CellDeps,
     ) {
         this.appTheme = deps.theme;
+        this.explicitSessions = seed.sessions === undefined ? undefined : normalizeSessionDefinitions(seed.sessions);
+        this.explicitSessionTimezone = typeof seed.sessionTimezone === 'string' && seed.sessionTimezone.trim() !== '' ? seed.sessionTimezone.trim() : undefined;
+        this.sessionChoices = this.explicitSessions ?? [];
+        this.sessionAvailableFlag = this.sessionChoices.length > 0;
+        const initialSession = this.explicitSessions === undefined
+            ? normalizeSession(seed.session)
+            : resolveMarketSession(seed.session, this.explicitSessions);
         // The canonical symbol form: pre-prefix pooled/persisted states carried the venue
         // in `provider` beside a bare symbol — weld them back together once, at boot.
         const symbol = prefixedSymbol(seed);
@@ -286,7 +336,7 @@ export class ChartCell {
             timeframe: seed.timeframe,
             priceStyle: seed.priceStyle,
             bars: seed.bars,
-            session: normalizeSession(seed.session),
+            session: initialSession,
         };
         const doc = gridHost.ownerDocument;
         this.host = doc.createElement('div');
@@ -307,7 +357,9 @@ export class ChartCell {
                 timeframe: seed.timeframe,
                 bars: seed.bars,
                 priceStyle: seed.priceStyle,
-                session: normalizeSession(seed.session),
+                session: initialSession,
+                sessions: this.explicitSessions,
+                sessionTimezone: this.explicitSessionTimezone,
                 data: seed.data,
                 visibleRange: seed.visibleRange,
                 theme: deps.theme,
@@ -321,7 +373,7 @@ export class ChartCell {
                 // the whole workspace (per-cell bars would cost a 44px gutter each).
                 drawings: cellDrawings(deps.chartDefaults.drawings),
             },
-            { dataFeed: deps.feed },
+            { dataFeed: deps.feed, motionPreference: deps.motionPreference },
         );
         for (const [language, make] of Object.entries(resolveEngines(deps.engines))) this.inner.registerEngine(language, make());
         // ONE attribution mark per WORKSPACE, not per cell: each cell disables its own
@@ -427,7 +479,7 @@ export class ChartCell {
                 this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
             }
             this.refreshSessionAvailable();
-            if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
+            if (this.inner && this.state.symbol) this.trackMarketStatus(this.inner.data, this.state.symbol);
         });
         this.syncStatuslineColors();
         this.cellControls = new CellControls(this.host, {
@@ -520,7 +572,7 @@ export class ChartCell {
             this.projectMarket(symbol, timeframe);
             this.refreshNativeCatalog(); // per-symbol support flags may differ
             this.refreshSessionAvailable(); // the new symbol may (not) have sessions
-            if (this.inner) this.marketStatus?.track(this.inner.data, symbol); // …and its own market clock
+            if (this.inner) this.trackMarketStatus(this.inner.data, symbol); // …and its own market clock
             this.deps.onMarketChanged(this.id);
         });
     }
@@ -543,26 +595,41 @@ export class ChartCell {
         if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
     }
 
-    /**
-     * Does this cell's market HAVE sessions (RTH/ETH meaningful)? Derived from the
-     * symbol's own metadata (`syminfo.session !== '24x7'`), asynchronously — the
-     * workspace re-projects the shared bottombar when the verdict lands or changes.
-     */
+    /** Whether this cell has an explicit catalog or metadata-derived session structure.
+     * Metadata mode resolves asynchronously; the workspace re-projects the shared
+     * bottombar when the verdict lands or changes. */
     get sessionAvailable(): boolean {
         return this.sessionAvailableFlag;
     }
 
-    /** This cell's shown session (`regular` when unset — the provider default). */
+    /** Ordered choices projected into the shared session dropdown. */
+    get sessions(): ReadonlyArray<Pick<MarketSessionDefinition, 'id' | 'label'>> {
+        return this.sessionChoices;
+    }
+
+    /** Session choice projected into workspace UI (`regular` when the provider default is unset). */
     get session(): MarketSession {
+        if (this.explicitSessions !== undefined) return resolveMarketSession(this.state.session, this.explicitSessions) ?? 'regular';
         return normalizeSession(this.state.session) ?? 'regular';
     }
 
-    /** Switch this cell's shown session in place (a reload — RTH and ETH are different bars). */
+    /** Switch this cell's shown session in place. An explicit catalog validates its IDs;
+     * metadata mode keeps any normalized provider-facing ID. */
     setSession(session: MarketSession): void {
-        if (session === this.session) return;
-        this.state.session = session;
+        const normalized = normalizeSession(session);
+        if (!normalized) return;
+        const allowed = this.explicitSessions === undefined
+            ? normalized
+            : this.explicitSessions.find((definition) => definition.id === normalized)?.id;
+        // The omitted provider default and an explicit `regular` ID can resolve to the
+        // same UI label but remain distinct request/cache identities.
+        const current = this.inner
+            ? normalizeSession(this.inner.market.session)
+            : normalizeSession(this.state.session);
+        if (!allowed || allowed === current) return;
+        this.state.session = allowed;
         this.deps.onStateDirty();
-        void this.inner?.setMarket({ session });
+        void this.inner?.setMarket({ session: allowed });
     }
 
     private refreshSessionAvailable(): void {
@@ -571,15 +638,44 @@ export class ChartCell {
         if (!chart || !symbol) return;
         void chart.data.symbolInfo(symbol).then((si) => {
             if (this.inner !== chart) return;
-            const available = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
-            const overnight = parseSessionSpec(si)?.overnight === true;
-            if (available !== this.sessionAvailableFlag || overnight !== this.sessionOvernightFlag) {
+            const metadataSpec = parseSessionSpec(si);
+            const choices = this.explicitSessions ?? (() => {
+                if (!metadataSpec) return [];
+                const current = normalizeSession(this.state.session);
+                return current && !LEGACY_SESSION_CHOICES.some((choice) => choice.id === current)
+                    ? [...LEGACY_SESSION_CHOICES, { id: current, label: current }]
+                    : LEGACY_SESSION_CHOICES;
+            })();
+            const available = choices.length > 0;
+            const overnight = this.explicitSessions === undefined && metadataSpec?.overnight === true;
+            const choicesChanged = sessionChoiceSignature(choices) !== sessionChoiceSignature(this.sessionChoices);
+            this.sessionChoices = choices;
+            if (available !== this.sessionAvailableFlag || overnight !== this.sessionOvernightFlag || choicesChanged) {
                 this.sessionAvailableFlag = available;
                 this.sessionOvernightFlag = overnight;
                 this.deps.onMarketChanged(this.id); // re-project the shared bottombar toggle
                 this.pushSettingsSections(); // the Trading session group follows the symbol
             }
             this.refreshSessionShading();
+        });
+    }
+
+    private trackMarketStatus(data: DataControl, symbol: string): void {
+        if (this.explicitSessions === undefined) {
+            const session = normalizeSession(this.state.session);
+            this.marketStatus?.track(
+                data,
+                symbol,
+                session && normalizeLegacySession(session) === undefined
+                    ? { explicit: true, session }
+                    : undefined,
+            );
+            return;
+        }
+        this.marketStatus?.track(data, symbol, {
+            explicit: true,
+            session: this.explicitSessions.length > 0 ? this.session : undefined,
+            sessionTimezone: this.explicitSessionTimezone,
         });
     }
 
@@ -594,7 +690,13 @@ export class ChartCell {
         const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
         const fallbackSpan = Number.isFinite(requestedSpan) ? Math.max(3 * 86_400_000, requestedSpan) : 3 * 86_400_000;
         const range = chart.getVisibleRange() ?? { from: now - fallbackSpan, to: now };
-        this.sessionShading.track(chart.data, symbol, { session: this.session, timeframe: this.timeframe, range });
+        this.sessionShading.track(chart.data, symbol, {
+            session: this.session,
+            timeframe: this.timeframe,
+            range,
+            definitions: this.explicitSessions,
+            sessionTimezone: this.explicitSessionTimezone,
+        });
     }
 
     /** The session-shade colors live in the renderer CONFIG (persisted with it, edited
@@ -622,9 +724,9 @@ export class ChartCell {
     private pushSettingsSections(): void {
         const chart = this.inner;
         if (!chart) return;
-        const rth = 'Regular hours (RTH)';
-        const eth = 'Extended hours (ETH)';
-        const shadeRows = this.sessionOvernightFlag
+        const shadeRows = this.explicitSessions !== undefined
+            ? []
+            : this.sessionOvernightFlag
             ? [
                   {
                       kind: 'color' as const,
@@ -652,21 +754,22 @@ export class ChartCell {
               ];
         // The `id` fields are the sections' stable visibility ids (`settings.hidden`,
         // docs/user/options.md) — same reserved ids as the widget's sections.
+        const choiceOptions = this.sessionChoices.map((choice) => [choice.id, choice.label] as const);
+        const choiceRows = choiceOptions.length < 2
+            ? []
+            : [{
+                  kind: 'select' as const,
+                  label: 'Session',
+                  id: 'session',
+                  options: choiceOptions,
+                  get: () => this.session,
+                  set: (id: string) => this.setSession(id),
+              }];
         const sessionSection = {
             title: 'Trading session',
             id: 'trading-session',
             placement: 'symbol' as const,
-            rows: [
-                {
-                    kind: 'select' as const,
-                    label: 'Session',
-                    id: 'session',
-                    options: [rth, eth],
-                    get: () => (this.session === 'extended' ? eth : rth),
-                    set: (v: string) => this.setSession(v === eth ? 'extended' : 'regular'),
-                },
-                ...shadeRows,
-            ],
+            rows: [...choiceRows, ...shadeRows],
         };
         const advanced = {
             title: 'Advanced',
@@ -756,7 +859,7 @@ export class ChartCell {
             });
         }
         sections.push(advanced);
-        if (this.sessionAvailableFlag) sections.push(sessionSection);
+        if (this.sessionAvailableFlag && sessionSection.rows.length > 0) sections.push(sessionSection);
         sections.push(watermarkSection);
         chart.renderer.setSettingsSections(sections);
     }
@@ -1266,22 +1369,44 @@ export class ChartCell {
         // Cosmetics + drawings round-trip (both validate untrusted input).
         if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
         if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
-        if (cs.indicators) this.applyIndicatorLedger(cs.indicators as { manifest: LedgerManifestEntry[]; natives: string[] });
-        // Third-party state converges to the document too: the restored bag REPLACES
-        // the baseline (absent in the document = the document carries none), then the
-        // registered handlers re-apply. After the ledger — a handler re-adding external
-        // indicators must land on the converged (external-free) instance set.
-        this.extState = { ...(cs.ext ?? {}) };
-        this.restorePersistedExt();
+        const nextExt = { ...(cs.ext ?? {}) };
+        const extChanged = !jsonStateEqual(this.extState, nextExt);
+        let indicatorLedgerApplied = false;
+        if (cs.indicators) {
+            const ledger = cs.indicators as { manifest: LedgerManifestEntry[]; natives: string[] };
+            // A changed extension payload may describe a different set of external
+            // indicators. Rebuild from the core ledger before its handler re-adds them.
+            if (extChanged || !indicatorLedgersEqual(this.indicatorLedgerSnapshot(), ledger)) {
+                this.applyIndicatorLedger(ledger);
+                indicatorLedgerApplied = true;
+            }
+        }
+        // Third-party state converges to the document too. Equal payloads stay live and
+        // their handlers do not replay unless core-ledger convergence just removed the
+        // external instances they own. This keeps getState()/applyState() idempotent
+        // while also rebuilding plugins after a genuine core-indicator change.
+        if (extChanged || indicatorLedgerApplied) {
+            if (extChanged) this.extState = nextExt;
+            this.restorePersistedExt();
+        }
         // Market last, as ONE in-place switch — `market:changed` re-syncs the cell
         // overlays and notifies the workspace (chrome projection, retention).
         const symbol = prefixedSymbol(cs);
-        const session = normalizeSession(cs.session) ?? 'regular';
+        const savedSession = normalizeSession(cs.session);
+        const session = this.explicitSessions === undefined
+            ? savedSession ?? 'regular'
+            : resolveMarketSession(cs.session, this.explicitSessions);
         const bars = typeof cs.bars === 'number' && Number.isFinite(cs.bars) && cs.bars > 0 ? cs.bars : 0;
         const next: { symbol?: string; timeframe?: string; bars?: number; session?: MarketSession } = {};
         if (symbol && symbol !== this.symbol) next.symbol = symbol;
         if (cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
-        if (session !== this.session) {
+        // A document that explicitly stores `regular` must move an omitted provider
+        // default onto that exact ID. For legacy documents with no session field, keep
+        // comparing through the UI fallback so an already-default chart stays put.
+        const currentSession = savedSession !== undefined
+            ? normalizeSession(this.inner.market.session)
+            : this.session;
+        if (session && session !== currentSession) {
             this.state.session = session;
             next.session = session;
         }
@@ -1302,7 +1427,14 @@ export class ChartCell {
         const ext = this.inner ? this.dehydrateExt() : Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined;
         return {
             ...this.state,
-            ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
+            ...(live
+                ? {
+                      symbol: live.symbol,
+                      provider: live.provider,
+                      timeframe: live.timeframe,
+                      ...(live.session !== undefined ? { session: live.session } : {}),
+                  }
+                : {}),
             priceStyle: this.priceStyle,
             watermark: this.watermarkOn,
             indicatorTitles: this.indicatorTitlesOn,
@@ -1315,22 +1447,28 @@ export class ChartCell {
             // shared manifest settles. See {@link indicatorLedger}. External instances
             // (`ctx.addIndicator`) stay out: their names would never resolve against the
             // manifest — their plugin persists them via the `ext` seam instead.
-            indicators: indicatorLedger({
-                present: this.inner ? this.inner.presentNativeIndicators() : [],
-                instanceEntries: this.instances
-                    .filter((it) => !it.external)
-                    .map((it) => {
-                        // LIVE deltas from the handle; a handle-less instance (add failed)
-                        // keeps whatever values it was restored with.
-                        const d = it.handle ? instanceDeltas(it.handle) : it.values;
-                        return d ? { name: it.entry.name, ...d } : it.entry.name;
-                    }),
-                pendingManifest: this.pendingManifestNames,
-                manifestSettled: this.deps.manifestSettled(),
-                volumePending: this.volumeMayBePending && this.volumeIntent,
-            }),
+            indicators: this.indicatorLedgerSnapshot(),
             ...(ext ? { ext } : {}),
         };
+    }
+
+    /** Current persistable indicator ledger, shared by state output and idempotent
+     * in-place restoration so applying an unchanged document preserves live handles. */
+    private indicatorLedgerSnapshot(): { manifest: LedgerManifestEntry[]; natives: string[] } {
+        return indicatorLedger({
+            present: this.inner ? this.inner.presentNativeIndicators() : [],
+            instanceEntries: this.instances
+                .filter((it) => !it.external)
+                .map((it) => {
+                    // LIVE deltas from the handle; a handle-less instance (add failed)
+                    // keeps whatever values it was restored with.
+                    const d = it.handle ? instanceDeltas(it.handle) : it.values;
+                    return d ? { name: it.entry.name, ...d } : it.entry.name;
+                }),
+            pendingManifest: this.pendingManifestNames,
+            manifestSettled: this.deps.manifestSettled(),
+            volumePending: this.volumeMayBePending && this.volumeIntent,
+        });
     }
 
     destroy(): void {

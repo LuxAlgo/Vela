@@ -11,7 +11,7 @@
 // consumers that genuinely need holidays (market-status badges, session profiles).
 // Symbols with no session vocabulary (crypto `24x7`) report null — nothing shaded.
 import type { DataControl } from '../core/DataControl';
-import type { MarketSession } from '../core/options';
+import type { MarketSession, MarketSessionDefinition } from '../core/options';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
 import type { SymbolInfo } from '../core/ports/MarketDataFeed';
 import type { CalendarWindow } from './market-status';
@@ -25,6 +25,9 @@ export interface SessionZonesUpdate {
     pre: CalendarWindow[];
     post: CalendarWindow[];
     extended: CalendarWindow[];
+    /** Host-declared session windows carry their own color. Metadata-derived sessions
+     * keep using the legacy phase buckets above and renderer-configured colors. */
+    bands?: Array<{ from: number; to: number; color: string }>;
 }
 
 /** One `[start, end)` window as minutes into the market's civil day. */
@@ -197,6 +200,76 @@ export function expandSessionZones(spec: SessionSpec, from: number, to: number):
     return { pre, post, extended: mergeAbutting(extended) };
 }
 
+/** Convert a civil date plus an arbitrary minute offset to epoch time in `dtf`'s zone.
+ * Re-resolving the offset at the candidate instant keeps edges on both sides of a DST
+ * transition accurate instead of applying one daily offset to the whole window. */
+function atCivilMinute(dtf: Intl.DateTimeFormat, year: number, month: number, day: number, minute: number): number {
+    const shifted = new Date(Date.UTC(year, month - 1, day) + minute * MINUTE_MS);
+    const y = shifted.getUTCFullYear();
+    const m = shifted.getUTCMonth() + 1;
+    const d = shifted.getUTCDate();
+    const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+    const naive = Date.UTC(y, m - 1, d);
+    const wall = naive + minuteOfDay * MINUTE_MS;
+    let candidate = wall;
+    for (let i = 0; i < 3; i += 1) {
+        const atCandidate = civilParts(dtf, candidate);
+        const rendered = Date.UTC(
+            atCandidate.year,
+            atCandidate.month - 1,
+            atCandidate.day,
+            atCandidate.hour,
+            atCandidate.minute,
+        );
+        const next = wall - (rendered - candidate);
+        if (next === candidate) break;
+        candidate = next;
+    }
+    return candidate;
+}
+
+/** Expand one explicit definition into colored market-time bands. Windows recur every
+ * civil day; the renderer's bar-slot clipping naturally removes closed-market days.
+ * An overnight window belongs to the civil day on which it ends (`1700-1600` Monday
+ * starts Sunday evening). */
+export function expandSessionDefinition(
+    definition: MarketSessionDefinition,
+    timezone: string,
+    from: number,
+    to: number,
+): Array<{ from: number; to: number; color: string }> {
+    const dtf = civilFormatter(timezone);
+    if (!dtf || !Number.isFinite(from) || !Number.isFinite(to)) return [];
+    const parsed: DayWindow[] = [];
+    for (const window of definition.windows) {
+        const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(window);
+        if (!m) return [];
+        const sh = Number(m[1]);
+        const sm = Number(m[2]);
+        const eh = Number(m[3]);
+        const em = Number(m[4]);
+        if (sh > 23 || sm > 59 || eh > 24 || em > 59 || (eh === 24 && em !== 0) || (sh === eh && sm === em)) return [];
+        parsed.push({ start: sh * 60 + sm, end: eh * 60 + em });
+    }
+    const bands: CalendarWindow[] = [];
+    const seen = new Set<number>();
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    for (let cursor = lo - 2 * DAY_MS; cursor < hi + 2 * DAY_MS; cursor += DAY_MS) {
+        const civil = civilParts(dtf, cursor);
+        const key = civil.year * 10_000 + civil.month * 100 + civil.day;
+        if (!Number.isFinite(key) || seen.has(key)) continue;
+        seen.add(key);
+        for (const window of parsed) {
+            const overnight = window.start > window.end;
+            const start = atCivilMinute(dtf, civil.year, civil.month, civil.day, overnight ? window.start - 1440 : window.start);
+            const end = atCivilMinute(dtf, civil.year, civil.month, civil.day, window.end);
+            if (end > start && end > lo && start < hi) bands.push([start, end]);
+        }
+    }
+    return mergeAbutting(bands).map(([start, end]) => ({ from: start, to: end, color: definition.color }));
+}
+
 /** Recompute coverage reaches this far beyond the visible span on each side, so
  *  ordinary panning keeps landing inside the last expansion. */
 const COVER_PAD_MIN_MS = 2 * DAY_MS;
@@ -216,6 +289,9 @@ export class SessionShadingTracker {
     /** Invalidates the one async step (metadata resolution) — bumped by track()/stop(). */
     private epoch = 0;
     private spec: SessionSpec | null = null;
+    /** `undefined` means metadata mode; null is an authoritative empty explicit list. */
+    private definition: MarketSessionDefinition | null | undefined;
+    private sessionTimezone = 'Etc/UTC';
     private ready = false;
     private session: MarketSession = 'regular';
     /** Whether one bar is shorter than a civil day — only then do pre/post bars exist. */
@@ -228,22 +304,49 @@ export class SessionShadingTracker {
     constructor(private readonly onZones: (zones: SessionZonesUpdate | null) => void) {}
 
     /** (Re)bind to a chart's data surface + market and expand once metadata lands. */
-    track(data: DataControl, symbol: string, opts: { session: MarketSession; timeframe: string; range: VisibleRange }): void {
+    track(
+        data: DataControl,
+        symbol: string,
+        opts: {
+            session: MarketSession;
+            timeframe: string;
+            range: VisibleRange;
+            definitions?: readonly MarketSessionDefinition[];
+            sessionTimezone?: string;
+        },
+    ): void {
         const my = ++this.epoch;
         this.ready = false;
         this.spec = null;
         this.covered = null;
+        this.sessionTimezone = 'Etc/UTC';
         this.session = opts.session;
+        this.definition = opts.definitions === undefined ? undefined : (opts.definitions.find((definition) => definition.id === opts.session) ?? null);
         const tfMs = timeframeMs(opts.timeframe);
         this.intraday = Number.isFinite(tfMs) && tfMs < DAY_MS;
         this.lastRange = opts.range;
+        const explicitTimezone = typeof opts.sessionTimezone === 'string' && opts.sessionTimezone.trim() !== '' ? opts.sessionTimezone.trim() : undefined;
+        // An empty catalog is immediately authoritative. Likewise, an explicit
+        // timezone makes a selected definition independent from symbol metadata.
+        if (this.definition === null || (this.definition && explicitTimezone !== undefined)) {
+            this.ready = true;
+            this.sessionTimezone = explicitTimezone ?? 'Etc/UTC';
+            this.emit(opts.range, true);
+            return;
+        }
         void data
             .symbolInfo(symbol)
             .catch(() => undefined)
             .then((si) => {
                 if (my !== this.epoch) return;
                 this.ready = true;
-                this.spec = parseSessionSpec(si);
+                if (opts.definitions === undefined) {
+                    this.spec = parseSessionSpec(si);
+                } else {
+                    this.spec = null;
+                    const metadataTimezone = typeof si?.timezone === 'string' && si.timezone !== '' ? si.timezone : undefined;
+                    this.sessionTimezone = metadataTimezone || 'Etc/UTC';
+                }
                 this.emit(this.lastRange ?? opts.range, true);
             });
     }
@@ -260,11 +363,36 @@ export class SessionShadingTracker {
         this.epoch += 1;
         this.ready = false;
         this.spec = null;
+        this.definition = undefined;
         this.covered = null;
         this.lastRange = null;
     }
 
     private emit(range: VisibleRange, force: boolean): void {
+        if (this.definition !== undefined) {
+            if (!this.definition) {
+                if (force) this.onZones(null);
+                return;
+            }
+            if (!this.intraday) {
+                if (force) this.onZones({ pre: [], post: [], extended: [], bands: [] });
+                return;
+            }
+            const from = Math.min(range.from, range.to);
+            const to = Math.max(range.from, range.to);
+            if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+            if (!force && this.covered && from >= this.covered.from && to <= this.covered.to) return;
+            const pad = Math.max(to - from, COVER_PAD_MIN_MS);
+            const covered = { from: from - pad, to: to + pad };
+            this.covered = covered;
+            this.onZones({
+                pre: [],
+                post: [],
+                extended: [],
+                bands: expandSessionDefinition(this.definition, this.sessionTimezone, covered.from, covered.to),
+            });
+            return;
+        }
         if (!this.spec) {
             if (force) this.onZones(null);
             return;

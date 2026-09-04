@@ -16,9 +16,10 @@ A key the active renderer **doesn't support emits a console warning and is ignor
 chart is never touched. Use `supports()` to check first (e.g. to hide a UI control on a
 renderer that lacks the feature).
 
-These are the **same keys** you can pass at construction (as [options](./options.md));
-setting them through `chart.renderer.set` applies them **live** instead of rebuilding the
-chart — so toggling them never re-executes your indicators.
+Construction [options](./options.md) cover the common startup settings. Renderer-only
+features such as `candleVisible` are available through `chart.renderer`. Setting any
+supported feature there applies it **live** instead of rebuilding the chart, so toggling
+it never re-executes your indicators.
 
 ## Common features
 
@@ -41,13 +42,14 @@ Available on every renderer:
 | Feature | Type | Default | Notes |
 |---|---|---|---|
 | `glow` | number (0 – ~0.7) | `0` | Neon glow/bloom on line series. **WebGL2 only** — the canvas2d backend stores the value but draws no glow. |
-| `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn. (Heikin Ashi is not yet available.) |
+| `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline' \| 'heikinashi'` | `'candles'` | How the base price series is drawn. Registered chart-type IDs are also accepted. |
 | `priceBaseline` | number \| `null` | `null` | Reference price for `priceStyle: 'baseline'`. `null` derives it from the config's `baseline.baselineLevel` (a percent of the visible pane range). |
 | `baselinePrice` | number (read-only) | — | The RESOLVED baseline reference price the paint splits on: `priceBaseline` when set, else the level% of the price pane's current range. For host chrome that colors by baseline position (e.g. a status line's value ink). Writes are ignored. |
+| `candleVisible` | boolean | `true` | Show or hide the whole base price series, regardless of whether its active style is candles, bars, line, area, or a plugin type. Stored as `series.visible` in the rich config, so shell state and templates restore it. Drawings, indicators, axes, and attribution remain visible. |
 | `candleZOrder` | number | `0` | Draw-order key of the price candles relative to overlay indicators. Indicators default to z ≥ 1, so candles sit behind all overlays by default. |
 | `seriesOrder` | `{ id, to: 'front' \| 'back' }` or `{ id, z }` | — | Reorder one indicator's series layer — move it to front/back, or set an explicit z key. |
 | `highlights` | `HighlightArea[]` | `[]` | Shaded vertical time bands (session highlighting, e.g. weekends or pre/regular/post), drawn behind grid + data. Malformed entries are dropped; bands are sorted by start time. |
-| `sessionZones` | `{ pre, post, extended }` \| `null` | `null` | Session time bands (`[start, end)` epoch-ms pairs per phase), shaded behind grid + data with the config's `sessions.premarketColor` / `sessions.postmarketColor` / `sessions.extendedColor`. Markets with a same-day pre/post split populate `pre`/`post`; markets whose extended session wraps midnight (an evening open rolling into the next day) populate the single `extended` phase instead. A host derives them from its market calendar (the widget does this automatically on markets with sessions); `null` means the market has no session structure. |
+| `sessionZones` | `{ pre, post, extended, bands? }` \| `null` | `null` | Session time bands behind grid + data. The three legacy arrays contain `[start, end)` epoch-ms pairs and use the config's pre/post/extended colors. `bands` contains `{ from, to, color }` entries for named sessions. The workspace derives both forms; `null` means no session structure. |
 | `tradeMarkers` | `{ visible?, labels?, qty?, colors? }` | everything on | Strategy trade markers (the order-fill arrows a strategy indicator emits via `IndicatorModel.trades`). Partial merge: `visible` hides the units, `labels` the order-id line, `qty` the signed-quantity line; `colors` overrides `{ long, short, exit }` (defaults `#2962ff` / `#f23645` / `#d500f9`). Malformed fields are dropped. |
 
 ### Interaction
@@ -63,6 +65,14 @@ Available on every renderer:
 | `paneResize` | boolean | `true` | Drag the separator between panes to resize them; double-clicking a separator restores the two adjacent panes to an even split. |
 | `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. `Ctrl`/`Cmd` chords are left untouched for the host's own shortcuts (the widget's pan/zoom glides, the browser's `Ctrl`+`0`, …). When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
 | `historyChords` | boolean | `true` | The drawings layer answers `Ctrl`/`Cmd`+`Z` / `Y` itself (drawing undo/redo). A host that owns a **unified** history — drawings plus its own app actions in one timeline, like the widget — sets it to `false` so the chords bubble up to the host's keymap instead of being consumed in-chart. Copy/paste/duplicate/delete/nudge keys are unaffected. |
+
+When the `animations` option is omitted, Vela follows the live
+`prefers-reduced-motion` browser preference. Reduced mode snaps zoom, pan, live-bar,
+intro, shell-glide, status, and layer motion to a static result. The configured feature
+values above do not change, are not persisted differently, and take effect again on
+future interactions if the preference returns to full motion. Pass `animations: true`
+or an animation object to override the browser preference; pass `false` to force the
+reduced mode. Read the effective result from `chart.reducedMotion`.
 
 > **Double-click behavior changed.** Double-clicking the **chart data area** no longer fits the
 > content to the view. Instead it maximizes the double-clicked pane so it fills the chart and every
@@ -157,7 +167,7 @@ chart.renderer.applyConfig({ candles: { upColor: '#26a69a' } }); // partial patc
 The covered cosmetics include layout (background, text, font), grid colors/visibility,
 crosshair (color/width/style/opacity/label), price scale (mode, log, border, labels,
 current-price line, last-price animation on/off), time-scale timezone, candle border/wick, and per-style colors for
-bars / line / area / baseline.
+bars / line / area / baseline, plus whole-price-series visibility (`series.visible`).
 
 ## Custom renderers
 

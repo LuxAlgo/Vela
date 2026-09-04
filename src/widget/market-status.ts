@@ -5,6 +5,7 @@
 // provider without the capability) keep the constructor's permanent 'open' — exactly
 // the pre-calendar behavior.
 import type { DataControl } from '../core/DataControl';
+import type { MarketSession } from '../core/options';
 import type { MarketStatus } from './statusline';
 import { parseSessionSpec } from './session-shading';
 
@@ -101,10 +102,14 @@ export class MarketStatusTracker {
     constructor(private readonly onStatus: (status: MarketStatus) => void) {}
 
     /** (Re)bind to a chart's data surface + symbol and start evaluating. */
-    track(data: DataControl, symbol: string): void {
+    track(
+        data: DataControl,
+        symbol: string,
+        options: { explicit?: boolean; session?: MarketSession; sessionTimezone?: string } = {},
+    ): void {
         const my = ++this.epoch;
         this.clearTimer();
-        void this.evaluate(my, data, symbol);
+        void this.evaluate(my, data, symbol, options);
     }
 
     stop(): void {
@@ -112,11 +117,35 @@ export class MarketStatusTracker {
         this.clearTimer();
     }
 
-    private async evaluate(my: number, data: DataControl, symbol: string): Promise<void> {
+    private async evaluate(
+        my: number,
+        data: DataControl,
+        symbol: string,
+        options: { explicit?: boolean; session?: MarketSession; sessionTimezone?: string },
+    ): Promise<void> {
         const resolved = data.resolve(symbol);
         const provider = resolved ? data.providerInstance(resolved.provider) : undefined;
         const si = await data.symbolInfo(symbol).catch(() => undefined);
         if (my !== this.epoch) return;
+        if (options.explicit) {
+            if (!provider?.getCalendar || !resolved || !options.session) {
+                this.onStatus('open');
+                return;
+            }
+            const now = Date.now();
+            const range = { from: now - FETCH_BACK_MS, to: now + FETCH_AHEAD_MS, session: options.session };
+            const windows = await provider.getCalendar(resolved.ticker, range).catch(() => null);
+            if (my !== this.epoch) return;
+            if (!windows) {
+                this.arm(my, data, symbol, options, RETRY_MS);
+                return;
+            }
+            this.onStatus(windows.some(([start, end]) => now >= start && now < end) ? 'open' : 'closed');
+            const boundary = windows.flatMap(([start, end]) => [start, end]).filter((edge) => edge > now).sort((a, b) => a - b)[0];
+            const delay = Math.min(boundary != null ? boundary - now : MAX_TIMER_MS, MAX_TIMER_MS);
+            this.arm(my, data, symbol, options, Math.max(delay, MIN_TIMER_MS));
+            return;
+        }
         const hasSessions = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
         if (!provider?.getCalendar || !hasSessions || !resolved) {
             this.onStatus('open'); // continuous market / no calendar — the legacy badge
@@ -132,7 +161,7 @@ export class MarketStatusTracker {
         if (my !== this.epoch) return;
         if (!regular || !extended) {
             // Transient fetch failure: keep the badge as it stands and retry.
-            this.arm(my, data, symbol, RETRY_MS);
+            this.arm(my, data, symbol, options, RETRY_MS);
             return;
         }
         const w: MarketWindows = { regular, extended };
@@ -142,15 +171,21 @@ export class MarketStatusTracker {
         this.onStatus(deriveMarketStatus(now, w, tz, overnight));
         const boundary = nextStatusBoundary(now, w);
         const delay = Math.min(boundary != null ? boundary - now : MAX_TIMER_MS, MAX_TIMER_MS);
-        this.arm(my, data, symbol, Math.max(delay, MIN_TIMER_MS));
+        this.arm(my, data, symbol, options, Math.max(delay, MIN_TIMER_MS));
     }
 
-    private arm(my: number, data: DataControl, symbol: string, delay: number): void {
+    private arm(
+        my: number,
+        data: DataControl,
+        symbol: string,
+        options: { explicit?: boolean; session?: MarketSession; sessionTimezone?: string },
+        delay: number,
+    ): void {
         this.clearTimer();
         this.timer = setTimeout(() => {
             this.timer = null;
             if (my !== this.epoch) return;
-            void this.evaluate(my, data, symbol);
+            void this.evaluate(my, data, symbol, options);
         }, delay);
     }
 

@@ -19,7 +19,7 @@ import {
 } from '../src/workspace/layouts';
 import { evenTracks, resizeTracks, trackOffsets, seamSegments, segmentSpanPx } from '../src/workspace/splitters';
 import { seedDefaults, cellChartDefaults, cellDrawings } from '../src/workspace/ChartCell';
-import { declaredOrder, nextAutoCellId } from '../src/workspace/VelaWorkspace';
+import { declaredOrder, nextAutoCellId, VelaWorkspace } from '../src/workspace/VelaWorkspace';
 import { parseSymbol } from '../src/data/ProviderRegistry';
 
 registerBuiltinLayouts();
@@ -336,15 +336,16 @@ describe('sync model (pure)', () => {
 
 describe('unified options — the cell seed/defaults merge (pure)', () => {
     it('seedDefaults picks exactly the widget market/view vocabulary', () => {
+        const sessions = [{ id: 'Asia-AM', label: 'Asia AM', windows: ['0900-1200'], color: '#abc' }];
         const seed = seedDefaults({
             symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500,
             priceStyle: 'footprint', data: [{ time: 1, open: 1, high: 1, low: 1, close: 1, volume: 1 }],
-            visibleRange: '1M',
+            visibleRange: '1M', session: 'Asia-AM', sessions, sessionTimezone: 'Asia/Tokyo',
         });
         expect(seed).toEqual({
             symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500,
             priceStyle: 'footprint', data: [{ time: 1, open: 1, high: 1, low: 1, close: 1, volume: 1 }],
-            visibleRange: '1M',
+            visibleRange: '1M', session: 'Asia-AM', sessions, sessionTimezone: 'Asia/Tokyo',
         });
     });
 
@@ -401,6 +402,38 @@ describe('cell identity ↔ slot position (declaredOrder / nextAutoCellId)', () 
         expect(nextAutoCellId(new Set())).toBe('c1');
         expect(nextAutoCellId(new Set(['c1', 'c2']))).toBe('c3');
         expect(nextAutoCellId(new Set(['btc', 'c1', 'c3']))).toBe('c2'); // holes fill first
+    });
+});
+
+describe('workspace renderer-config integration', () => {
+    it('marks cell state dirty when the renderer reports a committed config change', () => {
+        let configChanged: (() => void) | undefined;
+        const workspace = Object.create(VelaWorkspace.prototype) as unknown as {
+            wireCell(cell: unknown): void;
+            propagateStylePrefs: ReturnType<typeof vi.fn>;
+            markStateDirty: ReturnType<typeof vi.fn>;
+        };
+        workspace.propagateStylePrefs = vi.fn();
+        workspace.markStateDirty = vi.fn();
+        const chart = {
+            on: vi.fn(),
+            renderer: {
+                onCrosshairMove: vi.fn(),
+                onConfigChanged: vi.fn((cb: () => void) => {
+                    configChanged = cb;
+                    return () => undefined;
+                }),
+                onAxisLongPress: vi.fn(),
+            },
+        };
+
+        workspace.wireCell({ id: 'c1', chart });
+        expect(configChanged).toBeTypeOf('function');
+        configChanged!();
+
+        expect(workspace.propagateStylePrefs).toHaveBeenCalledOnce();
+        expect(workspace.propagateStylePrefs).toHaveBeenCalledWith('c1');
+        expect(workspace.markStateDirty).toHaveBeenCalledOnce();
     });
 });
 
