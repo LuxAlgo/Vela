@@ -28,6 +28,7 @@ import {
     buildFieldControl,
 } from '../../../ui/components/field';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
+import { chromeHint } from '../../shared/chrome-tooltip';
 import {
     filterHiddenHostRows,
     filterHiddenRows,
@@ -173,8 +174,7 @@ ${overlayScrollbarCss('.vela-sd-pane')}
 .vela-sd-mobile .vela-select-trigger,.vela-sd-mobile .vela-num input,.vela-sd-mobile .vela-width-field{height:34px;}
 .vela-sd-mobile .vela-sd-close{width:40px;height:40px;}
 .vela-sd-mobile .vela-sd-btn{height:38px;}
-.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span,.vela-sd-mobile .vela-field-label{white-space:normal !important;}
-`;
+.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span,.vela-sd-mobile .vela-field-label{white-space:normal !important;}`;
     if (!existing) document.head.appendChild(st);
 }
 
@@ -193,6 +193,7 @@ export class SettingsDialog {
     private themeControl: { current: ThemeName; onSelect: (name: ThemeName) => void } | null = null;
     /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
     private tabs: Array<{ title: string; show: () => void }> = [];
+    private hintTips: Array<() => void> = []; // ⓘ tooltip disposers of the open build (see hint)
     /** Active instance-strip tab per chart type — remembered across dialog rebuilds. */
     private readonly typeActiveInstance = new Map<string, number>();
     /** Active TOC group per structured pane (`<typeId>/<pane>` → group label). */
@@ -335,7 +336,6 @@ export class SettingsDialog {
                 this.syncTypeTabs?.(v);
             }), 'symbol.type'),
         );
-
         // Candles — the reference compact rows: one toggle + an up/down swatch pair each.
         const candles = sid(this.group(), 'symbol.style.candles');
         candles.append(this.sectionTitle('Candles'));
@@ -425,6 +425,15 @@ export class SettingsDialog {
         }
         showActive(config.series.style);
 
+        // Style-independent (the glide applies to every price style), so it gets its own group.
+        body.append(sid(this.sectionTitle('Animation'), 'symbol.animation'));
+        body.append(sid(this.boolRow(
+            'Animate price changes',
+            config.priceScale.animateLastPrice,
+            (v) => this.emit({ priceScale: { animateLastPrice: v } }),
+            this.hint('Glide the live bar to each new price instead of snapping.'),
+        ), 'symbol.animation.price-changes'));
+
         body.append(sid(this.sectionTitle('Time zone'), 'symbol.timezone'));
         body.append(sid(this.selectRowLabeled('Time zone', normalizeTimezone(config.timeScale.timezone), timezoneOptions(config.timeScale.timezone), (v) => this.emit({ timeScale: { timezone: v } })), 'symbol.timezone'));
 
@@ -488,8 +497,7 @@ export class SettingsDialog {
         body.append(sid(this.separator(), 'scales.price-scale'));
         body.append(sid(this.boolRow('Last Price Line', config.priceScale.currentPriceLine, (v) => this.emit({ priceScale: { currentPriceLine: v } })), 'scales.price-scale.last-price-line'));
         body.append(sid(this.boolRow('Last price label', config.priceScale.priceLabel, (v) => this.emit({ priceScale: { priceLabel: v } })), 'scales.price-scale.last-price-label'));
-        body.append(sid(this.boolRow('Countdown to bar close', config.priceScale.countdown, (v) => this.emit({ priceScale: { countdown: v } })), 'scales.price-scale.countdown'));
-        body.append(sid(this.boolRow('Axis labels', config.priceScale.labelsVisible, (v) => this.emit({ priceScale: { labelsVisible: v } })), 'scales.price-scale.axis-labels'));
+        body.append(sid(this.boolRow('Countdown to bar close', config.priceScale.countdown, (v) => this.emit({ priceScale: { countdown: v } })), 'scales.price-scale.countdown'));        body.append(sid(this.boolRow('Axis labels', config.priceScale.labelsVisible, (v) => this.emit({ priceScale: { labelsVisible: v } })), 'scales.price-scale.axis-labels'));
         body.append(sid(this.colorRow('Scale border color', config.priceScale.borderColor, (v) => this.emit({ priceScale: { borderColor: v } })), 'scales.price-scale.border-color'));
         body.append(sid(this.sectionTitle('Crosshair'), 'scales.crosshair'));
         body.append(sid(this.colorRow('Color', config.crosshair.color, (v) => this.emit({ crosshair: { color: v } })), 'scales.crosshair.color'));
@@ -685,6 +693,8 @@ export class SettingsDialog {
         this.ui = null;
         this.root = null;
         this.tabs = [];
+        for (const dispose of this.hintTips) dispose(); // a tip open at close time must not outlive its row
+        this.hintTips = [];
         ui?.destroy();
     }
 
@@ -1171,23 +1181,32 @@ export class SettingsDialog {
         });
     }
 
-    /** A toggle row: the checkbox sits to the LEFT of its label (never in the control area). */
-    private boolRow(label: string, value: boolean, onChange: (v: boolean) => void): HTMLElement {
-        return this.toggleRow(label, value, onChange, []);
+    /** A toggle row: the checkbox sits to the LEFT of its label (never in the control area).
+     *  `info` (see {@link hint}) rides after the label. */
+    private boolRow(label: string, value: boolean, onChange: (v: boolean) => void, info?: HTMLElement): HTMLElement {
+        return this.toggleRow(label, value, onChange, [], undefined, info);
     }
 
     /** An enable row: checkbox + label in the label column, dependent controls in the
      *  shared control column; the control group dims and ignores input while the toggle
      *  is off. With `get`, the row re-reads its state on a 'vela-sync' event. */
-    private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean): HTMLElement {
+    private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean, info?: HTMLElement): HTMLElement {
         return fieldRow({
             label,
             labelSize: 'sm',
             bool: controls.length === 0,
             toggle: { checked: value, onChange: onToggle, get },
             control: controls,
+            info,
             className: controls.length === 0 ? 'vela-sd-bool' : 'vela-sd-row',
         });
+    }
+
+    /** The shared ⓘ hint after a row label (see {@link chromeHint}). Disposed with the dialog. */
+    private hint(text: string): HTMLElement {
+        const { el, dispose } = chromeHint(text, { host: this.container, theme: () => this.theme });
+        this.hintTips.push(dispose);
+        return el;
     }
 
     private numberRow(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {

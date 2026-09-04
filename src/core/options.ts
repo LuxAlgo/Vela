@@ -117,7 +117,9 @@ export interface VelaOptions extends MarketConfig {
     nativeBackend?: NativeBackend;
     /** Native-renderer animations. `true`/`false` toggles all; an object configures
      *  each independently. Default: eased **zoom on**, inertial **pan on but snappy**
-     *  (short glide). Set `{ pan: false }` for an instant pan with no momentum. */
+     *  (short glide), live-bar glide **off**. Set `{ pan: false }` for an instant pan
+     *  with no momentum, `{ liveBar: true }` (or a duration in ms) to make the forming
+     *  candle slide toward each live tick instead of snapping. */
     animations?: boolean | AnimationConfig;
     /** Neon glow/bloom intensity for line series (0 = off, ~0.6 = strong). WebGL2 only
      *  — the canvas2d backend ignores it. Default 0. */
@@ -160,6 +162,37 @@ export interface AnimationConfig {
     zoom?: boolean;
     /** Inertial/kinetic pan — a short snappy glide after a drag-release. Default true. */
     pan?: boolean;
+    /** Glide of the forming bar: on a live tick the displayed high/low/close ease toward
+     *  the new values instead of snapping (the price line and axis label follow). `true`
+     *  uses the default duration ({@link LIVE_BAR_EASE_DEFAULT_MS}); a number is the ease
+     *  time-constant in ms (visually settled after ~3×; clamped to
+     *  {@link LIVE_BAR_EASE_MAX_MS}); `false`/`0` snaps. A new bar always snaps. Default
+     *  `false` — the painted candle is then never behind the real data. */
+    liveBar?: boolean | number;
+}
+
+/** Time-constant (ms) of the live-bar glide when `animations.liveBar` is `true`. */
+export const LIVE_BAR_EASE_DEFAULT_MS = 90;
+/** Upper bound (ms) for `animations.liveBar` — past this the candle visibly lags the feed. */
+export const LIVE_BAR_EASE_MAX_MS = 1000;
+
+/** Normalize an `animations.liveBar` value to an ease time-constant in ms (0 = snap). */
+export function resolveLiveBarEaseMs(value: unknown): number {
+    if (value === true) return LIVE_BAR_EASE_DEFAULT_MS;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
+    return Math.min(value, LIVE_BAR_EASE_MAX_MS);
+}
+
+/** Resolve `VelaOptions.animations` to the renderer's per-feature values.
+ *  A boolean toggles zoom + pan and leaves the live-bar glide at its default (off) for
+ *  `true`; `false` disables everything. An object configures each independently. */
+export function resolveAnimations(animations: boolean | AnimationConfig | undefined): Pick<RendererDisplayOptions, 'animZoom' | 'animPan' | 'animLiveBar'> {
+    if (typeof animations === 'boolean') return { animZoom: animations, animPan: animations, animLiveBar: 0 };
+    return {
+        animZoom: animations?.zoom ?? true,
+        animPan: animations?.pan ?? true,
+        animLiveBar: resolveLiveBarEaseMs(animations?.liveBar),
+    };
 }
 
 /** Native geometry-layer backend selection. */
@@ -182,6 +215,7 @@ export interface RendererDisplayOptions {
     nativeBackend: NativeBackend;
     animZoom: boolean;
     animPan: boolean;
+    animLiveBar: number;
     glow: number;
     upColor: string;
     downColor: string;
