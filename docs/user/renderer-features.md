@@ -56,6 +56,7 @@ Available on every renderer:
 |---|---|---|---|
 | `animZoom` | boolean | `true` | Eased wheel-zoom; takes effect on the next interaction. |
 | `animPan` | boolean | `true` | Inertial pan glide; takes effect on the next interaction. |
+| `animLiveBar` | number (ms) \| boolean | `0` | Glide of the forming bar on live ticks: the displayed high/low/close (and the current-price line and label) ease toward each new value instead of snapping. `0`/`false` = snap; `true` = the 90 ms default; a number = the ease duration in ms (visually settled in about three times that; capped at 1000). Reads back as a number. A new bar always snaps; the crosshair, legend and data window always show the real values. Takes effect on the next tick. The rich config carries only the on/off state (`priceScale.animateLastPrice`, the *Animate price changes* row of the settings dialog's Symbol → Animation group); turning it on there reuses the last non-zero duration set here. |
 | `intro` | `'settle' \| 'grow' \| false` | `'settle'` | Reveal animation on first paint. Setting it replays the intro (handy for comparing styles from the console). |
 | `zoomAnchor` | `'right' \| 'cursor'` | `'right'` | Wheel-zoom anchor: pin the right edge / latest bar, or the bar under the cursor. Affects the next wheel-zoom. Holding `Shift` (or a horizontal/trackpad swipe) makes the wheel **pan through history** instead of zooming. |
 | `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; scrolling the wheel over the price-axis strip rescales the same way, gently (scroll up compresses the span, down expands it); double-clicking an axis strip resets it. |
@@ -155,7 +156,7 @@ chart.renderer.applyConfig({ candles: { upColor: '#26a69a' } }); // partial patc
 
 The covered cosmetics include layout (background, text, font), grid colors/visibility,
 crosshair (color/width/style/opacity/label), price scale (mode, log, border, labels,
-current-price line), time-scale timezone, candle border/wick, and per-style colors for
+current-price line, last-price animation on/off), time-scale timezone, candle border/wick, and per-style colors for
 bars / line / area / baseline.
 
 ## Custom renderers

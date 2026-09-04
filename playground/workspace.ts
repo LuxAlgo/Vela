@@ -50,7 +50,7 @@ const ws = new VelaWorkspace("#workspace", {
   // upColor: '#089981',             // bullish candles (default: the palette's bullish green)
   // downColor: '#f23645',           // bearish candles (default: the palette's bearish red)
   // glow: 0,                        // neon glow on line series, 0..~0.6 — WebGL2 cells only
-  // animations: { zoom: true, pan: true }, // eased zoom + inertial pan; false disables both
+  // animations: { zoom: true, pan: true, liveBar: false }, // eased zoom + inertial pan + forming-bar glide (true = 90 ms, or a duration in ms); false disables all
   // nativeBackend: 'auto',          // explicit 'canvas2d'/'webgl2' wins over the maxWebglCells policy
   // renderer: NativeRenderer,       // a custom IChartRenderer class for every cell
   // drawings: true,                 // per-cell tools config — its `toolbar` key is ignored: the grid's

@@ -2,6 +2,26 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.17]
+
+### Changed
+
+- **The live candle now snaps to each tick by default, and its glide is yours to tune.**
+  On a streaming chart the forming candle used to slide toward every new price over a
+  short, fixed ease. That slide is now a setting — `animations: { liveBar }` at
+  construction, or `chart.renderer.set('animLiveBar', …)` live — and it is **off by
+  default**, so the painted candle, the current-price line and its axis label always
+  show the real latest values. Set `liveBar: true` to bring the slide back, or give it
+  a duration in milliseconds to make it as quick or as gentle as your feed calls for
+  (a slow feed reads well with a longer glide; a busy one with a short one). The chart
+  settings dialog gets a matching **Animate price changes** switch in a new *Animation*
+  group of the *Symbol* tab (with a hint explaining it), saved with the rest of the chart's settings and templates; switching it back
+  on reuses the duration you configured. A new bar always opens without a glide, and
+  the crosshair, legend and data window show the real values at all times.
+  `animations: false` keeps disabling every animation at once.
+  _(Breaking: charts that relied on the previous always-on slide now snap; pass
+  `animations: { liveBar: true }` to restore it.)_
+
 ## [v0.6.16]
 
 ### Added

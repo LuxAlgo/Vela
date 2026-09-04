@@ -26,6 +26,7 @@ import type { IndicatorModel, PaneAxisBand } from '../../core/model/indicator';
 import type { ScenePatch } from '../../core/model/patch';
 import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
+import { resolveLiveBarEaseMs, LIVE_BAR_EASE_DEFAULT_MS } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
 import { isLineLikeSeries } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
@@ -102,7 +103,7 @@ const ZOOM_OUT_MARGIN_BARS = 6; // breathing room at max zoom-out: all bars + th
 const ZOOM_TAU_MS = 70; // wheel-zoom glide
 const SCALE_TAU_MS = 80; // autoscale glide during zoom/fling
 const FLING_TAU_MS = 110; // inertial-pan velocity decay — short/snappy glide (≈ v0·tau drift), not a long drift
-const LIVE_BAR_TAU_MS = 90; // forming-bar OHLC glide — a fast ease so the live candle slides to each tick instead of snapping
+// (The forming-bar glide's time-constant is user-configurable — `animLiveBar`, off by default.)
 const SCROLL_TO_TAU_MS = 130; // scroll-to-latest glide — eases rightOffset back to the latest bars
 // Fling ends when on-screen motion drops below this (PIXELS/ms). Kept in pixel units
 // so the stop point is zoom-invariant + agrees with InputController's FLING_MIN_SPEED.
@@ -204,9 +205,11 @@ export class NativeRenderer implements IChartRenderer {
     private historyChordsEnabled = true;
     private liveRegion: HTMLDivElement | null = null;
 
-    // ── animation state (eased zoom + inertial pan) ──
+    // ── animation state (eased zoom + inertial pan + live-bar glide) ──
     private animZoom = true;
     private animPan = true;
+    private animLiveBarMs = 0; // forming-bar OHLC glide time-constant; 0 = each tick snaps
+    private animLiveBarOnMs = LIVE_BAR_EASE_DEFAULT_MS; // the duration the settings-dialog on/off toggle restores (last non-zero value configured)
     // Brand default candles.
     private candleUp = BULLISH;
     private candleDown = BEARISH;
@@ -320,6 +323,7 @@ export class NativeRenderer implements IChartRenderer {
             this.backendMode = opts.nativeBackend;
             this.animZoom = opts.animZoom;
             this.animPan = opts.animPan;
+            this.setLiveBarEase(resolveLiveBarEaseMs(opts.animLiveBar));
             this.glowAmount = opts.glow;
             this.candleUp = opts.upColor;
             this.candleDown = opts.downColor;
@@ -333,7 +337,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -375,6 +379,9 @@ export class NativeRenderer implements IChartRenderer {
             case 'animPan':
                 this.animPan = Boolean(value);
                 return;
+            case 'animLiveBar':
+                this.setLiveBarEase(resolveLiveBarEaseMs(value));
+                return; // affects the next tick only; a glide in flight finishes at the new rate (or snaps at 0)
             case 'intro': {
                 const s = value === false || value === 'none' || value === 'off' || value == null ? '' : String(value);
                 this.introStyle = s;
@@ -514,6 +521,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'glow': return this.glowAmount;
             case 'animZoom': return this.animZoom;
             case 'animPan': return this.animPan;
+            case 'animLiveBar': return this.animLiveBarMs;
             case 'intro': return this.introStyle;
             case 'zoomAnchor': return this.zoomAnchorMode;
             case 'axisDrag': return this.input ? this.input.axisDrag : this.axisDragEnabled;
@@ -672,6 +680,7 @@ export class NativeRenderer implements IChartRenderer {
                 currentPriceLine: this.scene.showPriceLine,
                 priceLabel: this.scene.showPriceLabel,
                 countdown: this.scene.showCountdown,
+                animateLastPrice: this.animLiveBarMs > 0,
             },
             panes: { separatorColor: s.separatorColor ?? t.borderColor },
             trades: {
@@ -802,6 +811,7 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.showPriceLabel = next.priceScale.priceLabel;
         this.scene.showCountdown = next.priceScale.countdown;
         this.syncCountdownTimer();
+        this.animLiveBarMs = next.priceScale.animateLastPrice ? this.animLiveBarOnMs : 0; // on/off only — the duration is the host's
         // panes
         s.separatorColor = keepInherit(s.separatorColor, next.panes.separatorColor, prevTheme.borderColor);
         // trade markers
@@ -1785,8 +1795,11 @@ export class NativeRenderer implements IChartRenderer {
         const last = this.bars[n - 1];
         if (last && bar.time === last.time) {
             this.bars[n - 1] = bar; // actual forming bar — the ease target
-            if (this.liveEaseTime !== bar.time) this.syncLiveEase(bar); // first tick of this bar (snap), then ease
-            this.animator.start(); // glide the displayed high/low/close toward this tick
+            if (this.animLiveBarMs <= 0 || this.liveEaseTime !== bar.time) {
+                this.syncLiveEase(bar); // glide off, or the first tick of this bar: snap
+            } else {
+                this.animator.start(); // glide the displayed high/low/close toward this tick
+            }
         } else if (!last || bar.time > last.time) {
             this.bars.push(bar);
             this.syncLiveEase(bar); // a fresh bar — snap (never ease across bars)
@@ -1799,6 +1812,13 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.scene.bars = this.bars;
         this.scheduler.invalidate(InvalidateLevel.Full);
+    }
+
+    /** Set the live-bar glide duration (0 = off). A non-zero value is also remembered as
+     *  what the config's on/off toggle (`priceScale.animateLastPrice`) switches back on to. */
+    private setLiveBarEase(ms: number): void {
+        this.animLiveBarMs = ms;
+        if (ms > 0) this.animLiveBarOnMs = ms;
     }
 
     /** Snap the eased forming-bar state to `bar` — no glide (a fresh bar or the first tick of one). */
@@ -1814,9 +1834,10 @@ export class NativeRenderer implements IChartRenderer {
         const target = this.bars[this.bars.length - 1];
         if (!target || this.liveEaseTime !== target.time) return false;
         const eps = Math.max(1e-9, Math.abs(target.close) * 1e-6);
-        const nh = easeToward(this.liveEaseHigh, target.high, dtMs, LIVE_BAR_TAU_MS);
-        const nl = easeToward(this.liveEaseLow, target.low, dtMs, LIVE_BAR_TAU_MS);
-        const nc = easeToward(this.liveEaseClose, target.close, dtMs, LIVE_BAR_TAU_MS);
+        const tau = this.animLiveBarMs; // 0 ⇒ easeToward returns the target (a mid-glide switch-off snaps)
+        const nh = easeToward(this.liveEaseHigh, target.high, dtMs, tau);
+        const nl = easeToward(this.liveEaseLow, target.low, dtMs, tau);
+        const nc = easeToward(this.liveEaseClose, target.close, dtMs, tau);
         const active = Math.abs(nh - target.high) > eps || Math.abs(nl - target.low) > eps || Math.abs(nc - target.close) > eps;
         this.liveEaseHigh = active ? nh : target.high;
         this.liveEaseLow = active ? nl : target.low;

@@ -54,7 +54,7 @@ const ws = new VelaWorkspace('#chart', {
     // upColor: '#089981',             // bullish candles (default: the palette's bullish green)
     // downColor: '#f23645',           // bearish candles (default: the palette's bearish red)
     // glow: 0,                        // neon glow on line series, 0..~0.6 — WebGL2 backend only
-    // animations: { zoom: true, pan: true }, // eased zoom + inertial pan; false disables both
+    // animations: { zoom: true, pan: true, liveBar: false }, // eased zoom + inertial pan + forming-bar glide (true = 90 ms, or a duration in ms); false disables all
     // nativeBackend: 'auto',          // 'auto' = WebGL2 when available, else canvas2d; or force either
     // renderer: NativeRenderer,       // a custom IChartRenderer class (default: the native renderer)
     // drawings: true,                 // user drawings — default: toolbar VISIBLE; false removes the whole

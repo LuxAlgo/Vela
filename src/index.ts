@@ -65,6 +65,7 @@ export type {
     ProviderName,
     RendererConstructor,
     RendererDisplayOptions,
+    AnimationConfig,
     AddIndicatorOptions,
     SettingsVisibilityPolicy,
 } from './core/options';
