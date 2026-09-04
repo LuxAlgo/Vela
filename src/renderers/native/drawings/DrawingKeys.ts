@@ -33,6 +33,12 @@ export type DrawingKeyAction =
 const NUDGE_STEP = 1; // px per arrow press; Shift = a coarser jump
 const NUDGE_STEP_COARSE = 10;
 
+/** Keep keyboard deletion non-destructive for locked drawings. Unknown stale ids pass through harmlessly. */
+export function unlockedDrawingIds(drawings: readonly { id: string; locked: boolean }[], ids: readonly string[]): string[] {
+    const locked = new Set(drawings.filter((drawing) => drawing.locked).map((drawing) => drawing.id));
+    return ids.filter((id) => !locked.has(id));
+}
+
 export function keyToDrawingAction(e: DrawingKeyEvent, ctx: DrawingKeyContext): DrawingKeyAction | null {
     if (ctx.editingText) return null; // typing a label → leave the keys alone
     const mod = e.ctrlKey || e.metaKey;

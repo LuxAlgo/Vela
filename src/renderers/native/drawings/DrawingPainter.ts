@@ -7,6 +7,7 @@ import { withAlpha } from '../../../core/color';
 import { barTransformFor } from '../../../core/price-styles/BarTransform';
 import type { OHLCV } from '../../../core/model/ohlcv';
 import { valueDecimals } from '../chrome/ticks';
+import type { PixelRect } from './DrawingHitTester';
 
 const HANDLE_RADIUS = 4.5; // px radius of the round drag handles
 /** Handle chrome is fixed (not the drawing's line color) so tools with atypical accents —
@@ -178,6 +179,18 @@ export class DrawingPainter {
         ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.globalAlpha = 1;
+    }
+
+    /** Paint the transient drag-selection rectangle above drawing handles. */
+    paintMarquee(ctx: CanvasRenderingContext2D, rect: PixelRect, theme: VelaTheme): void {
+        ctx.save();
+        ctx.fillStyle = withAlpha(theme.textColor, 0.08);
+        ctx.strokeStyle = DEFAULT_DRAWING_COLOR;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        ctx.restore();
     }
 
     private paintOne(ctx: CanvasRenderingContext2D, d: Drawing, proj: Projector, theme: VelaTheme): void {

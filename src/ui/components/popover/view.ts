@@ -32,6 +32,37 @@ export interface PopoverOptions extends PopoverControllerOptions {
 
 let open: Popover | null = null;
 
+/**
+ * Mirror the trigger's nearest presentation-motion scope onto a portaled root.
+ *
+ * Popovers normally live outside their trigger's DOM tree, so descendant selectors on
+ * a dialog or chart root cannot reach them. Observe only the owning scope's attribute:
+ * a live preference change then updates an already-open portal without marking the
+ * embedding app's portal host.
+ */
+export function mirrorPopoverMotionScope(trigger: HTMLElement, root: HTMLElement): () => void {
+    const scope = typeof trigger.closest === 'function'
+        ? trigger.closest<HTMLElement>('[data-vela-motion]')
+        : null;
+    if (!scope) {
+        root.removeAttribute('data-vela-motion');
+        return () => undefined;
+    }
+
+    const sync = (): void => {
+        const value = scope.dataset.velaMotion;
+        if (value === 'reduced' || value === 'full') root.dataset.velaMotion = value;
+        else root.removeAttribute('data-vela-motion');
+    };
+    sync();
+
+    const Observer = scope.ownerDocument.defaultView?.MutationObserver;
+    if (!Observer) return () => undefined;
+    const observer = new Observer(sync);
+    observer.observe(scope, { attributes: true, attributeFilter: ['data-vela-motion'] });
+    return () => observer.disconnect();
+}
+
 /** Close whichever kit popover is showing (dialog teardown, a second trigger). */
 export function closeOpenPopovers(): void {
     open?.hide();
@@ -76,6 +107,7 @@ export class Popover {
     private onOutside: ((e: Event) => void) | null = null;
     private onKey: ((e: KeyboardEvent) => void) | null = null;
     private onReflow: (() => void) | null = null;
+    private stopMotionScope: (() => void) | null = null;
     private shown = false;
 
     constructor(opts: PopoverOptions) {
@@ -116,6 +148,7 @@ export class Popover {
         }
         if (open && open !== this) open.hide();
         ensureUIHost(this.el, this.theme);
+        this.stopMotionScope = mirrorPopoverMotionScope(this.trigger, this.el);
         this.host.appendChild(this.el);
         this.shown = true;
         open = this;
@@ -158,6 +191,8 @@ export class Popover {
         this.onOutside = null;
         this.onKey = null;
         this.onReflow = null;
+        this.stopMotionScope?.();
+        this.stopMotionScope = null;
         this.el.remove();
         this.shown = false;
         if (open === this) open = null;

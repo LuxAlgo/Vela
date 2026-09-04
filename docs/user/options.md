@@ -16,7 +16,9 @@ How the chart obtains its candles.
 |---|---|---|
 | `symbol` | string | Symbol to load — the string is the WHOLE market identity. A **bare** ticker (`'BTCUSDT'`) resolves against the registered providers in **declaration order** (first one whose index lists it); an `EXCHANGE:` prefix (`'coinbase:BTC-USD'`, case-insensitive) **pins** the venue — a registered provider name, or a [listing prefix](./data-providers.md#listing-prefixes-nasdaqaapl) a provider's index declares (`'NASDAQ:AAPL'`, strict: a wrong venue resolves to nothing). |
 | `timeframe` | string | Bar interval, e.g. `'1h'`. |
-| `session` | `'regular' \| 'extended'` | Trading session to show, on markets that have one (`regular` = RTH, the default; `extended` = pre/post-market included). The flag rides every data request — providers without a session concept ignore it. Switch at runtime with `chart.setMarket({ session })` or the bottombar's RTH/ETH toggle. |
+| `session` | `MarketSession` (non-empty string) | Case-sensitive trading-session ID to show. Any non-empty provider-facing ID works without a catalog; metadata-derived workspace choices use `regular` / `extended`. History and live paths receive the ID unchanged; the legacy metadata-derived status badge also queries both conventional calendars. Switch it with `chart.setMarket({ session })` or the workspace's session dropdown. |
+| `sessions` | `readonly MarketSessionDefinition[]` | Explicit ordered session catalog. Each entry has `{ id, label, windows, color }`; omit it to derive regular/extended choices from symbol metadata, or pass `[]` to disable session structure. The first valid entry is the fallback. |
+| `sessionTimezone` | IANA zone string | Market timezone for explicit `sessions` windows. Resolution order is this option, symbol metadata, then `Etc/UTC`. An invalid explicit zone paints no bands. |
 | `bars` | number | How many bars of history to load. Depths beyond one ~10k-bar chunk paint the recent window first, then backfill older bars in the background — watch `history:progress` / await `chart.historyComplete()` for the full depth. |
 | `visibleRange` | `VisibleRangePreset \| {from,to}` | — | The window to frame on the **first paint** (`'1D'`, `'YTD'`, an explicit range…). The chart then loads its depth in one pass and paints that window straight away, instead of flashing a recent-bars preview and re-framing a moment later. |
 | `data` | `OHLCV[]` | **Offline bars.** When set, no network fetch happens. |
@@ -26,6 +28,48 @@ How the chart obtains its candles.
 > **The fetch path needs a registered provider.** No provider is bundled — register one with [`chart.data.registerProvider(...)`](./data-providers.md); registering it fires the chart's parked initial load. Each bar is `{ time, open, high, low, close, volume? }` with `time` in epoch milliseconds.
 >
 > With offline `data`, `timeframe` is still honored — it sets bar spacing and axis labels — while `symbol` and `bars` are ignored.
+
+### Named sessions
+
+You can send any non-empty session ID to a provider without declaring a catalog. Add an
+explicit catalog when you also want the workspace to validate IDs and present named,
+colored session choices, or when the symbol has no session metadata:
+
+```ts
+new VelaWorkspace('#chart', {
+  layout: false,
+  symbol: 'MYVENUE:JP225',
+  timeframe: '15',
+  session: 'afternoon',
+  sessionTimezone: 'Asia/Tokyo',
+  sessions: [
+    { id: 'morning', label: 'Morning', windows: ['0900-1130'], color: 'rgba(41, 98, 255, 0.12)' },
+    { id: 'afternoon', label: 'Afternoon', windows: ['1230-1500'], color: 'rgba(156, 39, 176, 0.12)' },
+    { id: 'overnight', label: 'Overnight', windows: ['1700-0500'], color: 'rgba(255, 152, 0, 0.12)' },
+  ],
+});
+```
+
+Windows use `HHMM-HHMM` in market time, recur each civil day, and may wrap midnight.
+Use several windows in one definition for a split session. Invalid definitions are
+dropped as a unit. IDs are trimmed and remain case-sensitive. History, range,
+progressive, subscription, and explicit/custom calendar requests receive them unchanged;
+declaration order is preserved and the first duplicate ID wins. The workspace shows one
+accessible dropdown when at least two valid choices exist and shades the selected session
+on intraday charts. Daily and longer charts do not shade partial-day windows. The
+selected ID is document state; the catalog and timezone remain host options and are not
+persisted.
+
+An explicit catalog takes precedence over symbol metadata. An unknown initial or saved
+ID resolves to the first valid definition; `sessions: []` disables session structure.
+`sessionTimezone` is independent of the display timezone. It falls back to symbol
+metadata and then `Etc/UTC`; an invalid explicit zone paints no bands. A bare `Vela`
+chart forwards an uncataloged provider-facing ID after trimming it, or validates it
+against an explicit catalog. It has no workspace dropdown or host-owned shading
+tracker. For explicit catalogs and custom IDs, the workspace asks `getCalendar` with
+the exact selected ID for holiday-aware market status. The legacy metadata-derived badge
+instead asks for both `regular` and `extended`; declared windows control shading, not
+calendar truth.
 
 A fetching chart pairs these market options with a registered provider — the display flags ride along in the same object, and registering the provider fires the parked initial load.
 
@@ -60,11 +104,11 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `currentPriceLine` | boolean | `true` | Dashed line + axis label at the latest price. |
 | `logScale` | boolean | `false` | Logarithmic price scale. |
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |
-| `animations` | boolean or `{ zoom?, pan?, liveBar? }` | **on** | `true`/`false` toggles all; an object configures each. Defaults: eased zoom on, inertial pan on (short snappy glide), live-bar glide **off**. `{ pan: false }` = instant pan. `liveBar` makes the forming candle (and the current-price line and label) slide toward each live tick instead of snapping: `true` = a 90 ms ease, a number = the ease duration in ms (settles in about three times that; capped at 1000), `false`/`0` = snap. A new bar always snaps. The settings dialog exposes an on/off switch for it (*Symbol → Animation → Animate price changes*; `priceScale.animateLastPrice` in the rich config); switching it back on reuses the duration set here. |
+| `animations` | boolean or `{ zoom?, pan?, liveBar? }` | system-aware | Omit it to follow `prefers-reduced-motion`. `false` forces reduced motion; `true` and any object (including `{}`) explicitly keep full-motion behavior. Full-motion defaults: eased zoom on, inertial pan on (short snappy glide), live-bar glide **off**. `{ pan: false }` = instant pan. `liveBar` makes the forming candle and latest-price chrome slide toward a live tick: `true` = 90 ms, a number = milliseconds (capped at 1000), `false`/`0` = snap. Reduced mode also removes intro, shell-glide, loading/status, layer, and nonessential UI motion without rewriting configured values. |
 | `glow` | number | `0` | Neon glow/bloom for line series (~0.6 = strong). **WebGL2 only** — ignored on canvas2d. |
 | `upColor` | string | `#089981` (green) | Bullish candle color (native renderer). |
 | `downColor` | string | `#f23645` (red) | Bearish candle color (native renderer). |
-| `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn (native renderer). |
+| `priceStyle` | `PriceStyle` | `'candles'` | How the base price series is drawn: `candles`, `bars`, `line`, `area`, `baseline`, `heikinashi`, or a registered chart-type ID. |
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 | `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
 
@@ -198,7 +242,7 @@ new VelaWorkspace('#chart', {
       'status-line.indicator-values',        //     Values
       'advanced',                            // the whole Advanced tab
       'advanced.bars',                       //   Bars to fetch
-      'trading-session',                     // the RTH/ETH group in the Symbol tab
+      'trading-session',                     // the trading-session group in the Symbol tab
       'trading-session.session',             //   Session select
       'trading-session.premarket-color',     //   Pre-market shading color (day-split markets)
       'trading-session.postmarket-color',    //   Post-market shading color (day-split markets)
@@ -222,8 +266,9 @@ new VelaWorkspace('#chart', {
 });
 ```
 
-Conditional entries hide-and-stay-hidden: `trading-session` only appears on symbols
-that have sessions, `status-line` only when the shell's status line is on,
+Conditional entries hide-and-stay-hidden: `trading-session` appears when symbol
+metadata supplies the legacy session controls or an explicit catalog supplies at least
+two choices, `status-line` only when the shell's status line is on,
 `canvas.theme` only when the host wires the theme switch — hiding them is safe either
 way. Host sections contributed through `setSettingsSections` need nothing from the
 contributor: the `id` fields are optional stability aids, label slugs are the
@@ -231,7 +276,8 @@ fallback.
 
 ### Non-obvious defaults, called out
 
-- **Animations are on** by default (eased zoom, snappy inertial pan).
+- **Animations follow the system preference** by default. Omitted `animations` uses
+  full motion unless `prefers-reduced-motion` requests a static presentation.
 - **The current-price line is on** by default.
 - **The price scale is linear** by default (`logScale: false`).
 
@@ -270,7 +316,7 @@ A native-renderer styling combo: draw price as a glowing line on the GPU backend
 ```js
 new Vela('#chart', {
   data: bars,
-  priceStyle: 'line',                 // candles | bars | line | area | baseline
+  priceStyle: 'line',                 // built-ins include candles, bars, line, area, baseline, heikinashi
   nativeBackend: 'webgl2',            // force the GPU backend
   glow: 0.6,                          // neon bloom on line series (WebGL2 only)
   animations: { zoom: true, pan: false }, // eased zoom, no pan momentum

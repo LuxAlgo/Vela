@@ -9,6 +9,7 @@
 // the `state:changed` notification); persistence is just an adapter driven through
 // the storage seam. Nothing here touches the URL — hosts wanting shareable links
 // compose them from `getState()` themselves.
+import { normalizeSession } from '../core/options';
 
 /** The linkable dimensions. `crosshair` mirrors the pointer time onto same-group
  *  cells as GHOST crosshairs (renderers without the optional `setExternalCrosshair`
@@ -70,7 +71,8 @@ export interface CellState {
     timeframe?: string;
     priceStyle?: string;
     bars?: number;
-    /** Trading session shown (`'extended'` persisted; absent = regular, the default). */
+    /** Selected provider-facing session id. An explicit host catalog validates it;
+     * without one, any normalized non-empty ID remains provider-facing state. */
     session?: string;
     /** Symbol watermark visibility — a per-chart display pref. */
     watermark?: boolean;
@@ -144,6 +146,33 @@ export function prefixedSymbol(cell: Pick<CellState, 'symbol' | 'provider'> | nu
 
 export function encodeState(state: WorkspaceState): string {
     return JSON.stringify(state);
+}
+
+/** Structural equality for the JSON-compatible opaque values carried by state `ext`
+ * bags. Object key order is irrelevant, while array order remains significant. The
+ * pair map also makes the comparison safe when an untrusted direct `applyState` call
+ * supplies a cyclic value even though persisted values must be JSON-serializable. */
+export function jsonStateEqual(left: unknown, right: unknown): boolean {
+    const pairs = new WeakMap<object, object>();
+    const equal = (a: unknown, b: unknown): boolean => {
+        if (Object.is(a, b)) return true;
+        if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object') return false;
+        if (Array.isArray(a) !== Array.isArray(b)) return false;
+        if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+        if (!Array.isArray(a) && Object.getPrototypeOf(a) !== Object.prototype && Object.getPrototypeOf(a) !== null) return false;
+        const mapped = pairs.get(a);
+        if (mapped) return mapped === b;
+        pairs.set(a, b);
+        const aKeys = Object.keys(a);
+        const bRecord = b as Record<string, unknown>;
+        if (aKeys.length !== Object.keys(bRecord).length) return false;
+        for (const key of aKeys) {
+            if (!Object.prototype.hasOwnProperty.call(bRecord, key)) return false;
+            if (!equal((a as Record<string, unknown>)[key], bRecord[key])) return false;
+        }
+        return true;
+    };
+    return equal(left, right);
 }
 
 /** Parse + sanitize a persisted payload. Null on anything unusable (wrong version,
@@ -222,7 +251,8 @@ function sanitizeCell(raw: unknown): CellState | null {
     if (typeof c.timeframe === 'string') out.timeframe = c.timeframe;
     if (typeof c.priceStyle === 'string') out.priceStyle = c.priceStyle;
     if (typeof c.bars === 'number' && Number.isFinite(c.bars) && c.bars > 0) out.bars = c.bars;
-    if (c.session === 'regular' || c.session === 'extended') out.session = c.session;
+    const session = normalizeSession(c.session);
+    if (session) out.session = session;
     if (typeof c.watermark === 'boolean') out.watermark = c.watermark;
     if (typeof c.indicatorTitles === 'boolean') out.indicatorTitles = c.indicatorTitles;
     if (typeof c.indicatorValues === 'boolean') out.indicatorValues = c.indicatorValues;

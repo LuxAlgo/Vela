@@ -53,7 +53,7 @@ export interface PopupAnchor {
 const BTN = 30; // icon-button side (px)
 const ICON = 21; // icon glyph side (px)
 const STYLE_ID = 'vela-drawing-popup-styles';
-const STYLE_REV = '3';
+const STYLE_REV = '4';
 
 /** Inject the scoped styles that inline cssText can't reach (`:focus`, scrollbar
  *  pseudo-elements). Idempotent — one shared sheet for all popups. */
@@ -68,6 +68,7 @@ function ensureStyles(): void {
 .vela-dpop-btn{background:transparent;color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dpop-btn:hover{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
 .vela-dpop-btn[data-active='1']{background:var(--vela-active);color:var(--vela-fg-bright);}
+.vela-dpop-btn:disabled{opacity:.38;cursor:not-allowed;background:transparent;color:var(--vela-fg-muted);}
 .vela-dpop-item{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-dpop-item:hover{background:var(--vela-hover-strong);}
 .vela-dpop-item[data-active='1']{background:var(--vela-active);}
@@ -302,8 +303,14 @@ export class DrawingSettingsPopup {
         if (isFrvp) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'frvp')));
         if (isPosition) bar.appendChild(this.iconBtn('Position size', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'position')));
         if (editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'levels')));
-        bar.appendChild(this.toggle('Lock', LOCK_ICON, drawing.locked, (v) => actions.setLocked(v)));
+        let deleteButton: HTMLButtonElement | null = null;
+        bar.appendChild(this.toggle('Lock', LOCK_ICON, drawing.locked, (v) => {
+            actions.setLocked(v);
+            if (deleteButton) deleteButton.disabled = v;
+        }));
         const del = this.iconBtn('Delete', TRASH_ICON, () => actions.remove());
+        deleteButton = del;
+        del.disabled = drawing.locked;
         del.style.color = 'var(--vela-danger)';
         bar.appendChild(del);
         bar.appendChild(this.kebabButton(actions));
@@ -994,4 +1001,3 @@ function styleLabel(v: string | number): string {
 function sized(svg: string, size: number = ICON): string {
     return svg.replace('<svg ', `<svg width="${size}" height="${size}" `);
 }
-

@@ -29,6 +29,7 @@ import {
 } from '../../../ui/components/field';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 import { chromeHint } from '../../shared/chrome-tooltip';
+import { applyMotionScope } from '../../shared/motion';
 import {
     filterHiddenHostRows,
     filterHiddenRows,
@@ -60,7 +61,7 @@ type ConfigPatch = Record<string, unknown>;
 export type HostSettingsRow =
     | { kind: 'heading'; label: string; id?: string }
     | { kind: 'toggle'; label: string; get: () => boolean; set: (v: boolean) => void; id?: string }
-    | { kind: 'select'; label: string; options: readonly string[]; get: () => string; set: (v: string) => void; id?: string }
+    | { kind: 'select'; label: string; options: readonly SettingsSelectOption[]; get: () => string; set: (v: string) => void; id?: string }
     | { kind: 'color'; label: string; get: () => string; set: (v: string) => void; id?: string };
 
 /** A host-contributed settings tab (see `RendererControl.setSettingsSections`). */
@@ -205,6 +206,7 @@ export class SettingsDialog {
 
     /** The visibility policy: setting ids hidden by the host (subtree semantics). */
     private hiddenSettings: ReadonlySet<string> = new Set();
+    private reducedMotion: boolean;
 
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
@@ -234,8 +236,16 @@ export class SettingsDialog {
     constructor(
         private readonly container: HTMLElement,
         private theme: VelaTheme,
+        reducedMotion = false,
     ) {
+        this.reducedMotion = reducedMotion;
         if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    }
+
+    /** Project the chart policy onto an open portal without affecting its host app. */
+    setReducedMotion(reduced: boolean): void {
+        this.reducedMotion = reduced;
+        if (this.ui) applyMotionScope(this.container, reduced, this.ui.backdrop, this.ui.positioner);
     }
 
     setTheme(theme: VelaTheme): void {
@@ -454,7 +464,7 @@ export class SettingsDialog {
                     if (hr.kind === 'heading') body.append(this.sectionTitle(hr.label));
                     else if (hr.kind === 'toggle') body.append(this.boolRow(hr.label, hr.get(), (v) => hr.set(v)));
                     else if (hr.kind === 'color') body.append(this.colorRow(hr.label, hr.get(), (v) => hr.set(v)));
-                    else body.append(this.selectRowLabeled(hr.label, hr.get(), hr.options.map((o) => [o, o] as const), (v) => hr.set(v)));
+                    else body.append(this.selectRowLabeled(hr.label, hr.get(), normalizeSelectOptions(hr.options), (v) => hr.set(v)));
                 }
             }
         };
@@ -638,6 +648,7 @@ export class SettingsDialog {
             },
             onOpenChange: (open) => { if (!open) this.close(); },
         });
+        applyMotionScope(this.container, this.reducedMotion, ui.backdrop, ui.positioner);
         if (mobile) ui.positioner.classList.add('vela-sd-mobile');
         ui.positioner.style.paddingTop = mobile ? '0' : '8vh';
 
@@ -1263,4 +1274,3 @@ function timezoneOptions(current: string): readonly (readonly [string, string])[
     if (TIMEZONES.some((t) => t.value === normalized)) return options;
     return [[normalized, tzMenuLabel(normalized, normalized)] as const, ...options];
 }
-

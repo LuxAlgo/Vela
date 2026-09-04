@@ -94,6 +94,18 @@ label (a trend line, a box), all four controls stay in that panel with the label
 
 Drag a handle to reshape; drag the body to move the whole drawing.
 
+Hold Ctrl/Cmd and drag from empty plot space to select every visible drawing whose
+clipped bounds touch the box. This replaces the selection; add Shift to union the hits
+with the selection captured when the drag began. Drawing and handle hits, active tools
+and modes, axes, pane separators, and touch gestures keep priority, and the chart does
+not pan. Escape or a pointer cancellation abandons an active box. Moving less than the
+drag threshold remains a normal empty click.
+
+Locked drawings remain selectable, including through the box, but interactive drag,
+nudge, Delete/Backspace, middle-click, and eraser actions leave them unchanged. Explicit
+`chart.drawings` API calls still have authority. Deleting several unlocked drawings from
+a box selection creates one history operation, so one Undo restores the set.
+
 ### Keyboard shortcuts
 
 When a drawing is selected (or hovered), with focus on the chart:
@@ -110,7 +122,8 @@ When a drawing is selected (or hovered), with focus on the chart:
 Shortcuts stand down while a text field (e.g. a label editor) is focused, so typing is never
 hijacked.
 
-Three mouse shortcuts complement these, and need no selection first: **middle-click** a drawing
+Five mouse shortcuts complement these, and need no selection first: **Ctrl/Cmd-drag** empty plot
+space to replace the drawing selection, add **Shift** to union with it, **middle-click** a drawing
 to delete it, **right-click** while a drawing tool, the ruler, or the eraser is active — placing
 or merely armed — to cancel it and return to the pointer (even in stay-in-drawing-mode, and
 without opening the chart's context menu for that click; persistent toggles like the magnet and

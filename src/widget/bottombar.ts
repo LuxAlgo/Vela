@@ -2,6 +2,7 @@
 // Range presets switch the timeframe AND frame the matching visible window; the widget
 // owns the rebuild, so the bar only reports the chosen preset upward.
 import type { VisibleRangePreset } from '../core/visible-range';
+import type { MarketSession, MarketSessionDefinition } from '../core/options';
 import { Menu } from '../ui/components/menu';
 import { Tooltip } from '../ui/components/tooltip';
 import { iconEl } from '../ui/icons';
@@ -81,22 +82,24 @@ const CSS = `
     cursor: pointer;
 }
 .vela-bb-tz:hover { background: var(--vela-hover); }
-.vela-bb-session { display: inline-flex; border: 1px solid var(--vela-border-strong); border-radius: 4px; overflow: hidden; margin-left: 6px; }
-.vela-bb-session-btn {
+.vela-bb-session {
     all: unset;
     height: 24px;
     display: inline-flex;
     align-items: center;
+    gap: 5px;
     padding: 0 8px;
+    margin-left: 6px;
+    border: 1px solid var(--vela-border-strong);
+    border-radius: 4px;
     color: var(--vela-fg-muted);
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
 }
-.vela-bb-session-btn:disabled { cursor: not-allowed; opacity: 0.55; }
-.vela-bb-session-btn:not(:disabled):hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-bb-session-btn.is-active { color: var(--vela-fg); background: var(--vela-surface-elev); }
-.vela-bb-session-btn.is-active:disabled { opacity: 0.8; }
+.vela-bb-session[hidden] { display: none !important; }
+.vela-bb-session:not(:disabled):hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-bb-session .vela-icon { width: 12px; height: 12px; }
 .vela-bb-settings {
     all: unset;
     display: inline-flex;
@@ -117,8 +120,8 @@ export interface BottombarOptions {
     timezone: string;
     onRange: (preset: RangePreset) => void;
     onTimezone: (zone: string) => void;
-    /** RTH/ETH toggled by the user. Fires only while the toggle is ENABLED (see {@link Bottombar.setSession}). */
-    onSession?: (session: 'regular' | 'extended') => void;
+    /** A declared/metadata-derived session selected from the active cell's menu. */
+    onSession?: (session: MarketSession) => void;
     onSettingsClick?: () => void;
 }
 
@@ -128,10 +131,12 @@ export class Bottombar {
     private readonly tzLabelEl: HTMLElement;
     private readonly tzButton: HTMLElement;
     private readonly tzMenu: Menu;
+    private readonly sessionButton: HTMLButtonElement;
+    private readonly sessionLabelEl: HTMLElement;
+    private readonly sessionMenu: Menu;
     private readonly settingsTip: Tooltip | null = null;
     private readonly rangeButtons = new Map<string, HTMLButtonElement>();
-    private readonly sessionButtons = new Map<'regular' | 'extended', HTMLButtonElement>();
-    private sessionEl: HTMLElement | null = null;
+    private sessionChoices: ReadonlyArray<Pick<MarketSessionDefinition, 'id' | 'label'>> = [];
     private timezone: string;
     private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -165,33 +170,21 @@ export class Bottombar {
         this.tzLabelEl = doc.createElement('span');
         this.tzLabelEl.textContent = tzButtonLabel(this.timezone);
         this.tzButton.append(this.clockEl, this.tzLabelEl);
-        const session = doc.createElement('span');
-        session.className = 'vela-bb-session';
-        this.sessionEl = session;
-        // Boots HIDDEN (sessions only apply to markets that have them); the host reveals
-        // it per active chart via `setSession` once symbol metadata declares sessions.
-        session.style.display = 'none';
-        session.title = 'Session — regular (RTH) vs extended (ETH) hours';
-        for (const [key, label] of [['regular', 'RTH'], ['extended', 'ETH']] as const) {
-            const b = doc.createElement('button');
-            b.className = 'vela-bb-session-btn' + (key === 'regular' ? ' is-active' : '');
-            b.textContent = label;
-            b.disabled = true;
-            b.addEventListener('click', () => {
-                if (b.disabled) return;
-                this.setSession({ session: key, enabled: true }); // optimistic — the reload confirms
-                opts.onSession?.(key);
-            });
-            this.sessionButtons.set(key, b);
-            session.appendChild(b);
-        }
+        this.sessionButton = doc.createElement('button');
+        this.sessionButton.className = 'vela-bb-session';
+        this.sessionButton.hidden = true;
+        this.sessionButton.disabled = true;
+        this.sessionButton.setAttribute('aria-label', 'Trading session');
+        this.sessionLabelEl = doc.createElement('span');
+        this.sessionLabelEl.className = 'vela-bb-session-label';
+        this.sessionButton.append(this.sessionLabelEl, iconEl('chevron-down', doc));
         const settingsBtn = doc.createElement('button');
         settingsBtn.className = 'vela-bb-settings';
         settingsBtn.appendChild(iconEl('gear', doc));
         settingsBtn.setAttribute('aria-label', 'Chart settings');
         if (opts.onSettingsClick) settingsBtn.addEventListener('click', opts.onSettingsClick);
         this.settingsTip = new Tooltip(settingsBtn, { content: 'Chart settings', triggerId: 'vela-bb-settings', host });
-        this.el.append(spacer, this.tzButton, session, settingsBtn);
+        this.el.append(spacer, this.tzButton, this.sessionButton, settingsBtn);
         host.appendChild(this.el);
 
         this.tzMenu = new Menu({
@@ -203,6 +196,19 @@ export class Bottombar {
             onSelect: (zone) => {
                 this.setTimezone(zone);
                 opts.onTimezone(zone);
+            },
+        });
+        this.sessionMenu = new Menu({
+            trigger: this.sessionButton,
+            triggerId: 'vela-bb-session',
+            host,
+            placement: 'top-end',
+            items: [],
+            onSelect: (id) => {
+                const choice = this.sessionChoices.find((candidate) => candidate.id === id);
+                if (!choice) return;
+                this.setSession({ session: choice.id, choices: this.sessionChoices });
+                opts.onSession?.(choice.id);
             },
         });
 
@@ -225,23 +231,29 @@ export class Bottombar {
         }
     }
 
-    /**
-     * Reflect the ACTIVE chart's session posture. `enabled: false` (a continuous
-     * market, or metadata not landed yet) HIDES the toggle entirely — RTH/ETH is
-     * meaningless there. Enabled, the chips appear and the active one tracks the
-     * chart's current session.
-     */
-    setSession(state: { session: 'regular' | 'extended'; enabled: boolean }): void {
-        if (this.sessionEl) this.sessionEl.style.display = state.enabled ? '' : 'none';
-        for (const [key, b] of this.sessionButtons) {
-            b.disabled = !state.enabled;
-            b.classList.toggle('is-active', key === (state.enabled ? state.session : 'regular'));
-        }
+    /** Reflect the active cell's ordered session catalog. Fewer than two choices keep
+     * the picker hidden; a single choice may still drive provider data and shading. */
+    setSession(state: {
+        session: MarketSession;
+        choices: ReadonlyArray<Pick<MarketSessionDefinition, 'id' | 'label'>>;
+    }): void {
+        this.sessionChoices = [...state.choices];
+        const active = this.sessionChoices.find((choice) => choice.id === state.session) ?? this.sessionChoices[0];
+        this.sessionLabelEl.textContent = active?.label ?? '';
+        const visible = this.sessionChoices.length >= 2;
+        this.sessionButton.hidden = !visible;
+        this.sessionButton.disabled = !visible;
+        this.sessionMenu.setItems(this.sessionChoices.map((choice) => ({
+            id: choice.id,
+            label: choice.label,
+            checked: choice.id === active?.id,
+        })));
     }
 
     destroy(): void {
         if (this.timer !== null) clearInterval(this.timer);
         this.tzMenu.destroy();
+        this.sessionMenu.destroy();
         this.settingsTip?.destroy();
         this.el.remove();
     }

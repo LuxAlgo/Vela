@@ -52,6 +52,17 @@ export interface InputControllerDeps {
      *  the effective magnet. True when it started (the drawings layer then owns the rest
      *  of the gesture). */
     drawingsMeasureStart?(x: number, y: number, snap: SnapMode): boolean;
+    /** Ctrl/Cmd+press on empty data plot: begin a marquee. `additive` (Shift) is latched
+     *  for the gesture. True when the drawings layer accepted it. */
+    drawingsMarqueeStart?(x: number, y: number, additive: boolean): boolean;
+    /** Advance a marquee after the pointer has crossed drag slop. */
+    drawingsMarqueeMove?(x: number, y: number): void;
+    /** Release a dragged marquee and commit its one selection intent. */
+    drawingsMarqueeEnd?(x: number, y: number): void;
+    /** Abort a pending/active marquee without changing selection. */
+    drawingsMarqueeCancel?(): void;
+    /** Resolve a sub-slop marquee gesture as an ordinary empty chart click. */
+    drawingsMarqueeClick?(): void;
     /** Middle-click: delete the drawing under the cursor. True when one was removed. */
     drawingsDeleteAt?(x: number, y: number): boolean;
     /** Right-click: cancel/disarm whatever non-persistent tool is active — an in-progress
@@ -111,7 +122,7 @@ const WHEEL_PRICE_DRAG_PX = 0.25;
  *  time axis, a sub-pane separator (drag to resize the panes above/below it), or one of
  *  the touch-only modes: a two-finger pinch, long-press crosshair inspection, or a
  *  long-press that opened an axis sheet (no further drag for that gesture). */
-type DragRegion = 'data' | 'price' | 'time' | 'separator' | 'drawing' | 'pinch' | 'crosshair' | 'axis-sheet';
+type DragRegion = 'data' | 'price' | 'time' | 'separator' | 'drawing' | 'marquee' | 'pinch' | 'crosshair' | 'axis-sheet';
 
 /**
  * The logical bar + its pixel that a wheel-zoom keeps pinned. `right` (the default)
@@ -290,6 +301,8 @@ export class InputController {
         el.removeEventListener('mousedown', this.onMiddleGuard);
         el.removeEventListener('auxclick', this.onMiddleGuard);
         el.removeEventListener('contextmenu', this.onContextGuard);
+        if (this.dragging && this.region === 'marquee') this.deps.drawingsMarqueeCancel?.();
+        this.dragging = false;
         this.cancelLongPress();
         this.touches.clear();
         this.el = null;
@@ -392,6 +405,25 @@ export class InputController {
             this.region = 'drawing';
             this.deps.drawingsPointerDown?.(x, y, this.snapMode(e), e.shiftKey);
             this.capture(e.pointerId);
+            return;
+        }
+        // Ctrl/Cmd+drag on EMPTY data plot selects drawings by rectangle. Axes/separators
+        // keep their native gestures, touch keeps pan/pinch, and Shift is latched here as union.
+        if (
+            e.pointerType !== 'touch'
+            && (e.ctrlKey || e.metaKey)
+            && x >= 0
+            && x <= this.deps.getCoords().width
+            && y >= 0
+            && y <= this.deps.getCoords().height
+            && this.regionAt(x, y) === 'data'
+            && this.deps.drawingsMarqueeStart?.(x, y, e.shiftKey)
+        ) {
+            const vp = this.deps.getCoords().getViewport();
+            this.deps.apply(vp); // stop an in-flight zoom/fling without moving the viewport
+            this.region = 'marquee';
+            this.capture(e.pointerId);
+            e.preventDefault();
             return;
         }
         // Shift+press on the empty plot starts the measure ruler in one gesture (a press
@@ -534,6 +566,9 @@ export class InputController {
             } else if (this.region === 'drawing') {
                 if (Math.abs(x - this.startX) > slop || Math.abs(y - this.startY) > slop) this.moved = true;
                 this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey);
+            } else if (this.region === 'marquee') {
+                if (Math.abs(x - this.startX) > slop || Math.abs(y - this.startY) > slop) this.moved = true;
+                if (this.moved) this.deps.drawingsMarqueeMove?.(x, y);
             } else {
                 const coords = this.deps.getCoords();
                 const vp = coords.getViewport();
@@ -611,6 +646,21 @@ export class InputController {
         // a gesture that latched `moved` (a one-way 9–14px drag) already panned the
         // chart and must not double as a click/tap on release.
         const tapRelease = this.dragging && !this.moved && (!wasTouch || Math.hypot(x - this.startX, y - this.startY) <= TOUCH_TAP_SLOP);
+        if (this.dragging && this.region === 'marquee') {
+            // A sparse event stream can jump from down straight to an out-of-slop up.
+            if (!this.moved && (Math.abs(x - this.startX) > DRAG_SLOP || Math.abs(y - this.startY) > DRAG_SLOP)) {
+                this.moved = true;
+                this.deps.drawingsMarqueeMove?.(x, y);
+            }
+            if (this.moved) this.deps.drawingsMarqueeEnd?.(x, y);
+            else {
+                if (this.deps.drawingsMarqueeClick) this.deps.drawingsMarqueeClick();
+                else this.deps.drawingsMarqueeCancel?.();
+                this.deps.onClick(x, y); // a modifier-click is still a normal chart click
+            }
+            this.endGesture(e);
+            return;
+        }
         if (this.dragging && this.region === 'drawing') {
             this.deps.drawingsPointerUp?.(x, y, this.snapMode(e));
         } else if (tapRelease && this.region === 'data') {
@@ -663,7 +713,8 @@ export class InputController {
         if (e.pointerType === 'touch') this.touches.delete(e.pointerId);
         this.cancelLongPress();
         if (!this.dragging) return;
-        if (this.region === 'drawing' && !Number.isNaN(this.cursorX)) this.deps.drawingsPointerUp?.(this.cursorX, this.cursorY, this.snapMode(e));
+        if (this.region === 'marquee') this.deps.drawingsMarqueeCancel?.();
+        else if (this.region === 'drawing' && !Number.isNaN(this.cursorX)) this.deps.drawingsPointerUp?.(this.cursorX, this.cursorY, this.snapMode(e));
         if (this.region === 'crosshair' || e.pointerType === 'touch') this.deps.onPointerMove(null, null);
         this.endGesture(e);
     };

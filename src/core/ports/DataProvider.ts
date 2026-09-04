@@ -132,9 +132,10 @@ export interface DataProvider {
     /**
      * Open a true live stream for `ticker`/`timeframe`. Each call to `onBar` delivers
      * the forming candle (or a freshly-closed one). Returns an unsubscribe fn. Absent
-     * ⇒ the feed polls `getBars` for ticks instead. `opts.session` names the trading
-     * session the chart is showing (see {@link BarRange.session}) — a provider whose
-     * live source cannot filter by session may fall back to polling internally.
+     * ⇒ the feed polls `getBars` for ticks instead. `opts.session` is the exact,
+     * case-sensitive provider-facing ID selected by the host (see
+     * {@link BarRange.session}) — a provider whose live source cannot filter by session
+     * may fall back to polling internally.
      */
     subscribe?(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void, opts?: { session?: string }): Unsubscribe;
 
@@ -143,9 +144,11 @@ export interface DataProvider {
      * `[start, end)` pairs of OPEN market time, holidays and DST already applied by the
      * source — the single market-time truth for session-anchored consumers (market-status
      * badges, session profiles), which must never recompute a holiday themselves.
-     * `range.session` selects the window set (`'regular'` default; `'extended'` = the
-     * full tape). Absent ⇒ the venue offers no calendar (continuous markets) and
-     * consumers fall back to their own anchoring (e.g. UTC days).
+     * Explicit catalogs and custom IDs request the exact provider-facing window set used
+     * for history and live bars. The metadata-derived status badge instead requests both
+     * conventional `regular` and `extended` calendars so it can derive market phases.
+     * An absent session means the provider default. Absent method ⇒ the venue offers no
+     * calendar (continuous markets), so consumers use their fallback.
      */
     getCalendar?(ticker: string, range: { from: number; to: number; session?: string }): Promise<ReadonlyArray<readonly [number, number]>>;
 

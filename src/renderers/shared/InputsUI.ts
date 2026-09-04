@@ -205,10 +205,23 @@ export class InputsUI {
      *  shells point this at their root so the dialog centers globally — the inline
      *  pane-anchored rows always stay in the container. */
     private dialogHost: HTMLElement | null = null;
+    private reducedMotion = false;
 
     setDialogHost(host: HTMLElement | null): void {
         this.dialogHost = host;
         if (host && getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    }
+
+    /** Gate presentation-only status animation without changing the status itself. */
+    setReducedMotion(reduced: boolean): void {
+        if (reduced === this.reducedMotion) return;
+        this.reducedMotion = reduced;
+        this.inputsDialog.setReducedMotion(reduced);
+        if (!reduced) return; // existing static indicators stay static; future status writes may animate
+        for (const row of this.rows.values()) {
+            for (const animation of row.statusEl.getAnimations?.({ subtree: true }) ?? []) animation.cancel();
+            row.statusEl.style.animation = 'none';
+        }
     }
 
     constructor(
@@ -901,7 +914,9 @@ export class InputsUI {
                 const dot = document.createElement('span');
                 dot.style.cssText = 'width:4px;height:4px;border-radius:50%;background:currentColor;opacity:0.15;flex:none;';
                 // Staggered phases via negative delays — every dot animates from the first frame.
-                dot.animate?.([{ opacity: 0.12 }, { opacity: 0.55 }], { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: -i * 260 });
+                if (!this.reducedMotion) {
+                    dot.animate?.([{ opacity: 0.12 }, { opacity: 0.55 }], { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: -i * 260 });
+                }
                 el.appendChild(dot);
             }
             return;
@@ -911,7 +926,8 @@ export class InputsUI {
         el.style.cssText =
             `display:inline-block;box-sizing:border-box;flex:none;width:8px;height:8px;border-radius:50%;` +
             `margin-left:${LEGEND_TITLE_STATUS_GAP_PX}px;transform:translateY(1px);` +
-            `background:${this.theme.upColor};animation:vela-ind-pulse 1.2s ease-in-out infinite;`;
+            `background:${this.theme.upColor};` +
+            (this.reducedMotion ? '' : 'animation:vela-ind-pulse 1.2s ease-in-out infinite;');
     }
 
     /** Inject the status keyframes once (idempotent). */

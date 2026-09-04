@@ -33,8 +33,17 @@ Mount into a host element with a theme, react to theme changes and resizes, and 
 
 - **Mount** attaches your surface to the container and adopts the supplied theme.
 - **Set theme** re-skins in place.
+- **Apply motion policy** through the optional `applyMotionPolicy(policy)` hook when your
+  renderer has presentation animation. Vela™ may call it before `mount` and again when a
+  system preference changes. Treat `policy.reduced` as a runtime gate, separate from the
+  configured feature values. When it becomes true, finish fixed-target motion immediately,
+  stop targetless motion at its current position, and paint a complete static frame.
 - **Resize** re-measures against the container.
 - **Destroy** must leave **nothing** behind — no DOM nodes, no observers, no event listeners, no floating overlays. A renderer that leaks on destroy will accumulate state across chart re-creation. Treat "destroy is exact" as a hard requirement.
+
+`applyMotionPolicy` is optional for compatibility with existing renderers. If you omit it,
+the host still removes its own DOM transitions, but your renderer remains responsible for
+honoring reduced motion on its surface.
 
 ### 2. Price bars
 
@@ -230,7 +239,11 @@ That alone gives you candles, panes, and basic indicator plots — a usable char
 - **External crosshair** — the optional `setExternalCrosshair(time, price?)` method: draw a dimmed **ghost crosshair** at a data-space position pushed from outside (multi-chart sync). Detected by presence (no capability flag); the one contract rule: a ghost must **never** re-emit `onCrosshairMove` — that one-way flow is what keeps the sync loop-free.
 - **Data-window readout** — the optional `getDataWindowReadout()` method: hand back the bar under the crosshair (the latest bar when the cursor is off the plot) with its values already formatted on the scale of the pane each one belongs to, grouped per indicator. Detected by presence (no capability flag); host panels such as the widget's data window read it through `chart.renderer.dataWindowReadout()` and simply show nothing without it.
 - **Loading affordance** — the optional `setLoading(loading)` method: the core raises it while a market load is in flight with **no bars painted yet** (the first load, and every symbol/timeframe switch — the core blanks the old series first), and drops it with the first series it hands over, or when a load fails or parks. Show something subtle (the native renderer pulses three small dots at the plot center), and hide content that does **not** ride the bar series — corner-anchored tables stay painted through an emptied chart unless you hide them, while bar-mapped content vanishes with the series on its own. Plugins get the same window as the `load:start` / `load:end` chart events. Without the method the chart is simply blank while loading. Detected by presence (no capability flag).
-- **Animations / polish** — transitions and presentation refinements.
+- **Animations / polish** — transitions and presentation refinements. Implement
+  `applyMotionPolicy(policy)` so an omitted `animations` option follows the live system
+  preference. Do not overwrite `animZoom`, `animPan`, `animLiveBar`, or other configured
+  features when reduction is active; the policy is an effective runtime gate, not saved
+  chart configuration.
 
 The key idea: a flag stays **false and renders blank** until its tier is real, and the core simply won't send that content meanwhile.
 

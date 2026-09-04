@@ -532,6 +532,9 @@ export class Statusline {
         this.detach();
         this.lastBar = null;
         this.hoverBar = null;
+        const syncChartHidden = (): void => {
+            this.setChartHidden(chart.renderer.get('candleVisible') === false);
+        };
         this.unsubs.push(
             chart.on('bar', (b: OHLCV) => {
                 this.lastBar = b;
@@ -541,7 +544,10 @@ export class Statusline {
                 this.hoverBar = e.ohlc;
                 this.render();
             }),
+            chart.renderer.onConfigChanged(syncChartHidden),
         );
+        // Renderer config may have been restored before the status line was built.
+        syncChartHidden();
         this.render();
     }
 
@@ -565,9 +571,8 @@ export class Statusline {
     }
 
     private render(): void {
-        // Chart visibility has no change event of its own — re-derive it from the live
-        // renderer on every readout refresh (bar ticks, crosshair moves), so a toggle
-        // made anywhere (the object tree's eye) reaches the status line.
+        // Also re-derive on readout refresh for custom renderers that do not publish
+        // config-change notifications.
         if (this.menuHooks) this.setChartHidden(!this.menuHooks.chartVisible());
         const bar = this.hoverBar ?? this.lastBar;
         if (!bar) {

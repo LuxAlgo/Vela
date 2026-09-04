@@ -2,7 +2,7 @@ import type { EngineAlert, EngineWarning } from "../ports/ScriptingEngine";
 import type { ScriptRun } from "../script-run";
 import type { OHLCV } from "../model/ohlcv";
 import type { DrawingTypeKey, SerializedDrawing } from "../drawings/Drawing";
-import type { VelaTheme } from "../options";
+import type { MarketSession, VelaTheme } from "../options";
 import type { SnapMode } from "../drawings/geometry";
 import type { DrawingMode } from "../drawings/port";
 
@@ -11,7 +11,7 @@ export interface VelaEventMap extends Record<string, unknown> {
   ready: undefined;
   /**
    * The chart's market switched IN PLACE via `setMarket` — symbol, provider, timeframe,
-   * or offline data changed (a depth-only reload does not fire). Fires after the new
+   * session, or offline data changed (a depth-only reload does not fire). Fires after the new
    * market's history is painted and every consumer restarted. `prev` carries the
    * previous identity so hosts can re-key per-symbol state (e.g. swap user-drawing
    * documents between symbols).
@@ -19,24 +19,25 @@ export interface VelaEventMap extends Record<string, unknown> {
   "market:changed": {
     symbol: string;
     timeframe: string;
-    prev: { symbol: string; timeframe: string };
+    session?: MarketSession;
+    prev: { symbol: string; timeframe: string; session?: MarketSession };
   };
   /**
    * A bar load began with nothing painted: the FIRST load (fires during construction —
    * subscribers attached later see only its `load:end`), or an identity switch
-   * (symbol/provider/timeframe), which blanks the old series in the same breath. Fires
+   * (symbol/provider/timeframe/session), which blanks the old series in the same breath. Fires
    * before the first fetch — plugins, extensions and custom indicators hide or reset
    * their own visuals here. Exactly one `load:end` follows. A depth-only reload
    * (`bars`) keeps the chart painted and fires neither.
    */
-  "load:start": { symbol: string; timeframe: string; firstLoad: boolean };
+  "load:start": { symbol: string; timeframe: string; session?: MarketSession; firstLoad: boolean };
   /**
    * The load ended: its first bars painted (`bars` > 0 — on deep histories the quick
    * preview, before the full depth), or it ended with none (`bars` = 0 — a failed
    * fetch, an empty market, or a parked symbol nothing serves). Counterpart of
    * `load:start`; plugins restore or rebuild their visuals here.
    */
-  "load:end": { symbol: string; timeframe: string; bars: number };
+  "load:end": { symbol: string; timeframe: string; session?: MarketSession; bars: number };
   "indicator:added": { id: string };
   "indicator:removed": { id: string };
   /** An indicator's stored input/prop VALUES changed (settings dialog, `setInputs`) — what state persistence listens to. */

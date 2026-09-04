@@ -63,6 +63,11 @@ export class Glider {
         if (!chart || !base) return;
         this.cur ??= { ...base }; // seed from the chart on a fresh glide; keep it while retargeting
         this.target = make(base);
+        if (chart.reducedMotion) {
+            chart.setVisibleRange(this.target);
+            this.stop();
+            return;
+        }
         if (!this.raf) this.tick();
     }
 
@@ -70,6 +75,11 @@ export class Glider {
         this.raf = requestAnimationFrame(() => {
             const chart = this.chart();
             if (!chart || !this.cur || !this.target) {
+                this.stop();
+                return;
+            }
+            if (chart.reducedMotion) {
+                chart.setVisibleRange(this.target);
                 this.stop();
                 return;
             }

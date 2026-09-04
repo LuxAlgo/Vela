@@ -294,7 +294,10 @@ describe('setMarket — in-place market switch', () => {
         const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [], dataFeed: feed });
         await chart.ready();
         const events: unknown[] = [];
+        const loads: unknown[] = [];
         chart.on('market:changed', (e) => events.push(e));
+        chart.on('load:start', (e) => loads.push({ event: 'start', ...e }));
+        chart.on('load:end', (e) => loads.push({ event: 'end', ...e }));
 
         await chart.setMarket({ session: 'extended' });
 
@@ -303,11 +306,77 @@ describe('setMarket — in-place market switch', () => {
         expect(feed.loads[feed.loads.length - 1]).toMatchObject({ symbol: 'AAA', session: 'extended' });
         expect(chart.market.session).toBe('extended');
         expect(events).toHaveLength(1); // an identity change — the chrome must re-sync
+        expect(events[0]).toEqual({
+            symbol: 'AAA',
+            timeframe: '60',
+            session: 'extended',
+            prev: { symbol: 'AAA', timeframe: '60' },
+        });
+        expect(loads).toEqual([
+            { event: 'start', symbol: 'AAA', timeframe: '60', session: 'extended', firstLoad: false },
+            { event: 'end', symbol: 'AAA', timeframe: '60', session: 'extended', bars: 50 },
+        ]);
 
         // Same session again: a no-op, no reload.
         const loadsBefore = feed.loads.length;
         await chart.setMarket({ session: 'extended' });
         expect(feed.loads.length).toBe(loadsBefore);
+    });
+
+    it('an explicit catalog forwards its first or selected arbitrary id on the initial load', async () => {
+        const definitions = [
+            { id: 'Asia-AM', label: 'Asia AM', windows: ['0900-1200'], color: '#111' },
+            { id: 'Asia-PM', label: 'Asia PM', windows: ['1300-1600'], color: '#222' },
+        ];
+        const firstFeed = new SwitchFeed();
+        const first = make(
+            { symbol: 'AAA', timeframe: '60', sessions: definitions, session: 'unknown', volume: false },
+            { renderer: new FakeRenderer(), engines: [], dataFeed: firstFeed },
+        );
+        await first.ready();
+        expect(firstFeed.loads[0]!.session).toBe('Asia-AM');
+        expect(first.market.session).toBe('Asia-AM');
+
+        const selectedFeed = new SwitchFeed();
+        const selected = make(
+            { symbol: 'AAA', timeframe: '60', sessions: definitions, session: 'Asia-PM', volume: false },
+            { renderer: new FakeRenderer(), engines: [], dataFeed: selectedFeed },
+        );
+        await selected.ready();
+        expect(selectedFeed.loads[0]!.session).toBe('Asia-PM');
+
+        await selected.setMarket({ session: 'unknown' });
+        expect(selected.market.session).toBe('Asia-AM');
+        expect(selectedFeed.loads[selectedFeed.loads.length - 1]!.session).toBe('Asia-AM');
+        await selected.setMarket({ session: 'Asia-PM' });
+        expect(selectedFeed.loads[selectedFeed.loads.length - 1]!.session).toBe('Asia-PM');
+
+        const disabledFeed = new SwitchFeed();
+        const disabled = make(
+            { symbol: 'AAA', timeframe: '60', sessions: [], session: 'extended', volume: false },
+            { renderer: new FakeRenderer(), engines: [], dataFeed: disabledFeed },
+        );
+        await disabled.ready();
+        expect(disabledFeed.loads[0]!.session).toBeUndefined();
+        await disabled.setMarket({ session: 'Asia-AM' });
+        expect(disabled.market.session).toBeUndefined();
+    });
+
+    it('normalizes open provider-facing ids on every switch and ignores an empty id', async () => {
+        const feed = new SwitchFeed();
+        const chart = make(
+            { symbol: 'AAA', timeframe: '60', session: '  Asia-AM  ', volume: false },
+            { renderer: new FakeRenderer(), engines: [], dataFeed: feed },
+        );
+        await chart.ready();
+        expect(feed.loads[0]!.session).toBe('Asia-AM');
+
+        await chart.setMarket({ session: '  Asia-PM  ' });
+        expect(feed.loads[feed.loads.length - 1]!.session).toBe('Asia-PM');
+        const loadCount = feed.loads.length;
+        await chart.setMarket({ session: '   ' });
+        expect(feed.loads).toHaveLength(loadCount);
+        expect(chart.market.session).toBe('Asia-PM');
     });
 
     it('a session-only flip carries the current zoom/position over the reload', async () => {
