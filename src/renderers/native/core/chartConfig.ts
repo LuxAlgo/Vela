@@ -223,6 +223,10 @@ export interface ChartConfig {
         currentPriceLine: boolean;
         priceLabel: boolean;
         countdown: boolean;
+        /** Glide the forming bar (and the last-price line/label) toward each live tick
+         *  instead of snapping. The duration comes from `animations.liveBar` / the
+         *  `animLiveBar` feature; this is only the on/off switch the settings dialog shows. */
+        animateLastPrice: boolean;
     };
     /** Stacked-pane chrome — the draggable line between an indicator's pane and the one above it. */
     panes: {
@@ -571,6 +575,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             currentPriceLine: isBool(ps.currentPriceLine) ? ps.currentPriceLine : base.priceScale.currentPriceLine,
             priceLabel: isBool(ps.priceLabel) ? ps.priceLabel : base.priceScale.priceLabel,
             countdown: isBool(ps.countdown) ? ps.countdown : base.priceScale.countdown,
+            animateLastPrice: isBool(ps.animateLastPrice) ? ps.animateLastPrice : base.priceScale.animateLastPrice,
         },
         panes: {
             separatorColor: isColor(panes.separatorColor) ? panes.separatorColor : base.panes.separatorColor,
