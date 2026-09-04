@@ -222,6 +222,32 @@ export function nextAutoCellId(taken: ReadonlySet<string>): string {
     }
 }
 
+/** Which dialogs are up when a bare keystroke reaches the workspace root. */
+export interface TypingState {
+    dialogs: number;
+    symbolSearch: boolean;
+    timeframeEntry: boolean;
+}
+
+/**
+ * What a bare keystroke on the workspace root does. Nothing open: a letter seeds symbol
+ * search, a digit the timeframe entry. An ENTRY dialog open: its field takes focus a
+ * tick after the dialog reports open, so the next key of a fast typist (`NQ`, `15`)
+ * still lands on the root — it is handed to that dialog as more typed text instead of
+ * dropped. Any other open dialog swallows bare typing. Pure — unit-tested.
+ */
+export function resolveTyping(key: string, open: TypingState): { target: 'symbol' | 'timeframe'; text: string } | null {
+    if (open.dialogs > 0) {
+        if (key.length !== 1) return null; // a printable character, not a control key
+        if (open.symbolSearch) return { target: 'symbol', text: key.toUpperCase() };
+        if (open.timeframeEntry) return { target: 'timeframe', text: key };
+        return null;
+    }
+    if (/^[a-zA-Z]$/.test(key)) return { target: 'symbol', text: key.toUpperCase() };
+    if (/^[0-9]$/.test(key)) return { target: 'timeframe', text: key };
+    return null;
+}
+
 export class VelaWorkspace {
     readonly root: HTMLElement;
     /** The shortcut system — one manager for the whole workspace, routed to the active cell. */
@@ -2199,17 +2225,14 @@ export class VelaWorkspace {
 
     /** Bare-typing router: letters → symbol search (seeded), digits → timeframe entry. */
     private routeTyping(ev: KeyboardEvent): void {
-        if (this.destroyed || this.openDialogs > 0) return;
+        if (this.destroyed) return;
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
         if (isEditableTarget(ev)) return; // never hijack a keystroke someone is TYPING
-        const key = ev.key;
-        if (/^[a-zA-Z]$/.test(key)) {
-            ev.preventDefault();
-            this.symbolPicker.open(key.toUpperCase());
-        } else if (/^[0-9]$/.test(key)) {
-            ev.preventDefault();
-            this.tfQuick.open(key);
-        }
+        const hit = resolveTyping(ev.key, { dialogs: this.openDialogs, symbolSearch: this.symbolPicker.isOpen, timeframeEntry: this.tfQuick.isOpen });
+        if (!hit) return;
+        ev.preventDefault();
+        if (hit.target === 'symbol') this.symbolPicker.type(hit.text);
+        else this.tfQuick.type(hit.text);
     }
 
     private trackDialog(open: boolean): void {
