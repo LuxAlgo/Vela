@@ -2,6 +2,20 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Native indicators and scripts can now tag an arbitrary price line on the axis.**
+  A price line (Pine `hline()`, or a native indicator's own levels) can opt into a
+  small gutter label on the price axis, next to its horizontal line — the same kind
+  of chip the latest-price line already shows, but for any price level an indicator
+  declares. By default the chip shows the line's price, formatted the same way as the
+  axis (respecting percent/log mode and the instrument's precision); it can also carry
+  custom text and a custom background color instead. Several labels stacked close
+  together on the same pane space themselves out automatically so none overlap, and on
+  the price pane they also steer clear of the built-in current-price and countdown chips.
+
 ## [v0.6.17]
 
 ### Changed

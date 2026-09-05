@@ -2,6 +2,7 @@ import type { VelaTheme } from '../../../core/options';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { OHLCV } from '../../../core/model/ohlcv';
 import type { LineStyle } from '../../../core/model/series';
+import type { PriceLine } from '../../../core/model/scene';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { percentScaleFor } from '../core/SceneGraph';
@@ -121,6 +122,7 @@ export class ChromeRenderer {
         this.drawMergedScaleColumns(ctx, scene, coords, dataW);
         this.drawPaneSeparators(ctx, scene, theme, fullW, panes);
         this.drawPriceLineAndCountdown(ctx, scene, coords, theme, dataW, pricePane);
+        this.drawPriceLineTags(ctx, scene, coords, theme, dataW, panes, pricePane);
         this.drawTimeAxis(ctx, scene, coords, theme, dataW, dataH, fullH);
     }
 
@@ -259,13 +261,14 @@ export class ChromeRenderer {
      * price level with centered text. The countdown ticks once per second (repaint scheduled).
      */
     private drawPriceLineAndCountdown(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, pricePane: PaneNode | null): void {
-        const n = scene.bars.length;
-        // A hidden price series takes its current-price line/label/countdown down with it —
-        // as does a hidden price PANE (collapsed, or zero-height while a study pane is maximized).
-        if (!pricePane || n === 0 || scene.candlesHidden || pricePane.collapsed || pricePane.bounds.height <= 0) return;
-        const last = scene.bars[n - 1]!;
-        const y = coords.priceToY(last.close, pricePane.scale, pricePane.bounds);
-        if (y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) return;
+        if (!pricePane) return;
+        // The dashed line is independent of the label/countdown chip, but shares the SAME
+        // base visibility (hidden price series/pane, no bars, the close out of view) —
+        // `currentPriceY` is the one place that gate lives, so this and the chip (and its
+        // axis-tag reservation below) can never disagree on whether/where it sits.
+        const y = currentPriceY(scene, coords, pricePane);
+        if (y === null) return;
+        const last = scene.bars[scene.bars.length - 1]!;
         const color = this.priceElementColor(scene, coords, theme, last);
 
         // ── dashed line (independent of the label) ──
@@ -282,10 +285,10 @@ export class ChromeRenderer {
         }
 
         // ── axis chips: last-price label and/or countdown ──
+        const chip = currentPriceChipGeometry(scene, coords, pricePane);
+        if (!chip) return;
+        const { showLabel, showCountdown } = chip;
         const interval = coords.barInterval;
-        const showCountdown = scene.showCountdown && interval > 0;
-        const showLabel = scene.showPriceLabel;
-        if (!showLabel && !showCountdown) return;
 
         const priceText = formatAxisValue(pricePane.scale, pricePane.bounds.height, last.close, percentScaleFor(scene, pricePane), scene.priceMintick);
         const cdText = showCountdown ? formatCountdown(last.time + interval - Date.now()) : '';
@@ -321,6 +324,71 @@ export class ChromeRenderer {
         ctx.textAlign = 'center';
         ctx.fillText(text, x + w / 2, y);
         ctx.textAlign = 'start';
+    }
+
+    /**
+     * Arbitrary price-line gutter tags (an indicator's `PriceLine.axisLabel`), one small
+     * chip per opted-in line, styled like the lone last-price chip above (same height,
+     * same centered-text/contrast-picked layout) but keyed to the LINE's own color instead
+     * of the price element's. Lines without `axisLabel` draw no chip — only the horizontal
+     * line itself (painted by the geometry backends, unaffected by this method). A hidden
+     * or removed indicator's model simply isn't in `scene.indicators` anymore, so its tags
+     * vanish with it; a collapsed pane is skipped like every other axis chrome here. On the
+     * PRICE pane, tags also avoid the built-in current-price/countdown chip's own occupied
+     * rows (`currentPriceChipInterval`) — the one chip this layer draws outside this method.
+     */
+    private drawPriceLineTags(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, panes: PaneNode[], pricePane: PaneNode | null): void {
+        if (!scene.showAxisLabels) return; // the tags live in the axis gutter, same master toggle as the ticks
+        const x = dataW + 1;
+        ctx.textBaseline = 'middle';
+        const reservedOnPricePane = currentPriceChipInterval(scene, coords, pricePane);
+        for (const pane of panes) {
+            if (pane.collapsed) continue;
+            const tags: PriceLineTag[] = [];
+            for (const model of scene.orderedIndicatorsForPane(pane.id)) {
+                if (model.priceLines.length === 0) continue;
+                const scale = scene.scaleFor(model, pane);
+                // A merged (own-scale) indicator's line reads its OWN scale, absolute —
+                // it doesn't follow the pane's percent/indexed mode, same as its axis column.
+                const pct = model.ownScale === true ? undefined : percentScaleFor(scene, pane);
+                for (const pl of model.priceLines) {
+                    const tag = this.priceLineTag(ctx, pl, pane, scale, pct, scene.priceMintick, coords, theme);
+                    if (tag) tags.push(tag);
+                }
+            }
+            if (tags.length === 0) continue;
+            const reserved = pane === pricePane ? reservedOnPricePane : null;
+            for (const tag of layoutPriceLineTags(tags, reserved)) {
+                ctx.fillStyle = tag.background;
+                ctx.fillRect(x, tag.y - PRICE_LINE_TAG_HEIGHT / 2, tag.width, PRICE_LINE_TAG_HEIGHT);
+                ctx.fillStyle = tag.textColor;
+                ctx.textAlign = 'center';
+                ctx.fillText(tag.text, x + tag.width / 2, tag.y);
+            }
+        }
+        ctx.textAlign = 'start';
+    }
+
+    /** One opted-in line → its tag geometry/paint, or null when the line has no `axisLabel`
+     *  or its price sits outside the pane's visible window (nothing to clip against). */
+    private priceLineTag(
+        ctx: CanvasRenderingContext2D,
+        pl: PriceLine,
+        pane: PaneNode,
+        scale: { min: number; max: number; log?: boolean },
+        pct: ReturnType<typeof percentScaleFor>,
+        mintick: number | undefined,
+        coords: CoordinateSystem,
+        theme: VelaTheme,
+    ): PriceLineTag | null {
+        if (!pl.axisLabel) return null;
+        const y = coords.priceToY(pl.price, scale, pane.bounds);
+        if (y < pane.bounds.top || y > pane.bounds.top + pane.bounds.height) return null;
+        const custom = pl.axisLabel === true ? undefined : pl.axisLabel;
+        const text = custom?.text ?? formatAxisValue(scale, pane.bounds.height, pl.price, pct, mintick);
+        const background = custom?.background ?? pl.color ?? this.axisTextColor;
+        const width = ctx.measureText(text).width + 8;
+        return { y, text, width, background, textColor: tagTextColor(background, theme.background) };
     }
 
     /**
@@ -392,6 +460,93 @@ function unionRange(a: { min: number; max: number } | null, b: { min: number; ma
     if (!a) return b;
     if (!b) return a;
     return { min: Math.min(a.min, b.min), max: Math.max(a.max, b.max) };
+}
+
+/**
+ * The last bar's close mapped to pixels on the price pane, or null when the current-price
+ * chrome (dashed line, label chip, countdown chip) is fully suppressed: no price pane, no
+ * bars loaded, the price series/pane hidden or collapsed, a zero-height pane, or the close
+ * outside the pane's visible window. The ONE place this bail-out lives, so the dashed line,
+ * the chip's own paint, and the axis-tag reservation below can never disagree on whether —
+ * or where — the latest price sits.
+ */
+function currentPriceY(scene: SceneGraph, coords: CoordinateSystem, pricePane: PaneNode | null): number | null {
+    const n = scene.bars.length;
+    if (!pricePane || n === 0 || scene.candlesHidden || pricePane.collapsed || pricePane.bounds.height <= 0) return null;
+    const last = scene.bars[n - 1]!;
+    const y = coords.priceToY(last.close, pricePane.scale, pricePane.bounds);
+    if (y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) return null;
+    return y;
+}
+
+/** The built-in current-price chip's paint geometry — its y and which of the label/countdown
+ *  rows show — or null when the chip itself is suppressed (on top of `currentPriceY`'s own
+ *  gate, neither the label nor the countdown enabled). Shared by `drawPriceLineAndCountdown`
+ *  (the chip's own paint) and `currentPriceChipInterval` below (the space OTHER axis tags
+ *  reserve around it), so the two can never drift on visibility, `y`, or which rows show. */
+function currentPriceChipGeometry(scene: SceneGraph, coords: CoordinateSystem, pricePane: PaneNode | null): { y: number; showLabel: boolean; showCountdown: boolean } | null {
+    const y = currentPriceY(scene, coords, pricePane);
+    if (y === null) return null;
+    const showCountdown = scene.showCountdown && coords.barInterval > 0;
+    const showLabel = scene.showPriceLabel;
+    if (!showLabel && !showCountdown) return null;
+    return { y, showLabel, showCountdown };
+}
+
+/** The built-in current-price chip's occupied vertical pixel interval, for arbitrary
+ *  `PriceLine.axisLabel` tags to reserve space around — `[y-8, y+8]` for a lone label or
+ *  countdown, `[y-8, y+24]` for the merged (label + countdown) block, matching the chip's
+ *  own layout in `drawPriceLineAndCountdown` exactly. Null when the chip doesn't show. */
+function currentPriceChipInterval(scene: SceneGraph, coords: CoordinateSystem, pricePane: PaneNode | null): { top: number; bottom: number } | null {
+    const chip = currentPriceChipGeometry(scene, coords, pricePane);
+    if (!chip) return null;
+    const bottom = chip.showLabel && chip.showCountdown ? chip.y + 24 : chip.y + 8;
+    return { top: chip.y - 8, bottom };
+}
+
+/** One resolved `PriceLine.axisLabel` tag, ready to paint (pixel `y`, measured `width`). */
+interface PriceLineTag {
+    y: number;
+    text: string;
+    width: number;
+    background: string;
+    textColor: string;
+}
+
+const PRICE_LINE_TAG_HEIGHT = 16;
+const PRICE_LINE_TAG_GAP = 2; // min px between two stacked tags, after the collision pass
+
+/**
+ * Deterministic vertical declutter for a pane's price-line tags: sorted top-to-bottom by
+ * their natural (price-mapped) top edge, each is pushed down just enough to clear whatever
+ * sits directly above it. Unlike the time axis (which SKIPS a colliding tick), a tag is never
+ * dropped — it's an indicator's explicit opt-in, not a generated ladder — so a busy pane
+ * instead reads as a tight, still-legible stack rather than overlapping text.
+ *
+ * `reserved` (the PRICE pane's built-in current-price/countdown chip interval, or null on
+ * every other pane / when that chip isn't showing) is folded into the SAME sweep as a
+ * phantom, unlabeled obstacle at its own fixed slot — so a tag that would otherwise land on
+ * top of the built-in chip is pushed clear of it exactly like it would be pushed clear of a
+ * neighboring tag, while a tag already clear of it is left at its natural position.
+ */
+function layoutPriceLineTags(tags: PriceLineTag[], reserved: { top: number; bottom: number } | null): PriceLineTag[] {
+    interface Slot {
+        tag: PriceLineTag | null; // null ⇒ the reserved chip's phantom slot (nothing to paint)
+        top: number;
+        bottom: number;
+    }
+    const slots: Slot[] = tags.map((tag) => ({ tag, top: tag.y - PRICE_LINE_TAG_HEIGHT / 2, bottom: tag.y + PRICE_LINE_TAG_HEIGHT / 2 }));
+    if (reserved) slots.push({ tag: null, top: reserved.top, bottom: reserved.bottom });
+    // Ties (a tag landing exactly on the chip's own slot) resolve chip-first — the built-in
+    // chip never moves, so the ONLY way to clear a tie is displacing the arbitrary tag.
+    slots.sort((a, b) => a.top - b.top || (a.tag === null ? -1 : b.tag === null ? 1 : 0));
+    let prevBottom = -Infinity;
+    for (const slot of slots) {
+        const top = Math.max(slot.top, prevBottom);
+        if (slot.tag) slot.tag.y = top + PRICE_LINE_TAG_HEIGHT / 2;
+        prevBottom = top + (slot.bottom - slot.top) + PRICE_LINE_TAG_GAP;
+    }
+    return tags;
 }
 
 function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {
