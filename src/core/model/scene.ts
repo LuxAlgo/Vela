@@ -62,6 +62,16 @@ export interface PriceLine {
     lineStyle?: LineStyle;
     width?: number;
     title?: string;
+    /**
+     * Draw a gutter tag for this line on the price axis, analogous to the built-in
+     * last-price chip — the LINE itself (both native backends) always draws regardless
+     * of this option. Absent ⇒ no tag (unchanged behavior for every existing line).
+     * `true` ⇒ the formatted price, matching the pane's own axis mode (percent/indexed/log)
+     * and the instrument's tick precision, tagged in the line's own `color` (or the
+     * axis text color when unset). An object overrides `text` and/or `background`;
+     * either field left out falls back to that same default.
+     */
+    axisLabel?: true | { text?: string; background?: string };
 }
 
 /**

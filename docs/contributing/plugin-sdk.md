@@ -171,6 +171,14 @@ value chip. The override is emitted per compute, so it can follow the inputs (to
 row off relabels the axis). It only holds while overriding natives are the pane's sole
 content; merging any real series into the pane brings the price axis back.
 
+A `PriceLine` in `priceLines` (a native's own `hline`-like levels, or a Pine `hline()`
+threaded through from a script engine) can tag itself on the price axis with
+**`axisLabel`**: `true` for the line's formatted price (matching the pane's own axis
+mode and the instrument's precision), or `{ text?, background? }` to override either the
+text or the chip's background (each defaults to the formatted price / the line's own
+`color`). Absent ⇒ no chip — only the line itself draws, unchanged. Several tagged lines
+close together on one pane space themselves apart automatically, so labels never overlap.
+
 ## Widget actions — `registerWidgetAction`
 
 Contribute UI as **data descriptors** (never DOM) — the widget projects them into its

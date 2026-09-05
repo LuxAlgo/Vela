@@ -2,6 +2,7 @@ import type { VelaTheme } from '../../../core/options';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { OHLCV } from '../../../core/model/ohlcv';
 import type { LineStyle } from '../../../core/model/series';
+import type { PriceLine } from '../../../core/model/scene';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { percentScaleFor } from '../core/SceneGraph';
@@ -121,6 +122,7 @@ export class ChromeRenderer {
         this.drawMergedScaleColumns(ctx, scene, coords, dataW);
         this.drawPaneSeparators(ctx, scene, theme, fullW, panes);
         this.drawPriceLineAndCountdown(ctx, scene, coords, theme, dataW, pricePane);
+        this.drawPriceLineTags(ctx, scene, coords, theme, dataW, panes);
         this.drawTimeAxis(ctx, scene, coords, theme, dataW, dataH, fullH);
     }
 
@@ -324,6 +326,67 @@ export class ChromeRenderer {
     }
 
     /**
+     * Arbitrary price-line gutter tags (an indicator's `PriceLine.axisLabel`), one small
+     * chip per opted-in line, styled like the lone last-price chip above (same height,
+     * same centered-text/contrast-picked layout) but keyed to the LINE's own color instead
+     * of the price element's. Lines without `axisLabel` draw no chip — only the horizontal
+     * line itself (painted by the geometry backends, unaffected by this method). A hidden
+     * or removed indicator's model simply isn't in `scene.indicators` anymore, so its tags
+     * vanish with it; a collapsed pane is skipped like every other axis chrome here.
+     */
+    private drawPriceLineTags(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, panes: PaneNode[]): void {
+        if (!scene.showAxisLabels) return; // the tags live in the axis gutter, same master toggle as the ticks
+        const x = dataW + 1;
+        ctx.textBaseline = 'middle';
+        for (const pane of panes) {
+            if (pane.collapsed) continue;
+            const tags: PriceLineTag[] = [];
+            for (const model of scene.orderedIndicatorsForPane(pane.id)) {
+                if (model.priceLines.length === 0) continue;
+                const scale = scene.scaleFor(model, pane);
+                // A merged (own-scale) indicator's line reads its OWN scale, absolute —
+                // it doesn't follow the pane's percent/indexed mode, same as its axis column.
+                const pct = model.ownScale === true ? undefined : percentScaleFor(scene, pane);
+                for (const pl of model.priceLines) {
+                    const tag = this.priceLineTag(ctx, pl, pane, scale, pct, scene.priceMintick, coords, theme);
+                    if (tag) tags.push(tag);
+                }
+            }
+            if (tags.length === 0) continue;
+            for (const tag of layoutPriceLineTags(tags)) {
+                ctx.fillStyle = tag.background;
+                ctx.fillRect(x, tag.y - PRICE_LINE_TAG_HEIGHT / 2, tag.width, PRICE_LINE_TAG_HEIGHT);
+                ctx.fillStyle = tag.textColor;
+                ctx.textAlign = 'center';
+                ctx.fillText(tag.text, x + tag.width / 2, tag.y);
+            }
+        }
+        ctx.textAlign = 'start';
+    }
+
+    /** One opted-in line → its tag geometry/paint, or null when the line has no `axisLabel`
+     *  or its price sits outside the pane's visible window (nothing to clip against). */
+    private priceLineTag(
+        ctx: CanvasRenderingContext2D,
+        pl: PriceLine,
+        pane: PaneNode,
+        scale: { min: number; max: number; log?: boolean },
+        pct: ReturnType<typeof percentScaleFor>,
+        mintick: number | undefined,
+        coords: CoordinateSystem,
+        theme: VelaTheme,
+    ): PriceLineTag | null {
+        if (!pl.axisLabel) return null;
+        const y = coords.priceToY(pl.price, scale, pane.bounds);
+        if (y < pane.bounds.top || y > pane.bounds.top + pane.bounds.height) return null;
+        const custom = pl.axisLabel === true ? undefined : pl.axisLabel;
+        const text = custom?.text ?? formatAxisValue(scale, pane.bounds.height, pl.price, pct, mintick);
+        const background = custom?.background ?? pl.color ?? this.axisTextColor;
+        const width = ctx.measureText(text).width + 8;
+        return { y, text, width, background, textColor: tagTextColor(background, theme.background) };
+    }
+
+    /**
      * The color of the latest price element for the active chart style — matches how the
      * series itself is drawn: candle/bar body up-down, the line/area line color, or the
      * baseline side (above/below the baseline price).
@@ -392,6 +455,36 @@ function unionRange(a: { min: number; max: number } | null, b: { min: number; ma
     if (!a) return b;
     if (!b) return a;
     return { min: Math.min(a.min, b.min), max: Math.max(a.max, b.max) };
+}
+
+/** One resolved `PriceLine.axisLabel` tag, ready to paint (pixel `y`, measured `width`). */
+interface PriceLineTag {
+    y: number;
+    text: string;
+    width: number;
+    background: string;
+    textColor: string;
+}
+
+const PRICE_LINE_TAG_HEIGHT = 16;
+const PRICE_LINE_TAG_GAP = 2; // min px between two stacked tags, after the collision pass
+
+/**
+ * Deterministic vertical declutter for a pane's price-line tags: sorted top-to-bottom by
+ * their natural (price-mapped) `y`, each tag is pushed down just enough to clear the one
+ * above it. Unlike the time axis (which SKIPS a colliding tick), a tag is never dropped —
+ * it's an indicator's explicit opt-in, not a generated ladder — so a busy pane instead
+ * reads as a tight, still-legible stack rather than overlapping text.
+ */
+function layoutPriceLineTags(tags: PriceLineTag[]): PriceLineTag[] {
+    const sorted = [...tags].sort((a, b) => a.y - b.y);
+    let prevBottom = -Infinity;
+    for (const tag of sorted) {
+        const top = Math.max(tag.y - PRICE_LINE_TAG_HEIGHT / 2, prevBottom);
+        tag.y = top + PRICE_LINE_TAG_HEIGHT / 2;
+        prevBottom = top + PRICE_LINE_TAG_HEIGHT + PRICE_LINE_TAG_GAP;
+    }
+    return sorted;
 }
 
 function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {
