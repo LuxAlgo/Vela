@@ -238,3 +238,118 @@ describe('PriceLine.axisLabel — gutter tag', () => {
         expect(rects[0]!.y).toBeCloseTo(42); // chip top = y(50) - 8
     });
 });
+
+/**
+ * Two bars (distinct times) so `coords.barInterval` is nonzero — required for the
+ * built-in countdown chip to be eligible at all (`showCountdown && barInterval > 0`).
+ * The last bar's close still sits at price 50 → chip y 50, same as the base `scene()`.
+ */
+function sceneWithInterval(): SceneGraph {
+    const s = new SceneGraph();
+    const pane = s.ensurePane('price', 'price', 0, 3);
+    pane.bounds = { top: 0, height: 100 };
+    pane.scale = { min: 0, max: 100 };
+    s.priceMintick = 0.01;
+    s.bars = [
+        { time: 0, open: 50, high: 50, low: 50, close: 50, volume: 0 },
+        { time: 60_000, open: 50, high: 50, low: 50, close: 50, volume: 0 },
+    ];
+    s.showPriceLine = false;
+    s.showPriceLabel = false;
+    s.showCountdown = false;
+    return s;
+}
+
+function renderWithInterval(s: SceneGraph) {
+    const { canvas, rects, texts } = fakeCanvas(400, 100);
+    const coords = new CoordinateSystem();
+    coords.setSize(400, 100, 1);
+    coords.setBars([0, 60_000]);
+    const chrome = new ChromeRenderer();
+    chrome.mount(canvas);
+    chrome.render(s, coords, DARK_THEME);
+    return { rects, texts };
+}
+
+/** True when two `{ y, h }` pixel spans (rect `y` is its TOP edge) overlap. */
+function rectsOverlap(a: { y: number; h: number }, b: { y: number; h: number }): boolean {
+    return a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+describe('PriceLine.axisLabel — avoids the built-in current-price/countdown chip', () => {
+    it('a tag exactly at the current price, with the price label only, is pushed clear of the label chip', () => {
+        const s = sceneWithInterval();
+        s.showPriceLabel = true; // reserves [y-8, y+8] = [42, 58] (y = 50)
+        s.indicators.set('ind', model([priceLine({ price: 50, color: '#123456', axisLabel: true })]));
+        const { rects } = renderWithInterval(s);
+        expect(rects).toHaveLength(2);
+        const tagRect = rects.find((r) => r.style === '#123456')!;
+        const chipRect = rects.find((r) => r.style !== '#123456')!;
+        expect(rectsOverlap(tagRect, chipRect)).toBe(false);
+        expect(chipRect.y).toBeCloseTo(42);
+        expect(chipRect.h).toBe(16);
+        // Pushed directly below the chip, clearing it by exactly the stacking gap.
+        expect(tagRect.y).toBeCloseTo(60);
+    });
+
+    it('collides with the merged label+countdown block (taller, 32px) and clears its full height', () => {
+        const s = sceneWithInterval();
+        s.showPriceLabel = true;
+        s.showCountdown = true; // together they reserve [y-8, y+24] = [42, 74]
+        s.indicators.set('ind', model([priceLine({ price: 50, color: '#123456', axisLabel: true })]));
+        const { rects } = renderWithInterval(s);
+        expect(rects).toHaveLength(2);
+        const tagRect = rects.find((r) => r.style === '#123456')!;
+        const chipRect = rects.find((r) => r.style !== '#123456')!;
+        expect(rectsOverlap(tagRect, chipRect)).toBe(false);
+        expect(chipRect.y).toBeCloseTo(42);
+        expect(chipRect.h).toBe(32); // the merged block, taller than a lone chip
+        expect(tagRect.y).toBeCloseTo(76); // pushed clear of the full 32px block, not just half of it
+    });
+
+    it('a countdown-only chip (no price label) reserves the same lone-chip height and still displaces a tag', () => {
+        const s = sceneWithInterval();
+        s.showPriceLabel = false;
+        s.showCountdown = true; // reserves [y-8, y+8], identical to the label-only case
+        s.indicators.set('ind', model([priceLine({ price: 50, color: '#123456', axisLabel: true })]));
+        const { rects } = renderWithInterval(s);
+        expect(rects).toHaveLength(2);
+        const tagRect = rects.find((r) => r.style === '#123456')!;
+        const chipRect = rects.find((r) => r.style !== '#123456')!;
+        expect(rectsOverlap(tagRect, chipRect)).toBe(false);
+        expect(chipRect.h).toBe(16);
+        expect(tagRect.y).toBeCloseTo(60);
+    });
+
+    it('tags naturally clear of the reserved block, immediately above and below it, are left in place', () => {
+        const s = sceneWithInterval();
+        s.showPriceLabel = true; // reserves [42, 58]
+        s.indicators.set('ind', model([
+            // Higher price maps to a SMALLER pixel y (higher on screen) on this non-inverted
+            // scale: 70 → pixel y 30 (rect top 22, clear above the reserved [42,58] block);
+            // 30 → pixel y 70 (rect top 62, clear below it).
+            priceLine({ id: 'above', price: 70, color: '#00ff00', axisLabel: true }),
+            priceLine({ id: 'below', price: 30, color: '#0000ff', axisLabel: true }),
+        ]));
+        const { rects } = renderWithInterval(s);
+        expect(rects).toHaveLength(3); // 2 tags + the built-in chip
+        const above = rects.find((r) => r.style === '#00ff00')!;
+        const below = rects.find((r) => r.style === '#0000ff')!;
+        const chip = rects.find((r) => r.style !== '#00ff00' && r.style !== '#0000ff')!;
+        // Neither tag was displaced from its natural price-mapped position.
+        expect(above.y).toBeCloseTo(22);
+        expect(below.y).toBeCloseTo(62);
+        expect(rectsOverlap(above, chip)).toBe(false);
+        expect(rectsOverlap(below, chip)).toBe(false);
+        expect(rectsOverlap(above, below)).toBe(false);
+    });
+
+    it('no displacement when the current-price chrome is disabled entirely', () => {
+        const s = sceneWithInterval(); // showPriceLabel / showCountdown default false
+        s.indicators.set('ind', model([priceLine({ price: 50, color: '#123456', axisLabel: true })]));
+        const { rects } = renderWithInterval(s);
+        expect(rects).toHaveLength(1); // no built-in chip at all — nothing to collide with
+        expect(rects[0]!.style).toBe('#123456');
+        expect(rects[0]!.y).toBeCloseTo(42); // natural position, unmoved
+    });
+});

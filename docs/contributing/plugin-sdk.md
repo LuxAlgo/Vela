@@ -177,7 +177,10 @@ threaded through from a script engine) can tag itself on the price axis with
 mode and the instrument's precision), or `{ text?, background? }` to override either the
 text or the chip's background (each defaults to the formatted price / the line's own
 `color`). Absent ⇒ no chip — only the line itself draws, unchanged. Several tagged lines
-close together on one pane space themselves apart automatically, so labels never overlap.
+close together on one pane space themselves apart automatically, so labels never overlap
+— and on the price pane, they also steer clear of the built-in current-price/countdown
+chip, reserving whatever space it currently occupies (a lone label or countdown, or the
+taller merged block when both show) instead of painting on top of it.
 
 ## Widget actions — `registerWidgetAction`
 
