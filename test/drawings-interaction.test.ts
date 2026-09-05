@@ -310,6 +310,81 @@ describe('DrawingInteraction: selection + claim', () => {
         h.it.up(50, 70);
         expect(h.settings).toHaveLength(0); // shift-click is selection-only
     });
+
+    it('ctrl-click (no move) toggles selection on release, without opening settings', () => {
+        const h = harness(null, [hline()]);
+        h.it.down(50, 70, 'strong', false, true); // Ctrl → strong magnet AND the selection modifier
+        expect(h.intents).toHaveLength(0); // nothing until the release decides click vs drag
+        h.it.up(51, 71); // within the slop → a click
+        expect(h.intents).toEqual([{ kind: 'select', ids: ['dw-1'], additive: true }]);
+        expect(h.settings).toHaveLength(0);
+    });
+});
+
+describe('DrawingInteraction: marquee (Ctrl/Cmd-drag on the empty plot)', () => {
+    // fake projector: x = time, y = 100 − price
+    const inside = () => createDrawing('trendline', { id: 'dw-1', paneId: 'price', anchors: [{ time: 20, price: 80 }, { time: 40, price: 60 }] })!; // px (20,20)→(40,40)
+    const outside = () => createDrawing('trendline', { id: 'dw-2', paneId: 'price', anchors: [{ time: 150, price: 20 }, { time: 180, price: 10 }] })!; // px (150,80)→(180,90)
+    const crossing = () => createDrawing('hline', { id: 'dw-3', paneId: 'price', anchors: [{ time: 0, price: 70 }] })!; // full-width line at y=30
+
+    it('starts only when idle with no tool armed, and claims the gesture', () => {
+        const armed = harness('trendline');
+        expect(armed.it.beginMarquee(5, 5)).toBe(false);
+        const h = harness(null, [inside()]);
+        expect(h.it.claim(100, 90)).toBe(false); // empty space → the host decides (pan vs marquee)
+        expect(h.it.beginMarquee(100, 90)).toBe(true);
+        expect(h.it.claim(100, 90)).toBe(true); // in flight → the drawings layer owns the moves
+        expect(h.it.marqueeRect()).toEqual({ x: 100, y: 90, w: 0, h: 0 });
+    });
+
+    it('release selects every visible drawing whose bounds touch the box (a line crossing it too)', () => {
+        const h = harness(null, [inside(), outside(), crossing()]);
+        h.it.beginMarquee(10, 10);
+        h.it.move(60, 50); // sweep (10,10)→(60,50)
+        expect(h.it.marqueeRect()).toEqual({ x: 10, y: 10, w: 50, h: 40 });
+        h.it.up(60, 50);
+        expect(h.it.marqueeRect()).toBeNull();
+        expect(h.intents).toEqual([{ kind: 'select', ids: ['dw-1', 'dw-3'] }]); // dw-2 sits far right
+    });
+
+    it('a sweep dragged up-left normalizes, and hidden drawings are never picked', () => {
+        const hidden = inside();
+        hidden.visible = false;
+        const h = harness(null, [hidden, crossing()]);
+        h.it.beginMarquee(60, 50);
+        h.it.move(10, 10);
+        h.it.up(10, 10);
+        expect(h.intents).toEqual([{ kind: 'select', ids: ['dw-3'] }]);
+    });
+
+    it('adds to the existing selection (union) and stays silent when nothing new is touched', () => {
+        const h = harness(null, [inside(), outside()]);
+        h.setSelected(['dw-2']);
+        h.it.beginMarquee(10, 10);
+        h.it.move(60, 50);
+        h.it.up(60, 50);
+        expect(h.intents).toEqual([{ kind: 'select', ids: ['dw-2', 'dw-1'] }]); // dw-2 kept, dw-1 added
+        h.intents.length = 0;
+        h.setSelected(['dw-1', 'dw-2']);
+        h.it.beginMarquee(10, 10);
+        h.it.move(60, 50);
+        h.it.up(60, 50); // both already selected → no intent
+        expect(h.intents).toHaveLength(0);
+    });
+
+    it('a box within the slop selects nothing; Escape cancels a sweep', () => {
+        const h = harness(null, [inside()]);
+        h.it.beginMarquee(30, 30);
+        h.it.move(32, 31);
+        h.it.up(32, 31); // a twitch, not a sweep — even though the box touches dw-1
+        expect(h.intents).toHaveLength(0);
+        h.it.beginMarquee(10, 10);
+        h.it.move(60, 50);
+        expect(h.it.cancel()).toBe(true);
+        expect(h.it.marqueeRect()).toBeNull();
+        h.it.up(60, 50);
+        expect(h.intents).toHaveLength(0);
+    });
 });
 
 describe('DrawingInteraction: click-move-click placement (measurement / position)', () => {
@@ -499,6 +574,127 @@ describe('DrawingInteraction: dragging', () => {
         expect(h.it.cancel()).toBe(true);
         expect(d.anchors).toEqual([{ time: 10, price: 10 }, { time: 50, price: 50 }]);
         expect(h.intents.some((i) => i.kind === 'edit')).toBe(false);
+    });
+
+    it('body-dragging a drawing that is part of a multi-selection moves the whole selection (one edit-many)', () => {
+        const a = trend();
+        const b = hline(); // y = 70
+        const locked = createDrawing('hline', { id: 'dw-3', paneId: 'price', anchors: [{ time: 10, price: 80 }] })!;
+        locked.locked = true;
+        const h = harness(null, [a, b, locked]);
+        h.setSelected(['dw-1', 'dw-2', 'dw-3']);
+        h.it.down(20, 80); // press the trend line's body (clear of the hline at y=70)
+        h.it.move(30, 75); // dt=+10, dp=+5
+        expect(b.anchors).toEqual([{ time: 20, price: 35 }]); // the rider follows live
+        expect(locked.anchors).toEqual([{ time: 10, price: 80 }]); // a locked member stays put
+        h.it.up(30, 75);
+        const many = h.intents.find((i) => i.kind === 'edit-many');
+        expect(many?.kind === 'edit-many' && many.docs.map((d) => d.id)).toEqual(['dw-1', 'dw-2']);
+        expect(many?.kind === 'edit-many' && many.docs[0]!.anchors).toEqual([{ time: 20, price: 15 }, { time: 60, price: 55 }]);
+        expect(h.intents.some((i) => i.kind === 'edit')).toBe(false);
+    });
+
+    it('a handle drag of a multi-selected drawing reshapes only that one', () => {
+        const a = trend();
+        const b = hline();
+        const h = harness(null, [a, b]);
+        h.setSelected(['dw-1', 'dw-2']);
+        h.it.down(10, 90); // grab the trend line's p1 handle
+        h.it.move(15, 85);
+        h.it.up(15, 85);
+        expect(b.anchors).toEqual([{ time: 10, price: 30 }]);
+        expect(h.intents.map((i) => i.kind)).toEqual(['edit']);
+    });
+
+    it('Escape during a group drag restores every member', () => {
+        const a = trend();
+        const b = hline();
+        const h = harness(null, [a, b]);
+        h.setSelected(['dw-1', 'dw-2']);
+        h.it.down(20, 80);
+        h.it.move(30, 75);
+        expect(h.it.cancel()).toBe(true);
+        expect(a.anchors).toEqual([{ time: 10, price: 10 }, { time: 50, price: 50 }]);
+        expect(b.anchors).toEqual([{ time: 10, price: 30 }]);
+        expect(h.intents).toHaveLength(0);
+    });
+});
+
+describe('DrawingInteraction: Ctrl/Cmd-drag duplicates', () => {
+    const trend = () =>
+        createDrawing('trendline', { id: 'dw-1', paneId: 'price', anchors: [{ time: 10, price: 10 }, { time: 50, price: 50 }] })!;
+    const hline = () => createDrawing('hline', { id: 'dw-2', paneId: 'price', anchors: [{ time: 10, price: 30 }] })!;
+
+    it('a Ctrl-drag of the body moves a COPY and commits it on release; the source never moves', () => {
+        const d = trend();
+        const h = harness(null, [d]);
+        h.it.down(30, 70, 'strong', false, true); // Ctrl held (strong magnet is its other meaning)
+        expect(h.it.dragClones()).toBeNull(); // nothing is copied until the press becomes a drag
+        h.it.move(40, 65);
+        const clones = h.it.dragClones()!;
+        expect(clones).toHaveLength(1);
+        expect(clones[0]!.anchors).toEqual([{ time: 20, price: 15 }, { time: 60, price: 55 }]); // the copy follows
+        expect(d.anchors).toEqual([{ time: 10, price: 10 }, { time: 50, price: 50 }]); // the source stays
+        h.it.up(40, 65);
+        expect(h.it.dragClones()).toBeNull();
+        expect(h.intents).toHaveLength(1);
+        const clone = h.intents[0]!;
+        expect(clone.kind).toBe('clone');
+        if (clone.kind === 'clone') {
+            expect(clone.docs).toHaveLength(1);
+            expect(clone.docs[0]!.type).toBe('trendline');
+            expect(clone.docs[0]!.anchors).toEqual([{ time: 20, price: 15 }, { time: 60, price: 55 }]);
+        }
+        expect(h.settings).toHaveLength(0);
+    });
+
+    it('Ctrl-dragging a member of a multi-selection copies the whole selection', () => {
+        const a = trend();
+        const b = hline();
+        const h = harness(null, [a, b]);
+        h.setSelected(['dw-1', 'dw-2']);
+        h.it.down(20, 80, 'off', false, true); // the trend line's body, clear of the hline
+        h.it.move(30, 75);
+        h.it.up(30, 75);
+        const clone = h.intents.find((i) => i.kind === 'clone');
+        expect(clone?.kind === 'clone' && clone.docs.map((d) => d.type)).toEqual(['trendline', 'hline']);
+        expect(clone?.kind === 'clone' && clone.docs[1]!.anchors).toEqual([{ time: 20, price: 35 }]);
+        expect(b.anchors).toEqual([{ time: 10, price: 30 }]); // sources untouched
+    });
+
+    it('Ctrl on a HANDLE keeps its resize meaning (no copy)', () => {
+        const d = trend();
+        const h = harness(null, [d]);
+        h.setHovered('dw-1');
+        h.it.down(10, 90, 'off', false, true); // grab p1 with Ctrl held
+        h.it.move(15, 85);
+        expect(h.it.dragClones()).toBeNull();
+        h.it.up(15, 85);
+        expect(h.intents.map((i) => i.kind)).toEqual(['edit']);
+        expect(d.anchors[0]).toEqual({ time: 15, price: 15 });
+    });
+
+    it('Escape during a Ctrl-drag leaves nothing behind and the source untouched', () => {
+        const d = trend();
+        const h = harness(null, [d]);
+        h.it.down(30, 70, 'off', false, true);
+        h.it.move(40, 65);
+        expect(h.it.cancel()).toBe(true);
+        expect(h.it.dragClones()).toBeNull();
+        expect(d.anchors).toEqual([{ time: 10, price: 10 }, { time: 50, price: 50 }]);
+        h.it.up(40, 65);
+        expect(h.intents).toHaveLength(0);
+    });
+
+    it('a locked drawing is never copied by a Ctrl-drag (the press stays a click → toggle)', () => {
+        const d = trend();
+        d.locked = true;
+        const h = harness(null, [d]);
+        h.it.down(30, 70, 'off', false, true);
+        h.it.move(40, 65);
+        expect(h.it.dragClones()).toBeNull();
+        h.it.up(40, 65);
+        expect(h.intents).toEqual([{ kind: 'select', ids: ['dw-1'], additive: true }]);
     });
 });
 

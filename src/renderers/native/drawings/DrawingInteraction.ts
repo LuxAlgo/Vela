@@ -1,5 +1,5 @@
 import type { Drawing, DrawingIntent, DrawingPoint, DrawingStyle, DrawingTypeKey, FreeAxis, Projector, SnapMode } from '../../../core/drawings';
-import { createDrawing } from '../../../core/drawings';
+import { createDrawing, deserializeDrawing } from '../../../core/drawings';
 import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
 
 /** Pixels of motion before a press counts as a drag (vs a click → open settings). */
@@ -35,16 +35,59 @@ export interface InteractionDeps {
     lastStyle(): DrawingStyle | undefined;
 }
 
+/** A drawing riding along with a body drag, with its anchors as they were at the press. */
+interface Rider {
+    id: string;
+    orig: DrawingPoint[];
+}
+
+/** A drawing a body drag moves (a source or its transient copy), with the anchors to translate from. */
+interface DragTarget {
+    d: Drawing;
+    orig: DrawingPoint[];
+}
+
+/** An axis-aligned pixel rectangle. */
+export interface PxRect {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
 type State =
     | { kind: 'idle' }
     | { kind: 'placing'; draft: Drawing; need: number; cursor: DrawingPoint | null }
-    | { kind: 'pressed'; id: string; handle: number; grab: DrawingPoint; orig: DrawingPoint[]; px: number; py: number; moved: boolean };
+    | {
+          kind: 'pressed';
+          id: string;
+          handle: number;
+          orig: DrawingPoint[];
+          px: number;
+          py: number;
+          moved: boolean;
+          /** The OTHER selected drawings a body drag carries along (a multi-selection moves as one). */
+          riders: Rider[];
+          /** Ctrl/Cmd was held at the press: a click toggles the selection, a body drag moves copies. */
+          mod: boolean;
+          /** The transient copies a Ctrl-drag moves (built at drag start); the sources stay put. */
+          clones: DragTarget[] | null;
+      }
+    /** Ctrl/Cmd-drag on the empty plot: a rubber-band box from the press to the cursor. */
+    | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number };
 
 /**
  * The single user-drawing interaction state machine: arm → place (click anchors,
  * live ghost) → press a drawing → release-without-moving opens its settings, or
  * drag (whole body / a handle) to move/resize. Built with a deps closure so it is
  * unit-testable without a canvas. `locked` drawings open settings but never drag.
+ *
+ * Modifiers at the press: Shift or Ctrl/Cmd over a drawing make the click a selection
+ * toggle (multi-select); Ctrl/Cmd plus a body drag DUPLICATES — the copies follow the
+ * cursor and are committed on release (`clone` intent), so the drag is one undo step and
+ * cancelling it leaves nothing behind. Ctrl/Cmd-drag on the empty plot sweeps a marquee
+ * that adds the drawings it touches to the selection. A body drag of a drawing that is
+ * part of a multi-selection moves (or copies) the whole selection.
  */
 export class DrawingInteraction {
     private state: State = { kind: 'idle' };
@@ -154,10 +197,31 @@ export class DrawingInteraction {
         return this.state.kind === 'pressed' && this.state.moved ? this.state.id : null;
     }
 
+    /** The copies a Ctrl-drag is moving (transient — not yet in the store), or null. */
+    dragClones(): readonly Drawing[] | null {
+        return this.state.kind === 'pressed' && this.state.moved && this.state.clones ? this.state.clones.map((c) => c.d) : null;
+    }
+
+    /** The marquee box being swept, normalized (or null when none is in progress). */
+    marqueeRect(): PxRect | null {
+        if (this.state.kind !== 'marquee') return null;
+        const { x0, y0, x1, y1 } = this.state;
+        return { x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
+    }
+
+    /** Ctrl/Cmd-press on the empty plot: start sweeping a selection box. False when a tool is
+     *  armed or a gesture is in flight (that path owns the press). */
+    beginMarquee(x: number, y: number): boolean {
+        if (this.state.kind !== 'idle' || this.deps.activeTool() != null) return false;
+        this.state = { kind: 'marquee', x0: x, y0: y, x1: x, y1: y };
+        return true;
+    }
+
     /** A press: place the next anchor, or grab a drawing/handle (resolved as click or drag on release).
      *  `shift` over a drawing toggles it in/out of the selection (multi-select) instead of dragging;
-     *  while placing a line tool it locks the segment angle to 45° steps. */
-    down(x: number, y: number, mode: SnapMode = 'off', shift = false): void {
+     *  while placing a line tool it locks the segment angle to 45° steps. `mod` (Ctrl/Cmd) over a
+     *  drawing also toggles on a click, but a body drag then moves a COPY. */
+    down(x: number, y: number, mode: SnapMode = 'off', shift = false, mod = false): void {
         const proj = this.deps.projector();
         if (this.state.kind === 'placing') {
             if (this.state.draft.placementMode() !== 'click') return; // drag/freehand finalize on release, not extra clicks
@@ -190,9 +254,57 @@ export class DrawingInteraction {
                 return;
             }
             const handle = hit.hitHandle(x, y, proj, HIT_TOLERANCE); // -1 = body, ≥0 = a handle
-            this.state = { kind: 'pressed', id: hit.id, handle, grab: proj.pxToPoint(x, y, hit.paneId), orig: cloneAnchors(hit), px: x, py: y, moved: false };
+            // A body drag of a SELECTED drawing carries the rest of the selection along; a handle
+            // drag reshapes just the one, and an unselected drawing drags alone.
+            const riders: Rider[] = [];
+            if (handle < 0 && this.deps.selectedIds().has(hit.id)) {
+                for (const id of this.deps.selectedIds()) {
+                    const d = id === hit.id ? null : this.byId(id);
+                    if (d && !d.locked && d.visible) riders.push({ id, orig: cloneAnchors(d) });
+                }
+            }
+            this.state = { kind: 'pressed', id: hit.id, handle, orig: cloneAnchors(hit), px: x, py: y, moved: false, riders, mod, clones: null };
         }
         // empty space → nothing here: the popup self-dismisses + hover already cleared handles.
+    }
+
+    /** The data-space delta a body drag from the press to (x, y) means on `paneId` — resolved per
+     *  pane so drawings riding along on another pane move by the same PIXELS, not the same price. */
+    private bodyDelta(paneId: string, x: number, y: number): { dt: number; dp: number } {
+        if (this.state.kind !== 'pressed') return { dt: 0, dp: 0 };
+        const proj = this.deps.projector();
+        const from = proj.pxToPoint(this.state.px, this.state.py, paneId);
+        const to = proj.pxToPoint(x, y, paneId);
+        return { dt: to.time - from.time, dp: to.price - from.price };
+    }
+
+    /** The pressed drawing and its riders, each with its anchors at the press. */
+    private dragSources(d: Drawing): DragTarget[] {
+        if (this.state.kind !== 'pressed') return [];
+        const out: DragTarget[] = [{ d, orig: this.state.orig }];
+        for (const r of this.state.riders) {
+            const rd = this.byId(r.id);
+            if (rd) out.push({ d: rd, orig: r.orig });
+        }
+        return out;
+    }
+
+    /** Move the pressed drawing's body (and its riders) — or, on a Ctrl-drag, their copies — to the
+     *  cursor. The copies are built on the first move (so a Ctrl-click never creates anything), from
+     *  sources that have not moved yet, so their own anchors are the origin to translate from. */
+    private dragBody(d: Drawing, x: number, y: number): void {
+        if (this.state.kind !== 'pressed') return;
+        this.snapAt = null; // whole-body moves stay smooth (no snap)
+        if (this.state.mod && !this.state.clones) {
+            this.state.clones = this.dragSources(d).flatMap((s) => {
+                const c = deserializeDrawing(s.d.serialize());
+                return c ? [{ d: c, orig: cloneAnchors(c) }] : [];
+            });
+        }
+        for (const t of this.state.clones ?? this.dragSources(d)) {
+            const { dt, dp } = this.bodyDelta(t.d.paneId, x, y);
+            t.d.anchors = t.d.translateBody(dt, dp, t.orig); // a callout pins its tip + moves only the box
+        }
     }
 
     /** Pointer move: advance the placing ghost, or live-preview a drag once past the slop.
@@ -219,12 +331,20 @@ export class DrawingInteraction {
             this.deps.changed();
             return;
         }
+        if (this.state.kind === 'marquee') {
+            this.state.x1 = x;
+            this.state.y1 = y;
+            this.deps.changed();
+            return;
+        }
         if (this.state.kind !== 'pressed') return;
         const d = this.byId(this.state.id);
         if (!d || d.locked) return; // locked → never drags (stays a click)
         if (!this.state.moved && Math.abs(x - this.state.px) <= DRAG_SLOP && Math.abs(y - this.state.py) <= DRAG_SLOP) return;
         this.state.moved = true;
-        if (this.state.handle >= 0) {
+        if (this.state.handle < 0) {
+            this.dragBody(d, x, y);
+        } else {
             const a = d.anchors[this.state.handle]; // a handle snaps to the candle
             if (a) {
                 // Shift on a two-point line re-locks the dragged endpoint's angle around the other one.
@@ -233,12 +353,6 @@ export class DrawingInteraction {
                 applyFree(a, point, d.anchorSchema().slots[this.state.handle]?.free ?? 'both');
             }
             d.constrainHandleDrag(this.state.handle); // e.g. a position flips its reward/stop to stay opposed
-        } else {
-            const pt = this.deps.projector().pxToPoint(x, y, d.paneId); // whole-body move stays smooth (no snap)
-            this.snapAt = null;
-            const dt = pt.time - this.state.grab.time;
-            const dp = pt.price - this.state.grab.price;
-            d.anchors = d.translateBody(dt, dp, this.state.orig); // a callout pins its tip + moves only the box
         }
         this.deps.changed();
     }
@@ -260,16 +374,48 @@ export class DrawingInteraction {
             }
             return; // click placement: releasing a click adds nothing (the press already placed the anchor)
         }
+        if (this.state.kind === 'marquee') {
+            const rect = this.marqueeRect()!;
+            this.state = { kind: 'idle' };
+            if (rect.w > DRAG_SLOP || rect.h > DRAG_SLOP) this.selectWithin(rect);
+            this.deps.changed();
+            return;
+        }
         if (this.state.kind !== 'pressed') return;
-        const { id, moved } = this.state;
+        const { id, moved, riders, mod, clones } = this.state;
         this.state = { kind: 'idle' };
         const d = this.byId(id);
-        if (moved) {
-            if (d) this.deps.emit({ kind: 'edit', doc: d.serialize() });
-            this.deps.changed();
-        } else {
-            this.deps.openSettings(id, x, y); // a click opens the settings popup
+        if (!moved) {
+            // A click: Ctrl/Cmd toggles the drawing in/out of the selection; plain opens its settings.
+            if (mod) this.deps.emit({ kind: 'select', ids: [id], additive: true });
+            else this.deps.openSettings(id, x, y);
+            return;
         }
+        if (clones) {
+            this.deps.emit({ kind: 'clone', docs: clones.map((c) => c.d.serialize()) });
+        } else if (d) {
+            const docs = [d.serialize()];
+            for (const r of riders) {
+                const rd = this.byId(r.id);
+                if (rd) docs.push(rd.serialize());
+            }
+            if (docs.length > 1) this.deps.emit({ kind: 'edit-many', docs });
+            else this.deps.emit({ kind: 'edit', doc: docs[0]! });
+        }
+        this.deps.changed();
+    }
+
+    /** Add every visible drawing whose on-screen bounds touch `rect` to the selection (a union,
+     *  so successive sweeps accumulate). No change when the box touches nothing new. */
+    private selectWithin(rect: PxRect): void {
+        const proj = this.deps.projector();
+        const ids = [...this.deps.selectedIds()];
+        for (const d of this.deps.drawings()) {
+            if (!d.visible || ids.includes(d.id)) continue;
+            const b = d.bounds(proj);
+            if (b && rectsIntersect(rect, b)) ids.push(d.id);
+        }
+        if (ids.length > this.deps.selectedIds().size) this.deps.emit({ kind: 'select', ids });
     }
 
     /** Cancel an in-progress placement or drag (Escape). Returns whether anything was cancelled. */
@@ -283,8 +429,16 @@ export class DrawingInteraction {
             return true;
         }
         if (this.state.kind === 'pressed') {
-            const d = this.byId(this.state.id);
-            if (d && this.state.moved) d.anchors = this.state.orig.map((o) => ({ time: o.time, price: o.price }));
+            // A Ctrl-drag moved copies only — dropping them is the whole rollback.
+            if (this.state.moved && !this.state.clones) {
+                const d = this.byId(this.state.id);
+                if (d) for (const s of this.dragSources(d)) s.d.anchors = s.orig.map((o) => ({ time: o.time, price: o.price }));
+            }
+            this.state = { kind: 'idle' };
+            this.deps.changed();
+            return true;
+        }
+        if (this.state.kind === 'marquee') {
             this.state = { kind: 'idle' };
             this.deps.changed();
             return true;
@@ -413,6 +567,11 @@ export class DrawingInteraction {
 
 function cloneAnchors(d: Drawing): DrawingPoint[] {
     return d.anchors.map((a) => ({ time: a.time, price: a.price }));
+}
+
+/** Closed-interval overlap, so a zero-thickness bound (a horizontal line's) still counts. */
+function rectsIntersect(a: PxRect, b: PxRect): boolean {
+    return a.x <= b.x + b.w && b.x <= a.x + a.w && a.y <= b.y + b.h && b.y <= a.y + a.h;
 }
 
 /** Move an anchor toward `pt`, honoring which axes its handle is free to move along. */

@@ -29,17 +29,47 @@ import { DrawingSettingsDialog } from './DrawingSettingsDialog';
 /** A `{ path: value }` patch emitted as the user edits a control. */
 export type SettingsPatch = Record<string, unknown>;
 
-/** The actions a settings popup can invoke (wired by the controller to intents). */
+/** The actions a settings popup can invoke (wired by the controller to intents). With several
+ *  drawings selected every action applies to all of them. */
 export interface SettingsActions {
-    /** The current live instance (sync rebuilds instances, so panels re-read through this). */
+    /** The current live PRIMARY instance (sync rebuilds instances, so panels re-read through this). */
     resolve(): Drawing | null;
     patch(p: SettingsPatch): void;
     setLocked(v: boolean): void;
     reorder(to: 'front' | 'back'): void;
+    /** Clone the drawing(s) in place (the copies become the selection). */
+    duplicate(): void;
     resetSettings(): void;
     remove(): void;
     /** Restore a serialized snapshot (Cancel in the settings dialog). */
     restore?(doc: SerializedDrawing): void;
+}
+
+/** The value of a control whose drawings disagree — the bar shows it as "mixed" and the first
+ *  edit unifies them. */
+export const MIXED: unique symbol = Symbol('mixed');
+export type Mixed = typeof MIXED;
+
+/** The settings paths every one of `drawings` supports — what a multi-selection bar can edit. */
+export function sharedPaths(drawings: readonly Drawing[]): Set<string> {
+    const [first, ...rest] = drawings;
+    const paths = new Set(first?.schema().fields.map((f) => f.path) ?? []);
+    for (const d of rest) {
+        const own = new Set(d.schema().fields.map((f) => f.path));
+        for (const p of paths) if (!own.has(p)) paths.delete(p);
+    }
+    return paths;
+}
+
+/** One value read off every drawing: the shared value when they all agree, else {@link MIXED}. */
+export function commonValue<T>(drawings: readonly Drawing[], read: (d: Drawing) => T): T | Mixed {
+    const first = read(drawings[0]!);
+    return drawings.every((d) => read(d) === first) ? first : MIXED;
+}
+
+/** The distinct values a mixed control spans (first-seen order) — the "in use" shortcuts. */
+function distinctValues<T>(drawings: readonly Drawing[], read: (d: Drawing) => T): T[] {
+    return [...new Set(drawings.map(read))];
 }
 
 /** The drawing's pixel bounding box, so the toolbar floats clear of it (not over it). */
@@ -53,7 +83,7 @@ export interface PopupAnchor {
 const BTN = 30; // icon-button side (px)
 const ICON = 21; // icon glyph side (px)
 const STYLE_ID = 'vela-drawing-popup-styles';
-const STYLE_REV = '3';
+const STYLE_REV = '4';
 
 /** Inject the scoped styles that inline cssText can't reach (`:focus`, scrollbar
  *  pseudo-elements). Idempotent — one shared sheet for all popups. */
@@ -68,6 +98,8 @@ function ensureStyles(): void {
 .vela-dpop-btn{background:transparent;color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dpop-btn:hover{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
 .vela-dpop-btn[data-active='1']{background:var(--vela-active);color:var(--vela-fg-bright);}
+/* Mixed (a multi-selection disagrees): the active fill at half strength behind a dashed ring. */
+.vela-dpop-btn[data-active='mixed']{background:var(--vela-hover-strong);color:var(--vela-fg-bright);outline:1px dashed var(--vela-fg-muted);outline-offset:-2px;}
 .vela-dpop-item{background:transparent;transition:background var(--vela-dur-fast) ease;}
 .vela-dpop-item:hover{background:var(--vela-hover-strong);}
 .vela-dpop-item[data-active='1']{background:var(--vela-active);}
@@ -96,7 +128,7 @@ export class DrawingSettingsPopup {
     private menuPop: Popover | null = null;
     private menuOwner: HTMLElement | null = null;
     private theme: VelaTheme;
-    private onClose: (() => void) | null = null;
+    private onClose: ((e?: PointerEvent) => void) | null = null;
 
     constructor(
         private readonly host: HTMLElement,
@@ -132,18 +164,32 @@ export class DrawingSettingsPopup {
         return node != null && (this.isOwnChrome(node) || this.settingsDialog.contains(node));
     }
 
-    /** Open the quick toolbar for `drawing`, floating clear of its `anchor` box.
-     *  `onClose` fires on an outside-click dismissal (not a programmatic close). */
-    open(drawing: Drawing, anchor: PopupAnchor | null, actions: SettingsActions, onClose?: () => void): void {
+    /** Open the quick toolbar for `drawings` (one, or a whole multi-selection), floating clear of
+     *  their `anchor` box. With several drawings the bar shows only the controls they ALL support,
+     *  a control whose values differ reads as mixed, and every edit applies to all of them —
+     *  per-drawing panels (levels, position sizing, the text field) stay single-drawing only.
+     *  `onClose` fires on a dismissal (an outside press, or Escape in the text field — not a
+     *  programmatic close), with the dismissing press when there is one, so the caller can tell a
+     *  modifier press (multi-select) from a plain one. */
+    open(drawings: readonly Drawing[], anchor: PopupAnchor | null, actions: SettingsActions, onClose?: (e?: PointerEvent) => void): void {
         this.close();
+        const drawing = drawings[0];
+        if (!drawing) return;
         ensureStyles();
         this.onClose = onClose ?? null;
         const t = this.theme;
+        const multi = drawings.length > 1;
         const schema = drawing.schema();
-        const paths = new Set(schema.fields.map((f) => f.path));
+        const paths = sharedPaths(drawings);
+        const common = <T>(read: (d: Drawing) => T): T | Mixed => commonValue(drawings, read);
+        const every = (pred: (d: Drawing) => boolean): boolean => drawings.every(pred);
+        /** A color swatch over the drawings: shared color, or striped with the colors in use. */
+        const swatch = (tip: string, glyph: string, read: (d: Drawing) => string, path: string, iconSize?: number): HTMLButtonElement =>
+            this.colorButton(tip, glyph, common(read), (v) => actions.patch({ [path]: v }), iconSize, distinctValues(drawings, read));
         // Text-first annotations (and computed labels) wear their text controls on the bar; on a
-        // shape that merely CAN carry a label they stay beside the label field.
-        const textOnBar = schema.textIsContent === true || !paths.has('text.value');
+        // shape that merely CAN carry a label they stay beside the label field — and a
+        // multi-selection has no label field, so its text styling always sits on the bar.
+        const textOnBar = multi || schema.textIsContent === true || !paths.has('text.value');
 
         const el = document.createElement('div');
         el.className = 'vela-dpop';
@@ -166,92 +212,96 @@ export class DrawingSettingsPopup {
         bar.appendChild(this.dragHandle());
 
         if (paths.has('glyph')) {
-            const cur = (drawing as unknown as { glyph?: string }).glyph ?? GLYPH_OPTIONS[0];
+            const cur = common((d) => (d as unknown as { glyph?: string }).glyph ?? GLYPH_OPTIONS[0]!);
             bar.appendChild(this.dropdown('Icon', GLYPH_OPTIONS, cur, (g) => glyphIcon(g), (v) => actions.patch({ glyph: v })));
         }
         if (paths.has('size')) {
-            const sz = (drawing as unknown as { size?: string }).size ?? 'normal';
+            const sz = common((d) => (d as unknown as { size?: string }).size ?? 'normal');
             bar.appendChild(this.dropdown('Icon size', STAMP_SIZE_OPTIONS, sz, (s) => stampSizeIcon(s), (v) => actions.patch({ size: v }), { label: sizeLabel }));
         }
         // Magnifier: the lower-timeframe pick is the tool's one behavior control — it leads the
         // bar (text-only: the label IS the glyph); the inset candles' up/down colors ride along.
         // Only timeframes strictly below the chart's are offered; unset colors show the theme's
         // series colors (the inset follows the chart series until the user recolors it).
-        if (paths.has('magnifier.timeframe') && drawing instanceof Magnifier) {
+        if (paths.has('magnifier.timeframe') && every((d) => d instanceof Magnifier)) {
+            const mag = (d: Drawing): Magnifier => d as Magnifier;
             const options = this.lowerTimeframeOptions();
             if (options.length > 0) {
                 bar.appendChild(
-                    this.dropdown('Lower timeframe', options.map((o) => o.value), drawing.magnifier.timeframe, () => '', (v) => actions.patch({ 'magnifier.timeframe': v }), {
+                    this.dropdown('Lower timeframe', options.map((o) => o.value), common((d) => mag(d).magnifier.timeframe), () => '', (v) => actions.patch({ 'magnifier.timeframe': v }), {
                         label: (v) => magnifierTimeframeLabel(String(v)),
                         labelInTrigger: true,
                     }),
                 );
             }
-            bar.appendChild(this.colorButton('Up candles', BUCKET_ICON, drawing.magnifier.upColor || t.upColor, (v) => actions.patch({ 'magnifier.upColor': v })));
-            bar.appendChild(this.colorButton('Down candles', BUCKET_ICON, drawing.magnifier.downColor || t.downColor, (v) => actions.patch({ 'magnifier.downColor': v })));
+            bar.appendChild(swatch('Up candles', BUCKET_ICON, (d) => mag(d).magnifier.upColor || t.upColor, 'magnifier.upColor'));
+            bar.appendChild(swatch('Down candles', BUCKET_ICON, (d) => mag(d).magnifier.downColor || t.downColor, 'magnifier.downColor'));
         }
         // The magnifier's unset border means the theme's contrast ink — the swatch shows that
         // effective color (same idea as effectiveFillColor below), not the generic blue default.
-        if (paths.has('style.lineColor')) bar.appendChild(this.colorButton('Line color', BRUSH_ICON, drawing.style.lineColor || (drawing instanceof Magnifier ? contrastColor(this.theme.background) : DEFAULT_DRAWING_COLOR), (v) => actions.patch({ 'style.lineColor': v })));
+        if (paths.has('style.lineColor')) bar.appendChild(swatch('Line color', BRUSH_ICON, (d) => d.style.lineColor || (d instanceof Magnifier ? contrastColor(this.theme.background) : DEFAULT_DRAWING_COLOR), 'style.lineColor'));
         if (paths.has('style.lineWidth')) {
             // A marker-width field (floor above the hairline ladder, e.g. the
             // highlighter's 4–60) can't live in the 1–4 dropdown — a free numeric
             // input honoring the schema's declared range replaces it.
             const wf = schema.fields.find((f) => f.path === 'style.lineWidth');
+            const width = common((d) => d.style.lineWidth);
             if (wf?.kind === 'number' && (wf.min ?? 1) > 1) {
-                bar.appendChild(this.widthInput('Line width', drawing.style.lineWidth, wf.min ?? 1, wf.max ?? 60, wf.step ?? 1, (v) => actions.patch({ 'style.lineWidth': v })));
+                bar.appendChild(this.widthInput('Line width', width, wf.min ?? 1, wf.max ?? 60, wf.step ?? 1, (v) => actions.patch({ 'style.lineWidth': v })));
             } else {
-                bar.appendChild(this.dropdown('Line width', [1, 2, 3, 4], drawing.style.lineWidth, (w) => lineIcon(w, 'solid'), (v) => actions.patch({ 'style.lineWidth': v }), { label: (v) => `${v}px`, labelInTrigger: true }));
+                bar.appendChild(this.dropdown('Line width', [1, 2, 3, 4], width, (w) => lineIcon(w, 'solid'), (v) => actions.patch({ 'style.lineWidth': v }), { label: (v) => `${v}px`, labelInTrigger: true }));
             }
         }
-        if (paths.has('style.lineStyle')) bar.appendChild(this.dropdown('Line style', LINE_STYLE_OPTIONS.map((o) => o.value), drawing.style.lineStyle, (s) => lineIcon(2, s), (v) => actions.patch({ 'style.lineStyle': v }), { label: styleLabel }));
+        if (paths.has('style.lineStyle')) bar.appendChild(this.dropdown('Line style', LINE_STYLE_OPTIONS.map((o) => o.value), common((d) => d.style.lineStyle), (s) => lineIcon(2, s), (v) => actions.patch({ 'style.lineStyle': v }), { label: styleLabel }));
         // initialize the Fill swatch to the color actually painted (validity tint / line-color wash /
         // background fallback), not a stale default — same source the renderer fills with.
-        if (paths.has('style.fillColor')) bar.appendChild(this.colorButton('Fill', BUCKET_ICON, effectiveFillColor(drawing, this.theme) ?? drawing.style.fillColor ?? DEFAULT_DRAWING_COLOR, (v) => actions.patch({ 'style.fillColor': v })));
+        if (paths.has('style.fillColor')) bar.appendChild(swatch('Fill', BUCKET_ICON, (d) => effectiveFillColor(d, this.theme) ?? d.style.fillColor ?? DEFAULT_DRAWING_COLOR, 'style.fillColor'));
         // Fixed-range VP: all settings live in the gear panel (nothing inline on the quick bar).
         const isFrvp = paths.has('frvp.rows') && drawing instanceof FixedRangeVolumeProfile;
         // Position tool: zone colors sit on the bar; risk/reward numbers + display toggles live
         // in the gear panel (they drive the loss/size labels).
-        const isPosition = paths.has('riskPercent') && drawing instanceof PositionTool;
+        const isPosition = paths.has('riskPercent') && every((d) => d instanceof PositionTool);
         if (isPosition) {
-            const pos = drawing as PositionTool;
-            bar.appendChild(this.colorButton('Profit zone', BUCKET_ICON, pos.profitColor, (v) => actions.patch({ profitColor: v })));
-            bar.appendChild(this.colorButton('Loss zone', BUCKET_ICON, pos.lossColor, (v) => actions.patch({ lossColor: v })));
+            const pos = (d: Drawing): PositionTool => d as PositionTool;
+            bar.appendChild(swatch('Profit zone', BUCKET_ICON, (d) => pos(d).profitColor, 'profitColor'));
+            bar.appendChild(swatch('Loss zone', BUCKET_ICON, (d) => pos(d).lossColor, 'lossColor'));
         }
         // Regression channel: per-line color + style, the two area fills, and the R² toggle.
-        const reg = (drawing as unknown as { reg?: RegressionStyle }).reg;
-        if (paths.has('reg.midColor') && reg) {
+        const regOf = (d: Drawing): RegressionStyle | undefined => (d as unknown as { reg?: RegressionStyle }).reg;
+        if (paths.has('reg.midColor') && every((d) => regOf(d) != null)) {
+            const reg = (d: Drawing): RegressionStyle => regOf(d)!;
             const styles = LINE_STYLE_OPTIONS.map((o) => o.value);
-            bar.appendChild(this.colorButton('Midline color', BRUSH_ICON, reg.midColor, (v) => actions.patch({ 'reg.midColor': v })));
-            bar.appendChild(this.dropdown('Midline style', styles, reg.midStyle, (s) => lineIcon(2, s), (v) => actions.patch({ 'reg.midStyle': v }), { label: styleLabel }));
-            bar.appendChild(this.colorButton('Upper line color', BRUSH_ICON, reg.upperColor, (v) => actions.patch({ 'reg.upperColor': v })));
-            bar.appendChild(this.dropdown('Upper line style', styles, reg.upperStyle, (s) => lineIcon(2, s), (v) => actions.patch({ 'reg.upperStyle': v }), { label: styleLabel }));
-            bar.appendChild(this.colorButton('Lower line color', BRUSH_ICON, reg.lowerColor, (v) => actions.patch({ 'reg.lowerColor': v })));
-            bar.appendChild(this.dropdown('Lower line style', styles, reg.lowerStyle, (s) => lineIcon(2, s), (v) => actions.patch({ 'reg.lowerStyle': v }), { label: styleLabel }));
-            bar.appendChild(this.colorButton('Upper fill', BUCKET_ICON, reg.upperFill, (v) => actions.patch({ 'reg.upperFill': v })));
-            bar.appendChild(this.colorButton('Lower fill', BUCKET_ICON, reg.lowerFill, (v) => actions.patch({ 'reg.lowerFill': v })));
-            bar.appendChild(this.toggle('Show R²', R2_ICON, reg.showR2, (v) => actions.patch({ 'reg.showR2': v })));
+            bar.appendChild(swatch('Midline color', BRUSH_ICON, (d) => reg(d).midColor, 'reg.midColor'));
+            bar.appendChild(this.dropdown('Midline style', styles, common((d) => reg(d).midStyle), (s) => lineIcon(2, s), (v) => actions.patch({ 'reg.midStyle': v }), { label: styleLabel }));
+            bar.appendChild(swatch('Upper line color', BRUSH_ICON, (d) => reg(d).upperColor, 'reg.upperColor'));
+            bar.appendChild(this.dropdown('Upper line style', styles, common((d) => reg(d).upperStyle), (s) => lineIcon(2, s), (v) => actions.patch({ 'reg.upperStyle': v }), { label: styleLabel }));
+            bar.appendChild(swatch('Lower line color', BRUSH_ICON, (d) => reg(d).lowerColor, 'reg.lowerColor'));
+            bar.appendChild(this.dropdown('Lower line style', styles, common((d) => reg(d).lowerStyle), (s) => lineIcon(2, s), (v) => actions.patch({ 'reg.lowerStyle': v }), { label: styleLabel }));
+            bar.appendChild(swatch('Upper fill', BUCKET_ICON, (d) => reg(d).upperFill, 'reg.upperFill'));
+            bar.appendChild(swatch('Lower fill', BUCKET_ICON, (d) => reg(d).lowerFill, 'reg.lowerFill'));
+            bar.appendChild(this.toggle('Show R²', R2_ICON, common((d) => reg(d).showR2), (v) => actions.patch({ 'reg.showR2': v })));
         }
         // Anchored VWAP: midline color + style, band σ-multiplier, the two band-line colors, and the fill.
-        const vwap = (drawing as unknown as { vwap?: VwapStyle }).vwap;
-        if (paths.has('vwap.midColor') && vwap) {
+        const vwapOf = (d: Drawing): VwapStyle | undefined => (d as unknown as { vwap?: VwapStyle }).vwap;
+        if (paths.has('vwap.midColor') && every((d) => vwapOf(d) != null)) {
+            const vwap = (d: Drawing): VwapStyle => vwapOf(d)!;
             const styles = LINE_STYLE_OPTIONS.map((o) => o.value);
             const MULTS = [0.5, 1, 1.5, 2, 2.5, 3, 4, 5];
-            bar.appendChild(this.colorButton('VWAP color', BRUSH_ICON, vwap.midColor, (v) => actions.patch({ 'vwap.midColor': v })));
-            bar.appendChild(this.dropdown('VWAP style', styles, vwap.midStyle, (s) => lineIcon(2, s), (v) => actions.patch({ 'vwap.midStyle': v }), { label: styleLabel }));
+            bar.appendChild(swatch('VWAP color', BRUSH_ICON, (d) => vwap(d).midColor, 'vwap.midColor'));
+            bar.appendChild(this.dropdown('VWAP style', styles, common((d) => vwap(d).midStyle), (s) => lineIcon(2, s), (v) => actions.patch({ 'vwap.midStyle': v }), { label: styleLabel }));
             bar.appendChild(
-                this.dropdown('Band multiplier', MULTS, vwap.multiplier, () => BANDS_ICON, (v) => actions.patch({ 'vwap.multiplier': v }), {
+                this.dropdown('Band multiplier', MULTS, common((d) => vwap(d).multiplier), () => BANDS_ICON, (v) => actions.patch({ 'vwap.multiplier': v }), {
                     label: (v) => `${v}σ`,
                     labelInTrigger: true,
                 }),
             );
-            bar.appendChild(this.colorButton('Upper band color', BRUSH_ICON, vwap.upperColor, (v) => actions.patch({ 'vwap.upperColor': v })));
-            bar.appendChild(this.colorButton('Lower band color', BRUSH_ICON, vwap.lowerColor, (v) => actions.patch({ 'vwap.lowerColor': v })));
-            bar.appendChild(this.colorButton('Band fill', BUCKET_ICON, vwap.bandFill, (v) => actions.patch({ 'vwap.bandFill': v })));
+            bar.appendChild(swatch('Upper band color', BRUSH_ICON, (d) => vwap(d).upperColor, 'vwap.upperColor'));
+            bar.appendChild(swatch('Lower band color', BRUSH_ICON, (d) => vwap(d).lowerColor, 'vwap.lowerColor'));
+            bar.appendChild(swatch('Band fill', BUCKET_ICON, (d) => vwap(d).bandFill, 'vwap.bandFill'));
         }
         // Dedekind tessellation: max circle curvature (tessellation density).
         if (paths.has('maxCurvature')) {
-            const cur = (drawing as unknown as { maxCurvature?: number }).maxCurvature ?? 24;
+            const cur = common((d) => (d as unknown as { maxCurvature?: number }).maxCurvature ?? 24);
             bar.appendChild(
                 this.dropdown('Max curvature', DEDEKIND_CURVATURE_OPTIONS, cur, () => DEDEKIND_ICON, (v) => actions.patch({ maxCurvature: v }), {
                     label: (v) => `n=${v}`,
@@ -261,7 +311,7 @@ export class DrawingSettingsPopup {
         }
         // Mach figures: wave count + (supersonic) Mach number.
         if (paths.has('mach')) {
-            const cur = (drawing as unknown as { mach?: number }).mach ?? 2;
+            const cur = common((d) => (d as unknown as { mach?: number }).mach ?? 2);
             bar.appendChild(
                 this.dropdown('Mach number', MACH_NUMBER_OPTIONS, cur, () => SUPERSONIC_ICON, (v) => actions.patch({ mach: v }), {
                     label: (v) => `M=${v}`,
@@ -270,7 +320,7 @@ export class DrawingSettingsPopup {
             );
         }
         if (paths.has('waveCount')) {
-            const cur = (drawing as unknown as { waveCount?: number }).waveCount ?? 6;
+            const cur = common((d) => (d as unknown as { waveCount?: number }).waveCount ?? 6);
             bar.appendChild(
                 this.dropdown('Waves', MACH_WAVE_COUNT_OPTIONS, cur, () => SONIC_ICON, (v) => actions.patch({ waveCount: v }), {
                     label: (v) => `${v}`,
@@ -279,30 +329,33 @@ export class DrawingSettingsPopup {
             );
         }
         // Range toggles + computed-label text styling (drawings whose label is computed, not typed).
-        const toggles = drawing as unknown as { showPrice?: boolean; showDate?: boolean };
-        if (paths.has('showPrice')) bar.appendChild(this.toggle('Show price', PRICE_DELTA_ICON, toggles.showPrice !== false, (v) => actions.patch({ showPrice: v })));
-        if (paths.has('showDate')) bar.appendChild(this.toggle('Show date', DATE_DELTA_ICON, toggles.showDate !== false, (v) => actions.patch({ showDate: v })));
-        if (paths.has('text.color') && textOnBar) bar.appendChild(this.colorButton('Text color', TYPE_ICON, drawing.text?.color || t.textColor, (v) => actions.patch({ 'text.color': v })));
-        if (paths.has('text.size') && textOnBar) bar.appendChild(this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), drawing.text?.size ?? 'normal', (s) => labelSizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }));
-        // Bold/italic live under the text field; a computed label has no field, so they go on the bar.
-        if (paths.has('text.bold') && !paths.has('text.value')) bar.appendChild(this.toggle('Bold', BOLD_ICON, !!drawing.text?.bold, (v) => actions.patch({ 'text.bold': v })));
-        if (paths.has('text.italic') && !paths.has('text.value')) bar.appendChild(this.toggle('Italic', ITALIC_ICON, !!drawing.text?.italic, (v) => actions.patch({ 'text.italic': v })));
-        if (paths.has('text.value')) bar.appendChild(this.iconBtn('Text', TYPE_ICON, () => this.toggleTextPanel(drawing, actions, !textOnBar)));
+        const flags = (d: Drawing): { showPrice?: boolean; showDate?: boolean } => d as unknown as { showPrice?: boolean; showDate?: boolean };
+        if (paths.has('showPrice')) bar.appendChild(this.toggle('Show price', PRICE_DELTA_ICON, common((d) => flags(d).showPrice !== false), (v) => actions.patch({ showPrice: v })));
+        if (paths.has('showDate')) bar.appendChild(this.toggle('Show date', DATE_DELTA_ICON, common((d) => flags(d).showDate !== false), (v) => actions.patch({ showDate: v })));
+        if (paths.has('text.color') && textOnBar) bar.appendChild(swatch('Text color', TYPE_ICON, (d) => d.text?.color || t.textColor, 'text.color'));
+        if (paths.has('text.size') && textOnBar) bar.appendChild(this.dropdown('Text size', TEXT_SIZE_OPTIONS.map((o) => o.value), common((d) => d.text?.size ?? 'normal'), (s) => labelSizeIcon(s), (v) => actions.patch({ 'text.size': v }), { label: sizeLabel }));
+        // Bold/italic live under the text field; a computed label has no field (nor does a
+        // multi-selection), so they go on the bar.
+        const textField = !multi && paths.has('text.value');
+        if (paths.has('text.bold') && !textField) bar.appendChild(this.toggle('Bold', BOLD_ICON, common((d) => !!d.text?.bold), (v) => actions.patch({ 'text.bold': v })));
+        if (paths.has('text.italic') && !textField) bar.appendChild(this.toggle('Italic', ITALIC_ICON, common((d) => !!d.text?.italic), (v) => actions.patch({ 'text.italic': v })));
+        if (textField) bar.appendChild(this.iconBtn('Text', TYPE_ICON, () => this.toggleTextPanel(drawing, actions, !textOnBar)));
         const editableLevels = drawing.editableLevels();
-        if (editableLevels && !(drawing instanceof MachFigure)) {
-            const fib = drawing as unknown as { numbersSize?: string; labelsSize?: string };
+        if (editableLevels && every((d) => d.editableLevels() != null && !(d instanceof MachFigure))) {
+            const fib = (d: Drawing): { numbersSize?: string; labelsSize?: string } => d as unknown as { numbersSize?: string; labelsSize?: string };
             const sizes = TEXT_SIZE_OPTIONS.map((o) => o.value);
-            bar.appendChild(this.dropdown('Numbers size', sizes, fib.numbersSize ?? 'small', (s) => numbersSizeIcon(s), (v) => actions.patch({ numbersSize: v }), { label: sizeLabel }));
-            bar.appendChild(this.dropdown('Label size', sizes, fib.labelsSize ?? 'normal', (s) => labelSizeIcon(s), (v) => actions.patch({ labelsSize: v }), { label: sizeLabel }));
+            bar.appendChild(this.dropdown('Numbers size', sizes, common((d) => fib(d).numbersSize ?? 'small'), (s) => numbersSizeIcon(s), (v) => actions.patch({ numbersSize: v }), { label: sizeLabel }));
+            bar.appendChild(this.dropdown('Label size', sizes, common((d) => fib(d).labelsSize ?? 'normal'), (s) => labelSizeIcon(s), (v) => actions.patch({ labelsSize: v }), { label: sizeLabel }));
         }
 
         // Trailing group: settings wheel (when the tool has one) sits just left of the lock,
-        // and a kebab overflow (z-order + reset) sits just right of delete.
+        // and a kebab overflow (z-order + reset) sits just right of delete. The gear panels edit
+        // one drawing's own data (levels, sizing, profile rows) — they stay off a multi-selection.
         bar.appendChild(this.divider());
-        if (isFrvp) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'frvp')));
-        if (isPosition) bar.appendChild(this.iconBtn('Position size', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'position')));
-        if (editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'levels')));
-        bar.appendChild(this.toggle('Lock', LOCK_ICON, drawing.locked, (v) => actions.setLocked(v)));
+        if (!multi && isFrvp) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'frvp')));
+        if (!multi && isPosition) bar.appendChild(this.iconBtn('Position size', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'position')));
+        if (!multi && editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'levels')));
+        bar.appendChild(this.toggle('Lock', LOCK_ICON, common((d) => d.locked), (v) => actions.setLocked(v)));
         const del = this.iconBtn('Delete', TRASH_ICON, () => actions.remove());
         del.style.color = 'var(--vela-danger)';
         bar.appendChild(del);
@@ -350,7 +403,7 @@ export class DrawingSettingsPopup {
         if (this.isOwnChrome(node)) return;
         const cb = this.onClose;
         this.close();
-        cb?.();
+        cb?.(e as PointerEvent);
     };
 
     /** Bar, host-floated shells, and kit popovers (select list / color chip) portaled into `host`. */
@@ -526,7 +579,7 @@ export class DrawingSettingsPopup {
         return b;
     }
 
-    /** The trailing kebab overflow — z-order actions + reset settings. */
+    /** The trailing kebab overflow — duplicate, z-order actions, reset settings. */
     private kebabButton(actions: SettingsActions): HTMLButtonElement {
         const b = this.base('More');
         b.innerHTML = sized(KEBAB_ICON);
@@ -540,6 +593,7 @@ export class DrawingSettingsPopup {
                 return;
             }
             this.openActionMenu(b, [
+                { icon: CLONE_ICON, label: 'Duplicate', onClick: () => actions.duplicate() },
                 { icon: FRONT_ICON, label: 'Bring to front', onClick: () => actions.reorder('front') },
                 { icon: BACK_ICON, label: 'Send to back', onClick: () => actions.reorder('back') },
                 { icon: RESET_ICON, label: 'Reset settings', onClick: () => actions.resetSettings() },
@@ -699,17 +753,19 @@ export class DrawingSettingsPopup {
         this.tipEl = null;
     }
 
-    private toggle(tip: string, icon: string, active: boolean, onChange: (v: boolean) => void): HTMLButtonElement {
+    /** An on/off button. A mixed state (the selected drawings disagree) reads as half-lit and
+     *  the first click turns it ON for all of them. */
+    private toggle(tip: string, icon: string, active: boolean | Mixed, onChange: (v: boolean) => void): HTMLButtonElement {
         const b = this.base(tip);
         b.innerHTML = sized(icon);
-        // `data-active` alone drives the fill — the stylesheet owns idle/hover/active.
-        const set = (on: boolean): void => {
-            b.dataset.active = on ? '1' : '0';
+        // `data-active` alone drives the fill — the stylesheet owns idle/hover/active/mixed.
+        const set = (on: boolean | Mixed): void => {
+            b.dataset.active = on === MIXED ? 'mixed' : on ? '1' : '0';
         };
         set(active);
         let on = active;
         b.addEventListener('click', () => {
-            on = !on;
+            on = on === MIXED ? true : !on;
             set(on);
             onChange(on);
         });
@@ -717,10 +773,11 @@ export class DrawingSettingsPopup {
     }
 
     /** An inline numeric width field for tools whose stroke range outgrows the 1–4px
-     *  ladder — the value is clamped to the schema's declared min/max on commit. */
-    private widthInput(tip: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
+     *  ladder — the value is clamped to the schema's declared min/max on commit. A mixed
+     *  value shows an empty field with a dash until a number is typed for all. */
+    private widthInput(tip: string, value: number | Mixed, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
         const ni = new NumberInput({
-            value,
+            value: value === MIXED ? min : value,
             min,
             max,
             step,
@@ -732,6 +789,10 @@ export class DrawingSettingsPopup {
             title: tip,
             onChange,
         });
+        if (value === MIXED) {
+            ni.input.value = '';
+            ni.input.placeholder = '—';
+        }
         ni.el.dataset.tip = tip;
         trapChartKeys(ni.el);
         return ni.el;
@@ -739,11 +800,12 @@ export class DrawingSettingsPopup {
 
     /** A pick-one dropdown: the trigger shows the current value's glyph (plus an optional inline
      *  text label — e.g. `2px` — for controls that would otherwise look alike), and clicking it
-     *  opens a floating list of every option so a value is one click away (no cycling through). */
+     *  opens a floating list of every option so a value is one click away (no cycling through).
+     *  A mixed value shows a dash in the trigger and highlights no row. */
     private dropdown(
         tip: string,
         values: readonly (string | number)[],
-        current: string | number,
+        current: string | number | Mixed,
         render: (v: string | number) => string,
         onChange: (v: string | number) => void,
         opts: { label?: (v: string | number) => string; labelInTrigger?: boolean } = {},
@@ -754,9 +816,15 @@ export class DrawingSettingsPopup {
         b.style.padding = '0 4px';
         b.style.gap = '2px';
         let cur = current;
-        const paint = (v: string | number): void => {
+        const paint = (v: string | number | Mixed): void => {
             b.replaceChildren();
-            const glyph = render(v);
+            if (v === MIXED) {
+                const dash = document.createElement('span');
+                dash.textContent = '—';
+                dash.style.cssText = 'min-width:18px;text-align:center;opacity:0.85;';
+                b.appendChild(dash);
+            }
+            const glyph = v === MIXED ? '' : render(v);
             if (glyph) {
                 // An empty glyph means a text-only control (e.g. the magnifier's timeframe) —
                 // the trigger then shows just the label + chevron.
@@ -765,7 +833,7 @@ export class DrawingSettingsPopup {
                 ic.innerHTML = sized(glyph);
                 b.appendChild(ic);
             }
-            if (opts.label && opts.labelInTrigger) {
+            if (opts.label && opts.labelInTrigger && v !== MIXED) {
                 const tx = document.createElement('span');
                 tx.textContent = opts.label(v);
                 tx.style.cssText = 'font-size:11px;opacity:0.85;font-variant-numeric:tabular-nums;';
@@ -800,7 +868,7 @@ export class DrawingSettingsPopup {
     private openMenu(
         anchor: HTMLElement,
         values: readonly (string | number)[],
-        current: string | number,
+        current: string | number | Mixed,
         render: (v: string | number) => string,
         label: ((v: string | number) => string) | undefined,
         onPick: (v: string | number) => void,
@@ -847,8 +915,10 @@ export class DrawingSettingsPopup {
 
     /** A color control: an `icon` over a thin **colored underline** showing the current
      *  value (the common idiom), with an invisible native picker overlaid to edit it.
-     *  `iconSize` shrinks it for the floating text controls. */
-    private colorButton(tip: string, icon: string, color: string, onChange: (v: string) => void, iconSize = 17): HTMLButtonElement {
+     *  `iconSize` shrinks it for the floating text controls. A mixed color paints the
+     *  underline striped with the colors `used` across the selection, and the picker then
+     *  leads with those colors so unifying onto one of them is a single click. */
+    private colorButton(tip: string, icon: string, color: string | Mixed, onChange: (v: string) => void, iconSize = 17, used: readonly string[] = []): HTMLButtonElement {
         const b = document.createElement('button');
         b.type = 'button';
         b.dataset.tip = tip;
@@ -858,7 +928,7 @@ export class DrawingSettingsPopup {
         ic.style.cssText = 'display:flex;';
         ic.innerHTML = sized(icon, iconSize);
         const bar = document.createElement('span');
-        bar.style.cssText = `display:block;height:3px;width:${Math.round(iconSize * 0.85)}px;border-radius:2px;background:${color};`;
+        bar.style.cssText = `display:block;height:3px;width:${Math.round(iconSize * 0.85)}px;border-radius:2px;background:${color === MIXED ? stripes(used) : color};`;
         b.append(ic, bar);
         let cur = color;
         // Stop the swatch's own pointerdown from reaching `el` (which would pre-close the popover),
@@ -866,7 +936,9 @@ export class DrawingSettingsPopup {
         b.addEventListener('pointerdown', (e) => e.stopPropagation());
         b.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.toggleColorPopover(b, cur, (v) => {
+            // A mixed picker starts from the first color in use — some real value must seed the sliders.
+            const seed = cur === MIXED ? used[0] ?? DEFAULT_DRAWING_COLOR : cur;
+            this.toggleColorPopover(b, seed, cur === MIXED ? used : [], (v) => {
                 cur = v;
                 bar.style.background = v;
                 onChange(v);
@@ -876,21 +948,45 @@ export class DrawingSettingsPopup {
     }
 
     /** Open the color popover for `anchor`, or close it if it's already this anchor's (toggle). */
-    private toggleColorPopover(anchor: HTMLElement, color: string, onChange: (v: string) => void): void {
+    private toggleColorPopover(anchor: HTMLElement, color: string, used: readonly string[], onChange: (v: string) => void): void {
         if (this.colorOwner === anchor) {
             this.closeColorPopover();
             return;
         }
-        this.openColorPopover(anchor, color, onChange);
+        this.openColorPopover(anchor, color, used, onChange);
     }
 
-    /** A floating RGB picker + opacity slider anchored to a color swatch — emits `#RRGGBB(AA)`. */
-    private openColorPopover(anchor: HTMLElement, color: string, onChange: (v: string) => void): void {
+    /** A floating RGB picker + opacity slider anchored to a color swatch — emits `#RRGGBB(AA)`.
+     *  `used` (a mixed swatch's colors) leads the picker as one-click unify shortcuts. */
+    private openColorPopover(anchor: HTMLElement, color: string, used: readonly string[], onChange: (v: string) => void): void {
         const t = this.theme;
         this.colorPop = this.hostFloat(anchor, {
             zIndex: 25,
             padding: '10px',
-            fill: (el) => { el.appendChild(buildColorPicker(color, t, onChange)); },
+            fill: (el, pop) => {
+                if (used.length > 1) {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding-bottom:9px;border-bottom:1px solid var(--vela-border);';
+                    const lbl = document.createElement('span');
+                    lbl.textContent = 'In use';
+                    lbl.style.cssText = 'font:var(--vela-font-size-sm) inherit;opacity:0.7;margin-right:2px;';
+                    row.appendChild(lbl);
+                    for (const c of used) {
+                        const sw = document.createElement('button');
+                        sw.type = 'button';
+                        sw.dataset.tip = c;
+                        sw.style.cssText = `width:18px;height:18px;border-radius:4px;border:1px solid var(--vela-border-strong);cursor:pointer;background:${c};padding:0;`;
+                        sw.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            pop.hide();
+                            onChange(c);
+                        });
+                        row.appendChild(sw);
+                    }
+                    el.appendChild(row);
+                }
+                el.appendChild(buildColorPicker(color, t, onChange));
+            },
         });
         this.colorOwner = anchor;
     }
@@ -922,6 +1018,7 @@ const BOLD_ICON = icon('bold');
 const ITALIC_ICON = icon('italic');
 const GRIP_ICON = icon('grip');
 const KEBAB_ICON = icon('kebab');
+const CLONE_ICON = icon('clone');
 const RESET_ICON = icon('reset');
 const GEAR_ICON = icon('gear');
 const CHEVRON_ICON = icon('chevron-down');
@@ -930,6 +1027,15 @@ const BANDS_ICON = icon('bands');
 const DEDEKIND_ICON = icon('dedekind');
 const SONIC_ICON = icon('sonic');
 const SUPERSONIC_ICON = icon('supersonic');
+
+/** A striped underline for a mixed color swatch: equal bands of every color in use (a neutral
+ *  gray pair when nothing concrete is known), so the mix itself is visible without opening it. */
+function stripes(colors: readonly string[]): string {
+    const bands = colors.length > 1 ? colors : ['var(--vela-fg-faint)', 'var(--vela-fg-muted)'];
+    const step = 100 / bands.length;
+    const stops = bands.map((c, i) => `${c} ${i * step}% ${(i + 1) * step}%`).join(',');
+    return `linear-gradient(90deg,${stops})`;
+}
 
 /** A line glyph at a given width + style (for the width/style dropdown glyphs). The stroke IS
  *  the value being previewed, so it overrides the tier's weight. */

@@ -298,6 +298,24 @@ describe('DrawingController — editing foundation', () => {
         expect(ctrl.all().map((d) => d.id)).toEqual([id]);
     });
 
+    it('clone intent: commits the given (moved) docs as fresh copies, source untouched, one undo step', () => {
+        const { port, ctrl, seen } = setup();
+        port.fire({ kind: 'create', doc: HLINE_DOC });
+        const src = ctrl.all()[0]!;
+        seen.length = 0;
+        // The end of a Ctrl-drag: the renderer hands over the source's twin, already translated.
+        port.fire({ kind: 'clone', docs: [{ ...src, anchors: [{ time: 2000, price: 26000 }] }] });
+        expect(ctrl.all().length).toBe(2);
+        const clone = ctrl.all().find((d) => d.id !== src.id)!;
+        expect(clone.anchors[0]).toEqual({ time: 2000, price: 26000 });
+        expect(clone.zIndex).toBe(src.zIndex); // keeps its source's depth
+        expect(ctrl.all().find((d) => d.id === src.id)!.anchors[0]).toEqual({ time: 1000, price: 25000 }); // source never moved
+        expect(port.selectionIds).toEqual([clone.id]); // the copy becomes the selection
+        expect(seen).toContainEqual(['drawing:created', clone.id]);
+        ctrl.undo();
+        expect(ctrl.all().map((d) => d.id)).toEqual([src.id]);
+    });
+
     it('copy is silent; paste creates fresh drawings', () => {
         const { ctrl, seen } = setup();
         const d = ctrl.add('hline', { anchors: [{ time: 1, price: 1 }] })!;

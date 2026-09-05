@@ -544,6 +544,9 @@ export class DrawingController {
             case 'duplicate':
                 this.duplicate(i.ids);
                 break;
+            case 'clone':
+                if (this.enabled && i.docs.length) this.insertClones(i.docs);
+                break;
             case 'copy':
                 this.copy(i.ids);
                 break;

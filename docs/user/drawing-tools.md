@@ -70,8 +70,10 @@ the magnet so the locked angle is kept exactly.
 Select a drawing (click it) to show its **handles** and a compact **quick-settings popup** floating
 beside it. The popup is built from each tool's own schema, so it shows only the controls that tool
 supports — line color/width/style, fill, text, and (for Fibonacci tools) a **gear** panel to
-enable/recolor/label each level. The popup also locks, reorders (bring-to-front /
-send-to-back), and deletes the drawing.
+enable/recolor/label each level. The popup also locks and deletes the drawing, and its overflow
+menu (the `⋮` button) duplicates it in place, reorders it (bring-to-front / send-to-back), or
+resets its settings. A duplicate lands exactly on its source and becomes the selection, ready to
+drag away.
 
 **Text is typed on the chart.** Placing a text annotation opens a blinking caret at the click point
 next to an `Enter Text` placeholder, framed by a thin gray box that marks the text as being edited,
@@ -93,6 +95,41 @@ field behind the popup's **Text** button, next to the text they format. On shape
 label (a trend line, a box), all four controls stay in that panel with the label field.
 
 Drag a handle to reshape; drag the body to move the whole drawing.
+
+### Selecting several drawings
+
+- **Shift+click** or **Ctrl/Cmd+click** a drawing to add it to (or remove it from) the selection.
+- **Ctrl/Cmd+drag on an empty spot** sweeps a selection box: every drawing it touches joins the
+  selection. Successive boxes accumulate.
+- While Ctrl/Cmd is held, handles mark only what is selected — hovering a drawing no longer shows
+  them — so the selection you are building is what you see.
+- Dragging the body of a selected drawing then moves the **whole selection** together, as one
+  undo step; a handle drag still reshapes just that one drawing. Locked members stay where they
+  are. Delete, nudge, copy, duplicate — and a **middle-click** on any selected drawing — act on
+  the whole selection too.
+- Click an empty spot to clear the selection (a drag to pan keeps it).
+
+### One popup for several drawings
+
+Selecting several drawings opens a **single quick-settings popup** for all of them, floating
+above their combined extent. It shows only the controls every selected drawing supports: three
+trend lines get the full trend-line bar, while a trend line, a box and a text annotation share
+just their common ground (text styling, lock, delete, the overflow menu) — controls a member
+lacks disappear rather than showing disabled. Where the drawings agree the control reads
+normally; where they differ it reads as **mixed**: a color swatch striped with every color in
+use, a dash in a dropdown, a half-lit toggle. Any edit applies to every selected drawing as one
+undo step, so picking blue from a mixed swatch turns them all blue. Opening a mixed swatch lists
+the colors currently in use first, so unifying onto one of them is a single click. The per-drawing
+panels — Fibonacci levels, position sizing, volume-profile rows, the text field — stay with a
+single selection.
+
+### Duplicating by dragging
+
+**Ctrl/Cmd+drag** a drawing's body to drag a **copy** away from it — the original stays put, the
+copy follows the cursor and is committed when you release, with its quick-settings popup open
+(one undo step; **Escape** mid-drag leaves nothing behind). With several drawings selected, the
+whole selection is copied at once and stays selected as a group.
+Ctrl/Cmd on a **handle** keeps its usual meaning — a strong magnet snap while reshaping.
 
 ### Keyboard shortcuts
 
@@ -366,7 +403,8 @@ the next load.
   snapshot history. A multi-target action (multi-drag, multi-delete, duplicate, paste) is one
   undo step.
 - **Clipboard.** `copyToClipboard(ids)` + `paste()`, or `duplicate(ids)` / `clone(id)`, mint fresh
-  copies (new ids) and select them — an in-memory, per-chart clipboard.
+  copies (new ids) and select them — an in-memory, per-chart clipboard. On the chart, the
+  popup's overflow menu, **Ctrl/Cmd+D**, and a **Ctrl/Cmd+drag** of the body do the same.
 
 ---
 

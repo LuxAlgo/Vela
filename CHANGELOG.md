@@ -2,6 +2,35 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Duplicate drawings by dragging, and select several at once.** Hold **Ctrl/Cmd** and
+  drag a drawing's body to pull a copy away from it: the original stays where it is, the
+  copy follows the cursor and is committed when you release — selected, with its
+  quick-settings popup open — as one undo step; press **Escape** mid-drag and nothing is
+  left behind. The quick-settings popup's overflow
+  menu gains a **Duplicate** entry that clones the drawing in place and hands it the
+  selection, ready to drag. Selection also grows beyond one drawing: **Ctrl/Cmd+click**
+  adds a drawing to (or removes it from) the selection, just as Shift+click does, and
+  **Ctrl/Cmd+drag on an empty spot** sweeps a selection box that picks up every drawing
+  it touches — successive boxes accumulate, and a click on an empty spot clears the
+  selection (while Ctrl/Cmd is held, handles mark only what is selected, not what the
+  cursor passes over). Dragging the body of any selected drawing then moves the whole
+  selection together (locked drawings stay put), Ctrl/Cmd+dragging it copies the whole
+  selection, and Delete, the arrow keys, copy, duplicate and a middle-click on a selected
+  drawing act on all of them, each as a single undo step.
+- **One settings popup for a whole selection.** Selecting several drawings opens a single
+  quick-settings popup for all of them, showing only the controls every one of them
+  supports — three trend lines get the full trend-line bar; a trend line, a box and a text
+  annotation share just their common ground, and anything a member lacks disappears rather
+  than showing disabled. Where the drawings agree a control reads normally; where they
+  differ it reads as mixed — a swatch striped with every color in use, a dash in a
+  dropdown, a half-lit toggle. Any edit applies to every selected drawing as one undo step,
+  and opening a mixed swatch lists the colors currently in use first, so unifying onto one
+  of them is a single click.
+
 ## [v0.6.17]
 
 ### Changed
