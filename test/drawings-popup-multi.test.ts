@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createDrawing } from '../src/core/drawings';
 import { sharedPaths, commonValue, MIXED } from '../src/renderers/native/drawings/DrawingSettingsPopup';
 
-const trend = (id: string, lineColor: string) => createDrawing('trendline', { id, paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 10, price: 10 }], style: { lineColor } })!;
+const trend = (id: string, lineColor: string) => createDrawing('trendline', { id, paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 10, price: 10 }], style: { lineColor, lineWidth: 1, lineStyle: 'solid' } })!;
 const box = (id: string) => createDrawing('box', { id, paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 10, price: 10 }] })!;
 const text = (id: string) => createDrawing('text', { id, paneId: 'price', anchors: [{ time: 0, price: 0 }] })!;
 

@@ -406,12 +406,13 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     /** Delete the (unlocked) drawing under the cursor. True when one was removed.
      *  Shared by the eraser (click + drag) and the middle-click shortcut; the latter passes
-     *  `withSelection` so a hit on a SELECTED drawing removes the whole selection with it. */
+     *  `withSelection` so a hit on a SELECTED drawing removes the selection with it (its
+     *  locked members excepted). */
     deleteAt(x: number, y: number, withSelection = false): boolean {
         const hit = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE);
         if (!hit || hit.locked) return false;
         this.popup.close();
-        const ids = withSelection && this.selectedIds.has(hit.id) ? this.selectionIds() : [hit.id];
+        const ids = withSelection && this.selectedIds.has(hit.id) ? this.deletableSelection() : [hit.id];
         this.emit({ kind: 'delete', ids });
         return true;
     }
@@ -516,7 +517,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
             this.render();
             return;
         }
+        // A drag of a SELECTED drawing dismissed its bar on the press (but kept the selection —
+        // see onPopupDismissed); once the drag lands, bring the bar back over the moved drawings.
+        const dragged = this.interaction.isDragging() ? this.interaction.pressedId() : null;
         this.interaction.up(x, y); // commit a drag, or open settings on a no-move click
+        if (dragged && this.selectedIds.has(dragged) && !this.popup.isOpen()) {
+            if (this.selectedIds.size >= 2) this.openSettingsForSelection(this.selectionIds());
+            else this.openSettingsById(dragged, x, y);
+        }
     }
 
     /** Toggle the transient ruler. Arming it clears any drawing tool + selection. */
@@ -822,7 +830,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.emit({ kind: 'duplicate', ids: this.selectionIds() });
                 break;
             case 'delete': {
-                const ids = this.selectedIds.size ? this.selectionIds() : this.hoveredId ? [this.hoveredId] : [];
+                const ids = this.selectedIds.size ? this.deletableSelection() : this.hoveredId ? [this.hoveredId] : [];
                 if (ids.length) {
                     this.popup.close();
                     this.emit({ kind: 'delete', ids });
@@ -838,6 +846,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     private selectionIds(): string[] {
         return [...this.selectedIds];
+    }
+
+    /** What a selection-wide delete removes: a lone selected drawing goes regardless, but inside
+     *  a multi-selection a LOCKED drawing is protected — the others go and it stays (selected). */
+    private deletableSelection(): string[] {
+        const ids = this.selectionIds();
+        if (ids.length < 2) return ids;
+        return ids.filter((id) => !this.drawings.find((d) => d.id === id)?.locked);
     }
 
     /** Move every selected (unlocked) drawing by a pixel delta — one edit/edit-many → one undo step. */
@@ -1009,11 +1025,16 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.render();
     }
 
-    /** Dismiss-on-outside-press also clears the selection — except when the press carries a
-     *  multi-select modifier (Shift / Ctrl / Cmd): that press is about to ADD to the selection
-     *  (or sweep a marquee onto it), so the drawings whose bar just closed must stay selected. */
+    /** Dismiss-on-outside-press also clears the selection — except when the press is ABOUT the
+     *  selection: it carries a multi-select modifier (Shift / Ctrl / Cmd — it will add to the
+     *  selection or sweep a marquee onto it), or it landed on a drawing that is already selected
+     *  (the canvas handler ran first and is holding it for a drag or a click), so the drawings
+     *  whose bar just closed must stay selected. */
     private readonly onPopupDismissed = (e?: PointerEvent): void => {
-        if (!(e && (e.shiftKey || e.ctrlKey || e.metaKey))) this.clearSelection();
+        if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) return;
+        const pressed = this.interaction.pressedId();
+        if (pressed && this.selectedIds.has(pressed)) return;
+        this.clearSelection();
     };
 
     /** Report the live drawings' current state as one edit (one undo step, however many). */
@@ -1074,8 +1095,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.openSettingsForSelection(ids); // rebuild so the controls reflect the restored defaults
             },
             remove: () => {
+                // Locked members are protected: they stay behind (still selected) while the rest go.
+                const ids = live().filter((d) => !d.locked).map((d) => d.id);
+                if (ids.length === 0) return;
                 this.popup.close();
-                this.emit({ kind: 'delete', ids: live().map((d) => d.id) });
+                this.emit({ kind: 'delete', ids });
             },
         }, this.onPopupDismissed);
     }

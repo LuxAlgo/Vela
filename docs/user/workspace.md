@@ -438,7 +438,8 @@ they work from the very first keystroke, before any click.
   the stack together. Drawings can be multi-selected
   (Ctrl/Cmd-click) and bundled into a named group that hides, locks, deletes and drags as one
   block; groups live for as long as the chart and are not persisted. Kept in sync with the
-  chart's events.
+  chart's events — a selection made on the chart (Ctrl/Cmd-click, a marquee) lights up every
+  row it covers, and a pick made in the panel selects the same drawings on the chart.
 - **Data window** — the other docked panel: the date and time of the bar under the crosshair,
   its OHLCV tinted with the bar's direction, then one section per indicator showing each plot's
   value in its own color. It follows the crosshair and falls back to the latest bar when the

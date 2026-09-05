@@ -385,16 +385,20 @@ export class DrawingController {
             next = [...ids];
         }
         this.selectedIds = next.filter((id) => this.store.has(id));
+        this.announceSelection();
+    }
+
+    /** Push the selection to the renderer and announce it (primary + the full list). */
+    private announceSelection(): void {
         this.port?.setSelection(this.selectedIds);
-        this.events.emit('drawing:selected', { id: this.selectedIds[0] ?? null });
+        this.events.emit('drawing:selected', { id: this.selectedIds[0] ?? null, ids: [...this.selectedIds] });
     }
 
     /** Restore a history snapshot, reconciling selection against what survived. */
     private restoreSnapshot(doc: DrawingsDocument): void {
         this.store.load(doc); // fires onChange → sync() + autoscale
         this.selectedIds = this.selectedIds.filter((id) => this.store.has(id));
-        this.port?.setSelection(this.selectedIds);
-        this.events.emit('drawing:selected', { id: this.selectedIds[0] ?? null });
+        this.announceSelection();
     }
 
     /** Delete drawings as one undo step; prune them from the selection. */

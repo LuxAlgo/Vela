@@ -20,7 +20,11 @@ All notable changes to Vela, newest first.
   cursor passes over). Dragging the body of any selected drawing then moves the whole
   selection together (locked drawings stay put), Ctrl/Cmd+dragging it copies the whole
   selection, and Delete, the arrow keys, copy, duplicate and a middle-click on a selected
-  drawing act on all of them, each as a single undo step.
+  drawing act on all of them, each as a single undo step. A lock protects a drawing inside
+  a group: deleting a multi-selection removes only its unlocked members and leaves the
+  locked ones in place, still selected. The object tree highlights every selected drawing,
+  not just the first, and the `drawing:selected` event now carries the full list as `ids`
+  alongside the primary `id`.
 - **One settings popup for a whole selection.** Selecting several drawings opens a single
   quick-settings popup for all of them, showing only the controls every one of them
   supports — three trend lines get the full trend-line bar; a trend line, a box and a text

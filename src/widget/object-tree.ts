@@ -142,9 +142,13 @@ const CSS = `
 .vela-ot-empty { padding: 20px 10px; text-align: center; color: var(--vela-fg-muted); font-size: 12px; }
 
 /* ── drawing groups ── */
-/* One top-level entry in a pane's drawing list: a lone drawing, or a whole group block. The
-   transparent border reserves the outline used when a drawing is dropped into the group. */
-.vela-ot-unit { border: 1px solid transparent; border-radius: 6px; }
+/* One top-level entry in a pane's drawing list: a lone drawing, or a whole group block. No
+   border of its own — units stack flush, so consecutive highlighted rows read as one block; the
+   drop-into-group outline is drawn inside the box instead (see the drag-and-drop rules). */
+.vela-ot-unit { border-radius: 6px; }
+/* Adjacent picked rows merge into one contiguous highlight: the shared edge loses its rounding. */
+.vela-ot-unit:has(> .vela-ot-row[data-picked]) + .vela-ot-unit > .vela-ot-row[data-picked] { border-top-left-radius: 0; border-top-right-radius: 0; }
+.vela-ot-unit:has(+ .vela-ot-unit > .vela-ot-row[data-picked]) > .vela-ot-row[data-picked] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .vela-ot-row[data-row-kind='group'] > .vela-icon { width: 12px; font-size: 11px; }
 /* A member sits indented under its group's header. */
 .vela-ot-subrow { padding-left: 26px; }
@@ -201,8 +205,10 @@ const CSS = `
 .vela-ot-gap[data-drop] { height: 4px; background: var(--vela-fg-bright); }
 .vela-ot-gap[data-drop]::before { display: none; }
 /* A whole container accepts the drop: merging into a pane, or a pane with no drawings yet.
-   The pane block's transparent border reserves the room for this outline. */
+   The pane block's transparent border reserves the room for this outline; a group unit has no
+   border to color, so it draws the same line as an inset outline (no layout footprint). */
 .vela-ot [data-drop='target'] { border-color: var(--vela-fg-bright); background: var(--vela-hover); }
+.vela-ot-unit[data-drop='target'] { outline: 1px solid var(--vela-fg-bright); outline-offset: -1px; }
 /* Where a reorder would insert. */
 .vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 var(--vela-fg-bright); }
 .vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 var(--vela-fg-bright); }
@@ -337,7 +343,8 @@ class MenuBuilder {
 
 export class ObjectTree extends SidePanel {
     private chart: Vela | null = null;
-    private selectedDrawing: string | null = null;
+    /** What the CHART has selected — every member of a multi-selection, mirrored as rows. */
+    private selectedDrawings = new Set<string>();
     private symbolName = '';
     /** The raw (possibly venue-prefixed) symbol — what icon resolution routes on. */
     private symbolRaw = '';
@@ -406,14 +413,12 @@ export class ObjectTree extends SidePanel {
         // Selection both stores and repaints, in that order: a refresh triggered before the id
         // is recorded would paint the previous selection and never come back to fix it.
         this.unsubs.push(
-            chart.on('drawing:selected', ({ id }) => {
-                this.selectedDrawing = id;
-                // A selection made on the chart takes over the panel's pick. Our own echo does
-                // not, or pushing a multi-pick to the chart would immediately shrink it to one.
-                if (!this.syncingSelection) {
-                    this.picked.clear();
-                    if (id) this.picked.add(id);
-                }
+            chart.on('drawing:selected', ({ ids }) => {
+                this.selectedDrawings = new Set(ids);
+                // A selection made on the chart takes over the panel's pick — all of it, so a
+                // marquee or Ctrl-click selection on the chart lights up every row it covers. Our
+                // own echo does not, or pushing a pick would just replace it with itself mid-render.
+                if (!this.syncingSelection) this.picked = new Set(ids);
                 this.refresh();
             }),
         );
@@ -783,7 +788,7 @@ export class ObjectTree extends SidePanel {
         el.dataset.drag = '1';
         el.title = 'Drag to restack, or onto another pane to move it there';
         if (inGroup) el.classList.add('vela-ot-subrow');
-        if (d.id === this.selectedDrawing) el.dataset.selected = '1';
+        if (this.selectedDrawings.has(d.id)) el.dataset.selected = '1';
         if (this.picked.has(d.id)) el.dataset.picked = '1';
         el.addEventListener('click', (e) => this.onDrawClick(e, d.id));
         return el;

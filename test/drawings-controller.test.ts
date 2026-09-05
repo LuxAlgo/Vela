@@ -329,8 +329,10 @@ describe('DrawingController — editing foundation', () => {
         expect(seen).toContainEqual(['drawing:created', pasted[0]!.id]);
     });
 
-    it('generalized select: additive toggles membership; primary is ids[0]', () => {
-        const { port, ctrl, seen } = setup();
+    it('generalized select: additive toggles membership; primary is ids[0]; the event carries the full list', () => {
+        const { port, ctrl, seen, events } = setup();
+        const payloads: Array<{ id: string | null; ids: string[] }> = [];
+        events.on('drawing:selected', (e) => payloads.push(e));
         port.fire({ kind: 'create', doc: HLINE_DOC });
         port.fire({ kind: 'create', doc: HLINE_DOC });
         const [a, b] = ctrl.all().map((d) => d.id);
@@ -340,6 +342,7 @@ describe('DrawingController — editing foundation', () => {
         port.fire({ kind: 'select', ids: [b!], additive: true });
         expect(port.selectionIds).toEqual([a, b]);
         expect(seen).toContainEqual(['drawing:selected', a]); // primary = first selected
+        expect(payloads[payloads.length - 1]).toEqual({ id: a, ids: [a, b] }); // a host UI can mirror every member
         port.fire({ kind: 'select', ids: [a!], additive: true }); // toggle a back off
         expect(port.selectionIds).toEqual([b]);
     });

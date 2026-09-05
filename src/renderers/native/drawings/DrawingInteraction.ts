@@ -197,6 +197,11 @@ export class DrawingInteraction {
         return this.state.kind === 'pressed' && this.state.moved ? this.state.id : null;
     }
 
+    /** The drawing under a press that has not been released yet (drag or click undecided), or null. */
+    pressedId(): string | null {
+        return this.state.kind === 'pressed' ? this.state.id : null;
+    }
+
     /** The copies a Ctrl-drag is moving (transient — not yet in the store), or null. */
     dragClones(): readonly Drawing[] | null {
         return this.state.kind === 'pressed' && this.state.moved && this.state.clones ? this.state.clones.map((c) => c.d) : null;

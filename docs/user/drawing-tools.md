@@ -105,7 +105,9 @@ Drag a handle to reshape; drag the body to move the whole drawing.
   them — so the selection you are building is what you see.
 - Dragging the body of a selected drawing then moves the **whole selection** together, as one
   undo step; a handle drag still reshapes just that one drawing. Locked members stay where they
-  are. Delete, nudge, copy, duplicate — and a **middle-click** on any selected drawing — act on
+  are. The selection survives the drag, and its popup comes back over the moved drawings.
+- A **lock protects a drawing inside a group**: deleting a multi-selection — Delete, middle-click,
+  or the popup's trash — removes only its unlocked members; the locked ones stay, still selected. Delete, nudge, copy, duplicate — and a **middle-click** on any selected drawing — act on
   the whole selection too.
 - Click an empty spot to clear the selection (a drag to pan keeps it).
 

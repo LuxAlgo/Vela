@@ -243,10 +243,17 @@ export class DrawingSettingsPopup {
         if (paths.has('style.lineWidth')) {
             // A marker-width field (floor above the hairline ladder, e.g. the
             // highlighter's 4–60) can't live in the 1–4 dropdown — a free numeric
-            // input honoring the schema's declared range replaces it.
-            const wf = schema.fields.find((f) => f.path === 'style.lineWidth');
+            // input honoring the schema's declared range replaces it. Only when EVERY
+            // selected drawing is a marker, though: mixed with a hairline tool the
+            // ladder is the range they all accept.
+            const widthField = (d: Drawing) => d.schema().fields.find((f) => f.path === 'style.lineWidth');
+            const wf = widthField(drawing);
             const width = common((d) => d.style.lineWidth);
-            if (wf?.kind === 'number' && (wf.min ?? 1) > 1) {
+            const markers = every((d) => {
+                const f = widthField(d);
+                return f?.kind === 'number' && (f.min ?? 1) > 1;
+            });
+            if (markers && wf?.kind === 'number') {
                 bar.appendChild(this.widthInput('Line width', width, wf.min ?? 1, wf.max ?? 60, wf.step ?? 1, (v) => actions.patch({ 'style.lineWidth': v })));
             } else {
                 bar.appendChild(this.dropdown('Line width', [1, 2, 3, 4], width, (w) => lineIcon(w, 'solid'), (v) => actions.patch({ 'style.lineWidth': v }), { label: (v) => `${v}px`, labelInTrigger: true }));
