@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Offline workspace charts survive layout changes.** Cells keep their current inline
+  data and visible window when they disappear and return, including data replaced
+  after construction. Cells switched to a provider continue using that provider.
+
+- **Workspace charts keep their full size in affected rendering environments.** They
+  continue to fill their cells when you resize the workspace or switch layouts.
+
 ## [v0.6.17]
 
 ### Changed

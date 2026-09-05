@@ -38,8 +38,15 @@ The browser bundle inlines the worker (see [setup.md](./setup.md#two-artifacts-f
 
 This is the end-to-end tier: **real indicators run all the way through the playground** in a real browser with a real renderer. It is the check that the whole pipeline — feed to engine to neutral model to renderer — actually produces the right picture.
 
-- **Today it is MANUAL.** You run it by hand in the playground (`npm run playground`) and look at the result.
-- The **intended direction is an automated harness** for these runs. Treat manual smoke testing as the current state, not the end state.
+- Most browser checks remain manual: run the playground (`npm run playground`) and
+  exercise the affected surface.
+- Workspace sizing has an automated Obscura smoke test. With the playground running,
+  run `npm run test:browser:workspace`. Set `OBSCURA_WORKER` if `obscura-worker` is not
+  on `PATH`. The test uses deterministic candles and checks computed and backing-store
+  sizes plus painted price pixels in every visible cell through layout changes,
+  resizing, hiding and showing, and maximize and restore. It also checks that named
+  cells retain their current inline data and visible ranges when they leave and return
+  to a layout, without reviving inline data after a switch back to a provider.
 
 The playground serves the **source directly** (vite): `npm run playground`, then exercise the change live — no build step. See [workflow.md](./workflow.md#the-playground).
 

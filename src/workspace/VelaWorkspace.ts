@@ -56,6 +56,7 @@ import { syncTargets, rangesWithin, styleConfigSlice, SYNC_KINDS, type SyncKind,
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { localStorageAdapter } from '../widget/persist';
 import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
+import { snapshotCellBoot, type CellRuntimeBoot } from './cell-boot';
 import { buildContext, type WorkspaceWidgetContext } from './context';
 import {
     registerBuiltinLayouts,
@@ -156,7 +157,7 @@ const CSS = `
 .vela-ws-main { position: relative; display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-ws-toolbar { position: relative; flex: none; }
 .vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
-.vela-cell { background: var(--vela-bg); position: relative; }
+.vela-cell { background: var(--vela-bg); position: relative; display: flex; }
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
    outline on the cell is painted under them) — inert to the pointer. Scoped to
    multi-cell grids ([data-multi]): a single-cell layout always has an active cell,
@@ -232,6 +233,8 @@ export class VelaWorkspace {
     private readonly feed = new MultiProviderFeed();
     private readonly cellsById = new Map<string, ChartCell>();
     private readonly pool = new Map<string, PooledCellState>();
+    /** Arrays and viewports belong to live pool entries, never the saved document. */
+    private readonly poolBoot = new WeakMap<PooledCellState, CellRuntimeBoot>();
     private readonly trackSizes = new Map<string, TrackSizes>(); // per layout id (splitter drags)
     private readonly splitters: SplitterLayer;
     private readonly resizeObserver: ResizeObserver | null = null;
@@ -1086,7 +1089,7 @@ export class VelaWorkspace {
         const preexisting = new Set(this.cellsById.keys());
         for (const [id, cell] of [...this.cellsById]) {
             if (!keep.has(id) || rebuildAll) {
-                this.poolSet(id, cell.dehydrate());
+                this.poolSet(id, cell.dehydrate(), snapshotCellBoot(cell.chart));
                 cell.destroy();
                 this.cellsById.delete(id);
                 this.events.emit('cell:destroyed', { id });
@@ -1199,6 +1202,7 @@ export class VelaWorkspace {
             cell.destroy();
             this.cellsById.delete(id);
         }
+        this.pool.clear();
         for (const dispose of this.attachmentDisposers.values()) {
             try {
                 dispose();
@@ -1449,7 +1453,9 @@ export class VelaWorkspace {
             }
             if (this.cellsById.has(id)) continue;
             const pooled = this.pool.get(id);
-            const seed: CellBoot = pooled ?? { ...seedDefaults(this.opts), ...(this.opts.cells?.[id] ?? {}) };
+            const seed: CellBoot = pooled
+                ? { ...pooled, ...this.poolBoot.get(pooled) }
+                : { ...seedDefaults(this.opts), ...(this.opts.cells?.[id] ?? {}) };
             this.pool.delete(id); // the slot is live again — its pooled state is consumed
             const cell = new ChartCell(id, this.gridEl, seed, {
                 feed: this.feed,
@@ -2219,7 +2225,8 @@ export class VelaWorkspace {
     }
 
     /** Pool a dehydrated slot state (bounded — oldest entries drop past the cap). */
-    private poolSet(id: string, state: PooledCellState): void {
+    private poolSet(id: string, state: PooledCellState, boot: CellRuntimeBoot): void {
+        this.poolBoot.set(state, boot);
         this.pool.delete(id);
         this.pool.set(id, state);
         if (this.pool.size > POOL_CAP) {

@@ -6,7 +6,8 @@
 // chart instance survives every market change and only dies with the cell itself, on a
 // layout change — its state then round-trips through the workspace pool, so shrinking
 // 4 → 2 → 4 restores the third and fourth exactly, indicators and drawings included).
-import { Vela } from '../Vela';
+import type { Vela } from '../Vela';
+import { CellChart } from './cell-boot';
 import { normalizeSession, type MarketSession, type NativeBackend, type VelaOptions, type VelaTheme } from '../core/options';
 import type { OHLCV } from '../core/model/ohlcv';
 import type { VisibleRangePreset } from '../core/visible-range';
@@ -299,7 +300,7 @@ export class ChartCell {
         this.host.addEventListener('focusin', () => this.deps.activate(id));
         gridHost.appendChild(this.host);
 
-        this.inner = new Vela(
+        this.inner = new CellChart(
             this.host,
             {
                 ...deps.chartDefaults,
