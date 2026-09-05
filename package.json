@@ -71,6 +71,7 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:browser:workspace": "node scripts/workspace-browser-smoke.mjs",
     "test:watch": "vitest",
     "lint": "eslint .",
     "playground": "vite"
