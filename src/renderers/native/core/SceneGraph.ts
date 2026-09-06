@@ -30,6 +30,8 @@ export interface SessionZones {
     pre: ReadonlyArray<readonly [number, number]>;
     post: ReadonlyArray<readonly [number, number]>;
     extended: ReadonlyArray<readonly [number, number]>;
+    /** Explicit host-defined sessions carry their resolved color per band. */
+    bands?: ReadonlyArray<HighlightArea>;
 }
 
 /** Price-axis display mode: absolute price, percent change vs a visible baseline, or
@@ -237,6 +239,7 @@ export class SceneGraph {
         for (const [from, to] of this.sessionZones.pre) out.push({ from, to, color: this.style.sessions.premarketColor });
         for (const [from, to] of this.sessionZones.post) out.push({ from, to, color: this.style.sessions.postmarketColor });
         for (const [from, to] of this.sessionZones.extended) out.push({ from, to, color: this.style.sessions.extendedColor });
+        for (const band of this.sessionZones.bands ?? []) out.push(band);
         return out;
     }
 

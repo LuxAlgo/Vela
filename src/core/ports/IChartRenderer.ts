@@ -4,7 +4,7 @@ import type { IndicatorModel } from '../model/indicator';
 import type { ScenePatch } from '../model/patch';
 import type { InputValue, SymbolPickerFn } from '../model/inputs';
 import type { Millis } from '../model/time';
-import type { VelaTheme, ThemeName, MoveTarget, PriceStyle } from '../options';
+import type { VelaTheme, ThemeName, MoveTarget, PriceStyle, ResolvedMotionPolicy } from '../options';
 import type { Unsubscribe } from '../util/types';
 import type { IDrawingsRendererPort } from '../drawings/port';
 
@@ -204,14 +204,14 @@ export type PaneAction =
     | { type: 'maximize'; paneId: string; maximized: boolean };
 
 /**
- * The rendering backend abstraction. No backend (e.g. lightweight-charts) types
- * cross this boundary — that is what makes the renderer swappable. The only MVP
- * implementation is `src/renderers/lightweight-charts/LwcRenderer.ts`.
+ * The rendering-backend abstraction. No implementation-specific types cross this
+ * boundary, which is what makes the renderer swappable. The bundled implementation is
+ * the native renderer; a host may supply any conforming backend.
  */
 export interface IChartRenderer {
     readonly capabilities: RendererCapabilities;
 
-    /** Stable identity of this renderer (e.g. `'native'`, `'lwc'`) — the warn label and `chart.renderer.name`. */
+    /** Stable identity of this renderer (e.g. `'native'`, `'my-renderer'`) — the warn label and `chart.renderer.name`. */
     readonly name: string;
     /** Feature keys this renderer can get/set at runtime via `chart.renderer.set` / `.get`. */
     readonly features: readonly string[];
@@ -219,6 +219,12 @@ export interface IChartRenderer {
     applyFeature(key: string, value: unknown): void;
     /** Read a feature's current value (`undefined` if unsupported). */
     readFeature(key: string): unknown;
+
+    /** Apply the effective presentation-motion policy atomically, possibly before
+     * mount. Renderers with presentation animation should settle active motion when
+     * reduction begins; configured feature values remain distinct from this runtime
+     * gate. Optional for compatibility with renderers that manage no motion. */
+    applyMotionPolicy?(policy: ResolvedMotionPolicy): void;
 
     mount(container: HTMLElement, theme: VelaTheme): void;
     setTheme(theme: VelaTheme): void;

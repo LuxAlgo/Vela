@@ -288,6 +288,8 @@ export interface ChartConfig {
         baselineLevel: number;
     };
     series: {
+        /** Whether the whole base price series is drawn, independent of its active style. */
+        visible: boolean;
         style: PriceStyle;
         baseline: number | null;
         /** Spacing multiplier for non-connecting styles (candles/bars/HA/plugin types): scales the
@@ -627,6 +629,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             baselineLevel: isNum(baseline.baselineLevel) ? clampLevel(baseline.baselineLevel) : base.baseline.baselineLevel,
         },
         series: {
+            visible: isBool(series.visible) ? series.visible : base.series.visible,
             style: isPriceStyle(series.style) ? series.style : base.series.style,
             baseline: series.baseline === null ? null : isNum(series.baseline) ? series.baseline : base.series.baseline,
             spacing: isNum(series.spacing) ? clampSpacing(series.spacing) : base.series.spacing,

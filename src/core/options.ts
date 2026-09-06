@@ -9,15 +9,78 @@ import type { DrawingsOption } from './drawings/toolbar';
 export type ProviderName = string;
 
 /**
- * Which trading session the chart shows, on markets that have one: `regular` = RTH
- * (09:30–16:00 for US equities), `extended` = ETH (pre/post-market included). The
- * provider owns the actual filtering — the flag rides every data request. Meaningless
- * (and ignored end-to-end) on continuous markets like crypto.
+ * Which trading session the chart shows. The two built-in metadata-derived IDs remain
+ * literal union members for editor completion, while providers may accept any non-empty
+ * ID without a catalog. An explicit catalog adds validation and presentation metadata.
+ * The provider owns the actual bar filtering. History and live paths receive the ID
+ * unchanged; a metadata-derived market-status badge may additionally request the
+ * conventional `regular` and `extended` calendars.
  */
-export type MarketSession = 'regular' | 'extended';
+export type MarketSession = 'regular' | 'extended' | (string & Record<never, never>);
 
-/** Narrow an untrusted string (persisted document, URL param) to a {@link MarketSession}. */
-export const normalizeSession = (v: unknown): MarketSession | undefined => (v === 'regular' || v === 'extended' ? v : undefined);
+/** One host-declared market session. Windows use `HHMM-HHMM`, recur each civil day in
+ * market time, and may wrap midnight; several windows represent split sessions such as
+ * a lunch break. */
+export interface MarketSessionDefinition {
+    id: MarketSession;
+    label: string;
+    windows: readonly string[];
+    /** Any non-empty canvas-compatible CSS color literal. Use alpha for translucent shading. */
+    color: string;
+}
+
+/** Normalize an untrusted provider/persisted session ID without changing its case. */
+export const normalizeSession = (v: unknown): MarketSession | undefined => {
+    if (typeof v !== 'string') return undefined;
+    const id = v.trim();
+    return id.length > 0 ? (id as MarketSession) : undefined;
+};
+
+/** Whether a string is one valid `HHMM-HHMM` session window. `2400` is accepted only
+ * as the end boundary; equal edges are empty and therefore invalid. */
+function validSessionWindow(v: unknown): v is string {
+    if (typeof v !== 'string') return false;
+    const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(v);
+    if (!m) return false;
+    const sh = Number(m[1]);
+    const sm = Number(m[2]);
+    const eh = Number(m[3]);
+    const em = Number(m[4]);
+    if (sh > 23 || sm > 59 || eh > 24 || em > 59 || (eh === 24 && em !== 0)) return false;
+    return sh !== eh || sm !== em;
+}
+
+/**
+ * Validate and defensively copy a host session catalog. Invalid definitions are
+ * dropped whole, declaration/window order is preserved, and the first valid duplicate
+ * ID wins. This function deliberately validates colors as non-empty strings, matching
+ * renderer config: syntax is consumed by the renderer in its browser context.
+ */
+export function normalizeSessionDefinitions(value: unknown): readonly MarketSessionDefinition[] {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set<string>();
+    const out: MarketSessionDefinition[] = [];
+    for (const raw of value) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+        const r = raw as { id?: unknown; label?: unknown; windows?: unknown; color?: unknown };
+        const id = normalizeSession(r.id);
+        const label = typeof r.label === 'string' ? r.label.trim() : '';
+        const color = typeof r.color === 'string' ? r.color.trim() : '';
+        if (!id || !label || !color || !Array.isArray(r.windows) || r.windows.length === 0 || !r.windows.every(validSessionWindow)) continue;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({ id, label, windows: [...r.windows], color });
+    }
+    return out;
+}
+
+/** Resolve a candidate against an explicit catalog; an absent/unknown ID falls back to
+ * the first valid definition. An empty catalog deliberately resolves to no session. */
+export function resolveMarketSession(candidate: unknown, definitions: readonly MarketSessionDefinition[]): MarketSession | undefined {
+    const id = normalizeSession(candidate);
+    if (id && definitions.some((definition) => definition.id === id)) return id;
+    return definitions[0]?.id;
+}
 
 /** How the chart obtains its candles. */
 export interface MarketConfig {
@@ -27,8 +90,8 @@ export interface MarketConfig {
     symbol?: string;
     timeframe?: string;
     bars?: number;
-    /** Trading session to show ({@link MarketSession}). Absent = the provider's default
-     *  (`regular` on session markets); continuous markets ignore it entirely. */
+    /** Trading session to show ({@link MarketSession}). Absent asks the provider for its
+     * default (`regular` on legacy session markets); continuous markets ignore it. */
     session?: MarketSession;
     /**
      * The window to frame on the FIRST paint — a preset name (`'1D'`, `'YTD'`, …) or an
@@ -45,8 +108,8 @@ export interface MarketConfig {
 /**
  * One in-place market switch — the argument of `chart.setMarket(next)`. Only the fields
  * given change; the rest of the market keeps its current value. `data` switches to
- * offline bars (and giving `symbol`/`provider` WITHOUT `data` drops a previous offline
- * dataset — back to the provider path). `visibleRange` frames the FIRST paint of the
+ * offline bars (and giving `symbol` WITHOUT `data` drops a previous offline dataset —
+ * back to the provider path). `visibleRange` frames the FIRST paint of the
  * new market (a range chip switching timeframe + depth + window in one call).
  */
 export interface MarketSwitch {
@@ -54,7 +117,7 @@ export interface MarketSwitch {
     symbol?: string;
     timeframe?: string;
     bars?: number;
-    /** Switch the shown trading session (reloads like a timeframe change). */
+    /** Switch to an exact provider-facing trading-session ID (reloads like a timeframe change). */
     session?: MarketSession;
     data?: OHLCV[];
     visibleRange?: VisibleRangePreset | VisibleRange;
@@ -74,7 +137,7 @@ export interface MarketSnapshot {
     provider?: ProviderName;
     timeframe?: string;
     bars?: number;
-    /** The shown trading session — undefined = the provider's default (regular). */
+    /** The shown trading session — undefined = the provider default or no session. */
     session?: MarketSession;
     offline: boolean;
 }
@@ -91,19 +154,26 @@ export interface VelaTheme {
 
 export type ThemeName = 'dark' | 'light';
 
-/** A renderer **class** — Vela instantiates it with the resolved display options.
- *  Built-in default: `NativeRenderer`.
- *  from `'vela/renderers/lwc'` and pass it as `options.renderer`. */
+/** A renderer class — Vela instantiates it with the resolved display options.
+ * Built-in default: `NativeRenderer`; hosts may pass any conforming implementation. */
 export type RendererConstructor = new (opts?: RendererDisplayOptions) => IChartRenderer;
 
 export interface VelaOptions extends MarketConfig {
+    /** Explicit session catalog. A bare chart uses the IDs to validate and resolve the
+     * provider-facing session; a shell also projects labels, windows, and colors into its
+     * UI. `undefined` lets a shell derive legacy regular/extended choices from symbol
+     * metadata; `[]` disables session UI. Host configuration, never chart state. */
+    sessions?: readonly MarketSessionDefinition[];
+    /** IANA market timezone a shell uses to expand explicit session windows. Falls back
+     * to symbol metadata, then `Etc/UTC`; independent from its display timezone. An
+     * invalid explicit zone produces no shading. */
+    sessionTimezone?: string;
     /** false = static history; true = history + live forming candle. */
     live?: boolean;
     theme?: ThemeName | VelaTheme;
     height?: number | string;
-    /** Rendering backend as a renderer **class** that Vela instantiates (with the
-     *  resolved display options). Omit for the built-in native renderer (default); for
-     **/
+    /** Rendering backend as a renderer class that Vela instantiates with the resolved
+     * display options. Omit it for the built-in native renderer. */
     renderer?: RendererConstructor;
     /** Scripting language used when `addIndicator` doesn't specify one. Default `'pine'`
      *  (or the first injected engine's language). */
@@ -115,11 +185,13 @@ export interface VelaOptions extends MarketConfig {
     /** Native geometry backend: `'auto'` (WebGL2 if available, else canvas2d),
      *  or force `'canvas2d'` / `'webgl2'`. Native renderer only. */
     nativeBackend?: NativeBackend;
-    /** Native-renderer animations. `true`/`false` toggles all; an object configures
-     *  each independently. Default: eased **zoom on**, inertial **pan on but snappy**
-     *  (short glide), live-bar glide **off**. Set `{ pan: false }` for an instant pan
-     *  with no momentum, `{ liveBar: true }` (or a duration in ms) to make the forming
-     *  candle slide toward each live tick instead of snapping. */
+    /** Native-renderer animations. When omitted, Vela follows
+     *  `prefers-reduced-motion`; `false` always reduces motion, while `true` and any
+     *  object are explicit full-motion host policies. An object configures each path
+     *  independently. Full-motion defaults: eased **zoom on**, inertial **pan on but
+     *  snappy** (short glide), live-bar glide **off**. Set `{ pan: false }` for an
+     *  instant pan with no momentum, `{ liveBar: true }` (or a duration in ms) to make
+     *  the forming candle slide toward each live tick instead of snapping. */
     animations?: boolean | AnimationConfig;
     /** Neon glow/bloom intensity for line series (0 = off, ~0.6 = strong). WebGL2 only
      *  — the canvas2d backend ignores it. Default 0. */
@@ -171,6 +243,17 @@ export interface AnimationConfig {
     liveBar?: boolean | number;
 }
 
+/** Effective presentation-motion policy after combining host configuration with the
+ * browser preference. `animations` values remain the configured source of truth; this
+ * runtime result is never persisted. */
+export interface ResolvedMotionPolicy {
+    reduced: boolean;
+    animZoom: boolean;
+    animPan: boolean;
+    animLiveBar: number;
+    intro: boolean;
+}
+
 /** Time-constant (ms) of the live-bar glide when `animations.liveBar` is `true`. */
 export const LIVE_BAR_EASE_DEFAULT_MS = 90;
 /** Upper bound (ms) for `animations.liveBar` — past this the candle visibly lags the feed. */
@@ -192,6 +275,20 @@ export function resolveAnimations(animations: boolean | AnimationConfig | undefi
         animZoom: animations?.zoom ?? true,
         animPan: animations?.pan ?? true,
         animLiveBar: resolveLiveBarEaseMs(animations?.liveBar),
+    };
+}
+
+/** Resolve the whole motion surface. Omission follows the system; every supplied value
+ * is an explicit host override. `true` retains the historical live-bar default (off). */
+export function resolveMotionPolicy(animations: boolean | AnimationConfig | undefined, systemReduced: boolean): ResolvedMotionPolicy {
+    const configured = resolveAnimations(animations);
+    const reduced = animations === false || (animations === undefined && systemReduced);
+    return {
+        reduced,
+        animZoom: reduced ? false : configured.animZoom,
+        animPan: reduced ? false : configured.animPan,
+        animLiveBar: reduced ? 0 : configured.animLiveBar,
+        intro: !reduced,
     };
 }
 

@@ -57,6 +57,8 @@ export type {
 export type * from './core/model';
 export type {
     VelaOptions,
+    MarketSession,
+    MarketSessionDefinition,
     MarketConfig,
     MarketSwitch,
     MarketSnapshot,
@@ -66,9 +68,12 @@ export type {
     RendererConstructor,
     RendererDisplayOptions,
     AnimationConfig,
+    ResolvedMotionPolicy,
     AddIndicatorOptions,
     SettingsVisibilityPolicy,
 } from './core/options';
+export { normalizeSession, normalizeSessionDefinitions, resolveMarketSession, resolveMotionPolicy } from './core/options';
+export type { MotionPreferenceSource } from './renderers/shared/motion';
 export type { IndicatorHandle, IndicatorEventMap } from './core/IndicatorHandle';
 export type { VelaEventMap } from './core/events/types';
 // The script-run surface: the `script:run` payload and what `chart.runScript()` resolves.

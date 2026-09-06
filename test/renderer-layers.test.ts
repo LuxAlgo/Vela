@@ -1,12 +1,16 @@
 // The SDK renderer-layer seam (src/renderers/native/layers.ts): registry semantics and the
 // generic native-data channel routing on the renderer (unmounted — mounted painting is
 // exercised in the browser playground; the channel/scene plumbing is the unit-testable part).
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { registerRendererLayer, unregisterRendererLayer, rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerInstance } from '../src/renderers/native/layers';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
 import { SceneGraph } from '../src/renderers/native/core/SceneGraph';
+import { registerChartType, unregisterChartType } from '../src/chart-types/registry';
 
-afterEach(() => unregisterRendererLayer('demo'));
+afterEach(() => {
+    unregisterRendererLayer('demo');
+    unregisterChartType('demo');
+});
 
 describe('renderer-layer registry', () => {
     it('register / replace-by-id / unregister / list', () => {
@@ -76,6 +80,67 @@ describe('generic native-data channels', () => {
         r.setNativeData('volume', { upColor: 'x' });
         expect(scene.volumeLayer).toEqual({ upColor: 'x' });
         expect(scene.nativeData.has('volume')).toBe(false);
+    });
+});
+
+describe('price-series visibility for SDK renderer layers', () => {
+    it('blanks the active custom chart-type layer while overlay and indicator layers keep painting', () => {
+        registerChartType({ id: 'demo', basePainting: 'none' });
+        const renderer = new NativeRenderer();
+        const r = renderer as unknown as Record<string, any>;
+        const scene = r.scene as SceneGraph;
+        scene.ensurePane('price', 'price', 0, 3);
+        renderer.applyFeature('priceStyle', 'demo');
+
+        const chartTypeRender = vi.fn();
+        const overlayRender = vi.fn();
+        const indicatorRender = vi.fn();
+        const clearChartType = vi.fn();
+        const canvas = (clear = vi.fn()) => ({
+            width: 10,
+            height: 10,
+            getContext: () => ({ clearRect: clear }),
+        });
+        r.extLayers = [
+            { def: { id: 'demo', repaintOnCursor: true }, instance: { render: chartTypeRender }, canvas: canvas(clearChartType) },
+            { def: { id: 'overlay', repaintOnCursor: true }, instance: { render: overlayRender }, canvas: canvas() },
+            { def: { id: 'study-layer', repaintOnCursor: true }, instance: { render: indicatorRender }, canvas: canvas() },
+        ];
+        scene.indicators.set('study', {
+            id: 'study',
+            title: 'Study',
+            series: [],
+            paneId: 'price',
+            native: { type: 'study-layer' },
+        } as never);
+        r.syncLayerCanvasOrder = () => undefined;
+        r.stampScaleInvert = () => undefined;
+        r.backend = { modelAlpha: 1, candleBodyAlpha: 1, candleStructureAlpha: 1, candleBodyScale: 1, render: vi.fn() };
+        r.volumeRenderer = { render: vi.fn() };
+        r.vpvrRenderer = { render: vi.fn() };
+        r.animator = { start: vi.fn() };
+        r.indicatorSlices = { prepare: () => new Map() };
+        r.dataCanvas = {};
+        r.backdropRenderer = { render: vi.fn() };
+        r.chrome = { render: vi.fn() };
+        r.axisSurface = () => ({});
+
+        r.paintData();
+        expect(chartTypeRender).toHaveBeenCalledOnce();
+        expect(overlayRender).toHaveBeenCalledOnce();
+        expect(indicatorRender).toHaveBeenCalledOnce();
+
+        renderer.applyFeature('candleVisible', false);
+        r.paintData();
+        expect(chartTypeRender).toHaveBeenCalledOnce();
+        expect(clearChartType).toHaveBeenCalledOnce();
+        expect(overlayRender).toHaveBeenCalledTimes(2);
+        expect(indicatorRender).toHaveBeenCalledTimes(2);
+
+        r.repaintCursorLayers();
+        expect(chartTypeRender).toHaveBeenCalledOnce();
+        expect(overlayRender).toHaveBeenCalledTimes(3);
+        expect(indicatorRender).toHaveBeenCalledTimes(3);
     });
 });
 

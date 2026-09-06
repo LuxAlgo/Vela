@@ -4,6 +4,7 @@
 // applyState / persist plumbing is verified in the browser (playground probes).
 import { describe, it, expect } from 'vitest';
 import { encodeState, decodeState, sanitizeState, memoryStorageAdapter, type WorkspaceState } from '../src/workspace/persist';
+import { jsonStateEqual } from '../src/state/document';
 import { localStorageAdapter } from '../src/widget/persist';
 import { ensureLayout, registerBuiltinLayouts } from '../src/workspace/layouts';
 
@@ -63,6 +64,25 @@ describe('state codec round-trip', () => {
     });
 });
 
+describe('jsonStateEqual', () => {
+    it('ignores object-key order but preserves nested values and array order', () => {
+        expect(jsonStateEqual(
+            { plugin: { enabled: true, inputs: { length: 20, source: 'close' } }, ids: ['a', 'b'] },
+            { ids: ['a', 'b'], plugin: { inputs: { source: 'close', length: 20 }, enabled: true } },
+        )).toBe(true);
+        expect(jsonStateEqual({ ids: ['a', 'b'] }, { ids: ['b', 'a'] })).toBe(false);
+        expect(jsonStateEqual({ value: 1 }, { value: 2 })).toBe(false);
+    });
+
+    it('does not recurse forever on cyclic values from an untrusted direct call', () => {
+        const left: Record<string, unknown> = { value: 1 };
+        const right: Record<string, unknown> = { value: 1 };
+        left.self = left;
+        right.self = right;
+        expect(jsonStateEqual(left, right)).toBe(true);
+    });
+});
+
 describe('sanitizeState (the applyState gate)', () => {
     it('drops malformed fields but keeps the healthy remainder', () => {
         const doc = sanitizeState({
@@ -98,18 +118,26 @@ describe('sanitizeState (the applyState gate)', () => {
         });
     });
 
-    it('keeps a valid session value and drops anything else', () => {
+    it('keeps syntactically valid custom session ids for catalog-aware resolution', () => {
         const doc = sanitizeState({
             version: 1,
             layout: '1',
             charts: [
                 { id: 'c1', symbol: 'NASDAQ:AAPL', session: 'extended' },
-                { id: 'c2', symbol: 'BTCUSDT', session: 'after-hours' }, // not a session → dropped
+                {
+                    id: 'c2',
+                    symbol: 'BTCUSDT',
+                    session: ' after-hours ',
+                    sessions: [{ id: 'after-hours', label: 'After hours', windows: ['1600-2000'], color: '#abc' }],
+                    sessionTimezone: 'America/New_York',
+                },
+                { id: 'c3', symbol: 'BTCUSDT', session: ' ' },
             ],
         });
         expect(doc?.charts).toEqual([
             { id: 'c1', symbol: 'NASDAQ:AAPL', session: 'extended' },
-            { id: 'c2', symbol: 'BTCUSDT' },
+            { id: 'c2', symbol: 'BTCUSDT', session: 'after-hours' },
+            { id: 'c3', symbol: 'BTCUSDT' },
         ]);
     });
 
@@ -172,6 +200,16 @@ describe('sanitizeState (the applyState gate)', () => {
         // requires object-ness so JSON primitives cannot masquerade as documents.
         expect(doc!.charts[0]!.rendererConfig).toEqual(config);
         expect(doc!.charts[0]!.drawings).toEqual(config);
+    });
+
+    it('round-trips hidden price-series state inside the renderer config', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            charts: [{ id: 'c1', rendererConfig: { series: { visible: false } } }],
+        });
+        const restored = decodeState(encodeState(doc!));
+        expect(restored!.charts[0]!.rendererConfig).toEqual({ series: { visible: false } });
     });
 
     it('keeps sync group records only when at least one valid member remains', () => {

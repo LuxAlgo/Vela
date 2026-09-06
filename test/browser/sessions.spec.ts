@@ -1,0 +1,30 @@
+import { test, expect, expectPaintedSurface } from './fixtures';
+
+test('keyboard session selection forwards the exact ID, paints its bands, and survives reload', async ({ app: page }) => {
+    await expect.poll(() => page.evaluate(() => window.fixture.subscribers)).toBe(1);
+    const trigger = page.getByRole('button', { name: 'Trading session', exact: true });
+    await expect(trigger).toHaveText('Morning');
+    await page.evaluate(() => { window.fixture.calls.length = 0; });
+    await trigger.click();
+    const menu = page.getByRole('menu').filter({ has: page.getByRole('menuitem', { name: 'Night', exact: true }) });
+    await expectPaintedSurface(menu);
+    await expect(menu.getByRole('menuitem')).toHaveText(['Morning', 'Afternoon', 'Night']);
+    await page.keyboard.press('End');
+    await expect(menu).toBeFocused();
+    await expect(menu).toHaveAttribute('aria-activedescendant', (await page.getByRole('menuitem', { name: 'Night', exact: true }).getAttribute('id'))!);
+    await page.keyboard.press('Enter');
+    await expect(trigger).toHaveText('Night');
+    await expect(menu).toBeHidden();
+    await expect.poll(() => page.evaluate(() => window.fixture.calls.filter(call => call.method === 'subscribe').length)).toBe(1);
+    const calls = await page.evaluate(() => window.fixture.calls);
+    expect(calls.filter(call => call.method === 'history')).toHaveLength(1);
+    expect(calls.some(call => call.method === 'calendar')).toBe(true);
+    expect(calls.every(call => call.session === 'Night-X')).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.fixture.paint().session)).toBeGreaterThan(100);
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('vela-browser-fixture') ?? '{}').charts?.[0]?.session)).toBe('Night-X');
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => window.fixture?.ready)).toBe(true);
+    await expect(trigger).toHaveText('Night');
+    await expect.poll(() => page.evaluate(() => window.fixture.paint().session)).toBeGreaterThan(100);
+    expect(await page.evaluate(() => window.fixture.calls.every(call => call.session === 'Night-X'))).toBe(true);
+});

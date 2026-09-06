@@ -25,7 +25,7 @@ import type { Pane } from '../../core/model/scene';
 import type { IndicatorModel, PaneAxisBand } from '../../core/model/indicator';
 import type { ScenePatch } from '../../core/model/patch';
 import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
-import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
+import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName, ResolvedMotionPolicy } from '../../core/options';
 import { resolveLiveBarEaseMs, LIVE_BAR_EASE_DEFAULT_MS } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
 import { isLineLikeSeries } from '../../core/model/series';
@@ -210,6 +210,9 @@ export class NativeRenderer implements IChartRenderer {
     private animPan = true;
     private animLiveBarMs = 0; // forming-bar OHLC glide time-constant; 0 = each tick snaps
     private animLiveBarOnMs = LIVE_BAR_EASE_DEFAULT_MS; // the duration the settings-dialog on/off toggle restores (last non-zero value configured)
+    /** Runtime gate from host options + system preference. Configured animation values
+     * stay intact while this is true, so a preference change never rewrites state. */
+    private motionReduced = false;
     // Brand default candles.
     private candleUp = BULLISH;
     private candleDown = BEARISH;
@@ -339,6 +342,47 @@ export class NativeRenderer implements IChartRenderer {
     readonly name = 'native';
     readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
 
+    applyMotionPolicy(policy: ResolvedMotionPolicy): void {
+        const changed = policy.reduced !== this.motionReduced;
+        this.motionReduced = policy.reduced;
+        if (this.mountContainer) this.mountContainer.dataset.velaMotion = policy.reduced ? 'reduced' : 'full';
+        if (this.wrapper) this.wrapper.dataset.velaMotion = policy.reduced ? 'reduced' : 'full';
+        if (this.inputsUI) this.inputsUI.setReducedMotion(policy.reduced);
+        this.settingsDialog?.setReducedMotion(policy.reduced);
+        if (!changed || !policy.reduced) return;
+        this.settlePresentationMotion();
+    }
+
+    /** Finish fixed-target motion and stop targetless motion in one repaint. */
+    private settlePresentationMotion(): void {
+        if (this.introRaf != null) cancelAnimationFrame(this.introRaf);
+        this.introRaf = null;
+        this.scene.bars = this.bars;
+        this.modelAlpha = 1;
+        const last = this.bars[this.bars.length - 1];
+        if (last) this.syncLiveEase(last);
+        for (const animation of this.wrapper?.getAnimations?.({ subtree: true }) ?? []) animation.cancel();
+        if (!this.animator || !this.scheduler) return; // policy may arrive before mount
+
+        const before = this.coords.getViewport();
+        let barSpacing = before.barSpacing;
+        let rightOffset = before.rightOffset;
+        if (this.targetBarSpacing > 0 && Math.abs(barSpacing - this.targetBarSpacing) > this.targetBarSpacing * 1e-3) {
+            barSpacing = this.targetBarSpacing;
+            rightOffset = this.anchoredRightOffset(barSpacing);
+        }
+        if (this.scrollTargetRO != null) rightOffset = this.scrollTargetRO;
+        const settled = this.clampViewport(barSpacing, rightOffset);
+        this.animator.stop();
+        this.panVelocity = 0; // inertia has no fixed target: stop at the current position
+        this.scrollTargetRO = null;
+        this.coords.setViewport(settled);
+        this.targetBarSpacing = settled.barSpacing;
+        this.computeScales(); // animator is idle, so scale targets snap in the same turn
+        this.scheduler.flushNow(InvalidateLevel.Full);
+        if (settled.barSpacing !== before.barSpacing || settled.rightOffset !== before.rightOffset) this.emitViewportChange();
+    }
+
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
         switch (key) {
@@ -385,7 +429,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'intro': {
                 const s = value === false || value === 'none' || value === 'off' || value == null ? '' : String(value);
                 this.introStyle = s;
-                if (s) this.playIntro(s); // setting it replays — used to compare styles from the console
+                if (s && !this.motionReduced) this.playIntro(s); // setting it replays — used to compare styles from the console
                 return;
             }
             case 'zoomAnchor':
@@ -403,9 +447,14 @@ export class NativeRenderer implements IChartRenderer {
             case 'candleZOrder':
                 this.scene.candleZ = Number(value) || 0;
                 break;
-            case 'candleVisible':
-                this.scene.candlesHidden = value === false;
-                break;
+            case 'candleVisible': {
+                const hidden = value === false;
+                if (hidden === this.scene.candlesHidden) return;
+                this.scene.candlesHidden = hidden;
+                this.scheduler?.invalidate(InvalidateLevel.Full);
+                for (const cb of this.configChangedCbs) cb();
+                return;
+            }
             case 'seriesOrder':
                 this.applySeriesOrder(value);
                 break;
@@ -623,7 +672,9 @@ export class NativeRenderer implements IChartRenderer {
             const dot = doc.createElement('span');
             Object.assign(dot.style, { width: '7px', height: '7px', borderRadius: '50%', background: this.chromeTheme().textColor, opacity: '0.15' });
             // Staggered phases via negative delays — every dot animates from the first frame.
-            dot.animate([{ opacity: 0.12 }, { opacity: 0.55 }], { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: -i * 260 });
+            if (!this.motionReduced) {
+                dot.animate([{ opacity: 0.12 }, { opacity: 0.55 }], { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: -i * 260 });
+            }
             el.appendChild(dot);
         }
         this.wrapper.appendChild(el); // appended last ⇒ above the canvases, still under dialogs
@@ -738,7 +789,12 @@ export class NativeRenderer implements IChartRenderer {
                     baselineLevel: s.baseline.baselineLevel,
                 };
             })(),
-            series: { style: this.scene.priceStyle, baseline: this.scene.baselineValue, spacing: this.coords.spacingScale },
+            series: {
+                visible: !this.scene.candlesHidden,
+                style: this.scene.priceStyle,
+                baseline: this.scene.baselineValue,
+                spacing: this.coords.spacingScale,
+            },
             sessions: { premarketColor: s.sessions.premarketColor, postmarketColor: s.sessions.postmarketColor, extendedColor: s.sessions.extendedColor },
         };
     }
@@ -857,6 +913,7 @@ export class NativeRenderer implements IChartRenderer {
         // session shading
         s.sessions = { premarketColor: next.sessions.premarketColor, postmarketColor: next.sessions.postmarketColor, extendedColor: next.sessions.extendedColor };
         // series
+        this.scene.candlesHidden = !next.series.visible;
         this.setPriceStyle(next.series.style);
         // Re-read the active style's candle override: setPriceStyle no-ops when the style
         // did not change, but the per-type bag (candle* keys) may have — this is the live
@@ -914,7 +971,7 @@ export class NativeRenderer implements IChartRenderer {
                 this.plot.appendChild(this.settingsButton);
             }
             if (this.settingsButton) this.settingsButton.style.display = 'flex';
-            if (this.plot && !this.settingsDialog) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
+            if (this.plot && !this.settingsDialog) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme, this.motionReduced);
         } else {
             this.settingsButton?.style.setProperty('display', 'none');
             this.settingsDialog?.close();
@@ -957,7 +1014,7 @@ export class NativeRenderer implements IChartRenderer {
      *  in-chart gear — created on demand, independent of the gear feature being enabled. */
     openSettingsDialog(section?: string): void {
         if (!this.settingsDialog && this.plot) {
-            this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
+            this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme, this.motionReduced);
             this.settingsDialog.setLayoutMode(this.layoutMode);
         }
         this.toggleSettingsDialog(section);
@@ -1104,7 +1161,7 @@ export class NativeRenderer implements IChartRenderer {
      *  instant when pan animation is off. Shared by scroll-to-latest and panBy. */
     private glideRightOffset(target: number): void {
         const vp = this.coords.getViewport();
-        if (!this.animPan) {
+        if (this.motionReduced || !this.animPan) {
             this.applyViewport({ barSpacing: vp.barSpacing, rightOffset: target });
             return;
         }
@@ -1267,6 +1324,7 @@ export class NativeRenderer implements IChartRenderer {
     // ── lifecycle ──
     mount(container: HTMLElement, theme: VelaTheme): void {
         this.mountContainer = container;
+        container.dataset.velaMotion = this.motionReduced ? 'reduced' : 'full';
         this.publishGutters();
         this.theme = this.deriveTheme(theme);
         // provisional chrome surface (refined by the first applyConfig)
@@ -1274,6 +1332,7 @@ export class NativeRenderer implements IChartRenderer {
         this.surfaceTextColor = theme.textColor;
 
         this.wrapper = document.createElement('div');
+        this.wrapper.dataset.velaMotion = this.motionReduced ? 'reduced' : 'full';
         // user-select none: in-chart chrome text (legend, dialogs, axis buttons) is UI,
         // never selectable — the kit's text-entry controls opt back in in their own CSS.
         Object.assign(this.wrapper.style, { position: 'relative', width: '100%', height: '100%', overflow: 'hidden', cursor: 'crosshair', userSelect: 'none', webkitUserSelect: 'none' });
@@ -1380,6 +1439,11 @@ export class NativeRenderer implements IChartRenderer {
             // User drawings claim a gesture before pan when armed / over a drawing.
             drawingsClaim: (x, y) => this.userDrawings?.claim(x, y) ?? false,
             drawingsMeasureStart: (x, y, snap) => this.userDrawings?.beginMeasureAt(x, y, snap) ?? false,
+            drawingsMarqueeStart: (x, y, additive) => this.userDrawings?.beginMarquee(x, y, additive) ?? false,
+            drawingsMarqueeMove: (x, y) => this.userDrawings?.moveMarquee(x, y),
+            drawingsMarqueeEnd: (x, y) => this.userDrawings?.endMarquee(x, y),
+            drawingsMarqueeCancel: () => this.userDrawings?.cancelMarquee(),
+            drawingsMarqueeClick: () => this.userDrawings?.marqueeClick(),
             drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
             drawingsCancelPlacement: () => this.userDrawings?.cancelPlacement() ?? false,
             drawingsSnapMode: () => this.snapMode,
@@ -1469,6 +1533,7 @@ export class NativeRenderer implements IChartRenderer {
         this.setKeyboardEnabled(this.keyboardEnabled); // accessible by default; wires focus + ARIA
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
+        this.inputsUI.setReducedMotion(this.motionReduced);
         this.inputsUI.setLayoutMode(this.layoutMode);
         this.inputsUI.setTitlesVisible(this.indicatorTitlesOn); // a remount keeps the toggle state
         this.inputsUI.setValuesVisible(this.indicatorValuesOn);
@@ -1719,6 +1784,7 @@ export class NativeRenderer implements IChartRenderer {
         this.mountContainer?.style.removeProperty('--vela-bottom-gutter');
         this.mountContainer?.style.removeProperty('--vela-price-pane-top');
         this.mountContainer?.style.removeProperty('--vela-price-pane-bottom');
+        this.mountContainer?.removeAttribute('data-vela-motion');
         this.mountContainer = null;
         this.wrapper?.remove();
     }
@@ -1782,7 +1848,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         if (!this.introPlayed && this.bars.length > 0) {
             this.introPlayed = true; // play the reveal once, when candles first appear
-            if (this.introStyle) {
+            if (this.introStyle && !this.motionReduced) {
                 this.playIntro(this.introStyle); // the reveal owns the paint — no full-frame flash first
                 return;
             }
@@ -1795,7 +1861,7 @@ export class NativeRenderer implements IChartRenderer {
         const last = this.bars[n - 1];
         if (last && bar.time === last.time) {
             this.bars[n - 1] = bar; // actual forming bar — the ease target
-            if (this.animLiveBarMs <= 0 || this.liveEaseTime !== bar.time) {
+            if (this.motionReduced || this.animLiveBarMs <= 0 || this.liveEaseTime !== bar.time) {
                 this.syncLiveEase(bar); // glide off, or the first tick of this bar: snap
             } else {
                 this.animator.start(); // glide the displayed high/low/close toward this tick
@@ -2269,7 +2335,7 @@ export class NativeRenderer implements IChartRenderer {
         this.zoomAnchorX = anchorX;
         this.panVelocity = 0;
         this.scrollTargetRO = null;
-        if (!this.animZoom) {
+        if (this.motionReduced || !this.animZoom) {
             const v = this.clampViewport(barSpacing, this.anchoredRightOffset(barSpacing));
             this.coords.setViewport(v);
             this.targetBarSpacing = v.barSpacing;
@@ -2283,7 +2349,7 @@ export class NativeRenderer implements IChartRenderer {
 
     /** Inertial pan: continue with a rightOffset velocity (logical units / ms) that decays. */
     private fling(velocity: number): void {
-        if (!this.animPan) return; // pan animation off → drag-release stops dead
+        if (this.motionReduced || !this.animPan) return; // pan animation off → drag-release stops dead
         this.scrollTargetRO = null; // a fresh flick cancels an in-flight scroll-to-latest glide
         this.panVelocity = velocity;
         this.animator.start();
@@ -2964,10 +3030,11 @@ export class NativeRenderer implements IChartRenderer {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         for (const l of this.extLayers) {
             if (!l.def.repaintOnCursor) continue;
+            if (this.baseSeriesHidesLayer(l.def.id)) continue;
             const lp = this.layerPane(l.def.id) ?? pane;
             if (lp.collapsed) continue; // blanked by the data frame; nothing to hover
             l.instance.render(this.extLayerArgs(l.def.id, lp.scale, lp.bounds, nowMs));
-            if (this.animZoom && l.instance.animating?.()) this.animator.start();
+            if (!this.motionReduced && this.animZoom && l.instance.animating?.()) this.animator.start();
         }
     }
 
@@ -2990,6 +3057,7 @@ export class NativeRenderer implements IChartRenderer {
             theme: this.theme,
             priceStyle: this.scene.priceStyle,
             nowMs,
+            reducedMotion: this.motionReduced,
             cursor: this.lastPointer,
         };
     }
@@ -3035,6 +3103,13 @@ export class NativeRenderer implements IChartRenderer {
             const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
             let folded: BasePaintingModulation | null = null;
             for (const l of this.extLayers) {
+                // A chart type's same-id, unowned layer is part of the base price
+                // representation. The whole-series eye suppresses it, but never an
+                // unrelated overlay or a layer owned by a native indicator.
+                if (this.baseSeriesHidesLayer(l.def.id)) {
+                    this.clearLayerCanvas(l.canvas);
+                    continue;
+                }
                 const lp: PaneNode = this.layerPane(l.def.id) ?? pane;
                 // A collapsed host pane shows its legend strip only — blank the layer for
                 // the duration (the instance isn't poked, so it can't clear itself).
@@ -3050,7 +3125,7 @@ export class NativeRenderer implements IChartRenderer {
                 // sits over the candles it would be dimming.
                 if (lp === pane) folded = foldBaseModulation(folded, l.instance.modulateBase?.(args) ?? null);
                 // A pulsing/fading layer keeps the animator alive; it stops itself when done.
-                if (this.animZoom && l.instance.animating?.()) this.animator.start();
+                if (!this.motionReduced && this.animZoom && l.instance.animating?.()) this.animator.start();
             }
             if (folded) {
                 if (folded.candleBodyScale != null) this.backend.candleBodyScale = clamp01(folded.candleBodyScale) || 0.01;
@@ -3415,6 +3490,13 @@ export class NativeRenderer implements IChartRenderer {
             if (m.native?.type === layerId) return m;
         }
         return null;
+    }
+
+    /** Whether the whole-price-series visibility gate owns this SDK layer. A same-id
+     * unowned layer is the active chart type's base painting; indicator-owned and
+     * unrelated overlay layers remain independent. */
+    private baseSeriesHidesLayer(layerId: string): boolean {
+        return this.scene.candlesHidden && layerId === this.scene.priceStyle && this.layerOwner(layerId) == null;
     }
 
     /** The pane an SDK layer paints on: its owner's pane, else the price pane. */
@@ -3938,7 +4020,7 @@ function sanitizeHighlights(value: unknown): HighlightArea[] {
  *  phase), or null (no session structure). */
 function sanitizeSessionZones(value: unknown): SessionZones | null {
     if (value == null || typeof value !== 'object') return null;
-    const v = value as { pre?: unknown; post?: unknown; extended?: unknown };
+    const v = value as { pre?: unknown; post?: unknown; extended?: unknown; bands?: unknown };
     const windows = (raw: unknown): Array<readonly [number, number]> => {
         if (!Array.isArray(raw)) return [];
         const out: Array<readonly [number, number]> = [];
@@ -3950,7 +4032,12 @@ function sanitizeSessionZones(value: unknown): SessionZones | null {
         }
         return out.sort((a, b) => a[0] - b[0]);
     };
-    return { pre: windows(v.pre), post: windows(v.post), extended: windows(v.extended) };
+    return {
+        pre: windows(v.pre),
+        post: windows(v.post),
+        extended: windows(v.extended),
+        ...(Array.isArray(v.bands) ? { bands: sanitizeHighlights(v.bands) } : {}),
+    };
 }
 
 /** Whether a value is one of the supported price-series styles (built-ins + SDK-registered). */

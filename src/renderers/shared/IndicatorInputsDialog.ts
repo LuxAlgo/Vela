@@ -9,6 +9,7 @@ import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openP
 import { Dialog } from '../../ui/components/dialog';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '../../ui/components/field';
 import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '../../ui/styles';
+import { applyMotionScope } from './motion';
 
 /** Emitted when the user edits an input in the in-chart settings dialog. */
 export interface InputsUIChange {
@@ -74,11 +75,21 @@ export class IndicatorInputsDialog {
     private choicePop: Popover | null = null;
     private calendarPop: Popover | null = null;
     private calendarAnchor: HTMLElement | null = null;
+    private reducedMotion = false;
 
     constructor(private readonly host: IndicatorDialogHost) {}
 
     isOpen(): boolean {
         return this.dialog !== null;
+    }
+
+    /** Project the chart policy onto an open portal without affecting its host app. */
+    setReducedMotion(reduced: boolean): void {
+        this.reducedMotion = reduced;
+        if (this.uiDialog) {
+            const host = this.host.dialogHost() ?? this.host.container;
+            applyMotionScope(host, reduced, this.uiDialog.backdrop, this.uiDialog.positioner);
+        }
     }
 
     private readonly onDialogKey = (e: KeyboardEvent): void => {
@@ -126,6 +137,7 @@ export class IndicatorInputsDialog {
             // the replacement dialog.
             onOpenChange: (open) => { if (!open && this.uiDialog === ui) this.close(); },
         });
+        applyMotionScope(host, this.reducedMotion, ui.backdrop, ui.positioner);
         applyChromeTokens(ui.panel, t);
         ui.panel.style.colorScheme = this.isDarkTheme() ? 'dark' : 'light';
         this.dialogTips.push(attachChromeTooltip(ui.panel.querySelector('.vela-dialog-close') as HTMLElement, {
@@ -1040,4 +1052,3 @@ function timeParts(ts: number): { date: string; time: string } {
     const mm = String(snapped % 60).padStart(2, '0');
     return { date, time: `${hh}:${mm}` };
 }
-

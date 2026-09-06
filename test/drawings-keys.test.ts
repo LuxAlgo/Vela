@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { keyToDrawingAction, isEditingText, type DrawingKeyContext } from '../src/renderers/native/drawings/DrawingKeys';
+import { keyToDrawingAction, isEditingText, unlockedDrawingIds, type DrawingKeyContext } from '../src/renderers/native/drawings/DrawingKeys';
 
 const ctx = (over: Partial<DrawingKeyContext> = {}): DrawingKeyContext => ({
     hasSelection: true,
@@ -49,5 +49,15 @@ describe('isEditingText', () => {
         expect(isEditingText({ tagName: 'DIV', isContentEditable: true } as unknown as EventTarget)).toBe(true);
         expect(isEditingText({ tagName: 'CANVAS' } as unknown as EventTarget)).toBe(false);
         expect(isEditingText(null)).toBe(false);
+    });
+});
+
+describe('unlockedDrawingIds', () => {
+    it('keeps unlocked and stale targets in order while excluding locked drawings', () => {
+        const drawings = [
+            { id: 'open', locked: false },
+            { id: 'locked', locked: true },
+        ];
+        expect(unlockedDrawingIds(drawings, ['locked', 'stale', 'open'])).toEqual(['stale', 'open']);
     });
 });

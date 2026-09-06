@@ -413,21 +413,36 @@ describe('BarStore', () => {
 });
 
 describe('session-keyed series (RTH vs ETH are different bars)', () => {
-    it('seriesKey keys extended apart and leaves regular/absent on the legacy key', () => {
+    it('seriesKey isolates every explicit id from the omitted provider default', () => {
         expect(seriesKey('edgx', 'AAPL', '60')).toBe('edgx|AAPL|60');
-        expect(seriesKey('edgx', 'AAPL', '60', 'regular')).toBe('edgx|AAPL|60'); // default = keyless
+        expect(seriesKey('edgx', 'AAPL', '60', 'regular')).toBe('edgx|AAPL|60|regular');
         expect(seriesKey('edgx', 'AAPL', '60', 'extended')).toBe('edgx|AAPL|60|extended');
     });
 
-    it('the two sessions never share cached bars, and the flag reaches the inner feed', async () => {
+    it('keeps arbitrary provider-facing ids exact and isolated', async () => {
         const { feed, store, cf } = setup(600);
-        const regular = await cf.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500 });
-        // Extended is a COLD series of its own — a fresh full load, not the cached regular bars.
+        await cf.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500, session: 'Asia-AM' });
+        const calls = feed.loadCalls;
+        await cf.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500, session: 'asia-am' });
+        expect(feed.loadCalls).toBe(calls + 1);
+        expect(store.get(seriesKey('binance', 'BTCUSDT', '60', 'Asia-AM'))).toBeDefined();
+        expect(store.get(seriesKey('binance', 'BTCUSDT', '60', 'asia-am'))).toBeDefined();
+    });
+
+    it('omitted, regular, and extended sessions never share cached bars', async () => {
+        const { feed, store, cf } = setup(600);
+        const providerDefault = await cf.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500 });
+        const callsAfterDefault = feed.loadCalls;
+        const regular = await cf.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500, session: 'regular' });
+        expect(feed.loadCalls).toBe(callsAfterDefault + 1);
+        // Extended is another COLD series — neither exact ID may borrow provider-default bars.
         const callsAfterRegular = feed.loadCalls;
         const extended = await cf.load({ symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500, session: 'extended' });
         expect(feed.loadCalls).toBe(callsAfterRegular + 1);
-        expect(times(extended)).toEqual(times(regular)); // same fake universe...
+        expect(times(regular)).toEqual(times(providerDefault)); // same fake universe...
+        expect(times(extended)).toEqual(times(providerDefault));
         expect(store.get(seriesKey('binance', 'BTCUSDT', '60'))).toBeDefined();
-        expect(store.get(seriesKey('binance', 'BTCUSDT', '60', 'extended'))).toBeDefined(); // ...two series
+        expect(store.get(seriesKey('binance', 'BTCUSDT', '60', 'regular'))).toBeDefined();
+        expect(store.get(seriesKey('binance', 'BTCUSDT', '60', 'extended'))).toBeDefined();
     });
 });

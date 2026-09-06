@@ -10,6 +10,7 @@
 import type { DataProvider } from '../core/ports/DataProvider';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { VelaTheme, NativeBackend, VelaOptions } from '../core/options';
+import { resolveMotionPolicy } from '../core/options';
 import type { VelaShellOptions } from '../widget/shell-options';
 import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
@@ -35,6 +36,7 @@ import { toolShortcutHints } from '../widget/tool-shortcuts';
 import { legendActionsProviderFor, legendCalloutsProviderFor, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
+import { MotionPreferenceController } from '../renderers/shared/motion';
 import { MobileBar } from '../widget/mobile-bar';
 import { TimeframeDrawer } from '../widget/timeframe-drawer';
 import { DrawingsDrawer } from '../widget/drawings-drawer';
@@ -54,6 +56,7 @@ import { registerBuiltinChartTypes } from '../chart-types/builtins';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { syncTargets, rangesWithin, styleConfigSlice, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
+import { jsonStateEqual } from '../state/document';
 import { localStorageAdapter } from '../widget/persist';
 import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
 import { buildContext, type WorkspaceWidgetContext } from './context';
@@ -320,6 +323,9 @@ export class VelaWorkspace {
     // on the root, the drawers build lazily on first open and act on the ACTIVE cell) ──
     /** Writes `data-layout` on the root and pushes mode flips into every cell's renderer. */
     private layoutCtl!: LayoutModeController;
+    /** One system reduced-motion observer shared by every live and rebuilt cell. */
+    private motionPreference!: MotionPreferenceController;
+    private motionUnsub: (() => void) | null = null;
     private readonly mobileBar: MobileBar | null;
     private readonly drawingPill: DrawingPill | null;
     private tfDrawer: TimeframeDrawer | null = null;
@@ -396,6 +402,12 @@ export class VelaWorkspace {
         this.root = doc.createElement('div');
         this.root.className = 'vela-workspace';
         ensureUIHost(this.root, resolveTheme(opts.theme));
+        this.motionPreference = new MotionPreferenceController(this.root, opts.animations === undefined);
+        const projectMotion = (systemReduced: boolean): void => {
+            this.root.dataset.velaMotion = resolveMotionPolicy(opts.animations, systemReduced).reduced ? 'reduced' : 'full';
+        };
+        projectMotion(this.motionPreference.reduced);
+        if (opts.animations === undefined) this.motionUnsub = this.motionPreference.onChange(projectMotion);
 
         // ONE shared feed: providers registered once; every cell's `chart.data` operates
         // on the same registry, symbol index, and closed-bar cache.
@@ -617,8 +629,8 @@ export class VelaWorkspace {
                           this.bottombar?.setActiveRange(preset.id);
                       },
                       onTimezone: (zone) => this.setTimezone(zone),
-                      // RTH/ETH acts on the ACTIVE cell (like the range chips): sessions
-                      // are a per-chart market dimension, not a shell preference.
+                      // Session selection acts on the ACTIVE cell (like the range chips):
+                      // it is a per-chart market dimension, not a shell preference.
                       onSession: (session) => this.active.setSession(session),
                       onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
@@ -975,8 +987,11 @@ export class VelaWorkspace {
             this.refreshRetention();
             // Document-level third-party state converges to the document (absent = none);
             // per-cell `ext` was handled by each cell's rehydrate above.
-            this.extState = { ...(st.ext ?? {}) };
-            this.restoreGlobalExt();
+            const nextExt = { ...(st.ext ?? {}) };
+            if (!jsonStateEqual(this.extState, nextExt)) {
+                this.extState = nextExt;
+                this.restoreGlobalExt();
+            }
             this.markStateDirty();
             return;
         }
@@ -1220,6 +1235,9 @@ export class VelaWorkspace {
         this.timezoneDrawer?.destroy();
         this.priceScaleDrawer?.destroy();
         this.layoutCtl.destroy();
+        this.motionUnsub?.();
+        this.motionUnsub = null;
+        this.motionPreference.destroy();
         this.dock.destroy(); // contributed panels; the two built-ins are ours to drop
         this.objectTree.destroy();
         this.dataWindow.destroy();
@@ -1258,7 +1276,7 @@ export class VelaWorkspace {
         this.objectTree.setSymbol(cell.symbol);
         this.dock.onChart(cell.chart); // every docked panel follows the active cell
         this.bottombar?.setActiveRange(cell.activeRangeId);
-        this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
+        this.bottombar?.setSession({ session: cell.session, choices: cell.sessions });
         this.indicatorPicker?.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
         // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet + stay
@@ -1449,10 +1467,17 @@ export class VelaWorkspace {
             }
             if (this.cellsById.has(id)) continue;
             const pooled = this.pool.get(id);
-            const seed: CellBoot = pooled ?? { ...seedDefaults(this.opts), ...(this.opts.cells?.[id] ?? {}) };
+            const configured = { ...seedDefaults(this.opts), ...(this.opts.cells?.[id] ?? {}) };
+            // Session definitions are host options, never document state. Re-overlay
+            // them when a durable pooled cell returns so its selected id can resolve
+            // against the current catalog without serializing colors/windows.
+            const seed: CellBoot = pooled
+                ? { ...pooled, sessions: configured.sessions, sessionTimezone: configured.sessionTimezone }
+                : configured;
             this.pool.delete(id); // the slot is live again — its pooled state is consumed
             const cell = new ChartCell(id, this.gridEl, seed, {
                 feed: this.feed,
+                motionPreference: this.motionPreference,
                 engines: this.opts.engines ?? {},
                 chartDefaults: cellChartDefaults(this.opts),
                 theme,
@@ -1592,7 +1617,10 @@ export class VelaWorkspace {
         chart.on('viewport:changed', (range) => this.propagateViewport(cell.id, range));
         // Style sync: any committed config edit (settings dialog, applyConfig) mirrors
         // this cell's Canvas + Scales-and-lines slice onto its same-group followers.
-        chart.renderer.onConfigChanged(() => this.propagateStylePrefs(cell.id));
+        chart.renderer.onConfigChanged(() => {
+            this.propagateStylePrefs(cell.id);
+            this.markStateDirty();
+        });
         // A theme picked in ONE cell (its settings dialog's Canvas → Theme) re-skins the
         // WHOLE workspace — shared chrome plus every other cell.
         chart.on('theme:changed', (t) => this.setTheme(t));
@@ -1895,7 +1923,7 @@ export class VelaWorkspace {
         this.mobileBar?.setSymbol(cell.symbol);
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
-        this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
+        this.bottombar?.setSession({ session: cell.session, choices: cell.sessions });
         // The chip highlight must track the cell through EVERY market path: a timeframe
         // change (cell API, contribution context, sync link) leaves range mode and a
         // direct `applyRange` enters it — the bar follows the cell's own record.

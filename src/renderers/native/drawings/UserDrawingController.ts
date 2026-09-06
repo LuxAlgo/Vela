@@ -23,7 +23,7 @@ import { DrawingSettingsPopup } from './DrawingSettingsPopup';
 import { DrawingToolbar, TOOLBAR_WIDTH, TOOLBAR_COLLAPSED_WIDTH } from './DrawingToolbar';
 import { MeasureOverlay } from './MeasureOverlay';
 import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
-import { keyToDrawingAction, isEditingText } from './DrawingKeys';
+import { keyToDrawingAction, isEditingText, unlockedDrawingIds } from './DrawingKeys';
 import type { DrawingSlice } from '../core/SceneGraph';
 
 /** Shown in the inline editor while a label carries no text yet. */
@@ -416,6 +416,38 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return true;
     }
 
+    /** Ctrl/Cmd+press on empty plot starts a renderer-local marquee; Shift latches union mode. */
+    beginMarquee(x: number, y: number, additive: boolean): boolean {
+        if (this.measureMode || this.eraserMode || this.activeTool != null) return false;
+        if (!this.interaction.startMarquee(x, y, additive)) return false;
+        // Remove the outside-pointer listener before this pointerdown bubbles. Otherwise it
+        // clears the selection snapshot that an additive marquee is defined against.
+        this.popup.close();
+        this.hoveredId = null;
+        this.render();
+        return true;
+    }
+
+    moveMarquee(x: number, y: number): void {
+        this.interaction.moveMarquee(x, y);
+    }
+
+    endMarquee(x: number, y: number): void {
+        this.interaction.finishMarquee(x, y);
+    }
+
+    cancelMarquee(): void {
+        this.interaction.cancelMarquee();
+    }
+
+    /** Resolve a modifier press released inside drag slop as the ordinary empty click
+     * it would have been without marquee support: abort the pending rectangle and
+     * dismiss the current drawing selection. */
+    marqueeClick(): void {
+        this.interaction.cancelMarquee();
+        this.clearSelection();
+    }
+
     /** A press landed on the chart: a finished transient measurement clears (the ruler vanishes on the
      *  next press / pan / zoom), and an open inline edit ends. This runs for EVERY press, including the
      *  ones the drawings layer doesn't claim — a press on empty chart is a pan, and the editor may not
@@ -799,7 +831,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.emit({ kind: 'duplicate', ids: this.selectionIds() });
                 break;
             case 'delete': {
-                const ids = this.selectedIds.size ? this.selectionIds() : this.hoveredId ? [this.hoveredId] : [];
+                const targets = this.selectedIds.size ? this.selectionIds() : this.hoveredId ? [this.hoveredId] : [];
+                const ids = unlockedDrawingIds(this.drawings, targets);
                 if (ids.length) {
                     this.popup.close();
                     this.emit({ kind: 'delete', ids });
@@ -958,6 +991,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
         const m = this.interaction.snapMarker();
         const my = m ? proj.yOf(m.point.price, m.paneId) : null;
         if (m && my != null) this.painter.paintSnapRing(ctx, proj.xOf(m.point.time), my, this.deps.theme());
+        const marquee = this.interaction.marqueeRect();
+        if (marquee) this.painter.paintMarquee(ctx, marquee, this.deps.theme());
         // The transient ruler paints on top of everything (until cleared on the next press/pan/zoom).
         if (this.measure.isActive()) this.measure.paint(ctx, proj, this.deps.theme());
     }
@@ -1025,6 +1060,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.emit({ kind: 'edit', doc });
             },
             remove: () => {
+                const d = live();
+                if (!d || d.locked) return;
                 this.closeTextEditor(); // else the editor floats over the deleted label until it loses focus
                 this.popup.close();
                 this.emit({ kind: 'delete', ids: [id] });

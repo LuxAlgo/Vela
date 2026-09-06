@@ -1,11 +1,133 @@
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
 import { registerChartType, unregisterChartType } from '../src/chart-types/registry';
 import { CHART_CONFIG_VERSION, defaultChartStyle, factoryResetConfig, mergeConfig, type ChartConfig } from '../src/renderers/native/core/chartConfig';
+import { VelaWorkspace } from '../src/workspace/VelaWorkspace';
 
 /** A known-good baseline config for the pure mergeConfig tests. */
 function baseConfig(): ChartConfig {
     return new NativeRenderer().getConfig();
+}
+
+type FeatureConformance =
+    | { configPath: string; set: unknown; expected: unknown; readExpected: unknown }
+    | { runtimeOnly: string };
+
+/**
+ * Every native renderer feature is classified here. Config-backed rows must prove
+ * their feature write, JSON serialization, validation, and restore path. The other
+ * rows document why persisting them in ChartConfig would cross an ownership boundary
+ * or capture transient runtime state.
+ */
+const FEATURE_CONFORMANCE = {
+    logScale: { configPath: 'priceScale.log', set: true, expected: true, readExpected: true },
+    currentPriceLine: { configPath: 'priceScale.currentPriceLine', set: false, expected: false, readExpected: false },
+    priceLabel: { configPath: 'priceScale.priceLabel', set: false, expected: false, readExpected: false },
+    countdown: { configPath: 'priceScale.countdown', set: false, expected: false, readExpected: false },
+    upColor: { configPath: 'candles.upColor', set: '#010203', expected: '#010203', readExpected: '#010203' },
+    downColor: { configPath: 'candles.downColor', set: '#040506', expected: '#040506', readExpected: '#040506' },
+    glow: { runtimeOnly: 'Renderer display option; ChartConfig stores chart cosmetics.' },
+    animZoom: { runtimeOnly: 'Host interaction preference.' },
+    animPan: { runtimeOnly: 'Host interaction preference.' },
+    animLiveBar: { configPath: 'priceScale.animateLastPrice', set: 90, expected: true, readExpected: 90 },
+    intro: { runtimeOnly: 'One-shot renderer lifecycle effect.' },
+    zoomAnchor: { runtimeOnly: 'Host interaction preference.' },
+    axisDrag: { runtimeOnly: 'Host interaction preference.' },
+    paneResize: { runtimeOnly: 'Host interaction preference.' },
+    candleZOrder: { configPath: 'stacking.candles', set: 4, expected: 4, readExpected: 4 },
+    candleVisible: { configPath: 'series.visible', set: false, expected: false, readExpected: false },
+    seriesOrder: {
+        configPath: 'stacking.series.conformance',
+        set: { id: 'conformance', z: 5 },
+        expected: 5,
+        readExpected: [{ id: 'conformance', z: 5 }],
+    },
+    highlights: { runtimeOnly: 'Transient host-supplied time ranges.' },
+    sessionZones: { runtimeOnly: 'Host-derived market-calendar data; ChartConfig stores only its colors.' },
+    gridlines: { runtimeOnly: 'Runtime master switch; ChartConfig stores independent vertical and horizontal choices.' },
+    axisLabels: { configPath: 'priceScale.labelsVisible', set: false, expected: false, readExpected: false },
+    scaleMode: { configPath: 'priceScale.mode', set: 'percent', expected: 'percent', readExpected: 'percent' },
+    invertScale: { configPath: 'priceScale.invert', set: true, expected: true, readExpected: true },
+    paneScales: { runtimeOnly: 'Read-only view of live pane scales.' },
+    autoScale: { runtimeOnly: 'Transient viewport scale state.' },
+    timezone: {
+        configPath: 'timeScale.timezone',
+        set: 'America/New_York',
+        expected: 'America/New_York',
+        readExpected: 'America/New_York',
+    },
+    keyboard: { runtimeOnly: 'Host input and accessibility policy.' },
+    historyChords: { runtimeOnly: 'Host keyboard-routing policy.' },
+    priceStyle: { configPath: 'series.style', set: 'line', expected: 'line', readExpected: 'line' },
+    priceBaseline: { configPath: 'series.baseline', set: 123, expected: 123, readExpected: 123 },
+    baselinePrice: { runtimeOnly: 'Read-only value derived from the live price scale.' },
+    settings: { runtimeOnly: 'Host UI availability policy.' },
+    attribution: { runtimeOnly: 'Host attribution policy and optional markup.' },
+    dialogHost: { runtimeOnly: 'Live DOM mount point.' },
+    tradeMarkers: {
+        configPath: 'trades.visible',
+        set: { visible: false },
+        expected: false,
+        readExpected: {
+            visible: false,
+            labels: true,
+            qty: true,
+            colors: { long: '#2962ff', short: '#f23645', exit: '#d500f9' },
+        },
+    },
+    indicatorTitles: { runtimeOnly: 'Workspace display state, persisted outside ChartConfig.' },
+    indicatorValues: { runtimeOnly: 'Workspace display state, persisted outside ChartConfig.' },
+} as const satisfies Record<string, FeatureConformance>;
+
+function valueAtPath(value: unknown, path: string): unknown {
+    return path.split('.').reduce<unknown>((current, key) => {
+        if (!current || typeof current !== 'object') return undefined;
+        return (current as Record<string, unknown>)[key];
+    }, value);
+}
+
+/** Drive the real public workspace state methods without constructing DOM chrome. The
+ * cell adapters isolate the contract under test: the workspace must carry the opaque
+ * renderer config from a live cell into the matching cell's in-place rehydrate path. */
+function roundTripFeatureThroughWorkspace(source: NativeRenderer, restored: NativeRenderer): {
+    state: ReturnType<VelaWorkspace['getState']>;
+    rehydrate: ReturnType<typeof vi.fn>;
+} {
+    const rehydrate = vi.fn((cell: { rendererConfig?: unknown }) => {
+        if (cell.rendererConfig != null) restored.applyConfig(cell.rendererConfig);
+    });
+    const workspace = Object.create(VelaWorkspace.prototype) as VelaWorkspace;
+    Object.assign(workspace, {
+        destroyed: false,
+        monoLayout: true,
+        def: { id: '1', cells: [{ id: 'c1' }] },
+        pool: new Map(),
+        cellsById: new Map([['c1', { dehydrate: () => ({ rendererConfig: source.getConfig() }) }]]),
+        order: ['c1'],
+        timezone: '',
+        syncOpts: {},
+        activeId: 'c1',
+        favs: [],
+        tfFavs: [],
+        trackSizes: new Map(),
+        dock: { getState: () => undefined, applyState: () => undefined },
+        extState: {},
+        drawingLinks: new Map(),
+        applySyncSetting: () => undefined,
+        clearMaximized: () => undefined,
+        applyGrid: () => undefined,
+        refreshCellControls: () => undefined,
+        projectActiveCell: () => undefined,
+        setActiveCell: () => undefined,
+        refreshRetention: () => undefined,
+        markStateDirty: () => undefined,
+        context: () => ({}),
+    });
+
+    const state = workspace.getState();
+    Object.assign(workspace, { cellsById: new Map([['c1', { rehydrate }]]) });
+    workspace.applyState(JSON.parse(JSON.stringify(state)));
+    return { state, rehydrate };
 }
 
 describe('mergeConfig — validating reducer (item 15)', () => {
@@ -66,6 +188,14 @@ describe('mergeConfig — validating reducer (item 15)', () => {
         expect(mergeConfig(base, { series: { spacing: -3 } }).series.spacing).toBe(0.1);
         expect(mergeConfig(base, { series: { spacing: 999 } }).series.spacing).toBe(10);
         expect(mergeConfig(base, { series: { spacing: 'x' } }).series.spacing).toBe(base.series.spacing);
+    });
+
+    it('series.visible accepts booleans and keeps the known-good base for older or malformed documents', () => {
+        const base = baseConfig();
+        base.series.visible = false;
+        expect(mergeConfig(base, {}).series.visible).toBe(false);
+        expect(mergeConfig(base, { series: { visible: 'no' } }).series.visible).toBe(false);
+        expect(mergeConfig(base, { series: { visible: true } }).series.visible).toBe(true);
     });
 
     it('trades: applies valid fields, drops malformed ones', () => {
@@ -130,7 +260,7 @@ describe('NativeRenderer.getConfig — defaults resolve to concrete values', () 
         expect(cfg.candles.downColor).toBe('#f23645');
         expect(cfg.candles.borderUpColor).toBe('#089981'); // inherits the body color
         expect(cfg.candles.wickDownColor).toBe('#f23645');
-        expect(cfg.series).toEqual({ style: 'candles', baseline: null, spacing: 1 });
+        expect(cfg.series).toEqual({ visible: true, style: 'candles', baseline: null, spacing: 1 });
     });
 
     it('is fully JSON-serializable (round-trips through stringify/parse)', () => {
@@ -139,7 +269,63 @@ describe('NativeRenderer.getConfig — defaults resolve to concrete values', () 
     });
 });
 
+describe('native renderer feature/config conformance', () => {
+    it('classifies every advertised feature as config-backed or deliberately runtime-only', () => {
+        const rendererFeatures = [...new NativeRenderer().features].sort();
+        expect(Object.keys(FEATURE_CONFORMANCE).sort()).toEqual(rendererFeatures);
+        for (const entry of Object.values(FEATURE_CONFORMANCE)) {
+            if ('runtimeOnly' in entry) expect(entry.runtimeOnly.trim().length).toBeGreaterThan(0);
+        }
+    });
+
+    it('round-trips every config-backed feature through workspace getState/applyState into live behavior', () => {
+        for (const [feature, entry] of Object.entries(FEATURE_CONFORMANCE)) {
+            if ('runtimeOnly' in entry) continue;
+            const source = new NativeRenderer();
+            source.applyFeature(feature, entry.set);
+            const restored = new NativeRenderer();
+            const { state, rehydrate } = roundTripFeatureThroughWorkspace(source, restored);
+            const saved = state.charts[0]?.rendererConfig;
+
+            expect(valueAtPath(saved, entry.configPath), `${feature} write -> ${entry.configPath}`).toEqual(entry.expected);
+            expect(rehydrate, `${feature} workspace in-place restore`).toHaveBeenCalledOnce();
+            expect(valueAtPath(restored.getConfig(), entry.configPath), `${feature} restore <- ${entry.configPath}`).toEqual(entry.expected);
+            expect(restored.readFeature(feature), `${feature} restored live value`).toEqual(entry.readExpected);
+        }
+    });
+});
+
 describe('NativeRenderer.applyConfig — applies + syncs the live scene fields', () => {
+    it('round-trips whole price-series visibility through JSON into a fresh renderer', () => {
+        const source = new NativeRenderer();
+        expect(source.getConfig().series.visible).toBe(true);
+
+        source.applyFeature('candleVisible', false);
+        const saved = JSON.parse(JSON.stringify(source.getConfig()));
+        const restored = new NativeRenderer();
+        restored.applyConfig(saved);
+
+        expect(saved.series.visible).toBe(false);
+        expect(restored.readFeature('candleVisible')).toBe(false);
+    });
+
+    it('notifies config subscribers once for a real visibility flip and not for a repeat', () => {
+        const r = new NativeRenderer();
+        const changed = vi.fn();
+        const unsubscribe = r.onConfigChanged(changed);
+
+        r.applyFeature('candleVisible', true);
+        expect(changed).not.toHaveBeenCalled();
+        r.applyFeature('candleVisible', false);
+        expect(changed).toHaveBeenCalledTimes(1);
+        r.applyFeature('candleVisible', false);
+        expect(changed).toHaveBeenCalledTimes(1);
+
+        unsubscribe();
+        r.applyFeature('candleVisible', true);
+        expect(changed).toHaveBeenCalledTimes(1);
+    });
+
     it('applies a partial config and reflects it in getConfig', () => {
         const r = new NativeRenderer();
         r.applyConfig({

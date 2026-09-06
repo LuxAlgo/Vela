@@ -20,7 +20,7 @@ The public, imperative chart and the composition root — the one place that wir
 
 - **`container`** — an `HTMLElement` or a CSS selector string. A missing selector throws.
 - **`options`** — display, behavior, and market options. See [options.md](./options.md).
-- **`deps`** — the **swap point** for the three layers (see below).
+- **`deps`** — the **swap point** for backends and browser motion observation (see below).
 
 Constructing a chart renders candles immediately. Scripting engines are opt-in.
 
@@ -36,8 +36,9 @@ Constructing a chart renders candles immediately. Scripting engines are opt-in.
 | `indicators()` | Live `IndicatorHandle[]` of everything on the chart (script + native), in insertion order — the seam for host panels (object trees, indicator lists) that need per-id visibility/removal. |
 | `availableNativeIndicators()` | Returns `Promise<NativeIndicatorInfo[]>` — the catalog of built-in native indicators with their live state on this chart, for building an "add indicator" picker UI (lets a host list them, gate unsupported ones, avoid duplicates). Async because support may need to probe the provider (a type may need data the symbol lacks). |
 | `presentNativeIndicators()` | Returns `string[]` — the native types present on the chart **right now**, one entry per instance (a multi-instance type repeats), synchronously (the presence slice of `availableNativeIndicators()`, which stays async only for support probing). Persistence snapshots read this: an unload-time save must see an add or remove made microseconds earlier. |
-| `setMarket(next)` | Switch the chart's market **in place** — `{ symbol?, timeframe?, bars?, data?, visibleRange? }` — without destroying the chart. The symbol string carries the venue: bare = registered providers in declaration order, `'coinbase:BTC-USD'` pins one. Only the fields given change. Indicators re-execute over the new bars, native indicators restart, and panes, user drawings, renderer config and event subscriptions all **survive**. Resolves once the new market's history is painted (a deep backfill continues behind it — await `historyComplete()`); a call superseded by a newer `setMarket` resolves silently. Emits `market:changed` when the market identity changed (a depth-only `bars` reload is silent). `visibleRange` frames the first paint of the new market. Drawings are kept as-is — per-symbol drawing documents are a host policy (`chart.drawings.toJSON()/fromJSON()` keyed off `market:changed`). |
-| `market` (getter) | The current market identity — the read counterpart of `setMarket`. A **snapshot** `{ symbol?, provider?, timeframe?, bars?, offline }` of the *requested* market (`provider` = the symbol's own `EXCHANGE:` prefix, or undefined when bare — the venue that actually served it is `chart.data.resolve(symbol)`): it reflects an in-flight switch immediately (before the new bars land), which is what persist-on-close flows want. Listen to `market:changed` for *committed* identity changes. Mutating the returned object changes nothing. |
+| `setMarket(next)` | Switch the chart's market **in place** — `{ symbol?, timeframe?, session?, bars?, data?, visibleRange? }` — without destroying the chart. The symbol string carries the venue: bare = registered providers in declaration order, `'coinbase:BTC-USD'` pins one. Only the fields given change. A session switch reloads with the exact case-sensitive provider-facing ID while preserving the visible bar count and newest visible-bar anchor. Indicators re-execute over the new bars, native indicators restart, and panes, user drawings, renderer config and event subscriptions all **survive**. Resolves once the new market's history is painted (a deep backfill continues behind it — await `historyComplete()`); a call superseded by a newer `setMarket` resolves silently. Emits `market:changed` when the market identity changed (a depth-only `bars` reload is silent). `visibleRange` frames the first paint of the new market. Drawings are kept as-is — per-symbol drawing documents are a host policy (`chart.drawings.toJSON()/fromJSON()` keyed off `market:changed`). |
+| `market` (getter) | The current market identity — the read counterpart of `setMarket`. A **snapshot** `{ symbol?, provider?, timeframe?, session?, bars?, offline }` of the *requested* market (`provider` = the symbol's own `EXCHANGE:` prefix, or undefined when bare — the venue that actually served it is `chart.data.resolve(symbol)`): it reflects an in-flight switch immediately (before the new bars land), which is what persist-on-close flows want. Listen to `market:changed` for *committed* identity changes. Mutating the returned object changes nothing. |
+| `reducedMotion` (getter) | The effective runtime motion gate. It follows `prefers-reduced-motion` only when `animations` is omitted; explicit `false` keeps it true, while `true` or an animation object keeps it false. It is not saved state. |
 | `ready()` | Returns a promise that resolves once the chart is painted and interactive. On a ranged feed the first paint is a small recent head (~200 bars) and the rest of the history keeps backfilling **behind** this — await `historyComplete()` for the full depth. |
 | `historyComplete()` | Returns a promise that resolves once the **current load's** full requested history has loaded — immediately for small/offline charts, after the background backfill for deep ones. **Per-load**: each `setMarket` re-arms the cycle (the superseded load's promise resolves rather than hanging), so call it again after a switch for the new market's depth. Never rejects: on destroy or a failed backfill it resolves with whatever depth loaded. |
 | `on(event, handler)` | Subscribe to a chart-level event. Returns an unsubscribe function. |
@@ -233,9 +234,9 @@ Subscribe with `chart.on(event, handler)`; every subscription returns an unsubsc
 | Event | Payload | Fires when |
 |---|---|---|
 | `ready` | — | The chart is painted and interactive (a deep chart's history may still be backfilling). |
-| `market:changed` | `{ symbol, timeframe, prev: { symbol, timeframe } }` | The market switched **in place** via `setMarket` — symbol (venue prefix included), timeframe, or offline data changed (a depth-only reload does not fire). Fires after the new market's history is painted and every consumer restarted. `prev` lets hosts re-key per-symbol state (e.g. swap user-drawing documents between symbols). |
-| `load:start` | `{ symbol, timeframe, firstLoad }` | A bar load began with nothing painted: the first load (fires during construction — later subscribers see only its `load:end`), or an identity switch, which blanks the old series in the same breath. Fires **before** the first fetch — plugins and custom indicators hide or reset their own visuals here. A depth-only reload fires neither event. |
-| `load:end` | `{ symbol, timeframe, bars }` | The load ended: its first bars painted (`bars` > 0 — on deep histories the quick preview), or it ended with none (`bars` = 0 — a failed fetch, an empty market, or a parked symbol). Exactly one per `load:start`; plugins restore or rebuild their visuals here. |
+| `market:changed` | `{ symbol, timeframe, session?, prev: { symbol, timeframe, session? } }` | The market switched **in place** via `setMarket` — symbol (venue prefix included), timeframe, session, or offline data changed (a depth-only reload does not fire). Fires after the new market's history is painted and every consumer restarted. `prev` lets hosts re-key per-market state. |
+| `load:start` | `{ symbol, timeframe, session?, firstLoad }` | A bar load began with nothing painted: the first load (fires during construction — later subscribers see only its `load:end`), or an identity switch, including a session switch, which blanks the old series in the same breath. Fires **before** the first fetch — plugins and custom indicators hide or reset their own visuals here. A depth-only reload fires neither event. |
+| `load:end` | `{ symbol, timeframe, session?, bars }` | The load ended: its first bars painted (`bars` > 0 — on deep histories the quick preview), or it ended with none (`bars` = 0 — a failed fetch, an empty market, or a parked symbol). Exactly one per `load:start`; plugins restore or rebuild their visuals here. |
 | `history:progress` | `{ loaded, target }` | A deep-history backfill chunk landed — `loaded` of `target` bars are on the chart. |
 | `history:complete` | `{ reason, oldestTime, barsLoaded }` | The history load finished. `reason`: `'depth'` (requested count loaded), `'genesis'` (the source has nothing older), or `'aborted'` (a fetch failed — the chart keeps what loaded). Fires exactly once, including for small/offline charts. |
 | `indicator:added` | `{ id }` | An indicator was added. |
@@ -382,8 +383,24 @@ The optional third constructor argument is where you replace a layer's default w
 | `renderer` | The drawing/output layer. Injects an already-constructed renderer *instance*, bypassing the `renderer` option's display-options wiring (a different axis from built-in vs custom — `options.renderer` already accepts any custom class too). | [Adding a renderer](../contributing/adding-a-renderer.md) |
 | `engines` | Scripting engines to register at construction (bulk form of `registerEngine`). | [Scripting engines](./scripting-engines.md) · [Adding an engine](../contributing/adding-an-engine.md) |
 | `dataFeed` | The market-data source. Replaces the default provider registry entirely with your own `MarketDataFeed` (used bare — no registry, no auto-cache). | [Adding a data provider](../contributing/adding-a-data-provider.md) |
+| `motionPreference` | A shared `MotionPreferenceSource`. The workspace injects one observer into all cells; a standalone chart creates its own when this key is absent. The source remains host-owned, and `destroy()` only removes Vela's subscription. | [Options](./options.md#display--behavior-options) |
 
-Each layer is one narrow port — implement it, declare its honest capabilities, and inject it here. The composition root is the only place that imports concrete backends.
+Each backend is one narrow port — implement it, declare its honest capabilities, and inject it here. The composition root is the only place that imports concrete backends.
+
+## Session and motion helpers
+
+The package root exports the same pure validation and policy helpers used by the built-in
+shells:
+
+| Export | Purpose |
+|---|---|
+| `normalizeSession(value)` | Trims an untrusted ID, preserves its case, and returns `undefined` for a non-string or empty value. |
+| `normalizeSessionDefinitions(value)` | Validates and defensively copies a catalog, dropping invalid entries and later duplicate IDs. |
+| `resolveMarketSession(candidate, definitions)` | Returns an exact catalog match, the first definition as fallback, or `undefined` for an empty catalog. |
+| `MarketSessionDefinition` | The `{ id, label, windows, color }` host-catalog type. |
+| `resolveMotionPolicy(animations, systemReduced)` | Resolves configured animation values and the effective reduced-motion gate without reading browser globals. |
+| `ResolvedMotionPolicy` | The resolved zoom, pan, live-bar, intro, and `reduced` values delivered to a renderer. |
+| `MotionPreferenceSource` | The injectable `{ reduced, onChange }` preference-observer contract. |
 
 > The three *adding-a-backend* guides are **Contributing** docs and are still being written. Until they land, no link points at them — see the Contributing section of the [docs index](../index.md).
 

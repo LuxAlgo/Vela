@@ -21,8 +21,14 @@ const ws = new VelaWorkspace('#app', {
     // is its durable identity, DECLARATION ORDER fills the layout's slots:
     symbol: 'BTCUSDT',
     timeframe: '60',
+    session: 'regular',
+    sessions: [
+        { id: 'regular', label: 'Regular', windows: ['0930-1600'], color: 'rgba(41, 98, 255, 0.12)' },
+        { id: 'extended', label: 'Extended', windows: ['0400-2000'], color: 'rgba(156, 39, 176, 0.12)' },
+    ],
+    sessionTimezone: 'America/New_York',
     cells: {
-        btc: { symbol: 'BTCUSDT', timeframe: '60' }, // 1st declared → 1st slot
+        btc: { symbol: 'BTCUSDT', timeframe: '60', session: 'extended' }, // 1st declared → 1st slot
         eth: { symbol: 'ETHUSDT', timeframe: '15' }, // slots 3–4: no entry → pure defaults
     },
     providers: { binance: () => new BinanceProvider() }, // registered ONCE, shared by every cell
@@ -40,9 +46,15 @@ const ws = new VelaWorkspace('#app', {
 `persist`/`storage`) + the grid's own options (`layout`, `cells`, `sync`,
 `drawingToolbar`, `maxWebglCells`, `alertCap`). A chart option means the same thing
 everywhere: on the widget it configures *the* chart, here it is the *default* of each
-cell — `upColor`, `glow`, `logScale`, `animations`, `defaultLanguage`, even `renderer`
-all apply to every cell. An explicit `nativeBackend` (other than `'auto'`) wins over
-the `maxWebglCells` budget policy.
+cell — `upColor`, `glow`, `logScale`, `animations`, `session`, `sessions`,
+`sessionTimezone`, `defaultLanguage`, even `renderer` all apply to every cell. An
+explicit `nativeBackend` (other than `'auto'`) wins over the `maxWebglCells` budget
+policy.
+
+You can use any non-empty provider-facing `session` ID without a `sessions` catalog.
+Add a catalog when the workspace should validate the ID and show named session choices
+with host-defined windows and colors. Omitting it keeps metadata-derived choices while
+preserving a custom selected ID across cell state and layout pooling.
 
 The `drawings` option applies here too, mapped onto the SHARED drawing surface:
 `false` removes it entirely — no toolbar, no mobile drawings entry, no tool pill (the
@@ -228,10 +240,13 @@ const state = ws.getState();
 // → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?,
 //     timeframeFavorites?, charts: […], ext? }
 // One ORDERED `charts` entry per cell, live AND dormant — array position i restores
-// into slot i, `id` is the cell's durable name: { id: 'btc', symbol, provider?, timeframe,
+// into slot i, `id` is the cell's durable name:
+//   { id: 'btc', symbol, provider?, timeframe, session?,
 //   priceStyle, bars?, watermark?, indicatorTitles?, rendererConfig (renderer.getConfig() document),
 //   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] },
 //   ext? (third-party per-chart state, by namespaced key) }
+// Only the selected session ID is state. Session catalogs and their market timezone
+// remain host options and are never serialized.
 // `ext` bags (document root and per chart) carry PLUGIN state — written and restored by
 // handlers plugins register (registerStatePersistence, see the plugin SDK); entries pass
 // through opaquely, so a document never loses them when the plugin isn't loaded.
@@ -311,11 +326,13 @@ are self-describing and always resolve.
 **Chart options** (every key of [the chart's options](./options.md) except `height`) sit
 at the top level and are each cell's **default** — `symbol` (bare = first declared
 provider; an `EXCHANGE:` prefix pins a venue), `timeframe`, `bars`, `priceStyle`,
-`data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`, `downColor`, `glow`,
+`session`, `sessions`, `sessionTimezone`, `data`, `visibleRange`, `theme`, `live`,
+`volume`, `upColor`, `downColor`, `glow`,
 `animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar excepted),
 `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
 `maxWebglCells` policy). `cells` overrides the market/view seeds per cell:
-`{ symbol, timeframe, bars, priceStyle, data, visibleRange }`.
+`{ symbol, timeframe, bars, priceStyle, session, sessions, sessionTimezone, data,
+visibleRange }`.
 
 **Cell names are identities, not positions.** A `cells` key is free-form (`btc`, `main`,
 …): it names the cell durably — persistence, `sync` groups and `ws.cell(name)` all speak
@@ -386,9 +403,12 @@ The shell is keyboard-first (bindings act on the **active cell**):
 - `mod+↑/↓` glide-zoom, `mod+←/→` glide-pan with the exact feel and limits of a drag
   (toward now it rests on the newest candle plus the usual empty space). `alt+T` arms
   the trend line tool; `alt+H` / `alt+V` drop a horizontal / vertical line at the
-  cursor — the drawing toolbar's menus show these chords beside the tools.
+  cursor — the drawing toolbar's menus show these chords beside the tools. When
+  reduced motion is active, the glide shortcuts land at their final viewport immediately.
 - Mouse: `Shift`+scroll pans through history instead of zooming, `Shift`+click starts
   the measure ruler at the cursor, and middle-click deletes the drawing under it.
+  Ctrl/Cmd-drag from empty plot space replaces the drawing selection with every
+  drawing the box touches; add Shift to union them with the current selection.
 - Drawing keys (undo/redo, copy/paste, delete, nudge) come from the core — see
   [Drawing tools](./drawing-tools.md).
 
@@ -421,7 +441,8 @@ they work from the very first keystroke, before any click.
   Right-clicking it opens an action menu with a
   toggle per element (logo, name, market status, OHLC, bar change — the same toggles
   as the settings dialog's Status line tab; hiding the name also hides the
-  venue/timeframe beside it) plus hide/show for the chart's price series. In
+  venue/timeframe beside it) plus hide/show for the chart's price series. The
+  price-series eye state survives workspace state and persisted reloads. In
   multi-cell grids it stays on one row — segments that don't fit the cell hide instead
   of wrapping (bar change first, then venue/timeframe, then the market badge; the logo
   + ticker always stay).
@@ -451,7 +472,10 @@ they work from the very first keystroke, before any click.
   right edge instead of shrinking the chart, and a pin in its header docks it as a column
   whenever you prefer that. Which panel is open, the widths you dragged and the panels you
   pinned are part of the saved state.
-- **Bottom bar** — range chips, a live clock, and the timezone picker. Each chip switches
+- **Bottom bar** — range chips, a live clock, and the timezone picker. An ordered
+  trading-session selector appears when the active cell has at least two choices;
+  selecting one reloads that chart with the exact provider-facing ID and persists the
+  selected ID. Each range chip switches
   the active chart's timeframe, **fetches the depth its window needs**, and frames it:
   `1D`→1m, `7D`→5m, `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing
   the timeframe by hand leaves range mode (the chip clears and the fetch depth returns

@@ -6,6 +6,7 @@ import { DrawingsControl } from '../src/core/DrawingsControl';
 import { buildToolbar } from '../src/core/drawings';
 import type { IDrawingsRendererPort, DrawingIntent, SerializedDrawing } from '../src/core/drawings';
 import type { IChartRenderer } from '../src/core/ports/IChartRenderer';
+import { unlockedDrawingIds } from '../src/renderers/native/drawings/DrawingKeys';
 
 class FakePort implements IDrawingsRendererPort {
     toolbar: unknown = null;
@@ -282,6 +283,24 @@ describe('DrawingController — editing foundation', () => {
         expect(ctrl.all().map((d) => d.anchors[0]!.price)).toEqual([1, 2]);
         ctrl.undo(); // one undo reverts BOTH
         expect(ctrl.all().map((d) => d.anchors[0]!.price)).toEqual([25000, 25000]);
+    });
+
+    it('keyboard deletion skips locked drawings, removes the rest in one undo step, while the explicit API can remove locked drawings', () => {
+        const { port, ctrl } = setup();
+        const first = ctrl.add('hline', { anchors: [{ time: 1, price: 1 }] })!;
+        const second = ctrl.add('hline', { anchors: [{ time: 2, price: 2 }] })!;
+        const locked = ctrl.add('hline', { anchors: [{ time: 3, price: 3 }] })!;
+        ctrl.setLocked(locked.id, true);
+
+        const keyboardIds = unlockedDrawingIds(ctrl.all(), [locked.id, second.id, first.id]);
+        expect(keyboardIds).toEqual([second.id, first.id]);
+        port.fire({ kind: 'delete', ids: keyboardIds });
+        expect(ctrl.all().map((d) => d.id)).toEqual([locked.id]);
+
+        ctrl.undo();
+        expect(ctrl.all().map((d) => d.id)).toEqual([first.id, second.id, locked.id]);
+        ctrl.remove(locked.id);
+        expect(ctrl.all().map((d) => d.id)).toEqual([first.id, second.id]);
     });
 
     it('duplicate clones with a fresh id, selects the clone, emits created, and is one undo step', () => {

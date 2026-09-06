@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandSessionZones, parseSessionSpec, SessionShadingTracker, type SessionZonesUpdate } from '../src/widget/session-shading';
+import { expandSessionDefinition, expandSessionZones, parseSessionSpec, SessionShadingTracker, type SessionZonesUpdate } from '../src/widget/session-shading';
 import { bandEdgeSlot, clipHighlightRect } from '../src/renderers/native/backdrop/BackdropRenderer';
 import { barTimeToLogical } from '../src/renderers/native/core/bar-time';
 import type { DataControl } from '../src/core/DataControl';
@@ -120,6 +120,70 @@ describe('expandSessionZones', () => {
     });
 });
 
+describe('expandSessionDefinition', () => {
+    it('expands multiple windows around a lunch break in declaration order', () => {
+        const monday = Date.UTC(2024, 2, 11, 0);
+        const bands = expandSessionDefinition(
+            { id: 'tokyo', label: 'Tokyo', windows: ['0930-1130', '1230-1600'], color: '#123456' },
+            'America/New_York',
+            monday,
+            monday + DAY,
+        );
+        expect(bands).toContainEqual({ from: Date.UTC(2024, 2, 11, 13, 30), to: Date.UTC(2024, 2, 11, 15, 30), color: '#123456' });
+        expect(bands).toContainEqual({ from: Date.UTC(2024, 2, 11, 16, 30), to: Date.UTC(2024, 2, 11, 20), color: '#123456' });
+    });
+
+    it('tracks DST and treats an overnight window as the following trading day', () => {
+        const definition = { id: 'night', label: 'Night', windows: ['1700-1600'], color: 'rgba(1,2,3,.2)' };
+        const bands = expandSessionDefinition(definition, 'America/New_York', Date.UTC(2024, 2, 7), Date.UTC(2024, 2, 13));
+        expect(bands).toContainEqual({
+            from: Date.UTC(2024, 2, 7, 22),
+            to: Date.UTC(2024, 2, 8, 21),
+            color: definition.color,
+        });
+        // Monday's trading session starts Sunday evening after the DST transition.
+        expect(bands).toContainEqual({
+            from: Date.UTC(2024, 2, 10, 21),
+            to: Date.UTC(2024, 2, 11, 20),
+            color: definition.color,
+        });
+    });
+
+    it('resolves each edge independently when a window crosses the DST transition', () => {
+        const spring = expandSessionDefinition(
+            { id: 'sunday', label: 'Sunday', windows: ['0100-0400'], color: '#123456' },
+            'America/New_York',
+            Date.UTC(2024, 2, 10),
+            Date.UTC(2024, 2, 11),
+        );
+        expect(spring).toContainEqual({
+            from: Date.UTC(2024, 2, 10, 6),
+            to: Date.UTC(2024, 2, 10, 8),
+            color: '#123456',
+        });
+
+        const fall = expandSessionDefinition(
+            { id: 'sunday', label: 'Sunday', windows: ['0000-0300'], color: '#123456' },
+            'America/New_York',
+            Date.UTC(2024, 10, 3),
+            Date.UTC(2024, 10, 4),
+        );
+        expect(fall).toContainEqual({
+            from: Date.UTC(2024, 10, 3, 4),
+            to: Date.UTC(2024, 10, 3, 8),
+            color: '#123456',
+        });
+    });
+
+    it('recurs on weekends for continuous-market operational windows', () => {
+        const definition = { id: 'maintenance', label: 'Maintenance', windows: ['0200-0300'], color: '#123456' };
+        const saturday = Date.UTC(2024, 2, 9);
+        const bands = expandSessionDefinition(definition, 'Etc/UTC', saturday, saturday + 2 * DAY);
+        expect(bands).toContainEqual({ from: saturday + 2 * H, to: saturday + 3 * H, color: definition.color });
+        expect(bands).toContainEqual({ from: saturday + DAY + 2 * H, to: saturday + DAY + 3 * H, color: definition.color });
+    });
+});
+
 describe('expandSessionZones — overnight roll tapes', () => {
     const spec = parseSessionSpec(OVERNIGHT_MARKET)!;
 
@@ -150,6 +214,100 @@ describe('expandSessionZones — overnight roll tapes', () => {
 });
 
 describe('SessionShadingTracker', () => {
+    it('uses the selected definition without metadata and carries that definition\'s color', async () => {
+        const data = { symbolInfo: () => new Promise<never>(() => {}) } as unknown as DataControl;
+        const updates: Array<SessionZonesUpdate | null> = [];
+        const tracker = new SessionShadingTracker((zones) => updates.push(zones));
+        const monday = Date.UTC(2024, 2, 11);
+        const definitions = [
+            { id: 'first', label: 'First', windows: ['0100-0200'], color: '#111111' },
+            { id: 'split', label: 'Split', windows: ['0900-1100', '1200-1500'], color: '#abcdef' },
+        ];
+        tracker.track(data, 'CUSTOM', {
+            session: 'split',
+            timeframe: '60',
+            range: { from: monday, to: monday + DAY },
+            definitions,
+            sessionTimezone: 'Etc/UTC',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const zones = updates[updates.length - 1]!;
+        expect(zones).not.toBeNull();
+        expect(zones!.pre).toEqual([]);
+        expect(zones!.post).toEqual([]);
+        expect(zones!.extended).toEqual([]);
+        expect(zones!.bands).toContainEqual({ from: monday + 9 * H, to: monday + 11 * H, color: '#abcdef' });
+        expect(zones!.bands).not.toContainEqual({ from: monday + H, to: monday + 2 * H, color: '#111111' });
+        tracker.stop();
+    });
+
+    it('uses a non-empty explicit catalog instead of conflicting legacy metadata', async () => {
+        const data = { symbolInfo: () => Promise.resolve<SymbolInfo>(US_EQUITIES) } as unknown as DataControl;
+        const updates: Array<SessionZonesUpdate | null> = [];
+        const tracker = new SessionShadingTracker((zones) => updates.push(zones));
+        const monday = Date.UTC(2024, 2, 11);
+        tracker.track(data, 'AAPL', {
+            session: 'custom-day',
+            timeframe: '60',
+            range: { from: monday, to: monday + DAY },
+            definitions: [{ id: 'custom-day', label: 'Custom day', windows: ['0100-0200'], color: '#abcdef' }],
+            sessionTimezone: 'Etc/UTC',
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const zones = updates[updates.length - 1]!;
+        expect(zones.pre).toEqual([]);
+        expect(zones.post).toEqual([]);
+        expect(zones.extended).toEqual([]);
+        expect(zones.bands).toContainEqual({ from: monday + H, to: monday + 2 * H, color: '#abcdef' });
+        expect((zones.bands ?? []).every((band) => band.color === '#abcdef')).toBe(true);
+        tracker.stop();
+    });
+
+    it('treats an explicit empty catalog as authoritative over session metadata', async () => {
+        const data = { symbolInfo: () => Promise.resolve<SymbolInfo>(US_EQUITIES) } as unknown as DataControl;
+        const updates: Array<SessionZonesUpdate | null> = [];
+        const tracker = new SessionShadingTracker((zones) => updates.push(zones));
+        tracker.track(data, 'AAPL', {
+            session: 'regular',
+            timeframe: '60',
+            range: { from: Date.UTC(2024, 2, 11), to: Date.UTC(2024, 2, 12) },
+            definitions: [],
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(updates).toEqual([null]);
+        tracker.stop();
+    });
+
+    it('resolves explicit timezone, metadata timezone, UTC fallback, and invalid timezone in order', async () => {
+        const monday = Date.UTC(2024, 2, 11);
+        const definitions = [{ id: 'day', label: 'Day', windows: ['0900-1000'], color: '#abcdef' }];
+        const run = async (symbolInfo: SymbolInfo, sessionTimezone?: string): Promise<SessionZonesUpdate> => {
+            const updates: Array<SessionZonesUpdate | null> = [];
+            const data = { symbolInfo: () => Promise.resolve(symbolInfo) } as unknown as DataControl;
+            const tracker = new SessionShadingTracker((zones) => updates.push(zones));
+            tracker.track(data, symbolInfo.ticker, {
+                session: 'day',
+                timeframe: '60',
+                range: { from: monday, to: monday + DAY },
+                definitions,
+                sessionTimezone,
+            });
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            tracker.stop();
+            return updates[updates.length - 1]!;
+        };
+
+        const explicit = await run({ ticker: 'CUSTOM', timezone: 'America/New_York' }, 'Etc/UTC');
+        expect(explicit.bands).toContainEqual({ from: monday + 9 * H, to: monday + 10 * H, color: '#abcdef' });
+        const metadata = await run({ ticker: 'CUSTOM', timezone: 'America/New_York' });
+        expect(metadata.bands).toContainEqual({ from: monday + 13 * H, to: monday + 14 * H, color: '#abcdef' });
+        const utc = await run({ ticker: 'CUSTOM' });
+        expect(utc.bands).toContainEqual({ from: monday + 9 * H, to: monday + 10 * H, color: '#abcdef' });
+        const invalid = await run({ ticker: 'CUSTOM', timezone: 'America/New_York' }, 'Not/AZone');
+        expect(invalid.bands).toEqual([]);
+    });
+
     it('expands the NEWEST range when the viewport moves while metadata resolves', async () => {
         let resolveSi!: (si: SymbolInfo) => void;
         const data = { symbolInfo: () => new Promise<SymbolInfo>((r) => { resolveSi = r; }) } as unknown as DataControl;

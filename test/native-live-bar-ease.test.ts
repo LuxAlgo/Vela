@@ -4,7 +4,7 @@
 // the first tick of a bar and every NEW bar still snap — only same-bar ticks glide.
 import { describe, it, expect } from 'vitest';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
-import { resolveAnimations, resolveLiveBarEaseMs, LIVE_BAR_EASE_DEFAULT_MS, LIVE_BAR_EASE_MAX_MS } from '../src/core/options';
+import { resolveAnimations, resolveLiveBarEaseMs, resolveMotionPolicy, LIVE_BAR_EASE_DEFAULT_MS, LIVE_BAR_EASE_MAX_MS } from '../src/core/options';
 import type { OHLCV } from '../src/core/model/ohlcv';
 
 const bar = (time: number, close: number): OHLCV => ({ time, open: 100, high: Math.max(100, close), low: Math.min(100, close), close, volume: 1 });
@@ -18,7 +18,7 @@ function makeRenderer(animLiveBar: number) {
     const anyR = r as any;
     anyR.coords.setSize(800, 200, 1); // unmounted, but sized — the bar/ease math is pure
     let starts = 0;
-    anyR.scheduler = { invalidate: () => {} }; // mount-owned; stubbed for the unmounted path
+    anyR.scheduler = { invalidate: () => {}, flushNow: () => {} }; // mount-owned; stubbed for the unmounted path
     anyR.animator = { active: false, start: () => { starts += 1; }, stop: () => {} };
     anyR.introPlayed = true;
     return { r, anyR, starts: () => starts };
@@ -127,5 +127,20 @@ describe('NativeRenderer forming-bar glide', () => {
         expect(r.readFeature('animLiveBar')).toBe(LIVE_BAR_EASE_DEFAULT_MS);
         r.applyFeature('animLiveBar', 99_999);
         expect(r.readFeature('animLiveBar')).toBe(LIVE_BAR_EASE_MAX_MS);
+    });
+
+    it('reduced motion snaps live bars without destroying the configured duration', () => {
+        const { r, anyR, starts } = makeRenderer(90);
+        r.setBars([bar(1000, 100), bar(2000, 101)]);
+        r.updateBar(bar(2000, 105));
+        r.applyMotionPolicy(resolveMotionPolicy(undefined, true));
+        r.updateBar(bar(2000, 110));
+        expect(anyR.liveEaseClose).toBe(110);
+        expect(starts()).toBe(0);
+        expect(r.readFeature('animLiveBar')).toBe(90); // configured state survives the runtime gate
+
+        r.applyMotionPolicy(resolveMotionPolicy(undefined, false));
+        r.updateBar(bar(2000, 115));
+        expect(starts()).toBe(1); // future ticks use the restored configured behavior
     });
 });

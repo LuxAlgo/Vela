@@ -130,6 +130,14 @@ Because Hyperliquid coins are bare, a bare `BTC` won't collide with Binance's `B
 
 Implement the `DataProvider` interface and register it under any name — see [Adding a data provider](../contributing/adding-a-data-provider.md). The only required method is `getBars`; everything else (`listSymbols`, `getSymbolInfo`, `info`, `subscribe`, `resolveSymbolIcon`) is a progressive enhancement. Symbol icons are the provider's call too: `resolveSymbolIcon(descriptor)` returns the icon URL the shells render in the symbol search, the status line and the object tree (the bundled crypto providers predefine a crypto-icon CDN; no resolver, or no URL, means a colored-initials badge — nothing breaks).
 
+`range.session` and `subscribe(..., opts.session)` receive the exact selected session
+ID. An explicit or custom session also reaches `getCalendar(..., range.session)`
+unchanged. The metadata-derived market-status badge additionally asks for both
+conventional `regular` and `extended` calendars so it can distinguish premarket,
+regular, and postmarket status. Filter each requested calendar consistently. Vela keeps
+cached series separate by session; providers without a session concept may ignore the
+ID.
+
 ## See also
 
 - [Adding a data provider](../contributing/adding-a-data-provider.md) — implement your own.

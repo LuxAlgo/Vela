@@ -2,6 +2,34 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Named trading sessions.** Hosts can define ordered trading sessions with their own
+  labels, market-time windows, colors, and provider-facing IDs. Workspaces show a
+  selector when several choices are available, shade the selected intraday session,
+  and restore the selected ID with saved state.
+
+- **Box selection for drawings.** Hold Ctrl/Cmd and drag from empty plot space to select
+  every drawing touched by the box, or add Shift to keep the current selection. The
+  gesture keeps the viewport fixed, supports one-step delete and undo, and leaves
+  locked drawings protected.
+
+### Changed
+
+- **Charts follow the system reduced-motion preference by default.** When `animations`
+  is omitted, reduced motion removes chart easing, presentation animation, workspace
+  glides, and contributed layer animation, and responds to preference changes live.
+  Pass `true` or an animation object to opt into full presentation motion, or `false`
+  to force reduced mode.
+
+### Fixed
+
+- **Hidden price series stay hidden after restore.** Hiding the base price series from
+  the status line or object tree now survives renderer templates, workspace state, and
+  persisted reloads.
+
 ## [v0.6.17]
 
 ### Changed

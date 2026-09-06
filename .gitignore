@@ -4,3 +4,5 @@ dist/
 *.log
 .env.local
 .DS_Store
+test-results/
+playwright-report/

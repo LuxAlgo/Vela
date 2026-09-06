@@ -12,7 +12,7 @@ import type { SymbolPickerFn } from './model/inputs';
 export class RendererControl {
     constructor(private readonly renderer: IChartRenderer) {}
 
-    /** The active renderer's identity, e.g. `'native'` or `'lwc'`. */
+    /** The active renderer's identity, e.g. `'native'` or `'my-renderer'`. */
     get name(): string {
         return this.renderer.name;
     }

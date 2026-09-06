@@ -597,13 +597,20 @@ describe('listing-prefix resolution (TradingView parity)', () => {
 });
 
 describe('session flag propagation (provider seam)', () => {
-    it('rides getBars ranges (load, loadRange, poll) and the subscribe opts', async () => {
+    it('forwards a custom id exactly through progressive, load, range, and subscribe paths', async () => {
         const ranges: Array<Record<string, unknown>> = [];
+        const progressiveRanges: Array<Record<string, unknown>> = [];
         const subOpts: unknown[] = [];
         const provider: DataProvider = {
             getBars(_t, _tf, range) {
                 ranges.push({ ...range });
                 return Promise.resolve(makeBars(range.limit ?? 10));
+            },
+            getBarsProgressive(_t, _tf, range, onBatch) {
+                progressiveRanges.push({ ...range });
+                const bars = makeBars(range.limit ?? 10);
+                onBatch(bars);
+                return Promise.resolve(bars);
             },
             listSymbols: () => Promise.resolve([{ ticker: 'AAPL', prefix: 'NASDAQ' }]),
             subscribe(_t, _tf, _onBar, opts) {
@@ -615,15 +622,19 @@ describe('session flag propagation (provider seam)', () => {
         feed.registerProvider('edgx', provider);
         await feed.ready();
 
-        await feed.load({ symbol: 'NASDAQ:AAPL', timeframe: '60', bars: 5, session: 'extended' });
-        expect(ranges[ranges.length - 1]!.session).toBe('extended');
+        const session = 'Asia-AM';
+        await feed.loadProgressive({ symbol: 'NASDAQ:AAPL', timeframe: '60', bars: 5, session }, () => {});
+        expect(progressiveRanges).toEqual([{ limit: 5, session }]);
 
-        await feed.loadRange!({ symbol: 'NASDAQ:AAPL', timeframe: '60', session: 'extended' }, { from: 0, limit: 5 });
-        expect(ranges[ranges.length - 1]).toMatchObject({ from: 0, session: 'extended' });
+        await feed.load({ symbol: 'NASDAQ:AAPL', timeframe: '60', bars: 5, session });
+        expect(ranges[ranges.length - 1]!.session).toBe(session);
 
-        const off = feed.subscribe({ symbol: 'NASDAQ:AAPL', timeframe: '60', session: 'extended' }, () => {});
+        await feed.loadRange!({ symbol: 'NASDAQ:AAPL', timeframe: '60', session }, { from: 0, limit: 5 });
+        expect(ranges[ranges.length - 1]).toMatchObject({ from: 0, session });
+
+        const off = feed.subscribe({ symbol: 'NASDAQ:AAPL', timeframe: '60', session }, () => {});
         off();
-        expect(subOpts).toEqual([{ session: 'extended' }]);
+        expect(subOpts).toEqual([{ session }]);
 
         // No session set -> nothing invented: the flag is simply absent.
         await feed.load({ symbol: 'NASDAQ:AAPL', timeframe: '60', bars: 5 });

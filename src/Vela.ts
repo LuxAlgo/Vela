@@ -2,8 +2,8 @@ import type { IChartRenderer, VisibleRange } from './core/ports/IChartRenderer';
 import type { ScriptingEngine } from './core/ports/ScriptingEngine';
 import type { MarketDataFeed } from './core/ports/MarketDataFeed';
 import type { VisibleRangePreset } from './core/visible-range';
-import type { VelaOptions, VelaTheme, ThemeName, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
-import { resolveAnimations } from './core/options';
+import type { VelaOptions, VelaTheme, ThemeName, MarketSwitch, MarketSnapshot, AddIndicatorOptions, MarketSessionDefinition } from './core/options';
+import { normalizeSession, normalizeSessionDefinitions, resolveAnimations, resolveMarketSession, resolveMotionPolicy } from './core/options';
 import type { InputValue } from './core/model/inputs';
 import type { IndicatorHandle } from './core/IndicatorHandle';
 import type { EngineContextSnapshot } from './core/ports/ScriptingEngine';
@@ -25,6 +25,7 @@ import { registerBuiltinChartTypes } from './chart-types/builtins';
 import { registerVolume } from './core/native-indicators/volume';
 import { registerVpvr } from './core/native-indicators/vpvr';
 import { registerClassicIndicators } from './core/native-indicators/classics';
+import { MotionPreferenceController, type MotionPreferenceSource } from './renderers/shared/motion';
 
 /** Outcome of {@link Vela.runIndicator}: success carries the live handle, failure the error. */
 export interface RunIndicatorResult {
@@ -37,7 +38,7 @@ export interface RunIndicatorResult {
     context: EngineContextSnapshot | null;
 }
 
-/** Optional dependency overrides — inject a different renderer, engines, or data feed (tests, swaps). */
+/** Optional dependency overrides for renderer, engines, data, and motion preference. */
 export interface VelaDeps {
     renderer?: IChartRenderer;
     /** Scripting engines to register at construction (bulk form of `registerEngine`); default none. */
@@ -45,15 +46,19 @@ export interface VelaDeps {
     /** Market-data source; default `new MultiProviderFeed()` (a provider registry; offline `data` needs no provider).
      *  A custom feed injected here is used bare — `chart.data` registration is then a no-op. */
     dataFeed?: MarketDataFeed;
+    /** Shared browser preference observer. The workspace supplies one so every cell
+     * follows the same media query without installing one listener per chart. Vela
+     * unsubscribes on destroy but leaves an injected source under its owner's control. */
+    motionPreference?: MotionPreferenceSource;
 }
 
 /**
  * The public, imperative chart. Composition root: wires the built-in native
- * renderer (the default) + provider data feed and delegates orchestration.
- * Optional renderers (e.g. lightweight-charts) are passed in as a class via
- * `options.renderer` and instantiated here, so this module imports only the
- * built-in native renderer. Scripting engines are opt-in — register one with
- * `registerEngine` (no engine ⇒ candles only).
+ * renderer (the default) + provider data feed and delegates orchestration. Pass a
+ * custom renderer as a class through `options.renderer`, or as a constructed instance
+ * through `deps.renderer`; this module imports only the built-in implementation.
+ * Scripting engines are opt-in — register one with `registerEngine` (no engine ⇒
+ * candles only).
  */
 export class Vela {
     private readonly orchestrator: EngineOrchestrator;
@@ -61,6 +66,14 @@ export class Vela {
     private readonly panesControl: PanesControl;
     private readonly dataControl: DataControl;
     private readonly drawingsControl: DrawingsControl;
+    private readonly motionHost: HTMLElement;
+    private readonly ownedMotionPreference: MotionPreferenceController | null;
+    private readonly motionPreference: MotionPreferenceSource;
+    private readonly rendererForMotion: IChartRenderer;
+    /** Normalized host catalog; `undefined` keeps the open provider-facing legacy API. */
+    private readonly sessionDefinitions: readonly MarketSessionDefinition[] | undefined;
+    private motionUnsub: (() => void) | null = null;
+    private motionReducedState = false;
 
     constructor(container: HTMLElement | string, options: VelaOptions = {}, deps: VelaDeps = {}) {
         registerBuiltinChartTypes(); // built-in chart types through the public SDK registry (idempotent)
@@ -69,6 +82,7 @@ export class Vela {
         registerClassicIndicators();
         const element = resolveElement(container);
         const theme = resolveTheme(options.theme);
+        this.motionHost = element;
         const display = {
             currentPriceLine: options.currentPriceLine ?? true,
             logScale: options.logScale ?? false,
@@ -87,18 +101,27 @@ export class Vela {
             );
         }
         const renderer = deps.renderer ?? new RendererClass(display);
+        this.ownedMotionPreference = deps.motionPreference ? null : new MotionPreferenceController(element, options.animations === undefined);
+        this.motionPreference = deps.motionPreference ?? this.ownedMotionPreference!;
+        this.rendererForMotion = renderer;
+        this.applyMotionPolicy(options.animations, this.motionPreference.reduced);
+        if (options.animations === undefined) {
+            this.motionUnsub = this.motionPreference.onChange((reduced) => this.applyMotionPolicy(options.animations, reduced));
+        }
         const engines = deps.engines ?? [];
         // Default: a multi-provider registry feed (caches closed bars internally). No
         // provider is bundled — register one with `chart.data.registerProvider(...)`;
         // until then a symbol-backed chart parks its initial load. Inject
         // `deps.dataFeed` to source candles from your own feed (used bare, no registry).
         const feed = deps.dataFeed ?? new MultiProviderFeed();
+        this.sessionDefinitions = options.sessions === undefined ? undefined : normalizeSessionDefinitions(options.sessions);
+        const session = this.sessionDefinitions === undefined ? normalizeSession(options.session) : resolveMarketSession(options.session, this.sessionDefinitions);
         const config: ResolvedConfig = {
             market: {
                 symbol: options.symbol,
                 timeframe: options.timeframe,
                 bars: options.bars,
-                session: options.session,
+                session,
                 visibleRange: options.visibleRange,
                 data: options.data,
             },
@@ -275,16 +298,21 @@ export class Vela {
     }
 
     /**
-     * Switch the chart's market IN PLACE — symbol, provider, timeframe, depth, or offline
-     * data — WITHOUT destroying the chart: indicators re-execute over the new bars, native
-     * indicators restart, and panes, user drawings, renderer config and event
+     * Switch the chart's market IN PLACE — symbol, timeframe, session, depth, or offline
+     * data — WITHOUT destroying the chart: indicators re-execute over the new bars,
+     * native indicators restart, and panes, user drawings, renderer config and event
      * subscriptions all survive. Resolves once the new market's history is painted (a
      * deep backfill continues behind it — await {@link historyComplete}); a call
      * superseded by a newer `setMarket` resolves silently. Emits `market:changed`
-     * (with the previous identity) when the market identity changed.
+     * (with the previous identity, including its session) when the identity changed.
      */
     setMarket(next: MarketSwitch): Promise<void> {
-        return this.orchestrator.setMarket(next);
+        if (next.session === undefined) return this.orchestrator.setMarket(next);
+        const { session: candidate, ...rest } = next;
+        const session = this.sessionDefinitions === undefined
+            ? normalizeSession(candidate)
+            : resolveMarketSession(candidate, this.sessionDefinitions);
+        return this.orchestrator.setMarket(session === undefined ? rest : { ...rest, session });
     }
 
     /** The current market identity — the read counterpart of {@link setMarket}. A snapshot
@@ -329,6 +357,12 @@ export class Vela {
      */
     get renderer(): RendererControl {
         return this.rendererControl;
+    }
+
+    /** Whether the chart currently resolves presentation motion to its reduced mode.
+     * Runtime environment state is intentionally absent from serialized chart state. */
+    get reducedMotion(): boolean {
+        return this.motionReducedState;
     }
 
     /**
@@ -421,7 +455,18 @@ export class Vela {
     }
 
     destroy(): void {
+        this.motionUnsub?.();
+        this.motionUnsub = null;
+        this.ownedMotionPreference?.destroy();
         this.orchestrator.destroy();
+        this.motionHost.removeAttribute?.('data-vela-motion');
+    }
+
+    private applyMotionPolicy(animations: VelaOptions['animations'], systemReduced: boolean): void {
+        const policy = resolveMotionPolicy(animations, systemReduced);
+        this.motionReducedState = policy.reduced;
+        if (this.motionHost.dataset) this.motionHost.dataset.velaMotion = policy.reduced ? 'reduced' : 'full';
+        this.rendererForMotion.applyMotionPolicy?.(policy);
     }
 }
 

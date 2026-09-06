@@ -3,7 +3,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { parseTimeframe, timeframeMs, timeframeLabel, favoriteTimeframeChips } from '../src/widget/timeframe';
 import { inputDeltas } from '../src/core/model/inputs';
-import { indicatorLedger, resolveIndicators } from '../src/widget/indicators';
+import { indicatorLedger, indicatorLedgersEqual, resolveIndicators } from '../src/widget/indicators';
 import { fmtPrice, fmtChange, decimalsFor } from '../src/widget/format';
 import { tzMenuLabel, tzButtonLabel } from '../src/widget/timezones';
 import { priceStyleLabel } from '../src/widget/topbar';
@@ -290,6 +290,19 @@ describe('indicatorLedger', () => {
         expect(indicatorLedger({ ...base, volumePending: true, present: ['volume'] })).toEqual({ manifest: [], natives: ['volume'] });
         // After the first load the registry is the whole truth: no intent padding.
         expect(indicatorLedger({ ...base, volumePending: false, present: ['vpvr'] })).toEqual({ manifest: [], natives: ['vpvr'] });
+    });
+
+    it('recognizes an unchanged ledger without depending on record or native order', () => {
+        const current = {
+            manifest: ['EMA', { name: 'RSI', inputs: { source: 'close', length: 21 }, props: { precision: 3 } }],
+            natives: ['volume', 'sma', 'sma'],
+        };
+        expect(indicatorLedgersEqual(current, {
+            manifest: ['EMA', { name: 'RSI', inputs: { length: 21, source: 'close' }, props: { precision: 3 } }],
+            natives: ['sma', 'volume', 'sma'],
+        })).toBe(true);
+        expect(indicatorLedgersEqual(current, { ...current, manifest: [...current.manifest].reverse() })).toBe(false);
+        expect(indicatorLedgersEqual(current, { ...current, natives: ['volume', 'sma'] })).toBe(false);
     });
 });
 

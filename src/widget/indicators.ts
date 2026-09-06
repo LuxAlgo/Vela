@@ -138,3 +138,34 @@ export function indicatorLedger(i: LedgerInputs): { manifest: LedgerManifestEntr
         natives,
     };
 }
+
+/** Whether two persisted ledgers describe the same live indicator set and values.
+ * Manifest order is presentation order; native entries are a multiset because the
+ * convergence path matches them by type. Input/prop record key order is immaterial. */
+export function indicatorLedgersEqual(
+    a: { manifest: readonly LedgerManifestEntry[]; natives: readonly string[] },
+    b: { manifest: readonly LedgerManifestEntry[]; natives: readonly string[] },
+): boolean {
+    if (a.manifest.length !== b.manifest.length || a.natives.length !== b.natives.length) return false;
+    const recordsEqual = (left: Record<string, InputValue> | undefined, right: Record<string, InputValue> | undefined): boolean => {
+        const leftKeys = Object.keys(left ?? {}).sort();
+        const rightKeys = Object.keys(right ?? {}).sort();
+        return leftKeys.length === rightKeys.length
+            && leftKeys.every((key, index) => key === rightKeys[index] && left?.[key] === right?.[key]);
+    };
+    const entriesEqual = (left: LedgerManifestEntry, right: LedgerManifestEntry): boolean => {
+        if (typeof left === 'string' || typeof right === 'string') return left === right;
+        return left.name === right.name
+            && recordsEqual(left.inputs, right.inputs)
+            && recordsEqual(left.props, right.props);
+    };
+    if (!a.manifest.every((entry, index) => entriesEqual(entry, b.manifest[index]!))) return false;
+    const counts = (values: readonly string[]): Map<string, number> => {
+        const out = new Map<string, number>();
+        for (const value of values) out.set(value, (out.get(value) ?? 0) + 1);
+        return out;
+    };
+    const ac = counts(a.natives);
+    const bc = counts(b.natives);
+    return ac.size === bc.size && [...ac].every(([type, count]) => bc.get(type) === count);
+}

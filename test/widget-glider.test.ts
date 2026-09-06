@@ -34,7 +34,7 @@ afterEach(() => {
 
 /** A chart whose READ-BACK clamps like the renderer's: the reported span never drops
  *  below `minSpanMs` (the zoom-in limit). Records every applied range. */
-function clampingChart(from: number, to: number, minSpanMs = 0) {
+function clampingChart(from: number, to: number, minSpanMs = 0, reducedMotion = false) {
     const applied: Array<{ from: number; to: number }> = [];
     const state = { from, to };
     const chart = {
@@ -43,6 +43,9 @@ function clampingChart(from: number, to: number, minSpanMs = 0) {
             state.from = r.from;
             state.to = r.to;
             applied.push({ ...r });
+        },
+        get reducedMotion() {
+            return reducedMotion;
         },
     } as unknown as Vela;
     return { chart, applied };
@@ -86,5 +89,13 @@ describe('Glider under renderer clamping', () => {
         glider.stop();
         pump(50);
         expect(applied.length).toBe(n); // nothing applied after stop
+    });
+
+    it('applies the final target synchronously when motion is reduced', () => {
+        const { chart, applied } = clampingChart(100 * HOUR, 200 * HOUR, 0, true);
+        const glider = new Glider(() => chart);
+        glider.zoom(0.5);
+        expect(applied).toEqual([{ from: 150 * HOUR, to: 200 * HOUR }]);
+        expect(frameQueue).toHaveLength(0);
     });
 });

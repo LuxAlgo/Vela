@@ -73,9 +73,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "playground": "vite"
+    "playground": "vite",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "eslint": "^9.0.0",
     "tsup": "^8.0.0",
     "typescript": "~5.9.3",

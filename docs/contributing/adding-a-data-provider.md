@@ -19,15 +19,15 @@ One method is **required**; the rest are **progressive** — present them when y
 
 #### Required
 
-- **`getBars(ticker, timeframe, range)`** — return bars for the requested window. `ticker` is what the user typed minus any `provider:` prefix (any `.ext` suffix is **kept** — you own its meaning). `range` is `{ from?, to?, limit?, session? }` (epoch ms; `to` omitted = now). The newest bar is treated as the forming candle. `session` (`'regular'` | `'extended'`) names the trading session the chart shows on markets that have one — honor it if your source can filter (regular vs extended bars are cached as separate series), ignore it otherwise. The same flag reaches `subscribe` as `opts.session` (4th argument).
+- **`getBars(ticker, timeframe, range)`** — return bars for the requested window. `ticker` is what the user typed minus any `provider:` prefix (any `.ext` suffix is **kept** — you own its meaning). `range` is `{ from?, to?, limit?, session? }` (epoch ms; `to` omitted = now). The newest bar is treated as the forming candle. `session` is the optional, case-sensitive provider-facing ID selected by the host; Vela™ forwards any non-empty ID unchanged after trimming it, even when the host declares no catalog. Metadata-derived workspace choices remain `regular` and `extended`; an explicit catalog adds labels, windows, colors, and ID validation. Honor the ID if your source can filter, and ignore it otherwise. The same selected ID reaches `subscribe` as `opts.session` (4th argument). Explicit and custom-session calendar lookups receive it as `range.session`; the legacy metadata-derived status badge separately requests both `regular` and `extended` calendars.
 
 #### Optional
 
 - **`listSymbols()`** — enumerate the symbols you serve, as `{ ticker, description?, type?, prefix? }[]`. This builds the **eager index** at registration that lets a **bare** symbol (no `provider:` prefix) resolve to you, and powers autocomplete. Without it, your provider is reachable **only** by an explicit `name:SYMBOL` prefix. Declare `prefix` when the symbol's **listing venue** is its identity (`NASDAQ` for AAPL, `NYSE` for IBM — a property of the symbol, not of your provider): it is what `NASDAQ:AAPL` strings resolve against and what every label displays. Leave it out where the provider *is* the identity (crypto, fx). **Grouped listings** (futures roots): emit one **group row** per root — `group` repeated in `ticker` (`{ ticker: 'ES', group: 'ES', … }`) — then its members carrying the same `group` with their own tickers, in deliberate order, one marked `default: true`. The picker folds members under the group row (a chevron unfolds them) and a group pick — clicked, or typed as `ES` / `CME:ES` — loads the `default` member (none or several marked ⇒ the **first listed**). The group row itself is listed, never loadable. Declare `market` when sibling markets of one source differ in session shape (futures product classes): consumers resolving per-market vocabulary key on it.
 - **`getSymbolInfo(ticker)`** — per-symbol metadata an engine may read (Pine `syminfo.*`). Absent ⇒ the engine synthesizes a fallback.
 - **`resolveSymbolIcon(descriptor)`** — the icon URL for one of your symbols; the provider owns the knowledge of where its asset class's icons live (the bundled crypto providers predefine the Ledger crypto-icon CDN). Called lazily per RENDERED row — cheap and synchronous. Return `undefined` for "no icon" (the shells show a colored-initials badge; a URL that 404s degrades the same way). Serve CORS-clean images (`Access-Control-Allow-Origin`) or drawing them taints the canvas and breaks the PNG export.
-- **`getCalendar(ticker, range)`** — the RESOLVED market calendar over `[from, to)`: ascending epoch-ms `[start, end)` pairs of open market time, **holidays and DST already applied by your source**. `range.session` selects the window set (`'regular'` default, `'extended'` = the full tape). This is the single market-time truth: the widget's market-status badge (open / pre / post / closed / holiday) and session-anchored consumers read these windows and never recompute a holiday themselves. Absent ⇒ no calendar (the right answer for continuous markets — crypto, most fx): the badge stays "Market Open" and consumers fall back to their own anchoring.
-- **`subscribe(ticker, timeframe, onBar)`** — open a true live candle stream and return an unsubscribe fn. Absent ⇒ the feed **polls `getBars`** for live ticks instead.
+- **`getCalendar(ticker, range)`** — the RESOLVED market calendar over `[from, to)`: ascending epoch-ms `[start, end)` pairs of open market time, **holidays and DST already applied by your source**. For explicit catalogs and custom IDs, `range.session` is the exact selected ID used by history and live requests. The metadata-derived status badge instead requests the conventional `regular` and `extended` calendars together so it can derive premarket, regular, and postmarket states. An absent ID remains the provider default. This is the single market-time truth: the widget's market-status badge and session-anchored consumers read these windows and never recompute a holiday themselves. Absent method ⇒ no calendar (the right answer for continuous markets — crypto, most fx): the badge stays "Market Open" and consumers fall back to their own anchoring.
+- **`subscribe(ticker, timeframe, onBar, opts?)`** — open a true live candle stream and return an unsubscribe fn. `opts.session` is the same selected ID used for history. Absent ⇒ the feed **polls `getBars`** for live ticks instead.
 - **`info()`** — provider metadata (display name, supported timeframes, capabilities). Absent ⇒ the registry synthesizes one from the methods you implement.
 - **`configure(config)`** — apply runtime config (e.g. API keys).
 
@@ -58,7 +58,7 @@ Registration is what **fires the chart's parked initial load** — until a provi
 
 ```ts
 const myProvider = {
-  // required — read ticker/timeframe per call (never stash them)
+  // required — read ticker, timeframe, and range.session per call (never stash them)
   async getBars(ticker, timeframe, range) {
     const bars = await fetchBars(ticker, timeframe, range); // your API
     return normalize(bars); // sorted + deduped by open-time, time in epoch ms
@@ -82,11 +82,11 @@ If you never add `listSymbols`/`getSymbolInfo`/`subscribe`, nothing breaks — t
 
 ### Caching is automatic
 
-The default feed caches **closed** bars in a shared in-memory store, keyed on the **resolved** `(provider, ticker, timeframe)` — so `BTCUSDT` and `BINANCE:BTCUSDT` share one entry. On a re-run it re-fetches only the uncached **tail** (newly-closed + forming bars) by calling your `getBars` with a bounded `range` whose `from` may **overlap** bars already held. Return the requested window as-is (sorted, de-duplicated); never error on an overlapping `from`. You implement no caching yourself.
+The default feed caches **closed** bars in a shared in-memory store, keyed on the **resolved** `(provider, ticker, timeframe, session)` — so `BTCUSDT` and `BINANCE:BTCUSDT` share one entry only when their session is also the same. Every explicit ID, including `regular`, gets a separate series; only an omitted ID uses the provider-default entry. On a re-run it re-fetches only the uncached **tail** (newly-closed + forming bars) by calling your `getBars` with a bounded `range` whose `from` may **overlap** bars already held. Return the requested window as-is (sorted, de-duplicated); never error on an overlapping `from`. You implement no caching yourself.
 
 ### The source-of-truth pitfall
 
-**Read the ticker and timeframe from the call arguments, never from stashed instance state.** The cache can serve history without ever calling your `getBars` for the primary load, then later call it for just the tail — a captured "current symbol" may be stale or never set.
+**Read the ticker, timeframe, and session from the call arguments, never from stashed instance state.** The cache can serve history without ever calling your `getBars` for the primary load, then later call it for just the tail — a captured "current market" may be stale or never set.
 
 ## Part 2 — A custom `MarketDataFeed` (advanced)
 
@@ -100,11 +100,16 @@ const chart = new Vela(container, options, {
 
 A feed injected this way is used as-is: `chart.data.registerProvider(...)` becomes a no-op + warning (there's no registry to register into), and you own any caching. Use this only when the provider model doesn't fit; for a normal data source, Part 1 is the path.
 
+The chart passes the selected ID as `cfg.session` to a custom feed's load, range, and
+subscription methods. If the feed supports session filtering, treat that value as part
+of the market identity and keep its cached series separate.
+
 ## Checklist
 
-- `getBars` implemented; reads ticker/timeframe from arguments, returns open-time-in-ms bars, sorted + de-duplicated.
+- `getBars` implemented; reads ticker, timeframe, and session from its arguments, returns open-time-in-ms bars, sorted + de-duplicated.
 - Newest bar treated as the forming candle; roll forward by emitting a larger open-time (no separate close event).
 - Ranged `getBars` tolerates an overlapping `from` and honors "`to` omitted = now"; no timeframe aggregation across requests unless your venue needs it internally.
+- History and live subscriptions honor the same exact `session` ID when the source supports filtering. Explicit/custom calendar requests do too; the metadata-derived status badge requests both conventional calendars. Unsupported sources ignore IDs consistently.
 - (Optional) `listSymbols` so bare symbols resolve to you; `getSymbolInfo` for real syminfo; `subscribe` for a true candle stream (else polling is used); `getCalendar` for resolved market-time windows on venues with trading sessions.
 - Registered via `chart.data.registerProvider(name, provider)`.
 

@@ -92,7 +92,7 @@ registerRendererLayer({
     repaintOnCursor: true,           // opt-in: pointer moves repaint this layer too
     create: () => ({
         mount(canvas) { /* keep the canvas reference */ },
-        render({ bars, data, pending, coords, scale, bounds, theme, priceStyle, nowMs, cursor }) {
+        render({ bars, data, pending, coords, scale, bounds, theme, priceStyle, nowMs, cursor, reducedMotion }) {
             // Always clear + repaint your own canvas. Gate on `priceStyle` if the
             // layer belongs to a chart type. Key mappings:
             //   coords.logicalToX(i) / coords.timeToX(ms)  → x
@@ -100,6 +100,7 @@ registerRendererLayer({
             //   coords.width / coords.dpr                  → sizing
             // `cursor` is the plot-relative pointer ({ x, y } | null) — hover
             // hit-testing input for layers that set `repaintOnCursor`.
+            // When `reducedMotion` is true, paint the complete static/end state.
         },
         animating?: () => false,     // return true while a pulse/fade needs frames
         modulateBase?: (args) => ({ candleBodyScale: 0.07, gridAlpha: 0 }),
@@ -107,6 +108,11 @@ registerRendererLayer({
     }),
 });
 ```
+
+`reducedMotion` is the effective presentation policy for that frame. Do not advance a
+pulse, fade, or reveal while it is true; paint the final state directly. The native
+renderer does not consult `animating()` while motion is reduced, so correctness must not
+depend on animation progress eventually producing a complete frame.
 
 **Ownership — layers backed by a native indicator.** When a mounted native indicator's
 type equals a layer's id, that indicator OWNS the layer, and the layer joins the chart's

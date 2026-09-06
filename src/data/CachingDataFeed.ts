@@ -8,8 +8,9 @@ import { timeframeToMs } from './timeframe';
 
 /** Series cache key — the symbol's own grammar carries the venue: a `provider:` prefix
  *  keys per venue (the multi-provider feed hands canonical prefixed symbols down); a
- *  bare symbol keys venue-less, whatever serves it (single-feed setups). A non-default
- *  session keys its own series (regular and extended bars genuinely differ). */
+ *  bare symbol keys venue-less, whatever serves it (single-feed setups). Every explicit
+ *  provider-facing session ID keys its own series; only an omitted ID uses the
+ *  provider-default series. */
 function cacheKey(symbol: string, timeframe: string, session?: string): string {
     const { provider, ticker } = parseSymbol(symbol);
     return seriesKey(provider ?? '', ticker, timeframe, session);

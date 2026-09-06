@@ -33,6 +33,8 @@ export interface RendererLayerArgs {
     priceStyle: string;
     /** Frame clock (ms) for pulses/fades; monotonic within a session. */
     nowMs: number;
+    /** True when presentation animation must resolve to a static/final frame. */
+    reducedMotion: boolean;
     /** Plot-relative pointer position, or null when the pointer is off the plot. Layers
      *  that hover-test set `repaintOnCursor` on their definition so pointer moves repaint
      *  them (only data-tier frames repaint layers otherwise). */

@@ -80,14 +80,14 @@ If any condition fails, the core uses the static re-run path: it pokes the engin
 
 ## Switching markets in place
 
-`chart.setMarket({ symbol?, provider?, timeframe?, bars?, data?, visibleRange? })` changes what the chart shows **without destroying it**. The switch is a controlled re-entry into the same load pipeline the chart booted with:
+`chart.setMarket({ symbol?, timeframe?, bars?, session?, data?, visibleRange? })` changes what the chart shows **without destroying it**. The symbol itself carries an optional provider prefix. A session change selects a different bar series, so it follows the same controlled re-entry into the load pipeline as a symbol or timeframe change:
 
 1. **Quiesce** — the live subscription stops, pending gap-heals and viewport pokes are dropped, and history tracking re-arms (the superseded load's `historyComplete()` promise resolves rather than hanging).
-2. **Reload** — the shared load pipeline runs for the new market (preview → chunk → background backfill for deep histories, a single fetch otherwise). Every step is generation-guarded: a newer switch (or destroy) abandons a stale load before it can touch the chart.
+2. **Reload** — the shared load pipeline runs for the new market (preview → chunk → background backfill for deep histories, a single fetch otherwise). The selected, case-sensitive session ID reaches history, range, progressive, subscription, and explicit/custom calendar paths unchanged, and the cache keeps every explicit session ID separate from the omitted provider default. The legacy metadata-derived status badge also requests both conventional calendars to derive its pre/regular/post states. Every step is generation-guarded: a newer switch (or destroy) abandons a stale load before it can touch the chart.
 3. **Restart consumers** — engine sessions are re-executed over the new bars (their next `ExecutionRequest` carries the new market), native indicators restart with a fresh context, the active chart-type data engine is rebuilt, and the live subscription re-targets.
-4. **Announce** — `market:changed` fires with the previous identity, so hosts can re-key per-symbol state (drawing documents, watchlists).
+4. **Announce** — `market:changed` fires with the current and previous session as part of the identity, so hosts can re-key per-market state (drawing documents, watchlists).
 
-What deliberately survives: panes and indicator records (legend rows, inputs, pane placement), user drawings, the renderer's cosmetic config, the zoom (the view keeps its bar spacing and only re-anchors the newest bars at the right edge — the previous pan pointed at another market's time range), and every event subscription. Old sessions are never poked with the new market's bars — bar/viewport notifications are held during the switch, and the re-execution that follows is what computes over the new data.
+What deliberately survives: panes and indicator records (legend rows, inputs, pane placement), user drawings, the renderer's cosmetic config, and every event subscription. A new symbol or timeframe keeps the bar spacing and re-anchors the newest bars at the right edge because the previous market's clock is no longer meaningful. A session-only switch preserves the number of visible bars and the newest visible-bar anchor against the incoming tape, so different session densities do not appear to change the zoom. Old engine sessions are never poked with the new market's bars — bar/viewport notifications are held during the switch, and the re-execution that follows is what computes over the new data.
 
 ## Causal, stateful execution
 
