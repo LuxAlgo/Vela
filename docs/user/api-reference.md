@@ -264,7 +264,7 @@ chart is never left half-changed.
 | `supports(feature)` | Whether a feature is available — use to show/hide a UI control. |
 | `get(feature)` | Read a feature's current value (`undefined` if unsupported). |
 | `set(feature, value)` / `set({ … })` | Apply one feature, or several at once (one repaint). |
-| `screenshot()` | Export the chart as a PNG data URL, or `null` if unsupported. Composites the geometry and chrome layers only — the crosshair, DOM overlays (tables, legend), user drawings, and the volume-profile layer are not included. |
+| `screenshot()` | Export the chart as a PNG data URL, or `null` if unsupported. The native renderer includes the plot canvas stack, volume profile, chrome, and user drawings, plus best-effort text/chip replicas of indicator legends and marked host overlays. The crosshair is excluded. See [Screenshot export](./renderer-features.md#screenshot-export) for DOM capture limits. |
 | `getConfig()` | Snapshot the renderer's full cosmetics as a serializable, versioned JSON document (or `null`). |
 | `applyConfig(config)` | Apply a full or partial config document from `getConfig()`; malformed/unknown fields are ignored. |
 | `onConfigChanged(cb)` | Subscribe to cosmetic-config changes — the in-chart settings dialog commits through `applyConfig`, so this is how host chrome mirroring a config value (a time-zone display, a saved template) learns about in-chart edits. Re-pull `get(…)`/`getConfig()` in the callback. Returns an unsubscribe fn; silent no-op unsubscribe on a renderer without a rich config. |
