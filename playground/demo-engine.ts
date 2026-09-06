@@ -398,7 +398,6 @@ export class DemoEngine implements ScriptingEngine {
                     meta: { title: program.title, overlay: program.overlay },
                     plots: Object.fromEntries(series.map((s) => [s.title, s.points.map((p) => ({ time: p.time, value: p.value }))])),
                     variables: { ...values },
-                    result: null,
                     warnings: [],
                 };
                 handlers.onModel(model);
