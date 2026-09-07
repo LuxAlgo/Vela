@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DrawingInteraction } from '../src/renderers/native/drawings/DrawingInteraction';
 import { createProjector } from '../src/renderers/native/drawings/Projector';
+import { deletableSelection, deleteTargets } from '../src/renderers/native/drawings/DrawingHitTester';
 import { effectiveSnapMode } from '../src/renderers/native/core/InputController';
 import { CoordinateSystem } from '../src/renderers/native/core/CoordinateSystem';
 import { createDrawing, DEFAULT_DRAWING_COLOR, MAX_PATH_POINTS, type Drawing, type DrawingIntent, type DrawingStyle, type DrawingTypeKey, type Projector } from '../src/core/drawings';
@@ -695,6 +696,45 @@ describe('DrawingInteraction: Ctrl/Cmd-drag duplicates', () => {
         expect(h.it.dragClones()).toBeNull();
         h.it.up(40, 65);
         expect(h.intents).toEqual([{ kind: 'select', ids: ['dw-1'], additive: true }]);
+    });
+});
+
+describe('delete-at-cursor targets (eraser + middle-click)', () => {
+    const line = (id: string, locked = false) => {
+        const d = createDrawing('hline', { id, paneId: 'price', anchors: [{ time: 10, price: 30 }] })!;
+        d.locked = locked;
+        return d;
+    };
+
+    it('a lone unlocked hit goes; a lone locked hit is protected', () => {
+        const a = line('a');
+        const b = line('b', true);
+        expect(deleteTargets(a, new Set(), [a, b], true)).toEqual(['a']);
+        expect(deleteTargets(b, new Set(), [a, b], true)).toEqual([]);
+        expect(deleteTargets(b, new Set(['b']), [a, b], true)).toEqual([]); // selected alone changes nothing
+    });
+
+    it('a middle-click on a LOCKED member of a multi-selection still removes the unlocked members', () => {
+        const a = line('a');
+        const b = line('b', true);
+        const c = line('c');
+        const sel = new Set(['a', 'b', 'c']);
+        expect(deleteTargets(b, sel, [a, b, c], true)).toEqual(['a', 'c']);
+        expect(deleteTargets(a, sel, [a, b, c], true)).toEqual(['a', 'c']); // same result from an unlocked member
+        expect(deletableSelection(sel, [a, b, c])).toEqual(['a', 'c']); // and the same set Delete removes
+    });
+
+    it('an all-locked multi-selection removes nothing', () => {
+        const a = line('a', true);
+        const b = line('b', true);
+        expect(deleteTargets(a, new Set(['a', 'b']), [a, b], true)).toEqual([]);
+    });
+
+    it('the eraser (no withSelection) never widens to the selection', () => {
+        const a = line('a');
+        const b = line('b');
+        expect(deleteTargets(a, new Set(['a', 'b']), [a, b], false)).toEqual(['a']);
+        expect(deleteTargets(line('c', true), new Set(['a', 'b']), [a, b], false)).toEqual([]);
     });
 });
 

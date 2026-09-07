@@ -26,3 +26,24 @@ export function topDrawingAt(
     }
     return null;
 }
+
+/**
+ * What a selection-wide delete removes: a lone selected drawing goes regardless, but inside a
+ * multi-selection a LOCKED drawing is protected — the others go and it stays (selected).
+ */
+export function deletableSelection(selected: Iterable<string>, drawings: readonly Drawing[]): string[] {
+    const ids = [...selected];
+    if (ids.length < 2) return ids;
+    return ids.filter((id) => !drawings.find((d) => d.id === id)?.locked);
+}
+
+/**
+ * What a delete-at-cursor press removes when `hit` is the drawing under it. A hit on a member of
+ * a multi-selection (with `withSelection`) takes the selection's deletable members — even when
+ * the hit itself is locked, so a middle-click on the locked one still clears the rest of the
+ * group. Any other locked hit is protected and nothing is removed.
+ */
+export function deleteTargets(hit: Drawing, selected: ReadonlySet<string>, drawings: readonly Drawing[], withSelection: boolean): string[] {
+    if (withSelection && selected.size >= 2 && selected.has(hit.id)) return deletableSelection(selected, drawings);
+    return hit.locked ? [] : [hit.id];
+}

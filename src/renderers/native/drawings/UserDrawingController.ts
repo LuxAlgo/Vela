@@ -22,7 +22,7 @@ import { DrawingInteraction } from './DrawingInteraction';
 import { DrawingSettingsPopup, type PopupAnchor } from './DrawingSettingsPopup';
 import { DrawingToolbar, TOOLBAR_WIDTH, TOOLBAR_COLLAPSED_WIDTH } from './DrawingToolbar';
 import { MeasureOverlay } from './MeasureOverlay';
-import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
+import { topDrawingAt, deletableSelection, deleteTargets, HIT_TOLERANCE } from './DrawingHitTester';
 import { keyToDrawingAction, isEditingText } from './DrawingKeys';
 import type { DrawingSlice } from '../core/SceneGraph';
 
@@ -406,13 +406,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
 
     /** Delete the (unlocked) drawing under the cursor. True when one was removed.
      *  Shared by the eraser (click + drag) and the middle-click shortcut; the latter passes
-     *  `withSelection` so a hit on a SELECTED drawing removes the selection with it (its
-     *  locked members excepted). */
+     *  `withSelection` so a hit on a member of a multi-selection removes the selection's
+     *  unlocked members — whichever member was hit, locked or not. */
     deleteAt(x: number, y: number, withSelection = false): boolean {
         const hit = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE);
-        if (!hit || hit.locked) return false;
+        if (!hit) return false;
+        const ids = deleteTargets(hit, this.selectedIds, this.drawings, withSelection);
+        if (ids.length === 0) return false;
         this.popup.close();
-        const ids = withSelection && this.selectedIds.has(hit.id) ? this.deletableSelection() : [hit.id];
         this.emit({ kind: 'delete', ids });
         return true;
     }
@@ -848,12 +849,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return [...this.selectedIds];
     }
 
-    /** What a selection-wide delete removes: a lone selected drawing goes regardless, but inside
-     *  a multi-selection a LOCKED drawing is protected — the others go and it stays (selected). */
     private deletableSelection(): string[] {
-        const ids = this.selectionIds();
-        if (ids.length < 2) return ids;
-        return ids.filter((id) => !this.drawings.find((d) => d.id === id)?.locked);
+        return deletableSelection(this.selectedIds, this.drawings);
     }
 
     /** Move every selected (unlocked) drawing by a pixel delta — one edit/edit-many → one undo step. */

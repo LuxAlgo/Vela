@@ -362,7 +362,7 @@ export class DrawingSettingsPopup {
         if (!multi && isFrvp) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'frvp')));
         if (!multi && isPosition) bar.appendChild(this.iconBtn('Position size', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'position')));
         if (!multi && editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'levels')));
-        bar.appendChild(this.toggle('Lock', LOCK_ICON, common((d) => d.locked), (v) => actions.setLocked(v)));
+        bar.appendChild(this.toggle('Lock', LOCK_ICON, common((d) => d.locked), (v) => actions.setLocked(v), UNLOCK_ICON));
         const del = this.iconBtn('Delete', TRASH_ICON, () => actions.remove());
         del.style.color = 'var(--vela-danger)';
         bar.appendChild(del);
@@ -761,13 +761,14 @@ export class DrawingSettingsPopup {
     }
 
     /** An on/off button. A mixed state (the selected drawings disagree) reads as half-lit and
-     *  the first click turns it ON for all of them. */
-    private toggle(tip: string, icon: string, active: boolean | Mixed, onChange: (v: boolean) => void): HTMLButtonElement {
+     *  the first click turns it ON for all of them. `off` swaps in a distinct glyph while the
+     *  toggle is off (a lock reads as an open padlock until it is engaged); mixed shows `icon`. */
+    private toggle(tip: string, icon: string, active: boolean | Mixed, onChange: (v: boolean) => void, off?: string): HTMLButtonElement {
         const b = this.base(tip);
-        b.innerHTML = sized(icon);
         // `data-active` alone drives the fill — the stylesheet owns idle/hover/active/mixed.
         const set = (on: boolean | Mixed): void => {
             b.dataset.active = on === MIXED ? 'mixed' : on ? '1' : '0';
+            b.innerHTML = sized(off && on === false ? off : icon);
         };
         set(active);
         let on = active;
@@ -1018,6 +1019,7 @@ const TYPE_ICON = icon('type');
 const PRICE_DELTA_ICON = icon('price-delta');
 const DATE_DELTA_ICON = icon('date-delta');
 const LOCK_ICON = icon('lock');
+const UNLOCK_ICON = icon('unlock');
 const FRONT_ICON = icon('bring-front');
 const BACK_ICON = icon('send-back');
 const TRASH_ICON = icon('trash');
