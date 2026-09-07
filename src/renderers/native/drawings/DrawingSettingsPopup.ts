@@ -184,8 +184,8 @@ export class DrawingSettingsPopup {
         const common = <T>(read: (d: Drawing) => T): T | Mixed => commonValue(drawings, read);
         const every = (pred: (d: Drawing) => boolean): boolean => drawings.every(pred);
         /** A color swatch over the drawings: shared color, or striped with the colors in use. */
-        const swatch = (tip: string, glyph: string, read: (d: Drawing) => string, path: string, iconSize?: number): HTMLButtonElement =>
-            this.colorButton(tip, glyph, common(read), (v) => actions.patch({ [path]: v }), iconSize, distinctValues(drawings, read));
+        const swatch = (tip: string, glyph: string, read: (d: Drawing) => string, path: string): HTMLButtonElement =>
+            this.colorButton(tip, glyph, common(read), (v) => actions.patch({ [path]: v }), undefined, distinctValues(drawings, read));
         // Text-first annotations (and computed labels) wear their text controls on the bar; on a
         // shape that merely CAN carry a label they stay beside the label field — and a
         // multi-selection has no label field, so its text styling always sits on the bar.

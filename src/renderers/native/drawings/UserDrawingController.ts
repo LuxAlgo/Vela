@@ -1161,8 +1161,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
         }, this.onPopupDismissed);
     }
 
-    /** A plain click on the empty plot: drop the selection (the multi-select twin of the popup's
-     *  dismiss-on-outside-press, which only covers the single-drawing case). */
+    /** A plain click on the empty plot: drop the selection. The popup's dismiss-on-outside-press
+     *  does the same, but a selection can exist with no bar open (a lone Ctrl-click pick, a
+     *  selection whose bar was dismissed by a modifier press) — this covers those. */
     deselect(): void {
         this.clearSelection();
     }
@@ -1206,7 +1207,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
         }
         if (i.kind === 'clone') {
             // A drag-to-duplicate ends like a click on the copy: its settings bar opens so it can be
-            // restyled right away. Several copies stay a plain multi-selection (one bar edits one drawing).
+            // restyled right away. Several copies need nothing here — the selection they become
+            // brings up the multi-selection bar on its own (see setSelection).
             const before = new Set(this.drawings.map((d) => d.id));
             this.intentCb?.(i);
             const fresh = this.drawings.filter((d) => !before.has(d.id));

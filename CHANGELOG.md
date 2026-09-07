@@ -10,9 +10,9 @@ All notable changes to Vela, newest first.
   drag a drawing's body to pull a copy away from it: the original stays where it is, the
   copy follows the cursor and is committed when you release — selected, with its
   quick-settings popup open — as one undo step; press **Escape** mid-drag and nothing is
-  left behind. The quick-settings popup's overflow
-  menu gains a **Duplicate** entry that clones the drawing in place and hands it the
-  selection, ready to drag. Selection also grows beyond one drawing: **Ctrl/Cmd+click**
+  left behind. The quick-settings popup's overflow menu gains a **Duplicate** entry that
+  clones the drawing in place and hands it the selection, ready to drag. Selection also
+  grows beyond one drawing: **Ctrl/Cmd+click**
   adds a drawing to (or removes it from) the selection, just as Shift+click does, and
   **Ctrl/Cmd+drag on an empty spot** sweeps a selection box that picks up every drawing
   it touches — successive boxes accumulate, and a click on an empty spot clears the
@@ -34,7 +34,7 @@ All notable changes to Vela, newest first.
   dropdown, a half-lit toggle. Any edit applies to every selected drawing as one undo step,
   and opening a mixed swatch lists the colors currently in use first, so unifying onto one
   of them is a single click.
-  
+
 ### Changed
 
 - **The built-in VWAP now carries standard-deviation bands.** Volume Weighted Average
