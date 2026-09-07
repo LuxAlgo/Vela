@@ -1,21 +1,25 @@
 import type { OHLCV } from '../../model/ohlcv';
 import type { MarkerPoint } from '../../model/series';
-import { SERIES_LINE, BULLISH, BEARISH, INFO, WARNING } from '../../palette';
-import type { ClassicIndicatorSpec, ClassicPlot } from './define';
-import { num, str } from './define';
-import { colorInput } from './shared';
+import type { InputSchema } from '../../model/inputs';
+import { SERIES_LINE, BULLISH, BEARISH, INFO, WARNING, CATEGORICAL } from '../../palette';
+import type { ClassicBand, ClassicIndicatorSpec, ClassicPlot } from './define';
+import { bool, num, str } from './define';
+import { sourceValues } from './math';
+import { colorInput, sourceInput, withAlpha } from './shared';
 
 /** Price-anchored specials: stops, anchored averages, levels, pivots, patterns. */
 
 const DAY_MS = 86400000;
 
-type Anchor = 'Day' | 'Week' | 'Month';
+type Anchor = 'Day' | 'Week' | 'Month' | 'Quarter' | 'Year';
 
 /** UTC period key for an anchor (epoch day 0 was a Thursday; weeks start Monday). */
 function periodKey(anchor: Anchor, time: number): number {
     if (anchor === 'Week') return Math.floor((Math.floor(time / DAY_MS) + 3) / 7);
-    if (anchor === 'Month') {
+    if (anchor === 'Month' || anchor === 'Quarter' || anchor === 'Year') {
         const d = new Date(time);
+        if (anchor === 'Year') return d.getUTCFullYear();
+        if (anchor === 'Quarter') return d.getUTCFullYear() * 4 + Math.floor(d.getUTCMonth() / 3);
         return d.getUTCFullYear() * 12 + d.getUTCMonth();
     }
     return Math.floor(time / DAY_MS);
@@ -70,40 +74,89 @@ const parabolicSar: ClassicIndicatorSpec = {
     },
 };
 
+const VWAP_BANDS_GROUP = 'Bands';
+const VWAP_STYLE = 'Style';
+/** The three ±k·σ band pairs. Each band has its own ink so the pairs read apart at a glance. */
+const VWAP_BANDS = [
+    { on: 'band1', mult: 'band1Mult', color: 'band1Color', fill: 'band1Fill', fillColor: 'band1FillColor', defMult: 1, defOn: true, defColor: BULLISH },
+    { on: 'band2', mult: 'band2Mult', color: 'band2Color', fill: 'band2Fill', fillColor: 'band2FillColor', defMult: 2, defOn: false, defColor: WARNING },
+    { on: 'band3', mult: 'band3Mult', color: 'band3Color', fill: 'band3Fill', fillColor: 'band3FillColor', defMult: 3, defOn: false, defColor: CATEGORICAL[4]! },
+] as const;
+
 const vwap: ClassicIndicatorSpec = {
     type: 'vwap',
     title: 'Volume Weighted Average Price',
     shortTitle: 'VWAP',
     overlay: true,
     inputs: [
-        { key: 'anchor', title: 'Anchor', type: 'string', defval: 'Day', options: ['Day', 'Week', 'Month'], tooltip: 'Where the accumulation resets (UTC periods)' },
-        { key: 'source', title: 'Source', type: 'string', defval: 'HLC3', options: ['HLC3', 'OHLC4', 'Close'] },
-        colorInput(INFO),
+        { key: 'anchor', title: 'Period', type: 'string', defval: 'Day', options: ['Day', 'Week', 'Month', 'Quarter', 'Year'], tooltip: 'Where the accumulation resets (UTC periods)' },
+        sourceInput('HLC3'),
+        // Each band is one row: its toggle leads, the multiplier follows unlabeled.
+        ...VWAP_BANDS.flatMap((b, i): InputSchema[] => [
+            { key: b.on, title: `Band ${i + 1} multiplier`, type: 'bool', defval: b.defOn, inline: b.on, group: VWAP_BANDS_GROUP },
+            { key: b.mult, title: '', type: 'float', defval: b.defMult, min: 0.1, max: 10, step: 0.1, inline: b.on, group: VWAP_BANDS_GROUP },
+        ]),
+        { ...colorInput(INFO, 'VWAP color'), group: VWAP_STYLE },
+        // One row per band: its ink, then the fill toggle with the fill's own (translucent) color.
+        ...VWAP_BANDS.flatMap((b, i): InputSchema[] => [
+            { ...colorInput(b.defColor, `Band ${i + 1} color`, b.color), inline: b.color, group: VWAP_STYLE },
+            { key: b.fill, title: 'Fill', type: 'bool', defval: true, inline: b.color, group: VWAP_STYLE },
+            { ...colorInput(withAlpha(b.defColor), '', b.fillColor), inline: b.color, group: VWAP_STYLE },
+        ]),
     ],
     compute: (bars, inputs) => {
         const anchor = str(inputs, 'anchor', 'Day') as Anchor;
-        const source = str(inputs, 'source', 'HLC3');
-        const values = new Array<number>(bars.length).fill(Number.NaN);
+        const src = sourceValues(bars, str(inputs, 'source', 'HLC3'));
+        const n = bars.length;
+        const values = new Array<number>(n).fill(Number.NaN);
+        const bands = VWAP_BANDS.filter((b) => bool(inputs, b.on, b.defOn)).map((b) => ({
+            mult: Math.max(0, num(inputs, b.mult, b.defMult)),
+            color: str(inputs, b.color, b.defColor),
+            fill: bool(inputs, b.fill, true),
+            fillColor: str(inputs, b.fillColor, withAlpha(b.defColor)),
+            up: new Array<number>(n).fill(Number.NaN),
+            down: new Array<number>(n).fill(Number.NaN),
+        }));
         let period = Number.NaN;
         let cumPV = 0;
+        let cumPV2 = 0;
         let cumV = 0;
-        for (let i = 0; i < bars.length; i++) {
+        for (let i = 0; i < n; i++) {
             const b = bars[i]!;
             const key = periodKey(anchor, b.time);
             if (key !== period) {
                 period = key;
                 cumPV = 0;
+                cumPV2 = 0;
                 cumV = 0;
             }
             const v = b.volume;
             if (v != null && Number.isFinite(v) && v > 0) {
-                const tp = source === 'Close' ? b.close : source === 'OHLC4' ? (b.open + b.high + b.low + b.close) / 4 : (b.high + b.low + b.close) / 3;
+                const tp = src[i]!;
                 cumPV += tp * v;
+                cumPV2 += tp * tp * v;
                 cumV += v;
             }
-            if (cumV > 0) values[i] = cumPV / cumV;
+            if (cumV <= 0) continue;
+            const mean = cumPV / cumV;
+            // Variance clamped at 0 — IEEE drift can dip `E[x²] − mean²` a hair under.
+            const sd = Math.sqrt(Math.max(0, cumPV2 / cumV - mean * mean));
+            values[i] = mean;
+            for (const band of bands) {
+                band.up[i] = mean + band.mult * sd;
+                band.down[i] = mean - band.mult * sd;
+            }
         }
-        return { plots: [{ key: 'vwap', title: 'VWAP', values, color: str(inputs, 'color', INFO), width: 2 }] };
+        const plots: ClassicPlot[] = [{ key: 'vwap', title: 'VWAP', values, color: str(inputs, 'color', INFO), width: 2 }];
+        const fills: ClassicBand[] = [];
+        bands.forEach((band, i) => {
+            plots.push(
+                { key: `up${i}`, title: `Upper ${band.mult}σ`, values: band.up, color: band.color },
+                { key: `down${i}`, title: `Lower ${band.mult}σ`, values: band.down, color: band.color },
+            );
+            if (band.fill) fills.push({ key: `band${i}`, from: `up${i}`, to: `down${i}`, color: band.fillColor });
+        });
+        return { plots, bands: fills };
     },
 };
 
