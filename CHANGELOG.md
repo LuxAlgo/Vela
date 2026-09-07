@@ -16,6 +16,10 @@ All notable changes to Vela, newest first.
   per band, its own color (each band starts in a distinct ink) with a Fill switch and the
   fill's own color — opacity included — beside it. Existing saved VWAP settings keep
   working: the period, source and line color keys are unchanged.
+- **The object tree names indicators by their compact title.** An indicator that
+  declares a short title now shows it on its row in the object tree, so the row reads
+  the same as its legend chip. Indicators without a short title keep their full name,
+  and a study pane's heading still carries the full name of the indicator that owns it.
 
 ### Fixed
 

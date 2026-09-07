@@ -36,14 +36,14 @@ import {
 import type { PaneInfo } from '../src/core/options';
 import type { SerializedDrawing } from '../src/core/drawings/Drawing';
 
-function pane(id: string, kind: 'price' | 'study', order: number, indicators: Array<{ id: string; title?: string; ownScale?: boolean }> = []): PaneInfo {
+function pane(id: string, kind: 'price' | 'study', order: number, indicators: Array<{ id: string; title?: string; shorttitle?: string; ownScale?: boolean }> = []): PaneInfo {
     return {
         id,
         kind,
         order,
         collapsed: false,
         maximized: false,
-        indicators: indicators.map((i) => ({ id: i.id, title: i.title ?? i.id, ownScale: i.ownScale === true })),
+        indicators: indicators.map((i) => ({ id: i.id, title: i.title ?? i.id, ...(i.shorttitle ? { shorttitle: i.shorttitle } : {}), ownScale: i.ownScale === true })),
     };
 }
 
@@ -138,6 +138,14 @@ describe('buildTree — the unified stack', () => {
         const tree = buildTree(snap({ panes: [p], indicatorVisible: (id) => id !== 'a', handleTitle: () => 'Indicator' }));
         const a = paneRows(tree[0]!).find((r) => r.kind === 'indicator');
         expect(a).toMatchObject({ label: 'SMA 20', visible: false, ownScale: true });
+    });
+
+    it('labels an indicator row with its compact name when it declares one — the pane keeps the full title', () => {
+        const panes = [pane('price', 'price', 0), pane('p1', 'study', 1, [{ id: 'rsi', title: 'Relative Strength Index', shorttitle: 'RSI' }])];
+        const tree = buildTree(snap({ panes, zOrder: [{ id: 'rsi', z: 0 }] }));
+        const row = paneRows(tree[1]!).find((r) => r.kind === 'indicator');
+        expect(row?.label).toBe('RSI');
+        expect(tree[1]!.label).toBe('Relative Strength Index');
     });
 
     it('falls back to the handle title, then the id, when the pane model has no title', () => {

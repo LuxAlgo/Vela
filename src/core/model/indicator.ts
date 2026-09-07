@@ -35,11 +35,11 @@ export type PaneAxis = 'none' | { bands: PaneAxisBand[] };
 export interface IndicatorModel {
     /** Per-instance id (stable). */
     id: string;
-    /** Full display name (settings dialog, object tree, inspect). */
+    /** Full display name (picker, inspect, and every surface with no {@link shorttitle}). */
     title: string;
     /**
-     * Compact label the legend chip and the settings dialog show instead of the full
-     * {@link title}. Absent ⇒ both use {@link title}. Mirrors Pine
+     * Compact label the legend chip, the settings dialog and the object tree's rows show
+     * instead of the full {@link title}. Absent ⇒ all use {@link title}. Mirrors Pine
      * `indicator(..., shorttitle=)`.
      */
     shorttitle?: string;
