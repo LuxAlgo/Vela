@@ -384,6 +384,22 @@ export class SymbolPicker {
         this.dialog.show();
     }
 
+    get isOpen(): boolean {
+        return this.dialog.open;
+    }
+
+    /** Text typed at the picker that never reached its field: closed, it opens seeded
+     *  with the text; open (the field takes focus a tick after the dialog does, and a
+     *  fast typist's next key lands in that tick), it extends the query. */
+    type(text: string): void {
+        if (!this.isOpen) {
+            this.open(text);
+            return;
+        }
+        this.input.value = (this.input.value + text).toUpperCase();
+        this.refresh();
+    }
+
     close(): void {
         this.dialog.hide(); // onOpenChange(false) blurs the field (iOS focus-zoom)
     }
