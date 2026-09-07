@@ -17,6 +17,14 @@ All notable changes to Vela, newest first.
   fill's own color — opacity included — beside it. Existing saved VWAP settings keep
   working: the period, source and line color keys are unchanged.
 
+### Fixed
+
+- **The symbol menu and the timeframe menu no longer lose keystrokes when you type
+  fast.** Typing straight onto the chart opens the symbol menu (letters) or the
+  timeframe menu (digits) seeded with what you typed. The second key used to vanish
+  when it arrived before the menu's field had taken focus, leaving only the first
+  character; every key now reaches the menu.
+
 ## [v0.6.17]
 
 ### Changed
