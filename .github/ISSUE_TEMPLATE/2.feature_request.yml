@@ -1,0 +1,101 @@
+name: Feature request
+description: Propose a new capability or a change to how Vela behaves.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping shape Vela. Start with the problem you are trying to solve, not only the solution you have in mind — that is what lets us find the right seam for it.
+
+        Vela is designed to be extended without forking: chart types, renderer layers, native indicators, widget actions, and settings sections all register through the public [plugin SDK](https://github.com/LuxAlgo/Vela/blob/main/docs/contributing/plugin-sdk.md), and data providers and scripting engines plug in behind ports. Before proposing a change to the library itself, check whether the SDK already lets you build what you need. If the feature is Pine Script specific, it belongs in the [engine addon](https://github.com/LuxAlgo/Vela-pinets) instead.
+
+        A feature request that changes a public option, type, port, or SDK registry is reviewed as a design first (see [Design-first changes](https://github.com/LuxAlgo/Vela/blob/main/CONTRIBUTING.md#design-first-changes) in the contributing guide). Opening the issue before writing code saves you from building something that cannot be merged.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what stops you today? Describe the use case from the point of view of the person using the chart or the developer integrating it.
+      placeholder: |
+        As a developer embedding the workspace, I want users to ... but today ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? Sketch the behavior, and the option, method, or SDK surface you imagine if you have one in mind. Pseudo-code is welcome.
+      placeholder: |
+        Add a `foo` option to `VelaWorkspace` that ... / A new drawing tool that ... / A renderer layer placement that ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Vela does this touch?
+      description: Your best guess is fine; maintainers will confirm.
+      options:
+        - Headless core (data model, options, chart API)
+        - Workspace / widget (topbar, pickers, layouts, keyboard, persistence)
+        - Drawing tools
+        - Built-in (native) indicators
+        - Renderer (native WebGL2 / canvas2d, layers, axes, crosshair)
+        - Data providers (a new provider, or provider capabilities)
+        - Scripting engine integration (`ScriptingEngine` port)
+        - Plugin SDK (a new registry or extension point)
+        - UI kit
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: public-api
+    attributes:
+      label: Does it change a public interface?
+      description: A new or changed option, exported type, method, port, or plugin SDK registry is visible to every Vela consumer and has semver consequences.
+      options:
+        - Not sure
+        - No, it is internal or purely additive UI behavior
+        - Yes, it adds a new public option, method, type, or SDK surface
+        - Yes, it changes or removes an existing public behavior (potentially breaking)
+    validations:
+      required: true
+  - type: textarea
+    id: sdk-check
+    attributes:
+      label: Can it be built with the existing plugin SDK?
+      description: If you tried to build it outside the core (a chart type, a renderer layer, a widget action, a custom provider) and hit a wall, describe exactly what was missing. That gap is often the real feature.
+      placeholder: |
+        I tried registering a renderer layer with `placement: 'above-data'`, but the layer has no access to ...
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve the problem, and why they fall short.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, screenshots, links to related issues, or examples of the behavior in other software described by what it does (please do not name other charting products).
+    validations:
+      required: false
+  - type: checkboxes
+    id: implementation
+    attributes:
+      label: Implementation
+      options:
+        - label: I would like to implement this myself once the design is agreed
+          required: false
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched the existing issues and this feature has not been requested yet
+          required: true
+        - label: I agree to follow this project's [code of conduct](https://github.com/LuxAlgo/Vela/blob/main/CONTRIBUTING.md#code-of-conduct)
+          required: true
