@@ -367,7 +367,8 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `getConfig()` / `applyConfig(doc)` | no | Aliases of `toJSON` / `fromJSON`, mirroring `chart.renderer`. |
 
 Drawing lifecycle is also surfaced as chart events (`drawing:created` / `drawing:edited` /
-`drawing:removed` / `drawing:selected` / `drawing:settings`), and the tool/mode state as
+`drawing:removed` / `drawing:selected` / `drawing:settings` — `drawing:selected` carries the
+primary `id` plus `ids`, every member of a multi-selection), and the tool/mode state as
 `drawing:tool` / `drawing:snap` / `drawing:stay` / `drawing:mode` — the seam an external toolbar mirrors. See
 [Drawing tools](./drawing-tools.md) for the tool catalogue, toolbar UX, and keyboard shortcuts.
 

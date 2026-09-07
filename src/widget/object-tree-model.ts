@@ -109,9 +109,15 @@ export function paneLabel(pane: PaneInfo, fallbackTitle: (id: string) => string 
     return `Pane ${pane.order + 1}`;
 }
 
-/** An indicator's display name. */
+/** An indicator's full display name. */
 function indicatorLabel(i: PaneInfo['indicators'][number], fallbackTitle: (id: string) => string | undefined): string {
     return i.title || fallbackTitle(i.id) || i.id;
+}
+
+/** An indicator row's label: the compact name it declares — matching its legend chip — or
+ *  else its full name. */
+function indicatorRowLabel(i: PaneInfo['indicators'][number], fallbackTitle: (id: string) => string | undefined): string {
+    return i.shorttitle || indicatorLabel(i, fallbackTitle);
 }
 
 /** The pane's series rows, extracted from its stack in rendered (front-first) order. */
@@ -330,7 +336,7 @@ function paneItems(snap: TreeSnapshot, pane: PaneInfo, units: DrawUnit[]): TreeI
     const indicatorRow = (i: PaneInfo['indicators'][number]): IndicatorRow => ({
         kind: 'indicator',
         id: i.id,
-        label: indicatorLabel(i, snap.handleTitle),
+        label: indicatorRowLabel(i, snap.handleTitle),
         visible: snap.indicatorVisible(i.id),
         ownScale: i.ownScale,
     });

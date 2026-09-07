@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the documentation
+    url: https://github.com/LuxAlgo/Vela/blob/main/docs/index.md
+    about: User guides, options, the API reference, and the plugin SDK. Many questions are answered there.
+  - name: Contributing guide
+    url: https://github.com/LuxAlgo/Vela/blob/main/CONTRIBUTING.md
+    about: How to set up the project, what a good pull request looks like, and how issues are handled.

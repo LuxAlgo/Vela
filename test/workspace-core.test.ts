@@ -19,7 +19,7 @@ import {
 } from '../src/workspace/layouts';
 import { evenTracks, resizeTracks, trackOffsets, seamSegments, segmentSpanPx } from '../src/workspace/splitters';
 import { seedDefaults, cellChartDefaults, cellDrawings } from '../src/workspace/ChartCell';
-import { declaredOrder, nextAutoCellId } from '../src/workspace/VelaWorkspace';
+import { declaredOrder, nextAutoCellId, resolveTyping } from '../src/workspace/VelaWorkspace';
 import { parseSymbol } from '../src/data/ProviderRegistry';
 
 registerBuiltinLayouts();
@@ -401,6 +401,33 @@ describe('cell identity ↔ slot position (declaredOrder / nextAutoCellId)', () 
         expect(nextAutoCellId(new Set())).toBe('c1');
         expect(nextAutoCellId(new Set(['c1', 'c2']))).toBe('c3');
         expect(nextAutoCellId(new Set(['btc', 'c1', 'c3']))).toBe('c2'); // holes fill first
+    });
+});
+
+describe('resolveTyping — bare keystrokes on the workspace root', () => {
+    const idle = { dialogs: 0, symbolSearch: false, timeframeEntry: false };
+
+    it('with nothing open: a letter seeds symbol search, a digit the timeframe entry', () => {
+        expect(resolveTyping('n', idle)).toEqual({ target: 'symbol', text: 'N' });
+        expect(resolveTyping('Q', idle)).toEqual({ target: 'symbol', text: 'Q' });
+        expect(resolveTyping('1', idle)).toEqual({ target: 'timeframe', text: '1' });
+        expect(resolveTyping('Escape', idle)).toBeNull();
+        expect(resolveTyping(' ', idle)).toBeNull();
+    });
+
+    it('hands the next keystroke to the entry dialog that just opened (fast typing `NQ`, `15`)', () => {
+        // The dialog reports open before its field takes focus; the second key lands
+        // on the root in that gap and must extend the query, not vanish.
+        expect(resolveTyping('q', { dialogs: 1, symbolSearch: true, timeframeEntry: false })).toEqual({ target: 'symbol', text: 'Q' });
+        expect(resolveTyping('2', { dialogs: 1, symbolSearch: true, timeframeEntry: false })).toEqual({ target: 'symbol', text: '2' });
+        expect(resolveTyping('5', { dialogs: 1, symbolSearch: false, timeframeEntry: true })).toEqual({ target: 'timeframe', text: '5' });
+        expect(resolveTyping('m', { dialogs: 1, symbolSearch: false, timeframeEntry: true })).toEqual({ target: 'timeframe', text: 'm' });
+        expect(resolveTyping('Enter', { dialogs: 1, symbolSearch: true, timeframeEntry: false })).toBeNull();
+    });
+
+    it('any other open dialog swallows bare typing', () => {
+        expect(resolveTyping('n', { dialogs: 1, symbolSearch: false, timeframeEntry: false })).toBeNull();
+        expect(resolveTyping('1', { dialogs: 2, symbolSearch: false, timeframeEntry: false })).toBeNull();
     });
 });
 

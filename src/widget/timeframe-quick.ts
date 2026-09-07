@@ -75,6 +75,22 @@ export class TimeframeQuick {
         }, 0);
     }
 
+    get isOpen(): boolean {
+        return this.dialog.open;
+    }
+
+    /** Text typed at the entry that never reached its field: closed, it opens seeded
+     *  with the text; open (the field takes focus a tick after the dialog does, and a
+     *  fast typist's next key lands in that tick), it extends the entry. */
+    type(text: string): void {
+        if (!this.isOpen) {
+            this.open(text);
+            return;
+        }
+        this.input.value += text;
+        this.renderHint();
+    }
+
     close(): void {
         this.dialog.hide();
     }

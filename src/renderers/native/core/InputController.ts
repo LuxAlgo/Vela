@@ -52,6 +52,9 @@ export interface InputControllerDeps {
      *  the effective magnet. True when it started (the drawings layer then owns the rest
      *  of the gesture). */
     drawingsMeasureStart?(x: number, y: number, snap: SnapMode): boolean;
+    /** Ctrl/Cmd+press on empty plot: start sweeping a selection box at (x,y). True when it
+     *  started (the drawings layer then owns the rest of the gesture). */
+    drawingsMarqueeStart?(x: number, y: number): boolean;
     /** Middle-click: delete the drawing under the cursor. True when one was removed. */
     drawingsDeleteAt?(x: number, y: number): boolean;
     /** Right-click: cancel/disarm whatever non-persistent tool is active — an in-progress
@@ -59,11 +62,13 @@ export interface InputControllerDeps {
      *  revert to the pointer. True when consumed — the companion contextmenu is then
      *  suppressed. */
     drawingsCancelPlacement?(): boolean;
-    /** A claimed press began. `snap` = effective magnet mode; `shift` = additive (multi-) select. */
-    drawingsPointerDown?(x: number, y: number, snap: SnapMode, shift: boolean): void;
+    /** A claimed press began. `snap` = effective magnet mode; `shift` = additive (multi-) select;
+     *  `mod` = Ctrl/Cmd held (a click toggles the selection, a body drag duplicates). */
+    drawingsPointerDown?(x: number, y: number, snap: SnapMode, shift: boolean, mod: boolean): void;
     /** Pointer moved (forwarded for the placing ghost / drag preview). `snap` = effective magnet
-     *  mode; `shift` = lock a line tool's segment angle to 45° steps. */
-    drawingsPointerMove?(x: number, y: number, snap: SnapMode, shift: boolean): void;
+     *  mode; `shift` = lock a line tool's segment angle to 45° steps; `mod` = Ctrl/Cmd held
+     *  (the cursor is picking a selection — no hover handles). */
+    drawingsPointerMove?(x: number, y: number, snap: SnapMode, shift: boolean, mod: boolean): void;
     /** Cursor to show while hovering the drawings layer (e.g. `'pointer'` over a drawing), or null. */
     drawingsCursor?(x: number, y: number): string | null;
     /** The sticky magnet mode set on the toolbar (off/weak/strong) — Ctrl/Cmd overrides it to strong. */
@@ -322,7 +327,7 @@ export class InputController {
         if (e.repeat || (e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Meta')) return;
         if (Number.isNaN(this.cursorX)) return; // pointer is not over the chart
         if (this.dragging && this.region !== 'drawing') return; // mid pan/axis gesture — nothing to re-shape
-        this.deps.drawingsPointerMove?.(this.cursorX, this.cursorY, this.snapMode(e), e.shiftKey);
+        this.deps.drawingsPointerMove?.(this.cursorX, this.cursorY, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
     };
 
     private local(e: PointerEvent | WheelEvent | MouseEvent): { x: number; y: number } {
@@ -390,13 +395,19 @@ export class InputController {
         // over a drawing/handle it claims the WHOLE gesture (no pan/fling), atomically.
         if (this.deps.drawingsClaim?.(x, y)) {
             this.region = 'drawing';
-            this.deps.drawingsPointerDown?.(x, y, this.snapMode(e), e.shiftKey);
+            this.deps.drawingsPointerDown?.(x, y, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
             this.capture(e.pointerId);
             return;
         }
         // Shift+press on the empty plot starts the measure ruler in one gesture (a press
         // over a drawing keeps the additive-select meaning of shift, via the claim above).
         if (e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y, this.snapMode(e))) {
+            this.region = 'drawing';
+            this.capture(e.pointerId);
+            return;
+        }
+        // Ctrl/Cmd+press on the empty plot sweeps a selection box over the drawings.
+        if ((e.ctrlKey || e.metaKey) && this.regionAt(x, y) === 'data' && this.deps.drawingsMarqueeStart?.(x, y)) {
             this.region = 'drawing';
             this.capture(e.pointerId);
             return;
@@ -533,7 +544,7 @@ export class InputController {
                 this.deps.apply({ barSpacing, rightOffset: this.startRightOffset });
             } else if (this.region === 'drawing') {
                 if (Math.abs(x - this.startX) > slop || Math.abs(y - this.startY) > slop) this.moved = true;
-                this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey);
+                this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
             } else {
                 const coords = this.deps.getCoords();
                 const vp = coords.getViewport();
@@ -563,7 +574,7 @@ export class InputController {
             this.el.style.cursor = drawCursor ?? (r === 'price' ? 'ns-resize' : r === 'time' ? 'ew-resize' : r === 'separator' ? 'row-resize' : '');
             // Forward hover moves so the drawings layer can advance a placing ghost
             // (placing is click-based, so the cursor follow happens with no button down).
-            this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey);
+            this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
         }
         // Hover crosshair is a MOUSE affordance. A touch never hovers: its crosshair
         // comes only from the long-press inspect path (region 'crosshair' above) —

@@ -21,3 +21,10 @@ export function fmtChange(open: number | null | undefined, close: number | null 
     const sign = diff >= 0 ? '+' : '';
     return `${sign}${fmtPrice(diff, decimalsFor(close))} (${sign}${pct.toFixed(2)}%)`;
 }
+
+/** Signed percent change alone ("+1.23%") from open→close; `''` when unavailable. */
+export function fmtChangePct(open: number | null | undefined, close: number | null | undefined): string {
+    if (open == null || close == null || !Number.isFinite(open) || !Number.isFinite(close) || open === 0) return '';
+    const pct = ((close - open) / open) * 100;
+    return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+}

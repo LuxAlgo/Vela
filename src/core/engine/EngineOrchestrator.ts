@@ -1695,7 +1695,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (!model) continue;
             const paneId = model.paneId ?? 'price';
             if (!byPane.has(paneId)) byPane.set(paneId, []);
-            byPane.get(paneId)!.push({ id: r.id, title: model.title || r.title, ownScale: model.ownScale === true });
+            byPane.get(paneId)!.push({
+                id: r.id,
+                title: model.title || r.title,
+                ...(model.shorttitle ? { shorttitle: model.shorttitle } : {}),
+                ownScale: model.ownScale === true,
+            });
         }
         const panes: PaneInfo[] = [];
         for (const paneId of this.paneOrder) {

@@ -1,0 +1,51 @@
+name: Community feedback
+description: Feedback on the docs, the contribution process, or the project as a whole.
+title: '[Feedback]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for feedback that is not a defect and not a feature of the library: a docs page that led you astray, a contributing step that was unclear, an issue or pull request template that asked the wrong questions, or an idea that would make Vela easier to adopt or contribute to.
+
+        For a rendering or behavior problem, use **Report a bug**. For a new capability, use **Feature request**.
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Documentation (guides, API reference, examples)
+        - Contribution process (templates, review, CLA, workflow)
+        - Playground and developer experience
+        - Release notes / changelog
+        - Project direction
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: What happened, or what would you change?
+      description: Tell us what you ran into, or what you would like the project to do differently.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Where?
+      description: Links to the docs page, issue, pull request, or template you are referring to.
+    validations:
+      required: false
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested change
+      description: If you have a concrete proposal, describe the outcome you would like to see.
+    validations:
+      required: false
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I agree to follow this project's [code of conduct](https://github.com/LuxAlgo/Vela/blob/main/CONTRIBUTING.md#code-of-conduct)
+          required: true

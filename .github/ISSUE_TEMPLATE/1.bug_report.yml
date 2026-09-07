@@ -1,0 +1,116 @@
+name: Report a bug
+description: Something in Vela renders, behaves, or types incorrectly.
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Charts are visual and runtime-heavy, so the fastest path to a fix is a reproduction a maintainer can *see*: exact steps in the playground, a minimal page, or a failing test. A screenshot or a short recording of the wrong rendering is worth a lot.
+
+        Please search the existing issues first. If you have a question or an idea rather than a defect, use the **Feature request** or **Community feedback** template.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where does it happen?
+      description: Pick the entry point you use. It tells us which layer to look at first.
+      options:
+        - Headless chart (`new Vela(...)` from `@luxalgo/vela`)
+        - Workspace / widget (`@luxalgo/vela/workspace`)
+        - Drawing tools
+        - Built-in (native) indicators
+        - Scripting engine integration (`ScriptingEngine` port, `@luxalgo/vela-pinets` addon)
+        - Data provider (Binance, Coinbase, Hyperliquid, or a custom provider)
+        - Plugin SDK (`@luxalgo/vela/plugin`: chart types, renderer layers, widget actions)
+        - UI kit (`@luxalgo/vela/ui`)
+        - Browser bundle (`dist/vela.global.js`)
+        - TypeScript types / package exports
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior, and what you expected to see instead. Attach a screenshot or recording if the problem is visual.
+      placeholder: |
+        Actual: the crosshair price label is cut off at the right edge of the pane when ...
+        Expected: the label stays fully visible inside the price axis.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The minimal sequence that triggers the bug. Steps in the playground (`npm run playground`, `/widget.html` or `/workspace.html`) are ideal because they run against `src/`. Otherwise share a minimal page, a StackBlitz or CodeSandbox link, or a failing vitest test.
+      placeholder: |
+        1. Open /widget.html with symbol BTCUSDT, timeframe 60
+        2. Zoom in until fewer than 20 bars are visible
+        3. Move the pointer over the last bar
+        4. See ...
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code
+      description: The options you pass to `Vela` / `VelaWorkspace`, the provider or engine you register, and any plugin SDK registrations involved. A `chart.inspect()` snapshot is helpful for rendering bugs.
+      render: ts
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output
+      description: Errors or warnings from the browser console, if any. Paste them as text, not as a screenshot.
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Vela version
+      description: The `@luxalgo/vela` version (`npm ls @luxalgo/vela`). Add the addon version if a scripting engine is involved.
+      placeholder: '@luxalgo/vela 0.6.18, @luxalgo/vela-pinets 0.2.7'
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: 'Chrome 128 on Windows 11 · Safari 18 on iOS 18 · Firefox 130 on Ubuntu 24.04'
+    validations:
+      required: true
+  - type: dropdown
+    id: renderer
+    attributes:
+      label: Renderer backend
+      description: Vela draws with WebGL2 and falls back to canvas2d when WebGL2 is unavailable. If you are not sure, leave "Unknown".
+      options:
+        - Unknown
+        - WebGL2
+        - canvas2d fallback
+        - Both (reproduces on either)
+    validations:
+      required: false
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Is this a regression?
+      description: Did this work in an earlier version of Vela?
+      options:
+        - Not sure
+        - Yes, it worked in an earlier version (say which one in the description)
+        - No, it never worked
+    validations:
+      required: false
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched the existing issues and this bug has not been reported yet
+          required: true
+        - label: I agree to follow this project's [code of conduct](https://github.com/LuxAlgo/Vela/blob/main/CONTRIBUTING.md#code-of-conduct)
+          required: true

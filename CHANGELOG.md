@@ -2,6 +2,72 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.18]
+
+### Added
+
+- **Duplicate drawings by dragging, and select several at once.** Hold **Ctrl/Cmd** and
+  drag a drawing's body to pull a copy away from it: the original stays where it is, the
+  copy follows the cursor and is committed when you release — selected, with its
+  quick-settings popup open — as one undo step; press **Escape** mid-drag and nothing is
+  left behind. The quick-settings popup's overflow menu gains a **Duplicate** entry that
+  clones the drawing in place and hands it the selection, ready to drag. Selection also
+  grows beyond one drawing: **Ctrl/Cmd+click**
+  adds a drawing to (or removes it from) the selection, just as Shift+click does, and
+  **Ctrl/Cmd+drag on an empty spot** sweeps a selection box that picks up every drawing
+  it touches — successive boxes accumulate, and a click on an empty spot clears the
+  selection (while Ctrl/Cmd is held, handles mark only what is selected, not what the
+  cursor passes over). Dragging the body of any selected drawing then moves the whole
+  selection together (locked drawings stay put), Ctrl/Cmd+dragging it copies the whole
+  selection, and Delete, the arrow keys, copy, duplicate and a middle-click on a selected
+  drawing act on all of them, each as a single undo step. A lock protects a drawing inside
+  a group: deleting a multi-selection removes only its unlocked members and leaves the
+  locked ones in place, still selected. The object tree highlights every selected drawing,
+  not just the first, and the `drawing:selected` event now carries the full list as `ids`
+  alongside the primary `id`.
+- **One settings popup for a whole selection.** Selecting several drawings opens a single
+  quick-settings popup for all of them, showing only the controls every one of them
+  supports — three trend lines get the full trend-line bar; a trend line, a box and a text
+  annotation share just their common ground, and anything a member lacks disappears rather
+  than showing disabled. Where the drawings agree a control reads normally; where they
+  differ it reads as mixed — a swatch striped with every color in use, a dash in a
+  dropdown, a half-lit toggle. Any edit applies to every selected drawing as one undo step,
+  and opening a mixed swatch lists the colors currently in use first, so unifying onto one
+  of them is a single click.
+
+### Changed
+
+- **The status line adapts to the chart's width in steps.** On a wide chart the symbol,
+  venue, timeframe and market status share one line with the full O/H/L/C readout and
+  the bar change. As the chart narrows, the values first move to a second line under the
+  symbol, then drop the open, high and low to keep only the close and the change, and
+  finally keep just the close and its percent change — so the readout stays legible
+  instead of overflowing the plot. Multi-chart cells and phone-width charts follow the
+  same steps; a cell too narrow for even the shortest readout hides it rather than
+  clipping it.
+- **The built-in VWAP now carries standard-deviation bands.** Volume Weighted Average
+  Price draws up to three ±k·σ band pairs around the average — a Bands group gives each
+  band its own on/off toggle and multiplier on one row (band 1 is on by default at 1σ;
+  bands 2 and 3 wait at 2σ and 3σ) — with a soft fill between each pair. The reset
+  period gains **Quarter** and **Year** beside Day, Week and Month, and Source now
+  offers the same choices as the moving averages (Close, Open, High, Low, HL2, HLC3,
+  OHLC4, HLCC4). A Style group at the bottom of the settings holds the VWAP color and,
+  per band, its own color (each band starts in a distinct ink) with a Fill switch and the
+  fill's own color — opacity included — beside it. Existing saved VWAP settings keep
+  working: the period, source and line color keys are unchanged.
+- **The object tree names indicators by their compact title.** An indicator that
+  declares a short title now shows it on its row in the object tree, so the row reads
+  the same as its legend chip. Indicators without a short title keep their full name,
+  and a study pane's heading still carries the full name of the indicator that owns it.
+
+### Fixed
+
+- **The symbol menu and the timeframe menu no longer lose keystrokes when you type
+  fast.** Typing straight onto the chart opens the symbol menu (letters) or the
+  timeframe menu (digits) seeded with what you typed. The second key used to vanish
+  when it arrived before the menu's field had taken focus, leaving only the first
+  character; every key now reaches the menu.
+
 ## [v0.6.17]
 
 ### Changed
