@@ -98,6 +98,43 @@ describe('sanitizeState (the applyState gate)', () => {
         });
     });
 
+    it('native entries carry input deltas and the hidden flag; manifest entries carry hidden', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            charts: [
+                {
+                    id: 'c1',
+                    indicators: {
+                        // Object natives: type required, inputs must be a plain bag, hidden must be TRUE.
+                        // A delta-less visible object collapses to the bare type; typeless entries vanish.
+                        natives: [
+                            'volume',
+                            { type: 'aroon', inputs: { length: 50 } },
+                            { type: 'vpvr', hidden: true },
+                            { type: 'sma', inputs: [9], hidden: false },
+                            { inputs: { length: 3 } },
+                        ],
+                        manifest: [{ name: 'RSI', hidden: true }, { name: 'MACD', hidden: 'yes' }],
+                    },
+                },
+            ],
+        });
+        expect(doc).toEqual({
+            version: 1,
+            layout: '1',
+            charts: [
+                {
+                    id: 'c1',
+                    indicators: {
+                        natives: ['volume', { type: 'aroon', inputs: { length: 50 } }, { type: 'vpvr', hidden: true }, 'sma'],
+                        manifest: [{ name: 'RSI', hidden: true }, 'MACD'],
+                    },
+                },
+            ],
+        });
+    });
+
     it('keeps a valid session value and drops anything else', () => {
         const doc = sanitizeState({
             version: 1,
