@@ -1321,6 +1321,11 @@ describe('EngineOrchestrator — loading placeholder + legend status', () => {
         expect(last?.id).toBe(ind.id);
         expect(last?.title).toBe('Mock');
         expect(last?.shorttitle).toBe('MK');
+
+        // The pane listing carries the compact name alongside the full title, so the object
+        // tree can label the row the way the legend chip does.
+        const entry = chart.panes.list().flatMap((p) => p.indicators).find((i) => i.id === ind.id);
+        expect(entry).toMatchObject({ title: 'Mock', shorttitle: 'MK' });
     });
 
     it('re-routes to the right pane when the computed overlay differs from the prepare-time guess', async () => {

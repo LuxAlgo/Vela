@@ -243,7 +243,12 @@ export interface PaneInfo {
     order: number;
     collapsed: boolean;
     maximized: boolean;
-    indicators: Array<{ id: string; title: string; ownScale: boolean }>;
+    indicators: Array<{
+        id: string;
+        title: string;
+        shorttitle?: string;
+        ownScale: boolean;
+    }>;
 }
 
 /** Options for `chart.addIndicator(source, options?)`. */
