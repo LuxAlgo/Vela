@@ -172,6 +172,8 @@ export const BUILTIN_SETTINGS_IDS: readonly string[] = [
     'symbol.style.baseline.fill-bottom',
     'symbol.style.baseline.base-level',
     'symbol.style.baseline.width',
+    'symbol.animation',
+    'symbol.animation.price-changes',
     'symbol.timezone',
     'scales',
     'scales.price-scale',

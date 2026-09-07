@@ -165,6 +165,9 @@ registerIcon('star-filled', S('<path d="M8 2.2l1.75 3.55 3.9.55-2.8 2.75.65 3.9L
 registerIcon('grip', S('<circle cx="6" cy="3.5" r="1"/><circle cx="10" cy="3.5" r="1"/><circle cx="6" cy="8" r="1"/><circle cx="10" cy="8" r="1"/><circle cx="6" cy="12.5" r="1"/><circle cx="10" cy="12.5" r="1"/>', 'fill="currentColor" stroke="none"'));
 registerIcon('kebab', S('<circle cx="8" cy="3.2" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="12.8" r="1.2"/>', 'fill="currentColor" stroke="none"'));
 registerIcon('burger', S('<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>'));
+// The ⓘ hint glyph: an "i" drawn as geometry (dot + stem) so it centers exactly in its
+// badge — a text "i" would sit at the font's mercy. The badge draws the circle.
+registerIcon('info', S('<path d="M8 7.4v4.4"/><circle cx="8" cy="4.6" r="0.9" fill="currentColor" stroke="none"/>'));
 registerIcon('reset', S('<path d="M2 8a6 6 0 1 0 6-6 6.5 6.5 0 0 0-4.5 1.83L2 5.33"/><path d="M2 2v3.33h3.33"/>'));
 
 // ── pane chrome (stack order, collapse, maximize) ──

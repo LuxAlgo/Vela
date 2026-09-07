@@ -123,7 +123,7 @@ describe('NativeRenderer.getConfig — defaults resolve to concrete values', () 
         expect(cfg.grid.vertLines).toEqual({ visible: true, color: '#20222c' });
         expect(cfg.grid.horzLines).toEqual({ visible: true, color: '#20222c' });
         expect(cfg.crosshair).toEqual({ color: '#9aa0ad', width: 1, style: 'dashed', opacity: 0.4, labelBackground: '#595959' });
-        expect(cfg.priceScale).toEqual({ mode: 'price', log: false, invert: false, borderColor: '#2a2b30', labelsVisible: true, currentPriceLine: true, priceLabel: true, countdown: true });
+        expect(cfg.priceScale).toEqual({ mode: 'price', log: false, invert: false, borderColor: '#2a2b30', labelsVisible: true, currentPriceLine: true, priceLabel: true, countdown: true, animateLastPrice: false });
         expect(cfg.panes).toEqual({ separatorColor: '#2a2b30' }); // inherits the theme border
         expect(cfg.timeScale).toEqual({ timezone: 'UTC' });
         expect(cfg.candles.upColor).toBe('#089981');

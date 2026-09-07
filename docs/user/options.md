@@ -60,7 +60,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `currentPriceLine` | boolean | `true` | Dashed line + axis label at the latest price. |
 | `logScale` | boolean | `false` | Logarithmic price scale. |
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |
-| `animations` | boolean or `{ zoom?, pan? }` | **on** | `true`/`false` toggles all; an object configures each. Defaults: eased zoom on, inertial pan on (short snappy glide). `{ pan: false }` = instant pan. |
+| `animations` | boolean or `{ zoom?, pan?, liveBar? }` | **on** | `true`/`false` toggles all; an object configures each. Defaults: eased zoom on, inertial pan on (short snappy glide), live-bar glide **off**. `{ pan: false }` = instant pan. `liveBar` makes the forming candle (and the current-price line and label) slide toward each live tick instead of snapping: `true` = a 90 ms ease, a number = the ease duration in ms (settles in about three times that; capped at 1000), `false`/`0` = snap. A new bar always snaps. The settings dialog exposes an on/off switch for it (*Symbol → Animation → Animate price changes*; `priceScale.animateLastPrice` in the rich config); switching it back on reuses the duration set here. |
 | `glow` | number | `0` | Neon glow/bloom for line series (~0.6 = strong). **WebGL2 only** — ignored on canvas2d. |
 | `upColor` | string | `#089981` (green) | Bullish candle color (native renderer). |
 | `downColor` | string | `#f23645` (red) | Bearish candle color (native renderer). |
@@ -154,6 +154,8 @@ new VelaWorkspace('#chart', {
       'symbol.style.baseline.fill-bottom',   //     Fill bottom area
       'symbol.style.baseline.base-level',    //     Base level %
       'symbol.style.baseline.width',         //     Width
+      'symbol.animation',                    //   Animation group
+      'symbol.animation.price-changes',      //     Animate price changes (the live-bar glide)
       'symbol.timezone',                     //   Time zone group
 
       // ══ Scales and lines tab ══════════════════════════════════════

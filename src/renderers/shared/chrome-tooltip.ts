@@ -5,6 +5,7 @@
 // chrome. Native `title` tooltips are banned here for the same reason they are banned on
 // the widget chrome: they look foreign and cannot be themed.
 import type { VelaTheme } from '../../core/options';
+import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 
 export interface ChromeTooltipOptions {
@@ -94,4 +95,41 @@ export function attachChromeTooltip(anchor: HTMLElement, opts: ChromeTooltipOpti
         anchor.removeEventListener('pointerdown', clear);
         clear();
     };
+}
+
+export interface ChromeHintOptions {
+    /** See {@link ChromeTooltipOptions.host}. */
+    host: HTMLElement;
+    /** See {@link ChromeTooltipOptions.theme}. */
+    theme: () => VelaTheme;
+    /** Badge diameter in px. Default 16. */
+    size?: number;
+}
+
+/**
+ * The ⓘ hint badge every in-chart dialog puts after a label: a round chip with the `info`
+ * icon and a wrapped chrome tooltip that opens quickly (a hint is asked for, not stumbled
+ * on). The glyph is an SVG, so it is centered in the badge regardless of the font. Styled
+ * inline (renderer chrome carries no stylesheet); the hover state is the tip's own
+ * pointer listeners. Returns the element and a disposer for the tooltip.
+ */
+export function chromeHint(text: string, opts: ChromeHintOptions): { el: HTMLElement; dispose: () => void } {
+    const px = opts.size ?? 16;
+    const el = document.createElement('span');
+    el.className = 'vela-hint';
+    el.setAttribute('role', 'img');
+    el.setAttribute('aria-label', text);
+    el.innerHTML = iconAt('info', px);
+    el.style.cssText =
+        `flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:${px}px;height:${px}px;` +
+        'border-radius:50%;cursor:help;user-select:none;background:var(--vela-hover);color:var(--vela-fg-muted);' +
+        'transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;';
+    const hover = (on: boolean): void => {
+        el.style.background = on ? 'var(--vela-active)' : 'var(--vela-hover)';
+        el.style.color = on ? 'var(--vela-fg-bright)' : 'var(--vela-fg-muted)';
+    };
+    el.addEventListener('pointerenter', () => hover(true));
+    el.addEventListener('pointerleave', () => hover(false));
+    const dispose = attachChromeTooltip(el, { host: opts.host, theme: opts.theme, text: () => text, wrap: true, delayMs: 250 });
+    return { el, dispose };
 }

@@ -3,6 +3,7 @@ import type { ScriptingEngine } from './core/ports/ScriptingEngine';
 import type { MarketDataFeed } from './core/ports/MarketDataFeed';
 import type { VisibleRangePreset } from './core/visible-range';
 import type { VelaOptions, VelaTheme, ThemeName, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
+import { resolveAnimations } from './core/options';
 import type { InputValue } from './core/model/inputs';
 import type { IndicatorHandle } from './core/IndicatorHandle';
 import type { EngineContextSnapshot } from './core/ports/ScriptingEngine';
@@ -68,22 +69,11 @@ export class Vela {
         registerClassicIndicators();
         const element = resolveElement(container);
         const theme = resolveTheme(options.theme);
-        // Resolve animations: boolean toggles all; object configures each; default = zoom on, pan on.
-        let animZoom = true;
-        let animPan = true;
-        if (typeof options.animations === 'boolean') {
-            animZoom = options.animations;
-            animPan = options.animations;
-        } else if (options.animations) {
-            animZoom = options.animations.zoom ?? true;
-            animPan = options.animations.pan ?? true;
-        }
         const display = {
             currentPriceLine: options.currentPriceLine ?? true,
             logScale: options.logScale ?? false,
             nativeBackend: options.nativeBackend ?? 'auto',
-            animZoom,
-            animPan,
+            ...resolveAnimations(options.animations),
             glow: options.glow ?? 0,
             upColor: options.upColor ?? BULLISH,
             downColor: options.downColor ?? BEARISH,

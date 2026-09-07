@@ -3,7 +3,7 @@ import type { VelaTheme } from '../../core/options';
 import { isDarkColor } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
-import { attachChromeTooltip } from './chrome-tooltip';
+import { attachChromeTooltip, chromeHint } from './chrome-tooltip';
 import { toggleSelectList, type SelectOption } from '../../ui/components/select';
 import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openPopoverTrigger } from '../../ui/components/popover';
 import { Dialog } from '../../ui/components/dialog';
@@ -459,14 +459,11 @@ export class IndicatorInputsDialog {
         return buildFieldControl({ kind: 'text', id, value: current, onChange: emit }).el;
     }
 
-    /** A hoverable ⓘ affordance carrying an input's `tooltip` (themed chrome tip; wraps). */
+    /** The shared ⓘ hint carrying an input's `tooltip` (see {@link chromeHint}). */
     private infoButton(tooltip: string): HTMLElement {
-        const b = document.createElement('span');
-        b.textContent = 'i';
-        this.dialogTips.push(attachChromeTooltip(b, { host: this.host.container, theme: () => this.host.theme(), text: () => tooltip, wrap: true, delayMs: 250 }));
-        b.className = 'vela-ind-hint';
-        b.style.cssText = 'flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-weight:600;font-size:11px;font-family:inherit;line-height:1;cursor:help;user-select:none;';
-        return b;
+        const { el, dispose } = chromeHint(tooltip, { host: this.host.container, theme: () => this.host.theme(), size: 18 });
+        this.dialogTips.push(dispose);
+        return el;
     }
 
     /** A dropdown over plain string options (value === label) — a thin case of {@link selectPairs}. */
@@ -946,8 +943,6 @@ export function ensureDialogStyles(): void {
 ${overlayScrollbarCss('.vela-dialog.vela-ind-dialog *', 9)}
 .vela-ind-tab{font-weight:600;font-size:13px;line-height:20px;transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
 .vela-ind-tab:not(.vela-ind-tab-active):hover{color:var(--vela-fg-bright);}
-.vela-ind-hint{background:var(--vela-hover);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-ind-hint:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
 .vela-ind-ctl,.vela-ind-close{background-color:transparent;color:inherit;transition:color var(--vela-dur-fast) ease,background-color var(--vela-dur-fast) ease;}
 .vela-ind-ctl svg,.vela-ind-close svg{width:${LEGEND_ICON_PX}px;height:${LEGEND_ICON_PX}px;display:block;flex:none;stroke-width:1;}
 .vela-ind-ctl:hover{background-color:var(--vela-hover-strong);}
