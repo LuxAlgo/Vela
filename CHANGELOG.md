@@ -34,6 +34,27 @@ All notable changes to Vela, newest first.
   dropdown, a half-lit toggle. Any edit applies to every selected drawing as one undo step,
   and opening a mixed swatch lists the colors currently in use first, so unifying onto one
   of them is a single click.
+  
+### Changed
+
+- **The built-in VWAP now carries standard-deviation bands.** Volume Weighted Average
+  Price draws up to three ±k·σ band pairs around the average — a Bands group gives each
+  band its own on/off toggle and multiplier on one row (band 1 is on by default at 1σ;
+  bands 2 and 3 wait at 2σ and 3σ) — with a soft fill between each pair. The reset
+  period gains **Quarter** and **Year** beside Day, Week and Month, and Source now
+  offers the same choices as the moving averages (Close, Open, High, Low, HL2, HLC3,
+  OHLC4, HLCC4). A Style group at the bottom of the settings holds the VWAP color and,
+  per band, its own color (each band starts in a distinct ink) with a Fill switch and the
+  fill's own color — opacity included — beside it. Existing saved VWAP settings keep
+  working: the period, source and line color keys are unchanged.
+
+### Fixed
+
+- **The symbol menu and the timeframe menu no longer lose keystrokes when you type
+  fast.** Typing straight onto the chart opens the symbol menu (letters) or the
+  timeframe menu (digits) seeded with what you typed. The second key used to vanish
+  when it arrived before the menu's field had taken focus, leaving only the first
+  character; every key now reaches the menu.
 
 ## [v0.6.17]
 
