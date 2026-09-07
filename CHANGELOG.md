@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.6.18]
 
 ### Added
 
@@ -37,6 +37,14 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The status line adapts to the chart's width in steps.** On a wide chart the symbol,
+  venue, timeframe and market status share one line with the full O/H/L/C readout and
+  the bar change. As the chart narrows, the values first move to a second line under the
+  symbol, then drop the open, high and low to keep only the close and the change, and
+  finally keep just the close and its percent change — so the readout stays legible
+  instead of overflowing the plot. Multi-chart cells and phone-width charts follow the
+  same steps; a cell too narrow for even the shortest readout hides it rather than
+  clipping it.
 - **The built-in VWAP now carries standard-deviation bands.** Volume Weighted Average
   Price draws up to three ±k·σ band pairs around the average — a Bands group gives each
   band its own on/off toggle and multiplier on one row (band 1 is on by default at 1σ;
