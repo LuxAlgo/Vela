@@ -168,6 +168,19 @@ export class DrawingPainter {
         this.paintHandles(ctx, pts);
     }
 
+    /** The selection box a Ctrl/Cmd-drag on the empty plot sweeps: a faint fill in the handle
+     *  accent under a thin dashed outline. */
+    paintMarquee(ctx: CanvasRenderingContext2D, rect: { x: number; y: number; w: number; h: number }): void {
+        ctx.save();
+        ctx.fillStyle = withAlpha(HANDLE_BORDER, 0.08);
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+        ctx.strokeStyle = HANDLE_BORDER;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w, rect.h);
+        ctx.restore();
+    }
+
     /** A hollow ring marking the candle point the magnet (Ctrl) will snap the next anchor to. */
     paintSnapRing(ctx: CanvasRenderingContext2D, x: number, y: number, theme: VelaTheme): void {
         ctx.setLineDash([]);

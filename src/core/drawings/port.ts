@@ -47,6 +47,11 @@ export type DrawingIntent =
     | { kind: 'undo' }
     | { kind: 'redo' }
     | { kind: 'duplicate'; ids: string[] } // clone in place + select the clones
+    /** Commit COPIES carrying the geometry given (the end of a drag-to-duplicate: the
+     *  sources never moved, the docs are their serialized twins already translated).
+     *  Ids are reassigned; the copies keep their sources' depth and become the selection.
+     *  One undo step. */
+    | { kind: 'clone'; docs: SerializedDrawing[] }
     | { kind: 'copy'; ids: string[] }
     | { kind: 'paste' };
 

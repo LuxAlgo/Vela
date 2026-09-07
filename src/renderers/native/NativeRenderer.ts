@@ -1362,7 +1362,10 @@ export class NativeRenderer implements IChartRenderer {
             zoomTo: (target, anchorLogical, anchorX) => this.zoomTo(target, anchorLogical, anchorX),
             fling: (v) => this.fling(v),
             onPointerMove: (x, y) => this.handlePointerMove(x, y),
-            onClick: (x) => this.handleClick(x),
+            onClick: (x) => {
+                this.userDrawings?.deselect(); // a click on the empty plot ends a (multi-)selection
+                this.handleClick(x);
+            },
             onAxisLongPress: (axis, x, y) => {
                 for (const cb of this.axisLongPressCbs) cb({ axis, x, y });
             },
@@ -1380,11 +1383,12 @@ export class NativeRenderer implements IChartRenderer {
             // User drawings claim a gesture before pan when armed / over a drawing.
             drawingsClaim: (x, y) => this.userDrawings?.claim(x, y) ?? false,
             drawingsMeasureStart: (x, y, snap) => this.userDrawings?.beginMeasureAt(x, y, snap) ?? false,
-            drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y) ?? false,
+            drawingsMarqueeStart: (x, y) => this.userDrawings?.beginMarqueeAt(x, y) ?? false,
+            drawingsDeleteAt: (x, y) => this.userDrawings?.deleteAt(x, y, true) ?? false, // middle-click: a selected hit takes the whole selection
             drawingsCancelPlacement: () => this.userDrawings?.cancelPlacement() ?? false,
             drawingsSnapMode: () => this.snapMode,
-            drawingsPointerDown: (x, y, snap, shift) => this.userDrawings?.pointerDown(x, y, snap, shift),
-            drawingsPointerMove: (x, y, snap, shift) => this.userDrawings?.pointerMove(x, y, snap, shift),
+            drawingsPointerDown: (x, y, snap, shift, mod) => this.userDrawings?.pointerDown(x, y, snap, shift, mod),
+            drawingsPointerMove: (x, y, snap, shift, mod) => this.userDrawings?.pointerMove(x, y, snap, shift, mod),
             drawingsPointerUp: (x, y, snap) => this.userDrawings?.pointerUp(x, y, snap),
             drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? null,
             drawingsDblClick: (x, y) => this.userDrawings?.dblClick(x, y) ?? false,
