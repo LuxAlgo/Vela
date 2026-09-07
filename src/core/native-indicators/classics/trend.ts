@@ -20,10 +20,6 @@ const aroon: ClassicIndicatorSpec = {
                 { key: 'up', title: 'Aroon up', values: up, color: BULLISH, width: 2 },
                 { key: 'down', title: 'Aroon down', values: down, color: BEARISH, width: 2 },
             ],
-            levels: [
-                { key: 'upper', price: 100, color: NEUTRAL, lineStyle: 'dotted' },
-                { key: 'lower', price: 0, color: NEUTRAL, lineStyle: 'dotted' },
-            ],
         };
     },
 };
