@@ -764,6 +764,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (!record.native) continue;
             record.native.instance.stop();
             record.native.instance = record.native.descriptor.create();
+            record.native.started = false;
             record.pendingStructural = true; // the next emitted model remounts over the old visuals
             if (record.hidden) {
                 record.native.stale = true;
@@ -1360,9 +1361,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (record.renderHandle) this.renderer.setIndicatorVisible?.(record.renderHandle, true);
             record.pendingStructural = true; // visuals dropped on hide → next model re-mounts
             if (record.native) {
-                if (record.native.stale) {
-                    // The instance was re-created for a NEW market while hidden — resume()
-                    // would revive the old market's compute; start the fresh instance instead.
+                if (record.native.stale || !record.native.started) {
+                    // The instance was re-created for a NEW market while hidden (`stale`),
+                    // or was ADDED hidden and never started (a restored hidden ledger entry —
+                    // startNativeIndicator bails on hidden records): resume() would either
+                    // revive the old market's compute or poke a context-less instance.
+                    // Start the instance instead.
                     record.native.stale = false;
                     const handle = this.handles.get(id);
                     if (handle) void this.startNativeIndicator(id, handle);
@@ -1586,6 +1590,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 },
             };
             record.native.instance.start(ctx, record.inputValues);
+            record.native.started = true;
         } catch (err) {
             this.fail(id, handle, err);
         }

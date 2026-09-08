@@ -2,6 +2,25 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.21]
+
+### Fixed
+
+- Native indicators restored HIDDEN no longer crash (volume/VPVR `resume`/`setInputs`
+  dereferenced a null context before `start`) and now START on un-hide instead of
+  resuming a never-started instance — previously the show path either crashed or left
+  a permanently blank row. Same pre-start family as the classic-indicator guard in
+  v0.6.20.
+- The constructor's volume auto-add intent reads object-form ledger entries
+  (`{ type: 'volume', hidden: true }` was missed by the bare-string check).
+
+### Added
+
+- A ChartCell persistence regression harness (jsdom): boots a real cell with a fake
+  renderer/feed and locks the dehydrate/rehydrate round-trip — stored-input seeds,
+  delta/hidden capture, drifted-chart convergence, legacy-ledger resets, the
+  visibility save trigger, and un-hide starting never-started natives.
+
 ## [v0.6.20]
 
 ### Added
