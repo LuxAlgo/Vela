@@ -105,11 +105,16 @@ Available on every renderer:
 ## Screenshot export
 
 `chart.renderer.screenshot()` returns a **PNG data URL** of the current chart (or `null`
-on a renderer that doesn't support it, with a warning). It composites the canvas layers in the
-order you see them: the series geometry — with any drawings stacked among the series already
-inside it — then the chrome layer that carries script-drawn shapes, then the drawings that sit
-over everything. The crosshair, the DOM overlays (tables, legend, data window) and the
-volume-profile layer are **not** included.
+on a renderer that doesn't support it, with a warning). The native renderer paints a fresh
+frame and composites the plot canvas stack in display order, including plugin layers,
+series geometry, volume columns, the volume profile, chrome, and user drawings. The
+crosshair is excluded.
+
+Indicator legends and host overlays marked with `data-vela-screenshot` inside the chart's
+mount container are included as best-effort text/chip replicas. A marker value of `"under"`
+places the replica below the canvases, as used by the symbol watermark. This is not an
+arbitrary HTML capture: unmarked host overlays, such as a separate data-window panel,
+are not included.
 
 ```js
 const url = chart.renderer.screenshot();

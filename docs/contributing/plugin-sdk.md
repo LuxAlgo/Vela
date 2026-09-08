@@ -231,9 +231,9 @@ Two rules keep actions portable:
 
 - **Everything through `ctx`, no outer references.** `when`/`run` must not close over a
   widget or chart instance — the context is rebuilt per invocation, so it always binds
-  the widget that projected the action (and, in a future multi-chart shell, the
-  **active** chart). Every member of the context is LIVE — `ctx.chart` resolves the
-  current chart at call time, and `ctx.symbol` / `ctx.timeframe` / `ctx.priceStyle`
+  the shell that projected the action and its **active** chart. Every member of the
+  context is LIVE — `ctx.chart` resolves the current chart at call time, and
+  `ctx.symbol` / `ctx.timeframe` / `ctx.priceStyle`
   (and a workspace's `ctx.cells` / `ctx.activeCellId`) are getters that follow every
   market and active-cell switch. Read them at the point of use; copying one into a
   variable at mount freezes it (an attachment once named screenshot files after the
