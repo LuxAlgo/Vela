@@ -18,7 +18,7 @@ export interface IndicatorRecord {
      * `stale` marks an instance re-created for a NEW market while the indicator was hidden —
      * showing it must START the fresh instance instead of resuming the old market's compute.
      */
-    native?: { type: string; instance: NativeIndicator; descriptor: NativeIndicatorDescriptor; stale?: boolean };
+    native?: { type: string; instance: NativeIndicator; descriptor: NativeIndicatorDescriptor; stale?: boolean; started?: boolean };
     /** Routing/inputs options from addIndicator (used to re-route on a fresh first model). */
     options?: AddIndicatorOptions;
     /** The engine selected for this indicator's language. */

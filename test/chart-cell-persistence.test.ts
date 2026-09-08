@@ -112,15 +112,27 @@ class FakeRenderer implements IChartRenderer {
     onPriceStyleChange(_cb: (style: PriceStyle) => void): Unsubscribe {
         return () => {};
     }
-    setNativeData(): void {}
+    nativePushes: Array<[string, unknown]> = [];
+    setNativeData(type: string, data: unknown): void {
+        this.nativePushes.push([type, data]);
+    }
     setIndicatorStatus(): void {}
+}
+
+/** The most recently constructed FakeRenderer (Vela instantiates the class). */
+let lastRenderer: FakeRenderer | null = null;
+class TrackedRenderer extends FakeRenderer {
+    constructor() {
+        super();
+        lastRenderer = this;
+    }
 }
 
 function makeDeps(over: Partial<CellDeps> = {}): CellDeps {
     return {
         feed: new MockDataFeed(),
         engines: {},
-        chartDefaults: { renderer: FakeRenderer, drawings: false } as CellDeps['chartDefaults'],
+        chartDefaults: { renderer: TrackedRenderer, drawings: false } as CellDeps['chartDefaults'],
         theme: DARK_THEME,
         live: false,
         volume: true,
@@ -221,6 +233,25 @@ describe('ChartCell native persistence round-trip (#146/#149)', () => {
         expect(natives).toHaveLength(2);
         expect(aroonOf(cell)!.inputValues().length).toBe(14); // declaration default
         expect(volumeOf(cell)!.visible).toBe(true);
+        cell.destroy();
+    });
+
+    it('un-hiding a RESTORED-HIDDEN native STARTS it (never-started instances must not stay blank)', async () => {
+        // The regression behind the volume/vpvr guards: an indicator restored hidden
+        // never starts (startNativeIndicator bails on hidden records), so the show
+        // path's resume() used to poke a context-less instance — a crash before the
+        // guards, a permanently blank row with guards alone. The orchestrator now
+        // STARTS a never-started instance on show; the layer push proves it ran.
+        const cell = makeCell({
+            indicators: { natives: [{ type: 'volume', hidden: true }], manifest: [] },
+        } as Partial<CellBoot>);
+        await settle();
+        const renderer = lastRenderer!;
+        renderer.nativePushes.length = 0;
+        volumeOf(cell)!.setVisible(true);
+        await settle();
+        expect(volumeOf(cell)!.visible).toBe(true);
+        expect(renderer.nativePushes.some(([type]) => type === 'volume')).toBe(true);
         cell.destroy();
     });
 
