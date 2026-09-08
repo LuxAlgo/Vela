@@ -99,7 +99,8 @@ function toPoints(bars: readonly OHLCV[], values: readonly number[], colors?: Re
 }
 
 class ClassicIndicator implements NativeIndicator {
-    private ctx!: NativeIndicatorContext;
+    /** Null until start() — a pre-start setInputs must record without computing. */
+    private ctx: NativeIndicatorContext | null = null;
     private inputs: Record<string, InputValue> = {};
 
     constructor(private readonly spec: ClassicIndicatorSpec) {}
@@ -118,6 +119,10 @@ class ClassicIndicator implements NativeIndicator {
 
     setInputs(inputs: Record<string, InputValue>): void {
         this.inputs = inputs;
+        // Pre-start edits (a workspace restore applies stored inputs the moment the
+        // handle exists) just record: `ctx` lands at start(), which recomputes with
+        // the orchestrator's replayed values — computing here would read no bars.
+        if (!this.ctx) return;
         this.recompute();
     }
 
@@ -131,6 +136,7 @@ class ClassicIndicator implements NativeIndicator {
     stop(): void {}
 
     private recompute(): void {
+        if (!this.ctx) return;
         const bars = this.ctx.bars();
         const out = this.spec.compute(bars, this.inputs);
         const instanceId = this.spec.type;
