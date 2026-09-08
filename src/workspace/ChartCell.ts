@@ -322,7 +322,7 @@ export class ChartCell {
                 // A RESTORED ledger is authoritative for the auto-added volume too: a
                 // slot persisted without it must come back without it (fresh slots
                 // keep the workspace default).
-                volume: seed.indicators ? seed.indicators.natives.includes('volume') : deps.volume,
+                volume: seed.indicators ? (seed.indicators.natives as LedgerNativeEntry[]).some((e) => ledgerNativeType(e) === 'volume') : deps.volume,
                 nativeBackend: deps.nativeBackend,
                 // The user's drawings option minus its toolbar: one SHARED bar serves
                 // the whole workspace (per-cell bars would cost a 44px gutter each).
