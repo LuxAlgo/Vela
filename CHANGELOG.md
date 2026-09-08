@@ -2,6 +2,18 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.22]
+
+### Fixed
+
+- **Indicators restored hidden are reachable again.** An indicator added and hidden
+  before it ever ran (a restored ledger/ext entry — a hidden native, or a hidden
+  library/Pine script) mounted no legend row at all: invisible AND unreachable, with
+  no eye to unhide it. Hidden adds now mount a dimmed placeholder row (no spinner)
+  and announce immediately, so the legend eye and host UIs (object tree) can reach
+  them; showing starts the instance via the v0.6.21 `started` path and the first
+  computed model remounts over the placeholder.
+
 ## [v0.6.21]
 
 ### Fixed

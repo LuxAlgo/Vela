@@ -1357,6 +1357,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             record.session = undefined;
             record.native?.instance.suspend();
             if (record.renderHandle) this.renderer.setIndicatorVisible?.(record.renderHandle, false);
+            // Hidden before anything mounted (a restored ledger entry hides the record
+            // right after add, before start): the row must exist anyway, or the
+            // indicator is unreachable — there is no eye to unhide it with. Natives
+            // mount here; a Pine record mounts via mountLoadingPlaceholder once its
+            // prepare completes (prepare runs regardless of visibility).
+            else if (record.native) this.mountHiddenNativeRow(id, record);
         } else {
             if (record.renderHandle) this.renderer.setIndicatorVisible?.(record.renderHandle, true);
             record.pendingStructural = true; // visuals dropped on hide → next model re-mounts
@@ -1629,9 +1635,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
      * over it in place (`pendingStructural`), clears the spinner, and only THEN fires
      * `indicator:added`/`ready` — so event semantics and `inspect()` (which skips
      * loading records) still mean "the indicator produced output".
+     *
+     * A HIDDEN record mounts too — dimmed, no spinner (its session never starts while
+     * hidden, so nothing is computing and no model will ever arrive to mount the row
+     * later). Without this an indicator ADDED hidden (a restored ledger/ext entry) had
+     * no legend row at all: invisible AND unreachable — the eye that unhides it never
+     * existed. The hidden mount announces immediately for the same reason: the "first
+     * computed model" that normally announces cannot come until the indicator is shown,
+     * and host UIs (object tree, landing watchers) must know it exists NOW.
      */
     private mountLoadingPlaceholder(id: string, record: IndicatorRecord): void {
-        if (record.renderHandle || record.hidden || !record.prepared) return;
+        if (record.renderHandle || !record.prepared) return;
         const meta = record.prepared.meta;
         const model: IndicatorModel = {
             id,
@@ -1655,7 +1669,34 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.ensurePaneFor(paneId);
         record.renderHandle = this.renderer.mountIndicator(model);
         record.pendingStructural = true; // the first computed model remounts over the placeholder
+        if (record.hidden) {
+            this.renderer.setIndicatorVisible?.(record.renderHandle, false);
+            this.announce(record, this.handles.get(id));
+            return;
+        }
         this.setLoading(record, true);
+    }
+
+    /**
+     * Mount the legend row for a NATIVE indicator that is being hidden BEFORE it ever
+     * started (a restored-hidden ledger entry: `startNativeIndicator` bails on hidden
+     * records, so no model — and therefore no row — would ever mount). The native
+     * counterpart of {@link mountLoadingPlaceholder}'s hidden branch: an empty model
+     * carries the title + inputs schema, the renderer marks the row hidden, and the
+     * announce makes the indicator visible to host UIs. Showing later STARTS the
+     * instance (the `started` flag path) and its first emit remounts over this row.
+     */
+    private mountHiddenNativeRow(id: string, record: IndicatorRecord): void {
+        if (record.renderHandle || !record.native) return;
+        const model = this.buildNativeModel(record, {});
+        const paneId = this.routePane(id, model, record.options ?? {});
+        this.placeModel(model, id, paneId);
+        record.model = model;
+        this.ensurePaneFor(paneId);
+        record.renderHandle = this.renderer.mountIndicator(model);
+        record.pendingStructural = true; // the first emit after show remounts over this row
+        this.renderer.setIndicatorVisible?.(record.renderHandle, false);
+        this.announce(record, this.handles.get(id));
     }
 
     /** Flip the record's loading state and reflect it in the legend row (spinner on/off). */
