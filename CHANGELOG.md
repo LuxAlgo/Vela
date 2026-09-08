@@ -2,6 +2,22 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.6.20]
+
+### Added
+
+- **Native indicator settings and visibility persist.** The workspace ledger's native
+  entries carry input DELTAS and a `hidden` flag (manifest entries carry `hidden` too),
+  the legend eye marks the state dirty, and `ctx.addIndicator` accepts `hidden` so
+  plugin restores can apply it. Restores converge kept indicators to the document's
+  values; legacy bare-string ledgers still restore unchanged. (#146, #149)
+
+### Fixed
+
+- Classic native indicators no longer compute against unloaded bars when a restore
+  applies stored inputs before the first data lands (a pre-start guard in
+  `ClassicIndicator`; the orchestrator replays the values at `start`). (#149)
+
 ## [v0.6.19]
 
 ## [v0.6.18]
