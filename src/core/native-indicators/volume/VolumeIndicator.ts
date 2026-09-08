@@ -34,7 +34,8 @@ export function volumeLayerData(inputs: Record<string, InputValue>): VolumeLayer
  * this instance only carries lifecycle + settings.
  */
 class VolumeIndicator implements NativeIndicator {
-    private ctx!: NativeIndicatorContext;
+    /** Null until start() — pre-start setInputs/resume must record without pushing. */
+    private ctx: NativeIndicatorContext | null = null;
     private inputs: Record<string, InputValue> = {};
 
     start(ctx: NativeIndicatorContext, inputs: Record<string, InputValue>): void {
@@ -52,14 +53,18 @@ class VolumeIndicator implements NativeIndicator {
 
     setInputs(inputs: Record<string, InputValue>): void {
         this.inputs = inputs;
-        this.ctx.pushData(volumeLayerData(inputs));
+        // Pre-start edits (a workspace restore applies stored inputs the moment the
+        // handle exists) just record: start() pushes the orchestrator's replayed values.
+        this.ctx?.pushData(volumeLayerData(inputs));
     }
 
     /** Hiding is a renderer-layer flag (set via `setIndicatorVisible`); no resources to free. */
     suspend(): void {}
 
     resume(): void {
-        this.ctx.pushData(volumeLayerData(this.inputs));
+        // Pre-start resume (a restore un-hiding an indicator that never started) is a
+        // no-op — start() pushes when the context lands.
+        this.ctx?.pushData(volumeLayerData(this.inputs));
     }
 
     stop(): void {}
