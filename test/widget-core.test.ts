@@ -288,8 +288,18 @@ describe('indicatorLedger', () => {
     it('reports the volume INTENT until the auto-add had its chance, never duplicating', () => {
         expect(indicatorLedger({ ...base, volumePending: true })).toEqual({ manifest: [], natives: ['volume'] });
         expect(indicatorLedger({ ...base, volumePending: true, present: ['volume'] })).toEqual({ manifest: [], natives: ['volume'] });
+        // ...including when the present volume travels as a VALUE-carrying entry.
+        expect(indicatorLedger({ ...base, volumePending: true, present: [{ type: 'volume', hidden: true }] })).toEqual({
+            manifest: [],
+            natives: [{ type: 'volume', hidden: true }],
+        });
         // After the first load the registry is the whole truth: no intent padding.
         expect(indicatorLedger({ ...base, volumePending: false, present: ['vpvr'] })).toEqual({ manifest: [], natives: ['vpvr'] });
+    });
+
+    it('native entries carry input deltas and hidden flags verbatim', () => {
+        const present = ['volume', { type: 'aroon', inputs: { length: 50 } }, { type: 'vpvr', hidden: true }];
+        expect(indicatorLedger({ ...base, present }).natives).toEqual(present);
     });
 });
 
