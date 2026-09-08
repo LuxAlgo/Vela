@@ -1095,7 +1095,7 @@ export class ChartCell {
     addExternalIndicator(entry: ExternalIndicatorEntry): void {
         this.addManifestInstance(
             { ...entry, enabled: true },
-            { external: true, ...(entry.inputs ? { inputs: entry.inputs } : {}), ...(entry.props ? { props: entry.props } : {}) },
+            { external: true, ...(entry.inputs ? { inputs: entry.inputs } : {}), ...(entry.props ? { props: entry.props } : {}), ...(entry.hidden ? { hidden: true } : {}) },
         );
     }
 
