@@ -51,6 +51,8 @@ export interface IndicatorModel {
      * (distinct title color) + list ordering (native indicators pin to the top).
      */
     native?: { type: string };
+    /** `false` ⇒ no legend row and no pane listing for this indicator (host-owned chrome); absent ⇒ a row. */
+    legend?: boolean;
     /**
      * Value-axis override for the pane this indicator OWNS — declared by content that is
      * not value-mapped (e.g. a bespoke renderer layer painting in pixel bands), where a
