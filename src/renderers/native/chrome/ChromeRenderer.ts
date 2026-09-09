@@ -15,6 +15,7 @@ import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
 import { parseColor } from '../backend/gl/color';
 import { DARK_THEME } from '../../../core/theme';
 import { tzOffsetMs } from './tz';
+import { countdownText } from './countdown';
 
 /**
  * Renderer-owned chrome layer (canvas2d) on its own canvas, stacked above the
@@ -256,7 +257,8 @@ export class ChromeRenderer {
      *  - the countdown-to-bar-close chip (`showCountdown`).
      * When the label and countdown are both on they merge into one stacked block (countdown
      * under the label, text flushed left); a lone label or countdown is centered on the
-     * price level with centered text. The countdown ticks once per second (repaint scheduled).
+     * price level with centered text. The countdown repaints on the renderer's second pulse
+     * and disappears once the bar has closed, until the next bar arrives.
      */
     private drawPriceLineAndCountdown(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, pricePane: PaneNode | null): void {
         const n = scene.bars.length;
@@ -282,13 +284,12 @@ export class ChromeRenderer {
         }
 
         // ── axis chips: last-price label and/or countdown ──
-        const interval = coords.barInterval;
-        const showCountdown = scene.showCountdown && interval > 0;
+        const cdText = scene.showCountdown ? countdownText(last.time, coords.barInterval, Date.now()) : null;
+        const showCountdown = cdText !== null;
         const showLabel = scene.showPriceLabel;
         if (!showLabel && !showCountdown) return;
 
         const priceText = formatAxisValue(pricePane.scale, pricePane.bounds.height, last.close, percentScaleFor(scene, pricePane), scene.priceMintick);
-        const cdText = showCountdown ? formatCountdown(last.time + interval - Date.now()) : '';
         const PAD = 8;
         const x = dataW + 1;
         // Text color chosen for contrast against the chip's own color (so a white candle
@@ -296,7 +297,7 @@ export class ChromeRenderer {
         const textColor = tagTextColor(color, theme.background);
         ctx.textBaseline = 'middle';
 
-        if (showLabel && showCountdown) {
+        if (showLabel && cdText !== null) {
             // Merged block: label row on top (centered on the price line), countdown row
             // under it. Same width, text flushed left.
             const w = Math.max(ctx.measureText(priceText).width, ctx.measureText(cdText).width) + PAD;
@@ -313,7 +314,7 @@ export class ChromeRenderer {
         }
 
         // Lone label or countdown — centered on the price level, text centered.
-        const text = showLabel ? priceText : cdText;
+        const text = showLabel ? priceText : (cdText ?? '');
         const w = ctx.measureText(text).width + PAD;
         ctx.fillStyle = color;
         ctx.fillRect(x, y - 8, w, 16);
@@ -423,14 +424,3 @@ function tagTextColor(bg: string, over: string): string {
     const L = 0.2126 * lin(R) + 0.7152 * lin(G) + 0.0722 * lin(B);
     return L >= 0.4 ? '#000000' : '#ffffff';
 }
-
-/** `M:SS` (or `H:MM:SS` past an hour) for the ms remaining until the bar closes; clamped at 0. */
-function formatCountdown(ms: number): string {
-    const total = Math.max(0, Math.floor(ms / 1000));
-    const s = total % 60;
-    const m = Math.floor(total / 60) % 60;
-    const h = Math.floor(total / 3600);
-    const pad = (v: number): string => String(v).padStart(2, '0');
-    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-}
-
