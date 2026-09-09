@@ -171,6 +171,16 @@ value chip. The override is emitted per compute, so it can follow the inputs (to
 row off relabels the axis). It only holds while overriding natives are the pane's sole
 content; merging any real series into the pane brings the price axis back.
 
+**Labels are clickable.** Every label an indicator paints — a native's emitted `labels`, or a
+script's `label.new(...)` — leaves a hit-rect, and a tap on one raises the `label:click` chart
+event with `{ id, indicatorId }` (`id` is the label's own id, `indicatorId` the owning
+indicator's handle id). A host that wants an action behind a marker — open the story behind a
+news flag, jump to a signal — gives its labels stable ids and resolves its own data from the
+event; the payload carries ids, not the label object. The same hit-rects feed the hover
+tooltip, so click and tooltip always agree on which label is under the pointer. Clicks while a
+drawing tool, the measure ruler, or the eraser is armed stay with that tool. The raw renderer
+seam underneath is `chart.renderer.onLabelClick(cb)`.
+
 ## Widget actions — `registerWidgetAction`
 
 Contribute UI as **data descriptors** (never DOM) — the widget projects them into its
