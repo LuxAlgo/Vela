@@ -130,7 +130,7 @@ describe('labels — tooltip hit regions', () => {
         const { scene } = paint([label({ tooltip: 'hello' })]);
         const regions = scene.labelTipRegions();
         expect(regions).toHaveLength(1);
-        expect(regions[0]).toEqual({ ...BUBBLE, text: 'hello' });
+        expect(regions[0]).toEqual({ ...BUBBLE, text: 'hello', labelId: 'l1' });
     });
 
     it('point shapes expose a square around the marker', () => {
@@ -152,16 +152,21 @@ describe('labels — tooltip hit regions', () => {
         expect(r.text).toBe('txt');
     });
 
-    it('labels without a tooltip contribute nothing, and regions reset per render', () => {
-        const { scene } = paint([label({})]);
-        expect(scene.labelTipRegions()).toHaveLength(0);
-        // Re-render with a tooltip-carrying set, then again without: stale regions must not survive.
+    it('every label leaves a hit-rect carrying its id, and only a tooltip-carrying one carries text', () => {
+        const { scene } = paint([label({ id: 'plain' }), label({ id: 'tipped', tooltip: 'x', x: 300 })]);
+        const regions = scene.labelTipRegions();
+        expect(regions.map((r) => r.labelId)).toEqual(['plain', 'tipped']);
+        expect(regions[0]!.text).toBeUndefined();
+        expect(regions[1]!.text).toBe('x');
+    });
+
+    it('regions reset per render — a label removed from the set leaves no stale hit-rect', () => {
         const rec = recordingCtx();
-        scene.setSet(setOf([label({ tooltip: 'x' })]));
+        const scene = new DrawingSceneRenderer({ timeToLogical: (ms) => ms, barAt: () => null, theme }, setOf([label({ id: 'a' }), label({ id: 'b', x: 300 })]));
         scene.render(rec.ctx, 800, 400, xOf, yOf);
-        expect(scene.labelTipRegions()).toHaveLength(1);
-        scene.setSet(setOf([label({})]));
+        expect(scene.labelTipRegions()).toHaveLength(2);
+        scene.setSet(setOf([label({ id: 'a' })]));
         scene.render(rec.ctx, 800, 400, xOf, yOf);
-        expect(scene.labelTipRegions()).toHaveLength(0);
+        expect(scene.labelTipRegions().map((r) => r.labelId)).toEqual(['a']);
     });
 });

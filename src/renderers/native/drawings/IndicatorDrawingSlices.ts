@@ -28,6 +28,17 @@ interface SliceEntry {
     tables: DrawingTable[];
     pane: PaneNode;
     indexOffset: number;
+    /** The owning indicator — stamped on every hit-rect so a click resolves to `{ indicatorId, labelId }`. */
+    indicatorId: string;
+}
+
+/** A hit-rect in plot space, stamped with the indicator that painted it. */
+export type PlotRegion = LabelTipRegion & { indicatorId: string };
+
+/** A label under a plot-space point, as the click seam reports it. */
+export interface LabelHit {
+    indicatorId: string;
+    labelId: string;
 }
 
 /**
@@ -47,8 +58,9 @@ export class IndicatorDrawingSlices {
     private readonly drawScene = new DrawingSceneRenderer({ timeToLogical: () => 0, barAt: () => null, theme: {} as VelaTheme });
     /** Slice canvas cache, keyed `paneId|beforeZ` — same lifecycle as the user-drawing cache. */
     private readonly sliceCache = new Map<string, HTMLCanvasElement>();
-    /** Tooltip hit-rects of every label drawn this frame, in plot coords (rebuilt per prepare). */
-    private tips: LabelTipRegion[] = [];
+    /** Hit-rects of every label (and tooltip-carrying table cell) drawn this frame, in plot
+     *  coords (rebuilt per prepare) — the hover tooltip and the label click both read them. */
+    private tips: PlotRegion[] = [];
 
     /**
      * Rebuild the per-indicator drawing slices for this data frame. `ref` is the data
@@ -94,14 +106,14 @@ export class IndicatorDrawingSlices {
                 const sc = scene.scaleFor(m, pane);
                 const mp = sc === pane.scale ? pane : { ...pane, scale: sc };
                 const beforeZ = indicatorSliceKey(scene.zOf(m.id), boundaries);
-                add(pane.id, beforeZ, { set, tables, pane: mp, indexOffset: scene.offsetOf(m.id) });
+                add(pane.id, beforeZ, { set, tables, pane: mp, indexOffset: scene.offsetOf(m.id), indicatorId: m.id });
             }
             if (pane.kind === 'price') {
                 for (const m of scene.indicators.values()) {
                     const set = modelDrawingSet(m, true);
                     const tables = (m.tables ?? []).filter((t) => t.overlay === true);
                     if (drawingSetEmpty(set) && tables.length === 0) continue;
-                    add(pane.id, Infinity, { set, tables, pane, indexOffset: scene.offsetOf(m.id) });
+                    add(pane.id, Infinity, { set, tables, pane, indexOffset: scene.offsetOf(m.id), indicatorId: m.id });
                 }
             }
         }
@@ -151,19 +163,21 @@ export class IndicatorDrawingSlices {
         // above its own lines/labels, as the DOM overlay used to.
         for (const t of e.tables) paintTable(ctx, t, { paneHeight: pane.bounds.height, plotWidth: dataW, theme }, paneTips);
         ctx.restore();
-        // Collect this entry's tooltip rects, shifted from pane space into plot space.
+        // Collect this entry's hit-rects, shifted from pane space into plot space and
+        // stamped with the indicator they belong to.
         for (const r of paneTips) {
-            this.tips.push({ ...r, top: r.top + pane.bounds.top, bottom: r.bottom + pane.bounds.top });
+            this.tips.push({ ...r, indicatorId: e.indicatorId, top: r.top + pane.bounds.top, bottom: r.bottom + pane.bounds.top });
         }
     }
 
-    /** Tooltip of the topmost label or table cell under a plot-space point, or null. Fed by the last prepare. */
+    /** Tooltip of the topmost tooltip-carrying label or table cell under a plot-space point, or null. Fed by the last prepare. */
     labelTooltipAt(x: number, y: number): string | null {
-        for (let i = this.tips.length - 1; i >= 0; i -= 1) {
-            const r = this.tips[i]!;
-            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return r.text;
-        }
-        return null;
+        return tooltipAt(this.tips, x, y);
+    }
+
+    /** The topmost indicator label under a plot-space point, or null (table cells never hit). Fed by the last prepare. */
+    labelAt(x: number, y: number): LabelHit | null {
+        return labelHitAt(this.tips, x, y);
     }
 }
 
@@ -181,4 +195,26 @@ export function mergeSlices(
     for (const [paneId, slices] of user) out.set(paneId, [...(out.get(paneId) ?? []), ...slices]);
     for (const slices of out.values()) slices.sort((a, b) => a.beforeZ - b.beforeZ); // stable: ties keep indicator-first
     return out;
+}
+
+/** Topmost region under the point that passes `accept` — later entries paint above earlier ones. */
+function regionAt(regions: readonly PlotRegion[], x: number, y: number, accept: (r: PlotRegion) => boolean): PlotRegion | null {
+    for (let i = regions.length - 1; i >= 0; i -= 1) {
+        const r = regions[i]!;
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && accept(r)) return r;
+    }
+    return null;
+}
+
+/** The hover rule: the topmost region that CARRIES a tooltip — a tooltip-less label under
+ *  the pointer is transparent to hover, so a tooltip beneath it still shows. */
+export function tooltipAt(regions: readonly PlotRegion[], x: number, y: number): string | null {
+    return regionAt(regions, x, y, (r) => r.text !== undefined)?.text ?? null;
+}
+
+/** The click rule: the topmost LABEL region — table cells have no label id and never
+ *  claim a click, and a label claims it whether or not it carries a tooltip. */
+export function labelHitAt(regions: readonly PlotRegion[], x: number, y: number): LabelHit | null {
+    const r = regionAt(regions, x, y, (region) => region.labelId !== undefined);
+    return r ? { indicatorId: r.indicatorId, labelId: r.labelId! } : null;
 }

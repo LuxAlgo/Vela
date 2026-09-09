@@ -2,6 +2,19 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Indicator labels are clickable.** A click on one of an indicator's label drawings
+  (`label.new(...)`, or a label a native indicator emits) raises a `label:click` chart
+  event carrying the label id and the owning indicator id, so a host can attach an
+  action to a label — open the story behind a news marker, jump to a signal, expand an
+  alert badge. The hit-rects are the ones the hover tooltip already reads, so click and
+  tooltip always agree on which label is under the pointer; a click while a drawing
+  tool, the measure ruler, or the eraser is armed stays with that tool. Renderers expose
+  the seam as `onLabelClick`, mirrored on `chart.renderer`.
+
 ## [v0.6.22]
 
 ### Fixed

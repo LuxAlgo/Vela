@@ -47,6 +47,14 @@ export interface VelaEventMap extends Record<string, unknown> {
   "data:unresolved": { symbol: string; providers: string[] };
   /** An indicator was moved/merged to another pane (`chart.panes` / legend / object tree). */
   "indicator:moved": { id: string; paneId: string };
+  /**
+   * The user clicked one of an indicator's LABEL drawings (`label.new(...)`, or a label a
+   * native indicator emits). `id` is the label's own id, `indicatorId` the owning indicator
+   * (the same id as `IndicatorHandle.id` / `indicator:added`). Hosts key interactive labels
+   * off it — a signal callout, a news marker, an alert badge. Never fires while a drawing
+   * tool, the measure ruler, or the eraser is armed: those own the click.
+   */
+  "label:click": { id: string; indicatorId: string };
   /** An indicator was shown/hidden (legend eye, `handle.setVisible`, or object tree). */
   "indicator:visibility": { id: string; visible: boolean };
   /** A pane's layout changed: order, collapse/maximize, creation or removal. */

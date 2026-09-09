@@ -5,6 +5,7 @@ import type {
     CrosshairEvent,
     CrosshairOHLC,
     ClickEvent,
+    LabelClickEvent,
     AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,
@@ -314,6 +315,7 @@ export class NativeRenderer implements IChartRenderer {
     private factoryConfig: ChartConfig | null = null;
     private hostSettingsSections: HostSettingsSection[] = [];
     private readonly clickCbs = new Set<(e: ClickEvent) => void>();
+    private readonly labelClickCbs = new Set<(e: LabelClickEvent) => void>();
     private readonly axisLongPressCbs = new Set<(e: AxisLongPressEvent) => void>();
     private readonly inputChangeCbs = new Set<(e: InputChangeEvent) => void>();
     private readonly removeIndicatorCbs = new Set<(id: string) => void>();
@@ -1367,9 +1369,9 @@ export class NativeRenderer implements IChartRenderer {
             zoomTo: (target, anchorLogical, anchorX) => this.zoomTo(target, anchorLogical, anchorX),
             fling: (v) => this.fling(v),
             onPointerMove: (x, y) => this.handlePointerMove(x, y),
-            onClick: (x) => {
+            onClick: (x, y) => {
                 this.userDrawings?.deselect(); // a click on the empty plot ends a (multi-)selection
-                this.handleClick(x);
+                this.handleClick(x, y);
             },
             onAxisLongPress: (axis, x, y) => {
                 for (const cb of this.axisLongPressCbs) cb({ axis, x, y });
@@ -2223,6 +2225,11 @@ export class NativeRenderer implements IChartRenderer {
         return () => this.clickCbs.delete(cb);
     }
 
+    onLabelClick(cb: (e: LabelClickEvent) => void): Unsubscribe {
+        this.labelClickCbs.add(cb);
+        return () => this.labelClickCbs.delete(cb);
+    }
+
     onAxisLongPress(cb: (e: AxisLongPressEvent) => void): Unsubscribe {
         this.axisLongPressCbs.add(cb);
         return () => this.axisLongPressCbs.delete(cb);
@@ -2511,11 +2518,15 @@ export class NativeRenderer implements IChartRenderer {
         for (const cb of this.crosshairCbs) cb(event);
     }
 
-    private handleClick(x: number): void {
+    private handleClick(x: number, y: number): void {
         if (this.coords.barCount === 0) return;
         const logical = Math.round(this.coords.xToLogical(x));
         const onBar = logical >= 0 && logical < this.coords.barCount;
         for (const cb of this.clickCbs) cb({ time: onBar ? this.coords.logicalToTime(logical) : null, price: null });
+        // A click on an indicator label resolves against the hit-rects of the last data
+        // paint — the same rects the hover tooltip reads, so click and tooltip agree.
+        const hit = this.indicatorSlices.labelAt(x, y);
+        if (hit) for (const cb of this.labelClickCbs) cb({ indicatorId: hit.indicatorId, labelId: hit.labelId });
     }
 
     private paneAtY(y: number): { scale: { min: number; max: number }; bounds: { top: number; height: number } } | null {

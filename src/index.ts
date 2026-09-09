@@ -83,6 +83,7 @@ export type {
     IndicatorRenderHandle,
     CrosshairEvent,
     ClickEvent,
+    LabelClickEvent,
     AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,

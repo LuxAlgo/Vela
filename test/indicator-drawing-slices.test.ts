@@ -4,7 +4,7 @@
 // stack — under the candles when the row sits under the candles. The painted result is
 // exercised in the browser; the keying + merge rules are the unit-testable part.
 import { describe, it, expect } from 'vitest';
-import { indicatorSliceKey, mergeSlices } from '../src/renderers/native/drawings/IndicatorDrawingSlices';
+import { indicatorSliceKey, labelHitAt, mergeSlices, tooltipAt, type PlotRegion } from '../src/renderers/native/drawings/IndicatorDrawingSlices';
 import { sliceKeyFor } from '../src/renderers/native/drawings/UserDrawingController';
 import { SceneGraph, type DrawingSlice } from '../src/renderers/native/core/SceneGraph';
 
@@ -63,5 +63,33 @@ describe('mergeSlices', () => {
         const merged = mergeSlices(ind, usr);
         expect(merged.get('study-1')!.length).toBe(1);
         expect(merged.get('price')!.length).toBe(1);
+    });
+});
+
+// The hover and click lookups share one region list (every painted label, plus tooltip-
+// carrying table cells) but read it by different rules.
+describe('label hit-rects — hover vs click', () => {
+    const region = (over: Partial<PlotRegion>): PlotRegion => ({ left: 0, top: 0, right: 10, bottom: 10, indicatorId: 'ind1', ...over });
+
+    it('a click resolves the topmost label under the point to its indicator + label ids', () => {
+        const regions = [region({ labelId: 'under' }), region({ labelId: 'over', indicatorId: 'ind2' })];
+        expect(labelHitAt(regions, 5, 5)).toEqual({ indicatorId: 'ind2', labelId: 'over' });
+        expect(labelHitAt(regions, 50, 50)).toBeNull();
+    });
+
+    it('a label claims a click whether or not it carries a tooltip', () => {
+        expect(labelHitAt([region({ labelId: 'plain' })], 5, 5)).toEqual({ indicatorId: 'ind1', labelId: 'plain' });
+    });
+
+    it('a table cell shows its tooltip but never claims a click', () => {
+        const cell = [region({ text: 'cell tip' })];
+        expect(tooltipAt(cell, 5, 5)).toBe('cell tip');
+        expect(labelHitAt(cell, 5, 5)).toBeNull();
+    });
+
+    it('a tooltip-less label is transparent to hover — the tooltip beneath it still shows', () => {
+        const regions = [region({ labelId: 'under', text: 'below' }), region({ labelId: 'over' })];
+        expect(tooltipAt(regions, 5, 5)).toBe('below');
+        expect(labelHitAt(regions, 5, 5)?.labelId).toBe('over');
     });
 });

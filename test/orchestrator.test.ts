@@ -7,6 +7,7 @@ import type {
     IndicatorRenderHandle,
     CrosshairEvent,
     ClickEvent,
+    LabelClickEvent,
     InputChangeEvent,
     VisibleRange,
 } from '../src/core/ports/IChartRenderer';
@@ -110,6 +111,10 @@ class FakeRenderer implements IChartRenderer {
     fireRemove(id: string): void { this.removeCb?.(id); }
     onCrosshairMove(_cb: (e: CrosshairEvent) => void): Unsubscribe { return () => {}; }
     onClick(_cb: (e: ClickEvent) => void): Unsubscribe { return () => {}; }
+    private labelClickCb: ((e: LabelClickEvent) => void) | null = null;
+    onLabelClick(cb: (e: LabelClickEvent) => void): Unsubscribe { this.labelClickCb = cb; return () => { this.labelClickCb = null; }; }
+    /** Test helper: simulate a click landing on an indicator label drawing. */
+    fireLabelClick(e: LabelClickEvent): void { this.labelClickCb?.(e); }
     getVisibleRange(): VisibleRange | null { return null; }
     visibleRangeCalls: VisibleRange[] = [];
     setVisibleRange(r: VisibleRange): void { this.visibleRangeCalls.push(r); }
@@ -2445,5 +2450,43 @@ describe('EngineOrchestrator — force_overlay routing', () => {
         // forced series + background + table + one of each drawing kind (line, box, label, polyline, linefill)
         expect(summary.forcedOverlay).toBe(8);
         chart.destroy();
+    });
+});
+
+describe('label:click', () => {
+    async function makeChart(renderer: IChartRenderer): Promise<Vela> {
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        await flush();
+        return chart;
+    }
+
+    it('a click on an indicator label surfaces as a chart event carrying the label and indicator ids', async () => {
+        const renderer = new FakeRenderer();
+        const chart = await makeChart(renderer);
+        const clicks: Array<{ id: string; indicatorId: string }> = [];
+        chart.on('label:click', (e) => clicks.push(e));
+        renderer.fireLabelClick({ indicatorId: 'ind-7', labelId: 'signal-3' });
+        expect(clicks).toEqual([{ id: 'signal-3', indicatorId: 'ind-7' }]);
+    });
+
+    it('a renderer without label hit-testing simply never fires it', async () => {
+        const renderer = new FakeRenderer();
+        renderer.onLabelClick = undefined as unknown as FakeRenderer['onLabelClick'];
+        const chart = await makeChart(renderer);
+        const clicks: unknown[] = [];
+        chart.on('label:click', (e) => clicks.push(e));
+        expect(clicks).toEqual([]);
+        chart.destroy();
+    });
+
+    it('destroying the chart unsubscribes from the renderer seam', async () => {
+        const renderer = new FakeRenderer();
+        const chart = await makeChart(renderer);
+        const clicks: unknown[] = [];
+        chart.on('label:click', (e) => clicks.push(e));
+        chart.destroy();
+        renderer.fireLabelClick({ indicatorId: 'ind-7', labelId: 'signal-3' });
+        expect(clicks).toEqual([]);
     });
 });

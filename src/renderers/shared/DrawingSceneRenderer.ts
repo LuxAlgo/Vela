@@ -66,13 +66,17 @@ export function drawingSetEmpty(s: DrawingSet): boolean {
     return !s.lines.length && !s.boxes.length && !s.labels.length && !s.polylines.length && !s.linefills.length;
 }
 
-/** Hover hit-rect of one rendered label that carries a tooltip (canvas coords of the last render). */
+/** Hit-rect of one rendered label or table cell (canvas coords of the last render): the
+ *  hover tooltip lookup reads `text`, the click lookup reads `labelId`. */
 export interface LabelTipRegion {
     left: number;
     top: number;
     right: number;
     bottom: number;
-    text: string;
+    /** The tooltip, when the label or cell carries one. */
+    text?: string;
+    /** The `DrawingLabel.id` of a label region; table-cell regions have none. */
+    labelId?: string;
 }
 
 function fontSizePx(size: BoxTextSize): number {
@@ -105,7 +109,7 @@ function lineCoversWindow(a: number, b: number, extend: DrawingExtend, lo: numbe
 export class DrawingSceneRenderer {
     /** measureText width cache, keyed by `${font} ${text}`, persists across frames. */
     private readonly widthCache = new Map<string, number>();
-    /** Tooltip hit-rects captured while drawing the CURRENT set (rebuilt per render). */
+    /** Hit-rects of the labels drawn from the CURRENT set (rebuilt per render). */
     private tipRegions: LabelTipRegion[] = [];
     /**
      * Index offset of the CURRENT set's model: its `xloc:'bar_index'` coordinates count
@@ -135,7 +139,7 @@ export class DrawingSceneRenderer {
         return !s.lines.length && !s.boxes.length && !s.labels.length && !s.polylines.length && !s.linefills.length;
     }
 
-    /** Tooltip hit-rects of the labels drawn by the LAST `render` call (same coords as `ctx`). */
+    /** Hit-rects of every label drawn by the LAST `render` call (same coords as `ctx`). */
     labelTipRegions(): readonly LabelTipRegion[] {
         return this.tipRegions;
     }
@@ -532,23 +536,24 @@ export class DrawingSceneRenderer {
             const color = lb.color ?? this.deps.theme.textColor;
             const fontPx = fontSizePx(lb.size);
 
+            // Every painted label leaves a hit-rect: the hover tooltip reads the ones
+            // carrying `text`, a click resolves the label under the pointer by `labelId`.
+            const meta = { labelId: lb.id, ...(lb.tooltip ? { text: lb.tooltip } : {}) };
             if (this.isPointShape(lb.style)) {
                 if (!lb.noFill) this.drawLabelShape(ctx, lb.style, px, py, fontPx, color);
                 if (lb.text) this.drawLabelText(ctx, lb, px, py + fontPx, fontPx);
-                if (lb.tooltip) {
-                    const r = Math.max(4, fontPx * 0.6) + 3;
-                    this.tipRegions.push({ left: px - r, top: py - r, right: px + r, bottom: py + r, text: lb.tooltip });
-                }
+                const r = Math.max(4, fontPx * 0.6) + 3;
+                this.tipRegions.push({ left: px - r, top: py - r, right: px + r, bottom: py + r, ...meta });
             } else if (lb.style === 'none' || lb.style === 'text_outline') {
                 if (lb.text) {
                     this.drawLabelText(ctx, lb, px, py, fontPx, lb.style === 'text_outline');
-                    if (lb.tooltip) this.tipRegions.push(this.textRegion(ctx, lb, px, py, fontPx, lb.tooltip));
+                    this.tipRegions.push({ ...this.textRegion(ctx, lb, px, py, fontPx), ...meta });
                 }
             } else {
                 // noFill (na color) keeps the bubble style's geometry — drawBubble
                 // places the text as if the bubble were there and skips the fill.
                 const r = this.drawBubble(ctx, lb, px, py, fontPx, color);
-                if (lb.tooltip) this.tipRegions.push({ left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h, text: lb.tooltip });
+                this.tipRegions.push({ left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h, ...meta });
             }
         }
     }
@@ -559,14 +564,14 @@ export class DrawingSceneRenderer {
         return `${lb.italic ? 'italic ' : ''}${lb.bold ? 'bold ' : ''}${fontPx}px ${family}`;
     }
 
-    /** Hover rect of a text-only label (style none/text_outline/noFill), centered like drawLabelText. */
-    private textRegion(ctx: CanvasRenderingContext2D, lb: DrawingLabel, cx: number, cy: number, fontPx: number, text: string): LabelTipRegion {
+    /** Hit rect of a text-only label (style none/text_outline/noFill), centered like drawLabelText. */
+    private textRegion(ctx: CanvasRenderingContext2D, lb: DrawingLabel, cx: number, cy: number, fontPx: number): Omit<LabelTipRegion, 'text' | 'labelId'> {
         const font = this.labelFont(lb, fontPx);
         const lines = (lb.text ?? '').split('\n');
         const w = Math.max(1, ...lines.map((l) => this.measure(ctx, font, l)));
         const h = fontPx * 1.25 * lines.length;
         const left = lb.textAlign === 'left' ? cx : lb.textAlign === 'right' ? cx - w : cx - w / 2;
-        return { left, top: cy - h / 2, right: left + w, bottom: cy + h / 2, text };
+        return { left, top: cy - h / 2, right: left + w, bottom: cy + h / 2 };
     }
 
     private isPointShape(style: DrawingLabel['style']): boolean {

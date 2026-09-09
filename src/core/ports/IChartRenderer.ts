@@ -137,6 +137,14 @@ export interface ClickEvent {
     price: number | null;
 }
 
+/** A click that landed on an indicator's label drawing (`label.new(...)` or a native's emitted label). */
+export interface LabelClickEvent {
+    /** The owning indicator — the same id as `IndicatorHandle.id` and `indicator:added`. */
+    indicatorId: string;
+    /** The label's own `DrawingLabel.id` (unique within its indicator, not across indicators). */
+    labelId: string;
+}
+
 /** A touch long-press on an axis strip — the mobile substitute for a right-click menu. */
 export interface AxisLongPressEvent {
     axis: 'price' | 'time';
@@ -376,6 +384,9 @@ export interface IChartRenderer {
     onToggleIndicatorVisible?(cb: (id: string, visible: boolean) => void): Unsubscribe;
     onCrosshairMove(cb: (e: CrosshairEvent) => void): Unsubscribe;
     onClick(cb: (e: ClickEvent) => void): Unsubscribe;
+    /** A click on an indicator label drawing. Optional — a renderer that does not hit-test
+     *  indicator drawings omits it; the core then never emits `label:click`. */
+    onLabelClick?(cb: (e: LabelClickEvent) => void): Unsubscribe;
     /** Touch long-press on a price or time axis strip. Optional — a renderer without
      *  touch axis gestures omits it; host chrome (timezone / price-scale sheets) keys off it. */
     onAxisLongPress?(cb: (e: AxisLongPressEvent) => void): Unsubscribe;

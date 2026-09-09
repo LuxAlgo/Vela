@@ -1,4 +1,4 @@
-import type { AxisLongPressEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, LegendCalloutView, RendererCapabilities } from './ports/IChartRenderer';
+import type { AxisLongPressEvent, LabelClickEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, LegendCalloutView, RendererCapabilities } from './ports/IChartRenderer';
 import type { Unsubscribe } from './util/types';
 import type { WallClock } from './util/wall-clock';
 import type { SymbolPickerFn } from './model/inputs';
@@ -156,6 +156,15 @@ export class RendererControl {
     /** Touch long-press on a price or time axis strip — silent no-op without the seam. */
     onAxisLongPress(cb: (e: AxisLongPressEvent) => void): Unsubscribe {
         return this.renderer.onAxisLongPress?.(cb) ?? (() => undefined);
+    }
+
+    /**
+     * A click on an indicator label drawing — the raw renderer seam behind the chart's
+     * `label:click` event, for host chrome that already listens on the renderer. Silent
+     * no-op unsubscribe on a renderer without indicator-drawing hit-testing.
+     */
+    onLabelClick(cb: (e: LabelClickEvent) => void): Unsubscribe {
+        return this.renderer.onLabelClick?.(cb) ?? (() => undefined);
     }
 
     /**

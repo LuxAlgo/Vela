@@ -147,6 +147,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     /** Latest chart visible range (left/right bar times), fed to viewport-dependent scripts. */
     private visibleRange: VisibleBarRange | null = null;
     private viewportUnsub: Unsubscribe | null = null;
+    private labelClickUnsub: Unsubscribe | null = null;
     private viewportTimer: ReturnType<typeof setTimeout> | null = null;
     // ── live gap-heal state (missed bars while a tab was backgrounded/frozen) ──
     /** A backfill fetch is in flight; live ticks arriving meanwhile buffer + replay after it. */
@@ -224,6 +225,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // The renderer's in-chart theme control (settings dialog Canvas → Theme) reports a
         // request here — the core owns the canonical theme, applies it, and announces it.
         this.renderer.onThemeSelect?.((name) => this.setTheme(resolveTheme(name)));
+        // A click on an indicator's label drawing surfaces as a chart event — the payload is
+        // the label id + owning indicator id, so a host resolves its own data by label.
+        this.labelClickUnsub = this.renderer.onLabelClick?.((e) => this.events.emit('label:click', { id: e.labelId, indicatorId: e.indicatorId })) ?? null;
         // Pan/zoom → re-run ONLY visible-range-dependent scripts (e.g. visible-range
         // volume profile) with the new window. Debounced so a drag re-runs once.
         this.viewportUnsub = this.renderer.onViewportChange((range) => this.onViewportChange(range));
@@ -1458,6 +1462,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportUnsub?.();
         this.paneActionUnsub?.();
+        this.labelClickUnsub?.();
         // native instances free their own caches/timers in stop()
         for (const record of this.registry.all()) {
             record.session?.stop();
