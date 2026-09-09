@@ -80,13 +80,18 @@ class FakeRenderer implements IChartRenderer {
     updateBar(): void {}
     ensurePane(_p: Pane): void {}
     removePane(): void {}
+    mountedIds: string[] = [];
     mountIndicator(model: IndicatorModel): IndicatorRenderHandle {
+        this.mountedIds.push(model.id);
         return { id: model.id };
     }
     updateIndicator(_h: IndicatorRenderHandle, _p: ScenePatch): void {}
     removeIndicator(): void {}
     setIndicatorInputs(_h: IndicatorRenderHandle, _v: Record<string, InputValue>): void {}
-    setIndicatorVisible(_h: IndicatorRenderHandle, _v: boolean): void {}
+    rowVisibility = new Map<string, boolean>();
+    setIndicatorVisible(h: IndicatorRenderHandle, v: boolean): void {
+        this.rowVisibility.set(h.id, v);
+    }
     onInputChange(_cb: (e: InputChangeEvent) => void): Unsubscribe {
         return () => {};
     }
@@ -233,6 +238,24 @@ describe('ChartCell native persistence round-trip (#146/#149)', () => {
         expect(natives).toHaveLength(2);
         expect(aroonOf(cell)!.inputValues().length).toBe(14); // declaration default
         expect(volumeOf(cell)!.visible).toBe(true);
+        cell.destroy();
+    });
+
+    it('a native RESTORED HIDDEN still mounts a dimmed legend row (the unhide affordance must exist)', async () => {
+        // Before this, a hidden ledger entry re-added its native and hid it pre-start;
+        // startNativeIndicator bails on hidden records, no model ever mounted, so the
+        // legend had NO row — the indicator was invisible AND unreachable after reload.
+        const cell = makeCell({
+            indicators: { natives: [{ type: 'volume', hidden: true }, { type: 'aroon', inputs: { length: 50 }, hidden: true }], manifest: [] },
+        } as Partial<CellBoot>);
+        await settle();
+        const renderer = lastRenderer!;
+        const volume = volumeOf(cell)!;
+        const aroon = aroonOf(cell)!;
+        expect(renderer.mountedIds).toContain(volume.id); // row exists…
+        expect(renderer.rowVisibility.get(volume.id)).toBe(false); // …marked hidden
+        expect(renderer.mountedIds).toContain(aroon.id); // pane natives too
+        expect(renderer.rowVisibility.get(aroon.id)).toBe(false);
         cell.destroy();
     });
 
