@@ -6,6 +6,7 @@ import type { InputValue, SymbolPickerFn } from '../model/inputs';
 import type { Millis } from '../model/time';
 import type { VelaTheme, ThemeName, MoveTarget, PriceStyle } from '../options';
 import type { Unsubscribe } from '../util/types';
+import type { WallClock } from '../util/wall-clock';
 import type { IDrawingsRendererPort } from '../drawings/port';
 
 /** What a rendering backend supports — drives graceful degradation + warnings. */
@@ -491,6 +492,14 @@ export interface IChartRenderer {
      * pointer-first one. Optional — a renderer without adaptive chrome omits it.
      */
     setLayoutMode?(mode: 'mobile' | 'desktop'): void;
+
+    /**
+     * Drive the renderer's time-of-day displays (the countdown-to-bar-close chip) from the
+     * HOST's second pulse instead of the renderer's own, so they read the same second as
+     * the host's clock chrome. `null` restores the renderer's own pulse. Optional — a
+     * renderer without time-of-day chrome omits it.
+     */
+    setWallClock?(clock: WallClock | null): void;
 
     /**
      * Interactive user-drawings surface. Present iff `capabilities.userDrawings`.

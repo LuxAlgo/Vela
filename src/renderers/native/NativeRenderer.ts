@@ -28,6 +28,7 @@ import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
 import { resolveLiveBarEaseMs, LIVE_BAR_EASE_DEFAULT_MS } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
+import { SecondClock, type WallClock } from '../../core/util/wall-clock';
 import { isLineLikeSeries } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
@@ -182,8 +183,12 @@ export class NativeRenderer implements IChartRenderer {
     private labelTooltip: LabelTooltip | null = null;
     private readonly crosshairLayer = new CrosshairRenderer();
     private scheduler!: Scheduler;
-    /** 1 Hz repaint pump so the price-axis countdown-to-bar-close ticks; null when off. */
-    private countdownTimer: ReturnType<typeof setInterval> | null = null;
+    /** The second pulse the countdown-to-bar-close chip ticks on: the host's (`setWallClock`)
+     *  when one is wired, else the renderer's own second-aligned clock. */
+    private hostClock: WallClock | null = null;
+    private ownClock: SecondClock | null = null;
+    /** Live subscription to the pulse while the countdown is on; null when off. */
+    private countdownUnsub: Unsubscribe | null = null;
     private animator!: Animator;
     private input!: InputController;
     private inputsUI!: InputsUI;
@@ -1661,20 +1666,32 @@ export class NativeRenderer implements IChartRenderer {
         this.syncSize();
     }
 
-    /** Run a 1 Hz repaint pump while the countdown chip is on (so it ticks); stop it otherwise.
-     *  Chrome tier: only the chip's wall-clock text moves — an idle chart must not recompute
+    /** Drive the countdown chip from the host's second pulse (`null` → the renderer's own). */
+    setWallClock(clock: WallClock | null): void {
+        if (clock === this.hostClock) return;
+        this.hostClock = clock;
+        if (this.countdownUnsub != null) {
+            this.countdownUnsub(); // re-subscribe on the new source
+            this.countdownUnsub = null;
+        }
+        this.syncCountdownTimer();
+    }
+
+    /** Subscribe to the second pulse while the countdown chip is on (so it ticks); unsubscribe
+     *  otherwise. Chrome tier: only the chip's text moves — an idle chart must not recompute
      *  scales or repaint the geometry/volume/VPVR/SDK layers once a second (that cost
      *  multiplies by the cell count in a multi-chart workspace). */
     private syncCountdownTimer(): void {
         if (this.scene.showCountdown) {
-            if (this.countdownTimer == null) {
-                this.countdownTimer = setInterval(() => {
+            if (this.countdownUnsub == null) {
+                const clock = this.hostClock ?? (this.ownClock ??= new SecondClock());
+                this.countdownUnsub = clock.onTick(() => {
                     if (this.scene.showCountdown && this.scene.bars.length > 0) this.scheduler?.invalidate(InvalidateLevel.Chrome);
-                }, 1000);
+                });
             }
-        } else if (this.countdownTimer != null) {
-            clearInterval(this.countdownTimer);
-            this.countdownTimer = null;
+        } else if (this.countdownUnsub != null) {
+            this.countdownUnsub();
+            this.countdownUnsub = null;
         }
     }
 
@@ -1682,7 +1699,7 @@ export class NativeRenderer implements IChartRenderer {
         if (this.introRaf != null) cancelAnimationFrame(this.introRaf);
         this.loadingEl?.remove();
         this.loadingEl = null;
-        if (this.countdownTimer != null) { clearInterval(this.countdownTimer); this.countdownTimer = null; }
+        if (this.countdownUnsub != null) { this.countdownUnsub(); this.countdownUnsub = null; }
         this.scheduler?.destroy();
         this.animator?.stop();
         this.input?.detach();
