@@ -425,14 +425,39 @@ export class SettingsDialog {
         }
         showActive(config.series.style);
 
-        // Style-independent (the glide applies to every price style), so it gets its own group.
+        // Style-independent (every motion applies to every price style), so it gets its own
+        // group. On/off switches only — the durations stay the host's.
         body.append(sid(this.sectionTitle('Animation'), 'symbol.animation'));
+        body.append(sid(this.boolRow(
+            'Animate zoom',
+            config.animations.zoom,
+            (v) => this.emit({ animations: { zoom: v } }),
+            this.hint('Glide the chart to each zoom step instead of jumping.'),
+        ), 'symbol.animation.zoom'));
+        body.append(sid(this.boolRow(
+            'Pan momentum',
+            config.animations.pan,
+            (v) => this.emit({ animations: { pan: v } }),
+            this.hint('Keep gliding briefly after a drag release, and ease scroll-to-latest and keyboard pans.'),
+        ), 'symbol.animation.pan'));
+        body.append(sid(this.boolRow(
+            'Animate price scale',
+            config.animations.autoscale,
+            (v) => this.emit({ animations: { autoscale: v } }),
+            this.hint('Glide the price scale to its new range while zooming or panning.'),
+        ), 'symbol.animation.autoscale'));
         body.append(sid(this.boolRow(
             'Animate price changes',
             config.priceScale.animateLastPrice,
             (v) => this.emit({ priceScale: { animateLastPrice: v } }),
             this.hint('Glide the live bar to each new price instead of snapping.'),
         ), 'symbol.animation.price-changes'));
+        body.append(sid(this.boolRow(
+            'Reveal on load',
+            config.animations.intro,
+            (v) => this.emit({ animations: { intro: v } }),
+            this.hint('Draw the candles in when a chart first loads. Takes effect on the next load.'),
+        ), 'symbol.animation.intro'));
 
         body.append(sid(this.sectionTitle('Time zone'), 'symbol.timezone'));
         body.append(sid(this.selectRowLabeled('Time zone', normalizeTimezone(config.timeScale.timezone), timezoneOptions(config.timeScale.timezone), (v) => this.emit({ timeScale: { timezone: v } })), 'symbol.timezone'));

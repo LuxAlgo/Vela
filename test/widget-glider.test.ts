@@ -88,3 +88,39 @@ describe('Glider under renderer clamping', () => {
         expect(applied.length).toBe(n); // nothing applied after stop
     });
 });
+
+describe('Glider honors the chart\'s zoom-animation switch', () => {
+    /** A chart whose renderer reports `animZoom` (the native feature: a time-constant, 0 = off). */
+    function chartWithAnimZoom(animZoom: number) {
+        const { chart, applied } = clampingChart(100 * HOUR, 200 * HOUR);
+        (chart as unknown as { renderer: unknown }).renderer = {
+            supports: (f: string) => f === 'animZoom',
+            get: (f: string) => (f === 'animZoom' ? animZoom : undefined),
+        };
+        return { chart, applied };
+    }
+
+    it('zoom animation off: the target is applied at once, with no frames', () => {
+        const { chart, applied } = chartWithAnimZoom(0);
+        new Glider(() => chart).zoom(0.5);
+        expect(frameQueue.length).toBe(0); // nothing scheduled
+        expect(applied.length).toBe(1);
+        expect(applied[0]!.to).toBe(200 * HOUR);
+        expect(applied[0]!.to - applied[0]!.from).toBe(50 * HOUR);
+    });
+
+    it('zoom animation on: the same press still glides over several frames', () => {
+        const { chart, applied } = chartWithAnimZoom(70);
+        new Glider(() => chart).zoom(0.5);
+        expect(frameQueue.length).toBe(1);
+        pump(1000);
+        expect(applied.length).toBeGreaterThan(3);
+    });
+
+    it('a chart without a renderer control (or without the feature) keeps gliding', () => {
+        const { chart, applied } = clampingChart(100 * HOUR, 200 * HOUR);
+        new Glider(() => chart).zoom(0.5);
+        pump(1000);
+        expect(applied.length).toBeGreaterThan(3);
+    });
+});

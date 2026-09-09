@@ -69,6 +69,9 @@ export type {
     RendererConstructor,
     RendererDisplayOptions,
     AnimationConfig,
+    IntroStyle,
+    IntroConfig,
+    IntroAnimation,
     AddIndicatorOptions,
     SettingsVisibilityPolicy,
 } from './core/options';

@@ -228,6 +228,18 @@ export interface ChartConfig {
          *  `animLiveBar` feature; this is only the on/off switch the settings dialog shows. */
         animateLastPrice: boolean;
     };
+    /** Motion on/off switches (the settings dialog's Animation group). On/off only — each
+     *  motion's duration stays what the host configured (`animations` option / renderer
+     *  features); switching one back on restores that duration. `pan` covers both the
+     *  drag-release inertia and the programmatic scroll glide. The live-bar glide's switch
+     *  is `priceScale.animateLastPrice` (it predates this block). */
+    animations: {
+        zoom: boolean;
+        pan: boolean;
+        autoscale: boolean;
+        /** The first-paint candle reveal — takes effect on the next load. */
+        intro: boolean;
+    };
     /** Stacked-pane chrome — the draggable line between an indicator's pane and the one above it. */
     panes: {
         separatorColor: string;
@@ -527,6 +539,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const gh = asObject(grid.horzLines);
     const cross = asObject(p.crosshair);
     const ps = asObject(p.priceScale);
+    const anim = asObject(p.animations);
     const panes = asObject(p.panes);
     const trades = asObject(p.trades);
     const ts = asObject(p.timeScale);
@@ -576,6 +589,12 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             priceLabel: isBool(ps.priceLabel) ? ps.priceLabel : base.priceScale.priceLabel,
             countdown: isBool(ps.countdown) ? ps.countdown : base.priceScale.countdown,
             animateLastPrice: isBool(ps.animateLastPrice) ? ps.animateLastPrice : base.priceScale.animateLastPrice,
+        },
+        animations: {
+            zoom: isBool(anim.zoom) ? anim.zoom : base.animations.zoom,
+            pan: isBool(anim.pan) ? anim.pan : base.animations.pan,
+            autoscale: isBool(anim.autoscale) ? anim.autoscale : base.animations.autoscale,
+            intro: isBool(anim.intro) ? anim.intro : base.animations.intro,
         },
         panes: {
             separatorColor: isColor(panes.separatorColor) ? panes.separatorColor : base.panes.separatorColor,

@@ -31,6 +31,14 @@ export function followStep(cur: Range, target: Range, follow = FOLLOW, epsFrac =
     return { cur: done ? { ...target } : { from: nf, to: nt }, done };
 }
 
+/** Whether the chart's renderer eases zooms (`animZoom` > 0). A renderer without the
+ *  feature keeps the keyboard glide — it has no zoom animation of its own to agree with. */
+function zoomAnimated(chart: Vela): boolean {
+    const control = (chart as Partial<Vela>).renderer;
+    if (!control || !control.supports('animZoom')) return true;
+    return Boolean(control.get('animZoom'));
+}
+
 /** Drives eased range changes on a chart; repeated calls retarget the running glide. */
 export class Glider {
     // The glide eases ITS OWN range, never the chart's read-back: getVisibleRange()
@@ -61,8 +69,16 @@ export class Glider {
         const chart = this.chart();
         const base = this.target ?? chart?.getVisibleRange();
         if (!chart || !base) return;
+        const target = make(base);
+        // The chart's zoom animation switched off (`animations.zoom` / the settings dialog)
+        // applies to the keyboard too: jump straight to the target, no glide.
+        if (!zoomAnimated(chart)) {
+            this.stop();
+            chart.setVisibleRange(target);
+            return;
+        }
         this.cur ??= { ...base }; // seed from the chart on a fresh glide; keep it while retargeting
-        this.target = make(base);
+        this.target = target;
         if (!this.raf) this.tick();
     }
 
