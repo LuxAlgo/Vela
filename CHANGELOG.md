@@ -2,6 +2,18 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **The countdown to bar close keeps step with the clock.** The price-axis countdown
+  chip and the workspace's bottom-bar clock now tick from one shared second pulse, so
+  the two can no longer read different seconds; the remaining time rounds up, so a
+  clock at `:54` sits beside `00:06` instead of `00:05`; and the chip disappears the
+  moment the bar closes rather than parking at `00:00` until the next bar arrives.
+  Hosts embedding a single chart can feed their own clock through
+  `chart.renderer.setWallClock` to get the same alignment.
+
 ## [v0.6.21]
 
 ### Fixed

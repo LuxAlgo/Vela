@@ -2,6 +2,9 @@
 export { Vela } from './Vela';
 export type { VelaDeps, RunIndicatorResult } from './Vela';
 export { RendererControl } from './core/RendererControl';
+// The second pulse behind time displays — share one between a host clock and
+// `chart.renderer.setWallClock` so the countdown chip never reads a different second.
+export { SecondClock, type WallClock } from './core/util/wall-clock';
 export { NativeRenderer } from './renderers/native/NativeRenderer';
 // The drawing-toolbar VIEW as a standalone component — a workspace shell mounts ONE
 // shared bar (dock:'static') and routes it to the active chart's `chart.drawings`.
