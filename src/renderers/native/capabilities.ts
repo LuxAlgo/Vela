@@ -20,6 +20,7 @@ export const NATIVE_CAPABILITIES: RendererCapabilities = {
     drawingDepth: true, // drawings share the series' z space (backend-composited interleave layers)
     tables: true, // canvas-painted into the owning indicator's interleave slice
     trades: true, // strategy order-fill markers (arrows + labels + fill-price ticks)
+    timelineMarks: true, // host events on a lane above the time axis (glyphs + detail popup)
     inputsUI: true, // reuses the DOM InputsUI
 };
 
