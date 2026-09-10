@@ -156,6 +156,15 @@ carry several instances (a study users stack at different settings); every add t
 creates a fresh instance. A type that pushes a bespoke layer payload through `pushData`
 must stay single-instance — the renderer's native layer is keyed by type.
 
+A native that is really **host-owned chrome** — trade markers from a journal, event flags,
+anything whose on/off switch lives in the host's own UI — can opt out of in-chart chrome with
+`legend: false` on the descriptor. Its output still computes and paints, but the chart mounts
+no legend row for it (no title chip, no eye/gear/✕, not counted by the fold chip) and
+`panes.list()` does not report it, so the object tree shows nothing either. The host controls
+it through the `IndicatorHandle` it got from `addNativeIndicator` (`remove()`, `setVisible()`).
+This is different from hiding: a hidden indicator keeps its row so the user can unhide it; a
+legend-less one has no row to begin with.
+
 A native whose visuals come entirely from a bespoke renderer layer (its `type` equals a
 registered layer id) can override the axis of the pane it OWNS by emitting **`paneAxis`**
 on its output: such content is not value-mapped (the layer paints in pixel bands), so a
