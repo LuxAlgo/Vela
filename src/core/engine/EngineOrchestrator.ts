@@ -696,6 +696,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (identityChanged) {
                 this.beginLoad(false);
                 this.setBarSeries([], { clearing: true });
+                // Mounted indicator models are stale the moment the identity changes, but
+                // their re-runs land only AFTER the new bars paint. Index-aligned series
+                // stop on their own (their anchor matches no new bar) — time-anchored
+                // content (drawings, bgcolor spans) and price-anchored hlines would
+                // re-project onto the incoming axis and linger. Blank them all now.
+                this.blankIndicatorVisuals();
                 // The active style's DATA ENGINE still rides the old market — its rebuild only
                 // follows the load. Silence it for the gap (its live pushes are stale the moment
                 // the identity changed) and blank its channels: per-bar payloads are keyed by
@@ -1011,6 +1017,24 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.bars = transform ? transform.full(this.rawBars) : this.rawBars;
         this.renderer.setBars(this.bars, { preserveView: true });
         this.reexecuteIndicators();
+    }
+
+    /**
+     * Blank every mounted indicator's painted output — series data, fills, backgrounds,
+     * price lines, drawings, bar colors, trades — while keeping the mount (legend row,
+     * pane, settings) intact, via the same idempotent-by-id remount an input edit uses.
+     * Called on a market identity switch: the fresh models arrive only after the new
+     * bars load, so nothing blanked here is ever restored — each consumer's re-run
+     * remounts a full model over it.
+     */
+    private blankIndicatorVisuals(): void {
+        for (const record of this.registry.all()) {
+            if (record.hidden || !record.renderHandle || !record.model) continue;
+            record.model = blankedModel(record.model);
+            record.renderHandle = this.renderer.mountIndicator(record.model);
+            record.pendingStructural = true; // the next model remounts; never a patch over the blank
+            this.setLoading(record, true);
+        }
     }
 
     /** Stop + re-run every visible Pine indicator (its input bars changed wholesale). */
@@ -1945,6 +1969,13 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const record = this.registry.get(id);
         if (!record || record.hidden) return true; // a model arriving for a just-hidden indicator is dropped
 
+        // A model arriving MID-SWITCH was computed over the outgoing market (a run already
+        // in flight when setMarket quiesced — every poke is gated and the re-executions
+        // only start after the load): applying it would repaint the just-blanked scene
+        // with stale content. It counts as no run at all — the pending cause stays for
+        // the post-load re-execution, whose model paints the new market.
+        if (this.switchingMarket) return false;
+
         // While the CHART ITSELF has no bars, an output-free model is the signature of a
         // run over zero bars (empty initial load: auth race, unresolved symbol, transient
         // feed failure) — an engine may then fabricate default metadata (generic title,
@@ -2165,6 +2196,29 @@ function yieldToPaint(): Promise<void> {
 }
 
 /** Build a value-only patch from a freshly-run model (used on live ticks / re-runs). */
+/**
+ * A copy of a mounted model with every painted output emptied. The structure — series
+ * specs (ids, titles, styles), pane routing, inputs — survives, so an idempotent
+ * remount keeps the legend and settings while nothing stale paints.
+ */
+function blankedModel(model: IndicatorModel): IndicatorModel {
+    return {
+        ...model,
+        series: model.series.map((s) => (s.kind === 'candle' || s.kind === 'bar' ? { ...s, bars: [] } : s.kind === 'markers' ? { ...s, markers: [] } : { ...s, points: [] })),
+        fills: [],
+        backgrounds: [],
+        priceLines: [],
+        lines: [],
+        boxes: [],
+        labels: [],
+        polylines: [],
+        linefills: [],
+        tables: [],
+        barColors: [],
+        trades: [],
+    };
+}
+
 function modelToValuePatch(model: IndicatorModel): ValuePatch {
     const series: SeriesValueDelta[] = [];
     let from = Number.POSITIVE_INFINITY;

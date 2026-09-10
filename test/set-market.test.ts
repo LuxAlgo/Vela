@@ -154,7 +154,8 @@ class FakeRenderer implements IChartRenderer {
     ensurePane(_p: Pane): void {}
     removePane(_id: string): void {}
     mountIndicator(model: IndicatorModel): IndicatorRenderHandle { this.mountedModels.push(model); return { id: model.id }; }
-    updateIndicator(_h: IndicatorRenderHandle, _p: ScenePatch): void {}
+    updates: ScenePatch[] = [];
+    updateIndicator(_h: IndicatorRenderHandle, p: ScenePatch): void { this.updates.push(p); }
     removeIndicator(_h: IndicatorRenderHandle): void {}
     setIndicatorInputs(_h: IndicatorRenderHandle, _v: Record<string, InputValue>): void {}
     setIndicatorVisible(_h: IndicatorRenderHandle, _v: boolean): void {}
@@ -207,6 +208,62 @@ class RecordingEngine implements ScriptingEngine {
             setVisibleRange: () => {},
             notifyBars: () => {},
         };
+    }
+}
+
+/**
+ * Static engine whose model carries every LINGER VECTOR of a market switch: content
+ * that does not ride the bar series (drawings, bgcolor spans, hlines) keeps painting
+ * on the incoming market's axis until the re-run's model lands. The handlers are kept
+ * so a test can emit a STALE model mid-switch (a run already in flight at quiesce).
+ */
+class DrawingEngine implements ScriptingEngine {
+    readonly language = 'pine';
+    readonly capabilities: EngineCapabilities = { streaming: false, visibleRange: false, inputs: true };
+    handlers: ExecutionHandlers | null = null;
+    private id = '';
+    private bars: OHLCV[] = [];
+
+    prepare(_source: string, instanceId: string): Promise<PreparedScript> {
+        return Promise.resolve({
+            language: 'pine',
+            inputs: [],
+            meta: { title: 'Draw', overlay: true },
+            reactsToViewport: false,
+            token: { instanceId },
+        });
+    }
+
+    execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        this.handlers = handlers;
+        this.id = (req.prepared.token as { instanceId: string }).instanceId;
+        this.bars = req.getBars?.() ?? req.bars;
+        this.emitModel();
+        handlers.onDone?.();
+        return { stop: () => {}, update: () => {}, setVisibleRange: () => {}, notifyBars: () => {} };
+    }
+
+    /** Emit a full model over the last-seen bars (call again to simulate a stale in-flight run). */
+    emitModel(): void {
+        const id = this.id;
+        const t0 = this.bars[0]?.time ?? 0;
+        const t1 = this.bars[this.bars.length - 1]?.time ?? 0;
+        const price = this.bars[0]?.close ?? 0;
+        this.handlers?.onModel({
+            id,
+            title: 'Draw',
+            overlay: true,
+            paneHint: 'price',
+            series: [{ id: `${id}:line:x#0`, title: 'Draw', paneId: 'unrouted', kind: 'line', points: this.bars.map((b) => ({ time: b.time, value: b.close })), style: { color: '#f00', width: 1, lineStyle: 'solid' } }],
+            fills: [],
+            backgrounds: [{ id: `${id}:bg0`, paneId: 'unrouted', from: t0, to: t1, color: '#00f' }],
+            priceLines: [{ id: `${id}:hl0`, paneId: 'unrouted', price }],
+            lines: [{ id: `${id}:l0`, paneId: 'unrouted', xloc: 'bar_time', x1: t0, y1: price, x2: t1, y2: price, extend: 'right', color: '#0f0', invisible: false, width: 1, style: 'solid', arrowLeft: false, arrowRight: false }],
+            boxes: [{ id: `${id}:b0`, paneId: 'unrouted', xloc: 'bar_time', left: t0, top: price + 1, right: t1, bottom: price - 1, extend: 'none', bgColor: '#333', borderWidth: 1, borderStyle: 'solid', textSize: 'auto', hAlign: 'center', vAlign: 'center', wrap: false, fontFamily: 'default', bold: false, italic: false }],
+            labels: [{ id: `${id}:lb0`, paneId: 'unrouted', xloc: 'bar_time', x: t1, y: price, yloc: 'price', style: 'label_up', color: '#ff0', size: 'small', textAlign: 'center', fontFamily: 'default' }],
+            inputs: [],
+            inputValues: {},
+        });
     }
 }
 
@@ -412,6 +469,70 @@ describe('setMarket — in-place market switch', () => {
 
         expect(engine.stops).toBe(1); // the old session was torn down
         expect(engine.executions[1]).toEqual({ symbol: 'BBB', timeframe: '60', barClose: PRICE.BBB });
+    });
+
+    it('an identity switch blanks mounted indicator visuals for the gap (nothing stale outlives the old market)', async () => {
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        const engine = new DrawingEngine();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [engine], dataFeed: feed });
+        chart.addIndicator('draw');
+        await chart.ready();
+        await flush();
+        const mounted = renderer.mountedModels[renderer.mountedModels.length - 1]!;
+        expect(mounted.lines).toHaveLength(1);
+        expect(mounted.boxes).toHaveLength(1);
+        expect(mounted.labels).toHaveLength(1);
+
+        const done = chart.setMarket({ symbol: 'SLOW' });
+        // Synchronously at the switch: the model is remounted BLANK. The new market's bars
+        // land before the script's re-run completes, and time-anchored drawings, bgcolor
+        // spans, and hlines would otherwise keep painting on the new axis for that window.
+        const blanked = renderer.mountedModels[renderer.mountedModels.length - 1]!;
+        expect(blanked.id).toBe(mounted.id);
+        expect(blanked.lines).toEqual([]);
+        expect(blanked.boxes).toEqual([]);
+        expect(blanked.labels).toEqual([]);
+        expect(blanked.backgrounds).toEqual([]);
+        expect(blanked.priceLines).toEqual([]);
+        expect(blanked.series.map((s) => (s.kind === 'line' ? s.points : null))).toEqual([[]]);
+        // The structure survives — legend/settings keep working through the gap.
+        expect(blanked.series[0]!.id).toBe(mounted.series[0]!.id);
+
+        feed.release();
+        await done;
+        await flush();
+        // The re-run's model repaints over the new market.
+        const fresh = renderer.mountedModels[renderer.mountedModels.length - 1]!;
+        expect(fresh.lines).toHaveLength(1);
+        expect(fresh.lines![0]!.x1).toBe(renderer.bars[0]!.time);
+    });
+
+    it('a stale model landing MID-SWITCH is dropped (a run in flight at quiesce cannot repaint the blank)', async () => {
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        const engine = new DrawingEngine();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [engine], dataFeed: feed });
+        chart.addIndicator('draw');
+        await chart.ready();
+        await flush();
+
+        const done = chart.setMarket({ symbol: 'SLOW' });
+        const mounts = renderer.mountedModels.length;
+        const updates = renderer.updates.length;
+        engine.emitModel(); // the OLD session's run completes mid-switch, over the OLD bars
+        expect(renderer.mountedModels.length).toBe(mounts); // dropped, not remounted…
+        expect(renderer.updates.length).toBe(updates); // …and never value-patched
+
+        feed.release();
+        await done;
+        await flush();
+        // The post-load re-execution still delivers the new market's model.
+        const fresh = renderer.mountedModels[renderer.mountedModels.length - 1]!;
+        expect(fresh.lines).toHaveLength(1);
+        expect(fresh.lines![0]!.x1).toBe(renderer.bars[0]!.time);
     });
 
     it('restarts a native indicator with a fresh context, keeping the record id', async () => {
