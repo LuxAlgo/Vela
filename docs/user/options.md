@@ -60,7 +60,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `currentPriceLine` | boolean | `true` | Dashed line + axis label at the latest price. |
 | `logScale` | boolean | `false` | Logarithmic price scale. |
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |
-| `animations` | boolean or `{ zoom?, pan?, liveBar? }` | **on** | `true`/`false` toggles all; an object configures each. Defaults: eased zoom on, inertial pan on (short snappy glide), live-bar glide **off**. `{ pan: false }` = instant pan. `liveBar` makes the forming candle (and the current-price line and label) slide toward each live tick instead of snapping: `true` = a 90 ms ease, a number = the ease duration in ms (settles in about three times that; capped at 1000), `false`/`0` = snap. A new bar always snaps. The settings dialog exposes an on/off switch for it (*Symbol → Animation → Animate price changes*; `priceScale.animateLastPrice` in the rich config); switching it back on reuses the duration set here. |
+| `animations` | boolean or `{ zoom?, pan?, scroll?, autoscale?, liveBar?, intro? }` | **on** | `true`/`false` toggles every motion; an object configures each on its own (see [The `animations` option](#the-animations-option) below). Defaults: eased zoom on, pan momentum on (short snappy glide), autoscale glide on, first-load reveal on, live-bar glide **off**. |
 | `glow` | number | `0` | Neon glow/bloom for line series (~0.6 = strong). **WebGL2 only** — ignored on canvas2d. |
 | `upColor` | string | `#089981` (green) | Bullish candle color (native renderer). |
 | `downColor` | string | `#f23645` (red) | Bearish candle color (native renderer). |
@@ -92,6 +92,43 @@ new Vela('#chart', { data: bars, drawings: { tools: ['trendline', 'hline', 'box'
 ```
 
 See [Drawing tools](./drawing-tools.md) for the full catalogue and the `chart.drawings` API.
+
+### The `animations` option
+
+Every eased motion of the native renderer is configured on its own. Each field takes
+`true` (the built-in feel), `false` (instant — the motion is off), or a **duration in
+milliseconds**: the ease time-constant, after which the motion has covered about 63% of
+the remaining distance; it looks settled after roughly three of them. Durations are
+capped at 1000 ms.
+
+| Field | Default | What it eases |
+|---|---|---|
+| `zoom` | `true` (70 ms) | The wheel zoom: bar spacing glides toward each notch's target instead of jumping. Off, the keyboard zoom keys of the widget jump too. |
+| `pan` | `true` (110 ms) | Pan momentum: the velocity a drag releases with decays over this time. `false` = the chart stops dead on release. |
+| `scroll` | follows `pan` (130 ms) | The programmatic scroll glide — the scroll-to-latest button, `chart.panBy`, the keyboard pan keys — easing the view to its target at constant zoom. Left unset it is on whenever `pan` is on, so `{ pan: false }` still means an instant pan everywhere. |
+| `autoscale` | `true` (80 ms) | The price scale's glide toward its new range while a zoom or fling is in flight (off = it snaps every frame). |
+| `liveBar` | `false` | The forming candle (and the current-price line and label) slide toward each live tick instead of snapping: `true` = a 90 ms ease. A new bar always snaps; the crosshair, legend and data window always show the real values. |
+| `intro` | `true` (`'settle'`, 650 ms) | The first-load reveal: candles draw themselves in left to right. `'settle'` overshoots and eases back, `'grow'` eases out; `false` skips it; `{ style?, duration? }` sets the style and/or the sweep duration in ms (capped at 5000). |
+
+```js
+new Vela('#chart', {
+  animations: {
+    zoom: 150,          // a slower, softer zoom glide
+    pan: false,         // …but a drag release stops dead (and panBy is instant)
+    liveBar: true,      // the forming candle glides to each tick
+    intro: { style: 'grow', duration: 400 },
+  },
+});
+```
+
+Each motion is also a live renderer feature — `animZoom`, `animPan`, `animScroll`,
+`animAutoscale`, `animLiveBar`, `intro` — so `chart.renderer.set('animZoom', 0)` switches
+it off at runtime (see [Renderer features](./renderer-features.md#interaction)). The
+settings dialog's *Symbol → Animation* group carries on/off switches for zoom, pan
+momentum (inertia and scroll glide together), the price scale, price changes (the live
+bar) and the reveal; switching one back on restores the duration configured here. In the
+rich config they are `animations.{zoom, pan, autoscale, intro}` plus
+`priceScale.animateLastPrice`.
 
 ### The `settings` option — hiding settings-dialog entries
 
@@ -155,7 +192,11 @@ new VelaWorkspace('#chart', {
       'symbol.style.baseline.base-level',    //     Base level %
       'symbol.style.baseline.width',         //     Width
       'symbol.animation',                    //   Animation group
+      'symbol.animation.zoom',               //     Animate zoom (the wheel-zoom glide)
+      'symbol.animation.pan',                //     Pan momentum (drag-release inertia + scroll glide)
+      'symbol.animation.autoscale',          //     Animate price scale (the autoscale glide)
       'symbol.animation.price-changes',      //     Animate price changes (the live-bar glide)
+      'symbol.animation.intro',              //     Reveal on load (the first-paint candle reveal)
       'symbol.timezone',                     //   Time zone group
 
       // ══ Scales and lines tab ══════════════════════════════════════

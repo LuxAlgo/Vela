@@ -30,6 +30,30 @@ All notable changes to Vela, newest first.
   controlling the indicator through its handle. Hidden indicators are unchanged: they
   keep their row so the user can unhide them.
 
+### Added
+
+- **Every chart motion is now yours to tune or switch off.** The `animations` option
+  covers each eased motion on its own — the wheel zoom, the pan momentum after a drag
+  release, the scroll glide behind the scroll-to-latest button and keyboard pans, the
+  price scale's glide while zooming, the live-bar glide, and the candle reveal on first
+  load. Each accepts `true` (the built-in feel), `false` (instant), or a duration in
+  milliseconds; the reveal also takes a style (`'settle'` or `'grow'`) and a sweep
+  duration. Every one is also a live renderer feature (`chart.renderer.set('animZoom',
+  150)`), and the settings dialog's *Symbol → Animation* group gains on/off switches
+  for zoom, pan momentum, the price scale, and the reveal alongside the existing
+  *Animate price changes* — switching a motion back on restores the duration you
+  configured, and the switches ride `getConfig()`/`applyConfig()` like every other
+  setting. Turning zoom animation off applies to the keyboard zoom keys too.
+
+### Changed
+
+- **`animZoom` and `animPan` now read back as durations.** The two renderer features
+  return their ease time in milliseconds (`0` = off) instead of a boolean, matching
+  `animLiveBar`; `true`/`false` are still accepted when setting them. _(Breaking: code
+  comparing the read value to `true`/`false` should test it for zero instead — a plain
+  truthiness check keeps working.)_ `animations: false` now also skips the first-load
+  candle reveal; pass `{ intro: true }` alongside the other switches to keep it.
+
 ### Fixed
 
 - **Indicators restored hidden are reachable again.** An indicator added and hidden

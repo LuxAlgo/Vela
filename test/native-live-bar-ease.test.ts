@@ -12,8 +12,8 @@ const bar = (time: number, close: number): OHLCV => ({ time, open: 100, high: Ma
 /* eslint-disable @typescript-eslint/no-explicit-any -- the eased state is private by design; the test reads it */
 function makeRenderer(animLiveBar: number) {
     const r = new NativeRenderer({
-        currentPriceLine: true, logScale: false, nativeBackend: 'canvas2d', animZoom: true, animPan: true,
-        animLiveBar, glow: 0, upColor: '#0f0', downColor: '#f00', priceStyle: 'candles',
+        currentPriceLine: true, logScale: false, nativeBackend: 'canvas2d', ...resolveAnimations({ liveBar: animLiveBar }),
+        glow: 0, upColor: '#0f0', downColor: '#f00', priceStyle: 'candles',
     });
     const anyR = r as any;
     anyR.coords.setSize(800, 200, 1); // unmounted, but sized — the bar/ease math is pure
@@ -24,14 +24,12 @@ function makeRenderer(animLiveBar: number) {
     return { r, anyR, starts: () => starts };
 }
 
-describe('resolveAnimations / resolveLiveBarEaseMs', () => {
-    it('defaults: zoom + pan on, live-bar glide OFF', () => {
-        expect(resolveAnimations(undefined)).toEqual({ animZoom: true, animPan: true, animLiveBar: 0 });
-        expect(resolveAnimations({})).toEqual({ animZoom: true, animPan: true, animLiveBar: 0 });
-    });
-    it('a boolean toggles zoom + pan; `true` keeps the live-bar default (off), `false` turns everything off', () => {
-        expect(resolveAnimations(true)).toEqual({ animZoom: true, animPan: true, animLiveBar: 0 });
-        expect(resolveAnimations(false)).toEqual({ animZoom: false, animPan: false, animLiveBar: 0 });
+describe('resolveAnimations / resolveLiveBarEaseMs (live bar)', () => {
+    it('defaults: live-bar glide OFF, even with every other motion on', () => {
+        expect(resolveAnimations(undefined).animLiveBar).toBe(0);
+        expect(resolveAnimations({}).animLiveBar).toBe(0);
+        expect(resolveAnimations(true).animLiveBar).toBe(0);
+        expect(resolveAnimations(false).animLiveBar).toBe(0);
     });
     it('liveBar: true = the default duration, a number = that duration (clamped), false/0/junk = off', () => {
         expect(resolveAnimations({ liveBar: true }).animLiveBar).toBe(LIVE_BAR_EASE_DEFAULT_MS);
