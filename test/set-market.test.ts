@@ -26,6 +26,7 @@ import type { MarketConfig } from '../src/core/options';
 import type { OHLCV } from '../src/core/model/ohlcv';
 import type { Pane } from '../src/core/model/scene';
 import type { IndicatorModel } from '../src/core/model/indicator';
+import type { DrawingLine } from '../src/core/model/drawings';
 import type { ScenePatch } from '../src/core/model/patch';
 import type { InputValue } from '../src/core/model/inputs';
 import type { VelaTheme } from '../src/core/options';
@@ -249,18 +250,28 @@ class DrawingEngine implements ScriptingEngine {
         const t0 = this.bars[0]?.time ?? 0;
         const t1 = this.bars[this.bars.length - 1]?.time ?? 0;
         const price = this.bars[0]?.close ?? 0;
+        const mkLine = (n: number): DrawingLine => ({ id: `${id}:l${n}`, paneId: 'unrouted', xloc: 'bar_time', x1: t0, y1: price + n, x2: t1, y2: price + n, extend: 'right', color: '#0f0', invisible: false, width: 1, style: 'solid', arrowLeft: false, arrowRight: false });
         this.handlers?.onModel({
             id,
             title: 'Draw',
             overlay: true,
             paneHint: 'price',
-            series: [{ id: `${id}:line:x#0`, title: 'Draw', paneId: 'unrouted', kind: 'line', points: this.bars.map((b) => ({ time: b.time, value: b.close })), style: { color: '#f00', width: 1, lineStyle: 'solid' } }],
-            fills: [],
+            series: [
+                { id: `${id}:line:x#0`, title: 'Hi', paneId: 'unrouted', kind: 'line', points: this.bars.map((b) => ({ time: b.time, value: b.close + 1 })), style: { color: '#f00', width: 1, lineStyle: 'solid' } },
+                { id: `${id}:line:x#1`, title: 'Lo', paneId: 'unrouted', kind: 'line', points: this.bars.map((b) => ({ time: b.time, value: b.close - 1 })), style: { color: '#f00', width: 1, lineStyle: 'solid' } },
+                { id: `${id}:markers:x#2`, title: 'Marks', paneId: 'unrouted', kind: 'markers', markers: [{ time: t1, position: 'aboveBar', shape: 'arrowUp', color: '#0f0' }] },
+            ],
+            fills: [{ id: `${id}:f0`, paneId: 'unrouted', fromSeriesId: `${id}:line:x#0`, toSeriesId: `${id}:line:x#1`, color: '#808' }],
             backgrounds: [{ id: `${id}:bg0`, paneId: 'unrouted', from: t0, to: t1, color: '#00f' }],
             priceLines: [{ id: `${id}:hl0`, paneId: 'unrouted', price }],
-            lines: [{ id: `${id}:l0`, paneId: 'unrouted', xloc: 'bar_time', x1: t0, y1: price, x2: t1, y2: price, extend: 'right', color: '#0f0', invisible: false, width: 1, style: 'solid', arrowLeft: false, arrowRight: false }],
+            lines: [mkLine(0)],
             boxes: [{ id: `${id}:b0`, paneId: 'unrouted', xloc: 'bar_time', left: t0, top: price + 1, right: t1, bottom: price - 1, extend: 'none', bgColor: '#333', borderWidth: 1, borderStyle: 'solid', textSize: 'auto', hAlign: 'center', vAlign: 'center', wrap: false, fontFamily: 'default', bold: false, italic: false }],
             labels: [{ id: `${id}:lb0`, paneId: 'unrouted', xloc: 'bar_time', x: t1, y: price, yloc: 'price', style: 'label_up', color: '#ff0', size: 'small', textAlign: 'center', fontFamily: 'default' }],
+            polylines: [{ id: `${id}:pl0`, paneId: 'unrouted', points: [{ xloc: 'bar_time', x: t0, price }, { xloc: 'bar_time', x: t1, price: price + 2 }], curved: false, closed: false, lineColor: '#fa0', lineWidth: 1, lineStyle: 'solid', arrowLeft: false, arrowRight: false }],
+            linefills: [{ id: `${id}:lf0`, paneId: 'unrouted', line1: mkLine(1), line2: mkLine(2), color: '#088' }],
+            tables: [{ id: `${id}:t0`, paneId: 'unrouted', position: 'top_right', columns: 1, rows: 1, frameWidth: 0, borderWidth: 0, cells: [[{ text: 'X', hAlign: 'center', vAlign: 'center', textSize: 'auto', fontFamily: 'default', bold: false, italic: false }]], merges: [] }],
+            barColors: [{ time: t1, color: '#f0f' }],
+            trades: [{ time: t1, price, side: 'buy', kind: 'entry' }],
             inputs: [],
             inputValues: {},
         });
@@ -491,12 +502,20 @@ describe('setMarket — in-place market switch', () => {
         // spans, and hlines would otherwise keep painting on the new axis for that window.
         const blanked = renderer.mountedModels[renderer.mountedModels.length - 1]!;
         expect(blanked.id).toBe(mounted.id);
+        // EVERY output vocabulary is emptied — plots, markers, fills, bgcolor spans,
+        // hlines, all six drawing kinds, barcolor, and strategy trades.
         expect(blanked.lines).toEqual([]);
         expect(blanked.boxes).toEqual([]);
         expect(blanked.labels).toEqual([]);
+        expect(blanked.polylines).toEqual([]);
+        expect(blanked.linefills).toEqual([]);
+        expect(blanked.tables).toEqual([]);
         expect(blanked.backgrounds).toEqual([]);
         expect(blanked.priceLines).toEqual([]);
-        expect(blanked.series.map((s) => (s.kind === 'line' ? s.points : null))).toEqual([[]]);
+        expect(blanked.fills).toEqual([]);
+        expect(blanked.barColors).toEqual([]);
+        expect(blanked.trades).toEqual([]);
+        expect(blanked.series.map((s) => (s.kind === 'markers' ? s.markers : s.kind === 'line' ? s.points : null))).toEqual([[], [], []]);
         // The structure survives — legend/settings keep working through the gap.
         expect(blanked.series[0]!.id).toBe(mounted.series[0]!.id);
 
