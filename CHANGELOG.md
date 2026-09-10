@@ -29,9 +29,6 @@ All notable changes to Vela, newest first.
   markers, event flags — whose on/off switch lives in the host's own UI; the host keeps
   controlling the indicator through its handle. Hidden indicators are unchanged: they
   keep their row so the user can unhide them.
-
-### Added
-
 - **Every chart motion is now yours to tune or switch off.** The `animations` option
   covers each eased motion on its own — the wheel zoom, the pan momentum after a drag
   release, the scroll glide behind the scroll-to-latest button and keyboard pans, the
