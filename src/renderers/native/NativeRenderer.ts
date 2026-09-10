@@ -2064,11 +2064,14 @@ export class NativeRenderer implements IChartRenderer {
         if (model.native && this.extLayers.some((l) => l.def.id === model.native!.type)) this.scene.assignIndicatorZTop(model.id);
         else this.scene.assignIndicatorZ(model.id);
         // The legend chip, the settings dialog and the object tree's rows all show the compact
-        // shorttitle when declared; the full title stays on the picker and inspect().
-        this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
-            native: !!model.native,
-            ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
-        });
+        // shorttitle when declared; the full title stays on the picker and inspect(). A
+        // `legend: false` native gets none of it — the scene model still mounts and paints.
+        if (model.legend !== false) {
+            this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
+                native: !!model.native,
+                ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
+            });
+        }
         if (model.native?.type === 'volume') {
             this.volumeActive = true; // the volume layer follows the indicator's presence
             this.volumeHidden = false;
@@ -3858,7 +3861,8 @@ export class NativeRenderer implements IChartRenderer {
         const map = new Map<string, string | null>();
         for (const pane of this.scene.panes.values()) {
             if (!pane.collapsed) continue;
-            const models = this.scene.orderedIndicatorsForPane(pane.id);
+            // Only models with a legend row can front a collapsed strip.
+            const models = this.scene.orderedIndicatorsForPane(pane.id).filter((m) => m.legend !== false);
             const merged = new Set(this.scene.ownScaleIndicatorsForPane(pane.id).map((m) => m.id));
             const master = models.find((m) => !merged.has(m.id)) ?? models[0];
             map.set(pane.id, master?.id ?? null);

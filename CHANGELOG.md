@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.7.0]
 
 ### Added
 
@@ -22,8 +22,13 @@ All notable changes to Vela, newest first.
 - **Popovers can center on their trigger and fade.** The UI kit's `Popover` accepts
   `align: 'center'` and a `fadeMs` duration for a short fade in and out — what the
   timeline-mark popup uses.
-
-## [v0.6.22]
+- **Native indicators can opt out of the legend.** A native indicator registered with
+  `legend: false` paints its output with no in-chart chrome: no legend row (no title
+  chip, no eye/gear/✕, not counted by the fold chip) and no entry in `panes.list()`, so
+  the object tree shows nothing either. It is for host-owned overlays — journal trade
+  markers, event flags — whose on/off switch lives in the host's own UI; the host keeps
+  controlling the indicator through its handle. Hidden indicators are unchanged: they
+  keep their row so the user can unhide them.
 
 ### Fixed
 

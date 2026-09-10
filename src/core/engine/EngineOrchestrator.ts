@@ -1617,6 +1617,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             overlay: d.overlay,
             paneHint: d.paneHint,
             native: { type: record.native!.type },
+            ...(d.legend === false ? { legend: false } : {}),
             ...(out.paneAxis != null ? { paneAxis: out.paneAxis } : {}),
             series: out.series ?? [],
             fills: out.fills ?? [],
@@ -1744,6 +1745,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         for (const r of this.registry.all()) {
             const model = r.model;
             if (!model) continue;
+            if (model.legend === false) continue; // host-owned chrome: no row anywhere, the handle is the control
             const paneId = model.paneId ?? 'price';
             if (!byPane.has(paneId)) byPane.set(paneId, []);
             byPane.get(paneId)!.push({
