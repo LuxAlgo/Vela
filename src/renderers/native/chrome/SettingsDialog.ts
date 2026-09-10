@@ -33,9 +33,13 @@ import {
     filterHiddenHostRows,
     filterHiddenRows,
     hostSectionId,
+    markGroupSettingsId,
+    MARKS_GROUPS_SETTINGS_ID,
+    MARKS_SETTINGS_ID,
     settingsIdHidden,
     settingsIdSlug,
 } from './settings-visibility';
+import type { MarkGroup } from '../../../core/marks/types';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -187,6 +191,9 @@ export class SettingsDialog {
     private config: ChartConfig | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
+    /** The timeline-mark groups (defined + named by marks) — one checkbox each on the Events tab. */
+    private markGroups: MarkGroup[] = [];
+    private markGroupVisible: (id: string) => boolean = () => true;
     /** The Canvas → Theme row: current app theme + where a pick is raised. The row is a
      *  host callback, NOT a config patch — the app theme stays out of the persisted
      *  `ChartConfig`, so exported templates never carry it. */
@@ -209,6 +216,12 @@ export class SettingsDialog {
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
         this.hostSections = sections;
+    }
+
+    /** The timeline-mark groups and their current visibility — the Events tab's rows on next open. */
+    setMarkGroups(groups: MarkGroup[], visible: (id: string) => boolean): void {
+        this.markGroups = groups;
+        this.markGroupVisible = visible;
     }
 
     /** Replace the visibility policy — an open dialog rebuilds in place to honor it. */
@@ -522,6 +535,15 @@ export class SettingsDialog {
             const tc = this.themeControl;
             body.append(sid(this.sectionTitle('Theme'), 'canvas.theme'));
             body.append(sid(this.selectRow('Color theme', tc.current === 'dark' ? 'Dark' : 'Light', ['Dark', 'Light'], (v) => tc.onSelect(v === 'Dark' ? 'dark' : 'light')), 'canvas.theme'));
+        }
+
+        // ══ EVENTS — timeline-mark group visibility, a tab of its own (present only while marks name groups) ══
+        if (this.markGroups.length > 0) {
+            body.append(sid(this.section('Events'), MARKS_SETTINGS_ID));
+            body.append(sid(this.sectionTitle('Visible events'), MARKS_GROUPS_SETTINGS_ID));
+            for (const g of this.markGroups) {
+                body.append(sid(this.boolRow(g.label, this.markGroupVisible(g.id), (v) => this.emit({ marks: { groups: { [g.id]: v } } })), markGroupSettingsId(g.id)));
+            }
         }
 
         renderChartTypeSections('end');

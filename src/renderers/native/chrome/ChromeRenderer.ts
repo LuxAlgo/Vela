@@ -12,10 +12,13 @@ import { renderTradeMarkers } from '../../shared/trade-markers';
 import type { TradeExecution } from '../../../core/model/trades';
 import { paneAxisTicks, formatAxisValue, timeTicks } from './ticks';
 import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
-import { parseColor } from '../backend/gl/color';
 import { DARK_THEME } from '../../../core/theme';
 import { tzOffsetMs } from './tz';
 import { countdownText } from './countdown';
+import { tagTextColor } from './contrast';
+import { markGroupVisible } from '../../shared/marks-state';
+import { clusterTooltip, layoutMarkLane, markGlyphAt, markStackAt, type MarkLaneLayout, type PlacedGlyph } from './marks/layout';
+import { MarkIconRaster, paintMarkLane } from './marks/paint';
 
 /**
  * Renderer-owned chrome layer (canvas2d) on its own canvas, stacked above the
@@ -33,10 +36,44 @@ export class ChromeRenderer {
     private axisTextColor = DARK_THEME.textColor;
     // Shared Pine-drawing renderer, used here for autoscale geometry only; widthCache persists.
     private readonly drawScene = new DrawingSceneRenderer({ timeToLogical: () => 0, barAt: () => null, theme: {} as VelaTheme });
+    /** The timeline-mark lane as laid out by the last frame — what hover/click hit-test against. */
+    private markLayout: MarkLaneLayout = { glyphs: [], stacks: new Map() };
+    /** Registry icons rasterized for the lane; the owner is asked for a chrome repaint when one lands. */
+    private readonly markIcons = new MarkIconRaster(() => this.onMarkIconReady?.());
+    private onMarkIconReady: (() => void) | null = null;
+    /** Bar open times of the current series, rebuilt only when the array or its length changes (a live tick keeps both). */
+    private barTimesSrc: readonly OHLCV[] | null = null;
+    private barTimesCache: number[] = [];
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
+    }
+
+    /** Where to ask for a chrome repaint when a lane icon finishes rasterizing. */
+    setMarkIconReady(cb: (() => void) | null): void {
+        this.onMarkIconReady = cb;
+    }
+
+    /** The interactive mark glyph under a plot point (last frame's layout), or null. */
+    markGlyphAt(x: number, y: number): PlacedGlyph | null {
+        return markGlyphAt(this.markLayout, x, y);
+    }
+
+    /** The mark stack (bar index) whose glyphs — or the gaps of its fan — cover a plot point. */
+    markStackAt(x: number, y: number): number | null {
+        return markStackAt(this.markLayout, x, y);
+    }
+
+    /** A glyph of the last frame by its cluster key — how an open popup follows its anchor. */
+    markGlyphByKey(key: string): PlacedGlyph | null {
+        return this.markLayout.glyphs.find((g) => g.cluster.key === key) ?? null;
+    }
+
+    /** Hover text of the mark glyph under a plot point, or null. */
+    markTooltipAt(x: number, y: number, groups: ReadonlyArray<{ id: string; label: string }>): string | null {
+        const g = this.markGlyphAt(x, y);
+        return g ? clusterTooltip(g.cluster, groups) : null;
     }
 
     /** Wire the drawing coordinate resolvers + theme (call once per frame before use). */
@@ -101,6 +138,7 @@ export class ChromeRenderer {
             // alone, not bars — so they must survive the empty frame, or the stacked
             // panes read as one undivided plot until the load completes.
             this.drawPaneSeparators(ctx, scene, theme, fullW, panes);
+            this.markLayout = { glyphs: [], stacks: new Map() }; // no bars ⇒ nothing to click either
             return;
         }
         const pricePane = panes.find((p) => p.kind === 'price') ?? null;
@@ -123,6 +161,48 @@ export class ChromeRenderer {
         this.drawPaneSeparators(ctx, scene, theme, fullW, panes);
         this.drawPriceLineAndCountdown(ctx, scene, coords, theme, dataW, pricePane);
         this.drawTimeAxis(ctx, scene, coords, theme, dataW, dataH, fullH);
+        this.drawMarkLane(ctx, scene, coords, theme, dataW, dataH);
+    }
+
+    /** The timeline-mark lane — after the axis, so the tokens read over the plot's bottom edge. */
+    private drawMarkLane(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, dataH: number): void {
+        if (!scene.marks.visible || scene.timelineMarks.length === 0) {
+            this.markLayout = { glyphs: [], stacks: new Map() };
+            return;
+        }
+        this.markLayout = layoutMarkLane({
+            marks: scene.timelineMarks,
+            groups: scene.markGroups,
+            hidden: (groupId) => !markGroupVisible(scene.marks, groupId, scene.markGroups),
+            barTimes: this.barTimes(scene),
+            intervalMs: coords.barInterval,
+            xOf: (bar) => coords.logicalToX(bar),
+            axisY: dataH,
+            dataW,
+            expanded: scene.marksExpandedStack,
+        });
+        const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        paintMarkLane(ctx, this.markLayout, {
+            axisY: dataH,
+            background: theme.background,
+            stemColor: scene.style.borderColor ?? theme.borderColor,
+            fontFamily: theme.fontFamily,
+            dpr: coords.dpr,
+            icons: this.markIcons,
+            hoverKey: scene.marksHoverKey,
+            hoverSince: scene.marksHoverSince,
+            activeKey: scene.marksActiveKey,
+            flashKey: scene.marksFlash && scene.marksFlash.until > nowMs ? scene.marksFlash.key : null,
+            nowMs,
+        });
+    }
+
+    private barTimes(scene: SceneGraph): readonly number[] {
+        if (this.barTimesSrc !== scene.bars || this.barTimesCache.length !== scene.bars.length) {
+            this.barTimesSrc = scene.bars;
+            this.barTimesCache = scene.bars.map((b) => b.time);
+        }
+        return this.barTimesCache;
     }
 
     destroy(): void {
@@ -401,26 +481,4 @@ function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {
     else ctx.setLineDash([]);
 }
 
-/**
- * White or black text for a colored price tag, biased toward white so saturated brand
- * colors (the default candle green / red sit at L≈0.22–0.24) read as white,
- * while genuinely light colors (a white or pale candle color) still get dark text. Uses
- * relative luminance with a flip point of 0.4 — higher than `readableText`'s WCAG crossover
- * (~0.18) which perceptually over-picks black on mid-tone fills. Translucent `bg` is
- * composited over `over` first so the choice reflects what's actually seen.
- */
-function tagTextColor(bg: string, over: string): string {
-    const [r, g, b, a] = parseColor(bg);
-    let R = r;
-    let G = g;
-    let B = b;
-    if (a < 1) {
-        const [or, og, ob] = parseColor(over);
-        R = r * a + or * (1 - a);
-        G = g * a + og * (1 - a);
-        B = b * a + ob * (1 - a);
-    }
-    const lin = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
-    const L = 0.2126 * lin(R) + 0.7152 * lin(G) + 0.0722 * lin(B);
-    return L >= 0.4 ? '#000000' : '#ffffff';
-}
+

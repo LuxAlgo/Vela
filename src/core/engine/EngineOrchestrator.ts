@@ -29,6 +29,7 @@ import { IndicatorHandleImpl, type IndicatorController } from './IndicatorHandle
 import { inspectModels, type SceneInspection } from './inspect';
 import { presetToRange, type VisibleRangePreset } from '../visible-range';
 import { DrawingController } from '../drawings/DrawingController';
+import { MarksController } from '../marks/MarksController';
 import { DrawingSeriesService } from './DrawingSeriesService';
 import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
@@ -247,6 +248,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             marketKey: () => `${this.config.market.symbol ?? ''}|${this.config.market.session ?? ''}`,
         });
         this.drawings = new DrawingController(this.renderer, this.events, config.drawings, drawingSeries);
+        this.marks = new MarksController(this.renderer, this.events);
         // A symbol nothing can serve leaves the load PARKED; publish it so a host can say so
         // instead of showing a blank chart forever (it still resumes if a provider registers).
         // A parked load also ends the loading state — nothing is coming, and an endless
@@ -268,6 +270,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
 
     /** The user-drawings manager (backs `chart.drawings`). */
     readonly drawings: DrawingController;
+    /** The timeline-marks manager (backs `chart.marks`). */
+    readonly marks: MarksController;
 
     /**
      * The visible range to feed a run. Prefer the latest viewport-change event, but
@@ -1470,6 +1474,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.unresolvedUnsub = null;
         this.feed.destroy?.(); // parked waits would otherwise outlive the chart
         this.drawings.destroy();
+        this.marks.destroy();
         this.renderer.destroy();
         this.events.clear();
     }

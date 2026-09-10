@@ -6,10 +6,12 @@
 // Vela ships no scripting engine — `demo-engine.ts` is the page's own, written against
 // the public port (see widget.ts's header). For Pine Script:
 // `npm i @luxalgo/vela-pinets pinets` and `engines: { pine: () => new PineWorkerEngine() }`.
+import type { Vela } from "../src";
 import { VelaWorkspace } from "../src/workspace";
 import { BinanceProvider } from "../src/data/providers/binance";
 import { DemoEngine } from "./demo-engine";
 import { playgroundStorage } from "./persistence";
+import { addSampleMarks } from "./marks";
 
 const ws = new VelaWorkspace("#workspace", {
   layout: "4",
@@ -100,6 +102,18 @@ for (const cell of ws.cells()) cell.chart.on("theme:changed", syncShellTheme);
 ws.on("cell:created", ({ id }) =>
   ws.cell(id)?.chart.on("theme:changed", syncShellTheme),
 );
+
+// Sample timeline marks (chart.marks) on every cell — the ones alive now and those a
+// later layout switch mints. Each waits for its own chart to paint, then spreads the
+// marks over that chart's visible range (see marks.ts).
+const seedMarks = (chart: Vela): void => {
+  void chart.ready().then(() => addSampleMarks(chart));
+};
+for (const cell of ws.cells()) seedMarks(cell.chart);
+ws.on("cell:created", ({ id }) => {
+  const cell = ws.cell(id);
+  if (cell) seedMarks(cell.chart);
+});
 
 // Handy for poking around from the browser console (and for the automated probes).
 (window as unknown as { __ws: VelaWorkspace }).__ws = ws;

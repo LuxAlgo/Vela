@@ -2,6 +2,27 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Timeline marks — events on the chart.** `chart.marks` pins host events (dividends,
+  splits, earnings, news, releases…) to the bar they belong to and shows them as small
+  outlined tokens — a letter or an icon in the event's color — on a lane just above the
+  time axis. A token swells briefly under the pointer and fills with its color while its
+  popup is open. Clicking one opens a popup centered on the token, with a short fade,
+  showing the event's title and details: plain text, formatted HTML (sanitized), or a
+  panel of fields and buttons — and the details can load on demand. Several events of
+  one kind on the same bar fold into one slightly larger token that lists them all;
+  events of different kinds on one bar stack into a small deck that fans out on hover
+  (or a tap) so each can be opened. Marks follow the bars: switch timeframes and they
+  re-snap and regroup. Every kind of event gets its own checkbox on a new **Events** tab
+  of the chart settings, and the choice is saved with the chart. Hosts hear every click
+  through the new `mark:click` event, and the playground pages carry a sample set.
+- **Popovers can center on their trigger and fade.** The UI kit's `Popover` accepts
+  `align: 'center'` and a `fadeMs` duration for a short fade in and out — what the
+  timeline-mark popup uses.
+
 ## [v0.6.22]
 
 ### Fixed
