@@ -6,6 +6,9 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Timeline mark popups now toggle with a click.** Clicking the mark whose popup is
+  open closes it; previously that second click closed and immediately reopened the popup,
+  so it took a click elsewhere to dismiss it.
 - **Three-point tools preview their first line right away.** The pitchfork family
   (Andrews', Schiff, modified Schiff, inside) and the triangle now draw a line from the
   first placed point to the cursor as soon as the first click lands, instead of showing
