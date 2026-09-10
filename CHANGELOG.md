@@ -2,6 +2,83 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.7.0]
+
+### Added
+
+- **Timeline marks — events on the chart.** `chart.marks` pins host events (dividends,
+  splits, earnings, news, releases…) to the bar they belong to and shows them as small
+  outlined tokens — a letter or an icon in the event's color — on a lane just above the
+  time axis. A token swells briefly under the pointer and fills with its color while its
+  popup is open. Clicking one opens a popup centered on the token, with a short fade,
+  showing the event's title and details: plain text, formatted HTML (sanitized), or a
+  panel of fields and buttons — and the details can load on demand. Several events of
+  one kind on the same bar fold into one slightly larger token that lists them all;
+  events of different kinds on one bar stack into a small deck that fans out on hover
+  (or a tap) so each can be opened. Marks follow the bars: switch timeframes and they
+  re-snap and regroup. Every kind of event gets its own checkbox on a new **Events** tab
+  of the chart settings, and the choice is saved with the chart. Hosts hear every click
+  through the new `mark:click` event, and the playground pages carry a sample set.
+- **Popovers can center on their trigger and fade.** The UI kit's `Popover` accepts
+  `align: 'center'` and a `fadeMs` duration for a short fade in and out — what the
+  timeline-mark popup uses.
+- **Native indicators can opt out of the legend.** A native indicator registered with
+  `legend: false` paints its output with no in-chart chrome: no legend row (no title
+  chip, no eye/gear/✕, not counted by the fold chip) and no entry in `panes.list()`, so
+  the object tree shows nothing either. It is for host-owned overlays — journal trade
+  markers, event flags — whose on/off switch lives in the host's own UI; the host keeps
+  controlling the indicator through its handle. Hidden indicators are unchanged: they
+  keep their row so the user can unhide them.
+- **Every chart motion is now yours to tune or switch off.** The `animations` option
+  covers each eased motion on its own — the wheel zoom, the pan momentum after a drag
+  release, the scroll glide behind the scroll-to-latest button and keyboard pans, the
+  price scale's glide while zooming, the live-bar glide, and the candle reveal on first
+  load. Each accepts `true` (the built-in feel), `false` (instant), or a duration in
+  milliseconds; the reveal also takes a style (`'settle'` or `'grow'`) and a sweep
+  duration. Every one is also a live renderer feature (`chart.renderer.set('animZoom',
+  150)`), and the settings dialog's *Symbol → Animation* group gains on/off switches
+  for zoom, pan momentum, the price scale, and the reveal alongside the existing
+  *Animate price changes* — switching a motion back on restores the duration you
+  configured, and the switches ride `getConfig()`/`applyConfig()` like every other
+  setting. Turning zoom animation off applies to the keyboard zoom keys too.
+
+### Changed
+
+- **`animZoom` and `animPan` now read back as durations.** The two renderer features
+  return their ease time in milliseconds (`0` = off) instead of a boolean, matching
+  `animLiveBar`; `true`/`false` are still accepted when setting them. _(Breaking: code
+  comparing the read value to `true`/`false` should test it for zero instead — a plain
+  truthiness check keeps working.)_ `animations: false` now also skips the first-load
+  candle reveal; pass `{ intro: true }` alongside the other switches to keep it.
+
+### Fixed
+
+- **Indicators restored hidden are reachable again.** An indicator added and hidden
+  before it ever ran (a restored ledger/ext entry — a hidden native, or a hidden
+  library/Pine script) mounted no legend row at all: invisible AND unreachable, with
+  no eye to unhide it. Hidden adds now mount a dimmed placeholder row (no spinner)
+  and announce immediately, so the legend eye and host UIs (object tree) can reach
+  them; showing starts the instance via the v0.6.21 `started` path and the first
+  computed model remounts over the placeholder.
+
+- **The countdown to bar close keeps step with the clock.** The price-axis countdown
+  chip and the workspace's bottom-bar clock now tick from one shared second pulse, so
+  the two can no longer read different seconds; the remaining time rounds up, so a
+  clock at `:54` sits beside `00:06` instead of `00:05`; and the chip disappears the
+  moment the bar closes rather than parking at `00:00` until the next bar arrives.
+  Hosts embedding a single chart can feed their own clock through
+  `chart.renderer.setWallClock` to get the same alignment.
+
+- **The mobile bar's maximize stop only shows when there is something to maximize.**
+  In a multi-chart workspace switched to a one-chart layout, the stop used to stay in
+  the bar as a dead press; it now disappears with the extra charts and returns when
+  the layout grows again.
+
+- **Chart-settings dropdowns no longer overflow on mobile.** A long option such as
+  `Regular hours (RTH)` or `(UTC-5) Chicago` wrapped onto several lines inside its
+  dropdown and spilled over the neighboring rows. The closed value now stays on one
+  line, and on mobile the dropdown widens to fit it (up to a cap) before ellipsizing.
+
 ## [v0.6.21]
 
 ### Fixed

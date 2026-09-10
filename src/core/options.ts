@@ -116,10 +116,12 @@ export interface VelaOptions extends MarketConfig {
      *  or force `'canvas2d'` / `'webgl2'`. Native renderer only. */
     nativeBackend?: NativeBackend;
     /** Native-renderer animations. `true`/`false` toggles all; an object configures
-     *  each independently. Default: eased **zoom on**, inertial **pan on but snappy**
-     *  (short glide), live-bar glide **off**. Set `{ pan: false }` for an instant pan
-     *  with no momentum, `{ liveBar: true }` (or a duration in ms) to make the forming
-     *  candle slide toward each live tick instead of snapping. */
+     *  each motion independently — on/off, or its ease duration in ms. Default: eased
+     *  **zoom on**, inertial **pan on but snappy** (short glide), gliding **autoscale
+     *  on**, first-paint **reveal on**, live-bar glide **off**. Set `{ pan: false }` for an
+     *  instant pan with no momentum, `{ zoom: 150 }` for a slower zoom glide,
+     *  `{ liveBar: true }` (or a duration in ms) to make the forming candle slide toward
+     *  each live tick instead of snapping, `{ intro: false }` to skip the reveal. */
     animations?: boolean | AnimationConfig;
     /** Neon glow/bloom intensity for line series (0 = off, ~0.6 = strong). WebGL2 only
      *  — the canvas2d backend ignores it. Default 0. */
@@ -156,12 +158,29 @@ export interface SettingsVisibilityPolicy {
     hidden?: readonly string[];
 }
 
-/** Per-feature native-renderer animation toggles. */
+/**
+ * Per-feature native-renderer animation settings. Every eased motion takes
+ * `boolean | number`: `false`/`0` = off (the motion is instant), `true` = the built-in
+ * duration, a number = its ease time-constant in ms — the motion covers ~63% of the
+ * remaining distance per time-constant and is visually settled after about three of
+ * them (clamped to {@link ANIMATION_EASE_MAX_MS}).
+ */
 export interface AnimationConfig {
-    /** Eased cursor-anchored wheel-zoom (+ gliding autoscale while zooming). Default true. */
-    zoom?: boolean;
-    /** Inertial/kinetic pan — a short snappy glide after a drag-release. Default true. */
-    pan?: boolean;
+    /** Eased cursor-anchored wheel-zoom: the bar spacing glides toward each wheel notch's
+     *  target instead of jumping. Default `true` ({@link ZOOM_EASE_DEFAULT_MS}). */
+    zoom?: boolean | number;
+    /** Inertial/kinetic pan — the velocity a drag releases with decays over this
+     *  time-constant (a short, snappy glide by default; `false` stops dead). Default
+     *  `true` ({@link PAN_INERTIA_DEFAULT_MS}). */
+    pan?: boolean | number;
+    /** The programmatic scroll glide — the scroll-to-latest button, `chart.panBy`, the
+     *  keyboard pan keys — easing the view toward its target at constant zoom. Default:
+     *  follows `pan` on/off, at {@link SCROLL_EASE_DEFAULT_MS} when on. */
+    scroll?: boolean | number;
+    /** Autoscale glide: while a zoom or fling is in flight the price scale eases toward
+     *  its new window instead of snapping every frame. Default `true`
+     *  ({@link AUTOSCALE_EASE_DEFAULT_MS}). */
+    autoscale?: boolean | number;
     /** Glide of the forming bar: on a live tick the displayed high/low/close ease toward
      *  the new values instead of snapping (the price line and axis label follow). `true`
      *  uses the default duration ({@link LIVE_BAR_EASE_DEFAULT_MS}); a number is the ease
@@ -169,29 +188,101 @@ export interface AnimationConfig {
      *  {@link LIVE_BAR_EASE_MAX_MS}); `false`/`0` snaps. A new bar always snaps. Default
      *  `false` — the painted candle is then never behind the real data. */
     liveBar?: boolean | number;
+    /** The first-paint reveal: candles draw themselves in, left to right, when they first
+     *  appear. `true` = the default `'settle'` style (an overshoot that eases back);
+     *  `'grow'` = a plain ease-out; `false` = no reveal; an object picks the style and/or
+     *  the `duration` of the whole sweep in ms (default {@link INTRO_DURATION_DEFAULT_MS};
+     *  clamped to {@link INTRO_DURATION_MAX_MS}). Default `true`. */
+    intro?: boolean | IntroStyle | IntroConfig;
 }
 
+/** The first-paint reveal styles: `settle` overshoots and eases back, `grow` eases out. */
+export type IntroStyle = 'settle' | 'grow';
+
+/** Object form of `animations.intro` — style and/or sweep duration (ms). */
+export interface IntroConfig {
+    style?: IntroStyle;
+    duration?: number;
+}
+
+/** A resolved `animations.intro`: `style: false` = no reveal. */
+export interface IntroAnimation {
+    style: IntroStyle | false;
+    duration: number;
+}
+
+// Built-in ease time-constants (ms) — what `true` means for each `animations` entry.
+/** Wheel-zoom glide. */
+export const ZOOM_EASE_DEFAULT_MS = 70;
+/** Inertial-pan velocity decay — short/snappy (the drift is ≈ v₀·τ), not a long coast. */
+export const PAN_INERTIA_DEFAULT_MS = 110;
+/** Scroll-to-latest / `panBy` glide toward its target offset. */
+export const SCROLL_EASE_DEFAULT_MS = 130;
+/** Autoscale glide during a zoom/fling. */
+export const AUTOSCALE_EASE_DEFAULT_MS = 80;
 /** Time-constant (ms) of the live-bar glide when `animations.liveBar` is `true`. */
 export const LIVE_BAR_EASE_DEFAULT_MS = 90;
+/** Whole-sweep duration of the first-paint reveal. */
+export const INTRO_DURATION_DEFAULT_MS = 650;
+/** Upper bound (ms) for any ease time-constant — past this the chart visibly lags its input. */
+export const ANIMATION_EASE_MAX_MS = 1000;
 /** Upper bound (ms) for `animations.liveBar` — past this the candle visibly lags the feed. */
-export const LIVE_BAR_EASE_MAX_MS = 1000;
+export const LIVE_BAR_EASE_MAX_MS = ANIMATION_EASE_MAX_MS;
+/** Upper bound (ms) for the reveal sweep. */
+export const INTRO_DURATION_MAX_MS = 5000;
+
+/** Normalize a `boolean | number` animation entry to an ease time-constant in ms (0 = off):
+ *  `true` ⇒ `defaultMs`, a positive finite number ⇒ itself clamped to `maxMs`, anything
+ *  else (`false`, `0`, negative, NaN, junk) ⇒ 0. */
+export function resolveEaseMs(value: unknown, defaultMs: number, maxMs = ANIMATION_EASE_MAX_MS): number {
+    if (value === true) return defaultMs;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
+    return Math.min(value, maxMs);
+}
 
 /** Normalize an `animations.liveBar` value to an ease time-constant in ms (0 = snap). */
 export function resolveLiveBarEaseMs(value: unknown): number {
-    if (value === true) return LIVE_BAR_EASE_DEFAULT_MS;
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
-    return Math.min(value, LIVE_BAR_EASE_MAX_MS);
+    return resolveEaseMs(value, LIVE_BAR_EASE_DEFAULT_MS, LIVE_BAR_EASE_MAX_MS);
 }
 
-/** Resolve `VelaOptions.animations` to the renderer's per-feature values.
- *  A boolean toggles zoom + pan and leaves the live-bar glide at its default (off) for
- *  `true`; `false` disables everything. An object configures each independently. */
-export function resolveAnimations(animations: boolean | AnimationConfig | undefined): Pick<RendererDisplayOptions, 'animZoom' | 'animPan' | 'animLiveBar'> {
-    if (typeof animations === 'boolean') return { animZoom: animations, animPan: animations, animLiveBar: 0 };
+/** Normalize an `animations.intro` value (also what the renderer's `intro` feature
+ *  accepts): `true` ⇒ the default settle reveal, a style name ⇒ that style at the
+ *  default duration, an object ⇒ its style/duration (missing fields default), and
+ *  anything else (`false`, `'none'`, `'off'`, `null`, `undefined`, junk) ⇒ off — like
+ *  {@link resolveEaseMs}, the "absent = default" rule lives in {@link resolveAnimations}. */
+export function resolveIntro(value: unknown): IntroAnimation {
+    const off: IntroAnimation = { style: false, duration: 0 };
+    if (value === true) return { style: 'settle', duration: INTRO_DURATION_DEFAULT_MS };
+    if (value === 'settle' || value === 'grow') return { style: value, duration: INTRO_DURATION_DEFAULT_MS };
+    if (value && typeof value === 'object') {
+        const o = value as IntroConfig;
+        const d = o.duration;
+        return {
+            style: o.style === 'grow' ? 'grow' : 'settle',
+            duration: typeof d === 'number' && Number.isFinite(d) && d > 0 ? Math.min(d, INTRO_DURATION_MAX_MS) : INTRO_DURATION_DEFAULT_MS,
+        };
+    }
+    return off;
+}
+
+/** The renderer's resolved per-motion animation values (see {@link RendererDisplayOptions}). */
+export type ResolvedAnimations = Pick<RendererDisplayOptions, 'animZoom' | 'animPan' | 'animScroll' | 'animAutoscale' | 'animLiveBar' | 'animIntro'>;
+
+/** Resolve `VelaOptions.animations` to the renderer's per-motion values. `true` (or
+ *  absent) is every motion at its default — the live-bar glide's default is off;
+ *  `false` disables everything, the reveal included. An object configures each on its
+ *  own; `scroll` left unset follows `pan` on/off. */
+export function resolveAnimations(animations: boolean | AnimationConfig | undefined): ResolvedAnimations {
+    if (animations === false) return { animZoom: 0, animPan: 0, animScroll: 0, animAutoscale: 0, animLiveBar: 0, animIntro: { style: false, duration: 0 } };
+    const cfg: AnimationConfig = animations === true || animations == null ? {} : animations;
+    const animPan = resolveEaseMs(cfg.pan ?? true, PAN_INERTIA_DEFAULT_MS);
     return {
-        animZoom: animations?.zoom ?? true,
-        animPan: animations?.pan ?? true,
-        animLiveBar: resolveLiveBarEaseMs(animations?.liveBar),
+        animZoom: resolveEaseMs(cfg.zoom ?? true, ZOOM_EASE_DEFAULT_MS),
+        animPan,
+        animScroll: cfg.scroll === undefined ? (animPan > 0 ? SCROLL_EASE_DEFAULT_MS : 0) : resolveEaseMs(cfg.scroll, SCROLL_EASE_DEFAULT_MS),
+        animAutoscale: resolveEaseMs(cfg.autoscale ?? true, AUTOSCALE_EASE_DEFAULT_MS),
+        animLiveBar: resolveLiveBarEaseMs(cfg.liveBar),
+        animIntro: resolveIntro(cfg.intro ?? true),
     };
 }
 
@@ -213,9 +304,13 @@ export interface RendererDisplayOptions {
     currentPriceLine: boolean;
     logScale: boolean;
     nativeBackend: NativeBackend;
-    animZoom: boolean;
-    animPan: boolean;
+    // Ease time-constants in ms; 0 = that motion is off (instant). See `AnimationConfig`.
+    animZoom: number;
+    animPan: number;
+    animScroll: number;
+    animAutoscale: number;
     animLiveBar: number;
+    animIntro: IntroAnimation;
     glow: number;
     upColor: string;
     downColor: string;

@@ -25,9 +25,20 @@ import type { Pane } from '../../core/model/scene';
 import type { IndicatorModel, PaneAxisBand } from '../../core/model/indicator';
 import type { ScenePatch } from '../../core/model/patch';
 import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
-import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName } from '../../core/options';
-import { resolveLiveBarEaseMs, LIVE_BAR_EASE_DEFAULT_MS } from '../../core/options';
+import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName, IntroAnimation, IntroStyle } from '../../core/options';
+import {
+    resolveEaseMs,
+    resolveLiveBarEaseMs,
+    resolveIntro,
+    ZOOM_EASE_DEFAULT_MS,
+    PAN_INERTIA_DEFAULT_MS,
+    SCROLL_EASE_DEFAULT_MS,
+    AUTOSCALE_EASE_DEFAULT_MS,
+    LIVE_BAR_EASE_DEFAULT_MS,
+    INTRO_DURATION_DEFAULT_MS,
+} from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
+import { SecondClock, type WallClock } from '../../core/util/wall-clock';
 import { isLineLikeSeries } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
@@ -36,7 +47,7 @@ import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
 import { CoordinateSystem, type PaneBounds, type PriceScale } from './core/CoordinateSystem';
 import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from './core/Scheduler';
-import { Animator, easeToward } from './core/Animator';
+import { Animator, EaseSetting, easeToward } from './core/Animator';
 import { InputController } from './core/InputController';
 import { KeyboardController } from './core/KeyboardController';
 import { SceneGraph, paneLogScale, paneScaleMode, paneInvert, type PaneNode, type HighlightArea, type SessionZones, type ScaleMode } from './core/SceneGraph';
@@ -57,6 +68,11 @@ import { formatPriceLabel } from './chrome/ticks';
 import { zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
+import { markGroupVisible, mergeMarksState } from '../shared/marks-state';
+import { effectiveMarkGroups } from './chrome/marks/layout';
+import { MarkPopover } from './chrome/marks/MarkPopover';
+import { MARK_PULSE_MS } from './chrome/marks/paint';
+import type { MarkClickEvent, MarkGroup, TimelineMark } from '../../core/marks/types';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint } from './core/chartConfig';
@@ -99,15 +115,19 @@ const SCROLL_BTN_BOTTOM = TIME_AXIS_H + 14; // px from the plot's bottom edge �
 const SCROLL_BTN_PROXIMITY_PX = 120; // the button reveals only while the cursor is within this radius of its center
 const MIN_VISIBLE_BARS = 2; // never zoom/pan so far that fewer than this many candles stay on screen (the only pan limit)
 const ZOOM_OUT_MARGIN_BARS = 6; // breathing room at max zoom-out: all bars + this margin fill the width (no thin strip)
-// Animation time constants (exponential-approach time-constants, ms).
-const ZOOM_TAU_MS = 70; // wheel-zoom glide
-const SCALE_TAU_MS = 80; // autoscale glide during zoom/fling
-const FLING_TAU_MS = 110; // inertial-pan velocity decay — short/snappy glide (≈ v0·tau drift), not a long drift
-// (The forming-bar glide's time-constant is user-configurable — `animLiveBar`, off by default.)
-const SCROLL_TO_TAU_MS = 130; // scroll-to-latest glide — eases rightOffset back to the latest bars
+// (The animation time-constants — zoom, fling, scroll, autoscale, live-bar glides — are
+// host-configurable through `VelaOptions.animations`; their defaults live in core/options.)
+// After the candle reveal the indicator models fade in over this long (capped at the reveal's own duration).
+const INTRO_MODEL_FADE_MS = 350;
 // Fling ends when on-screen motion drops below this (PIXELS/ms). Kept in pixel units
 // so the stop point is zoom-invariant + agrees with InputController's FLING_MIN_SPEED.
 const FLING_STOP_PX = 0.02;
+const MARK_FLASH_MS = 220; // a content-less mark click's filled flash — the acknowledgement when no popup opens
+
+/** The frame clock (ms) the mark lane's hover pulse and click flash run on. */
+function frameNow(): number {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
 // Price-axis drag sensitivity: the visible price SPAN scales by e^(Δpx·k) — drag down
 // (Δpx>0) expands the span (zoom out), drag up compresses it (zoom in). Kept low so a
 // rescale takes a deliberate, sizeable drag (~2× over ~170px) rather than a twitch.
@@ -180,10 +200,21 @@ export class NativeRenderer implements IChartRenderer {
     private readonly indicatorSlices = new IndicatorDrawingSlices();
     /** Hover tooltips for Pine labels (canvas hit-rects collected by the chrome layer). */
     private labelTooltip: LabelTooltip | null = null;
+    /** The timeline-mark popup (a kit Popover anchored on a lane glyph); null before mount. */
+    private markPopover: MarkPopover | null = null;
+    /** How the fanned mark stack was opened: a hover folds when the pointer leaves, a tap only on a tap elsewhere. */
+    private marksExpandedBy: 'hover' | 'tap' = 'hover';
+    /** The rAF loop keeping the chrome repainting while a lane glyph pulses (hover) or flashes (click); null when idle. */
+    private markPulseRaf: number | null = null;
+    private readonly markClickCbs = new Set<(e: MarkClickEvent) => void>();
     private readonly crosshairLayer = new CrosshairRenderer();
     private scheduler!: Scheduler;
-    /** 1 Hz repaint pump so the price-axis countdown-to-bar-close ticks; null when off. */
-    private countdownTimer: ReturnType<typeof setInterval> | null = null;
+    /** The second pulse the countdown-to-bar-close chip ticks on: the host's (`setWallClock`)
+     *  when one is wired, else the renderer's own second-aligned clock. */
+    private hostClock: WallClock | null = null;
+    private ownClock: SecondClock | null = null;
+    /** Live subscription to the pulse while the countdown is on; null when off. */
+    private countdownUnsub: Unsubscribe | null = null;
     private animator!: Animator;
     private input!: InputController;
     private inputsUI!: InputsUI;
@@ -205,16 +236,19 @@ export class NativeRenderer implements IChartRenderer {
     private historyChordsEnabled = true;
     private liveRegion: HTMLDivElement | null = null;
 
-    // ── animation state (eased zoom + inertial pan + live-bar glide) ──
-    private animZoom = true;
-    private animPan = true;
-    private animLiveBarMs = 0; // forming-bar OHLC glide time-constant; 0 = each tick snaps
-    private animLiveBarOnMs = LIVE_BAR_EASE_DEFAULT_MS; // the duration the settings-dialog on/off toggle restores (last non-zero value configured)
+    // ── animation state: one ease time-constant per motion (0 = off), each remembering the
+    // host's duration so the config's on/off switches restore it (see EaseSetting) ──
+    private readonly animZoom = new EaseSetting(ZOOM_EASE_DEFAULT_MS); // wheel-zoom glide
+    private readonly animPan = new EaseSetting(PAN_INERTIA_DEFAULT_MS); // inertial-pan velocity decay
+    private readonly animScroll = new EaseSetting(SCROLL_EASE_DEFAULT_MS); // scroll-to-latest / panBy glide
+    private readonly animAutoscale = new EaseSetting(AUTOSCALE_EASE_DEFAULT_MS); // autoscale glide during zoom/fling
+    private readonly animLiveBar = new EaseSetting(LIVE_BAR_EASE_DEFAULT_MS, 0); // forming-bar OHLC glide; ships off
     // Brand default candles.
     private candleUp = BULLISH;
     private candleDown = BEARISH;
     // ── intro reveal (plays once when candles first appear) ──
-    private introStyle = 'settle'; // 'grow' | 'settle' | '' (off)
+    private intro: IntroAnimation = { style: 'settle', duration: INTRO_DURATION_DEFAULT_MS };
+    private introOnStyle: IntroStyle = 'settle'; // the style the config's on/off switch restores
     private introPlayed = false;
     private introRaf: number | null = null;
     /** The load affordance (three pulsing dots) — up while the host reports a bar load in
@@ -321,9 +355,12 @@ export class NativeRenderer implements IChartRenderer {
             this.scene.showPriceLine = opts.currentPriceLine;
             this.scene.logScale = opts.logScale;
             this.backendMode = opts.nativeBackend;
-            this.animZoom = opts.animZoom;
-            this.animPan = opts.animPan;
-            this.setLiveBarEase(resolveLiveBarEaseMs(opts.animLiveBar));
+            this.animZoom.set(opts.animZoom);
+            this.animPan.set(opts.animPan);
+            this.animScroll.set(opts.animScroll);
+            this.animAutoscale.set(opts.animAutoscale);
+            this.animLiveBar.set(opts.animLiveBar);
+            this.setIntro(opts.animIntro);
             this.glowAmount = opts.glow;
             this.candleUp = opts.upColor;
             this.candleDown = opts.downColor;
@@ -337,7 +374,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -374,18 +411,28 @@ export class NativeRenderer implements IChartRenderer {
                 if (this.backend && 'glow' in this.backend) (this.backend as unknown as { glow: number }).glow = this.glowAmount;
                 break;
             case 'animZoom':
-                this.animZoom = Boolean(value);
+                this.animZoom.set(resolveEaseMs(value, ZOOM_EASE_DEFAULT_MS));
                 return; // affects the next interaction only — nothing to repaint
-            case 'animPan':
-                this.animPan = Boolean(value);
+            case 'animPan': {
+                // `animPan` is the umbrella for pan motion: it also switches the programmatic
+                // scroll glide on/off (at its own duration); `animScroll` tunes that one alone.
+                const ms = resolveEaseMs(value, PAN_INERTIA_DEFAULT_MS);
+                this.animPan.set(ms);
+                this.animScroll.toggle(ms > 0);
                 return;
+            }
+            case 'animScroll':
+                this.animScroll.set(resolveEaseMs(value, SCROLL_EASE_DEFAULT_MS));
+                return;
+            case 'animAutoscale':
+                this.animAutoscale.set(resolveEaseMs(value, AUTOSCALE_EASE_DEFAULT_MS));
+                return; // a glide in flight finishes at the new rate (or snaps at 0)
             case 'animLiveBar':
-                this.setLiveBarEase(resolveLiveBarEaseMs(value));
+                this.animLiveBar.set(resolveLiveBarEaseMs(value));
                 return; // affects the next tick only; a glide in flight finishes at the new rate (or snaps at 0)
             case 'intro': {
-                const s = value === false || value === 'none' || value === 'off' || value == null ? '' : String(value);
-                this.introStyle = s;
-                if (s) this.playIntro(s); // setting it replays — used to compare styles from the console
+                this.setIntro(resolveIntro(value));
+                if (this.intro.style) this.playIntro(); // setting it replays — used to compare styles from the console
                 return;
             }
             case 'zoomAnchor':
@@ -463,6 +510,11 @@ export class NativeRenderer implements IChartRenderer {
                 // Partial state merge ({ visible?, labels?, qty?, colors? }) — malformed fields drop.
                 this.scene.tradeMarkers = mergeTradeMarkersState(this.scene.tradeMarkers, value);
                 break;
+            case 'marks':
+                // `false`/`true` toggles the lane; `{ visible?, groups? }` merges partially (groups additive).
+                this.scene.marks = mergeMarksState(this.scene.marks, value);
+                this.markPopover?.close(); // the open cluster may just have been hidden
+                break;
             case 'keyboard':
                 this.setKeyboardEnabled(Boolean(value));
                 return; // owns its own DOM (focus/listeners/live region)
@@ -519,10 +571,12 @@ export class NativeRenderer implements IChartRenderer {
             case 'upColor': return this.candleUp;
             case 'downColor': return this.candleDown;
             case 'glow': return this.glowAmount;
-            case 'animZoom': return this.animZoom;
-            case 'animPan': return this.animPan;
-            case 'animLiveBar': return this.animLiveBarMs;
-            case 'intro': return this.introStyle;
+            case 'animZoom': return this.animZoom.tau;
+            case 'animPan': return this.animPan.tau;
+            case 'animScroll': return this.animScroll.tau;
+            case 'animAutoscale': return this.animAutoscale.tau;
+            case 'animLiveBar': return this.animLiveBar.tau;
+            case 'intro': return this.intro.style;
             case 'zoomAnchor': return this.zoomAnchorMode;
             case 'axisDrag': return this.input ? this.input.axisDrag : this.axisDragEnabled;
             case 'paneResize': return this.input ? this.input.paneResize : this.paneResizeEnabled;
@@ -553,6 +607,7 @@ export class NativeRenderer implements IChartRenderer {
                 return price ? this.scene.baselinePriceFor(price.scale) : this.scene.baselineValue;
             }
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
+            case 'marks': return { visible: this.scene.marks.visible, groups: { ...this.scene.marks.groups } };
             case 'keyboard': return this.keyboardEnabled;
             case 'historyChords': return this.historyChordsEnabled;
             case 'settings': return this.settingsEnabled;
@@ -680,7 +735,13 @@ export class NativeRenderer implements IChartRenderer {
                 currentPriceLine: this.scene.showPriceLine,
                 priceLabel: this.scene.showPriceLabel,
                 countdown: this.scene.showCountdown,
-                animateLastPrice: this.animLiveBarMs > 0,
+                animateLastPrice: this.animLiveBar.on,
+            },
+            animations: {
+                zoom: this.animZoom.on,
+                pan: this.animPan.on,
+                autoscale: this.animAutoscale.on,
+                intro: this.intro.style !== false,
             },
             panes: { separatorColor: s.separatorColor ?? t.borderColor },
             trades: {
@@ -692,6 +753,7 @@ export class NativeRenderer implements IChartRenderer {
                 exitColor: this.scene.tradeMarkers.colors.exit,
             },
             timeScale: { timezone: this.scene.timezone },
+            marks: { visible: this.scene.marks.visible, groups: { ...this.scene.marks.groups } },
             candles: {
                 upColor: this.candleUp,
                 downColor: this.candleDown,
@@ -811,7 +873,13 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.showPriceLabel = next.priceScale.priceLabel;
         this.scene.showCountdown = next.priceScale.countdown;
         this.syncCountdownTimer();
-        this.animLiveBarMs = next.priceScale.animateLastPrice ? this.animLiveBarOnMs : 0; // on/off only — the duration is the host's
+        // animations: on/off only — the durations are the host's (EaseSetting remembers them)
+        this.animLiveBar.toggle(next.priceScale.animateLastPrice);
+        this.animZoom.toggle(next.animations.zoom);
+        this.animPan.toggle(next.animations.pan);
+        this.animScroll.toggle(next.animations.pan); // the scroll glide is pan motion too
+        this.animAutoscale.toggle(next.animations.autoscale);
+        this.intro = { style: next.animations.intro ? this.introOnStyle : false, duration: this.intro.duration || INTRO_DURATION_DEFAULT_MS };
         // panes
         s.separatorColor = keepInherit(s.separatorColor, next.panes.separatorColor, prevTheme.borderColor);
         // trade markers
@@ -823,6 +891,8 @@ export class NativeRenderer implements IChartRenderer {
         };
         // time scale
         this.scene.timezone = next.timeScale.timezone;
+        // timeline marks (lane toggle + per-group visibility)
+        this.scene.marks = { visible: next.marks.visible, groups: { ...next.marks.groups } };
         // candles
         this.candleUp = next.candles.upColor;
         this.candleDown = next.candles.downColor;
@@ -983,6 +1053,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
+        this.settingsDialog.setMarkGroups(this.markGroupsInUse(), (id) => markGroupVisible(this.scene.marks, id, this.scene.markGroups));
         this.settingsDialog.setHiddenSettings(this.hiddenSettings);
         this.syncThemeControl();
         this.settingsDialog.toggle(
@@ -1101,10 +1172,10 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     /** Ease rightOffset to `target` at constant zoom (see animTick's scroll glide);
-     *  instant when pan animation is off. Shared by scroll-to-latest and panBy. */
+     *  instant when the scroll glide is off. Shared by scroll-to-latest and panBy. */
     private glideRightOffset(target: number): void {
         const vp = this.coords.getViewport();
-        if (!this.animPan) {
+        if (!this.animScroll.on) {
             this.applyViewport({ barSpacing: vp.barSpacing, rightOffset: target });
             return;
         }
@@ -1173,21 +1244,22 @@ export class NativeRenderer implements IChartRenderer {
      * full size, eased, with a left→right stagger so the chart draws itself; `settle`
      * adds an ease-out-back overshoot. Autoscale stays on the real bars so the frame
      * never moves. Re-callable, so styles can be compared live from the console.
+     * Style and sweep duration come from the resolved `intro` setting.
      */
-    private playIntro(style: string): void {
+    private playIntro(): void {
         if (this.introRaf != null) cancelAnimationFrame(this.introRaf);
         this.introRaf = null;
+        const { style, duration } = this.intro;
         const real = this.bars;
         const n = real.length;
-        if (n === 0) return;
+        if (n === 0 || !style) return;
         // Pin the price scale to the real-data autoscale for the whole reveal.
         this.computeScales();
         for (const pane of this.scene.panes.values()) pane.scale = { ...pane.scaleTarget };
         this.modelAlpha = 0; // indicators stay hidden until the candles finish
-        const DURATION = 650;
         const start = performance.now();
         const step = (now: number): void => {
-            const p = Math.min(1, (now - start) / DURATION);
+            const p = Math.min(1, (now - start) / duration);
             this.scene.bars = p >= 1 ? real : real.map((b, i) => this.revealCandle(b, i, p, n, style));
             this.paintData();
             if (p < 1) {
@@ -1202,10 +1274,10 @@ export class NativeRenderer implements IChartRenderer {
 
     /** After the candle reveal, fade the indicator models (series/fills/…) from hidden to full. */
     private fadeInModels(): void {
-        const FADE = 350;
+        const fade = Math.min(INTRO_MODEL_FADE_MS, this.intro.duration || INTRO_MODEL_FADE_MS);
         const start = performance.now();
         const step = (now: number): void => {
-            this.modelAlpha = Math.min(1, (now - start) / FADE);
+            this.modelAlpha = Math.min(1, (now - start) / fade);
             this.paintData();
             if (this.modelAlpha < 1) {
                 this.introRaf = requestAnimationFrame(step);
@@ -1221,7 +1293,7 @@ export class NativeRenderer implements IChartRenderer {
      * One candle of the reveal: interpolate its body + wick from a flat tick at the open
      * up to full size, staggered left→right. `settle` overshoots past full then eases back.
      */
-    private revealCandle(b: OHLCV, i: number, p: number, n: number, style: string): OHLCV {
+    private revealCandle(b: OHLCV, i: number, p: number, n: number, style: IntroStyle): OHLCV {
         const SPAN = 0.55; // fraction of the timeline the wave takes to cross left→right
         const local = Math.max(0, Math.min(1, (p - (i / Math.max(1, n - 1)) * SPAN) / (1 - SPAN)));
         let t: number;
@@ -1362,7 +1434,8 @@ export class NativeRenderer implements IChartRenderer {
             zoomTo: (target, anchorLogical, anchorX) => this.zoomTo(target, anchorLogical, anchorX),
             fling: (v) => this.fling(v),
             onPointerMove: (x, y) => this.handlePointerMove(x, y),
-            onClick: (x) => {
+            onClick: (x, y) => {
+                if (this.handleMarkClick(x, y)) return; // a lane glyph takes the click whole
                 this.userDrawings?.deselect(); // a click on the empty plot ends a (multi-)selection
                 this.handleClick(x);
             },
@@ -1390,7 +1463,7 @@ export class NativeRenderer implements IChartRenderer {
             drawingsPointerDown: (x, y, snap, shift, mod) => this.userDrawings?.pointerDown(x, y, snap, shift, mod),
             drawingsPointerMove: (x, y, snap, shift, mod) => this.userDrawings?.pointerMove(x, y, snap, shift, mod),
             drawingsPointerUp: (x, y, snap) => this.userDrawings?.pointerUp(x, y, snap),
-            drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? null,
+            drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? (this.chrome.markGlyphAt(x, y) ? 'pointer' : null),
             drawingsDblClick: (x, y) => this.userDrawings?.dblClick(x, y) ?? false,
             drawingsClearTransient: () => this.userDrawings?.clearTransient(),
         });
@@ -1414,8 +1487,19 @@ export class NativeRenderer implements IChartRenderer {
         // The hit-rects are collected by the slice prepainter (drawings paint there now).
         this.labelTooltip = new LabelTooltip(this.plot, {
             theme: () => this.chromeTheme(),
-            lookup: (x, y) => this.indicatorSlices.labelTooltipAt(x, y),
+            lookup: (x, y) => this.indicatorSlices.labelTooltipAt(x, y) ?? this.chrome.markTooltipAt(x, y, this.markGroupsInUse()),
         });
+        // Timeline-mark popup, plus the chrome repaint a lane icon asks for once it has rasterized.
+        this.markPopover = new MarkPopover({
+            plot: this.plot,
+            host: () => this.dialogHost ?? this.plot,
+            theme: () => this.chromeTheme(),
+            onOpenChange: (key) => {
+                this.scene.marksActiveKey = key; // the glyph paints filled while its popup shows
+                this.scheduler?.invalidate(InvalidateLevel.Chrome);
+            },
+        });
+        this.chrome.setMarkIconReady(() => this.scheduler?.invalidate(InvalidateLevel.Chrome));
 
         // User-drawings layer (paints L1.5 plus the interleave layers the geometry backend
         // composites into the series stack, and owns the interaction/settings popup). It
@@ -1661,20 +1745,32 @@ export class NativeRenderer implements IChartRenderer {
         this.syncSize();
     }
 
-    /** Run a 1 Hz repaint pump while the countdown chip is on (so it ticks); stop it otherwise.
-     *  Chrome tier: only the chip's wall-clock text moves — an idle chart must not recompute
+    /** Drive the countdown chip from the host's second pulse (`null` → the renderer's own). */
+    setWallClock(clock: WallClock | null): void {
+        if (clock === this.hostClock) return;
+        this.hostClock = clock;
+        if (this.countdownUnsub != null) {
+            this.countdownUnsub(); // re-subscribe on the new source
+            this.countdownUnsub = null;
+        }
+        this.syncCountdownTimer();
+    }
+
+    /** Subscribe to the second pulse while the countdown chip is on (so it ticks); unsubscribe
+     *  otherwise. Chrome tier: only the chip's text moves — an idle chart must not recompute
      *  scales or repaint the geometry/volume/VPVR/SDK layers once a second (that cost
      *  multiplies by the cell count in a multi-chart workspace). */
     private syncCountdownTimer(): void {
         if (this.scene.showCountdown) {
-            if (this.countdownTimer == null) {
-                this.countdownTimer = setInterval(() => {
+            if (this.countdownUnsub == null) {
+                const clock = this.hostClock ?? (this.ownClock ??= new SecondClock());
+                this.countdownUnsub = clock.onTick(() => {
                     if (this.scene.showCountdown && this.scene.bars.length > 0) this.scheduler?.invalidate(InvalidateLevel.Chrome);
-                }, 1000);
+                });
             }
-        } else if (this.countdownTimer != null) {
-            clearInterval(this.countdownTimer);
-            this.countdownTimer = null;
+        } else if (this.countdownUnsub != null) {
+            this.countdownUnsub();
+            this.countdownUnsub = null;
         }
     }
 
@@ -1682,7 +1778,7 @@ export class NativeRenderer implements IChartRenderer {
         if (this.introRaf != null) cancelAnimationFrame(this.introRaf);
         this.loadingEl?.remove();
         this.loadingEl = null;
-        if (this.countdownTimer != null) { clearInterval(this.countdownTimer); this.countdownTimer = null; }
+        if (this.countdownUnsub != null) { this.countdownUnsub(); this.countdownUnsub = null; }
         this.scheduler?.destroy();
         this.animator?.stop();
         this.input?.detach();
@@ -1706,6 +1802,11 @@ export class NativeRenderer implements IChartRenderer {
         this.plot?.removeEventListener('pointerleave', this.onScrollProximityLeave);
         this.labelTooltip?.destroy();
         this.labelTooltip = null;
+        this.markPopover?.destroy();
+        this.markPopover = null;
+        this.chrome.setMarkIconReady(null);
+        if (this.markPulseRaf !== null) cancelAnimationFrame(this.markPulseRaf);
+        this.markPulseRaf = null;
         this.scrollButton?.remove();
         this.scrollButton = null;
         for (const l of this.extLayers) l.instance.destroy?.();
@@ -1786,8 +1887,8 @@ export class NativeRenderer implements IChartRenderer {
         }
         if (!this.introPlayed && this.bars.length > 0) {
             this.introPlayed = true; // play the reveal once, when candles first appear
-            if (this.introStyle) {
-                this.playIntro(this.introStyle); // the reveal owns the paint — no full-frame flash first
+            if (this.intro.style) {
+                this.playIntro(); // the reveal owns the paint — no full-frame flash first
                 return;
             }
         }
@@ -1799,7 +1900,7 @@ export class NativeRenderer implements IChartRenderer {
         const last = this.bars[n - 1];
         if (last && bar.time === last.time) {
             this.bars[n - 1] = bar; // actual forming bar — the ease target
-            if (this.animLiveBarMs <= 0 || this.liveEaseTime !== bar.time) {
+            if (!this.animLiveBar.on || this.liveEaseTime !== bar.time) {
                 this.syncLiveEase(bar); // glide off, or the first tick of this bar: snap
             } else {
                 this.animator.start(); // glide the displayed high/low/close toward this tick
@@ -1818,11 +1919,11 @@ export class NativeRenderer implements IChartRenderer {
         this.scheduler.invalidate(InvalidateLevel.Full);
     }
 
-    /** Set the live-bar glide duration (0 = off). A non-zero value is also remembered as
-     *  what the config's on/off toggle (`priceScale.animateLastPrice`) switches back on to. */
-    private setLiveBarEase(ms: number): void {
-        this.animLiveBarMs = ms;
-        if (ms > 0) this.animLiveBarOnMs = ms;
+    /** Set the reveal (style + duration). A non-off style is also remembered as what the
+     *  config's on/off toggle (`animations.intro`) switches back on to. */
+    private setIntro(next: IntroAnimation): void {
+        this.intro = next;
+        if (next.style) this.introOnStyle = next.style;
     }
 
     /** Snap the eased forming-bar state to `bar` — no glide (a fresh bar or the first tick of one). */
@@ -1838,7 +1939,7 @@ export class NativeRenderer implements IChartRenderer {
         const target = this.bars[this.bars.length - 1];
         if (!target || this.liveEaseTime !== target.time) return false;
         const eps = Math.max(1e-9, Math.abs(target.close) * 1e-6);
-        const tau = this.animLiveBarMs; // 0 ⇒ easeToward returns the target (a mid-glide switch-off snaps)
+        const tau = this.animLiveBar.tau; // 0 ⇒ easeToward returns the target (a mid-glide switch-off snaps)
         const nh = easeToward(this.liveEaseHigh, target.high, dtMs, tau);
         const nl = easeToward(this.liveEaseLow, target.low, dtMs, tau);
         const nc = easeToward(this.liveEaseClose, target.close, dtMs, tau);
@@ -2002,11 +2103,14 @@ export class NativeRenderer implements IChartRenderer {
         if (model.native && this.extLayers.some((l) => l.def.id === model.native!.type)) this.scene.assignIndicatorZTop(model.id);
         else this.scene.assignIndicatorZ(model.id);
         // The legend chip, the settings dialog and the object tree's rows all show the compact
-        // shorttitle when declared; the full title stays on the picker and inspect().
-        this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
-            native: !!model.native,
-            ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
-        });
+        // shorttitle when declared; the full title stays on the picker and inspect(). A
+        // `legend: false` native gets none of it — the scene model still mounts and paints.
+        if (model.legend !== false) {
+            this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
+                native: !!model.native,
+                ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
+            });
+        }
         if (model.native?.type === 'volume') {
             this.volumeActive = true; // the volume layer follows the indicator's presence
             this.volumeHidden = false;
@@ -2178,7 +2282,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     listSettingsIds(): string[] {
-        return settingsIdCatalog(this.hostSettingsSections);
+        return settingsIdCatalog(this.hostSettingsSections, this.markGroupsInUse());
     }
 
     onChartTypeSettingsChange(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe {
@@ -2209,6 +2313,25 @@ export class NativeRenderer implements IChartRenderer {
     onAxisLongPress(cb: (e: AxisLongPressEvent) => void): Unsubscribe {
         this.axisLongPressCbs.add(cb);
         return () => this.axisLongPressCbs.delete(cb);
+    }
+
+    // ── timeline marks (the `chart.marks` model; see the port) ──
+    setTimelineMarks(marks: readonly TimelineMark[], groups: readonly MarkGroup[]): void {
+        this.scene.timelineMarks = marks;
+        this.scene.markGroups = groups;
+        this.scene.marksExpandedStack = null;
+        this.markPopover?.close(); // the open cluster may no longer exist (a market switch replaced the set)
+        this.scheduler?.invalidate(InvalidateLevel.Chrome);
+    }
+
+    onMarkClick(cb: (e: MarkClickEvent) => void): Unsubscribe {
+        this.markClickCbs.add(cb);
+        return () => this.markClickCbs.delete(cb);
+    }
+
+    /** Every group the lane knows: the defined ones, then those marks name without a definition. */
+    private markGroupsInUse(): MarkGroup[] {
+        return effectiveMarkGroups(this.scene.timelineMarks, this.scene.markGroups);
     }
 
     onViewportChange(cb: (range: VisibleRange) => void): Unsubscribe {
@@ -2273,7 +2396,7 @@ export class NativeRenderer implements IChartRenderer {
         this.zoomAnchorX = anchorX;
         this.panVelocity = 0;
         this.scrollTargetRO = null;
-        if (!this.animZoom) {
+        if (!this.animZoom.on) {
             const v = this.clampViewport(barSpacing, this.anchoredRightOffset(barSpacing));
             this.coords.setViewport(v);
             this.targetBarSpacing = v.barSpacing;
@@ -2287,7 +2410,7 @@ export class NativeRenderer implements IChartRenderer {
 
     /** Inertial pan: continue with a rightOffset velocity (logical units / ms) that decays. */
     private fling(velocity: number): void {
-        if (!this.animPan) return; // pan animation off → drag-release stops dead
+        if (!this.animPan.on) return; // pan animation off → drag-release stops dead
         this.scrollTargetRO = null; // a fresh flick cancels an in-flight scroll-to-latest glide
         this.panVelocity = velocity;
         this.animator.start();
@@ -2340,7 +2463,7 @@ export class NativeRenderer implements IChartRenderer {
 
         const tbs = this.targetBarSpacing;
         if (Math.abs(barSpacing - tbs) > tbs * 1e-3) {
-            barSpacing = clampBarSpacing(easeToward(barSpacing, tbs, dtMs, ZOOM_TAU_MS));
+            barSpacing = clampBarSpacing(easeToward(barSpacing, tbs, dtMs, this.animZoom.tau));
             rightOffset = this.anchoredRightOffset(barSpacing);
             active = true;
         } else if (barSpacing !== tbs) {
@@ -2351,7 +2474,8 @@ export class NativeRenderer implements IChartRenderer {
         const stopVel = FLING_STOP_PX / Math.max(1e-6, barSpacing * this.coords.spacingScale); // zoom-invariant stop point
         if (Math.abs(this.panVelocity) > stopVel) {
             rightOffset += this.panVelocity * dtMs;
-            this.panVelocity *= Math.exp(-dtMs / FLING_TAU_MS);
+            const tau = this.animPan.tau; // 0 (switched off mid-fling) ⇒ the glide ends this frame
+            this.panVelocity = tau > 0 ? this.panVelocity * Math.exp(-dtMs / tau) : 0;
             if (Math.abs(this.panVelocity) <= stopVel) this.panVelocity = 0;
             else active = true;
         }
@@ -2359,7 +2483,7 @@ export class NativeRenderer implements IChartRenderer {
         // Scroll-to-latest glide: ease rightOffset toward the target margin at constant zoom.
         if (this.scrollTargetRO != null) {
             const target = this.scrollTargetRO;
-            const next = easeToward(rightOffset, target, dtMs, SCROLL_TO_TAU_MS);
+            const next = easeToward(rightOffset, target, dtMs, this.animScroll.tau);
             if (Math.abs(next - target) < 1e-3) {
                 rightOffset = target;
                 this.scrollTargetRO = null;
@@ -2394,6 +2518,7 @@ export class NativeRenderer implements IChartRenderer {
      *  through Math.log), not a non-linear jump. */
     private easeScales(dtMs: number): boolean {
         let moving = false;
+        const tau = this.animAutoscale.tau; // 0 ⇒ every window snaps to its target this frame
         for (const pane of this.scene.panes.values()) {
             const t = pane.scaleTarget;
             const s = pane.scale;
@@ -2401,8 +2526,8 @@ export class NativeRenderer implements IChartRenderer {
                 const lt0 = Math.log(t.min);
                 const lt1 = Math.log(t.max);
                 const lspan = Math.max(1e-9, Math.abs(lt1 - lt0));
-                const n0 = easeToward(Math.log(s.min), lt0, dtMs, SCALE_TAU_MS);
-                const n1 = easeToward(Math.log(s.max), lt1, dtMs, SCALE_TAU_MS);
+                const n0 = easeToward(Math.log(s.min), lt0, dtMs, tau);
+                const n1 = easeToward(Math.log(s.max), lt1, dtMs, tau);
                 if (Math.abs(n0 - lt0) <= lspan * 1e-3 && Math.abs(n1 - lt1) <= lspan * 1e-3) {
                     pane.scale = { min: t.min, max: t.max, log: true };
                 } else {
@@ -2412,8 +2537,8 @@ export class NativeRenderer implements IChartRenderer {
                 continue;
             }
             const span = Math.max(1e-9, Math.abs(t.max - t.min));
-            let nmin = easeToward(s.min, t.min, dtMs, SCALE_TAU_MS);
-            let nmax = easeToward(s.max, t.max, dtMs, SCALE_TAU_MS);
+            let nmin = easeToward(s.min, t.min, dtMs, tau);
+            let nmax = easeToward(s.max, t.max, dtMs, tau);
             if (Math.abs(nmin - t.min) <= span * 1e-3 && Math.abs(nmax - t.max) <= span * 1e-3) {
                 nmin = t.min;
                 nmax = t.max;
@@ -2427,8 +2552,8 @@ export class NativeRenderer implements IChartRenderer {
             const t = sl.scaleTarget;
             const s = sl.scale;
             const span = Math.max(1e-9, Math.abs(t.max - t.min));
-            let nmin = easeToward(s.min, t.min, dtMs, SCALE_TAU_MS);
-            let nmax = easeToward(s.max, t.max, dtMs, SCALE_TAU_MS);
+            let nmin = easeToward(s.min, t.min, dtMs, tau);
+            let nmax = easeToward(s.max, t.max, dtMs, tau);
             if (Math.abs(nmin - t.min) <= span * 1e-3 && Math.abs(nmax - t.max) <= span * 1e-3) {
                 nmin = t.min;
                 nmax = t.max;
@@ -2451,6 +2576,9 @@ export class NativeRenderer implements IChartRenderer {
             this.scene.crosshair = null;
             this.hoverSeparatorY = null;
             this.lastPointer = null;
+            // A touch release also lands here (no resting pointer): a fan a tap opened must survive it.
+            if (this.marksExpandedBy === 'hover') this.setMarksExpanded(null);
+            this.setMarkHover(null);
             this.scheduler.invalidate(InvalidateLevel.Cursor);
             this.hoverLogical = null; // off the plot ⇒ the readout falls back to the latest bar
             const empty: CrosshairEvent = { time: null, price: null, paneKind: null, values: new Map(), ohlc: null };
@@ -2465,6 +2593,9 @@ export class NativeRenderer implements IChartRenderer {
         this.hoverSeparatorY = x >= 0 && y >= 0 && y <= this.coords.height ? this.separatorHoverY(y) : null;
         // Cursor tier: repaint only the crosshair overlay, not the data layer.
         this.scheduler.invalidate(InvalidateLevel.Cursor);
+        // A multi-group mark stack fans out while the pointer is over it (or over the gaps of its fan).
+        this.setMarksExpanded(inData ? this.chrome.markStackAt(x, y) : null);
+        this.setMarkHover(inData ? (this.chrome.markGlyphAt(x, y)?.cluster.key ?? null) : null);
 
         // Only report a time/value when the cursor is over a real bar (not the
         // right-offset whitespace) — matches LWC emitting null off any data point.
@@ -2499,6 +2630,82 @@ export class NativeRenderer implements IChartRenderer {
         const logical = Math.round(this.coords.xToLogical(x));
         const onBar = logical >= 0 && logical < this.coords.barCount;
         for (const cb of this.clickCbs) cb({ time: onBar ? this.coords.logicalToTime(logical) : null, price: null });
+    }
+
+    /**
+     * Fan out (or collapse, with null) a multi-group mark stack; repaints the chrome tier when
+     * it changes. A stack whose glyph holds the open popup stays fanned — the pointer leaving
+     * the plot for the popup must not bury the glyph under the deck (which would close it).
+     */
+    private setMarksExpanded(stack: number | null, by: 'hover' | 'tap' = 'hover'): void {
+        if (this.scene.marksExpandedStack === stack) return;
+        if (stack === null && this.markPopover?.key) {
+            const open = this.chrome.markGlyphByKey(this.markPopover.key);
+            if (open && open.stack === this.scene.marksExpandedStack) return;
+        }
+        this.scene.marksExpandedStack = stack;
+        this.marksExpandedBy = by;
+        this.scheduler?.invalidate(InvalidateLevel.Chrome);
+    }
+
+    /**
+     * A click on the mark lane: a collapsed deck fans out (the touch path — a mouse already
+     * fanned it by hovering), a glyph reports its cluster (`onMarkClick`) and opens the popup
+     * when any of its marks carries content. True when the click landed on the lane.
+     */
+    private handleMarkClick(x: number, y: number): boolean {
+        const glyph = this.chrome.markGlyphAt(x, y);
+        if (!glyph) {
+            if (this.scene.marksExpandedStack !== null && this.chrome.markStackAt(x, y) === null) this.setMarksExpanded(null);
+            return false;
+        }
+        if (glyph.decked) {
+            this.setMarksExpanded(glyph.stack, 'tap');
+            return true;
+        }
+        const marks = glyph.cluster.marks;
+        const first = marks[0]!;
+        const event: MarkClickEvent = { id: first.id, ids: marks.map((m) => m.id), time: first.time, ...(glyph.cluster.group !== undefined ? { group: glyph.cluster.group } : {}) };
+        for (const cb of this.markClickCbs) cb(event);
+        if (marks.some((m) => m.content !== undefined)) {
+            this.markPopover?.open(glyph.cluster, { x: glyph.x, y: glyph.y, size: glyph.size });
+        } else {
+            // Nothing to open — a brief filled flash acknowledges the click all the same.
+            this.scene.marksFlash = { key: glyph.cluster.key, until: frameNow() + MARK_FLASH_MS };
+            this.syncMarkPulse();
+        }
+        return true;
+    }
+
+    /** After a chrome frame: keep the open mark popup on its glyph, or close it once the glyph is gone. */
+    private trackMarkPopover(): void {
+        const key = this.markPopover?.key;
+        if (!key) return;
+        const g = this.chrome.markGlyphByKey(key);
+        this.markPopover!.track(g && !(g.decked && g.depth !== 0) ? { x: g.x, y: g.y, size: g.size } : null);
+    }
+
+    /** The lane glyph under the pointer — it swells once as the pointer lands (a rAF-driven chrome repaint for the pulse's duration). */
+    private setMarkHover(key: string | null): void {
+        if (this.scene.marksHoverKey === key) return;
+        this.scene.marksHoverKey = key;
+        this.scene.marksHoverSince = frameNow();
+        this.scheduler?.invalidate(InvalidateLevel.Chrome);
+        this.syncMarkPulse();
+    }
+
+    /** Run a chrome-tier repaint loop while a glyph's hover pulse or click flash plays; it stops itself once both are over. */
+    private syncMarkPulse(): void {
+        if (this.markPulseRaf !== null || typeof requestAnimationFrame !== 'function') return;
+        const tick = (): void => {
+            this.markPulseRaf = null;
+            const now = frameNow();
+            if (this.scene.marksFlash && this.scene.marksFlash.until <= now) this.scene.marksFlash = null;
+            this.scheduler?.invalidate(InvalidateLevel.Chrome);
+            const pulsing = this.scene.marksHoverKey !== null && now - this.scene.marksHoverSince < MARK_PULSE_MS;
+            if (pulsing || this.scene.marksFlash !== null) this.markPulseRaf = requestAnimationFrame(tick);
+        };
+        this.markPulseRaf = requestAnimationFrame(tick);
     }
 
     private paneAtY(y: number): { scale: { min: number; max: number }; bounds: { top: number; height: number } } | null {
@@ -2951,6 +3158,7 @@ export class NativeRenderer implements IChartRenderer {
             // re-wires the drawing resolvers (three closures over live refs — cheap).
             this.chrome.prepare(this.scene, this.coords, this.theme);
             this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
+            this.trackMarkPopover();
         }
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx()); // L2 crosshair
         // Hover-testing SDK layers (repaintOnCursor) follow pointer moves too — each owns
@@ -2971,7 +3179,7 @@ export class NativeRenderer implements IChartRenderer {
             const lp = this.layerPane(l.def.id) ?? pane;
             if (lp.collapsed) continue; // blanked by the data frame; nothing to hover
             l.instance.render(this.extLayerArgs(l.def.id, lp.scale, lp.bounds, nowMs));
-            if (this.animZoom && l.instance.animating?.()) this.animator.start();
+            if (this.animZoom.on && l.instance.animating?.()) this.animator.start();
         }
     }
 
@@ -3054,7 +3262,7 @@ export class NativeRenderer implements IChartRenderer {
                 // sits over the candles it would be dimming.
                 if (lp === pane) folded = foldBaseModulation(folded, l.instance.modulateBase?.(args) ?? null);
                 // A pulsing/fading layer keeps the animator alive; it stops itself when done.
-                if (this.animZoom && l.instance.animating?.()) this.animator.start();
+                if (this.animZoom.on && l.instance.animating?.()) this.animator.start();
             }
             if (folded) {
                 if (folded.candleBodyScale != null) this.backend.candleBodyScale = clamp01(folded.candleBodyScale) || 0.01;
@@ -3080,6 +3288,7 @@ export class NativeRenderer implements IChartRenderer {
         this.backdropRenderer.render(this.scene, this.coords, this.theme, gridAlpha); // L-2, under every layer canvas
         this.backend.render(this.scene, this.coords, this.theme);
         this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
+        this.trackMarkPopover();
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair
 
         if (easeLive && liveActual) this.bars[li] = liveActual; // restore the true forming bar
@@ -3693,7 +3902,8 @@ export class NativeRenderer implements IChartRenderer {
         const map = new Map<string, string | null>();
         for (const pane of this.scene.panes.values()) {
             if (!pane.collapsed) continue;
-            const models = this.scene.orderedIndicatorsForPane(pane.id);
+            // Only models with a legend row can front a collapsed strip.
+            const models = this.scene.orderedIndicatorsForPane(pane.id).filter((m) => m.legend !== false);
             const merged = new Set(this.scene.ownScaleIndicatorsForPane(pane.id).map((m) => m.id));
             const master = models.find((m) => !merged.has(m.id)) ?? models[0];
             map.set(pane.id, master?.id ?? null);

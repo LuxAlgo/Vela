@@ -51,6 +51,20 @@ describe('placePopover', () => {
         expect(pos.top).toBe(140);
     });
 
+    it('centers on the trigger when align is center', () => {
+        const pos = placePopover({
+            trigger,
+            pop: { width: 80, height: 40 },
+            gap: 4,
+            align: 'center',
+            clamp: viewportRect(800, 600, 6),
+            originX: 0,
+            originY: 0,
+        });
+        expect(pos.left).toBe(110); // 100 + 100/2 - 80/2
+        expect(pos.top).toBe(138);
+    });
+
     it('flips above when it would leave the clamp', () => {
         const pos = placePopover({
             trigger: { left: 100, top: 500, right: 200, bottom: 534, width: 100, height: 34 },

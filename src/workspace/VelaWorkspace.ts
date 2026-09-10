@@ -21,6 +21,7 @@ import { Menu } from '../ui/components/menu';
 import type { Vela } from '../Vela';
 import { Topbar, priceStyleLabel, priceStyleIcon } from '../widget/topbar';
 import { Bottombar, RANGE_PRESETS } from '../widget/bottombar';
+import { SecondClock } from '../core/util/wall-clock';
 import { ObjectTree } from '../widget/object-tree';
 import { DataWindow } from '../widget/data-window';
 import type { ScriptRun } from '../core/script-run';
@@ -257,6 +258,9 @@ export class VelaWorkspace {
     private readonly events = new TypedEventBus<WorkspaceEventMap>();
     private readonly feed = new MultiProviderFeed();
     private readonly cellsById = new Map<string, ChartCell>();
+    /** The one second pulse behind every time display: the bottom-bar clock and each
+     *  cell's countdown chip subscribe to it, so they can never read different seconds. */
+    private readonly clock = new SecondClock();
     private readonly pool = new Map<string, PooledCellState>();
     private readonly trackSizes = new Map<string, TrackSizes>(); // per layout id (splitter drags)
     private readonly splitters: SplitterLayer;
@@ -638,6 +642,7 @@ export class VelaWorkspace {
             opts.bottombar !== false
                 ? new Bottombar(this.root, {
                       timezone: this.timezone,
+                      clock: this.clock,
                       onRange: (preset) => {
                           this.active.applyRange(preset);
                           this.bottombar?.setActiveRange(preset.id);
@@ -1179,6 +1184,8 @@ export class VelaWorkspace {
         const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
         const paneMax = cell ? cell.chart.panes.list().some((p) => p.maximized) : false;
         this.mobileBar.setMaximizeActive(this.maximizedId != null || paneMax);
+        // Same gate as the per-cell controls: a one-chart layout has nothing to isolate.
+        this.mobileBar.setMaximizeVisible(this.def.cells.length > 1);
     }
 
     /**
@@ -1515,6 +1522,9 @@ export class VelaWorkspace {
             // A fresh renderer starts desktop — push the live mode so touch gestures,
             // fullscreen dialogs and the scroll-button sizing apply from the first frame.
             cell.chart.renderer.setLayoutMode(this.layoutCtl.current);
+            // The bottom-bar clock is authoritative: the cell's countdown chip ticks on the
+            // same pulse, never on a renderer-private timer that could read another second.
+            cell.chart.renderer.setWallClock(this.clock);
             cell.setControlsSuspended(this.layoutCtl.current === 'mobile');
             // The shared star set is a workspace pref — every newborn cell inherits it
             // silently (equal-set idempotence keeps the favorites event from echoing).

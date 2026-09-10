@@ -228,6 +228,18 @@ export interface ChartConfig {
          *  `animLiveBar` feature; this is only the on/off switch the settings dialog shows. */
         animateLastPrice: boolean;
     };
+    /** Motion on/off switches (the settings dialog's Animation group). On/off only — each
+     *  motion's duration stays what the host configured (`animations` option / renderer
+     *  features); switching one back on restores that duration. `pan` covers both the
+     *  drag-release inertia and the programmatic scroll glide. The live-bar glide's switch
+     *  is `priceScale.animateLastPrice` (it predates this block). */
+    animations: {
+        zoom: boolean;
+        pan: boolean;
+        autoscale: boolean;
+        /** The first-paint candle reveal — takes effect on the next load. */
+        intro: boolean;
+    };
     /** Stacked-pane chrome — the draggable line between an indicator's pane and the one above it. */
     panes: {
         separatorColor: string;
@@ -245,6 +257,12 @@ export interface ChartConfig {
     };
     timeScale: {
         timezone: string;
+    };
+    /** Timeline marks (the `marks` feature): the lane's master toggle + per-group visibility
+     *  (the Events tab's checkboxes). `groups` merges additively, like `stacking.series`. */
+    marks: {
+        visible: boolean;
+        groups: Record<string, boolean>;
     };
     /** Per-chart-type settings (plugin SDK sections), keyed by type id then row key. */
     chartTypes: Record<string, Record<string, unknown>>;
@@ -527,9 +545,12 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const gh = asObject(grid.horzLines);
     const cross = asObject(p.crosshair);
     const ps = asObject(p.priceScale);
+    const anim = asObject(p.animations);
     const panes = asObject(p.panes);
     const trades = asObject(p.trades);
     const ts = asObject(p.timeScale);
+    const marks = asObject(p.marks);
+    const markGroups = asObject(marks.groups);
     const candles = asObject(p.candles);
     const bars = asObject(p.bars);
     const line = asObject(p.line);
@@ -577,6 +598,12 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             countdown: isBool(ps.countdown) ? ps.countdown : base.priceScale.countdown,
             animateLastPrice: isBool(ps.animateLastPrice) ? ps.animateLastPrice : base.priceScale.animateLastPrice,
         },
+        animations: {
+            zoom: isBool(anim.zoom) ? anim.zoom : base.animations.zoom,
+            pan: isBool(anim.pan) ? anim.pan : base.animations.pan,
+            autoscale: isBool(anim.autoscale) ? anim.autoscale : base.animations.autoscale,
+            intro: isBool(anim.intro) ? anim.intro : base.animations.intro,
+        },
         panes: {
             separatorColor: isColor(panes.separatorColor) ? panes.separatorColor : base.panes.separatorColor,
         },
@@ -590,6 +617,15 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
         },
         timeScale: {
             timezone: typeof ts.timezone === 'string' && ts.timezone ? ts.timezone : base.timeScale.timezone,
+        },
+        marks: {
+            visible: isBool(marks.visible) ? marks.visible : base.marks.visible,
+            // Additive like `stacking.series`: a patch names only the groups it carries, so a
+            // choice stored for a group the host has not registered yet survives verbatim.
+            groups: {
+                ...base.marks.groups,
+                ...Object.fromEntries(Object.entries(markGroups).filter(([, v]) => isBool(v)) as Array<[string, boolean]>),
+            },
         },
         candles: {
             upColor: isColor(candles.upColor) ? candles.upColor : base.candles.upColor,

@@ -27,6 +27,16 @@ export function settingsIdSlug(label: string): string {
         .replace(/^-+|-+$/g, '');
 }
 
+/** The Events tab — timeline-mark visibility; present once marks name groups. */
+export const MARKS_SETTINGS_ID = 'events';
+/** Its "Visible events" section: one checkbox per mark group (the id names the groups, not the label). */
+export const MARKS_GROUPS_SETTINGS_ID = 'events.groups';
+
+/** A mark group's settings-row id (`events.groups.<group-id>`, the id kebab-cased). */
+export function markGroupSettingsId(groupId: string): string {
+    return `${MARKS_GROUPS_SETTINGS_ID}.${settingsIdSlug(groupId)}`;
+}
+
 /** True when `id` — or any of its dot-path ancestors — is in the hidden set. */
 export function settingsIdHidden(id: string, hidden: ReadonlySet<string>): boolean {
     if (hidden.size === 0) return false;
@@ -173,7 +183,11 @@ export const BUILTIN_SETTINGS_IDS: readonly string[] = [
     'symbol.style.baseline.base-level',
     'symbol.style.baseline.width',
     'symbol.animation',
+    'symbol.animation.zoom',
+    'symbol.animation.pan',
+    'symbol.animation.autoscale',
     'symbol.animation.price-changes',
+    'symbol.animation.intro',
     'symbol.timezone',
     'scales',
     'scales.price-scale',
@@ -203,12 +217,19 @@ export const BUILTIN_SETTINGS_IDS: readonly string[] = [
 /**
  * Every addressable setting id of a chart instance: the built-ins, the registered
  * chart types' sections (rows enumerated across flat rows, instances, and
- * subsections), and the given host sections. The discovery surface behind
+ * subsections), the given host sections, and the timeline-mark groups (the Events tab,
+ * present once marks name groups). The discovery surface behind
  * `chart.renderer.listSettingsIds()` — hosts enumerate this instead of reading
  * contributor source.
  */
-export function settingsIdCatalog(hostSections: readonly HostSectionIdSource[]): string[] {
+export function settingsIdCatalog(hostSections: readonly HostSectionIdSource[], markGroups: readonly { id: string }[] = []): string[] {
     const ids = new Set<string>(BUILTIN_SETTINGS_IDS);
+    // Dynamic rows — one per mark group — so they enumerate here, not in the static list.
+    if (markGroups.length > 0) {
+        ids.add(MARKS_SETTINGS_ID);
+        ids.add(MARKS_GROUPS_SETTINGS_ID);
+        for (const g of markGroups) ids.add(markGroupSettingsId(g.id));
+    }
     for (const def of chartTypes()) {
         // A plugin style painting its own candles gets the per-style cosmetics group
         // in the Symbol tab (settings section or not) — same row set as the built-in.

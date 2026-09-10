@@ -41,6 +41,7 @@ const CSS = `
     font-weight: 600;
     -webkit-tap-highlight-color: transparent;
 }
+.vela-mb-item[hidden] { display: none !important; }
 .vela-mb-item:active { background: var(--vela-hover); }
 .vela-mb-item .vela-icon { font-size: 18px; width: 18px; height: 18px; }
 /* A lit stop (the maximize toggle while something is isolated): the inverse
@@ -170,6 +171,13 @@ export class MobileBar {
         this.maxEl.classList.toggle('vela-mb-on', on);
         this.maxEl.setAttribute('aria-label', on ? 'Restore layout' : 'Maximize chart');
         this.maxEl.replaceChildren(iconEl(on ? 'restore' : 'maximize', this.el.ownerDocument));
+    }
+
+    /** Show the maximize stop only while the grid holds more than one chart — on a
+     *  one-cell layout there is nothing to isolate, so the stop would be a dead press. */
+    setMaximizeVisible(visible: boolean): void {
+        if (!this.maxEl) return;
+        this.maxEl.hidden = !visible;
     }
 
     destroy(): void {

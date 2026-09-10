@@ -246,6 +246,7 @@ Subscribe with `chart.on(event, handler)`; every subscription returns an unsubsc
 | `bar` | the bar (OHLCV) | A live tick — the forming bar updated or a new bar appended. |
 | `viewport:changed` | `{ from, to }` (epoch-ms) | The visible time range moved (pan/zoom/fit) — fires per applied change, not debounced. The seam viewport-sync links between charts build on. |
 | `theme:changed` | the resolved theme object | The app theme changed — `setTheme(...)` or the in-chart settings dialog (Canvas → Theme). Host chrome around the chart (toolbars, panels, page shells) re-skins from the payload. Plot-only cosmetic edits (a `layout.background` set through the config) do **not** fire it. |
+| `mark:click` | `{ id, ids, time, group? }` | A [timeline mark](#chartmarks--the-timeline-marks-control-surface) glyph was clicked — `ids` lists every mark under it (several marks of one group on one bar fold into a cluster), `id`/`time` its first. Fires before the popup opens; a mark without content opens none, so this is where a host shows its own UI. |
 | `alert` | engine alert | A script raised an alert. |
 | `warning` | engine warning | A script raised a warning. |
 
@@ -273,6 +274,7 @@ chart is never left half-changed.
 | `setExternalCrosshair(time, price?)` | Show (or clear, with `null`) a **ghost crosshair** at a data-space position driven from OUTSIDE this chart — the multi-chart crosshair-sync seam ([the workspace](./workspace.md) drives it from the linked cells' pointers). A ghost never re-emits `onCrosshairMove` (one-way by contract — no echo loops). Silent no-op on a renderer without the optional port seam; feature-detect with `supportsExternalCrosshair`. |
 | `set('dialogHost', el)` | Where the renderer mounts its MODAL dialogs (chart settings, indicator settings). Multi-chart shells pass their root element so dialogs center over the whole grid instead of clipping inside one cell — the workspace does this automatically for every cell. Runtime-only; never part of the config template. |
 | `supportsExternalCrosshair` (getter) | Whether the active renderer implements the optional `setExternalCrosshair` seam (the native renderer does). |
+| `setWallClock(clock)` | Drive the renderer's time-of-day chrome (the price-axis countdown to bar close) from the host's own second pulse — a `WallClock` (`SecondClock` is the exported second-aligned implementation) — so it ticks in step with a host clock display instead of on a separate timer that can read a different second. `null` hands the pulse back to the renderer. [The workspace](./workspace.md) does this for every cell with its bottom-bar clock. Silent no-op on a renderer without time-of-day chrome. |
 | `focus()` | Move keyboard focus back onto the chart's interactive surface — call after a host control (e.g. a shared toolbar button) stole focus, so chart/drawing shortcuts keep working. Silent no-op on a renderer without a focusable surface. |
 
 Feature-detect, read, and change how the chart is drawn at runtime — with no indicator re-run:
@@ -371,6 +373,89 @@ Drawing lifecycle is also surfaced as chart events (`drawing:created` / `drawing
 primary `id` plus `ids`, every member of a multi-selection), and the tool/mode state as
 `drawing:tool` / `drawing:snap` / `drawing:stay` / `drawing:mode` — the seam an external toolbar mirrors. See
 [Drawing tools](./drawing-tools.md) for the tool catalogue, toolbar UX, and keyboard shortcuts.
+
+---
+
+## `chart.marks` — the timeline-marks control surface
+
+Host events pinned to a moment in time — dividends, splits, earnings, releases — shown as small
+colored **glyphs on a lane just above the time axis**, each opening a **popup** on click. The model
+is core-owned, so every method works on any renderer; on one without the `timelineMarks`
+capability nothing paints (`supported` reports it). Marks are **data, not user state**: the chart
+never persists them — re-supply them on `market:changed`. What *is* saved with the chart's config
+is each group's visibility (the checkboxes on the chart settings' **Events** tab, which
+appears once marks name groups). The [Timeline marks](./timeline-marks.md) guide walks through
+the whole surface with examples.
+
+| Member | Description |
+|---|---|
+| `supported` | Whether the active renderer paints timeline marks. |
+| `add(mark)` | Add one mark; an existing id is replaced in place. Chainable. |
+| `set(marks)` | Replace the whole set (a market switch). |
+| `remove(id)` · `clear()` | Drop one mark, or all of them. |
+| `all()` | Every mark, in insertion order. |
+| `defineGroup({ id, label, visible? })` | Name a visibility group: the label of its checkbox in settings and its default visibility. A mark may name a group that was never defined — it then shows its capitalized id. |
+| `groups()` | The defined groups, in definition order. |
+| `setGroupVisible(id, visible?)` · `isGroupVisible(id)` | The same switch as the settings checkbox; the choice is persisted with the chart's config. On a renderer without the `marks` feature the setter warns and no-ops. |
+
+A mark is `{ id, time, glyph, title?, tooltip?, group?, content? }`:
+
+- **`time`** is epoch-ms, but the glyph never sits at that exact pixel: it centers on **the bar whose
+  span contains the time**. A time in a gap (a weekend, a closed session) goes to the first bar that
+  follows; one past the newest bar projects onto the extrapolated grid in the right whitespace. Change
+  timeframe and the marks re-snap.
+- **`glyph`** is a colored token — `{ shape?, color, letter? }` (`'circle'` · `'square'` · `'diamond'` ·
+  `'pin'`, one or two characters in auto-contrasted ink) or `{ shape?, color, icon }` with an id from the
+  icon registry (`registerIcon` from `vela/ui`). Icons travel as ids, never inline markup, so a mark
+  payload can come from data.
+- **`content`** is what the popup shows under `title`: `{ text }` (escaped), `{ html }` (sanitized
+  through an allowlist — scripts, styles, frames, event handlers and `javascript:` URLs never reach the
+  page; links open in a new tab), or `{ panel: { items } }` — rows of `text`, `field` (label/value)
+  and `button` (`run`, optional `primary`, `close`). Pass a **function** (sync or async) instead and
+  it resolves when the popup needs it — details fetched on click, one entry at a time as the user
+  scrolls. Without `content` a click only emits `mark:click`.
+- **`group`** folds marks of one kind that land on the same bar into **one slightly larger glyph**
+  listing them all (earliest first); marks of *different* groups on one bar **stack** — a small deck
+  that fans out on hover (or a tap on touch) so each can be opened.
+
+```js
+import { registerIcon, svg16 } from '@luxalgo/vela/ui';
+
+registerIcon('myco.split', svg16('<path d="M8 2v12M3 5l5-3 5 3M3 11l5 3 5-3"/>'));
+
+chart.marks
+    .defineGroup({ id: 'dividends', label: 'Dividends' })
+    .defineGroup({ id: 'splits', label: 'Splits' })
+    .add({
+        id: 'div-2024-06-11',
+        time: Date.UTC(2024, 5, 11),
+        title: 'Dividends',
+        group: 'dividends',
+        glyph: { shape: 'circle', color: '#2962ff', letter: 'D' },
+        tooltip: 'Dividend · $0.01',
+        content: {
+            panel: {
+                items: [
+                    { type: 'field', label: 'Ex-dividend date', value: "Tue 11 Jun '24" },
+                    { type: 'field', label: 'Amount', value: '0.01' },
+                    { type: 'button', label: 'More NVDA dividends', primary: true, run: () => openDividends('NVDA') },
+                ],
+            },
+        },
+    })
+    .add({
+        id: 'split-2024-06-10',
+        time: Date.UTC(2024, 5, 10),
+        title: 'Stock split',
+        group: 'splits',
+        glyph: { icon: 'myco.split', color: '#ff9800' },
+        content: async () => ({ html: await fetchSplitDetails('NVDA') }),
+    });
+
+chart.on('mark:click', ({ id, ids, time }) => { /* ids = every mark under the clicked glyph */ });
+chart.on('market:changed', ({ symbol }) => chart.marks.set(marksFor(symbol)));
+chart.renderer.set('marks', false); // hide the whole lane (`{ groups: { splits: false } }` hides one group)
+```
 
 ---
 

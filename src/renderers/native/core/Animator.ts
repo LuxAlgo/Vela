@@ -59,6 +59,44 @@ export class Animator {
     };
 }
 
+/**
+ * One configurable ease time-constant (ms; 0 = the motion is off). Remembers the last
+ * non-zero value so a plain on/off switch (the settings dialog, the rich config's
+ * booleans) turns the motion back on at the host's duration, not a built-in default.
+ */
+export class EaseSetting {
+    private ms: number;
+    private onMs: number;
+
+    /** `defaultMs` is what the on/off switch restores when nothing else was configured;
+     *  `initialMs` (default: `defaultMs`) is the starting value — 0 for a motion that
+     *  ships off. */
+    constructor(defaultMs: number, initialMs = defaultMs) {
+        this.onMs = defaultMs;
+        this.ms = initialMs;
+    }
+
+    /** The active time-constant; 0 when off. */
+    get tau(): number {
+        return this.ms;
+    }
+
+    get on(): boolean {
+        return this.ms > 0;
+    }
+
+    /** Set the time-constant (0 = off). A non-zero value becomes what `toggle(true)` restores. */
+    set(ms: number): void {
+        this.ms = ms;
+        if (ms > 0) this.onMs = ms;
+    }
+
+    /** On/off only — the duration stays the last one configured. */
+    toggle(on: boolean): void {
+        this.ms = on ? this.onMs : 0;
+    }
+}
+
 /** Frame-rate-independent exponential approach of `current` toward `target`. */
 export function easeToward(current: number, target: number, dtMs: number, tauMs: number): number {
     if (tauMs <= 0) return target;

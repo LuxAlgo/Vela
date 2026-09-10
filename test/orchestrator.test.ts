@@ -452,6 +452,34 @@ describe('EngineOrchestrator', () => {
         expect(renderer.mountedModels.filter((m) => m.id === ind.id).length).toBeGreaterThan(mountsBefore);
     });
 
+    it('an indicator ADDED hidden still mounts a dimmed legend row; showing runs + paints it', async () => {
+        // The restored-hidden gap: a ledger/ext entry re-adds its indicator and hides it
+        // before anything mounts. Without a row the indicator was invisible AND
+        // unreachable — the legend eye that unhides it never existed.
+        const renderer = new FakeRenderer();
+        const engine = new MockEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('//@version=5\nindicator("Ghost", overlay=true)\nplot(close)');
+        ind.setVisible(false); // hidden before prepare/execute — the restore ordering
+        await chart.ready();
+        await flush();
+
+        // The row exists (one placeholder mount), marked hidden, with NO computed output —
+        // and the indicator announced so host UIs (object tree) can list it.
+        const rows = renderer.mountedModels.filter((m) => m.id === ind.id);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.series).toHaveLength(0);
+        expect(renderer.indicatorVisible.get(ind.id)).toBe(false);
+        expect(engine.runCount[ind.id] ?? 0).toBe(0); // hidden ⇒ never executed
+
+        // The eye click shows it: the session starts and the computed model remounts.
+        renderer.fireToggleVisible(ind.id, true);
+        await flush();
+        expect(renderer.indicatorVisible.get(ind.id)).toBe(true);
+        const computed = renderer.mountedModels.filter((m) => m.id === ind.id && m.series.length > 0);
+        expect(computed.length).toBeGreaterThan(0);
+    });
+
     it('a hidden indicator does not re-run on viewport changes (resource suspension); the legend eye toggles it', async () => {
         const renderer = new FakeRenderer();
         const engine = new MockEngine();
@@ -2417,5 +2445,62 @@ describe('EngineOrchestrator — force_overlay routing', () => {
         // forced series + background + table + one of each drawing kind (line, box, label, polyline, linefill)
         expect(summary.forcedOverlay).toBe(8);
         chart.destroy();
+    });
+});
+
+describe('native indicators — legend: false (host-owned chrome)', () => {
+    const legendless: NativeIndicatorDescriptor = {
+        ...testNativeDescriptor,
+        type: 'test-native-legendless',
+        title: 'Host markers',
+        legend: false,
+        create: () => new TestNativeIndicator(),
+    };
+    afterEach(() => unregisterNativeIndicator(legendless.type));
+
+    async function makeChart(): Promise<{ chart: Vela; renderer: FakeRenderer }> {
+        registerNativeIndicator(legendless);
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        await flush();
+        return { chart, renderer };
+    }
+
+    it('paints its output but mounts with no legend row and no pane listing', async () => {
+        const { chart, renderer } = await makeChart();
+        const handle = chart.addNativeIndicator(legendless.type);
+        await flush();
+        const model = renderer.mountedModels.find((m) => m.id === handle.id);
+        expect(model).toBeDefined();
+        expect(model!.legend).toBe(false); // the renderer skips the legend row on this flag
+        expect(model!.series).toHaveLength(1); // the output still reaches the scene
+        expect(chart.panes.list().flatMap((p) => p.indicators.map((i) => i.id))).not.toContain(handle.id);
+    });
+
+    it('the host still controls it through its handle', async () => {
+        const { chart, renderer } = await makeChart();
+        const handle = chart.addNativeIndicator(legendless.type);
+        await flush();
+        handle.setVisible(false);
+        await flush();
+        expect(renderer.indicatorVisible.get(handle.id)).toBe(false);
+        handle.remove();
+        await flush();
+        expect(renderer.removed).toContain(handle.id);
+        expect(chart.inspect().indicators.some((s) => s.id === handle.id)).toBe(false);
+    });
+
+    it('an ordinary native keeps its legend row and pane listing', async () => {
+        const { chart, renderer } = await makeChart();
+        registerNativeIndicator(testNativeDescriptor);
+        try {
+            const handle = chart.addNativeIndicator(testNativeDescriptor.type);
+            await flush();
+            expect(renderer.mountedModels.find((m) => m.id === handle.id)!.legend).toBeUndefined();
+            expect(chart.panes.list().flatMap((p) => p.indicators.map((i) => i.id))).toContain(handle.id);
+        } finally {
+            unregisterNativeIndicator(testNativeDescriptor.type);
+        }
     });
 });

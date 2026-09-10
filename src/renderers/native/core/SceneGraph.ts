@@ -7,6 +7,8 @@ import type { PriceStyle } from '../../../core/options';
 import type { PriceScale, PaneBounds } from './CoordinateSystem';
 import { type CandlePaintOverride, type ChartStyle, defaultChartStyle } from './chartConfig';
 import { defaultTradeMarkersState, type TradeMarkersState } from '../../shared/trade-markers';
+import { defaultMarksState, type MarksDisplayState } from '../../shared/marks-state';
+import type { MarkGroup, TimelineMark } from '../../../core/marks/types';
 
 /** A user-defined shaded time band spanning the full plot height (all panes) — the
  *  generic primitive behind session highlighting (weekends, pre/regular/post). Unlike
@@ -188,6 +190,20 @@ export class SceneGraph {
     /** Strategy trade-marker display (the `tradeMarkers` feature): master toggle, the
      *  two text lines, and the palette. Trade markers always paint on the price pane. */
     tradeMarkers: TradeMarkersState = defaultTradeMarkersState();
+    /** Timeline-mark display (the `marks` feature): the lane's master toggle + per-group visibility. */
+    marks: MarksDisplayState = defaultMarksState();
+    /** The host's timeline marks + group definitions (`setTimelineMarks`), painted on the lane above the time axis. */
+    timelineMarks: readonly TimelineMark[] = [];
+    markGroups: readonly MarkGroup[] = [];
+    /** The mark stack (bar index) fanned out by hover or tap, if any. */
+    marksExpandedStack: number | null = null;
+    /** The lane glyph (cluster key) under the pointer — it pulses — and when the hover began (frame-clock ms). */
+    marksHoverKey: string | null = null;
+    marksHoverSince = 0;
+    /** The cluster whose popup is open: its glyph paints filled ("active"). */
+    marksActiveKey: string | null = null;
+    /** A content-less click's brief filled flash — the cluster key and the frame-clock time it ends. */
+    marksFlash: { key: string; until: number } | null = null;
     /** Renderer-owned shaded time bands (session highlighting), behind grid + data. */
     highlights: HighlightArea[] = [];
     /** Pre/post-market bands pushed by the host (`sessionZones` feature); null ⇒ no sessions. */

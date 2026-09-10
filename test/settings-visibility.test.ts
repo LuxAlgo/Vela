@@ -7,6 +7,7 @@ import {
     filterHiddenRows,
     hostRowId,
     hostSectionId,
+    markGroupSettingsId,
     settingsIdCatalog,
     settingsIdHidden,
     settingsIdSlug,
@@ -146,6 +147,16 @@ describe('settingsIdCatalog', () => {
         expect(ids).toContain('type:viz-test.ovl');
         expect(ids).toContain('advanced');
         expect(ids).toContain('advanced.bars');
+    });
+
+    it('lists the Events tab and one row per timeline-mark group — only while groups exist', () => {
+        expect(settingsIdCatalog([])).not.toContain('events');
+        const ids = settingsIdCatalog([], [{ id: 'dividends' }, { id: 'stock splits' }]);
+        expect(ids).toContain('events');
+        expect(ids).toContain('events.groups');
+        expect(ids).toContain('events.groups.dividends');
+        expect(ids).toContain('events.groups.stock-splits');
+        expect(markGroupSettingsId('Stock Splits')).toBe('events.groups.stock-splits');
     });
 
     it('built-in ids are unique and rows nest under their tab', () => {

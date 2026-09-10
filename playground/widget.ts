@@ -16,6 +16,7 @@
 // …which is exactly what the addon's own playground does (repos/Vela-pinets, port 5192).
 import { VelaWorkspace } from '../src/workspace';
 import { BinanceProvider } from '../src/data/providers/binance';
+import { addSampleMarks } from './marks';
 import { DemoEngine, DEMO_SCRIPTS } from './demo-engine';
 import { playgroundStorage } from './persistence';
 
@@ -86,6 +87,10 @@ const ws = new VelaWorkspace('#chart', {
 });
 
 void ws.chart.ready().then(() => console.log('[vela-dev] chart ready'));
+
+// Sample timeline marks (chart.marks) — see marks.ts: a cluster, a fanning stack, a custom
+// icon with details loaded on click… spread over the visible range once the chart painted.
+void ws.chart.ready().then(() => addSampleMarks(ws.chart));
 
 // The page shell follows the app theme — flip it from chart settings → Canvas → Theme
 // (or `ws.setTheme('light')` in the console) and the body around the chart follows.
