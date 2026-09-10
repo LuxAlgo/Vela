@@ -31,9 +31,14 @@ describe('drawings/SchiffPitchfork', () => {
 
     it('starts the median at the PRICE-shifted origin (not the Andrews pivot)', () => {
         const d = make();
-        // S = (10, mean(60,80)=70) → px (10,30); the Andrews median would instead pass through px(10,40)
+        // S = (10, mean(60,80)=70) → px (10,30); the Andrews median px(10,40)→px(30,50) passes (20,45)
         expect(d.hitTest(10, 30, proj, 2)).toBe(true);
-        expect(d.hitTest(10, 40, proj, 2)).toBe(false);
+        expect(d.hitTest(20, 45, proj, 2)).toBe(false);
+    });
+
+    it('keeps the pivot attached with a pivot → first tine construction line', () => {
+        // px(10,40) → px(30,20) passes (15,35); the shifted median (10,30)→(30,50) does not
+        expect(make().hitTest(15, 35, proj, 2)).toBe(true);
     });
 
     it('reports the anchor price span + round-trips', () => {
@@ -53,6 +58,11 @@ describe('drawings/ModifiedSchiffPitchfork', () => {
         // S = (mean(10,30)=20, mean(60,80)=70) → px (20,30)
         expect(d.hitTest(20, 30, proj, 2)).toBe(true);
         expect(d.hitTest(20, 40, proj, 2)).toBe(false);
+    });
+
+    it('keeps the pivot attached with a pivot → first tine construction line', () => {
+        // px(10,40) → px(30,20) passes (15,35); the shifted median starts at (20,30)
+        expect(make().hitTest(15, 35, proj, 2)).toBe(true);
     });
 
     it('round-trips through serialize', () => {

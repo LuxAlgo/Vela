@@ -9,7 +9,8 @@ import { SegmentDrawing } from './SegmentDrawing';
  * Shared base for the Schiff pitchfork family. Identical to an Andrews' pitchfork —
  * median through M = midpoint(p2, p3), tines through p2/p3 parallel to it, base line
  * p2–p3 — except the median STARTS at a shifted origin S (computed in data space by
- * each subclass) instead of the pivot p1. The tines track the new median direction.
+ * each subclass) instead of the pivot p1. The tines track the new median direction, and a
+ * construction line p1–p2 keeps the pivot attached to the shape.
  */
 export abstract class PitchforkVariant extends SegmentDrawing {
     anchorSchema(): { min: number; max: number; slots: AnchorSlot[] } {
@@ -35,17 +36,14 @@ export abstract class PitchforkVariant extends SegmentDrawing {
             const y = proj.yOf(p.price, this.paneId);
             return y == null ? null : [proj.xOf(p.time), y];
         };
-        const c = this.anchors[2];
-        if (!c) {
-            // Placing: the shifted origin needs all three anchors, so preview the pivot → cursor line.
-            const P0 = px(a);
-            const P1 = px(b);
-            return P0 && P1 ? { segments: [[P0[0], P0[1], P1[0], P1[1]]], fill: null } : null;
-        }
-        const S = px(this.medianStart(a, b, c));
+        const P0 = px(a);
         const P1 = px(b);
+        if (!P0 || !P1) return null;
+        const c = this.anchors[2];
+        if (!c) return { segments: [[P0[0], P0[1], P1[0], P1[1]]], fill: null }; // pivot → cursor only (placing)
+        const S = px(this.medianStart(a, b, c));
         const P2 = px(c);
-        if (!S || !P1 || !P2) return null;
+        if (!S || !P2) return null;
         const mx = (P1[0] + P2[0]) / 2;
         const my = (P1[1] + P2[1]) / 2; // median target = midpoint of the tine anchors
         const dx = mx - S[0];
@@ -58,6 +56,9 @@ export abstract class PitchforkVariant extends SegmentDrawing {
                 extendRay(P1[0], P1[1], P1[0] + dx, P1[1] + dy, 'right', w, h), // upper tine
                 extendRay(P2[0], P2[1], P2[0] + dx, P2[1] + dy, 'right', w, h), // lower tine
                 [P1[0], P1[1], P2[0], P2[1]], // base line
+                // The median leaves from the shifted origin, not the pivot — without this construction
+                // line the pivot handle would float unattached to the shape it defines.
+                [P0[0], P0[1], P1[0], P1[1]], // pivot → first tine anchor
             ],
             fill: null,
         };
