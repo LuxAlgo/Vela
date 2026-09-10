@@ -28,16 +28,18 @@ export class Pitchfork extends SegmentDrawing {
     geometry(proj: Projector): SegmentGeometry | null {
         const a = this.anchors[0];
         const b = this.anchors[1];
-        const c = this.anchors[2];
-        if (!a || !b || !c) return null;
+        if (!a || !b) return null;
         const px = (p: DrawingPoint): [number, number] | null => {
             const y = proj.yOf(p.price, this.paneId);
             return y == null ? null : [proj.xOf(p.time), y];
         };
         const P0 = px(a);
         const P1 = px(b);
+        if (!P0 || !P1) return null;
+        const c = this.anchors[2];
+        if (!c) return { segments: [[P0[0], P0[1], P1[0], P1[1]]], fill: null }; // pivot → cursor only (placing)
         const P2 = px(c);
-        if (!P0 || !P1 || !P2) return null;
+        if (!P2) return null;
         const mx = (P1[0] + P2[0]) / 2;
         const my = (P1[1] + P2[1]) / 2; // midpoint of the two tine anchors
         const dx = mx - P0[0];

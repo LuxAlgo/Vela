@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDrawing, deserializeDrawing, type Projector } from '../src/core/drawings';
+import { createDrawing, deserializeDrawing, type Projector, type SegmentDrawing } from '../src/core/drawings';
 
 /** Linear projector: x = time, y = 100 − price, single pane 'price', 200×100 plot. */
 function fakeProjector(): Projector {
@@ -80,6 +80,27 @@ describe('drawings/InsidePitchfork', () => {
         const a = make().serialize();
         expect(deserializeDrawing(a)!.serialize()).toEqual(a);
         expect(a.type).toBe('insidepitchfork');
+    });
+});
+
+describe('drawings/pitchfork family · placing preview', () => {
+    const proj = fakeProjector();
+    const types = ['pitchfork', 'schiffpitchfork', 'modifiedschiffpitchfork', 'insidepitchfork'] as const;
+
+    // While placing, the ghost carries the pivot + the cursor. Two anchors must already show
+    // the pivot → cursor line, or the first click leaves nothing on the chart until the second.
+    it.each(types)('%s draws the pivot → cursor line with only two anchors', (type) => {
+        const d = createDrawing(type, { paneId: 'price', anchors: [forkAnchors[0]!, forkAnchors[1]!] }) as SegmentDrawing;
+        const g = d.geometry(proj);
+        expect(g).not.toBeNull();
+        expect(g!.segments).toEqual([[10, 40, 30, 20]]); // px(10,60)→px(10,40), px(30,80)→px(30,20)
+        expect(g!.fill).toBeNull();
+        expect(d.hitTest(20, 30, proj, 2)).toBe(true); // midpoint of the pivot → cursor line
+    });
+
+    it.each(types)('%s still draws nothing with a single anchor', (type) => {
+        const d = createDrawing(type, { paneId: 'price', anchors: [forkAnchors[0]!] }) as SegmentDrawing;
+        expect(d.geometry(proj)).toBeNull();
     });
 });
 

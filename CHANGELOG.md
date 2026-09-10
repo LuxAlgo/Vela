@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Three-point tools preview their first line right away.** The pitchfork family
+  (Andrews', Schiff, modified Schiff, inside) and the triangle now draw a line from the
+  first placed point to the cursor as soon as the first click lands, instead of showing
+  only the anchor markers until the second point is placed.
+
 ## [v0.7.0]
 
 ### Added

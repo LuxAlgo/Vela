@@ -30,12 +30,18 @@ export abstract class PitchforkVariant extends SegmentDrawing {
     geometry(proj: Projector): SegmentGeometry | null {
         const a = this.anchors[0];
         const b = this.anchors[1];
-        const c = this.anchors[2];
-        if (!a || !b || !c) return null;
+        if (!a || !b) return null;
         const px = (p: DrawingPoint): [number, number] | null => {
             const y = proj.yOf(p.price, this.paneId);
             return y == null ? null : [proj.xOf(p.time), y];
         };
+        const c = this.anchors[2];
+        if (!c) {
+            // Placing: the shifted origin needs all three anchors, so preview the pivot → cursor line.
+            const P0 = px(a);
+            const P1 = px(b);
+            return P0 && P1 ? { segments: [[P0[0], P0[1], P1[0], P1[1]]], fill: null } : null;
+        }
         const S = px(this.medianStart(a, b, c));
         const P1 = px(b);
         const P2 = px(c);
