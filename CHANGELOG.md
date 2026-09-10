@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Timeline mark popups now toggle with a click.** Clicking the mark whose popup is
+  open closes it; previously that second click closed and immediately reopened the popup,
+  so it took a click elsewhere to dismiss it.
+
 ## [v0.7.0]
 
 ### Added
