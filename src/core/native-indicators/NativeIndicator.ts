@@ -103,6 +103,15 @@ export interface NativeIndicatorDescriptor {
     /** Marks the type as beta — surfaced in the catalog so a host "add indicator" UI can badge it. */
     readonly beta?: boolean;
     /**
+     * Whether instances get in-chart chrome. Absent ⇒ a legend row like any indicator.
+     * `false` ⇒ the output paints, but there is NO legend row (no title chip, no eye/gear/✕,
+     * uncounted by the fold chip) and `panes.list()` does not report it — for host-owned
+     * overlays (trade markers, event flags) whose on/off lives in the host's own UI. Distinct
+     * from hidden: a legend-less indicator still computes and paints; the host controls it
+     * through its handle.
+     */
+    readonly legend?: boolean;
+    /**
      * Allow several instances of this type on one chart — every add creates a new one (a study
      * like a moving average is typically stacked at different lengths). Absent ⇒ SINGLE instance
      * per type: a second add returns the existing handle. A type that pushes a bespoke layer

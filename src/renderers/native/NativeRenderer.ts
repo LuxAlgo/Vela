@@ -68,6 +68,11 @@ import { formatPriceLabel } from './chrome/ticks';
 import { zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
+import { markGroupVisible, mergeMarksState } from '../shared/marks-state';
+import { effectiveMarkGroups } from './chrome/marks/layout';
+import { MarkPopover } from './chrome/marks/MarkPopover';
+import { MARK_PULSE_MS } from './chrome/marks/paint';
+import type { MarkClickEvent, MarkGroup, TimelineMark } from '../../core/marks/types';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint } from './core/chartConfig';
@@ -117,6 +122,12 @@ const INTRO_MODEL_FADE_MS = 350;
 // Fling ends when on-screen motion drops below this (PIXELS/ms). Kept in pixel units
 // so the stop point is zoom-invariant + agrees with InputController's FLING_MIN_SPEED.
 const FLING_STOP_PX = 0.02;
+const MARK_FLASH_MS = 220; // a content-less mark click's filled flash — the acknowledgement when no popup opens
+
+/** The frame clock (ms) the mark lane's hover pulse and click flash run on. */
+function frameNow(): number {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
 // Price-axis drag sensitivity: the visible price SPAN scales by e^(Δpx·k) — drag down
 // (Δpx>0) expands the span (zoom out), drag up compresses it (zoom in). Kept low so a
 // rescale takes a deliberate, sizeable drag (~2× over ~170px) rather than a twitch.
@@ -189,6 +200,13 @@ export class NativeRenderer implements IChartRenderer {
     private readonly indicatorSlices = new IndicatorDrawingSlices();
     /** Hover tooltips for Pine labels (canvas hit-rects collected by the chrome layer). */
     private labelTooltip: LabelTooltip | null = null;
+    /** The timeline-mark popup (a kit Popover anchored on a lane glyph); null before mount. */
+    private markPopover: MarkPopover | null = null;
+    /** How the fanned mark stack was opened: a hover folds when the pointer leaves, a tap only on a tap elsewhere. */
+    private marksExpandedBy: 'hover' | 'tap' = 'hover';
+    /** The rAF loop keeping the chrome repainting while a lane glyph pulses (hover) or flashes (click); null when idle. */
+    private markPulseRaf: number | null = null;
+    private readonly markClickCbs = new Set<(e: MarkClickEvent) => void>();
     private readonly crosshairLayer = new CrosshairRenderer();
     private scheduler!: Scheduler;
     /** The second pulse the countdown-to-bar-close chip ticks on: the host's (`setWallClock`)
@@ -356,7 +374,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'indicatorTitles', 'indicatorValues'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -492,6 +510,11 @@ export class NativeRenderer implements IChartRenderer {
                 // Partial state merge ({ visible?, labels?, qty?, colors? }) — malformed fields drop.
                 this.scene.tradeMarkers = mergeTradeMarkersState(this.scene.tradeMarkers, value);
                 break;
+            case 'marks':
+                // `false`/`true` toggles the lane; `{ visible?, groups? }` merges partially (groups additive).
+                this.scene.marks = mergeMarksState(this.scene.marks, value);
+                this.markPopover?.close(); // the open cluster may just have been hidden
+                break;
             case 'keyboard':
                 this.setKeyboardEnabled(Boolean(value));
                 return; // owns its own DOM (focus/listeners/live region)
@@ -584,6 +607,7 @@ export class NativeRenderer implements IChartRenderer {
                 return price ? this.scene.baselinePriceFor(price.scale) : this.scene.baselineValue;
             }
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
+            case 'marks': return { visible: this.scene.marks.visible, groups: { ...this.scene.marks.groups } };
             case 'keyboard': return this.keyboardEnabled;
             case 'historyChords': return this.historyChordsEnabled;
             case 'settings': return this.settingsEnabled;
@@ -729,6 +753,7 @@ export class NativeRenderer implements IChartRenderer {
                 exitColor: this.scene.tradeMarkers.colors.exit,
             },
             timeScale: { timezone: this.scene.timezone },
+            marks: { visible: this.scene.marks.visible, groups: { ...this.scene.marks.groups } },
             candles: {
                 upColor: this.candleUp,
                 downColor: this.candleDown,
@@ -866,6 +891,8 @@ export class NativeRenderer implements IChartRenderer {
         };
         // time scale
         this.scene.timezone = next.timeScale.timezone;
+        // timeline marks (lane toggle + per-group visibility)
+        this.scene.marks = { visible: next.marks.visible, groups: { ...next.marks.groups } };
         // candles
         this.candleUp = next.candles.upColor;
         this.candleDown = next.candles.downColor;
@@ -1026,6 +1053,7 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
+        this.settingsDialog.setMarkGroups(this.markGroupsInUse(), (id) => markGroupVisible(this.scene.marks, id, this.scene.markGroups));
         this.settingsDialog.setHiddenSettings(this.hiddenSettings);
         this.syncThemeControl();
         this.settingsDialog.toggle(
@@ -1406,7 +1434,8 @@ export class NativeRenderer implements IChartRenderer {
             zoomTo: (target, anchorLogical, anchorX) => this.zoomTo(target, anchorLogical, anchorX),
             fling: (v) => this.fling(v),
             onPointerMove: (x, y) => this.handlePointerMove(x, y),
-            onClick: (x) => {
+            onClick: (x, y) => {
+                if (this.handleMarkClick(x, y)) return; // a lane glyph takes the click whole
                 this.userDrawings?.deselect(); // a click on the empty plot ends a (multi-)selection
                 this.handleClick(x);
             },
@@ -1434,7 +1463,7 @@ export class NativeRenderer implements IChartRenderer {
             drawingsPointerDown: (x, y, snap, shift, mod) => this.userDrawings?.pointerDown(x, y, snap, shift, mod),
             drawingsPointerMove: (x, y, snap, shift, mod) => this.userDrawings?.pointerMove(x, y, snap, shift, mod),
             drawingsPointerUp: (x, y, snap) => this.userDrawings?.pointerUp(x, y, snap),
-            drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? null,
+            drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? (this.chrome.markGlyphAt(x, y) ? 'pointer' : null),
             drawingsDblClick: (x, y) => this.userDrawings?.dblClick(x, y) ?? false,
             drawingsClearTransient: () => this.userDrawings?.clearTransient(),
         });
@@ -1458,8 +1487,19 @@ export class NativeRenderer implements IChartRenderer {
         // The hit-rects are collected by the slice prepainter (drawings paint there now).
         this.labelTooltip = new LabelTooltip(this.plot, {
             theme: () => this.chromeTheme(),
-            lookup: (x, y) => this.indicatorSlices.labelTooltipAt(x, y),
+            lookup: (x, y) => this.indicatorSlices.labelTooltipAt(x, y) ?? this.chrome.markTooltipAt(x, y, this.markGroupsInUse()),
         });
+        // Timeline-mark popup, plus the chrome repaint a lane icon asks for once it has rasterized.
+        this.markPopover = new MarkPopover({
+            plot: this.plot,
+            host: () => this.dialogHost ?? this.plot,
+            theme: () => this.chromeTheme(),
+            onOpenChange: (key) => {
+                this.scene.marksActiveKey = key; // the glyph paints filled while its popup shows
+                this.scheduler?.invalidate(InvalidateLevel.Chrome);
+            },
+        });
+        this.chrome.setMarkIconReady(() => this.scheduler?.invalidate(InvalidateLevel.Chrome));
 
         // User-drawings layer (paints L1.5 plus the interleave layers the geometry backend
         // composites into the series stack, and owns the interaction/settings popup). It
@@ -1762,6 +1802,11 @@ export class NativeRenderer implements IChartRenderer {
         this.plot?.removeEventListener('pointerleave', this.onScrollProximityLeave);
         this.labelTooltip?.destroy();
         this.labelTooltip = null;
+        this.markPopover?.destroy();
+        this.markPopover = null;
+        this.chrome.setMarkIconReady(null);
+        if (this.markPulseRaf !== null) cancelAnimationFrame(this.markPulseRaf);
+        this.markPulseRaf = null;
         this.scrollButton?.remove();
         this.scrollButton = null;
         for (const l of this.extLayers) l.instance.destroy?.();
@@ -2058,11 +2103,14 @@ export class NativeRenderer implements IChartRenderer {
         if (model.native && this.extLayers.some((l) => l.def.id === model.native!.type)) this.scene.assignIndicatorZTop(model.id);
         else this.scene.assignIndicatorZ(model.id);
         // The legend chip, the settings dialog and the object tree's rows all show the compact
-        // shorttitle when declared; the full title stays on the picker and inspect().
-        this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
-            native: !!model.native,
-            ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
-        });
+        // shorttitle when declared; the full title stays on the picker and inspect(). A
+        // `legend: false` native gets none of it — the scene model still mounts and paints.
+        if (model.legend !== false) {
+            this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
+                native: !!model.native,
+                ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
+            });
+        }
         if (model.native?.type === 'volume') {
             this.volumeActive = true; // the volume layer follows the indicator's presence
             this.volumeHidden = false;
@@ -2234,7 +2282,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     listSettingsIds(): string[] {
-        return settingsIdCatalog(this.hostSettingsSections);
+        return settingsIdCatalog(this.hostSettingsSections, this.markGroupsInUse());
     }
 
     onChartTypeSettingsChange(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe {
@@ -2265,6 +2313,25 @@ export class NativeRenderer implements IChartRenderer {
     onAxisLongPress(cb: (e: AxisLongPressEvent) => void): Unsubscribe {
         this.axisLongPressCbs.add(cb);
         return () => this.axisLongPressCbs.delete(cb);
+    }
+
+    // ── timeline marks (the `chart.marks` model; see the port) ──
+    setTimelineMarks(marks: readonly TimelineMark[], groups: readonly MarkGroup[]): void {
+        this.scene.timelineMarks = marks;
+        this.scene.markGroups = groups;
+        this.scene.marksExpandedStack = null;
+        this.markPopover?.close(); // the open cluster may no longer exist (a market switch replaced the set)
+        this.scheduler?.invalidate(InvalidateLevel.Chrome);
+    }
+
+    onMarkClick(cb: (e: MarkClickEvent) => void): Unsubscribe {
+        this.markClickCbs.add(cb);
+        return () => this.markClickCbs.delete(cb);
+    }
+
+    /** Every group the lane knows: the defined ones, then those marks name without a definition. */
+    private markGroupsInUse(): MarkGroup[] {
+        return effectiveMarkGroups(this.scene.timelineMarks, this.scene.markGroups);
     }
 
     onViewportChange(cb: (range: VisibleRange) => void): Unsubscribe {
@@ -2509,6 +2576,9 @@ export class NativeRenderer implements IChartRenderer {
             this.scene.crosshair = null;
             this.hoverSeparatorY = null;
             this.lastPointer = null;
+            // A touch release also lands here (no resting pointer): a fan a tap opened must survive it.
+            if (this.marksExpandedBy === 'hover') this.setMarksExpanded(null);
+            this.setMarkHover(null);
             this.scheduler.invalidate(InvalidateLevel.Cursor);
             this.hoverLogical = null; // off the plot ⇒ the readout falls back to the latest bar
             const empty: CrosshairEvent = { time: null, price: null, paneKind: null, values: new Map(), ohlc: null };
@@ -2523,6 +2593,9 @@ export class NativeRenderer implements IChartRenderer {
         this.hoverSeparatorY = x >= 0 && y >= 0 && y <= this.coords.height ? this.separatorHoverY(y) : null;
         // Cursor tier: repaint only the crosshair overlay, not the data layer.
         this.scheduler.invalidate(InvalidateLevel.Cursor);
+        // A multi-group mark stack fans out while the pointer is over it (or over the gaps of its fan).
+        this.setMarksExpanded(inData ? this.chrome.markStackAt(x, y) : null);
+        this.setMarkHover(inData ? (this.chrome.markGlyphAt(x, y)?.cluster.key ?? null) : null);
 
         // Only report a time/value when the cursor is over a real bar (not the
         // right-offset whitespace) — matches LWC emitting null off any data point.
@@ -2557,6 +2630,82 @@ export class NativeRenderer implements IChartRenderer {
         const logical = Math.round(this.coords.xToLogical(x));
         const onBar = logical >= 0 && logical < this.coords.barCount;
         for (const cb of this.clickCbs) cb({ time: onBar ? this.coords.logicalToTime(logical) : null, price: null });
+    }
+
+    /**
+     * Fan out (or collapse, with null) a multi-group mark stack; repaints the chrome tier when
+     * it changes. A stack whose glyph holds the open popup stays fanned — the pointer leaving
+     * the plot for the popup must not bury the glyph under the deck (which would close it).
+     */
+    private setMarksExpanded(stack: number | null, by: 'hover' | 'tap' = 'hover'): void {
+        if (this.scene.marksExpandedStack === stack) return;
+        if (stack === null && this.markPopover?.key) {
+            const open = this.chrome.markGlyphByKey(this.markPopover.key);
+            if (open && open.stack === this.scene.marksExpandedStack) return;
+        }
+        this.scene.marksExpandedStack = stack;
+        this.marksExpandedBy = by;
+        this.scheduler?.invalidate(InvalidateLevel.Chrome);
+    }
+
+    /**
+     * A click on the mark lane: a collapsed deck fans out (the touch path — a mouse already
+     * fanned it by hovering), a glyph reports its cluster (`onMarkClick`) and opens the popup
+     * when any of its marks carries content. True when the click landed on the lane.
+     */
+    private handleMarkClick(x: number, y: number): boolean {
+        const glyph = this.chrome.markGlyphAt(x, y);
+        if (!glyph) {
+            if (this.scene.marksExpandedStack !== null && this.chrome.markStackAt(x, y) === null) this.setMarksExpanded(null);
+            return false;
+        }
+        if (glyph.decked) {
+            this.setMarksExpanded(glyph.stack, 'tap');
+            return true;
+        }
+        const marks = glyph.cluster.marks;
+        const first = marks[0]!;
+        const event: MarkClickEvent = { id: first.id, ids: marks.map((m) => m.id), time: first.time, ...(glyph.cluster.group !== undefined ? { group: glyph.cluster.group } : {}) };
+        for (const cb of this.markClickCbs) cb(event);
+        if (marks.some((m) => m.content !== undefined)) {
+            this.markPopover?.open(glyph.cluster, { x: glyph.x, y: glyph.y, size: glyph.size });
+        } else {
+            // Nothing to open — a brief filled flash acknowledges the click all the same.
+            this.scene.marksFlash = { key: glyph.cluster.key, until: frameNow() + MARK_FLASH_MS };
+            this.syncMarkPulse();
+        }
+        return true;
+    }
+
+    /** After a chrome frame: keep the open mark popup on its glyph, or close it once the glyph is gone. */
+    private trackMarkPopover(): void {
+        const key = this.markPopover?.key;
+        if (!key) return;
+        const g = this.chrome.markGlyphByKey(key);
+        this.markPopover!.track(g && !(g.decked && g.depth !== 0) ? { x: g.x, y: g.y, size: g.size } : null);
+    }
+
+    /** The lane glyph under the pointer — it swells once as the pointer lands (a rAF-driven chrome repaint for the pulse's duration). */
+    private setMarkHover(key: string | null): void {
+        if (this.scene.marksHoverKey === key) return;
+        this.scene.marksHoverKey = key;
+        this.scene.marksHoverSince = frameNow();
+        this.scheduler?.invalidate(InvalidateLevel.Chrome);
+        this.syncMarkPulse();
+    }
+
+    /** Run a chrome-tier repaint loop while a glyph's hover pulse or click flash plays; it stops itself once both are over. */
+    private syncMarkPulse(): void {
+        if (this.markPulseRaf !== null || typeof requestAnimationFrame !== 'function') return;
+        const tick = (): void => {
+            this.markPulseRaf = null;
+            const now = frameNow();
+            if (this.scene.marksFlash && this.scene.marksFlash.until <= now) this.scene.marksFlash = null;
+            this.scheduler?.invalidate(InvalidateLevel.Chrome);
+            const pulsing = this.scene.marksHoverKey !== null && now - this.scene.marksHoverSince < MARK_PULSE_MS;
+            if (pulsing || this.scene.marksFlash !== null) this.markPulseRaf = requestAnimationFrame(tick);
+        };
+        this.markPulseRaf = requestAnimationFrame(tick);
     }
 
     private paneAtY(y: number): { scale: { min: number; max: number }; bounds: { top: number; height: number } } | null {
@@ -3009,6 +3158,7 @@ export class NativeRenderer implements IChartRenderer {
             // re-wires the drawing resolvers (three closures over live refs — cheap).
             this.chrome.prepare(this.scene, this.coords, this.theme);
             this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
+            this.trackMarkPopover();
         }
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx()); // L2 crosshair
         // Hover-testing SDK layers (repaintOnCursor) follow pointer moves too — each owns
@@ -3138,6 +3288,7 @@ export class NativeRenderer implements IChartRenderer {
         this.backdropRenderer.render(this.scene, this.coords, this.theme, gridAlpha); // L-2, under every layer canvas
         this.backend.render(this.scene, this.coords, this.theme);
         this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
+        this.trackMarkPopover();
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair
 
         if (easeLive && liveActual) this.bars[li] = liveActual; // restore the true forming bar
@@ -3751,7 +3902,8 @@ export class NativeRenderer implements IChartRenderer {
         const map = new Map<string, string | null>();
         for (const pane of this.scene.panes.values()) {
             if (!pane.collapsed) continue;
-            const models = this.scene.orderedIndicatorsForPane(pane.id);
+            // Only models with a legend row can front a collapsed strip.
+            const models = this.scene.orderedIndicatorsForPane(pane.id).filter((m) => m.legend !== false);
             const merged = new Set(this.scene.ownScaleIndicatorsForPane(pane.id).map((m) => m.id));
             const master = models.find((m) => !merged.has(m.id)) ?? models[0];
             map.set(pane.id, master?.id ?? null);

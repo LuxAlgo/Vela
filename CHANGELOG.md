@@ -2,7 +2,33 @@
 
 All notable changes to Vela, newest first.
 
-## [v0.6.22]
+## [v0.7.0]
+
+### Added
+
+- **Timeline marks — events on the chart.** `chart.marks` pins host events (dividends,
+  splits, earnings, news, releases…) to the bar they belong to and shows them as small
+  outlined tokens — a letter or an icon in the event's color — on a lane just above the
+  time axis. A token swells briefly under the pointer and fills with its color while its
+  popup is open. Clicking one opens a popup centered on the token, with a short fade,
+  showing the event's title and details: plain text, formatted HTML (sanitized), or a
+  panel of fields and buttons — and the details can load on demand. Several events of
+  one kind on the same bar fold into one slightly larger token that lists them all;
+  events of different kinds on one bar stack into a small deck that fans out on hover
+  (or a tap) so each can be opened. Marks follow the bars: switch timeframes and they
+  re-snap and regroup. Every kind of event gets its own checkbox on a new **Events** tab
+  of the chart settings, and the choice is saved with the chart. Hosts hear every click
+  through the new `mark:click` event, and the playground pages carry a sample set.
+- **Popovers can center on their trigger and fade.** The UI kit's `Popover` accepts
+  `align: 'center'` and a `fadeMs` duration for a short fade in and out — what the
+  timeline-mark popup uses.
+- **Native indicators can opt out of the legend.** A native indicator registered with
+  `legend: false` paints its output with no in-chart chrome: no legend row (no title
+  chip, no eye/gear/✕, not counted by the fold chip) and no entry in `panes.list()`, so
+  the object tree shows nothing either. It is for host-owned overlays — journal trade
+  markers, event flags — whose on/off switch lives in the host's own UI; the host keeps
+  controlling the indicator through its handle. Hidden indicators are unchanged: they
+  keep their row so the user can unhide them.
 
 ### Added
 
@@ -45,6 +71,16 @@ All notable changes to Vela, newest first.
   moment the bar closes rather than parking at `00:00` until the next bar arrives.
   Hosts embedding a single chart can feed their own clock through
   `chart.renderer.setWallClock` to get the same alignment.
+
+- **The mobile bar's maximize stop only shows when there is something to maximize.**
+  In a multi-chart workspace switched to a one-chart layout, the stop used to stay in
+  the bar as a dead press; it now disappears with the extra charts and returns when
+  the layout grows again.
+
+- **Chart-settings dropdowns no longer overflow on mobile.** A long option such as
+  `Regular hours (RTH)` or `(UTC-5) Chicago` wrapped onto several lines inside its
+  dropdown and spilled over the neighboring rows. The closed value now stays on one
+  line, and on mobile the dropdown widens to fit it (up to a cap) before ellipsizing.
 
 ## [v0.6.21]
 

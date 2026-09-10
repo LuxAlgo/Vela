@@ -98,6 +98,7 @@ last non-zero duration set through the option or the feature.
 |---|---|---|---|
 | `attribution` | boolean | `true` | The in-chart attribution mark (bottom-left logomark linking to the Vela™ project). Disabling it is allowed only when an equivalent visible attribution is displayed elsewhere on the page (see the repository's [`NOTICE`](../../NOTICE) file). |
 | `settings` | boolean | `false` | An in-chart gear button + dialog to edit a curated slice of the rich config (colors, fonts, scale, timezone) with export/import. |
+| `marks` | boolean or `{ visible?, groups? }` | everything on | The [timeline-mark](./api-reference.md#chartmarks--the-timeline-marks-control-surface) lane above the time axis. `false` hides the lane; `{ groups: { dividends: false } }` hides one group — the same switch as the Events tab's checkboxes, persisted with the config. Partial merge; malformed fields drop. |
 
 > **Pane controls.** Hovering a pane reveals a small button cluster in its top-right corner: move
 > the pane up/down, collapse/expand it, and maximize/restore it. Each indicator's legend row also

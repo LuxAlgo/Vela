@@ -226,6 +226,11 @@ new VelaWorkspace('#chart', {
       'canvas.grid.horizontal',              //     Horizontal lines toggle + color
       'canvas.theme',                        //   Theme group (Dark/Light)
 
+      // ══ Events tab (timeline marks — present once marks name groups) ═
+      'events',                              // the whole tab
+      'events.groups',                       //   Visible events (one checkbox per mark group)
+      'events.groups.<group-id>',            //     a group's checkbox (the group id, kebab-cased)
+
       // ══ Widget & workspace tabs (shell-contributed) ═══════════════
       'status-line',                         // the whole Status line tab
       'status-line.parts',                   //   Status line group (the five rows below)

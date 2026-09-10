@@ -19,6 +19,7 @@ import { rendererDefaults } from './core/renderer-defaults';
 import { PanesControl } from './core/PanesControl';
 import { DataControl } from './core/DataControl';
 import { DrawingsControl } from './core/DrawingsControl';
+import { MarksControl } from './core/MarksControl';
 import { NativeRenderer } from './renderers/native/NativeRenderer';
 import { MultiProviderFeed } from './data/MultiProviderFeed';
 import { registerBuiltinChartTypes } from './chart-types/builtins';
@@ -61,6 +62,7 @@ export class Vela {
     private readonly panesControl: PanesControl;
     private readonly dataControl: DataControl;
     private readonly drawingsControl: DrawingsControl;
+    private readonly marksControl: MarksControl;
 
     constructor(container: HTMLElement | string, options: VelaOptions = {}, deps: VelaDeps = {}) {
         registerBuiltinChartTypes(); // built-in chart types through the public SDK registry (idempotent)
@@ -121,6 +123,7 @@ export class Vela {
         if (Object.keys(defaults).length > 0) this.rendererControl.set(defaults);
         this.panesControl = new PanesControl(this.orchestrator);
         this.drawingsControl = new DrawingsControl(this.orchestrator.drawings);
+        this.marksControl = new MarksControl(this.orchestrator.marks);
     }
 
     /**
@@ -364,6 +367,18 @@ export class Vela {
      */
     get drawings(): DrawingsControl {
         return this.drawingsControl;
+    }
+
+    /**
+     * The chart's timeline-marks control surface: host events pinned to a bar and shown
+     * as glyphs on a lane above the time axis, each opening a popup on click —
+     * `chart.marks.add({ id, time, glyph, title, content })`, `chart.marks.set(list)`,
+     * `chart.marks.defineGroup({ id, label })`. Marks are data, not user state: re-supply
+     * them on `market:changed`. On a renderer without the `timelineMarks` capability the
+     * model still fills but nothing paints (`chart.marks.supported`).
+     */
+    get marks(): MarksControl {
+        return this.marksControl;
     }
 
     on<K extends keyof VelaEventMap>(event: K, handler: (payload: VelaEventMap[K]) => void): () => void {

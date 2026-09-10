@@ -1,7 +1,7 @@
 // Popover CONTROLLER — placement math only. No DOM: the view measures rects and
 // the vanilla (or a future React) projection applies the returned coordinates.
 
-export type PopoverAlign = 'start' | 'end';
+export type PopoverAlign = 'start' | 'end' | 'center';
 export type PopoverPosition = 'fixed' | 'absolute';
 
 /** Axis-aligned rectangle in viewport coordinates. */
@@ -67,10 +67,11 @@ export function intersectRects(a: Rect, b: Rect): Rect {
 /**
  * Place a popover under `trigger`, flipping above when it would leave `clamp`.
  * Prefers the side with more room when neither fully fits. `align: 'end'` right-aligns
- * to the trigger (swatches and width fields sit at the row's right edge).
+ * to the trigger (swatches and width fields sit at the row's right edge); `'center'`
+ * centers it on the trigger (a popup over a small glyph).
  */
 export function placePopover(a: PlaceArgs): PlaceResult {
-    let left = a.align === 'end' ? a.trigger.right - a.pop.width : a.trigger.left;
+    let left = a.align === 'end' ? a.trigger.right - a.pop.width : a.align === 'center' ? a.trigger.left + a.trigger.width / 2 - a.pop.width / 2 : a.trigger.left;
     const below = a.trigger.bottom + a.gap;
     const above = a.trigger.top - a.pop.height - a.gap;
     const fitsBelow = below + a.pop.height <= a.clamp.bottom;

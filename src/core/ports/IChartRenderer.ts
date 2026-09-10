@@ -8,6 +8,7 @@ import type { VelaTheme, ThemeName, MoveTarget, PriceStyle } from '../options';
 import type { Unsubscribe } from '../util/types';
 import type { WallClock } from '../util/wall-clock';
 import type { IDrawingsRendererPort } from '../drawings/port';
+import type { MarkClickEvent, MarkGroup, TimelineMark } from '../marks/types';
 
 /** What a rendering backend supports — drives graceful degradation + warnings. */
 export interface RendererCapabilities {
@@ -39,6 +40,10 @@ export interface RendererCapabilities {
      *  ticks on the price pane, plus the `tradeMarkers` display feature. Absent/false ⇒ the
      *  channel is carried through mounts/patches but never painted. */
     trades?: boolean;
+    /** Timeline marks (`chart.marks`): host events pinned to a bar, painted as glyphs on a lane
+     *  above the time axis with a detail popup on click. Absent/false ⇒ the model still fills
+     *  (`chart.marks.all()`) but nothing paints. */
+    timelineMarks?: boolean;
     /** Whether the renderer provides the in-chart inputs/settings UI. */
     inputsUI: boolean;
 }
@@ -252,6 +257,16 @@ export interface IChartRenderer {
      * layers omits it.
      */
     setNativeData?(type: string, data: unknown): void;
+
+    /**
+     * Replace the timeline marks + their group definitions (the `chart.marks` model). The
+     * renderer snaps each mark onto its bar, folds same-bar/same-group marks into clusters, and
+     * paints the lane above the time axis; group visibility is its own display state (the
+     * `marks` feature). Present iff `capabilities.timelineMarks`.
+     */
+    setTimelineMarks?(marks: readonly TimelineMark[], groups: readonly MarkGroup[]): void;
+    /** A timeline-mark glyph was clicked — every mark of its cluster is listed. Present iff `capabilities.timelineMarks`. */
+    onMarkClick?(cb: (e: MarkClickEvent) => void): Unsubscribe;
 
     /**
      * Reflect an indicator's live status in its legend row: `'loading'` (a fetch is in flight —

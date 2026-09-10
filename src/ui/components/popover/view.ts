@@ -28,6 +28,8 @@ export interface PopoverOptions extends PopoverControllerOptions {
     zIndex?: string | number;
     /** Clamp rectangle. `'viewport'` (default) or an element (dialog / chart host). */
     boundary?: PopoverBoundary;
+    /** Fade the shell in on show and out on hide over this many ms (default 0 — instant). */
+    fadeMs?: number;
 }
 
 let open: Popover | null = null;
@@ -77,6 +79,9 @@ export class Popover {
     private onKey: ((e: KeyboardEvent) => void) | null = null;
     private onReflow: (() => void) | null = null;
     private shown = false;
+    private readonly fadeMs: number;
+    /** The pending removal of a fading-out shell; a show() that reuses the shell cancels it. */
+    private leaveTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(opts: PopoverOptions) {
         const doc = opts.trigger.ownerDocument;
@@ -86,6 +91,7 @@ export class Popover {
         this.ctrl = popoverController(opts);
         this.boundary = opts.boundary ?? 'viewport';
         this.theme = opts.theme;
+        this.fadeMs = Math.max(0, opts.fadeMs ?? 0);
 
         this.el = doc.createElement('div');
         this.el.className = 'vela-popover vela-ui-layer' + (opts.className ? ` ${opts.className}` : '');
@@ -115,11 +121,22 @@ export class Popover {
             return;
         }
         if (open && open !== this) open.hide();
+        if (this.leaveTimer !== null) {
+            clearTimeout(this.leaveTimer);
+            this.leaveTimer = null;
+        }
         ensureUIHost(this.el, this.theme);
+        if (this.fadeMs > 0) {
+            this.el.style.transition = `opacity ${this.fadeMs}ms ease`;
+            this.el.style.opacity = '0';
+            this.el.style.pointerEvents = '';
+        }
         this.host.appendChild(this.el);
         this.shown = true;
         open = this;
         this.place();
+        // place() measured the shell (a style flush at opacity 0) — flipping it now runs the transition.
+        if (this.fadeMs > 0) this.el.style.opacity = '1';
         const onOutside = (ev: Event): void => {
             const t = ev.target as Node;
             if (this.el.contains(t) || this.trigger.contains(t)) return;
@@ -158,7 +175,17 @@ export class Popover {
         this.onOutside = null;
         this.onKey = null;
         this.onReflow = null;
-        this.el.remove();
+        if (this.fadeMs > 0) {
+            // Fade out, then leave the DOM; the shell is inert meanwhile (no listeners, not `open`, no hits).
+            this.el.style.opacity = '0';
+            this.el.style.pointerEvents = 'none';
+            this.leaveTimer = setTimeout(() => {
+                this.leaveTimer = null;
+                this.el.remove();
+            }, this.fadeMs);
+        } else {
+            this.el.remove();
+        }
         this.shown = false;
         if (open === this) open = null;
         this.ctrl.onClose?.();

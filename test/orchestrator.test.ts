@@ -2447,3 +2447,60 @@ describe('EngineOrchestrator — force_overlay routing', () => {
         chart.destroy();
     });
 });
+
+describe('native indicators — legend: false (host-owned chrome)', () => {
+    const legendless: NativeIndicatorDescriptor = {
+        ...testNativeDescriptor,
+        type: 'test-native-legendless',
+        title: 'Host markers',
+        legend: false,
+        create: () => new TestNativeIndicator(),
+    };
+    afterEach(() => unregisterNativeIndicator(legendless.type));
+
+    async function makeChart(): Promise<{ chart: Vela; renderer: FakeRenderer }> {
+        registerNativeIndicator(legendless);
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        await flush();
+        return { chart, renderer };
+    }
+
+    it('paints its output but mounts with no legend row and no pane listing', async () => {
+        const { chart, renderer } = await makeChart();
+        const handle = chart.addNativeIndicator(legendless.type);
+        await flush();
+        const model = renderer.mountedModels.find((m) => m.id === handle.id);
+        expect(model).toBeDefined();
+        expect(model!.legend).toBe(false); // the renderer skips the legend row on this flag
+        expect(model!.series).toHaveLength(1); // the output still reaches the scene
+        expect(chart.panes.list().flatMap((p) => p.indicators.map((i) => i.id))).not.toContain(handle.id);
+    });
+
+    it('the host still controls it through its handle', async () => {
+        const { chart, renderer } = await makeChart();
+        const handle = chart.addNativeIndicator(legendless.type);
+        await flush();
+        handle.setVisible(false);
+        await flush();
+        expect(renderer.indicatorVisible.get(handle.id)).toBe(false);
+        handle.remove();
+        await flush();
+        expect(renderer.removed).toContain(handle.id);
+        expect(chart.inspect().indicators.some((s) => s.id === handle.id)).toBe(false);
+    });
+
+    it('an ordinary native keeps its legend row and pane listing', async () => {
+        const { chart, renderer } = await makeChart();
+        registerNativeIndicator(testNativeDescriptor);
+        try {
+            const handle = chart.addNativeIndicator(testNativeDescriptor.type);
+            await flush();
+            expect(renderer.mountedModels.find((m) => m.id === handle.id)!.legend).toBeUndefined();
+            expect(chart.panes.list().flatMap((p) => p.indicators.map((i) => i.id))).toContain(handle.id);
+        } finally {
+            unregisterNativeIndicator(testNativeDescriptor.type);
+        }
+    });
+});

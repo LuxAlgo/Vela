@@ -33,9 +33,13 @@ import {
     filterHiddenHostRows,
     filterHiddenRows,
     hostSectionId,
+    markGroupSettingsId,
+    MARKS_GROUPS_SETTINGS_ID,
+    MARKS_SETTINGS_ID,
     settingsIdHidden,
     settingsIdSlug,
 } from './settings-visibility';
+import type { MarkGroup } from '../../../core/marks/types';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -88,7 +92,7 @@ function styleLabel(id: string): string {
 }
 
 const SD_STYLE_ID = 'vela-settings-controls';
-const SD_STYLE_REV = '5';
+const SD_STYLE_REV = '6';
 
 /**
  * The dialog's surface palette. It follows the STABLE chrome surface (the tokens written on
@@ -174,7 +178,15 @@ ${overlayScrollbarCss('.vela-sd-pane')}
 .vela-sd-mobile .vela-select-trigger,.vela-sd-mobile .vela-num input,.vela-sd-mobile .vela-width-field{height:34px;}
 .vela-sd-mobile .vela-sd-close{width:40px;height:40px;}
 .vela-sd-mobile .vela-sd-btn{height:38px;}
-.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span,.vela-sd-mobile .vela-field-label{white-space:normal !important;}`;
+.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span,.vela-sd-mobile .vela-field-label{white-space:normal !important;}
+/* The wrap rule above is for ROW LABELS only: a select's closed value must keep its
+   single-line ellipsis, or a long option wraps to several lines inside the 34px
+   trigger and spills over the rows around it. Three classes so it outranks the
+   two-classes-plus-element selector above. The kit's fixed 100px column is a desktop
+   alignment device; on mobile the trigger hugs its value instead (the grid's control
+   column is max-content), capped so a long option still ellipsizes before the label. */
+.vela-sd-mobile .vela-select-trigger .vela-select-label{white-space:nowrap !important;}
+.vela-sd-mobile .vela-select:not([data-fill]){width:auto;min-width:100px;max-width:min(220px,55vw);}`;
     if (!existing) document.head.appendChild(st);
 }
 
@@ -187,6 +199,9 @@ export class SettingsDialog {
     private config: ChartConfig | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
+    /** The timeline-mark groups (defined + named by marks) — one checkbox each on the Events tab. */
+    private markGroups: MarkGroup[] = [];
+    private markGroupVisible: (id: string) => boolean = () => true;
     /** The Canvas → Theme row: current app theme + where a pick is raised. The row is a
      *  host callback, NOT a config patch — the app theme stays out of the persisted
      *  `ChartConfig`, so exported templates never carry it. */
@@ -209,6 +224,12 @@ export class SettingsDialog {
     /** Host-app sections (e.g. the widget's Status line tab) — re-shown on next open. */
     setHostSections(sections: HostSettingsSection[]): void {
         this.hostSections = sections;
+    }
+
+    /** The timeline-mark groups and their current visibility — the Events tab's rows on next open. */
+    setMarkGroups(groups: MarkGroup[], visible: (id: string) => boolean): void {
+        this.markGroups = groups;
+        this.markGroupVisible = visible;
     }
 
     /** Replace the visibility policy — an open dialog rebuilds in place to honor it. */
@@ -547,6 +568,15 @@ export class SettingsDialog {
             const tc = this.themeControl;
             body.append(sid(this.sectionTitle('Theme'), 'canvas.theme'));
             body.append(sid(this.selectRow('Color theme', tc.current === 'dark' ? 'Dark' : 'Light', ['Dark', 'Light'], (v) => tc.onSelect(v === 'Dark' ? 'dark' : 'light')), 'canvas.theme'));
+        }
+
+        // ══ EVENTS — timeline-mark group visibility, a tab of its own (present only while marks name groups) ══
+        if (this.markGroups.length > 0) {
+            body.append(sid(this.section('Events'), MARKS_SETTINGS_ID));
+            body.append(sid(this.sectionTitle('Visible events'), MARKS_GROUPS_SETTINGS_ID));
+            for (const g of this.markGroups) {
+                body.append(sid(this.boolRow(g.label, this.markGroupVisible(g.id), (v) => this.emit({ marks: { groups: { [g.id]: v } } })), markGroupSettingsId(g.id)));
+            }
         }
 
         renderChartTypeSections('end');

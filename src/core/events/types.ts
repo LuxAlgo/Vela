@@ -5,6 +5,7 @@ import type { DrawingTypeKey, SerializedDrawing } from "../drawings/Drawing";
 import type { VelaTheme } from "../options";
 import type { SnapMode } from "../drawings/geometry";
 import type { DrawingMode } from "../drawings/port";
+import type { MarkClickEvent } from "../marks/types";
 
 /** Chart-level events emitted on `chart.on(...)`. */
 export interface VelaEventMap extends Record<string, unknown> {
@@ -90,6 +91,9 @@ export interface VelaEventMap extends Record<string, unknown> {
   "drawing:removed": { id: string };
   /** The user requested a drawing's settings popup. */
   "drawing:settings": { id: string };
+  /** A timeline-mark glyph was clicked — `ids` lists every mark under it (a cluster). Fires
+   *  before the popup opens; a mark without content opens none, so this is the host's hook. */
+  "mark:click": MarkClickEvent;
   /**
    * A SCRIPT computed — the first run over the history, a live tick, a new bar, an input
    * edit, a viewport move, a market switch. The payload carries the run itself (title,

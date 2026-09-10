@@ -16,6 +16,7 @@ export { BarStore, sharedBarStore } from './data/BarStore';
 export { timeframeToMs } from './data/timeframe';
 export { DataControl } from './core/DataControl';
 export { DrawingsControl } from './core/DrawingsControl';
+export { MarksControl } from './core/MarksControl';
 
 // Native indicators (core-computed, no scripting engine) — register a type, then chart.addNativeIndicator(type)
 export { registerNativeIndicator, unregisterNativeIndicator, getNativeIndicator, nativeIndicatorTypes, nativeIndicatorDescriptors } from './core/native-indicators';
@@ -55,6 +56,9 @@ export type {
     DrawingSeriesState,
     DrawingSeriesGateway,
 } from './core/drawings';
+
+// Timeline marks (`chart.marks`): host events on a lane above the time axis.
+export type { TimelineMark, MarkGlyph, MarkShape, MarkContent, MarkContentSource, MarkPanelItem, MarkGroup, MarkClickEvent } from './core/marks';
 
 // Public types
 export type * from './core/model';

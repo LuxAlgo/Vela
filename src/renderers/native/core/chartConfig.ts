@@ -258,6 +258,12 @@ export interface ChartConfig {
     timeScale: {
         timezone: string;
     };
+    /** Timeline marks (the `marks` feature): the lane's master toggle + per-group visibility
+     *  (the Events tab's checkboxes). `groups` merges additively, like `stacking.series`. */
+    marks: {
+        visible: boolean;
+        groups: Record<string, boolean>;
+    };
     /** Per-chart-type settings (plugin SDK sections), keyed by type id then row key. */
     chartTypes: Record<string, Record<string, unknown>>;
     candles: {
@@ -543,6 +549,8 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const panes = asObject(p.panes);
     const trades = asObject(p.trades);
     const ts = asObject(p.timeScale);
+    const marks = asObject(p.marks);
+    const markGroups = asObject(marks.groups);
     const candles = asObject(p.candles);
     const bars = asObject(p.bars);
     const line = asObject(p.line);
@@ -609,6 +617,15 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
         },
         timeScale: {
             timezone: typeof ts.timezone === 'string' && ts.timezone ? ts.timezone : base.timeScale.timezone,
+        },
+        marks: {
+            visible: isBool(marks.visible) ? marks.visible : base.marks.visible,
+            // Additive like `stacking.series`: a patch names only the groups it carries, so a
+            // choice stored for a group the host has not registered yet survives verbatim.
+            groups: {
+                ...base.marks.groups,
+                ...Object.fromEntries(Object.entries(markGroups).filter(([, v]) => isBool(v)) as Array<[string, boolean]>),
+            },
         },
         candles: {
             upColor: isColor(candles.upColor) ? candles.upColor : base.candles.upColor,
