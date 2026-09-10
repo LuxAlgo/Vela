@@ -1184,6 +1184,8 @@ export class VelaWorkspace {
         const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
         const paneMax = cell ? cell.chart.panes.list().some((p) => p.maximized) : false;
         this.mobileBar.setMaximizeActive(this.maximizedId != null || paneMax);
+        // Same gate as the per-cell controls: a one-chart layout has nothing to isolate.
+        this.mobileBar.setMaximizeVisible(this.def.cells.length > 1);
     }
 
     /**

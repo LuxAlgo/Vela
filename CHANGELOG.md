@@ -48,6 +48,16 @@ All notable changes to Vela, newest first.
   Hosts embedding a single chart can feed their own clock through
   `chart.renderer.setWallClock` to get the same alignment.
 
+- **The mobile bar's maximize stop only shows when there is something to maximize.**
+  In a multi-chart workspace switched to a one-chart layout, the stop used to stay in
+  the bar as a dead press; it now disappears with the extra charts and returns when
+  the layout grows again.
+
+- **Chart-settings dropdowns no longer overflow on mobile.** A long option such as
+  `Regular hours (RTH)` or `(UTC-5) Chicago` wrapped onto several lines inside its
+  dropdown and spilled over the neighboring rows. The closed value now stays on one
+  line, and on mobile the dropdown widens to fit it (up to a cap) before ellipsizing.
+
 ## [v0.6.21]
 
 ### Fixed

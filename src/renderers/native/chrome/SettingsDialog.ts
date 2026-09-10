@@ -92,7 +92,7 @@ function styleLabel(id: string): string {
 }
 
 const SD_STYLE_ID = 'vela-settings-controls';
-const SD_STYLE_REV = '5';
+const SD_STYLE_REV = '6';
 
 /**
  * The dialog's surface palette. It follows the STABLE chrome surface (the tokens written on
@@ -178,7 +178,15 @@ ${overlayScrollbarCss('.vela-sd-pane')}
 .vela-sd-mobile .vela-select-trigger,.vela-sd-mobile .vela-num input,.vela-sd-mobile .vela-width-field{height:34px;}
 .vela-sd-mobile .vela-sd-close{width:40px;height:40px;}
 .vela-sd-mobile .vela-sd-btn{height:38px;}
-.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span,.vela-sd-mobile .vela-field-label{white-space:normal !important;}`;
+.vela-sd-mobile .vela-sd-row span,.vela-sd-mobile .vela-sd-bool span,.vela-sd-mobile .vela-field-label{white-space:normal !important;}
+/* The wrap rule above is for ROW LABELS only: a select's closed value must keep its
+   single-line ellipsis, or a long option wraps to several lines inside the 34px
+   trigger and spills over the rows around it. Three classes so it outranks the
+   two-classes-plus-element selector above. The kit's fixed 100px column is a desktop
+   alignment device; on mobile the trigger hugs its value instead (the grid's control
+   column is max-content), capped so a long option still ellipsizes before the label. */
+.vela-sd-mobile .vela-select-trigger .vela-select-label{white-space:nowrap !important;}
+.vela-sd-mobile .vela-select:not([data-fill]){width:auto;min-width:100px;max-width:min(220px,55vw);}`;
     if (!existing) document.head.appendChild(st);
 }
 
