@@ -6,6 +6,13 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **An edit made just before a workspace is torn down is no longer lost.** Changes are
+  batched for a moment before `state:changed` fires, and destroying the workspace inside
+  that window used to drop the pending change without telling anyone — so an app saving
+  from that event lost the user's last symbol change or added indicator. `destroy()` now
+  emits the pending `state:changed` before tearing anything down, and `getState()` called
+  during teardown still describes the charts that were on screen rather than the last
+  restored document.
 - **Timeline mark popups now toggle with a click.** Clicking the mark whose popup is
   open closes it; previously that second click closed and immediately reopened the popup,
   so it took a click elsewhere to dismiss it.

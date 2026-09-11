@@ -1222,13 +1222,30 @@ export class VelaWorkspace {
 
     destroy(): void {
         if (this.destroyed) return;
+        // A pending `markStateDirty` burst is FLUSHED, not dropped. The timer carries
+        // both halves of the dirty signal — the `state:changed` event and the storage
+        // write — so simply clearing it silently discarded the user's last edit for
+        // any host that saves from `state:changed` (a server-backed host: `persistNow`
+        // is a no-op there, since it needs `persistKey`). Emitting before the teardown
+        // means subscribers read a live, complete `getState()`.
+        const flushing = this.stateTimer != null;
+        if (this.stateTimer != null) {
+            clearTimeout(this.stateTimer);
+            this.stateTimer = null;
+        }
+        if (flushing) this.events.emit('state:changed', undefined);
         this.persistNow(); // snapshot while the cells are still alive
         this.destroyed = true;
-        if (this.stateTimer != null) clearTimeout(this.stateTimer);
         if (this.persistKey !== null && typeof window !== 'undefined') window.removeEventListener('beforeunload', this.onUnload);
         this.resizeObserver?.disconnect();
         this.splitters.destroy();
         for (const [id, cell] of [...this.cellsById]) {
+            // Dehydrate into the pool before tearing the cell down, exactly as a layout
+            // rebuild does. Without it `getState()` after `destroy()` rebuilds `charts`
+            // from the pool alone and reports the last APPLIED document rather than what
+            // was on screen — so a host reading state during its own teardown gets a
+            // stale document back and cannot tell that anything changed.
+            this.poolSet(id, cell.dehydrate());
             cell.destroy();
             this.cellsById.delete(id);
         }
