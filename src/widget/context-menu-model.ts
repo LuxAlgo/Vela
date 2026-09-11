@@ -3,7 +3,7 @@
 // be tested without a DOM; `ChartContextMenu` reads the renderer, calls these and shows
 // the result.
 import type { MenuItemDescriptor } from '../ui/components/menu';
-import { TIMEZONES, tzMenuLabel } from './timezones';
+import { timezoneMenuRows } from './timezones';
 
 /** Zone a right-click landed in — the chart body, the right price scale, the bottom time axis. */
 export type Zone = 'body' | 'price-axis' | 'time-axis';
@@ -128,14 +128,13 @@ export function priceAxisItems(s: PriceAxisState): MenuItemDescriptor[] {
     ];
 }
 
+/** `timezone` is the host's STORED choice — an IANA zone, or the exchange rule. */
 export function timeAxisItems(timezone: string): MenuItemDescriptor[] {
-    // A renderer defaulting to the bare `'UTC'` means the same zone as the list's `'Etc/UTC'`.
-    const active = timezone === 'UTC' ? 'Etc/UTC' : timezone;
     return [
         {
             id: 'timezone',
             label: 'Time zone',
-            submenu: TIMEZONES.map((t) => ({ id: `tz:${t.value}`, label: tzMenuLabel(t.value, t.label), checked: t.value === active })),
+            submenu: timezoneMenuRows(timezone).map((r) => ({ id: `tz:${r.value}`, label: r.label, checked: r.checked })),
         },
         settingsItem('time-axis', 'More settings…'),
     ];

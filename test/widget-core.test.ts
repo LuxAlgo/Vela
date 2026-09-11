@@ -5,7 +5,7 @@ import { parseTimeframe, timeframeMs, timeframeLabel, favoriteTimeframeChips } f
 import { inputDeltas } from '../src/core/model/inputs';
 import { indicatorLedger, resolveIndicators } from '../src/widget/indicators';
 import { fmtPrice, fmtChange, decimalsFor } from '../src/widget/format';
-import { tzMenuLabel, tzButtonLabel } from '../src/widget/timezones';
+import { tzMenuLabel, tzButtonLabel, resolveTimezone, timezoneMenuRows, EXCHANGE_TIMEZONE, TIMEZONES } from '../src/widget/timezones';
 import { priceStyleLabel } from '../src/widget/topbar';
 import { RANGE_PRESETS } from '../src/widget/bottombar';
 import { filterSymbols } from '../src/widget/symbol-picker';
@@ -124,6 +124,27 @@ describe('widget chrome pure helpers', () => {
         expect(tzMenuLabel('Europe/Paris', 'Paris')).toMatch(/^\(UTC\+[12]\) Paris$/); // CET/CEST
         expect(tzButtonLabel('Etc/UTC')).toBe('UTC');
         expect(tzButtonLabel('Asia/Tokyo')).toBe('UTC+9');
+    });
+
+    it('the exchange rule resolves to the market zone, UTC while unknown; fixed zones pass through', () => {
+        expect(resolveTimezone(EXCHANGE_TIMEZONE, 'America/Chicago')).toBe('America/Chicago');
+        expect(resolveTimezone(EXCHANGE_TIMEZONE, undefined)).toBe('Etc/UTC');
+        expect(resolveTimezone(EXCHANGE_TIMEZONE, '')).toBe('Etc/UTC');
+        expect(resolveTimezone('Europe/Paris', 'America/Chicago')).toBe('Europe/Paris');
+        expect(resolveTimezone('UTC', 'America/Chicago')).toBe('UTC'); // the renderer's alias is left alone
+    });
+
+    it('picker rows: UTC, then a plain "Exchange" rule row, then the catalog with one check', () => {
+        const rows = timezoneMenuRows(EXCHANGE_TIMEZONE);
+        expect(rows).toHaveLength(TIMEZONES.length + 1);
+        expect(rows[0]!.value).toBe('Etc/UTC');
+        expect(rows[1]).toEqual({ value: 'exchange', label: 'Exchange', checked: true });
+        expect(rows.filter((r) => r.checked)).toHaveLength(1);
+        expect(rows.filter((r) => r.value !== 'exchange').map((r) => r.value)).toEqual(TIMEZONES.map((t) => t.value));
+
+        const fixed = timezoneMenuRows('UTC');
+        expect(fixed[1]!.checked).toBe(false);
+        expect(fixed.filter((r) => r.checked).map((r) => r.value)).toEqual(['Etc/UTC']);
     });
 
     it('price-style labels: built-ins + registry labels + raw id fallback', () => {

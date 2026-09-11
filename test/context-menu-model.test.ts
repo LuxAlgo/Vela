@@ -121,11 +121,12 @@ describe('price-axis menu', () => {
 });
 
 describe('time-axis menu', () => {
-    it('lists every timezone and checks the active one', () => {
+    it('lists UTC, the exchange rule, then every other timezone, and checks the active one', () => {
         const items = timeAxisItems('Europe/Paris');
         expect(items.map((i) => i.id)).toEqual(['timezone', 'settings:Scales and lines']);
         const zones = items[0]!.submenu!;
-        expect(zones).toHaveLength(TIMEZONES.length);
+        expect(zones).toHaveLength(TIMEZONES.length + 1);
+        expect(zones.slice(0, 2).map((z) => z.id)).toEqual(['tz:Etc/UTC', 'tz:exchange']);
         expect(zones.filter((z) => z.checked).map((z) => z.id)).toEqual(['tz:Europe/Paris']);
         expect(zones.find((z) => z.id === 'tz:Asia/Tokyo')?.label).toBe('(UTC+9) Tokyo');
     });
@@ -134,6 +135,14 @@ describe('time-axis menu', () => {
         for (const tz of ['UTC', 'Etc/UTC']) {
             expect(timeAxisItems(tz)[0]!.submenu!.filter((z) => z.checked).map((z) => z.id)).toEqual(['tz:Etc/UTC']);
         }
+    });
+
+    it('the exchange row reads plain "Exchange" (a rule, no offset) and checks under the rule', () => {
+        const zones = timeAxisItems('exchange')[0]!.submenu!;
+        expect(zones.filter((z) => z.checked).map((z) => z.id)).toEqual(['tz:exchange']);
+        expect(zones[1]!.label).toBe('Exchange');
+        // A fixed zone active: the exchange row is offered but not checked.
+        expect(timeAxisItems('Europe/Paris')[0]!.submenu![1]!.checked).toBe(false);
     });
 });
 
