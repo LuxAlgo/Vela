@@ -319,7 +319,21 @@ export class VelaWorkspace {
     private readonly persistKey: string | null;
     private readonly storage: WorkspaceStorage;
     private stateTimer: ReturnType<typeof setTimeout> | null = null;
-    private readonly onUnload = (): void => this.persistNow();
+    /** Re-entrance guard for {@link flushPendingState}: a `state:changed` subscriber that
+     *  calls back into the workspace (`destroy()` on save is the obvious one) must not
+     *  re-enter the flush and recurse. */
+    private emitting = false;
+    /** False until the constructor finishes. Boot is not an edit: seeding the sync
+     *  settings marks state dirty, so without this a workspace mounted and torn down
+     *  inside the debounce window would flush and tell the host the user had changed
+     *  something — a save of the default document over whatever was stored. */
+    private booted = false;
+    /** A page unload gets the same flush as a teardown — the pending edit reaches the
+     *  host, the timer is cleared, and a `destroy()` that follows adds no second write. */
+    private readonly onUnload = (): void => {
+        this.flushPendingState();
+        this.persistNow();
+    };
     /** Re-entrance guard around one propagation tick: followers' synchronous echoes
      *  (their setVisibleRange re-emits viewport:changed) must not re-propagate. */
     private syncBusy = false;
@@ -735,6 +749,9 @@ export class VelaWorkspace {
         // is fully built (cells live, attachments mounted). The async-adapter boot and
         // host `applyState` calls reach the same handlers through applyState.
         this.restoreGlobalExt();
+        // Built. From here a dirty mark means the USER changed something, and a teardown
+        // is allowed to flush it; everything above was setup (see {@link booted}).
+        this.booted = true;
     }
 
     // ── access ──────────────────────────────────────────────────
@@ -1222,24 +1239,8 @@ export class VelaWorkspace {
 
     destroy(): void {
         if (this.destroyed) return;
-        // A pending `markStateDirty` burst is FLUSHED, not dropped. The timer carries
-        // both halves of the dirty signal — the `state:changed` event and the storage
-        // write — so simply clearing it silently discarded the user's last edit for
-        // any host that saves from `state:changed` (a server-backed host: `persistNow`
-        // is a no-op there, since it needs `persistKey`). Emitting before the teardown
-        // means subscribers read a live, complete `getState()`.
-        const flushing = this.stateTimer != null;
-        if (flushing) this.events.emit('state:changed', undefined);
-        this.persistNow(); // snapshot while the cells are still alive
-        // AFTER the flush, never before: the emit runs with `destroyed` still false (so
-        // handlers see a live workspace), which leaves `markStateDirty` un-guarded for
-        // the duration — a handler that edits state schedules a fresh timer. Clearing
-        // here catches both that one and the original, so no timer outlives `destroy()`.
+        this.flushPendingState(); // the user's last edit, before anything is torn down
         this.destroyed = true;
-        if (this.stateTimer != null) {
-            clearTimeout(this.stateTimer);
-            this.stateTimer = null;
-        }
         if (this.persistKey !== null && typeof window !== 'undefined') window.removeEventListener('beforeunload', this.onUnload);
         this.resizeObserver?.disconnect();
         this.splitters.destroy();
@@ -1350,13 +1351,53 @@ export class VelaWorkspace {
     /** Debounced dirty mark: one `state:changed` (+ one storage write in persist mode)
      *  per burst of edits, flushed hard on unload/destroy. */
     private markStateDirty(): void {
-        if (this.destroyed) return;
+        if (this.destroyed || !this.booted) return;
         if (this.stateTimer != null) clearTimeout(this.stateTimer);
         this.stateTimer = setTimeout(() => {
             this.stateTimer = null;
             this.events.emit('state:changed', undefined);
             this.persistNow();
         }, 500);
+    }
+
+    /**
+     * Push a pending debounced change out NOW, for a teardown or a page unload — the
+     * two moments the 500ms timer would otherwise never reach.
+     *
+     * Dropping it was a silent data loss: the timer carries BOTH halves of the dirty
+     * signal — the `state:changed` event and the storage write — so a host that saves
+     * from that event (a server-backed host, where `persistNow` is a no-op for want of
+     * a `persistKey`) simply never heard about the user's last edit.
+     *
+     * Idempotent and re-entrancy safe, which the ordering here buys:
+     *  - a no-op unless a timer is actually pending, so a teardown with nothing
+     *    outstanding stays silent and never invents an edit;
+     *  - the timer is cleared FIRST, so nothing survives this call and a second call
+     *    does nothing — `destroy()` after an unload flush adds no second write;
+     *  - the state is snapshotted BEFORE the handlers run, and that snapshot is what
+     *    gets persisted, so storage and the host are told the same thing even if a
+     *    handler mutates state while it runs;
+     *  - `emitting` is held across the emit, so a handler calling back in (a host that
+     *    tears down on save is the obvious one) cannot re-enter this and recurse.
+     */
+    private flushPendingState(): void {
+        if (this.stateTimer == null || this.emitting) return;
+        clearTimeout(this.stateTimer);
+        this.stateTimer = null;
+        const snapshot = this.persistKey !== null ? encodeState(this.getState()) : null;
+        this.emitting = true;
+        try {
+            this.events.emit('state:changed', undefined);
+        } finally {
+            this.emitting = false;
+        }
+        if (snapshot !== null && this.persistKey !== null) {
+            try {
+                void this.storage.set(this.persistKey, snapshot);
+            } catch {
+                /* best-effort — a failing adapter must never break the workspace */
+            }
+        }
     }
 
     /** Write the current state through the storage adapter now (fire-and-forget). */
