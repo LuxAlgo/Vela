@@ -112,35 +112,37 @@ describe('aggregateCandleColumns (sub-pixel LOD bucketing)', () => {
     // 10 px per price unit, chart top at price 100 — plenty of resolution for the void checks.
     const yOf = (price: number): number => (100 - price) * 10;
     const oneColumn = (): number => 0;
+    // The backends' paint resolution, reduced to its direction fallback.
+    const dirColor = (b: OHLCV): string => (b.close >= b.open ? 'up' : 'down');
 
-    it('collapses a column of overlapping bars into ONE min-to-max stick', () => {
+    it('collapses a column of overlapping same-color bars into ONE min-to-max stick', () => {
         const bars = [bar(1, 10, 12, 9, 11), bar(2, 11, 13, 10, 12), bar(3, 12, 14, 11, 13)];
-        const sticks = aggregateCandleColumns(bars, 0, 2, oneColumn, yOf);
-        expect(sticks).toEqual([{ x: 0, hi: 14, lo: 9, headTime: 1, open: 10, close: 13 }]);
+        const sticks = aggregateCandleColumns(bars, 0, 2, oneColumn, yOf, dirColor);
+        expect(sticks).toEqual([{ x: 0, hi: 14, lo: 9, color: 'up' }]);
     });
 
     it('keeps a PRICE GAP inside a column as a void — two sticks, never one solid span', () => {
         // The regression: the bars around a large price jump land in the same pixel
         // column once zoomed far out; a single min-to-max stick would paint the void.
         const bars = [bar(1, 10, 12, 9, 11), bar(2, 40, 42, 39, 41)];
-        const sticks = aggregateCandleColumns(bars, 0, 1, oneColumn, yOf);
+        const sticks = aggregateCandleColumns(bars, 0, 1, oneColumn, yOf, dirColor);
         expect(sticks).toEqual([
-            { x: 0, hi: 12, lo: 9, headTime: 1, open: 10, close: 11 },
-            { x: 0, hi: 42, lo: 39, headTime: 2, open: 40, close: 41 },
+            { x: 0, hi: 12, lo: 9, color: 'up' },
+            { x: 0, hi: 42, lo: 39, color: 'up' },
         ]);
     });
 
     it('coalesces a SUB-PIXEL void — an invisible gap is not worth a second stick', () => {
         // 0.05 price units = 0.5 px: below one pixel, the runs merge back into one.
         const bars = [bar(1, 10, 12, 9, 11), bar(2, 12.1, 12.15, 12.05, 12.1)];
-        const sticks = aggregateCandleColumns(bars, 0, 1, oneColumn, yOf);
-        expect(sticks).toEqual([{ x: 0, hi: 12.15, lo: 9, headTime: 1, open: 10, close: 12.1 }]);
+        const sticks = aggregateCandleColumns(bars, 0, 1, oneColumn, yOf, dirColor);
+        expect(sticks).toEqual([{ x: 0, hi: 12.15, lo: 9, color: 'up' }]);
     });
 
-    it('a later bar bridging two disjoint runs merges them (head stays the earliest bar)', () => {
+    it('a later bar bridging two disjoint same-color runs merges them', () => {
         const bars = [bar(1, 10, 12, 9, 11), bar(2, 40, 42, 39, 41), bar(3, 25, 41, 10, 30)];
-        const sticks = aggregateCandleColumns(bars, 0, 2, oneColumn, yOf);
-        expect(sticks).toEqual([{ x: 0, hi: 42, lo: 9, headTime: 1, open: 10, close: 30 }]);
+        const sticks = aggregateCandleColumns(bars, 0, 2, oneColumn, yOf, dirColor);
+        expect(sticks).toEqual([{ x: 0, hi: 42, lo: 9, color: 'up' }]);
     });
 
     it('emits one stick per pixel column and skips holes and zero-range bars', () => {
@@ -153,20 +155,53 @@ describe('aggregateCandleColumns (sub-pixel LOD bucketing)', () => {
         ];
         // Two bars in column 0, the last one in column 1.
         const xOf = (i: number): number => (i < 2 ? 0 : 1);
-        const sticks = aggregateCandleColumns(bars, 0, 4, xOf, yOf);
+        const sticks = aggregateCandleColumns(bars, 0, 4, xOf, yOf, dirColor);
         expect(sticks).toEqual([
-            { x: 0, hi: 13, lo: 9, headTime: 1, open: 10, close: 12 },
-            { x: 1, hi: 32, lo: 29, headTime: 5, open: 30, close: 31 },
+            { x: 0, hi: 13, lo: 9, color: 'up' },
+            { x: 1, hi: 32, lo: 29, color: 'up' },
         ]);
     });
 
-    it('sticks carry their OWN run direction (a gap-up column colors each side by its bars)', () => {
-        // Below the gap: a down run (open 12 → close 10). Above: an up run (40 → 42).
+    it('sticks carry their OWN bars\u2019 color (a gap-up column colors each side by its bars)', () => {
+        // Below the gap: a down bar (open 12 → close 10). Above: an up bar (40 → 42).
         const bars = [bar(1, 12, 13, 9, 10), bar(2, 40, 43, 39, 42)];
-        const sticks = aggregateCandleColumns(bars, 0, 1, oneColumn, yOf);
-        const below = sticks.find((s) => s.hi === 13)!;
-        const above = sticks.find((s) => s.hi === 43)!;
-        expect(below.close).toBeLessThan(below.open);
-        expect(above.close).toBeGreaterThan(above.open);
+        const sticks = aggregateCandleColumns(bars, 0, 1, oneColumn, yOf, dirColor);
+        expect(sticks.find((s) => s.hi === 13)!.color).toBe('down');
+        expect(sticks.find((s) => s.hi === 43)!.color).toBe('up');
+    });
+
+    it('a down bar\u2019s long wick keeps the down color when an up bar shares its column', () => {
+        // The regression: zoomed in, a down bar with a deep lower wick is red; once the
+        // tall up bar right after it lands in the same pixel column, one merged
+        // first-open→last-close stick turns the whole wick green. Bars of different
+        // colors must stay separate sticks, each covering only its own bars' range.
+        const down = bar(1, 94.4, 94.5, 82, 94.1); // wick down to 82
+        const up = bar(2, 94.1, 100.2, 94.05, 100.1); // recovery, barely overlapping the down bar
+        const sticks = aggregateCandleColumns([down, up], 0, 1, oneColumn, yOf, dirColor);
+        expect(sticks).toEqual([
+            { x: 0, hi: 94.5, lo: 82, color: 'down' },
+            { x: 0, hi: 100.2, lo: 94.05, color: 'up' },
+        ]);
+    });
+
+    it('paints a column\u2019s sticks latest-bar-last so the newest bar wins where colors overlap', () => {
+        // An up bar fully inside an earlier down bar's range: both sticks exist, the up
+        // one comes out AFTER (drawn on top), as sequential per-bar drawing would give.
+        const bars = [bar(1, 20, 30, 10, 15), bar(2, 18, 22, 16, 21)];
+        const sticks = aggregateCandleColumns(bars, 0, 1, oneColumn, yOf, dirColor);
+        expect(sticks.map((s) => s.color)).toEqual(['down', 'up']);
+        // Reverse the time order and the down bar paints on top instead.
+        const flipped = aggregateCandleColumns([bars[1]!, bars[0]!], 0, 1, oneColumn, yOf, dirColor);
+        expect(flipped.map((s) => s.color)).toEqual(['up', 'down']);
+    });
+
+    it('groups by the RESOLVED paint, so a barcolor()ed bar forms its own run', () => {
+        const bars = [bar(1, 10, 12, 9, 11), bar(2, 11, 13, 10, 12), bar(3, 12, 14, 11, 13)];
+        const tinted = (b: OHLCV): string => (b.time === 2 ? '#ff0' : dirColor(b));
+        const sticks = aggregateCandleColumns(bars, 0, 2, oneColumn, yOf, tinted);
+        expect(sticks).toEqual([
+            { x: 0, hi: 13, lo: 10, color: '#ff0' },
+            { x: 0, hi: 14, lo: 9, color: 'up' }, // bars 1 and 3 bridge across bar 2's range
+        ]);
     });
 });
