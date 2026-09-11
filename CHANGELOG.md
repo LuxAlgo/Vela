@@ -4,6 +4,16 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Plugin indicators drawn by a renderer layer can now be added several times.** A
+  plugin native indicator that paints through its own renderer layer and allows several
+  instances (`multiInstance` on its descriptor) now gets one layer per instance: each
+  instance draws on its own canvas, on its own pane, with its own stacking order, and its
+  data never overwrites a sibling's. Previously such types had to stay single-instance.
+  Running native indicators also learn their own id (`ctx.id`), so an instance can
+  identify itself to host code — a picker or a drag handle — without ambiguity.
+
 ### Fixed
 
 - **Timeline mark popups now toggle with a click.** Clicking the mark whose popup is

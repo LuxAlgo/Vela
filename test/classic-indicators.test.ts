@@ -248,6 +248,7 @@ describe('classic descriptor adapter', () => {
         const instance = desc.create();
         let captured: NativeIndicatorOutput | undefined;
         const ctx: NativeIndicatorContext = {
+            id: 'native-test',
             symbol: 'TEST',
             timeframe: '1m',
             live: false,

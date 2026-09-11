@@ -578,6 +578,56 @@ describe('EngineOrchestrator', () => {
         }
     });
 
+    it('native context: each instance knows its own id; a multiInstance type pushes layer data on a per-instance channel stamped on its model', async () => {
+        // A layer-backed native: pushes a payload tagged with its context id, and emits an
+        // empty model (the legend row) like the built-in layer natives do.
+        class LayerNative implements NativeIndicator {
+            ctx: NativeIndicatorContext | null = null;
+            start(ctx: NativeIndicatorContext): void { this.ctx = ctx; ctx.emit({}); ctx.pushData({ from: ctx.id }); }
+            onBars(): void {}
+            onViewport(): void {}
+            setInputs(): void {}
+            suspend(): void {}
+            resume(): void {}
+            stop(): void {}
+        }
+        const singles: LayerNative[] = [];
+        const multis: LayerNative[] = [];
+        registerNativeIndicator({ ...testNativeDescriptor, type: 'layer-single', title: 'Single', create: () => { const n = new LayerNative(); singles.push(n); return n; } });
+        registerNativeIndicator({ ...testNativeDescriptor, type: 'layer-multi', title: 'Multi', multiInstance: true, create: () => { const n = new LayerNative(); multis.push(n); return n; } });
+        try {
+            const renderer = new FakeRenderer();
+            const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+            const s = chart.addNativeIndicator('layer-single');
+            const m1 = chart.addNativeIndicator('layer-multi');
+            const m2 = chart.addNativeIndicator('layer-multi');
+            await chart.ready();
+            await flush();
+
+            // The context id IS the handle id, per instance.
+            expect(singles[0]!.ctx!.id).toBe(s.id);
+            expect(multis.map((n) => n.ctx!.id)).toEqual([m1.id, m2.id]);
+
+            // Single-instance: the type is the channel, the model names no channel of its own.
+            expect(renderer.nativePushes).toContainEqual(['layer-single', { from: s.id }]);
+            expect(renderer.mountedModels.find((mm) => mm.id === s.id)?.native).toEqual({ type: 'layer-single' });
+
+            // Multi-instance: one channel per instance (never the bare type), and the model
+            // carries it so the renderer can mount a dedicated layer reading it.
+            const m1Channel = renderer.mountedModels.find((mm) => mm.id === m1.id)?.native?.channel;
+            const m2Channel = renderer.mountedModels.find((mm) => mm.id === m2.id)?.native?.channel;
+            expect(m1Channel).toBeTruthy();
+            expect(m2Channel).toBeTruthy();
+            expect(m1Channel).not.toBe(m2Channel);
+            expect(renderer.nativePushes).toContainEqual([m1Channel, { from: m1.id }]);
+            expect(renderer.nativePushes).toContainEqual([m2Channel, { from: m2.id }]);
+            expect(renderer.nativePushes.some(([ch]) => ch === 'layer-multi')).toBe(false);
+        } finally {
+            unregisterNativeIndicator('layer-single');
+            unregisterNativeIndicator('layer-multi');
+        }
+    });
+
     it("an output's paneAxis override is stamped onto the mounted model (and only then)", async () => {
         // A layer-painting native: series-less output declaring a categorical pane axis.
         class UnscaledNative implements NativeIndicator {
