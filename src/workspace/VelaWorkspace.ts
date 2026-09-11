@@ -1061,12 +1061,23 @@ export class VelaWorkspace {
         }
     }
 
-    /** Set the workspace-global display timezone — applied to EVERY cell. */
+    /**
+     * Set the workspace-global display timezone — applied to EVERY cell. An IANA zone,
+     * or `'exchange'` (the exchange rule): each cell then renders in its OWN market's
+     * zone (Chicago for a CME future, New York for a US equity, UTC for crypto), and the
+     * bottom bar follows the active cell's.
+     */
     setTimezone(zone: string): void {
         this.timezone = zone;
-        this.bottombar?.setTimezone(zone);
-        for (const cell of this.cellsById.values()) cell.chart.renderer.set('timezone', zone);
+        this.projectTimezone();
+        for (const cell of this.cellsById.values()) cell.applyTimezone();
         this.markStateDirty();
+    }
+
+    /** Bottom bar ⇐ the stored choice + the ACTIVE cell's market zone (labels the exchange row). */
+    private projectTimezone(): void {
+        const active = this.activeId ? this.cellsById.get(this.activeId) : undefined;
+        this.bottombar?.setTimezone(this.timezone, active?.exchangeTimezone);
     }
 
     /**
@@ -1292,6 +1303,7 @@ export class VelaWorkspace {
         this.dock.onChart(cell.chart); // every docked panel follows the active cell
         this.bottombar?.setActiveRange(cell.activeRangeId);
         this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
+        this.projectTimezone(); // under the exchange rule the bar's zone is the active cell's
         this.indicatorPicker?.sync(); // the dialog may be open while the active cell changes
         this.glider.stop(); // a mid-glide switch must not steer the next cell's viewport
         // Shared drawing toolbar ⇄ the active cell: re-apply the GLOBAL tool + magnet + stay
@@ -1932,6 +1944,7 @@ export class VelaWorkspace {
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
         this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
+        this.projectTimezone(); // the new symbol's market zone, once its metadata lands
         // The chip highlight must track the cell through EVERY market path: a timeframe
         // change (cell API, contribution context, sync link) leaves range mode and a
         // direct `applyRange` enters it — the bar follows the cell's own record.
@@ -2100,6 +2113,7 @@ export class VelaWorkspace {
         this.timezoneDrawer ??= new TimezoneDrawer({
             host: this.root,
             timezone: () => this.timezone,
+            exchangeTimezone: () => (this.activeId ? this.cellsById.get(this.activeId)?.exchangeTimezone : undefined),
             onTimezone: (zone) => this.setTimezone(zone),
             onOpenChange: (open) => this.trackDialog(open),
         });

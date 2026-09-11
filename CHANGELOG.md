@@ -4,6 +4,16 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Exchange time zone.** The time-zone picker (bottom bar, time-axis menu, mobile sheet)
+  offers an **Exchange** row, right under UTC: pick it and every chart renders in its own market's
+  zone — Chicago for a CME future, New York for a US equity, UTC for crypto — as declared
+  by its provider. In a multi-chart grid each cell follows its own market, and the
+  bottom-bar clock shows the active chart's. The choice persists with the workspace and
+  can be set from code with `timezone: 'exchange'` or `setTimezone('exchange')`;
+  choosing a fixed zone anywhere returns the whole workspace to that zone.
+
 ### Fixed
 
 - **Right-click menus and dropdowns follow the app theme, not the plot.** Changing the

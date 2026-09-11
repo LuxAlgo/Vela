@@ -64,10 +64,55 @@ export const TIMEZONES: readonly TimezoneEntry[] = [
     { value: 'Pacific/Kiritimati', label: 'Kiritimati' },
 ];
 
+/**
+ * The "follow the market" choice: not a zone but a RULE, resolved per chart to the
+ * symbol's own trading timezone (`SymbolInfo.timezone` — Chicago for CME futures, New
+ * York for US equities, UTC for crypto). It is what the workspace stores and persists;
+ * a renderer only ever receives the resolved IANA zone (see {@link resolveTimezone}).
+ */
+export const EXCHANGE_TIMEZONE = 'exchange';
+
+export function isExchangeTimezone(zone: string): boolean {
+    return zone === EXCHANGE_TIMEZONE;
+}
+
+/**
+ * The IANA zone a chart actually renders in. The exchange rule resolves to the market's
+ * zone, falling back to UTC while symbol metadata is unknown (not landed yet, or a
+ * provider that declares none); an explicit zone passes through untouched.
+ */
+export function resolveTimezone(zone: string, exchangeZone: string | undefined): string {
+    if (!isExchangeTimezone(zone)) return zone;
+    return exchangeZone && exchangeZone !== '' ? exchangeZone : 'Etc/UTC';
+}
+
 /** The renderer's config default is the bare `'UTC'` alias — fold it (and any other
  *  UTC spelling) onto the catalog's `'Etc/UTC'` so selection checks land on one entry. */
 export function normalizeTimezone(zone: string): string {
     return zone === 'UTC' || zone === 'Etc/UTC' || zone === 'Etc/GMT' ? 'Etc/UTC' : zone;
+}
+
+export interface TimezoneRow {
+    /** The value a pick stores — an IANA zone, or {@link EXCHANGE_TIMEZONE}. */
+    value: string;
+    label: string;
+    checked: boolean;
+}
+
+/**
+ * The rows every zone PICKER offers (bottom bar, time-axis menu, mobile sheet): UTC,
+ * then the exchange rule, then the rest of the catalog. `current` is the stored choice
+ * (rule or zone); `exchangeZone` is the active chart's market zone, which labels the
+ * exchange row with its live offset — unknown, the row reads bare "Exchange". The
+ * renderer's own settings dialog does NOT use this: it edits a resolved zone and lists
+ * {@link TIMEZONES} alone.
+ */
+export function timezoneMenuRows(current: string, exchangeZone: string | undefined): TimezoneRow[] {
+    const active = normalizeTimezone(current);
+    const [utc, ...zones] = TIMEZONES.map((t) => ({ value: t.value, label: tzMenuLabel(t.value, t.label), checked: t.value === active }));
+    // `tzButtonLabel`, not `tzOffset`: a UTC market must read "(UTC)", not an ICU "GMT+0".
+    const exchange = { value: EXCHANGE_TIMEZONE, label: exchangeZone ? `(${tzButtonLabel(exchangeZone)}) Exchange` : 'Exchange', checked: isExchangeTimezone(current) };
+    return [utc!, exchange, ...zones];
 }
 
 /** Current UTC offset of an IANA zone as `"UTC"`, `"UTC+2"` or `"UTC-9:30"`. */

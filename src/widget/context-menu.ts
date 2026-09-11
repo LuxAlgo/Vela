@@ -17,6 +17,7 @@ import {
     type ScaleChoice,
     type Zone,
 } from './context-menu-model';
+import { resolveTimezone } from './timezones';
 
 /** Approximate chrome insets used only to classify the right-clicked zone. */
 const PRICE_AXIS_W = 60;
@@ -25,8 +26,10 @@ const TIME_AXIS_H = 26;
 export interface ContextMenuCallbacks {
     /** Reset the view (all history, autoscale back on). */
     resetView: () => void;
-    /** The display timezone the host holds (the time-axis menu checks it). */
+    /** The display-timezone choice the host holds — a zone or the exchange rule (the time-axis menu checks it). */
     timezone?: () => string;
+    /** The chart's market zone, once its symbol metadata is known — labels the exchange row's offset. */
+    exchangeTimezone?: () => string | undefined;
     /** Switch the display timezone through the host, so its own chrome follows. */
     setTimezone?: (zone: string) => void;
     /** Live widget context for contributed `context:*` actions. */
@@ -119,7 +122,7 @@ export class ChartContextMenu {
         }
         if (zone === 'time-axis') {
             const tz = this.cbs.timezone?.() ?? String(this.chart?.renderer.get('timezone') ?? 'Etc/UTC');
-            return [...timeAxisItems(tz), ...this.contributed('time-axis')];
+            return [...timeAxisItems(tz, this.cbs.exchangeTimezone?.()), ...this.contributed('time-axis')];
         }
         const chart = this.chart;
         return [
@@ -147,7 +150,8 @@ export class ChartContextMenu {
         } else if (id.startsWith('tz:')) {
             const zone = id.slice('tz:'.length);
             if (this.cbs.setTimezone) this.cbs.setTimezone(zone);
-            else chart.renderer.set('timezone', zone);
+            // No host to hold the rule: the renderer only understands a real zone.
+            else chart.renderer.set('timezone', resolveTimezone(zone, this.cbs.exchangeTimezone?.()));
         } else if (id === 'auto') {
             chart.renderer.set('autoScale', chart.renderer.get('autoScale') === false);
         } else if (id === 'invert') {

@@ -37,7 +37,7 @@ import {
 } from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
-import { normalizeTimezone } from '../core/timezones';
+import { normalizeTimezone, resolveTimezone } from '../core/timezones';
 import { applyPlotOverlayTokens } from '../ui';
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
@@ -141,7 +141,8 @@ export interface CellDeps {
     /** Where the renderer mounts its MODAL dialogs (chart/indicator settings) — the
      *  workspace root, so dialogs center over the whole grid instead of one cell. */
     dialogHost: HTMLElement;
-    /** The workspace-global display timezone (applied to every cell's renderer). */
+    /** The workspace-global display-timezone CHOICE — an IANA zone, or the exchange
+     *  rule, which each cell resolves to its own market's zone ({@link ChartCell.applyTimezone}). */
     timezone(): string;
     /** Switch the workspace-global display timezone (a cell's time-axis menu). */
     setTimezone(zone: string): void;
@@ -229,6 +230,9 @@ export class ChartCell {
     /** Latched: the symbol's extended tape wraps midnight (an overnight roll market) —
      *  one extended-hours shading phase instead of the pre/post split. */
     private sessionOvernightFlag = false;
+    /** Latched: the symbol's own trading zone (`SymbolInfo.timezone`) — what the exchange
+     *  rule resolves to on this cell. Undefined until metadata lands or when none is declared. */
+    private exchangeZone: string | undefined;
 
     private inner: Vela | null;
     /** The live app theme — seeded from deps, updated on `theme:changed` (the base the
@@ -351,10 +355,13 @@ export class ChartCell {
         // The renderer's settings dialog owns a Time zone row too (it commits through
         // applyConfig) — mirror it back so the workspace bottom bar, the other cells and
         // the persisted state never disagree with this cell's axis. `renderer.set` is a
-        // feature write, not an applyConfig, so adopting the value cannot loop.
+        // feature write, not an applyConfig, so adopting the value cannot loop. The
+        // comparison is against the RESOLVED zone: under the exchange rule the renderer
+        // legitimately holds the market's zone, and that must not read as a user edit
+        // (which would demote the rule to that fixed zone).
         this.inner.renderer.onConfigChanged(() => {
             const zone = this.inner?.renderer.get('timezone');
-            if (typeof zone === 'string' && normalizeTimezone(zone) !== normalizeTimezone(this.deps.timezone())) {
+            if (typeof zone === 'string' && normalizeTimezone(zone) !== normalizeTimezone(this.displayTimezone)) {
                 this.deps.setTimezone(normalizeTimezone(zone));
             }
             this.syncStatuslineColors(); // a settings edit may have recolored the active style
@@ -406,8 +413,7 @@ export class ChartCell {
             this.refreshSessionShading(); // the first painted bars now define the exact range
         });
         this.inner.on('viewport:changed', (range) => this.sessionShading.updateRange(range));
-        const tz = deps.timezone();
-        if (tz !== 'Etc/UTC') this.inner.renderer.set('timezone', tz);
+        this.applyTimezone();
 
         this.indicatorTitlesOn = seed.indicatorTitles ?? true;
         if (!this.indicatorTitlesOn) this.inner.renderer.set('indicatorTitles', false);
@@ -436,7 +442,7 @@ export class ChartCell {
                 this.statusline?.setSymbol(this.state.symbol);
                 this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
             }
-            this.refreshSessionAvailable();
+            this.refreshSymbolMetadata();
             if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
         });
         this.syncStatuslineColors();
@@ -453,6 +459,7 @@ export class ChartCell {
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => this.resetView(),
             timezone: () => this.deps.timezone(),
+            exchangeTimezone: () => this.exchangeZone,
             setTimezone: (zone) => this.deps.setTimezone(zone),
             // Right-clicking activates the cell first (capture-phase pointerdown), so the
             // context the actions receive is this cell's — the active one.
@@ -532,7 +539,7 @@ export class ChartCell {
         this.offMarket = this.inner.on('market:changed', ({ symbol, timeframe }) => {
             this.projectMarket(symbol, timeframe);
             this.refreshNativeCatalog(); // per-symbol support flags may differ
-            this.refreshSessionAvailable(); // the new symbol may (not) have sessions
+            this.refreshSymbolMetadata(); // the new symbol may (not) have sessions, and its own zone
             if (this.inner) this.marketStatus?.track(this.inner.data, symbol); // …and its own market clock
             this.deps.onMarketChanged(this.id);
         });
@@ -578,7 +585,40 @@ export class ChartCell {
         void this.inner?.setMarket({ session });
     }
 
-    private refreshSessionAvailable(): void {
+    /**
+     * The symbol's own trading zone, once its metadata has landed — what the exchange
+     * rule resolves to on this cell (the workspace labels the shared bottom bar with the
+     * ACTIVE cell's). Undefined = unknown or undeclared (the rule then renders UTC).
+     */
+    get exchangeTimezone(): string | undefined {
+        return this.exchangeZone;
+    }
+
+    /** The IANA zone this cell's axis renders in: the workspace choice, resolved. */
+    get displayTimezone(): string {
+        return resolveTimezone(this.deps.timezone(), this.exchangeZone);
+    }
+
+    /**
+     * Push the resolved zone to the renderer — on the workspace choice changing, and on
+     * this cell's market zone changing under the exchange rule. Skips the write when the
+     * renderer already holds it (its config default is the bare `'UTC'` alias).
+     */
+    applyTimezone(): void {
+        const chart = this.inner;
+        if (!chart) return;
+        const zone = this.displayTimezone;
+        const current = chart.renderer.get('timezone');
+        // A renderer without the feature reads `undefined` — treat it as the default so a
+        // UTC workspace never issues a write it would only warn about.
+        const held = typeof current === 'string' && current ? current : 'UTC';
+        if (normalizeTimezone(held) === normalizeTimezone(zone)) return;
+        chart.renderer.set('timezone', zone);
+    }
+
+    /** Re-read the symbol's metadata: session posture (RTH/ETH toggle, shading) and its
+     *  trading zone (the exchange rule). Async — the workspace re-projects when a verdict lands. */
+    private refreshSymbolMetadata(): void {
         const chart = this.inner;
         const symbol = this.state.symbol;
         if (!chart || !symbol) return;
@@ -586,10 +626,16 @@ export class ChartCell {
             if (this.inner !== chart) return;
             const available = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
             const overnight = parseSessionSpec(si)?.overnight === true;
-            if (available !== this.sessionAvailableFlag || overnight !== this.sessionOvernightFlag) {
+            const zone = typeof si?.timezone === 'string' && si.timezone !== '' ? si.timezone : undefined;
+            const zoneChanged = zone !== this.exchangeZone;
+            if (zoneChanged) {
+                this.exchangeZone = zone;
+                this.applyTimezone(); // a no-op unless the workspace follows the exchange
+            }
+            if (available !== this.sessionAvailableFlag || overnight !== this.sessionOvernightFlag || zoneChanged) {
                 this.sessionAvailableFlag = available;
                 this.sessionOvernightFlag = overnight;
-                this.deps.onMarketChanged(this.id); // re-project the shared bottombar toggle
+                this.deps.onMarketChanged(this.id); // re-project the shared bottombar toggle + zone label
                 this.pushSettingsSections(); // the Trading session group follows the symbol
             }
             this.refreshSessionShading();
