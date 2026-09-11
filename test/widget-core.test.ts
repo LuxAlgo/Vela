@@ -134,19 +134,17 @@ describe('widget chrome pure helpers', () => {
         expect(resolveTimezone('UTC', 'America/Chicago')).toBe('UTC'); // the renderer's alias is left alone
     });
 
-    it('picker rows: UTC, then the exchange rule with the market offset, then the catalog with one check', () => {
-        const rows = timezoneMenuRows(EXCHANGE_TIMEZONE, 'Asia/Tokyo');
+    it('picker rows: UTC, then a plain "Exchange" rule row, then the catalog with one check', () => {
+        const rows = timezoneMenuRows(EXCHANGE_TIMEZONE);
         expect(rows).toHaveLength(TIMEZONES.length + 1);
         expect(rows[0]!.value).toBe('Etc/UTC');
-        expect(rows[1]).toEqual({ value: 'exchange', label: '(UTC+9) Exchange', checked: true });
+        expect(rows[1]).toEqual({ value: 'exchange', label: 'Exchange', checked: true });
         expect(rows.filter((r) => r.checked)).toHaveLength(1);
         expect(rows.filter((r) => r.value !== 'exchange').map((r) => r.value)).toEqual(TIMEZONES.map((t) => t.value));
 
-        const fixed = timezoneMenuRows('UTC', 'Asia/Tokyo');
+        const fixed = timezoneMenuRows('UTC');
         expect(fixed[1]!.checked).toBe(false);
         expect(fixed.filter((r) => r.checked).map((r) => r.value)).toEqual(['Etc/UTC']);
-        // A UTC market (crypto) labels the rule with the bare offset.
-        expect(timezoneMenuRows(EXCHANGE_TIMEZONE, 'Etc/UTC')[1]!.label).toBe('(UTC) Exchange');
     });
 
     it('price-style labels: built-ins + registry labels + raw id fallback', () => {

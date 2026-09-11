@@ -137,16 +137,12 @@ describe('time-axis menu', () => {
         }
     });
 
-    it('the exchange row checks under the rule and carries the market zone offset when known', () => {
-        const known = timeAxisItems('exchange', 'Asia/Tokyo')[0]!.submenu!;
-        expect(known.filter((z) => z.checked).map((z) => z.id)).toEqual(['tz:exchange']);
-        expect(known[1]!.label).toBe('(UTC+9) Exchange');
-        // Metadata not landed (or none declared): the row stays offered, unlabeled.
-        const unknown = timeAxisItems('exchange')[0]!.submenu!;
-        expect(unknown[1]!.label).toBe('Exchange');
-        expect(unknown[1]!.checked).toBe(true);
+    it('the exchange row reads plain "Exchange" (a rule, no offset) and checks under the rule', () => {
+        const zones = timeAxisItems('exchange')[0]!.submenu!;
+        expect(zones.filter((z) => z.checked).map((z) => z.id)).toEqual(['tz:exchange']);
+        expect(zones[1]!.label).toBe('Exchange');
         // A fixed zone active: the exchange row is offered but not checked.
-        expect(timeAxisItems('Europe/Paris', 'Asia/Tokyo')[0]!.submenu![1]!.checked).toBe(false);
+        expect(timeAxisItems('Europe/Paris')[0]!.submenu![1]!.checked).toBe(false);
     });
 });
 

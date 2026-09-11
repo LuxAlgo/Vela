@@ -2113,7 +2113,6 @@ export class VelaWorkspace {
         this.timezoneDrawer ??= new TimezoneDrawer({
             host: this.root,
             timezone: () => this.timezone,
-            exchangeTimezone: () => (this.activeId ? this.cellsById.get(this.activeId)?.exchangeTimezone : undefined),
             onTimezone: (zone) => this.setTimezone(zone),
             onOpenChange: (open) => this.trackDialog(open),
         });

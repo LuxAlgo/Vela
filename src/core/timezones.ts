@@ -102,17 +102,15 @@ export interface TimezoneRow {
 /**
  * The rows every zone PICKER offers (bottom bar, time-axis menu, mobile sheet): UTC,
  * then the exchange rule, then the rest of the catalog. `current` is the stored choice
- * (rule or zone); `exchangeZone` is the active chart's market zone, which labels the
- * exchange row with its live offset — unknown, the row reads bare "Exchange". The
+ * (rule or zone). The exchange row reads plain "Exchange" — it is a rule, not a zone, so
+ * it carries no offset (the bar's clock/offset label shows the resolved zone). The
  * renderer's own settings dialog does NOT use this: it edits a resolved zone and lists
  * {@link TIMEZONES} alone.
  */
-export function timezoneMenuRows(current: string, exchangeZone: string | undefined): TimezoneRow[] {
+export function timezoneMenuRows(current: string): TimezoneRow[] {
     const active = normalizeTimezone(current);
     const [utc, ...zones] = TIMEZONES.map((t) => ({ value: t.value, label: tzMenuLabel(t.value, t.label), checked: t.value === active }));
-    // `tzButtonLabel`, not `tzOffset`: a UTC market must read "(UTC)", not an ICU "GMT+0".
-    const exchange = { value: EXCHANGE_TIMEZONE, label: exchangeZone ? `(${tzButtonLabel(exchangeZone)}) Exchange` : 'Exchange', checked: isExchangeTimezone(current) };
-    return [utc!, exchange, ...zones];
+    return [utc!, { value: EXCHANGE_TIMEZONE, label: 'Exchange', checked: isExchangeTimezone(current) }, ...zones];
 }
 
 /** Current UTC offset of an IANA zone as `"UTC"`, `"UTC+2"` or `"UTC-9:30"`. */

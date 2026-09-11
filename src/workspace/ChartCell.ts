@@ -459,7 +459,6 @@ export class ChartCell {
         this.contextMenu = new ChartContextMenu(this.host, {
             resetView: () => this.resetView(),
             timezone: () => this.deps.timezone(),
-            exchangeTimezone: () => this.exchangeZone,
             setTimezone: (zone) => this.deps.setTimezone(zone),
             // Right-clicking activates the cell first (capture-phase pointerdown), so the
             // context the actions receive is this cell's — the active one.

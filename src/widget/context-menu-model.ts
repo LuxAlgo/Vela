@@ -128,14 +128,13 @@ export function priceAxisItems(s: PriceAxisState): MenuItemDescriptor[] {
     ];
 }
 
-/** `timezone` is the host's STORED choice (an IANA zone, or the exchange rule);
- *  `exchangeTimezone` the chart's market zone, labeling the exchange row's offset. */
-export function timeAxisItems(timezone: string, exchangeTimezone?: string): MenuItemDescriptor[] {
+/** `timezone` is the host's STORED choice — an IANA zone, or the exchange rule. */
+export function timeAxisItems(timezone: string): MenuItemDescriptor[] {
     return [
         {
             id: 'timezone',
             label: 'Time zone',
-            submenu: timezoneMenuRows(timezone, exchangeTimezone).map((r) => ({ id: `tz:${r.value}`, label: r.label, checked: r.checked })),
+            submenu: timezoneMenuRows(timezone).map((r) => ({ id: `tz:${r.value}`, label: r.label, checked: r.checked })),
         },
         settingsItem('time-axis', 'More settings…'),
     ];

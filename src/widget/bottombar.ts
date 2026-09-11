@@ -222,18 +222,18 @@ export class Bottombar {
     }
 
     /**
-     * Reflect the stored choice AND the active chart's market zone. The clock, the
-     * offset label and the exchange row's offset all read the RESOLVED zone, so a
-     * workspace on the exchange rule re-labels when the active cell (or its symbol)
-     * changes market — the host re-projects on both. Idempotent: unchanged inputs
-     * leave the menu alone.
+     * Reflect the stored choice AND the active chart's market zone. The clock and the
+     * offset label read the RESOLVED zone, so a workspace on the exchange rule re-labels
+     * when the active cell (or its symbol) changes market — the host re-projects on
+     * both. Idempotent: unchanged inputs leave the menu alone.
      */
     setTimezone(zone: string, exchangeTimezone?: string): void {
         if (zone === this.timezone && exchangeTimezone === this.exchangeTimezone) return;
+        const choiceChanged = zone !== this.timezone;
         this.timezone = zone;
         this.exchangeTimezone = exchangeTimezone;
         this.tzLabelEl.textContent = tzButtonLabel(this.displayZone);
-        this.tzMenu.setItems(this.tzItems());
+        if (choiceChanged) this.tzMenu.setItems(this.tzItems()); // the rows only depend on the choice
         this.tick();
     }
 
@@ -272,7 +272,7 @@ export class Bottombar {
     }
 
     private tzItems() {
-        return timezoneMenuRows(this.timezone, this.exchangeTimezone).map((r) => ({ id: r.value, label: r.label, checked: r.checked }));
+        return timezoneMenuRows(this.timezone).map((r) => ({ id: r.value, label: r.label, checked: r.checked }));
     }
 
     private tick(): void {

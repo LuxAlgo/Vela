@@ -28,8 +28,6 @@ export interface TimezoneDrawerOptions {
     host: HTMLElement;
     /** The stored choice — a zone or the exchange rule. */
     timezone: () => string;
-    /** The active chart's market zone (labels the exchange row's offset). */
-    exchangeTimezone?: () => string | undefined;
     onTimezone: (zone: string) => void;
     onOpenChange?: (open: boolean) => void;
 }
@@ -60,7 +58,7 @@ export class TimezoneDrawer {
         this.drawer.body.replaceChildren();
         const list = doc.createElement('div');
         list.className = 'vela-tzd-list';
-        for (const tz of timezoneMenuRows(this.opts.timezone(), this.opts.exchangeTimezone?.())) {
+        for (const tz of timezoneMenuRows(this.opts.timezone())) {
             const row = doc.createElement('div');
             row.className = 'vela-tzd-row';
             const label = doc.createElement('span');
