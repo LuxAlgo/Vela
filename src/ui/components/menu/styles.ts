@@ -5,7 +5,7 @@ export const MENU_CSS = `
     /* The list is a <ul>: without this, block rows (the separator) paint a ::marker dot. */
     list-style: none;
     margin: 0;
-    background: var(--vela-surface-elev);
+    background: var(--vela-surface);
     color: var(--vela-fg);
     border: 1px solid var(--vela-border-strong);
     border-radius: 6px;

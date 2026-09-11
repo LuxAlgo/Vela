@@ -897,7 +897,8 @@ export class ChartCell {
     }
 
     /** The workspace shell keeps the app theme; the cell host's tokens re-derive from
-     *  the LIVE plot surface (see {@link applyPlotOverlayTokens}). */
+     *  the LIVE plot surface for overlay ink (statusline, watermark). Menus portal to
+     *  `.vela-ui` and keep the app-theme surface (see {@link applyPlotOverlayTokens}). */
     private syncPlotOverlayTokens(): void {
         applyPlotOverlayTokens(this.host, this.appTheme, this.inner?.renderer.getConfig() ?? null);
     }
