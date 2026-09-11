@@ -6,6 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Right-click menus and dropdowns follow the app theme, not the plot.** Changing the
+  chart background in settings used to recolor those panels with the plot. They now
+  use the same surface as the drawing toolbar and the chart settings dialog, and only
+  a theme switch restyles them.
 - **An edit made just before a workspace is torn down is no longer lost.** Changes are
   batched for a moment before `state:changed` fires, and destroying the workspace inside
   that window used to drop the pending change without telling anyone — so an app saving
