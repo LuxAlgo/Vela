@@ -77,11 +77,13 @@ export interface NativeIndicator {
     onViewport(range: VisibleRange): void;
     /** Settings changed — recompute + emit. */
     setInputs(inputs: Record<string, InputValue>): void;
-    /** Hidden — stop timers/fetches (free resources); the instance + its state are kept for resume. */
+    /** Hidden — stop timers/fetches (free resources); the instance + its state are kept for resume.
+     *  Only ever called after `start` (an instance added hidden is not suspended — it is
+     *  started when first shown). */
     suspend(): void;
     /** Shown again — resume + re-emit. */
     resume(): void;
-    /** Removed — full teardown (clear caches, stop timers). */
+    /** Removed — full teardown (clear caches, stop timers). Only ever called after `start`. */
     stop(): void;
 }
 

@@ -767,7 +767,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     private restartNativeIndicators(): void {
         for (const record of this.registry.all()) {
             if (!record.native) continue;
-            record.native.instance.stop();
+            if (record.native.started) record.native.instance.stop();
             record.native.instance = record.native.descriptor.create();
             record.native.started = false;
             record.pendingStructural = true; // the next emitted model remounts over the old visuals
@@ -1332,7 +1332,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // opt-out a removed volume resurrected on the next symbol/timeframe switch.
         if (record?.native?.type === 'volume') this.volumeOptedOut = true;
         record?.session?.stop();
-        record?.native?.instance.stop();
+        // A native added hidden and never started (a restored ledger entry) has nothing
+        // to tear down — and its `stop()` may not expect to run without a context.
+        if (record?.native?.started) record.native.instance.stop();
         this.handles.delete(id);
         if (record?.renderHandle) this.renderer.removeIndicator(record.renderHandle);
         const paneId = record?.model?.paneId;
@@ -1360,7 +1362,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (!visible) {
             record.session?.stop();
             record.session = undefined;
-            record.native?.instance.suspend();
+            // Only a RUNNING instance is suspended: a record hidden right after its add
+            // (a restored hidden ledger entry) has not started yet, so there is nothing
+            // to suspend — and the instance's suspend() is entitled to assume start() ran.
+            if (record.native?.started) record.native.instance.suspend();
             if (record.renderHandle) this.renderer.setIndicatorVisible?.(record.renderHandle, false);
             // Hidden before anything mounted (a restored ledger entry hides the record
             // right after add, before start): the row must exist anyway, or the
@@ -1466,7 +1471,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // native instances free their own caches/timers in stop()
         for (const record of this.registry.all()) {
             record.session?.stop();
-            record.native?.instance.stop();
+            if (record.native?.started) record.native.instance.stop();
         }
         for (const engine of this.typeEngines.values()) engine.stop(); // chart-type data engines (SDK)
         this.typeEngines.clear();

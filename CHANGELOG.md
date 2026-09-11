@@ -16,6 +16,11 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **A plugin indicator restored hidden no longer crashes the chart on load.** A saved
+  layout that carried a hidden plugin native indicator could throw while the chart was
+  being built, because the indicator was asked to suspend before it had ever started.
+  Such an indicator is now left alone until it is first shown, at which point it starts
+  as usual; removing it or closing the chart while it is still hidden is equally safe.
 - **Timeline mark popups now toggle with a click.** Clicking the mark whose popup is
   open closes it; previously that second click closed and immediately reopened the popup,
   so it took a click elsewhere to dismiss it.

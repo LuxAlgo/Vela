@@ -578,6 +578,57 @@ describe('EngineOrchestrator', () => {
         }
     });
 
+    it('a native hidden before it started is neither suspended nor stopped — start runs when it is first shown', async () => {
+        // An instance that assumes the contract: suspend/stop only after start (it reads
+        // its context there, like the layer-backed natives that clear their channel).
+        class StrictNative implements NativeIndicator {
+            calls = { start: 0, suspend: 0, stop: 0 };
+            private ctx: NativeIndicatorContext | null = null;
+            start(ctx: NativeIndicatorContext): void { this.calls.start += 1; this.ctx = ctx; ctx.emit({}); }
+            onBars(): void {}
+            onViewport(): void {}
+            setInputs(): void {}
+            suspend(): void { this.calls.suspend += 1; this.ctx!.pushData(null); }
+            resume(): void {}
+            stop(): void { this.calls.stop += 1; this.ctx!.pushData(null); }
+        }
+        const made: StrictNative[] = [];
+        // multiInstance so every add below mints a fresh instance to observe.
+        registerNativeIndicator({ ...testNativeDescriptor, type: 'strict-native', title: 'Strict', multiInstance: true, create: () => { const n = new StrictNative(); made.push(n); return n; } });
+        try {
+            const renderer = new FakeRenderer();
+            const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+            // The restored-ledger shape: add, then hide immediately — before ready/start.
+            const h = chart.addNativeIndicator('strict-native');
+            h.setVisible(false);
+            await chart.ready();
+            await flush();
+            expect(made[0]!.calls).toEqual({ start: 0, suspend: 0, stop: 0 }); // never started ⇒ never suspended
+            expect(renderer.mountedModels.some((m) => m.id === h.id)).toBe(true); // the hidden row still mounts
+
+            h.setVisible(true);
+            await flush();
+            expect(made[0]!.calls.start).toBe(1); // first show STARTS it
+            h.setVisible(false);
+            expect(made[0]!.calls.suspend).toBe(1); // a running instance is suspended as usual
+
+            // A second one, removed while still never-started: no stop() either.
+            const h2 = chart.addNativeIndicator('strict-native');
+            h2.setVisible(false);
+            h2.remove();
+            expect(made[1]!.calls).toEqual({ start: 0, suspend: 0, stop: 0 });
+
+            // And destroy() only stops what ran.
+            const h3 = chart.addNativeIndicator('strict-native');
+            h3.setVisible(false);
+            chart.destroy();
+            expect(made[0]!.calls.stop).toBe(1);
+            expect(made[2]!.calls.stop).toBe(0);
+        } finally {
+            unregisterNativeIndicator('strict-native');
+        }
+    });
+
     it('native context: each instance knows its own id; a multiInstance type pushes layer data on a per-instance channel stamped on its model', async () => {
         // A layer-backed native: pushes a payload tagged with its context id, and emits an
         // empty model (the legend row) like the built-in layer natives do.
