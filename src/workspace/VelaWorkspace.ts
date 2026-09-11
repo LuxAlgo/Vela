@@ -1229,13 +1229,17 @@ export class VelaWorkspace {
         // is a no-op there, since it needs `persistKey`). Emitting before the teardown
         // means subscribers read a live, complete `getState()`.
         const flushing = this.stateTimer != null;
+        if (flushing) this.events.emit('state:changed', undefined);
+        this.persistNow(); // snapshot while the cells are still alive
+        // AFTER the flush, never before: the emit runs with `destroyed` still false (so
+        // handlers see a live workspace), which leaves `markStateDirty` un-guarded for
+        // the duration — a handler that edits state schedules a fresh timer. Clearing
+        // here catches both that one and the original, so no timer outlives `destroy()`.
+        this.destroyed = true;
         if (this.stateTimer != null) {
             clearTimeout(this.stateTimer);
             this.stateTimer = null;
         }
-        if (flushing) this.events.emit('state:changed', undefined);
-        this.persistNow(); // snapshot while the cells are still alive
-        this.destroyed = true;
         if (this.persistKey !== null && typeof window !== 'undefined') window.removeEventListener('beforeunload', this.onUnload);
         this.resizeObserver?.disconnect();
         this.splitters.destroy();
@@ -1245,7 +1249,16 @@ export class VelaWorkspace {
             // from the pool alone and reports the last APPLIED document rather than what
             // was on screen — so a host reading state during its own teardown gets a
             // stale document back and cannot tell that anything changed.
-            this.poolSet(id, cell.dehydrate());
+            //
+            // Guarded like the attachment disposers below: `dehydrate()` reaches renderer
+            // and drawing state, and a snapshot for the host's benefit must never be able
+            // to abandon the teardown midway, leaking the remaining cells and their
+            // listeners. A cell that cannot be snapshotted keeps whatever the pool holds.
+            try {
+                this.poolSet(id, cell.dehydrate());
+            } catch (err) {
+                console.warn(`[vela] could not snapshot cell "${id}" while destroying:`, err);
+            }
             cell.destroy();
             this.cellsById.delete(id);
         }
