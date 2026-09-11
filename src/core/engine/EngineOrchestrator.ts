@@ -20,6 +20,7 @@ import { IndicatorRegistry, type IndicatorRecord } from './IndicatorRegistry';
 import {
     getNativeIndicator,
     nativeIndicatorDescriptors,
+    nativeInstanceChannel,
     type NativeIndicatorContext,
     type NativeIndicatorInfo,
     type NativeIndicatorOutput,
@@ -1587,7 +1588,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             await this.readyPromise;
             const record = this.registry.get(id);
             if (!record?.native || record.hidden) return; // removed/hidden during the await
+            const channel = this.nativeChannel(record);
             const ctx: NativeIndicatorContext = {
+                id,
                 symbol: this.config.market.symbol ?? 'TEST',
                 timeframe: this.config.market.timeframe ?? '60',
                 live: this.config.live,
@@ -1595,7 +1598,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 bars: () => this.bars,
                 data: this.dataControl,
                 emit: (out) => this.applyModel(id, this.buildNativeModel(record, out)),
-                pushData: (data) => this.renderer.setNativeData?.(record.native!.type, data),
+                pushData: (data) => this.renderer.setNativeData?.(channel, data),
                 setStatus: (status) => {
                     if (record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status);
                 },
@@ -1607,16 +1610,27 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         }
     }
 
+    /** The renderer-layer channel a native instance's `pushData` lands on: the type itself
+     *  for a single-instance type (the layer id doubles as the channel), a per-instance
+     *  channel for a `multiInstance` type — otherwise every instance would overwrite the
+     *  one layer. Stamped on the model so the renderer mounts a dedicated layer for it. */
+    private nativeChannel(record: IndicatorRecord): string {
+        const { type, descriptor } = record.native!;
+        return descriptor.multiInstance ? nativeInstanceChannel(type, record.id) : type;
+    }
+
     /** Wrap a native indicator's emitted visuals into a full IndicatorModel, tagged `native`. */
     private buildNativeModel(record: IndicatorRecord, out: NativeIndicatorOutput): IndicatorModel {
         const d = record.native!.descriptor;
+        const type = record.native!.type;
+        const channel = this.nativeChannel(record);
         return {
             id: record.id,
             title: record.title,
             ...(d.shortTitle ? { shorttitle: d.shortTitle } : {}),
             overlay: d.overlay,
             paneHint: d.paneHint,
-            native: { type: record.native!.type },
+            native: { type, ...(channel !== type ? { channel } : {}) },
             ...(d.legend === false ? { legend: false } : {}),
             ...(out.paneAxis != null ? { paneAxis: out.paneAxis } : {}),
             series: out.series ?? [],

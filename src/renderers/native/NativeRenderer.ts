@@ -95,6 +95,17 @@ import { applyChromeTokens } from '../shared/theme-tokens';
  *  Both expose the same four fields, so axis-drag / reset work uniformly on either. */
 type ScaleHolder = { scale: PriceScale; scaleTarget: PriceScale; manualScale: PriceScale | null; initialized: boolean };
 
+/** One mounted SDK layer (see `NativeRenderer.extLayers`). */
+interface ExtLayer {
+    def: RendererLayerDefinition;
+    instance: RendererLayerInstance;
+    canvas: HTMLCanvasElement;
+    /** The native-data channel this entry paints (`def.id` for the base entry). */
+    channel: string;
+    /** The indicator instance this entry is dedicated to (null = the base entry). */
+    owner: string | null;
+}
+
 const PRICE_PANE_ID = 'price';
 const WEAK_SNAP_PX = 8; // 'weak' magnet only snaps when a candle point is within this many px of the cursor
 const TRANSPARENT = 'rgba(0,0,0,0)'; // default area/baseline fill edge (fades out)
@@ -172,7 +183,14 @@ export class NativeRenderer implements IChartRenderer {
     private readonly backdropRenderer = new BackdropRenderer();
     private readonly volumeRenderer = new VolumeRenderer();
     /** SDK renderer layers instantiated at mount ({@link registerRendererLayer}). */
-    private extLayers: Array<{ def: RendererLayerDefinition; instance: RendererLayerInstance; canvas: HTMLCanvasElement }> = [];
+    /**
+     * The mounted SDK layers. One BASE entry per registered definition (channel = the layer
+     * id, no owner of its own), plus one DEDICATED entry per mounted native indicator whose
+     * model names its own channel (`native.channel` — an instance of a multi-instance type):
+     * same definition, its own canvas, reading that instance's channel and following that
+     * instance's pane and z key. `channel` is unique across the array.
+     */
+    private extLayers: ExtLayer[] = [];
     /** Last applied layer-canvas order (ids below + above the data canvas) — re-slotted only on change. */
     private layerOrderSig = '';
     // The attribution mark (see chrome/AttributionMark + the NOTICE file): default-on;
@@ -1398,11 +1416,7 @@ export class NativeRenderer implements IChartRenderer {
         Object.assign(this.plot.style, { position: 'absolute', top: '0', right: '0', bottom: '0', left: '0' });
         // SDK renderer layers: one transparent canvas each, stacked by placement —
         // 'below-data' behind the candles, 'above-data' over them (under the chrome/axes).
-        this.extLayers = rendererLayers().map((def) => {
-            const canvas = document.createElement('canvas');
-            Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
-            return { def, instance: def.create(), canvas };
-        });
+        this.extLayers = rendererLayers().map((def) => ({ def, instance: def.create(), canvas: this.createLayerCanvas(), channel: def.id, owner: null }));
         const below = this.extLayers.filter((l) => l.def.placement === 'below-data').map((l) => l.canvas);
         const above = this.extLayers.filter((l) => l.def.placement !== 'below-data').map((l) => l.canvas);
         this.plot.append(this.backdropCanvas, ...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas, this.cursorCanvas, this.overlayRoot);
@@ -1420,6 +1434,8 @@ export class NativeRenderer implements IChartRenderer {
         this.volumeRenderer.mount(this.volumeCanvas);
         this.vpvrRenderer.mount(this.vpvrCanvas);
         for (const l of this.extLayers) l.instance.mount(l.canvas);
+        // Indicators mounted before the renderer (a re-mount) bring their dedicated layers back.
+        for (const m of this.scene.indicators.values()) this.ensureInstanceLayer(m);
         this.chrome.mount(this.chromeCanvas);
         this.crosshairLayer.mount(this.cursorCanvas);
         this.coords.setViewport(defaultViewport());
@@ -2102,6 +2118,7 @@ export class NativeRenderer implements IChartRenderer {
         // say so or the recorded order (object tree, seriesOrder reads) starts out a lie.
         if (model.native && this.extLayers.some((l) => l.def.id === model.native!.type)) this.scene.assignIndicatorZTop(model.id);
         else this.scene.assignIndicatorZ(model.id);
+        this.ensureInstanceLayer(model);
         // The legend chip, the settings dialog and the object tree's rows all show the compact
         // shorttitle when declared; the full title stays on the picker and inspect(). A
         // `legend: false` native gets none of it — the scene model still mounts and paints.
@@ -2152,6 +2169,7 @@ export class NativeRenderer implements IChartRenderer {
             this.scene.vpvrLayer = null;
         }
         this.scene.indicators.delete(handle.id);
+        this.dropInstanceLayer(handle.id);
         this.scene.forgetIndicatorZ(handle.id);
         this.scene.forgetAnchorOffset(handle.id);
         this.scene.dropIndicatorScale(handle.id);
@@ -3176,9 +3194,9 @@ export class NativeRenderer implements IChartRenderer {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         for (const l of this.extLayers) {
             if (!l.def.repaintOnCursor) continue;
-            const lp = this.layerPane(l.def.id) ?? pane;
+            const lp = this.layerPane(l) ?? pane;
             if (lp.collapsed) continue; // blanked by the data frame; nothing to hover
-            l.instance.render(this.extLayerArgs(l.def.id, lp.scale, lp.bounds, nowMs));
+            l.instance.render(this.extLayerArgs(l, lp.scale, lp.bounds, nowMs));
             if (this.animZoom.on && l.instance.animating?.()) this.animator.start();
         }
     }
@@ -3189,13 +3207,15 @@ export class NativeRenderer implements IChartRenderer {
         canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    /** One frame's args for an SDK renderer layer (shared by the data + cursor paint paths). */
-    private extLayerArgs(id: string, scale: PriceScale, bounds: PaneBounds, nowMs: number): RendererLayerArgs {
+    /** One frame's args for an SDK renderer layer (shared by the data + cursor paint paths).
+     *  Data + pending come from the entry's channel (per instance for a dedicated entry);
+     *  the settings bag is the TYPE's — a chart type's dialog values, one bag per type. */
+    private extLayerArgs(l: ExtLayer, scale: PriceScale, bounds: PaneBounds, nowMs: number): RendererLayerArgs {
         return {
             bars: this.scene.bars,
-            data: this.scene.nativeData.get(id),
-            settings: (this.scene.nativeData.get(`${id}-settings`) as Record<string, unknown> | undefined) ?? {},
-            pending: this.scene.nativePending.get(id) ?? [],
+            data: this.scene.nativeData.get(l.channel),
+            settings: (this.scene.nativeData.get(`${l.def.id}-settings`) as Record<string, unknown> | undefined) ?? {},
+            pending: this.scene.nativePending.get(l.channel) ?? [],
             coords: this.coords,
             scale,
             bounds,
@@ -3247,14 +3267,14 @@ export class NativeRenderer implements IChartRenderer {
             const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
             let folded: BasePaintingModulation | null = null;
             for (const l of this.extLayers) {
-                const lp: PaneNode = this.layerPane(l.def.id) ?? pane;
+                const lp: PaneNode = this.layerPane(l) ?? pane;
                 // A collapsed host pane shows its legend strip only — blank the layer for
                 // the duration (the instance isn't poked, so it can't clear itself).
                 if (lp.collapsed) {
                     this.clearLayerCanvas(l.canvas);
                     continue;
                 }
-                const args = this.extLayerArgs(l.def.id, lp.scale, lp.bounds, nowMs);
+                const args = this.extLayerArgs(l, lp.scale, lp.bounds, nowMs);
                 l.instance.render(args);
                 // Any mounted layer may dim/slim the base painting (chart type or overlay)
                 // — folded this same frame, applied below before the backend paints. Only
@@ -3619,20 +3639,65 @@ export class NativeRenderer implements IChartRenderer {
         return null;
     }
 
-    /** The mounted native indicator that OWNS an SDK layer — the one whose type equals the
-     *  layer id (the id doubles as the data channel, so the pairing is the SDK's own
-     *  contract). Null for chart-type channels and while the owner is hidden (a hidden
-     *  indicator leaves the scene; its cleared data channel paints nothing anyway). */
-    private layerOwner(layerId: string): IndicatorModel | null {
+    /** One transparent, pointer-transparent SDK layer canvas covering the plot. */
+    private createLayerCanvas(): HTMLCanvasElement {
+        const canvas = document.createElement('canvas');
+        Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+        return canvas;
+    }
+
+    /**
+     * Mount the DEDICATED layer of a native indicator that names its own channel (an
+     * instance of a multi-instance type painting through a registered layer): a fresh
+     * instance of the layer's definition on its own canvas, reading that channel. Idempotent
+     * — a show after hide re-mounts the model, and the layer (kept across the hide, like the
+     * z key) is simply reused. Skipped while the renderer itself is unmounted (`mount()`
+     * catches up from the scene).
+     */
+    private ensureInstanceLayer(model: IndicatorModel): void {
+        const channel = model.native?.channel;
+        if (!channel || !this.plot) return;
+        if (this.extLayers.some((l) => l.owner === model.id)) return;
+        const base = this.extLayers.find((l) => l.owner === null && l.def.id === model.native!.type);
+        if (!base) return; // no layer registered for the type — the model paints through its series alone
+        const canvas = this.createLayerCanvas();
+        // Match the pile's current backing size; the next resize re-sizes every layer anyway.
+        canvas.width = this.dataCanvas.width;
+        canvas.height = this.dataCanvas.height;
+        canvas.style.width = this.dataCanvas.style.width || '100%';
+        canvas.style.height = this.dataCanvas.style.height || '100%';
+        const entry: ExtLayer = { def: base.def, instance: base.def.create(), canvas, channel, owner: model.id };
+        this.extLayers.push(entry);
+        this.plot.insertBefore(canvas, this.chromeCanvas); // re-slotted by the owner's z on the next data frame
+        entry.instance.mount(canvas);
+    }
+
+    /** Tear down the dedicated layer of a removed indicator (a hide keeps it). */
+    private dropInstanceLayer(indicatorId: string): void {
+        const i = this.extLayers.findIndex((l) => l.owner === indicatorId);
+        if (i < 0) return;
+        const [l] = this.extLayers.splice(i, 1);
+        l!.instance.destroy?.();
+        l!.canvas.remove();
+    }
+
+    /** The mounted native indicator that OWNS an SDK layer entry. A dedicated entry is
+     *  owned by the instance it was mounted for; the base entry by the mounted indicator
+     *  whose type equals the layer id and that has no channel of its own (the id doubles
+     *  as the data channel, so the pairing is the SDK's own contract). Null for chart-type
+     *  channels and while the owner is hidden (a hidden indicator leaves the scene; its
+     *  cleared data channel paints nothing anyway). */
+    private layerOwner(l: ExtLayer): IndicatorModel | null {
+        if (l.owner !== null) return this.scene.indicators.get(l.owner) ?? null;
         for (const m of this.scene.indicators.values()) {
-            if (m.native?.type === layerId) return m;
+            if (m.native?.type === l.def.id && !m.native.channel) return m;
         }
         return null;
     }
 
     /** The pane an SDK layer paints on: its owner's pane, else the price pane. */
-    private layerPane(layerId: string): PaneNode | null {
-        const owner = this.layerOwner(layerId);
+    private layerPane(l: ExtLayer): PaneNode | null {
+        const owner = this.layerOwner(l);
         const paneId = owner ? (owner.paneId ?? PRICE_PANE_ID) : PRICE_PANE_ID;
         return this.scene.panes.get(paneId) ?? null;
     }
@@ -3641,12 +3706,13 @@ export class NativeRenderer implements IChartRenderer {
      *  owned layers by their owner's z key against the candles' (an indicator restacked
      *  below the candles takes its layer canvas along), unowned by declared placement. */
     private orderedLayerCanvases(): { below: HTMLCanvasElement[]; above: HTMLCanvasElement[] } {
-        const byId = new Map(this.extLayers.map((l) => [l.def.id, l.canvas]));
+        // Keyed by channel — unique per entry (a dedicated entry's channel names its instance).
+        const byId = new Map(this.extLayers.map((l) => [l.channel, l.canvas]));
         const { below, above } = stackLayers(
             this.extLayers.map((l) => {
-                const owner = this.layerOwner(l.def.id);
+                const owner = this.layerOwner(l);
                 return {
-                    id: l.def.id,
+                    id: l.channel,
                     placement: l.def.placement === 'below-data' ? 'below-data' as const : 'above-data' as const,
                     ownerZ: owner ? this.scene.zOf(owner.id) : null,
                 };
@@ -3670,7 +3736,7 @@ export class NativeRenderer implements IChartRenderer {
     private syncLayerCanvasOrder(): void {
         if (this.extLayers.length === 0 || !this.plot) return;
         const { below, above } = this.orderedLayerCanvases();
-        const sig = [...below.map((c) => this.extLayers.find((l) => l.canvas === c)!.def.id), '|', ...above.map((c) => this.extLayers.find((l) => l.canvas === c)!.def.id)].join(',');
+        const sig = [...below.map((c) => this.extLayers.find((l) => l.canvas === c)!.channel), '|', ...above.map((c) => this.extLayers.find((l) => l.canvas === c)!.channel)].join(',');
         if (sig === this.layerOrderSig) return;
         this.layerOrderSig = sig;
         for (const c of below) this.plot.insertBefore(c, this.dataCanvas);
