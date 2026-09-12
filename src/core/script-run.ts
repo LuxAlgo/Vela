@@ -18,6 +18,8 @@ export type ScriptRunCause =
     | 'bar'
     /** An input was edited. */
     | 'inputs'
+    /** The script's source was replaced in place (`handle.updateCode`). */
+    | 'code'
     /** The visible range moved (viewport-aware scripts only). */
     | 'viewport'
     /** The chart's market changed and the script re-executed over the new bars. */
