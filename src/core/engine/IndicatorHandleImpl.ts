@@ -11,6 +11,7 @@ export interface IndicatorController {
     inputValuesOf(id: string): Record<string, InputValue>;
     propValuesOf(id: string): Record<string, InputValue>;
     applyProps(id: string, values: Record<string, InputValue>): void;
+    updateCode(id: string, source: string): void;
     removeIndicator(id: string): void;
     setVisible(id: string, visible: boolean): void;
     moveIndicator(id: string, target: MoveTarget): void;
@@ -20,8 +21,9 @@ export interface IndicatorController {
 export class IndicatorHandleImpl implements IndicatorHandle {
     readonly id: string;
     title: string;
-    /** The script source (see {@link IndicatorHandle.source}); undefined for natives. */
-    readonly source?: string;
+    /** The script source (see {@link IndicatorHandle.source}); undefined for natives.
+     *  Revised by the orchestrator when {@link updateCode} lands (never before). */
+    source?: string;
     /** The native type (see {@link IndicatorHandle.nativeType}); undefined for scripts. */
     readonly nativeType?: string;
     private schema: InputSchema[] = [];
@@ -78,6 +80,10 @@ export class IndicatorHandleImpl implements IndicatorHandle {
         this.controller.applyProps(this.id, values);
     }
 
+    updateCode(source: string): void {
+        this.controller.updateCode(this.id, source);
+    }
+
     setVisible(visible: boolean): void {
         this.controller.setVisible(this.id, visible);
     }
@@ -105,6 +111,11 @@ export class IndicatorHandleImpl implements IndicatorHandle {
 
     setPropsSchema(schema: InputSchema[]): void {
         this.propsSchema = schema;
+    }
+
+    /** Sync the public `source` once a code update has been prepared and taken over. */
+    setSource(source: string): void {
+        this.source = source;
     }
 
     /** Sync the public `visible` getter when the orchestrator changes visibility (API or legend eye). */

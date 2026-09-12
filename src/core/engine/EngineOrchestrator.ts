@@ -1,12 +1,12 @@
 import type { IChartRenderer, VisibleRange } from '../ports/IChartRenderer';
 import type { MarketDataFeed, BarRange } from '../ports/MarketDataFeed';
-import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason } from '../ports/ScriptingEngine';
+import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
 import type { OHLCV } from '../model/ohlcv';
 import type { IndicatorModel } from '../model/indicator';
 import type { ValuePatch, SeriesValueDelta } from '../model/patch';
 import { isLineLikeSeries } from '../model/series';
-import type { InputValue } from '../model/inputs';
+import type { InputSchema, InputValue } from '../model/inputs';
 import type { VelaTheme, MarketConfig, MarketSwitch, MarketSnapshot, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
 import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
@@ -1312,6 +1312,67 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.events.emit('indicator:inputs', { id });
     }
 
+    /**
+     * IndicatorController: replace a SCRIPT indicator's source in place (see
+     * {@link IndicatorHandle.updateCode}). Prepare-first: the running session keeps
+     * computing until the new source has compiled, so a broken edit costs the user
+     * nothing but an `error` event. Natives have no script — warn and leave them alone.
+     */
+    updateCode(id: string, source: string): void {
+        const record = this.registry.get(id);
+        const handle = this.handles.get(id);
+        if (!record || !handle) return;
+        if (record.native) {
+            console.warn(`[vela] updateCode("${id}") — a native indicator has no script to update.`);
+            return;
+        }
+        if (source === record.source && record.pendingSource === undefined) return;
+        record.pendingSource = source;
+        void this.swapSource(id, source, handle);
+    }
+
+    private async swapSource(id: string, source: string, handle: IndicatorHandleImpl): Promise<void> {
+        const engine = this.registry.get(id)?.engine ?? this.engineFor(this.registry.get(id)?.options?.language);
+        let prepared: PreparedScript;
+        try {
+            prepared = await engine.prepare(source, id);
+        } catch (err) {
+            const record = this.registry.get(id);
+            // Only the LATEST pending edit reports; a superseded one failing is noise.
+            if (record?.pendingSource === source) {
+                record.pendingSource = undefined;
+                this.fail(id, handle, err);
+            }
+            return;
+        }
+        const record = this.registry.get(id);
+        // Removed, or superseded by a later updateCode, while preparing.
+        if (!record || record.pendingSource !== source) return;
+        record.pendingSource = undefined;
+        record.source = source;
+        record.engine = engine;
+        record.prepared = prepared;
+        handle.setSource(source);
+        // Values survive on the keys (or titles) the new schema still declares; the rest
+        // fall back to the new declaration defaults — a renamed input is a new input.
+        record.inputValues = valuesOnSchema(prepared.inputs, record.inputValues);
+        record.propValues = valuesOnSchema(prepared.props ?? [], record.propValues);
+        handle.setSchema(prepared.inputs);
+        handle.setPropsSchema(prepared.props ?? []);
+        record.session?.stop();
+        record.session = undefined;
+        record.pendingStructural = true; // the first model of the new source remounts over the old visuals
+        record.pendingCause = 'code';
+        if (record.hidden) return; // showing runs the (now replaced) prepared script
+        if (record.renderHandle) {
+            this.renderer.setIndicatorInputs(record.renderHandle, record.inputValues, record.propValues);
+            this.setLoading(record, true);
+        } else {
+            this.mountLoadingPlaceholder(id, record); // updated before its first prepare ever landed
+        }
+        this.executeIndicator(id, handle);
+    }
+
     /** IndicatorController: tear down an indicator and (if now empty) its pane. */
     /** Live handles of every indicator on the chart (script + native), insertion order. */
     listIndicators(): IndicatorHandle[] {
@@ -1498,6 +1559,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             record.engine = engine;
 
             const prepared = await engine.prepare(source, id);
+            // An updateCode that landed during this prepare owns the record now — the
+            // original source must not overwrite the replacement's schema and session.
+            if (record.source !== source) return;
             record.prepared = prepared;
             const defaults: Record<string, InputValue> = {};
             for (const input of prepared.inputs) defaults[input.key] = input.defval;
@@ -1981,7 +2045,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             // so its pane is never re-derived here.)
             const routed = this.routePane(id, model, record.options ?? {});
             if (routed !== paneId) {
-                if (paneId !== 'price') {
+                // A placeholder's pane is its own; after a code update the pane may also hold
+                // indicators merged into it since — those keep it.
+                if (paneId !== 'price' && !this.registry.all().some((r) => r.id !== id && r.model?.paneId === paneId)) {
                     this.renderer.removePane(paneId);
                     this.forgetPane(paneId); // keep core paneOrder in sync (was left stale → desynced list()/anchors/undo)
                 }
@@ -2162,6 +2228,23 @@ function yieldToPaint(): Promise<void> {
         return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     }
     return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Re-seat stored values on a NEW schema: every declared key takes its default, then a
+ * previous value is kept where the schema still declares its key (or title — add-time
+ * overrides may be title-keyed). Stale keys drop.
+ */
+function valuesOnSchema(schema: InputSchema[], previous: Record<string, InputValue>): Record<string, InputValue> {
+    const out: Record<string, InputValue> = {};
+    const declared = new Set<string>();
+    for (const s of schema) {
+        out[s.key] = s.defval;
+        declared.add(s.key);
+        declared.add(s.title);
+    }
+    for (const [k, v] of Object.entries(previous)) if (declared.has(k)) out[k] = v;
+    return out;
 }
 
 /** Build a value-only patch from a freshly-run model (used on live ticks / re-runs). */
