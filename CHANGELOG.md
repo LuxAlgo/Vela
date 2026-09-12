@@ -26,6 +26,13 @@ All notable changes to Vela, newest first.
   only the anchor markers until the second point is placed. The Schiff and modified
   Schiff pitchforks also keep that pivot line in the finished shape, so the pivot handle
   no longer floats detached from the fork it defines.
+- **Indicator visuals no longer linger across a market switch.** Switching the symbol,
+  timeframe, or session now clears every indicator's painted output the moment the
+  switch starts, and each indicator repaints once its recomputation over the new market
+  completes. Previously, outputs that are not tied to the bar series — drawing objects
+  such as lines, boxes, labels, and polylines, plus background tints and horizontal
+  levels — could stay visible over the new market's candles until the script finished
+  recomputing, which for heavy scripts took many seconds.
 
 ## [v0.7.0]
 

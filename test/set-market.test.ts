@@ -26,6 +26,7 @@ import type { MarketConfig } from '../src/core/options';
 import type { OHLCV } from '../src/core/model/ohlcv';
 import type { Pane } from '../src/core/model/scene';
 import type { IndicatorModel } from '../src/core/model/indicator';
+import type { DrawingLine } from '../src/core/model/drawings';
 import type { ScenePatch } from '../src/core/model/patch';
 import type { InputValue } from '../src/core/model/inputs';
 import type { VelaTheme } from '../src/core/options';
@@ -154,7 +155,8 @@ class FakeRenderer implements IChartRenderer {
     ensurePane(_p: Pane): void {}
     removePane(_id: string): void {}
     mountIndicator(model: IndicatorModel): IndicatorRenderHandle { this.mountedModels.push(model); return { id: model.id }; }
-    updateIndicator(_h: IndicatorRenderHandle, _p: ScenePatch): void {}
+    updates: ScenePatch[] = [];
+    updateIndicator(_h: IndicatorRenderHandle, p: ScenePatch): void { this.updates.push(p); }
     removeIndicator(_h: IndicatorRenderHandle): void {}
     setIndicatorInputs(_h: IndicatorRenderHandle, _v: Record<string, InputValue>): void {}
     setIndicatorVisible(_h: IndicatorRenderHandle, _v: boolean): void {}
@@ -207,6 +209,72 @@ class RecordingEngine implements ScriptingEngine {
             setVisibleRange: () => {},
             notifyBars: () => {},
         };
+    }
+}
+
+/**
+ * Static engine whose model carries every LINGER VECTOR of a market switch: content
+ * that does not ride the bar series (drawings, bgcolor spans, hlines) keeps painting
+ * on the incoming market's axis until the re-run's model lands. The handlers are kept
+ * so a test can emit a STALE model mid-switch (a run already in flight at quiesce).
+ */
+class DrawingEngine implements ScriptingEngine {
+    readonly language = 'pine';
+    readonly capabilities: EngineCapabilities = { streaming: false, visibleRange: false, inputs: true };
+    handlers: ExecutionHandlers | null = null;
+    private id = '';
+    private bars: OHLCV[] = [];
+
+    prepare(_source: string, instanceId: string): Promise<PreparedScript> {
+        return Promise.resolve({
+            language: 'pine',
+            inputs: [],
+            meta: { title: 'Draw', overlay: true },
+            reactsToViewport: false,
+            token: { instanceId },
+        });
+    }
+
+    execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        this.handlers = handlers;
+        this.id = (req.prepared.token as { instanceId: string }).instanceId;
+        this.bars = req.getBars?.() ?? req.bars;
+        this.emitModel();
+        handlers.onDone?.();
+        return { stop: () => {}, update: () => {}, setVisibleRange: () => {}, notifyBars: () => {} };
+    }
+
+    /** Emit a full model over the last-seen bars (call again to simulate a stale in-flight run). */
+    emitModel(): void {
+        const id = this.id;
+        const t0 = this.bars[0]?.time ?? 0;
+        const t1 = this.bars[this.bars.length - 1]?.time ?? 0;
+        const price = this.bars[0]?.close ?? 0;
+        const mkLine = (n: number): DrawingLine => ({ id: `${id}:l${n}`, paneId: 'unrouted', xloc: 'bar_time', x1: t0, y1: price + n, x2: t1, y2: price + n, extend: 'right', color: '#0f0', invisible: false, width: 1, style: 'solid', arrowLeft: false, arrowRight: false });
+        this.handlers?.onModel({
+            id,
+            title: 'Draw',
+            overlay: true,
+            paneHint: 'price',
+            series: [
+                { id: `${id}:line:x#0`, title: 'Hi', paneId: 'unrouted', kind: 'line', points: this.bars.map((b) => ({ time: b.time, value: b.close + 1 })), style: { color: '#f00', width: 1, lineStyle: 'solid' } },
+                { id: `${id}:line:x#1`, title: 'Lo', paneId: 'unrouted', kind: 'line', points: this.bars.map((b) => ({ time: b.time, value: b.close - 1 })), style: { color: '#f00', width: 1, lineStyle: 'solid' } },
+                { id: `${id}:markers:x#2`, title: 'Marks', paneId: 'unrouted', kind: 'markers', markers: [{ time: t1, position: 'aboveBar', shape: 'arrowUp', color: '#0f0' }] },
+            ],
+            fills: [{ id: `${id}:f0`, paneId: 'unrouted', fromSeriesId: `${id}:line:x#0`, toSeriesId: `${id}:line:x#1`, color: '#808' }],
+            backgrounds: [{ id: `${id}:bg0`, paneId: 'unrouted', from: t0, to: t1, color: '#00f' }],
+            priceLines: [{ id: `${id}:hl0`, paneId: 'unrouted', price }],
+            lines: [mkLine(0)],
+            boxes: [{ id: `${id}:b0`, paneId: 'unrouted', xloc: 'bar_time', left: t0, top: price + 1, right: t1, bottom: price - 1, extend: 'none', bgColor: '#333', borderWidth: 1, borderStyle: 'solid', textSize: 'auto', hAlign: 'center', vAlign: 'center', wrap: false, fontFamily: 'default', bold: false, italic: false }],
+            labels: [{ id: `${id}:lb0`, paneId: 'unrouted', xloc: 'bar_time', x: t1, y: price, yloc: 'price', style: 'label_up', color: '#ff0', size: 'small', textAlign: 'center', fontFamily: 'default' }],
+            polylines: [{ id: `${id}:pl0`, paneId: 'unrouted', points: [{ xloc: 'bar_time', x: t0, price }, { xloc: 'bar_time', x: t1, price: price + 2 }], curved: false, closed: false, lineColor: '#fa0', lineWidth: 1, lineStyle: 'solid', arrowLeft: false, arrowRight: false }],
+            linefills: [{ id: `${id}:lf0`, paneId: 'unrouted', line1: mkLine(1), line2: mkLine(2), color: '#088' }],
+            tables: [{ id: `${id}:t0`, paneId: 'unrouted', position: 'top_right', columns: 1, rows: 1, frameWidth: 0, borderWidth: 0, cells: [[{ text: 'X', hAlign: 'center', vAlign: 'center', textSize: 'auto', fontFamily: 'default', bold: false, italic: false }]], merges: [] }],
+            barColors: [{ time: t1, color: '#f0f' }],
+            trades: [{ time: t1, price, side: 'buy', kind: 'entry' }],
+            inputs: [],
+            inputValues: {},
+        });
     }
 }
 
@@ -412,6 +480,78 @@ describe('setMarket — in-place market switch', () => {
 
         expect(engine.stops).toBe(1); // the old session was torn down
         expect(engine.executions[1]).toEqual({ symbol: 'BBB', timeframe: '60', barClose: PRICE.BBB });
+    });
+
+    it('an identity switch blanks mounted indicator visuals for the gap (nothing stale outlives the old market)', async () => {
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        const engine = new DrawingEngine();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [engine], dataFeed: feed });
+        chart.addIndicator('draw');
+        await chart.ready();
+        await flush();
+        const mounted = renderer.mountedModels[renderer.mountedModels.length - 1]!;
+        expect(mounted.lines).toHaveLength(1);
+        expect(mounted.boxes).toHaveLength(1);
+        expect(mounted.labels).toHaveLength(1);
+
+        const done = chart.setMarket({ symbol: 'SLOW' });
+        // Synchronously at the switch: the model is remounted BLANK. The new market's bars
+        // land before the script's re-run completes, and time-anchored drawings, bgcolor
+        // spans, and hlines would otherwise keep painting on the new axis for that window.
+        const blanked = renderer.mountedModels[renderer.mountedModels.length - 1]!;
+        expect(blanked.id).toBe(mounted.id);
+        // EVERY output vocabulary is emptied — plots, markers, fills, bgcolor spans,
+        // hlines, all six drawing kinds, barcolor, and strategy trades.
+        expect(blanked.lines).toEqual([]);
+        expect(blanked.boxes).toEqual([]);
+        expect(blanked.labels).toEqual([]);
+        expect(blanked.polylines).toEqual([]);
+        expect(blanked.linefills).toEqual([]);
+        expect(blanked.tables).toEqual([]);
+        expect(blanked.backgrounds).toEqual([]);
+        expect(blanked.priceLines).toEqual([]);
+        expect(blanked.fills).toEqual([]);
+        expect(blanked.barColors).toEqual([]);
+        expect(blanked.trades).toEqual([]);
+        expect(blanked.series.map((s) => (s.kind === 'markers' ? s.markers : s.kind === 'line' ? s.points : null))).toEqual([[], [], []]);
+        // The structure survives — legend/settings keep working through the gap.
+        expect(blanked.series[0]!.id).toBe(mounted.series[0]!.id);
+
+        feed.release();
+        await done;
+        await flush();
+        // The re-run's model repaints over the new market.
+        const fresh = renderer.mountedModels[renderer.mountedModels.length - 1]!;
+        expect(fresh.lines).toHaveLength(1);
+        expect(fresh.lines![0]!.x1).toBe(renderer.bars[0]!.time);
+    });
+
+    it('a stale model landing MID-SWITCH is dropped (a run in flight at quiesce cannot repaint the blank)', async () => {
+        const feed = new SwitchFeed();
+        feed.gatedLoads.add('SLOW');
+        const renderer = new FakeRenderer();
+        const engine = new DrawingEngine();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer, engines: [engine], dataFeed: feed });
+        chart.addIndicator('draw');
+        await chart.ready();
+        await flush();
+
+        const done = chart.setMarket({ symbol: 'SLOW' });
+        const mounts = renderer.mountedModels.length;
+        const updates = renderer.updates.length;
+        engine.emitModel(); // the OLD session's run completes mid-switch, over the OLD bars
+        expect(renderer.mountedModels.length).toBe(mounts); // dropped, not remounted…
+        expect(renderer.updates.length).toBe(updates); // …and never value-patched
+
+        feed.release();
+        await done;
+        await flush();
+        // The post-load re-execution still delivers the new market's model.
+        const fresh = renderer.mountedModels[renderer.mountedModels.length - 1]!;
+        expect(fresh.lines).toHaveLength(1);
+        expect(fresh.lines![0]!.x1).toBe(renderer.bars[0]!.time);
     });
 
     it('restarts a native indicator with a fresh context, keeping the record id', async () => {
