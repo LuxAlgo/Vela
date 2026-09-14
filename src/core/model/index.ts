@@ -12,11 +12,14 @@ export type {
     CandleStyle,
     CandleBarColor,
     MarkerPoint,
+    SeriesSurface,
+    SeriesDisplay,
     LineLikeSeries,
     CandleSeries,
     MarkerSeries,
     SeriesSpec,
 } from './series';
+export { seriesShownOn, seriesInScale } from './series';
 export type { PaneKind, Pane, Fill, FillGradientStop, Background, PriceLine, Scene } from './scene';
 export type {
     DrawingXLoc,

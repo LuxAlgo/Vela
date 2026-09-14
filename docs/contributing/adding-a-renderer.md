@@ -191,6 +191,8 @@ These carry no backend types, so any renderer can use them. Your renderer suppli
 
 > **Subtlety — `force_overlay` and cross-pane drawings.** A study indicator (which lives in its own pane) can mark a drawing to render on the **price pane** instead. Your drawing layer must be able to place a study's drawing on a pane other than the study's own. Plan the coordinate resolution so a drawing can target any pane, not just its owner's.
 
+> **Subtlety — a series is shown per surface, not on/off.** A value series carries an optional `display` with one flag per surface — `pane` (painted), `priceScale` (kept in the pane's autoscale and backing any axis value label you draw), `legend` (its value beside the indicator title), `dataWindow` (its row in the data window) — and a `visible: false` shorthand that hides it everywhere. A series off every surface still exists in the model: fills anchor to it. Resolve the flags with `seriesShownOn(series, surface)` and gate the autoscale with `seriesInScale(series)` (both exported from `@luxalgo/vela/plugin`), so a data-window-only plot never paints, never appears in the legend, and never stretches the pane's scale — the same reading the native renderer applies.
+
 ---
 
 ## Selection and binding
