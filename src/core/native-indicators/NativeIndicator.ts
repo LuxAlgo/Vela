@@ -36,6 +36,10 @@ export interface NativeIndicatorOutput {
 
 /** Services the host gives a running native indicator. */
 export interface NativeIndicatorContext {
+    /** This instance's indicator id — the same id its `IndicatorHandle`, `inspect()` and
+     *  the pane listing report. Lets an instance name itself to host code (a picker, a
+     *  hit-test) and tell itself apart from siblings of a `multiInstance` type. */
+    readonly id: string;
     readonly symbol: string;
     readonly timeframe: string;
     readonly live: boolean;
@@ -73,11 +77,13 @@ export interface NativeIndicator {
     onViewport(range: VisibleRange): void;
     /** Settings changed — recompute + emit. */
     setInputs(inputs: Record<string, InputValue>): void;
-    /** Hidden — stop timers/fetches (free resources); the instance + its state are kept for resume. */
+    /** Hidden — stop timers/fetches (free resources); the instance + its state are kept for resume.
+     *  Only ever called after `start` (an instance added hidden is not suspended — it is
+     *  started when first shown). */
     suspend(): void;
     /** Shown again — resume + re-emit. */
     resume(): void;
-    /** Removed — full teardown (clear caches, stop timers). */
+    /** Removed — full teardown (clear caches, stop timers). Only ever called after `start`. */
     stop(): void;
 }
 
@@ -114,8 +120,10 @@ export interface NativeIndicatorDescriptor {
     /**
      * Allow several instances of this type on one chart — every add creates a new one (a study
      * like a moving average is typically stacked at different lengths). Absent ⇒ SINGLE instance
-     * per type: a second add returns the existing handle. A type that pushes a bespoke layer
-     * payload through `pushData` must stay single-instance (the layer is keyed by type).
+     * per type: a second add returns the existing handle. A type that paints through a renderer
+     * layer (`pushData`) gets ONE layer instance per indicator instance, each fed by that
+     * instance's own channel and painting on that instance's pane — so instances never
+     * overwrite each other (see `IndicatorModel.native.channel`).
      */
     readonly multiInstance?: boolean;
     inputsSchema(): InputSchema[];
@@ -146,6 +154,18 @@ export interface NativeIndicatorInfo {
     readonly multiInstance?: boolean;
     /** The type is flagged beta (for a badge in the picker). */
     readonly beta?: boolean;
+}
+
+/**
+ * The renderer-layer data channel of ONE instance of a `multiInstance` native type. A
+ * single-instance type's channel is its type (the layer id doubles as the channel); a
+ * multi-instance type needs one channel per instance, or every instance's `pushData`
+ * would land on the same layer. The orchestrator stamps it on the model
+ * (`IndicatorModel.native.channel`) and routes the instance's pushes to it; the renderer
+ * mounts a dedicated layer instance reading it.
+ */
+export function nativeInstanceChannel(type: string, instanceId: string): string {
+    return `${type}#${instanceId}`;
 }
 
 /** Process-wide catalog of native-indicator types. Built-ins (volume, VPVR) register via the composition root. */

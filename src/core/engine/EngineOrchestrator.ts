@@ -20,6 +20,7 @@ import { IndicatorRegistry, type IndicatorRecord } from './IndicatorRegistry';
 import {
     getNativeIndicator,
     nativeIndicatorDescriptors,
+    nativeInstanceChannel,
     type NativeIndicatorContext,
     type NativeIndicatorInfo,
     type NativeIndicatorOutput,
@@ -766,7 +767,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     private restartNativeIndicators(): void {
         for (const record of this.registry.all()) {
             if (!record.native) continue;
-            record.native.instance.stop();
+            if (record.native.started) record.native.instance.stop();
             record.native.instance = record.native.descriptor.create();
             record.native.started = false;
             record.pendingStructural = true; // the next emitted model remounts over the old visuals
@@ -1331,7 +1332,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // opt-out a removed volume resurrected on the next symbol/timeframe switch.
         if (record?.native?.type === 'volume') this.volumeOptedOut = true;
         record?.session?.stop();
-        record?.native?.instance.stop();
+        // A native added hidden and never started (a restored ledger entry) has nothing
+        // to tear down — and its `stop()` may not expect to run without a context.
+        if (record?.native?.started) record.native.instance.stop();
         this.handles.delete(id);
         if (record?.renderHandle) this.renderer.removeIndicator(record.renderHandle);
         const paneId = record?.model?.paneId;
@@ -1359,7 +1362,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (!visible) {
             record.session?.stop();
             record.session = undefined;
-            record.native?.instance.suspend();
+            // Only a RUNNING instance is suspended: a record hidden right after its add
+            // (a restored hidden ledger entry) has not started yet, so there is nothing
+            // to suspend — and the instance's suspend() is entitled to assume start() ran.
+            if (record.native?.started) record.native.instance.suspend();
             if (record.renderHandle) this.renderer.setIndicatorVisible?.(record.renderHandle, false);
             // Hidden before anything mounted (a restored ledger entry hides the record
             // right after add, before start): the row must exist anyway, or the
@@ -1465,7 +1471,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // native instances free their own caches/timers in stop()
         for (const record of this.registry.all()) {
             record.session?.stop();
-            record.native?.instance.stop();
+            if (record.native?.started) record.native.instance.stop();
         }
         for (const engine of this.typeEngines.values()) engine.stop(); // chart-type data engines (SDK)
         this.typeEngines.clear();
@@ -1587,7 +1593,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             await this.readyPromise;
             const record = this.registry.get(id);
             if (!record?.native || record.hidden) return; // removed/hidden during the await
+            const channel = this.nativeChannel(record);
             const ctx: NativeIndicatorContext = {
+                id,
                 symbol: this.config.market.symbol ?? 'TEST',
                 timeframe: this.config.market.timeframe ?? '60',
                 live: this.config.live,
@@ -1595,7 +1603,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 bars: () => this.bars,
                 data: this.dataControl,
                 emit: (out) => this.applyModel(id, this.buildNativeModel(record, out)),
-                pushData: (data) => this.renderer.setNativeData?.(record.native!.type, data),
+                pushData: (data) => this.renderer.setNativeData?.(channel, data),
                 setStatus: (status) => {
                     if (record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status);
                 },
@@ -1607,16 +1615,27 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         }
     }
 
+    /** The renderer-layer channel a native instance's `pushData` lands on: the type itself
+     *  for a single-instance type (the layer id doubles as the channel), a per-instance
+     *  channel for a `multiInstance` type — otherwise every instance would overwrite the
+     *  one layer. Stamped on the model so the renderer mounts a dedicated layer for it. */
+    private nativeChannel(record: IndicatorRecord): string {
+        const { type, descriptor } = record.native!;
+        return descriptor.multiInstance ? nativeInstanceChannel(type, record.id) : type;
+    }
+
     /** Wrap a native indicator's emitted visuals into a full IndicatorModel, tagged `native`. */
     private buildNativeModel(record: IndicatorRecord, out: NativeIndicatorOutput): IndicatorModel {
         const d = record.native!.descriptor;
+        const type = record.native!.type;
+        const channel = this.nativeChannel(record);
         return {
             id: record.id,
             title: record.title,
             ...(d.shortTitle ? { shorttitle: d.shortTitle } : {}),
             overlay: d.overlay,
             paneHint: d.paneHint,
-            native: { type: record.native!.type },
+            native: { type, ...(channel !== type ? { channel } : {}) },
             ...(d.legend === false ? { legend: false } : {}),
             ...(out.paneAxis != null ? { paneAxis: out.paneAxis } : {}),
             series: out.series ?? [],

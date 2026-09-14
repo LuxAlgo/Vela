@@ -4,8 +4,23 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Plugin indicators drawn by a renderer layer can now be added several times.** A
+  plugin native indicator that paints through its own renderer layer and allows several
+  instances (`multiInstance` on its descriptor) now gets one layer per instance: each
+  instance draws on its own canvas, on its own pane, with its own stacking order, and its
+  data never overwrites a sibling's. Previously such types had to stay single-instance.
+  Running native indicators also learn their own id (`ctx.id`), so an instance can
+  identify itself to host code — a picker or a drag handle — without ambiguity.
+
 ### Fixed
 
+- **A plugin indicator restored hidden no longer crashes the chart on load.** A saved
+  layout that carried a hidden plugin native indicator could throw while the chart was
+  being built, because the indicator was asked to suspend before it had ever started.
+  Such an indicator is now left alone until it is first shown, at which point it starts
+  as usual; removing it or closing the chart while it is still hidden is equally safe.
 - **Right-click menus and dropdowns follow the app theme, not the plot.** Changing the
   chart background in settings used to recolor those panels with the plot. They now
   use the same surface as the drawing toolbar and the chart settings dialog, and only
