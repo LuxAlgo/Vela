@@ -6,6 +6,14 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Replace an indicator's script in place.** `handle.updateCode(source)` re-runs an
+  indicator on new code without taking it off the chart: it keeps its identity, legend
+  row, pane placement, visibility and any handle you hold, and input values carry over
+  wherever the new script still declares them. The new source is compiled before the
+  running one is stopped, so a script that fails to compile leaves the current indicator
+  computing and painting and reports through the handle's `error` event. Runs caused this
+  way report `cause: 'code'` on `script:run`. Native indicators, which have no script,
+  ignore the call.
 - **Plugin indicators drawn by a renderer layer can now be added several times.** A
   plugin native indicator that paints through its own renderer layer and allows several
   instances (`multiInstance` on its descriptor) now gets one layer per instance: each
