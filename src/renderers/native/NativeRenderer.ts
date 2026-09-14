@@ -3486,8 +3486,9 @@ export class NativeRenderer implements IChartRenderer {
                 const or = overlaySeriesRange(this.scene.indicators.values(), i0, i1, (id) => this.scene.offsetOf(id));
                 if (or) dr = dr ? { min: Math.min(dr.min, or.min), max: Math.max(dr.max, or.max) } : or;
             }
-            // Hidden candles drop out of the price pane's autoscale, so overlay indicators fill the pane.
-            const includeCandles = pane.kind === 'price' && !this.scene.candlesHidden;
+            // Hidden candles drop out of the price pane's autoscale, so overlay indicators fill
+            // the pane — unless layer content still paints at bar prices there (see below).
+            const includeCandles = pane.kind === 'price' && (!this.scene.candlesHidden || this.priceLayersAnchoredToBars(masterModels));
             // Each pane logs (or not) on its OWN flag — the price pane from the scene setting,
             // study panes from their own — so a study going log never touches the price pane.
             pane.scaleTarget = computePaneScale(masterModels, this.bars, includeCandles, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id));
@@ -3765,6 +3766,18 @@ export class NativeRenderer implements IChartRenderer {
         return masterModels.every(
             (m) => m.series.length === 0 && !!m.native && this.extLayers.some((l) => l.def.id === m.native!.type),
         );
+    }
+
+    /**
+     * True when SDK-layer content on the price pane paints at BAR PRICES without
+     * contributing a series: the active chart type's own layer, or an overlay layer native
+     * (a series-less model whose type names a mounted layer). Hiding the candles must then
+     * keep the bars in the price scale — with nothing else on the pane the scale would fall
+     * to the {0,1} placeholder and every such layer would paint off-screen and vanish.
+     */
+    private priceLayersAnchoredToBars(masterModels: IndicatorModel[]): boolean {
+        if (this.extLayers.some((l) => l.owner === null && l.def.id === this.scene.priceStyle)) return true;
+        return masterModels.some((m) => m.series.length === 0 && !!m.native && this.extLayers.some((l) => l.def.id === m.native!.type));
     }
 
     /** Per-pane scale state for a host UI (e.g. a price-axis context menu): the pane's pixel
