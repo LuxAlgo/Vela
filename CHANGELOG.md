@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.7.3]
+
+### Fixed
+
+- **Hiding the chart hides a plugin chart type whole.** With a plugin chart type
+  selected, hiding the chart from the symbol legend removed the candles but left the
+  chart type's own drawing on the pane. The chart type now disappears together with the
+  candles — everything the current chart type paints, its hover readouts included — and
+  comes back on show. Overlay plugin indicators that draw through a renderer layer are
+  unaffected: they stay visible while the chart is hidden, whatever the chart type.
+
 ## [v0.7.2]
 
 ### Fixed
