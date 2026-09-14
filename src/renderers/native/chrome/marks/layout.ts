@@ -148,7 +148,10 @@ export function foldOverlappingClusters(clusters: readonly MarkCluster[], xOf: (
             const x = xOf(c.bar);
             const run = runs[runs.length - 1];
             if (run && Number.isFinite(x) && Number.isFinite(anchorX) && x - anchorX < bucketPx) {
-                runs[runs.length - 1] = { key: run.key, bar: run.bar, group: run.group, marks: [...run.marks, ...c.marks] };
+                // `run.marks` is this function's own array (created below), so appending in place is
+                // safe — and keeps a bucket that swallows thousands of marks at an extreme zoom-out
+                // linear, where re-spreading on every join would go quadratic per frame.
+                run.marks.push(...c.marks);
             } else {
                 runs.push({ key: c.key, bar: c.bar, group: c.group, marks: [...c.marks] });
                 anchorX = x;
