@@ -4,6 +4,16 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Plugin indicators drawn by a renderer layer can now be added several times.** A
+  plugin native indicator that paints through its own renderer layer and allows several
+  instances (`multiInstance` on its descriptor) now gets one layer per instance: each
+  instance draws on its own canvas, on its own pane, with its own stacking order, and its
+  data never overwrites a sibling's. Previously such types had to stay single-instance.
+  Running native indicators also learn their own id (`ctx.id`), so an instance can
+  identify itself to host code — a picker or a drag handle — without ambiguity.
+
 ### Fixed
 
 - **Candle wicks keep their color when zoomed far out.** Once bars are packed tighter
@@ -12,6 +22,22 @@ All notable changes to Vela, newest first.
   bullish green the moment the recovery candle next to it landed in the same column.
   Each bar's range now keeps its own color — direction, `barcolor()` tint, or the
   wick color from the candle settings, the same rules as at every other zoom level.
+- **A plugin indicator restored hidden no longer crashes the chart on load.** A saved
+  layout that carried a hidden plugin native indicator could throw while the chart was
+  being built, because the indicator was asked to suspend before it had ever started.
+  Such an indicator is now left alone until it is first shown, at which point it starts
+  as usual; removing it or closing the chart while it is still hidden is equally safe.
+- **Right-click menus and dropdowns follow the app theme, not the plot.** Changing the
+  chart background in settings used to recolor those panels with the plot. They now
+  use the same surface as the drawing toolbar and the chart settings dialog, and only
+  a theme switch restyles them.
+- **An edit made just before a workspace is torn down is no longer lost.** Changes are
+  batched for a moment before `state:changed` fires, and destroying the workspace inside
+  that window used to drop the pending change without telling anyone — so an app saving
+  from that event lost the user's last symbol change or added indicator. `destroy()` now
+  emits the pending `state:changed` before tearing anything down, and `getState()` called
+  during teardown still describes the charts that were on screen rather than the last
+  restored document.
 - **Timeline mark popups now toggle with a click.** Clicking the mark whose popup is
   open closes it; previously that second click closed and immediately reopened the popup,
   so it took a click elsewhere to dismiss it.
