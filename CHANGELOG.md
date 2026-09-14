@@ -16,6 +16,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Candle wicks keep their color when zoomed far out.** Once bars are packed tighter
+  than a pixel, the candles sharing a column are drawn as thin sticks; a stick used to
+  take one direction for all of its bars, so a bearish candle's long wick could turn
+  bullish green the moment the recovery candle next to it landed in the same column.
+  Each bar's range now keeps its own color — direction, `barcolor()` tint, or the
+  wick color from the candle settings, the same rules as at every other zoom level.
 - **A plugin indicator restored hidden no longer crashes the chart on load.** A saved
   layout that carried a hidden plugin native indicator could throw while the chart was
   being built, because the indicator was asked to suspend before it had ever started.

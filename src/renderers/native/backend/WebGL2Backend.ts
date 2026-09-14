@@ -700,7 +700,7 @@ export class WebGL2Backend implements IRenderBackend {
         const spacing = coords.bodySpacing();
         const tier = candleTier(spacing);
         if (tier === 'aggregate') {
-            this.emitCandlesAggregated(b, bars, i0, i1, coords, pane, up, down, barColors);
+            this.emitCandlesAggregated(b, bars, i0, i1, coords, pane, (bar) => barColors.get(bar.time) ?? (bar.close >= bar.open ? up : down));
             return;
         }
         const tickW = Math.max(1, Math.round(spacing * 0.35));
@@ -855,14 +855,19 @@ export class WebGL2Backend implements IRenderBackend {
         // A candle-based plugin style paints with its OWN cosmetics (unset keys inherit
         // the shared candles block); built-ins pass through untouched.
         const paint = effectiveCandlePaint(scene.style.candle, scene.candleOverride, theme.upColor, theme.downColor);
-        if (tier === 'aggregate') {
-            this.emitCandlesAggregated(b, bars, i0, i1, coords, pane, paint.up, paint.down, barColors);
-            return;
-        }
-        const drawBody = tier === 'full';
         const up = paint.up;
         const down = paint.down;
         const cs = paint.candle;
+        if (tier === 'aggregate') {
+            // The stick IS the candle, so a bar's paint resolves as in the stick-only tier
+            // below: the wick color setting wins, then barcolor(), then the direction color.
+            this.emitCandlesAggregated(b, bars, i0, i1, coords, pane, (bar) => {
+                const isUp = bar.close >= bar.open;
+                return (isUp ? cs.wickUpColor : cs.wickDownColor) ?? barColors.get(bar.time) ?? (isUp ? up : down);
+            });
+            return;
+        }
+        const drawBody = tier === 'full';
         // When a fading style drops the body below the structure, draw a body outline even
         // if no border is configured — so the candle keeps a visible (hollow) skeleton.
         const fading = this.candleStructureAlpha > this.candleBodyAlpha + 0.001;
@@ -930,14 +935,15 @@ export class WebGL2Backend implements IRenderBackend {
     /**
      * Sub-pixel LOD (mirrors Canvas2dBackend.drawCandlesAggregated): bars sharing a
      * rounded pixel column collapse into high-low sticks — one per contiguous
-     * coverage run (see {@link aggregateCandleColumns}), so a price gap inside the
-     * column stays a void. Draw cost stays bounded by screen width, not bar count;
-     * stick color follows its own first-open→last-close.
+     * SAME-COLOR coverage run (see {@link aggregateCandleColumns}), so a price gap
+     * inside the column stays a void and every bar's extent keeps its own color. Draw
+     * cost stays bounded by screen width, not bar count. `colorOf` is the calling
+     * style's per-bar paint rule (candles and OHLC bars resolve theirs differently).
      */
-    private emitCandlesAggregated(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, up: string, down: string, barColors: ReadonlyMap<number, string>): void {
+    private emitCandlesAggregated(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, colorOf: (bar: OHLCV) => string): void {
         const yOf = (price: number): number => coords.priceToY(price, pane.scale, pane.bounds);
-        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf)) {
-            const c = parseColor(barColors.get(s.headTime) ?? (s.close >= s.open ? up : down));
+        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf, colorOf)) {
+            const c = parseColor(s.color);
             const hY = yOf(s.hi);
             b.rect(s.x - 0.5, hY, 1, yOf(s.lo) - hY, c);
         }
