@@ -21,6 +21,21 @@ All notable changes to Vela, newest first.
   data never overwrites a sibling's. Previously such types had to stay single-instance.
   Running native indicators also learn their own id (`ctx.id`), so an instance can
   identify itself to host code — a picker or a drag handle — without ambiguity.
+- **A plot can show on some surfaces and not others.** An indicator series now carries
+  a per-surface `display`: painted in its pane, kept on the price scale, its value beside
+  the legend title, and its row in the data window are four independent switches. A
+  script can keep a helper value readable in the data window without drawing it, show a
+  value in the legend only, or paint a line that reports nowhere. The `visible: false`
+  shorthand still hides a series everywhere. Renderer and plugin authors resolve the
+  flags with `seriesShownOn` and `seriesInScale` from `@luxalgo/vela/plugin`.
+
+### Changed
+
+- **Hidden plots no longer stretch the price scale.** A series that is neither painted
+  in its pane nor shown on the price scale — a data-window-only or legend-only readout,
+  or a `visible: false` fill anchor — is left out of the pane's autoscale, so a helper
+  plot far from the drawn values no longer squashes what is actually visible. A plot
+  shown on the price scale keeps its values in view even when it is not painted.
 
 ### Fixed
 

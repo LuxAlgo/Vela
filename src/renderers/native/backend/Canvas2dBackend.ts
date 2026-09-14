@@ -3,7 +3,7 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { Fill, Background, PriceLine } from '../../../core/model/scene';
 import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColor } from '../../../core/model/series';
-import { isLineLikeSeries } from '../../../core/model/series';
+import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
@@ -542,11 +542,14 @@ export class Canvas2dBackend implements IRenderBackend {
     }
 
     private drawSeries(ctx: CanvasRenderingContext2D, spec: SeriesSpec, pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number, theme: VelaTheme, off = 0): void {
+        // Off-pane series (legend/data-window-only readouts, hidden fill anchors) are
+        // kept in the model for fills and readouts but never painted here.
+        if (!seriesShownOn(spec, 'pane')) return;
         if (spec.kind === 'candle' || spec.kind === 'bar') {
             this.drawPlotCandles(ctx, spec, pane, coords, i0, i1, theme, off);
             return;
         }
-        if (!isLineLikeSeries(spec) || spec.visible === false) return;
+        if (!isLineLikeSeries(spec)) return;
         switch (spec.kind) {
             case 'histogram':
             case 'columns':

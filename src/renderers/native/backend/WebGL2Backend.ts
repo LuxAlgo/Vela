@@ -3,7 +3,7 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { Fill, Background, PriceLine } from '../../../core/model/scene';
 import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColor } from '../../../core/model/series';
-import { isLineLikeSeries } from '../../../core/model/series';
+import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
@@ -566,7 +566,7 @@ export class WebGL2Backend implements IRenderBackend {
      *  Routing mirrors the main pass: own series per pane, force_overlay series on the price pane. */
     private emitGlowSources(b: Batch, scene: SceneGraph, pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number): void {
         const emitOne = (s: SeriesSpec, off: number): void => {
-            if (!isLineLikeSeries(s) || s.visible === false) return;
+            if (!isLineLikeSeries(s) || !seriesShownOn(s, 'pane')) return;
             if (s.kind === 'histogram' || s.kind === 'columns') return;
             if (s.kind === 'circles' || s.kind === 'cross') this.emitPointMarkers(b, s, pane, coords, i0, i1, off);
             else this.emitPolyline(b, s, pane, coords, i0, i1, s.kind === 'step', off);
@@ -950,11 +950,14 @@ export class WebGL2Backend implements IRenderBackend {
     }
 
     private emitSeries(b: Batch, spec: SeriesSpec, pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number, theme: VelaTheme, off = 0): void {
+        // Off-pane series (legend/data-window-only readouts, hidden fill anchors) are
+        // kept in the model for fills and readouts but never painted here.
+        if (!seriesShownOn(spec, 'pane')) return;
         if (spec.kind === 'candle' || spec.kind === 'bar') {
             this.emitPlotCandles(b, spec, pane, coords, i0, i1, theme, off);
             return;
         }
-        if (!isLineLikeSeries(spec) || spec.visible === false) return;
+        if (!isLineLikeSeries(spec)) return;
         switch (spec.kind) {
             case 'histogram':
             case 'columns':

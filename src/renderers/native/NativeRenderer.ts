@@ -39,7 +39,7 @@ import {
 } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
 import { SecondClock, type WallClock } from '../../core/util/wall-clock';
-import { isLineLikeSeries } from '../../core/model/series';
+import { isLineLikeSeries, seriesShownOn, type SeriesSurface } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
 import { AxisScaleButtons, type AxisScaleView } from './chrome/AxisScaleButtons';
@@ -3089,18 +3089,20 @@ export class NativeRenderer implements IChartRenderer {
         };
     }
 
-    /** One group per indicator (name = indicator title), each with a row per drawable plot. */
+    /** One group per indicator (name = indicator title), each with a row per plot shown in the data window. */
     private dataWindowGroups(idx: number, pricePane: PaneNode | null): DataWindowGroup[] {
         const groups: DataWindowGroup[] = [];
         for (const model of this.scene.indicators.values()) {
-            const rows = this.dataWindowRowsFor(model, idx, pricePane);
+            const rows = this.readoutRowsFor(model, idx, pricePane, 'dataWindow');
             if (rows.length) groups.push({ name: model.title, rows });
         }
         return groups;
     }
 
-    /** One indicator's readout at bar `idx`: a row per drawable plot, formatted on its pane's scale. */
-    private dataWindowRowsFor(model: IndicatorModel, idx: number, pricePane: PaneNode | null): DataWindowRow[] {
+    /** One indicator's readout at bar `idx` for one value surface (the legend or the data window):
+     *  a row per plot shown on that surface, formatted on its pane's scale. A plot's `display`
+     *  decides per surface — a data-window-only plot has a row here and none in the legend. */
+    private readoutRowsFor(model: IndicatorModel, idx: number, pricePane: PaneNode | null, surface: SeriesSurface): DataWindowRow[] {
         // The volume native draws through its bespoke layer and mounts a series-less model, so
         // its readout comes straight from the bar's volume instead of iterating `model.series`.
         if (model.native?.type === 'volume') return this.volumeReadoutRows(model, idx);
@@ -3108,13 +3110,13 @@ export class NativeRenderer implements IChartRenderer {
         const off = this.scene.offsetOf(model.id);
         const rows: DataWindowRow[] = [];
         for (const s of model.series) {
+            if (!seriesShownOn(s, surface)) continue;
             let value: number | null | undefined;
             let color: string;
             if (s.kind === 'candle' || s.kind === 'bar') {
                 value = s.bars[idx - off]?.close;
                 color = s.style?.up ?? this.theme.upColor;
             } else if (isLineLikeSeries(s)) {
-                if (s.visible === false) continue;
                 value = s.points[idx - off]?.value;
                 color = s.points[idx - off]?.color ?? s.style.color;
             } else {
@@ -3139,9 +3141,10 @@ export class NativeRenderer implements IChartRenderer {
         return [{ label: model.title, value: formatVolume(vol), color }];
     }
 
-    /** Refresh the plot values beside every legend title — the same readout the data window
-     *  shows (crosshair bar, else the latest bar), pushed per paint. A hidden indicator has
-     *  no scene model, so its row is absent from the map and its readout clears. */
+    /** Refresh the plot values beside every legend title — the same bar the data window reads
+     *  (crosshair bar, else the latest bar), pushed per paint, filtered to the plots whose
+     *  `display` includes the legend. A hidden indicator has no scene model, so its row is
+     *  absent from the map and its readout clears. */
     private updateLegendValues(): void {
         if (!this.inputsUI) return;
         const n = this.bars.length;
@@ -3150,7 +3153,7 @@ export class NativeRenderer implements IChartRenderer {
             const idx = this.hoverLogical != null ? this.hoverLogical : n - 1;
             const pricePane = this.dataWindowPricePane();
             for (const model of this.scene.indicators.values()) {
-                values.set(model.id, this.dataWindowRowsFor(model, idx, pricePane).map((r) => ({ value: r.value, color: r.color })));
+                values.set(model.id, this.readoutRowsFor(model, idx, pricePane, 'legend').map((r) => ({ value: r.value, color: r.color })));
             }
         }
         this.inputsUI.setPlotValues(values);
