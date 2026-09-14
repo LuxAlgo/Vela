@@ -30,6 +30,12 @@ export interface IndicatorRecord {
     /** Declaration-prop values (effective defaults merged with user/add-time overrides).
      *  Stays empty for engines without props support and for natives. */
     propValues: Record<string, InputValue>;
+    /**
+     * A source handed to `updateCode` that is still being prepared. The latest call wins:
+     * a prepare that resolves for any other source is discarded, so two quick edits never
+     * race the older one onto the chart.
+     */
+    pendingSource?: string;
     /** The live execution session (static or streaming) — poked on input/viewport/bar changes. */
     session?: ExecutionSession;
     /**

@@ -23,16 +23,18 @@ export class Triangle extends SegmentDrawing {
     geometry(proj: Projector): SegmentGeometry | null {
         const a = this.anchors[0];
         const b = this.anchors[1];
-        const c = this.anchors[2];
-        if (!a || !b || !c) return null;
+        if (!a || !b) return null;
         const px = (p: DrawingPoint): [number, number] | null => {
             const y = proj.yOf(p.price, this.paneId);
             return y == null ? null : [proj.xOf(p.time), y];
         };
         const A = px(a);
         const B = px(b);
+        if (!A || !B) return null;
+        const c = this.anchors[2];
+        if (!c) return { segments: [[A[0], A[1], B[0], B[1]]], fill: null }; // first edge only (placing)
         const C = px(c);
-        if (!A || !B || !C) return null;
+        if (!C) return null;
         return {
             segments: [
                 [A[0], A[1], B[0], B[1]],

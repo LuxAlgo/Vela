@@ -3,7 +3,7 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { Fill, Background, PriceLine } from '../../../core/model/scene';
 import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColor } from '../../../core/model/series';
-import { isLineLikeSeries } from '../../../core/model/series';
+import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
@@ -221,7 +221,7 @@ export class Canvas2dBackend implements IRenderBackend {
         const spacing = coords.bodySpacing();
         const tier = candleTier(spacing);
         if (tier === 'aggregate') {
-            this.drawCandlesAggregated(ctx, bars, i0, i1, coords, pane, up, down, barColors);
+            this.drawCandlesAggregated(ctx, bars, i0, i1, coords, pane, (b) => barColors.get(b.time) ?? (b.close >= b.open ? up : down));
             return;
         }
         const tickW = Math.max(1, Math.round(spacing * 0.35));
@@ -428,12 +428,17 @@ export class Canvas2dBackend implements IRenderBackend {
         // A candle-based plugin style paints with its OWN cosmetics (unset keys inherit
         // the shared candles block); built-ins pass through untouched.
         const paint = effectiveCandlePaint(scene.style.candle, scene.candleOverride, theme.upColor, theme.downColor);
+        const cs = paint.candle;
         if (tier === 'aggregate') {
-            this.drawCandlesAggregated(ctx, bars, i0, i1, coords, pane, paint.up, paint.down, barColors);
+            // The stick IS the candle, so a bar's paint resolves as in the stick-only tier
+            // below: the wick color setting wins, then barcolor(), then the direction color.
+            this.drawCandlesAggregated(ctx, bars, i0, i1, coords, pane, (b) => {
+                const up = b.close >= b.open;
+                return (up ? cs.wickUpColor : cs.wickDownColor) ?? barColors.get(b.time) ?? (up ? paint.up : paint.down);
+            });
             return;
         }
         const drawBody = tier === 'full';
-        const cs = paint.candle;
         // When a fading style drops the body below the structure, draw a body outline even
         // if no border is configured — so the candle keeps a visible (hollow) skeleton.
         const fading = this.candleStructureAlpha > this.candleBodyAlpha + 0.001;
@@ -509,10 +514,11 @@ export class Canvas2dBackend implements IRenderBackend {
 
     /**
      * Sub-pixel LOD: bars sharing a rounded pixel column collapse into high-low
-     * sticks (one per contiguous coverage run — see {@link aggregateCandleColumns}),
-     * so draw cost is bounded by screen width (not bar count) when zoomed far out
-     * and a price gap inside the column stays a void. Each stick's color follows
-     * its first-open→last-close direction (a barcolor() on the head bar still wins).
+     * sticks (one per contiguous SAME-COLOR coverage run — see
+     * {@link aggregateCandleColumns}), so draw cost is bounded by screen width (not
+     * bar count) when zoomed far out, a price gap inside the column stays a void, and
+     * every bar's extent keeps its own color. `colorOf` is the calling style's per-bar
+     * paint rule (candles and OHLC bars resolve theirs differently).
      */
     private drawCandlesAggregated(
         ctx: CanvasRenderingContext2D,
@@ -521,15 +527,13 @@ export class Canvas2dBackend implements IRenderBackend {
         i1: number,
         coords: CoordinateSystem,
         pane: PaneNode,
-        up: string,
-        down: string,
-        barColors: ReadonlyMap<number, string>,
+        colorOf: (bar: OHLCV) => string,
     ): void {
         const yOf = (price: number): number => coords.priceToY(price, pane.scale, pane.bounds);
         ctx.lineWidth = 1;
-        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf)) {
+        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf, colorOf)) {
             const x = s.x + 0.5;
-            ctx.strokeStyle = barColors.get(s.headTime) ?? (s.close >= s.open ? up : down);
+            ctx.strokeStyle = s.color;
             ctx.beginPath();
             ctx.moveTo(x, yOf(s.hi));
             ctx.lineTo(x, yOf(s.lo));
@@ -538,11 +542,14 @@ export class Canvas2dBackend implements IRenderBackend {
     }
 
     private drawSeries(ctx: CanvasRenderingContext2D, spec: SeriesSpec, pane: PaneNode, coords: CoordinateSystem, i0: number, i1: number, theme: VelaTheme, off = 0): void {
+        // Off-pane series (legend/data-window-only readouts, hidden fill anchors) are
+        // kept in the model for fills and readouts but never painted here.
+        if (!seriesShownOn(spec, 'pane')) return;
         if (spec.kind === 'candle' || spec.kind === 'bar') {
             this.drawPlotCandles(ctx, spec, pane, coords, i0, i1, theme, off);
             return;
         }
-        if (!isLineLikeSeries(spec) || spec.visible === false) return;
+        if (!isLineLikeSeries(spec)) return;
         switch (spec.kind) {
             case 'histogram':
             case 'columns':

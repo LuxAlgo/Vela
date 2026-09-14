@@ -1,12 +1,12 @@
 import type { IChartRenderer, VisibleRange } from '../ports/IChartRenderer';
 import type { MarketDataFeed, BarRange } from '../ports/MarketDataFeed';
-import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason } from '../ports/ScriptingEngine';
+import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
 import type { OHLCV } from '../model/ohlcv';
 import type { IndicatorModel } from '../model/indicator';
 import type { ValuePatch, SeriesValueDelta } from '../model/patch';
 import { isLineLikeSeries } from '../model/series';
-import type { InputValue } from '../model/inputs';
+import type { InputSchema, InputValue } from '../model/inputs';
 import type { VelaTheme, MarketConfig, MarketSwitch, MarketSnapshot, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
 import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
@@ -20,6 +20,7 @@ import { IndicatorRegistry, type IndicatorRecord } from './IndicatorRegistry';
 import {
     getNativeIndicator,
     nativeIndicatorDescriptors,
+    nativeInstanceChannel,
     type NativeIndicatorContext,
     type NativeIndicatorInfo,
     type NativeIndicatorOutput,
@@ -696,6 +697,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (identityChanged) {
                 this.beginLoad(false);
                 this.setBarSeries([], { clearing: true });
+                // Mounted indicator models are stale the moment the identity changes, but
+                // their re-runs land only AFTER the new bars paint. Index-aligned series
+                // stop on their own (their anchor matches no new bar) — time-anchored
+                // content (drawings, bgcolor spans) and price-anchored hlines would
+                // re-project onto the incoming axis and linger. Blank them all now.
+                this.blankIndicatorVisuals();
                 // The active style's DATA ENGINE still rides the old market — its rebuild only
                 // follows the load. Silence it for the gap (its live pushes are stale the moment
                 // the identity changed) and blank its channels: per-bar payloads are keyed by
@@ -766,7 +773,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     private restartNativeIndicators(): void {
         for (const record of this.registry.all()) {
             if (!record.native) continue;
-            record.native.instance.stop();
+            if (record.native.started) record.native.instance.stop();
             record.native.instance = record.native.descriptor.create();
             record.native.started = false;
             record.pendingStructural = true; // the next emitted model remounts over the old visuals
@@ -1011,6 +1018,24 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.bars = transform ? transform.full(this.rawBars) : this.rawBars;
         this.renderer.setBars(this.bars, { preserveView: true });
         this.reexecuteIndicators();
+    }
+
+    /**
+     * Blank every mounted indicator's painted output — series data, fills, backgrounds,
+     * price lines, drawings, bar colors, trades — while keeping the mount (legend row,
+     * pane, settings) intact, via the same idempotent-by-id remount an input edit uses.
+     * Called on a market identity switch: the fresh models arrive only after the new
+     * bars load, so nothing blanked here is ever restored — each consumer's re-run
+     * remounts a full model over it.
+     */
+    private blankIndicatorVisuals(): void {
+        for (const record of this.registry.all()) {
+            if (record.hidden || !record.renderHandle || !record.model) continue;
+            record.model = blankedModel(record.model);
+            record.renderHandle = this.renderer.mountIndicator(record.model);
+            record.pendingStructural = true; // the next model remounts; never a patch over the blank
+            this.setLoading(record, true);
+        }
     }
 
     /** Stop + re-run every visible Pine indicator (its input bars changed wholesale). */
@@ -1312,6 +1337,67 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         this.events.emit('indicator:inputs', { id });
     }
 
+    /**
+     * IndicatorController: replace a SCRIPT indicator's source in place (see
+     * {@link IndicatorHandle.updateCode}). Prepare-first: the running session keeps
+     * computing until the new source has compiled, so a broken edit costs the user
+     * nothing but an `error` event. Natives have no script — warn and leave them alone.
+     */
+    updateCode(id: string, source: string): void {
+        const record = this.registry.get(id);
+        const handle = this.handles.get(id);
+        if (!record || !handle) return;
+        if (record.native) {
+            console.warn(`[vela] updateCode("${id}") — a native indicator has no script to update.`);
+            return;
+        }
+        if (source === record.source && record.pendingSource === undefined) return;
+        record.pendingSource = source;
+        void this.swapSource(id, source, handle);
+    }
+
+    private async swapSource(id: string, source: string, handle: IndicatorHandleImpl): Promise<void> {
+        const engine = this.registry.get(id)?.engine ?? this.engineFor(this.registry.get(id)?.options?.language);
+        let prepared: PreparedScript;
+        try {
+            prepared = await engine.prepare(source, id);
+        } catch (err) {
+            const record = this.registry.get(id);
+            // Only the LATEST pending edit reports; a superseded one failing is noise.
+            if (record?.pendingSource === source) {
+                record.pendingSource = undefined;
+                this.fail(id, handle, err);
+            }
+            return;
+        }
+        const record = this.registry.get(id);
+        // Removed, or superseded by a later updateCode, while preparing.
+        if (!record || record.pendingSource !== source) return;
+        record.pendingSource = undefined;
+        record.source = source;
+        record.engine = engine;
+        record.prepared = prepared;
+        handle.setSource(source);
+        // Values survive on the keys (or titles) the new schema still declares; the rest
+        // fall back to the new declaration defaults — a renamed input is a new input.
+        record.inputValues = valuesOnSchema(prepared.inputs, record.inputValues);
+        record.propValues = valuesOnSchema(prepared.props ?? [], record.propValues);
+        handle.setSchema(prepared.inputs);
+        handle.setPropsSchema(prepared.props ?? []);
+        record.session?.stop();
+        record.session = undefined;
+        record.pendingStructural = true; // the first model of the new source remounts over the old visuals
+        record.pendingCause = 'code';
+        if (record.hidden) return; // showing runs the (now replaced) prepared script
+        if (record.renderHandle) {
+            this.renderer.setIndicatorInputs(record.renderHandle, record.inputValues, record.propValues);
+            this.setLoading(record, true);
+        } else {
+            this.mountLoadingPlaceholder(id, record); // updated before its first prepare ever landed
+        }
+        this.executeIndicator(id, handle);
+    }
+
     /** IndicatorController: tear down an indicator and (if now empty) its pane. */
     /** Live handles of every indicator on the chart (script + native), insertion order. */
     listIndicators(): IndicatorHandle[] {
@@ -1331,7 +1417,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // opt-out a removed volume resurrected on the next symbol/timeframe switch.
         if (record?.native?.type === 'volume') this.volumeOptedOut = true;
         record?.session?.stop();
-        record?.native?.instance.stop();
+        // A native added hidden and never started (a restored ledger entry) has nothing
+        // to tear down — and its `stop()` may not expect to run without a context.
+        if (record?.native?.started) record.native.instance.stop();
         this.handles.delete(id);
         if (record?.renderHandle) this.renderer.removeIndicator(record.renderHandle);
         const paneId = record?.model?.paneId;
@@ -1359,7 +1447,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         if (!visible) {
             record.session?.stop();
             record.session = undefined;
-            record.native?.instance.suspend();
+            // Only a RUNNING instance is suspended: a record hidden right after its add
+            // (a restored hidden ledger entry) has not started yet, so there is nothing
+            // to suspend — and the instance's suspend() is entitled to assume start() ran.
+            if (record.native?.started) record.native.instance.suspend();
             if (record.renderHandle) this.renderer.setIndicatorVisible?.(record.renderHandle, false);
             // Hidden before anything mounted (a restored ledger entry hides the record
             // right after add, before start): the row must exist anyway, or the
@@ -1465,7 +1556,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         // native instances free their own caches/timers in stop()
         for (const record of this.registry.all()) {
             record.session?.stop();
-            record.native?.instance.stop();
+            if (record.native?.started) record.native.instance.stop();
         }
         for (const engine of this.typeEngines.values()) engine.stop(); // chart-type data engines (SDK)
         this.typeEngines.clear();
@@ -1498,6 +1589,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             record.engine = engine;
 
             const prepared = await engine.prepare(source, id);
+            // An updateCode that landed during this prepare owns the record now — the
+            // original source must not overwrite the replacement's schema and session.
+            if (record.source !== source) return;
             record.prepared = prepared;
             const defaults: Record<string, InputValue> = {};
             for (const input of prepared.inputs) defaults[input.key] = input.defval;
@@ -1587,7 +1681,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             await this.readyPromise;
             const record = this.registry.get(id);
             if (!record?.native || record.hidden) return; // removed/hidden during the await
+            const channel = this.nativeChannel(record);
             const ctx: NativeIndicatorContext = {
+                id,
                 symbol: this.config.market.symbol ?? 'TEST',
                 timeframe: this.config.market.timeframe ?? '60',
                 live: this.config.live,
@@ -1595,7 +1691,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 bars: () => this.bars,
                 data: this.dataControl,
                 emit: (out) => this.applyModel(id, this.buildNativeModel(record, out)),
-                pushData: (data) => this.renderer.setNativeData?.(record.native!.type, data),
+                pushData: (data) => this.renderer.setNativeData?.(channel, data),
                 setStatus: (status) => {
                     if (record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status);
                 },
@@ -1607,16 +1703,27 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         }
     }
 
+    /** The renderer-layer channel a native instance's `pushData` lands on: the type itself
+     *  for a single-instance type (the layer id doubles as the channel), a per-instance
+     *  channel for a `multiInstance` type — otherwise every instance would overwrite the
+     *  one layer. Stamped on the model so the renderer mounts a dedicated layer for it. */
+    private nativeChannel(record: IndicatorRecord): string {
+        const { type, descriptor } = record.native!;
+        return descriptor.multiInstance ? nativeInstanceChannel(type, record.id) : type;
+    }
+
     /** Wrap a native indicator's emitted visuals into a full IndicatorModel, tagged `native`. */
     private buildNativeModel(record: IndicatorRecord, out: NativeIndicatorOutput): IndicatorModel {
         const d = record.native!.descriptor;
+        const type = record.native!.type;
+        const channel = this.nativeChannel(record);
         return {
             id: record.id,
             title: record.title,
             ...(d.shortTitle ? { shorttitle: d.shortTitle } : {}),
             overlay: d.overlay,
             paneHint: d.paneHint,
-            native: { type: record.native!.type },
+            native: { type, ...(channel !== type ? { channel } : {}) },
             ...(d.legend === false ? { legend: false } : {}),
             ...(out.paneAxis != null ? { paneAxis: out.paneAxis } : {}),
             series: out.series ?? [],
@@ -1945,6 +2052,13 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         const record = this.registry.get(id);
         if (!record || record.hidden) return true; // a model arriving for a just-hidden indicator is dropped
 
+        // A model arriving MID-SWITCH was computed over the outgoing market (a run already
+        // in flight when setMarket quiesced — every poke is gated and the re-executions
+        // only start after the load): applying it would repaint the just-blanked scene
+        // with stale content. It counts as no run at all — the pending cause stays for
+        // the post-load re-execution, whose model paints the new market.
+        if (this.switchingMarket) return false;
+
         // While the CHART ITSELF has no bars, an output-free model is the signature of a
         // run over zero bars (empty initial load: auth race, unresolved symbol, transient
         // feed failure) — an engine may then fabricate default metadata (generic title,
@@ -1981,7 +2095,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             // so its pane is never re-derived here.)
             const routed = this.routePane(id, model, record.options ?? {});
             if (routed !== paneId) {
-                if (paneId !== 'price') {
+                // A placeholder's pane is its own; after a code update the pane may also hold
+                // indicators merged into it since — those keep it.
+                if (paneId !== 'price' && !this.registry.all().some((r) => r.id !== id && r.model?.paneId === paneId)) {
                     this.renderer.removePane(paneId);
                     this.forgetPane(paneId); // keep core paneOrder in sync (was left stale → desynced list()/anchors/undo)
                 }
@@ -2164,7 +2280,47 @@ function yieldToPaint(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/**
+ * Re-seat stored values on a NEW schema: every declared key takes its default, then a
+ * previous value is kept where the schema still declares its key (or title — add-time
+ * overrides may be title-keyed). Stale keys drop.
+ */
+function valuesOnSchema(schema: InputSchema[], previous: Record<string, InputValue>): Record<string, InputValue> {
+    const out: Record<string, InputValue> = {};
+    const declared = new Set<string>();
+    for (const s of schema) {
+        out[s.key] = s.defval;
+        declared.add(s.key);
+        declared.add(s.title);
+    }
+    for (const [k, v] of Object.entries(previous)) if (declared.has(k)) out[k] = v;
+    return out;
+}
+
 /** Build a value-only patch from a freshly-run model (used on live ticks / re-runs). */
+/**
+ * A copy of a mounted model with every painted output emptied. The structure — series
+ * specs (ids, titles, styles), pane routing, inputs — survives, so an idempotent
+ * remount keeps the legend and settings while nothing stale paints.
+ */
+function blankedModel(model: IndicatorModel): IndicatorModel {
+    return {
+        ...model,
+        series: model.series.map((s) => (s.kind === 'candle' || s.kind === 'bar' ? { ...s, bars: [] } : s.kind === 'markers' ? { ...s, markers: [] } : { ...s, points: [] })),
+        fills: [],
+        backgrounds: [],
+        priceLines: [],
+        lines: [],
+        boxes: [],
+        labels: [],
+        polylines: [],
+        linefills: [],
+        tables: [],
+        barColors: [],
+        trades: [],
+    };
+}
+
 function modelToValuePatch(model: IndicatorModel): ValuePatch {
     const series: SeriesValueDelta[] = [];
     let from = Number.POSITIVE_INFINITY;

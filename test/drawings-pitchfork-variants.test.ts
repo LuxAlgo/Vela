@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDrawing, deserializeDrawing, type Projector } from '../src/core/drawings';
+import { createDrawing, deserializeDrawing, type Projector, type SegmentDrawing } from '../src/core/drawings';
 
 /** Linear projector: x = time, y = 100 − price, single pane 'price', 200×100 plot. */
 function fakeProjector(): Projector {
@@ -31,9 +31,14 @@ describe('drawings/SchiffPitchfork', () => {
 
     it('starts the median at the PRICE-shifted origin (not the Andrews pivot)', () => {
         const d = make();
-        // S = (10, mean(60,80)=70) → px (10,30); the Andrews median would instead pass through px(10,40)
+        // S = (10, mean(60,80)=70) → px (10,30); the Andrews median px(10,40)→px(30,50) passes (20,45)
         expect(d.hitTest(10, 30, proj, 2)).toBe(true);
-        expect(d.hitTest(10, 40, proj, 2)).toBe(false);
+        expect(d.hitTest(20, 45, proj, 2)).toBe(false);
+    });
+
+    it('keeps the pivot attached with a pivot → first tine construction line', () => {
+        // px(10,40) → px(30,20) passes (15,35); the shifted median (10,30)→(30,50) does not
+        expect(make().hitTest(15, 35, proj, 2)).toBe(true);
     });
 
     it('reports the anchor price span + round-trips', () => {
@@ -53,6 +58,11 @@ describe('drawings/ModifiedSchiffPitchfork', () => {
         // S = (mean(10,30)=20, mean(60,80)=70) → px (20,30)
         expect(d.hitTest(20, 30, proj, 2)).toBe(true);
         expect(d.hitTest(20, 40, proj, 2)).toBe(false);
+    });
+
+    it('keeps the pivot attached with a pivot → first tine construction line', () => {
+        // px(10,40) → px(30,20) passes (15,35); the shifted median starts at (20,30)
+        expect(make().hitTest(15, 35, proj, 2)).toBe(true);
     });
 
     it('round-trips through serialize', () => {
@@ -80,6 +90,27 @@ describe('drawings/InsidePitchfork', () => {
         const a = make().serialize();
         expect(deserializeDrawing(a)!.serialize()).toEqual(a);
         expect(a.type).toBe('insidepitchfork');
+    });
+});
+
+describe('drawings/pitchfork family · placing preview', () => {
+    const proj = fakeProjector();
+    const types = ['pitchfork', 'schiffpitchfork', 'modifiedschiffpitchfork', 'insidepitchfork'] as const;
+
+    // While placing, the ghost carries the pivot + the cursor. Two anchors must already show
+    // the pivot → cursor line, or the first click leaves nothing on the chart until the second.
+    it.each(types)('%s draws the pivot → cursor line with only two anchors', (type) => {
+        const d = createDrawing(type, { paneId: 'price', anchors: [forkAnchors[0]!, forkAnchors[1]!] }) as SegmentDrawing;
+        const g = d.geometry(proj);
+        expect(g).not.toBeNull();
+        expect(g!.segments).toEqual([[10, 40, 30, 20]]); // px(10,60)→px(10,40), px(30,80)→px(30,20)
+        expect(g!.fill).toBeNull();
+        expect(d.hitTest(20, 30, proj, 2)).toBe(true); // midpoint of the pivot → cursor line
+    });
+
+    it.each(types)('%s still draws nothing with a single anchor', (type) => {
+        const d = createDrawing(type, { paneId: 'price', anchors: [forkAnchors[0]!] }) as SegmentDrawing;
+        expect(d.geometry(proj)).toBeNull();
     });
 });
 

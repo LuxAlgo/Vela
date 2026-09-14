@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDrawing, deserializeDrawing, type Projector } from '../src/core/drawings';
+import { createDrawing, deserializeDrawing, type Projector, type SegmentDrawing } from '../src/core/drawings';
 
 /** Linear projector: x = time, y = 100 − price, single pane 'price'. */
 function fakeProjector(): Projector {
@@ -115,5 +115,15 @@ describe('drawings/Triangle', () => {
         const a = make().serialize();
         expect(deserializeDrawing(a)!.serialize()).toEqual(a);
         expect(a.type).toBe('triangle');
+    });
+
+    it('previews the first edge while placing (two anchors, no fill)', () => {
+        const partial = (n: number) =>
+            createDrawing('triangle', { paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 40, price: 0 }].slice(0, n) }) as SegmentDrawing;
+        const g = partial(2).geometry(proj);
+        expect(g).not.toBeNull();
+        expect(g!.segments).toEqual([[0, 100, 40, 100]]);
+        expect(g!.fill).toBeNull();
+        expect(partial(1).geometry(proj)).toBeNull();
     });
 });

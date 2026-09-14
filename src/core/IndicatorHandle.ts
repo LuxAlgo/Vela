@@ -16,9 +16,10 @@ export interface IndicatorEventMap extends Record<string, unknown> {
 export interface IndicatorHandle {
     readonly id: string;
     readonly title: string;
-    /** The script source this indicator was added with. `undefined` for a NATIVE
-     *  (core-computed) indicator — there is no script to show. What a host editor
-     *  opens when a legend action asks for "the code behind this row". */
+    /** The script source this indicator currently runs (the one it was added with,
+     *  until {@link updateCode} replaces it). `undefined` for a NATIVE (core-computed)
+     *  indicator — there is no script to show. What a host editor opens when a legend
+     *  action asks for "the code behind this row". */
     readonly source?: string;
     /** The registered type of a NATIVE (core-computed) indicator — `undefined` for a
      *  script indicator. The two are exclusive: a handle has a `source` or a `nativeType`. */
@@ -43,6 +44,17 @@ export interface IndicatorHandle {
     setProp(key: string, value: InputValue): void;
     /** Override several declaration props at once and re-run. */
     setProps(values: Record<string, InputValue>): void;
+    /**
+     * Replace the script and re-run it **in place** — same `id`, same legend row, same
+     * pane placement, same handle; the seam for a host editor's "run my edit" and for a
+     * library's "update to the new version". The new source is prepared first: only once
+     * it compiles is the running script stopped and the new one started, so a broken edit
+     * leaves the current indicator computing and painting and reports through `error`.
+     * Input and prop values survive where the new script still declares their key;
+     * anything else takes the new declaration default. No-op for a native indicator and
+     * for an unchanged source.
+     */
+    updateCode(source: string): void;
     /**
      * Hide or show the indicator. Hiding **suspends** it — its visuals are dropped (the legend
      * row stays, marked hidden) and its computation stops (the engine session is torn down), so a

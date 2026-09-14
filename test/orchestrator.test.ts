@@ -221,11 +221,16 @@ class MockEngine implements ScriptingEngine {
     private liveSinks: Record<string, { handlers: ExecutionHandlers; req: ExecutionRequest; inputs?: Record<string, InputValue> }> = {};
 
     prepare(source: string, instanceId: string): Promise<PreparedScript> {
+        // A `// broken` marker fails to compile (the updateCode "keep the working script" path).
+        if (/\/\/ broken/.test(source)) return Promise.reject(new Error('mock: syntax error'));
         const overlay = /overlay\s*=\s*true/.test(source);
         const reactsToViewport = /visible/i.test(source);
+        // `// inputs: A,B` declares that input set (default: one `Length`) — how a code update
+        // that renames/adds/drops inputs is expressed to this engine.
+        const keys = /\/\/ inputs:\s*([\w,]+)/.exec(source)?.[1]?.split(',') ?? ['Length'];
         return Promise.resolve({
             language: 'pine',
-            inputs: [{ key: 'Length', title: 'Length', type: 'int', defval: 14 }],
+            inputs: keys.map((key) => ({ key, title: key, type: 'int', defval: 14 })),
             meta: { title: 'Mock', overlay, ...(this.declareShortTitle ? { shorttitle: this.declareShortTitle } : {}) },
             reactsToViewport,
             token: { instanceId, overlay },
@@ -575,6 +580,107 @@ describe('EngineOrchestrator', () => {
             expect(chart.indicators().map((h) => h.id)).toEqual([h2.id]);
         } finally {
             unregisterNativeIndicator('test-multi');
+        }
+    });
+
+    it('a native hidden before it started is neither suspended nor stopped — start runs when it is first shown', async () => {
+        // An instance that assumes the contract: suspend/stop only after start (it reads
+        // its context there, like the layer-backed natives that clear their channel).
+        class StrictNative implements NativeIndicator {
+            calls = { start: 0, suspend: 0, stop: 0 };
+            private ctx: NativeIndicatorContext | null = null;
+            start(ctx: NativeIndicatorContext): void { this.calls.start += 1; this.ctx = ctx; ctx.emit({}); }
+            onBars(): void {}
+            onViewport(): void {}
+            setInputs(): void {}
+            suspend(): void { this.calls.suspend += 1; this.ctx!.pushData(null); }
+            resume(): void {}
+            stop(): void { this.calls.stop += 1; this.ctx!.pushData(null); }
+        }
+        const made: StrictNative[] = [];
+        // multiInstance so every add below mints a fresh instance to observe.
+        registerNativeIndicator({ ...testNativeDescriptor, type: 'strict-native', title: 'Strict', multiInstance: true, create: () => { const n = new StrictNative(); made.push(n); return n; } });
+        try {
+            const renderer = new FakeRenderer();
+            const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+            // The restored-ledger shape: add, then hide immediately — before ready/start.
+            const h = chart.addNativeIndicator('strict-native');
+            h.setVisible(false);
+            await chart.ready();
+            await flush();
+            expect(made[0]!.calls).toEqual({ start: 0, suspend: 0, stop: 0 }); // never started ⇒ never suspended
+            expect(renderer.mountedModels.some((m) => m.id === h.id)).toBe(true); // the hidden row still mounts
+
+            h.setVisible(true);
+            await flush();
+            expect(made[0]!.calls.start).toBe(1); // first show STARTS it
+            h.setVisible(false);
+            expect(made[0]!.calls.suspend).toBe(1); // a running instance is suspended as usual
+
+            // A second one, removed while still never-started: no stop() either.
+            const h2 = chart.addNativeIndicator('strict-native');
+            h2.setVisible(false);
+            h2.remove();
+            expect(made[1]!.calls).toEqual({ start: 0, suspend: 0, stop: 0 });
+
+            // And destroy() only stops what ran.
+            const h3 = chart.addNativeIndicator('strict-native');
+            h3.setVisible(false);
+            chart.destroy();
+            expect(made[0]!.calls.stop).toBe(1);
+            expect(made[2]!.calls.stop).toBe(0);
+        } finally {
+            unregisterNativeIndicator('strict-native');
+        }
+    });
+
+    it('native context: each instance knows its own id; a multiInstance type pushes layer data on a per-instance channel stamped on its model', async () => {
+        // A layer-backed native: pushes a payload tagged with its context id, and emits an
+        // empty model (the legend row) like the built-in layer natives do.
+        class LayerNative implements NativeIndicator {
+            ctx: NativeIndicatorContext | null = null;
+            start(ctx: NativeIndicatorContext): void { this.ctx = ctx; ctx.emit({}); ctx.pushData({ from: ctx.id }); }
+            onBars(): void {}
+            onViewport(): void {}
+            setInputs(): void {}
+            suspend(): void {}
+            resume(): void {}
+            stop(): void {}
+        }
+        const singles: LayerNative[] = [];
+        const multis: LayerNative[] = [];
+        registerNativeIndicator({ ...testNativeDescriptor, type: 'layer-single', title: 'Single', create: () => { const n = new LayerNative(); singles.push(n); return n; } });
+        registerNativeIndicator({ ...testNativeDescriptor, type: 'layer-multi', title: 'Multi', multiInstance: true, create: () => { const n = new LayerNative(); multis.push(n); return n; } });
+        try {
+            const renderer = new FakeRenderer();
+            const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+            const s = chart.addNativeIndicator('layer-single');
+            const m1 = chart.addNativeIndicator('layer-multi');
+            const m2 = chart.addNativeIndicator('layer-multi');
+            await chart.ready();
+            await flush();
+
+            // The context id IS the handle id, per instance.
+            expect(singles[0]!.ctx!.id).toBe(s.id);
+            expect(multis.map((n) => n.ctx!.id)).toEqual([m1.id, m2.id]);
+
+            // Single-instance: the type is the channel, the model names no channel of its own.
+            expect(renderer.nativePushes).toContainEqual(['layer-single', { from: s.id }]);
+            expect(renderer.mountedModels.find((mm) => mm.id === s.id)?.native).toEqual({ type: 'layer-single' });
+
+            // Multi-instance: one channel per instance (never the bare type), and the model
+            // carries it so the renderer can mount a dedicated layer reading it.
+            const m1Channel = renderer.mountedModels.find((mm) => mm.id === m1.id)?.native?.channel;
+            const m2Channel = renderer.mountedModels.find((mm) => mm.id === m2.id)?.native?.channel;
+            expect(m1Channel).toBeTruthy();
+            expect(m2Channel).toBeTruthy();
+            expect(m1Channel).not.toBe(m2Channel);
+            expect(renderer.nativePushes).toContainEqual([m1Channel, { from: m1.id }]);
+            expect(renderer.nativePushes).toContainEqual([m2Channel, { from: m2.id }]);
+            expect(renderer.nativePushes.some(([ch]) => ch === 'layer-multi')).toBe(false);
+        } finally {
+            unregisterNativeIndicator('layer-single');
+            unregisterNativeIndicator('layer-multi');
         }
     });
 
@@ -2502,5 +2608,171 @@ describe('native indicators — legend: false (host-owned chrome)', () => {
         } finally {
             unregisterNativeIndicator(testNativeDescriptor.type);
         }
+    });
+});
+
+// ── handle.updateCode — replace the script in place ────────────────────────────────
+
+describe('handle.updateCode — the same indicator runs new code', () => {
+    const OVERLAY = '//@version=5\nindicator("A", overlay=true)\nplot(close)';
+    const OVERLAY_V2 = '//@version=5\nindicator("A", overlay=true)\nplot(open)';
+    const STUDY = '//@version=5\nindicator("A")\nplot(close)';
+
+    async function makeChart(opts: { live?: boolean } = {}) {
+        const renderer = new FakeRenderer();
+        const engine = new MockEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: opts.live ?? false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        await flush();
+        return { chart, renderer, engine };
+    }
+
+    it('keeps the id, handle and legend row: the new source re-runs and remounts idempotently', async () => {
+        const { chart, renderer, engine } = await makeChart();
+        const causes: string[] = [];
+        chart.on('script:run', (run) => causes.push(run.cause));
+        const ind = chart.addIndicator(OVERLAY);
+        await flush();
+        const mountsBefore = renderer.mountedModels.filter((m) => m.id === ind.id).length;
+        const runsBefore = engine.runCount[ind.id] ?? 0;
+
+        ind.updateCode(OVERLAY_V2);
+        await flush();
+
+        expect(ind.source).toBe(OVERLAY_V2); // the handle reports what runs now
+        expect(engine.runCount[ind.id]).toBe(runsBefore + 1); // one fresh execution of the new source
+        expect(renderer.mountedModels.filter((m) => m.id === ind.id).length).toBe(mountsBefore + 1); // remount, same id
+        expect(renderer.removed).not.toContain(ind.id); // never torn down — the row and the handle survive
+        expect(chart.indicators().map((h) => h.id)).toEqual([ind.id]); // no second instance appeared
+        expect(causes[causes.length - 1]).toBe('code'); // the run says why it happened
+    });
+
+    it('stops the previous live session and streams the new script under the same id', async () => {
+        const { renderer, engine, chart } = await makeChart({ live: true });
+        const ind = chart.addIndicator(OVERLAY);
+        await flush();
+        engine.emitStream(ind.id);
+        await flush();
+        expect(engine.streamStarts[ind.id]).toBe(1);
+
+        ind.updateCode(OVERLAY_V2);
+        await flush();
+        expect(engine.streamStops[ind.id]).toBe(1); // the old stream is stopped…
+        expect(engine.streamStarts[ind.id]).toBe(2); // …and a new one opened for the new code
+        const mountsBefore = renderer.mountedModels.filter((m) => m.id === ind.id).length;
+        engine.emitStream(ind.id);
+        await flush();
+        expect(renderer.mountedModels.filter((m) => m.id === ind.id).length).toBe(mountsBefore + 1); // its first model remounts
+    });
+
+    it('a source that fails to compile leaves the running script untouched and reports through error', async () => {
+        const { engine, chart } = await makeChart({ live: true });
+        const ind = chart.addIndicator(OVERLAY);
+        await flush();
+        engine.emitStream(ind.id);
+        await flush();
+        const errors: string[] = [];
+        ind.on('error', ({ error }) => errors.push(error.message));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            ind.updateCode(OVERLAY_V2 + '\n// broken');
+            await flush();
+        } finally {
+            errorSpy.mockRestore();
+        }
+        expect(errors).toEqual(['mock: syntax error']);
+        expect(ind.source).toBe(OVERLAY); // still the working code
+        expect(engine.streamStops[ind.id] ?? 0).toBe(0); // the working session was never stopped
+        expect(engine.streamStarts[ind.id]).toBe(1);
+        expect(chart.indicators()).toHaveLength(1);
+    });
+
+    it('keeps input values the new script still declares, drops the rest, seeds new ones with their defaults', async () => {
+        const { chart } = await makeChart();
+        const ind = chart.addIndicator(OVERLAY);
+        await flush();
+        ind.setInput('Length', 50);
+        await flush();
+
+        ind.updateCode(OVERLAY_V2 + '\n// inputs: Length,Speed');
+        await flush();
+        expect(ind.inputs.map((i) => i.key)).toEqual(['Length', 'Speed']); // the schema follows the code
+        expect(ind.inputValues()).toEqual({ Length: 50, Speed: 14 }); // kept where declared, default where new
+
+        ind.updateCode(OVERLAY_V2 + '\n// inputs: Speed');
+        await flush();
+        expect(ind.inputValues()).toEqual({ Speed: 14 }); // a dropped input leaves no stale value behind
+    });
+
+    it('re-routes the pane when the new script flips overlay, and drops the pane it leaves empty', async () => {
+        const { chart, renderer } = await makeChart();
+        const ind = chart.addIndicator(STUDY);
+        await flush();
+        const studyPane = renderer.mountedModels.filter((m) => m.id === ind.id).pop()!.paneId!;
+        expect(studyPane).not.toBe('price');
+
+        ind.updateCode(OVERLAY);
+        await flush();
+        expect(renderer.mountedModels.filter((m) => m.id === ind.id).pop()!.paneId).toBe('price');
+        expect(renderer.removedPanes).toContain(studyPane); // its old pane had nothing else in it
+        expect(chart.panes.list().map((p) => p.id)).not.toContain(studyPane);
+
+        ind.updateCode(STUDY);
+        await flush();
+        expect(renderer.mountedModels.filter((m) => m.id === ind.id).pop()!.paneId).toBe(studyPane); // back on its own pane
+    });
+
+    it('while hidden it stays suspended; showing runs the NEW source', async () => {
+        const { chart, engine } = await makeChart();
+        const ind = chart.addIndicator(OVERLAY);
+        await flush();
+        ind.setVisible(false);
+        const runsBefore = engine.runCount[ind.id] ?? 0;
+
+        ind.updateCode(OVERLAY_V2);
+        await flush();
+        expect(ind.source).toBe(OVERLAY_V2); // prepared and adopted…
+        expect(engine.runCount[ind.id] ?? 0).toBe(runsBefore); // …but a hidden indicator computes nothing
+
+        ind.setVisible(true);
+        await flush();
+        expect(engine.runCount[ind.id]).toBe(runsBefore + 1);
+    });
+
+    it('is a no-op for the same source and for a native indicator', async () => {
+        const { chart, engine } = await makeChart();
+        const ind = chart.addIndicator(OVERLAY);
+        await flush();
+        const runsBefore = engine.runCount[ind.id]!;
+        ind.updateCode(OVERLAY);
+        await flush();
+        expect(engine.runCount[ind.id]).toBe(runsBefore);
+
+        registerNativeIndicator(testNativeDescriptor);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const native = chart.addNativeIndicator(testNativeDescriptor.type);
+            await flush();
+            native.updateCode(OVERLAY);
+            await flush();
+            expect(native.source).toBeUndefined();
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('native indicator has no script'));
+        } finally {
+            warn.mockRestore();
+            unregisterNativeIndicator(testNativeDescriptor.type);
+        }
+    });
+
+    it('two quick edits: only the LATEST source lands', async () => {
+        const { chart, engine } = await makeChart();
+        const ind = chart.addIndicator(OVERLAY);
+        await flush();
+        const runsBefore = engine.runCount[ind.id]!;
+        ind.updateCode(OVERLAY_V2 + '\n// inputs: A');
+        ind.updateCode(OVERLAY_V2 + '\n// inputs: B');
+        await flush();
+        expect(ind.source).toBe(OVERLAY_V2 + '\n// inputs: B');
+        expect(ind.inputs.map((i) => i.key)).toEqual(['B']);
+        expect(engine.runCount[ind.id]).toBe(runsBefore + 1); // the superseded edit never executed
     });
 });

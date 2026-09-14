@@ -87,9 +87,9 @@ What `addIndicator` returns. Usable immediately.
 
 | Member | Description |
 |---|---|
-| `id` | Stable, content-addressed identity for this indicator. |
+| `id` | This instance's identity on the chart — stable for as long as the indicator stays on it (input edits, hide/show and `updateCode` all keep it). |
 | `title` | Display title (overridable via the `title` option). |
-| `source` | The script source the indicator was added with; `undefined` for a native indicator. |
+| `source` | The script source the indicator currently runs — the one it was added with, until `updateCode` replaces it; `undefined` for a native indicator. |
 | `nativeType` | The registered type of a native indicator (`'volume'`, `'sma'`, …); `undefined` for a script indicator. A handle has one of `source` or `nativeType`, never both. |
 | `inputs` | The inputs parsed from the script source — each with a `key`, `title`, `type`, `defval`, and optional `min`/`max`/`step`/`options`/`group`/`inline`/`tab`/`tooltip`. Populated once the script is prepared. |
 | `props` | The script's declaration properties (a strategy's `initial_capital`, an indicator's `precision`, …) in the same schema shape as `inputs`. Empty when the engine exposes none. |
@@ -98,6 +98,7 @@ What `addIndicator` returns. Usable immediately.
 | `setInputs(values)` | Change several inputs at once, keyed by input key or title. |
 | `setProp(key, value)` | Override one declaration property (e.g. `initial_capital`). A prop change replays the whole script. |
 | `setProps(values)` | Override several declaration properties at once. |
+| `updateCode(source)` | Replace the script and re-run it **in place** — same `id`, legend row, pane placement and handle. The new source is compiled first; only then is the running script stopped and the new one started, so a broken edit leaves the current indicator computing and painting and reports through `error`. Input and prop values survive where the new script still declares their key; anything else takes the new default. No-op for a native indicator and for an unchanged source. |
 | `setVisible(visible)` | Hide or show the indicator. Hiding suspends it — its visuals are dropped and its computation stops; showing re-runs it over the current bars. |
 | `on(event, handler)` | Per-indicator events — `ready`, `error` (`{ error }`), `alert` (`{ id, message, title?, time }`). Returns an unsubscribe function. |
 | `context(select?)` | `Promise` of a **read-only, serializable snapshot** of the engine's execution context — see [below](#capturing-what-a-script-computes). `null` when the engine lacks the capability or nothing ran yet. |
@@ -115,6 +116,10 @@ macd.on('error', ({ error }) => console.error('MACD failed:', error.message));
 // Retune inputs — each change triggers a re-run.
 macd.setInput('fast', 8);
 macd.setInputs({ slow: 21, signal: 5 });
+
+// Swap the code under the same row — an editor's "run my edit". A source that fails
+// to compile leaves the current MACD running and fires `error` instead.
+macd.updateCode(editedMacdSource);
 
 // Hiding suspends it (visuals dropped, computation stopped); showing re-runs it.
 macd.setVisible(false);
@@ -160,6 +165,7 @@ and nothing to await.
 | `'tick'` | The forming bar changed — **values can still move**. |
 | `'bar'` | A new bar opened, so the one before it is **final**. |
 | `'inputs'` | An input was edited. |
+| `'code'` | The script was replaced in place (`handle.updateCode`). |
 | `'viewport'` | The visible range moved (viewport-aware scripts only). |
 | `'market'` | The chart's market changed and the script re-executed. |
 

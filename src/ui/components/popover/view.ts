@@ -2,7 +2,7 @@
 // owns portal, placement, capture-phase outside-dismiss, and the single-open registry.
 import type { VelaTheme } from '../../../core/options';
 import { injectStyles } from '../../styles';
-import { ensureUIHost } from '../../tokens';
+import { ensureUIHost, floatingLayerHost } from '../../tokens';
 import {
     insetRect,
     intersectRects,
@@ -75,6 +75,8 @@ export class Popover {
     private readonly ctrl: ReturnType<typeof popoverController>;
     private readonly boundary: PopoverBoundary;
     private readonly theme?: VelaTheme;
+    /** Hosted under a `.vela-ui` we resolved ourselves — its tokens win over `theme`. */
+    private readonly inheritsTokens: boolean;
     private onOutside: ((e: Event) => void) | null = null;
     private onKey: ((e: KeyboardEvent) => void) | null = null;
     private onReflow: (() => void) | null = null;
@@ -87,7 +89,10 @@ export class Popover {
         const doc = opts.trigger.ownerDocument;
         injectStyles(POPOVER_STYLE_ID, POPOVER_CSS, doc);
         this.trigger = opts.trigger;
-        this.host = opts.host ?? doc.body;
+        // No explicit host: portal to the trigger's `.vela-ui` (app-theme tokens) rather
+        // than <body>. Explicit hosts (drawing chrome, mark popups) keep their own tokens.
+        this.host = opts.host ?? floatingLayerHost(opts.trigger, doc.body);
+        this.inheritsTokens = !opts.host && this.host !== doc.body;
         this.ctrl = popoverController(opts);
         this.boundary = opts.boundary ?? 'viewport';
         this.theme = opts.theme;
@@ -125,7 +130,10 @@ export class Popover {
             clearTimeout(this.leaveTimer);
             this.leaveTimer = null;
         }
-        ensureUIHost(this.el, this.theme);
+        // A caller theme is often the live plot surface (settings dialogs pass
+        // `this.theme`); stamping it on a `.vela-ui`-hosted shell would recolor the
+        // list to layout.background.
+        ensureUIHost(this.el, this.inheritsTokens ? undefined : this.theme);
         if (this.fadeMs > 0) {
             this.el.style.transition = `opacity ${this.fadeMs}ms ease`;
             this.el.style.opacity = '0';

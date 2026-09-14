@@ -56,6 +56,22 @@ export class MarkPopover {
     private openKey: string | null = null;
     /** Bumped per open/close — a lazy content resolving after its popup went away is dropped. */
     private generation = 0;
+    /**
+     * The cluster whose popup was open when the current pointer press began. The anchor is
+     * hit-transparent (the glyph is canvas pixels), so the shell's outside-dismiss closes the
+     * popup on pointerdown; the click the renderer derives from the same pointerup must then
+     * read as "close", not reopen that cluster. Captured on the document ahead of the shell's
+     * (deferred) listener, cleared once the release has dispatched.
+     */
+    private pressKey: string | null = null;
+    private readonly onPress = (): void => {
+        if (this.openKey === null) return;
+        this.pressKey = this.openKey;
+        const doc = this.deps.plot.ownerDocument;
+        const clear = (): void => void setTimeout(() => (this.pressKey = null), 0);
+        doc.addEventListener('pointerup', clear, { capture: true, once: true });
+        doc.addEventListener('pointercancel', clear, { capture: true, once: true });
+    };
 
     constructor(private readonly deps: MarkPopoverDeps) {
         const doc = deps.plot.ownerDocument;
@@ -65,6 +81,7 @@ export class MarkPopover {
         this.anchor.className = 'vela-marks-anchor';
         Object.assign(this.anchor.style, { position: 'absolute', pointerEvents: 'none', left: '0', top: '0', width: '0', height: '0' });
         deps.plot.appendChild(this.anchor);
+        doc.addEventListener('pointerdown', this.onPress, true);
     }
 
     /** The cluster key the open popup belongs to, or null. */
@@ -73,6 +90,7 @@ export class MarkPopover {
     }
 
     open(cluster: MarkCluster, rect: MarkGlyphRect): void {
+        if (this.pressKey === cluster.key) return; // this press already closed that popup — the click toggles it off
         this.close();
         this.place(rect);
         const gen = ++this.generation;
@@ -122,6 +140,7 @@ export class MarkPopover {
 
     destroy(): void {
         this.close();
+        this.deps.plot.ownerDocument.removeEventListener('pointerdown', this.onPress, true);
         this.anchor.remove();
     }
 

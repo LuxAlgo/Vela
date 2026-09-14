@@ -1,7 +1,7 @@
 import type { OHLCV } from '../../../core/model/ohlcv';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { SeriesSpec } from '../../../core/model/series';
-import { isLineLikeSeries } from '../../../core/model/series';
+import { isLineLikeSeries, seriesInScale } from '../../../core/model/series';
 import type { PriceScale } from './CoordinateSystem';
 
 // LWC's default scaleMargins reserve the top 20% / bottom 10% of pane PIXEL
@@ -80,6 +80,10 @@ export function computePaneScale(
 
 /** Fold one series' visible values (bars or points + base) into `consider`. */
 function considerSeries(s: SeriesSpec, i0: number, i1: number, off: number, consider: (v: number | null | undefined) => void): void {
+    // A series with no on-chart presence — off the pane and off the price scale (a
+    // legend/data-window-only readout, a hidden fill anchor) — must not stretch the
+    // window: nothing of it is there to keep in view.
+    if (!seriesInScale(s)) return;
     if (s.kind === 'candle' || s.kind === 'bar') {
         for (let i = i0; i <= i1; i += 1) {
             const b = s.bars[i - off];
@@ -89,8 +93,6 @@ function considerSeries(s: SeriesSpec, i0: number, i1: number, off: number, cons
             }
         }
     } else if (isLineLikeSeries(s)) {
-        // Hidden (display.none / na) series are NOT skipped — like LWC they
-        // stay on the price scale so a fill anchored to them stays in view.
         for (let i = i0; i <= i1; i += 1) consider(s.points[i - off]?.value);
         // Histogram/columns grow from their base (default 0) — include it so
         // an all-positive plot autoscales from a visible zero line.
