@@ -3489,8 +3489,11 @@ export class NativeRenderer implements IChartRenderer {
                 if (or) dr = dr ? { min: Math.min(dr.min, or.min), max: Math.max(dr.max, or.max) } : or;
             }
             // Hidden candles drop out of the price pane's autoscale, so overlay indicators fill
-            // the pane — unless layer content still paints at bar prices there (see below).
-            const includeCandles = pane.kind === 'price' && (!this.scene.candlesHidden || this.priceLayersAnchoredToBars(masterModels));
+            // the pane — unless layer content still paints at bar prices there (see below), or
+            // nothing else on the pane can be measured: the bars then keep the scale, so the
+            // axis stays on the price range while hidden instead of the {0,1} placeholder.
+            const includeCandles = pane.kind === 'price'
+                && (!this.scene.candlesHidden || this.priceLayersAnchoredToBars(masterModels) || !this.paneHasMeasurableContent(masterModels, dr));
             // Each pane logs (or not) on its OWN flag — the price pane from the scene setting,
             // study panes from their own — so a study going log never touches the price pane.
             pane.scaleTarget = computePaneScale(masterModels, this.bars, includeCandles, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id));
@@ -3789,6 +3792,14 @@ export class NativeRenderer implements IChartRenderer {
      */
     private priceLayersAnchoredToBars(masterModels: IndicatorModel[]): boolean {
         return masterModels.some((m) => m.series.length === 0 && !!m.native && this.extLayers.some((l) => l.def.id === m.native!.type));
+    }
+
+    /** True when the pane's master content contributes SOMETHING to its autoscale besides
+     *  the candles: a series painted on the pane (force_overlay ones scale elsewhere), a
+     *  price line, or a measured drawings range. Mirrors what `computePaneScale` considers. */
+    private paneHasMeasurableContent(masterModels: IndicatorModel[], drawings: { min: number; max: number } | null | undefined): boolean {
+        if (drawings) return true;
+        return masterModels.some((m) => m.priceLines.length > 0 || m.series.some((s) => s.overlay !== true));
     }
 
     /** Per-pane scale state for a host UI (e.g. a price-axis context menu): the pane's pixel
