@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Dense timeline marks fold into clusters as you zoom out.** Marks of one group used to
+  fold only when they landed on the same bar, so a busy feed on a fine timeframe drew a
+  solid band of overlapping glyphs. Neighbouring marks whose glyphs would overlap at the
+  current bar spacing now share one glyph: the tooltip carries the count, the popup lists
+  every mark, and zooming back in separates them again.
+
 ## [v0.7.2]
 
 ### Fixed
