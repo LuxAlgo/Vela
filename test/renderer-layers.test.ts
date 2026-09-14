@@ -79,6 +79,40 @@ describe('generic native-data channels', () => {
     });
 });
 
+describe('hidden candles keep the price scale for bar-anchored layer content', () => {
+    // The autoscale asks this before dropping the candles from the price pane's scale: a
+    // layer that paints at bar prices (a chart type's own layer, an overlay layer native)
+    // has no series of its own, so without the bars the scale would collapse to {0,1} and
+    // the layer would paint off-screen — "hide chart" must not blank it.
+    type Probe = { extLayers: unknown[]; scene: SceneGraph; priceLayersAnchoredToBars(models: unknown[]): boolean };
+    const layer = (id: string, owner: string | null = null) => ({ def: { id, create: () => ({ mount() {}, render() {} }) }, instance: { mount() {}, render() {} }, canvas: {}, channel: owner ? `${id}#${owner}` : id, owner });
+    const model = (id: string, native: string | undefined, series: unknown[] = []) => ({ id, title: id, paneId: 'price', series, ...(native ? { native: { type: native } } : {}) });
+
+    it('is false with no layers and false for series-backed content (candles drop out as before)', () => {
+        const r = new NativeRenderer() as unknown as Probe;
+        expect(r.priceLayersAnchoredToBars([])).toBe(false);
+        r.extLayers = [layer('demo')];
+        r.scene.priceStyle = 'candles';
+        expect(r.priceLayersAnchoredToBars([model('pine', undefined, [{ kind: 'line' }])])).toBe(false);
+        expect(r.priceLayersAnchoredToBars([model('vol', 'volume')])).toBe(false); // bespoke layer, not an SDK layer
+    });
+
+    it('is true while the active price style is an SDK chart type with a mounted layer', () => {
+        const r = new NativeRenderer() as unknown as Probe;
+        r.extLayers = [layer('demo')];
+        r.scene.priceStyle = 'demo';
+        expect(r.priceLayersAnchoredToBars([])).toBe(true);
+    });
+
+    it('is true when an overlay layer native (series-less, type names a layer) sits on the price pane', () => {
+        const r = new NativeRenderer() as unknown as Probe;
+        r.extLayers = [layer('demo'), layer('demo', 'native-2')];
+        r.scene.priceStyle = 'candles';
+        expect(r.priceLayersAnchoredToBars([model('native-2', 'demo')])).toBe(true);
+        expect(r.priceLayersAnchoredToBars([model('native-9', 'other')])).toBe(false); // no layer registered for that type
+    });
+});
+
 describe('chart-type SDK settings (config bag + channel + notification)', () => {
     it('applyConfig persists chartTypes values, pushes the -settings channel, and notifies', () => {
         const r = new NativeRenderer();

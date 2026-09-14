@@ -2,6 +2,18 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Hiding the chart no longer blanks plugin layers drawn at bar prices.** Hiding the
+  candles from the symbol legend used to empty the price pane whenever what remained on
+  it was drawn by a plugin renderer layer — a plugin chart type, or an overlay plugin
+  indicator painting through its own layer: with no series left to measure, the price
+  scale collapsed and those layers painted off-screen. The bars now keep driving the
+  price scale while such content is on the pane, so the candles disappear and everything
+  else stays exactly where it was.
+
 ## [v0.7.1]
 
 ### Added
