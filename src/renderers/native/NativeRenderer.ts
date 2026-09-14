@@ -3198,7 +3198,7 @@ export class NativeRenderer implements IChartRenderer {
         for (const l of this.extLayers) {
             if (!l.def.repaintOnCursor) continue;
             const lp = this.layerPane(l) ?? pane;
-            if (lp.collapsed) continue; // blanked by the data frame; nothing to hover
+            if (lp.collapsed || this.layerHiddenWithCandles(l)) continue; // blanked by the data frame; nothing to hover
             l.instance.render(this.extLayerArgs(l, lp.scale, lp.bounds, nowMs));
             if (this.animZoom.on && l.instance.animating?.()) this.animator.start();
         }
@@ -3271,9 +3271,11 @@ export class NativeRenderer implements IChartRenderer {
             let folded: BasePaintingModulation | null = null;
             for (const l of this.extLayers) {
                 const lp: PaneNode = this.layerPane(l) ?? pane;
-                // A collapsed host pane shows its legend strip only — blank the layer for
-                // the duration (the instance isn't poked, so it can't clear itself).
-                if (lp.collapsed) {
+                // A collapsed host pane shows its legend strip only, and a hidden price
+                // series takes its chart type's layer with it — blank the layer for the
+                // duration (the instance isn't poked, so it can't clear itself). Skipping
+                // the modulateBase fold too: nothing is left to dim under it.
+                if (lp.collapsed || this.layerHiddenWithCandles(l)) {
                     this.clearLayerCanvas(l.canvas);
                     continue;
                 }
@@ -3769,14 +3771,23 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     /**
-     * True when SDK-layer content on the price pane paints at BAR PRICES without
-     * contributing a series: the active chart type's own layer, or an overlay layer native
-     * (a series-less model whose type names a mounted layer). Hiding the candles must then
-     * keep the bars in the price scale — with nothing else on the pane the scale would fall
-     * to the {0,1} placeholder and every such layer would paint off-screen and vanish.
+     * True for the layer painting the ACTIVE chart type (the base entry whose id is the
+     * current price style) while the price series is hidden. The chart type IS the price
+     * series, so "hide chart" blanks its layer along with the bars; an indicator's layer
+     * (an overlay layer native, on any pane) is independent content and keeps painting.
+     */
+    private layerHiddenWithCandles(l: ExtLayer): boolean {
+        return this.scene.candlesHidden && l.owner === null && l.def.id === this.scene.priceStyle;
+    }
+
+    /**
+     * True when an overlay layer native (a series-less model whose type names a mounted
+     * layer) sits on the price pane: it paints at BAR PRICES without contributing a series,
+     * so hiding the candles must keep the bars in the price scale — with nothing else on the
+     * pane the scale would fall to the {0,1} placeholder and the layer would paint off-screen
+     * and vanish. The chart type's own layer does not count: it is blanked with the candles.
      */
     private priceLayersAnchoredToBars(masterModels: IndicatorModel[]): boolean {
-        if (this.extLayers.some((l) => l.owner === null && l.def.id === this.scene.priceStyle)) return true;
         return masterModels.some((m) => m.series.length === 0 && !!m.native && this.extLayers.some((l) => l.def.id === m.native!.type));
     }
 
