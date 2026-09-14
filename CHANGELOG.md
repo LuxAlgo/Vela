@@ -14,9 +14,27 @@ All notable changes to Vela, newest first.
   computing and painting and reports through the handle's `error` event. Runs caused this
   way report `cause: 'code'` on `script:run`. Native indicators, which have no script,
   ignore the call.
+- **Plugin indicators drawn by a renderer layer can now be added several times.** A
+  plugin native indicator that paints through its own renderer layer and allows several
+  instances (`multiInstance` on its descriptor) now gets one layer per instance: each
+  instance draws on its own canvas, on its own pane, with its own stacking order, and its
+  data never overwrites a sibling's. Previously such types had to stay single-instance.
+  Running native indicators also learn their own id (`ctx.id`), so an instance can
+  identify itself to host code — a picker or a drag handle — without ambiguity.
 
 ### Fixed
 
+- **Candle wicks keep their color when zoomed far out.** Once bars are packed tighter
+  than a pixel, the candles sharing a column are drawn as thin sticks; a stick used to
+  take one direction for all of its bars, so a bearish candle's long wick could turn
+  bullish green the moment the recovery candle next to it landed in the same column.
+  Each bar's range now keeps its own color — direction, `barcolor()` tint, or the
+  wick color from the candle settings, the same rules as at every other zoom level.
+- **A plugin indicator restored hidden no longer crashes the chart on load.** A saved
+  layout that carried a hidden plugin native indicator could throw while the chart was
+  being built, because the indicator was asked to suspend before it had ever started.
+  Such an indicator is now left alone until it is first shown, at which point it starts
+  as usual; removing it or closing the chart while it is still hidden is equally safe.
 - **Right-click menus and dropdowns follow the app theme, not the plot.** Changing the
   chart background in settings used to recolor those panels with the plot. They now
   use the same surface as the drawing toolbar and the chart settings dialog, and only
@@ -37,6 +55,13 @@ All notable changes to Vela, newest first.
   only the anchor markers until the second point is placed. The Schiff and modified
   Schiff pitchforks also keep that pivot line in the finished shape, so the pivot handle
   no longer floats detached from the fork it defines.
+- **Indicator visuals no longer linger across a market switch.** Switching the symbol,
+  timeframe, or session now clears every indicator's painted output the moment the
+  switch starts, and each indicator repaints once its recomputation over the new market
+  completes. Previously, outputs that are not tied to the bar series — drawing objects
+  such as lines, boxes, labels, and polylines, plus background tints and horizontal
+  levels — could stay visible over the new market's candles until the script finished
+  recomputing, which for heavy scripts took many seconds.
 
 ## [v0.7.0]
 

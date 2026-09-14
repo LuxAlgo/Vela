@@ -87,28 +87,23 @@ export function candleGeometry(xCss: number, spacing: number, dpr: number, bodyS
     };
 }
 
-/** One aggregate-tier stick: a contiguous run of price coverage inside one pixel column. */
+/** One aggregate-tier stick: a contiguous run of SAME-COLOR price coverage inside one pixel column. */
 export interface AggregatedStick {
     /** The rounded CSS-px column shared by the stick's bars (canvas2d strokes at `x + 0.5`). */
     x: number;
     hi: number;
     lo: number;
-    /** The stick's FIRST bar — the barcolor() lookup key and the direction's open. */
-    headTime: number;
-    open: number;
-    /** The stick's LAST bar's close (direction = `close >= open`, as everywhere). */
-    close: number;
+    /** The resolved paint shared by every bar in the run — the grouping key. */
+    color: string;
 }
 
-/** One in-progress coverage interval of the current column (price space, index-tracked). */
+/** One in-progress coverage run of the current column (price space, index-tracked). */
 interface Coverage {
     lo: number;
     hi: number;
-    headIdx: number;
-    headTime: number;
-    open: number;
+    color: string;
+    /** The run's most recent bar — the column's paint order key. */
     lastIdx: number;
-    close: number;
 }
 
 /**
@@ -119,9 +114,15 @@ interface Coverage {
  * an overnight jump, once zoomed far out) stays a visible void instead of being
  * painted over as a solid connection. Runs whose separation is under one pixel
  * (`yOf` measures it) merge anyway: an invisible void isn't worth a second stick, and
- * ordinary contiguous data keeps producing exactly one stick per column. Each stick
- * carries its own first-open/last-close direction and its head bar's time, so
- * barcolor() and up/down coloring follow the run that actually holds those bars.
+ * ordinary contiguous data keeps producing exactly one stick per column.
+ *
+ * Runs are kept PER COLOR (`colorOf` resolves each bar's paint — direction, barcolor(),
+ * wick setting): bars of different colors never merge, so a down bar's long wick stays
+ * the down color even when the up bar next to it shares the column. Merging them into
+ * one first-open→last-close stick would recolor that wick by whichever bar closed last.
+ * Within a column the sticks come out in order of their most recent bar, so where runs
+ * of different colors overlap in price the latest bar paints on top — the same result
+ * drawing the bars one by one would give.
  */
 export function aggregateCandleColumns(
     bars: ArrayLike<OHLCV | undefined>,
@@ -129,34 +130,36 @@ export function aggregateCandleColumns(
     i1: number,
     xOf: (index: number) => number,
     yOf: (price: number) => number,
+    colorOf: (bar: OHLCV) => string,
 ): AggregatedStick[] {
     const out: AggregatedStick[] = [];
     let col = NaN;
-    let intervals: Coverage[] = []; // sorted by `lo`; typically length 1
+    let runs: Coverage[] = []; // the current column's runs, any color; typically length 1
     const flush = (): void => {
-        if (intervals.length === 0) return;
-        // Coalesce runs whose void is sub-pixel — it cannot render anyway.
-        const merged: Coverage[] = [intervals[0]!];
-        for (let k = 1; k < intervals.length; k += 1) {
-            const prev = merged[merged.length - 1]!;
-            const next = intervals[k]!;
-            if (Math.abs(yOf(prev.hi) - yOf(next.lo)) < 1) {
+        if (runs.length === 0) return;
+        // Coalesce same-color runs whose void is sub-pixel — it cannot render anyway.
+        // Same-color runs are disjoint (overlaps merged on insert), so in `lo` order the
+        // previous run of a color is the one just below.
+        runs.sort((a, b) => a.lo - b.lo);
+        const merged: Coverage[] = [];
+        for (const next of runs) {
+            let prev: Coverage | undefined;
+            for (let k = merged.length - 1; k >= 0; k -= 1) {
+                if (merged[k]!.color === next.color) {
+                    prev = merged[k];
+                    break;
+                }
+            }
+            if (prev && Math.abs(yOf(prev.hi) - yOf(next.lo)) < 1) {
                 prev.hi = next.hi;
-                if (next.headIdx < prev.headIdx) {
-                    prev.headIdx = next.headIdx;
-                    prev.headTime = next.headTime;
-                    prev.open = next.open;
-                }
-                if (next.lastIdx > prev.lastIdx) {
-                    prev.lastIdx = next.lastIdx;
-                    prev.close = next.close;
-                }
+                if (next.lastIdx > prev.lastIdx) prev.lastIdx = next.lastIdx;
             } else {
                 merged.push(next);
             }
         }
-        for (const iv of merged) out.push({ x: col, hi: iv.hi, lo: iv.lo, headTime: iv.headTime, open: iv.open, close: iv.close });
-        intervals = [];
+        merged.sort((a, b) => a.lastIdx - b.lastIdx);
+        for (const r of merged) out.push({ x: col, hi: r.hi, lo: r.lo, color: r.color });
+        runs = [];
     };
     for (let i = i0; i <= i1; i += 1) {
         const b = bars[i];
@@ -166,27 +169,18 @@ export function aggregateCandleColumns(
             flush();
             col = x;
         }
-        // Merge the bar's range into every overlapping interval (usually zero or one).
+        // Merge the bar's range into every overlapping run OF ITS COLOR (usually zero or one).
+        const color = colorOf(b);
         let lo = b.low;
         let hi = b.high;
-        let headIdx = i;
-        let headTime = b.time;
-        let open = b.open;
-        for (let k = intervals.length - 1; k >= 0; k -= 1) {
-            const iv = intervals[k]!;
-            if (iv.lo > hi || iv.hi < lo) continue;
-            if (iv.lo < lo) lo = iv.lo;
-            if (iv.hi > hi) hi = iv.hi;
-            if (iv.headIdx < headIdx) {
-                headIdx = iv.headIdx;
-                headTime = iv.headTime;
-                open = iv.open;
-            }
-            intervals.splice(k, 1);
+        for (let k = runs.length - 1; k >= 0; k -= 1) {
+            const r = runs[k]!;
+            if (r.color !== color || r.lo > hi || r.hi < lo) continue;
+            if (r.lo < lo) lo = r.lo;
+            if (r.hi > hi) hi = r.hi;
+            runs.splice(k, 1);
         }
-        let insertAt = 0;
-        while (insertAt < intervals.length && intervals[insertAt]!.lo < lo) insertAt += 1;
-        intervals.splice(insertAt, 0, { lo, hi, headIdx, headTime, open, lastIdx: i, close: b.close });
+        runs.push({ lo, hi, color, lastIdx: i }); // `i` is the newest bar, so it is the run's last
     }
     flush();
     return out;

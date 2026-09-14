@@ -90,7 +90,7 @@ registerRendererLayer({
     id: 'mytype',                    // = the `setNativeData` channel it receives
     placement: 'above-data',         // or 'below-data' (behind the candles)
     repaintOnCursor: true,           // opt-in: pointer moves repaint this layer too
-    create: () => ({
+    create: () => ({                 // once per mounted renderer (+ once per instance of a multi-instance owner)
         mount(canvas) { /* keep the canvas reference */ },
         render({ bars, data, pending, coords, scale, bounds, theme, priceStyle, nowMs, cursor }) {
             // Always clear + repaint your own canvas. Gate on `priceStyle` if the
@@ -127,6 +127,13 @@ normal object model instead of sitting outside it:
   collapsed host pane blanks the layer, and `modulateBase` is consulted only while the
   owner sits on the price pane.
 
+- **Multi-instance owners:** when the owning type allows several instances
+  (`multiInstance: true` on its descriptor), each instance owns a layer of its own — the
+  definition's `create()` runs once per mounted renderer for the base layer AND once per
+  such instance, each on its own canvas, fed by that instance's channel, stacked and
+  paned by that instance. The base layer of such a type receives no data (every instance
+  has its own channel) and paints nothing.
+
 Chart-type channels (no owning indicator) keep the declared `placement` and the price
 pane, exactly as before.
 
@@ -153,8 +160,15 @@ volume and VPVR ride this seam. See `NativeIndicator` types in `@luxalgo/vela/pl
 A type is **single-instance** by default: a second `addNativeIndicator` of the same type
 returns the existing handle. Set `multiInstance: true` on the descriptor when a chart may
 carry several instances (a study users stack at different settings); every add then
-creates a fresh instance. A type that pushes a bespoke layer payload through `pushData`
-must stay single-instance — the renderer's native layer is keyed by type.
+creates a fresh instance. This holds for layer-backed types too: each instance of a
+multi-instance type that paints through a registered renderer layer gets its **own layer
+instance** — the layer's `create()` runs once more per instance, on its own canvas,
+reading that instance's own data channel (the channel is stamped on the model as
+`native.channel`; `pushData` routes there automatically) and following that instance's
+pane and stacking. Nothing changes for the layer code: `args.data` is still "my payload".
+Every running instance also knows its own id (`ctx.id` — the same id its handle and
+`inspect()` report), so an instance can name itself to host code and tell itself apart
+from its siblings.
 
 A native that is really **host-owned chrome** — trade markers from a journal, event flags,
 anything whose on/off switch lives in the host's own UI — can opt out of in-chart chrome with
