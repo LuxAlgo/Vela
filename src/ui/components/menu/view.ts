@@ -5,6 +5,7 @@
 // chain across levels instead of the view faking any of it.
 import { runMachine, spreadProps, type HandleOf } from '../../zag';
 import { injectStyles } from '../../styles';
+import { floatingLayerHost } from '../../tokens';
 import { iconEl } from '../../icons';
 import { menuController, type MenuControllerOptions, type MenuItemDescriptor } from './controller';
 import { MENU_CSS, MENU_STYLE_ID } from './styles';
@@ -265,7 +266,7 @@ export class Menu {
         const anchor = opts.trigger ?? opts.host ?? document.body;
         const doc = anchor.ownerDocument;
         injectStyles(MENU_STYLE_ID, MENU_CSS, doc);
-        const host = opts.host ?? (anchor.closest?.('.vela-ui') as HTMLElement | null) ?? doc.body;
+        const host = floatingLayerHost(opts.host ?? anchor, doc.body);
         this.root = new Surface(doc, {
             host,
             placement: opts.placement,

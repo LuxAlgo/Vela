@@ -44,16 +44,25 @@ export function applyThemeTokens(el: HTMLElement, t: VelaTheme): void {
     for (const key in tokens) el.style.setProperty(key, tokens[key]!);
 }
 
-/** Re-token a chart-overlay host (statusline, watermark, toast, context menu — chrome
- *  floating OVER the plot) from the LIVE plot surface: a config edit can recolor the
- *  plot background independently of the app theme (a white plot typed into settings on
- *  the dark theme), and the overlay ink must stay readable either way. `config` is the
- *  renderer's `getConfig()` snapshot; a missing/shapeless one falls back to the base
- *  app theme. */
+/** Re-token a chart-overlay host (statusline, watermark, toast — chrome floating OVER
+ *  the plot) from the LIVE plot surface: a config edit can recolor the plot background
+ *  independently of the app theme (a white plot typed into settings on the dark theme),
+ *  and the overlay ink must stay readable either way. `config` is the renderer's
+ *  `getConfig()` snapshot; a missing/shapeless one falls back to the base app theme.
+ *  Floating menus and dropdowns do NOT use this — they mount on {@link floatingLayerHost}
+ *  so their surface follows the app theme alone. */
 export function applyPlotOverlayTokens(host: HTMLElement, base: VelaTheme, config: unknown): void {
     const layout = (config as { layout?: { background?: string; textColor?: string } } | null)?.layout;
     const t = layout?.background && layout.textColor ? { ...base, background: layout.background, textColor: layout.textColor } : base;
     applyThemeTokens(host, t);
+}
+
+/** Mount floating kit layers (menus, select lists) on the nearest `.vela-ui` so they
+ *  inherit the app-theme tokens. A plot-overlay host (the cell) retokens from
+ *  `layout.background`; chrome panels must not follow that. Falls back to `fallback`
+ *  (typically `document.body`) when no kit host is an ancestor. */
+export function floatingLayerHost(from: HTMLElement, fallback?: HTMLElement): HTMLElement {
+    return (from.closest('.vela-ui') as HTMLElement | null) ?? fallback ?? from;
 }
 
 /** Mark an element as a kit host: static token sheet + the `.vela-ui` class. */
