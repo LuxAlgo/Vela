@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Two-letter mark tokens stay inside their outline.** A timeline mark carrying two
+  characters (`US`, `EU`) drew them at the single-letter size, so on a 16 px pin the pair
+  ran over the head. Pairs now share the token's width at a smaller size; a single letter
+  is unchanged.
+
 ## [v0.7.4]
 
 ### Changed

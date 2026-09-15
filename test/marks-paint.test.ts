@@ -1,7 +1,28 @@
 // The timeline-mark lane's hover pulse (src/renderers/native/chrome/marks/paint): the
 // size multiplier the painter applies to the token the pointer landed on — pure, node env.
 import { describe, it, expect } from 'vitest';
-import { pulseScale, MARK_PULSE_AMPLITUDE, MARK_PULSE_MS } from '../src/renderers/native/chrome/marks/paint';
+import { letterFontPx, pulseScale, MARK_PULSE_AMPLITUDE, MARK_PULSE_MS } from '../src/renderers/native/chrome/marks/paint';
+
+describe('marks · letterFontPx', () => {
+    it('a single letter fills the token; a pair shares its width and shrinks to stay inside the outline', () => {
+        expect(letterFontPx(16, 'N')).toBe(9);
+        expect(letterFontPx(16, 'US')).toBe(6);
+        expect(letterFontPx(20, 'N')).toBe(12);
+        expect(letterFontPx(20, 'EU')).toBe(8);
+    });
+
+    it('the widest currency pair fits a 16 px pin head and a 20 px cluster token', () => {
+        // Measured in Chrome with the host font (system-ui, 600 weight): `CH` is the widest
+        // ISO pair — 9.5 px at 6 px, 12.43 px at 8 px. A pin's head is 82% of the token, less
+        // the 1.5 px outline on each side.
+        const measuredWidthOfCH = { 6: 9.5, 8: 12.43 } as const;
+        const headInner = (size: number) => size * 0.82 - 1.5 * 2;
+        expect(letterFontPx(16, 'CH')).toBe(6);
+        expect(measuredWidthOfCH[6]).toBeLessThan(headInner(16));
+        expect(letterFontPx(20, 'CH')).toBe(8);
+        expect(measuredWidthOfCH[8]).toBeLessThan(headInner(20));
+    });
+});
 
 describe('marks · pulseScale', () => {
     it('plays once: 1 at rest, 1 + amplitude at mid-pulse, back to 1 at the end and ever after', () => {
