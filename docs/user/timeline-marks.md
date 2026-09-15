@@ -54,7 +54,7 @@ tooltip; click it for the popup. Open the chart settings: an **Events** tab now 
 | `glyph` | yes | How the token looks: `{ shape?, color, letter? }` or `{ shape?, color, icon }` — see [Glyphs](#glyphs). |
 | `title` | no | The popup's heading, whatever form the content takes. |
 | `tooltip` | no | Hover text on the glyph. Without it a lone mark shows its `title`. |
-| `group` | no | The kind of event (`'dividends'`, `'news'`…). Marks of one group on one bar fold together; each group gets a checkbox in settings — see [Groups](#groups-clusters-and-stacks). |
+| `group` | no | The kind of event (`'dividends'`, `'news'`…). Marks of one group on one bar — or on neighbouring bars once zoomed out far enough for their glyphs to overlap — fold together; each group gets a checkbox in settings — see [Groups](#groups-clusters-and-stacks). |
 | `content` | no | What the popup shows — text, sanitized HTML, or a panel; a value or a function resolved on click. Without it a click only emits `mark:click` — see [The popup](#the-popup). |
 
 The full type is `TimelineMark`, exported from `@luxalgo/vela`.
@@ -75,7 +75,8 @@ contains the time**:
   history backfills that far.
 
 Marks re-snap whenever the bars change: switch the timeframe and three news items 15 minutes
-apart become **three glyphs on a 5-minute chart and one cluster on an hourly chart**.
+apart become **three glyphs on a 5-minute chart and one cluster on an hourly chart**. Zoom does
+the same within a timeframe — see [Clustering](#groups-clusters-and-stacks).
 
 ```js
 const t = Date.UTC(2024, 5, 11, 14, 0);
@@ -187,7 +188,12 @@ content: async () => ({ html: await fetchDividendDetails('NVDA', '2024-06-11') }
 
 **Clustering.** Marks of one group that land on the same bar fold into **one cluster glyph** —
 slightly larger than a single mark, carrying the first mark's glyph, and hovering as
-`<Group label> · <count>`. Its popup lists every mark, earliest first.
+`<Group label> · <count>`. Its popup lists every mark, earliest first. The same fold happens
+across **neighbouring bars whenever the glyphs would overlap at the current zoom**: zoomed far
+out, same-group marks that would overlap fold into one cluster sitting on their earliest bar, and
+the next cluster starts where the glyphs clear each other — so a dense feed reads as a row of
+clusters a glyph apart, never a solid band and never one giant glyph. Zoom back in and they
+separate again. Groups never fold into each other.
 
 **Stacking.** Marks of *different* groups on one bar form a **stack**: a small deck showing the
 top group's token with the others peeking out behind it. Hovering the deck fans the tokens out
