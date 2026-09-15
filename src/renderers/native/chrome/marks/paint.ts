@@ -85,12 +85,25 @@ export function paintMarkLane(ctx: CanvasRenderingContext2D, layout: MarkLaneLay
             const img = deps.icons.get(mark.glyph.icon, ink, symbolPx, deps.dpr);
             if (img) ctx.drawImage(img, center.x - symbolPx / 2, center.y - symbolPx / 2, symbolPx, symbolPx);
         } else if (mark.glyph.letter) {
+            const letter = mark.glyph.letter.slice(0, 2);
             ctx.fillStyle = ink;
-            ctx.font = `600 ${Math.round(size * 0.58)}px ${deps.fontFamily}`;
-            ctx.fillText(mark.glyph.letter.slice(0, 2), center.x, center.y + 0.5);
+            ctx.font = `600 ${letterFontPx(size, letter)}px ${deps.fontFamily}`;
+            ctx.fillText(letter, center.x, center.y + 0.5);
         }
     }
     ctx.restore();
+}
+
+/**
+ * The font size for a token's letter(s), px. One character fills the token; two must
+ * share the same width, so they drop to a size where the widest pair of capitals still
+ * sits inside a 16 px pin head instead of running over its outline. The ratio comes from
+ * measuring `CH` (the widest ISO currency pair) in the host font at 600 weight: 9.5 px at
+ * 6 px against a head that is 16 × 0.82 − 2 × 1.5 (outline) = 10.1 px wide; 6.5 px already
+ * overflows. On the 20 px cluster token the same ratio gives 8 px, 12.4 px against 13.4.
+ */
+export function letterFontPx(size: number, letter: string): number {
+    return Math.round(size * (letter.length > 1 ? 0.38 : 0.58));
 }
 
 /** Trace a token outline centered at (x, y) and return where its symbol centers (a pin's head sits above its tail). */
