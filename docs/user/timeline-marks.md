@@ -215,6 +215,23 @@ chart.marks
 A mark may name a group you never defined — it then shows its capitalized id (`'splits'` →
 *Splits*). Ungrouped marks have no checkbox and always show.
 
+**Nesting.** A group can name a `parent`. Its checkbox lists indented under the parent's and
+dims while the parent is off; its marks paint only while **both** switches are on. That gives a
+master switch with sub-choices — the child keeps its own choice for when the parent comes back:
+
+```js
+chart.marks
+    .defineGroup({ id: 'news', label: 'News', visible: false })
+    .defineGroup({ id: 'news-latest', label: 'Show most recent', parent: 'news' })
+    .defineGroup({ id: 'news-all', label: 'Show historical', parent: 'news', visible: false })
+    .defineGroup({ id: 'economic', label: 'Economic releases' })
+    .defineGroup({ id: 'economic-high', label: 'High impact', parent: 'economic' })
+    .defineGroup({ id: 'economic-low', label: 'Low impact', parent: 'economic', visible: false });
+```
+
+A parent may carry marks of its own. A `parent` that names no defined group is ignored (the
+group lists at the top level), so a typo can never make a group vanish from the tab.
+
 The user's choice is **persisted with the chart's cosmetic config** (`chart.renderer.getConfig()`
 → `marks.groups`), so it survives a reload and rides workspace templates. A stored choice for a
 group the host has not registered yet is kept verbatim until that group shows up. The same
@@ -222,7 +239,7 @@ switch is available from code:
 
 ```js
 chart.marks.setGroupVisible('news', false);
-chart.marks.isGroupVisible('news'); // false — the stored choice, else the group's declared default, else true
+chart.marks.isGroupVisible('news'); // false — the stored choice, else the group's declared default, else true; a nested group also needs every ancestor on
 
 chart.renderer.set('marks', false); // hide the whole lane
 chart.renderer.set('marks', { groups: { splits: false } }); // the settings checkbox, from code

@@ -4,3 +4,4 @@
  */
 export type { MarkShape, MarkGlyph, MarkPanelItem, MarkContent, MarkContentSource, TimelineMark, MarkGroup, MarkClickEvent } from './types';
 export { MarksController } from './MarksController';
+export { markGroupVisible, markGroupRows, type MarkGroupRow } from './visibility';

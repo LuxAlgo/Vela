@@ -83,6 +83,14 @@ export interface MarkGroup {
     label: string;
     /** Default visibility before the user toggles it (default true). A persisted choice wins. */
     visible?: boolean;
+    /**
+     * The id of the group this one nests under. A child's marks paint only while BOTH it
+     * and its parent are visible; on the Events tab it lists indented beneath the parent
+     * and dims while the parent is off, keeping its own choice for when the parent comes
+     * back. Lets a host offer `News → Latest / All` or `Economic → High / Medium / Low`
+     * as one master switch with sub-choices. A parent may hold marks of its own.
+     */
+    parent?: string;
 }
 
 /** The `mark:click` payload — every mark under the clicked glyph (a cluster lists them all). */

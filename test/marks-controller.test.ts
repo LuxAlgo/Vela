@@ -100,6 +100,17 @@ describe('MarksController', () => {
         expect(ctrl.isGroupVisible('quiet')).toBe(true); // the stored choice wins over the default
     });
 
+    it('a nested group reads hidden while its parent is switched off, and rejects a malformed parent', () => {
+        const { renderer } = fakeRenderer();
+        const ctrl = new MarksController(renderer, new TypedEventBus<VelaEventMap>());
+        ctrl.defineGroup({ id: 'news', label: 'News', visible: false });
+        ctrl.defineGroup({ id: 'news-latest', label: 'Latest news', parent: 'news' });
+        expect(ctrl.isGroupVisible('news-latest')).toBe(false); // own default on, parent off
+        ctrl.setGroupVisible('news', true);
+        expect(ctrl.isGroupVisible('news-latest')).toBe(true);
+        expect(() => ctrl.defineGroup({ id: 'bad', label: 'Bad', parent: '' as never })).toThrow(/parent/);
+    });
+
     it('stays inert on a renderer without the capability: the model fills, nothing is pushed, the setter warns', () => {
         const { renderer, pushes, features } = fakeRenderer({ capable: false });
         const ctrl = new MarksController(renderer, new TypedEventBus<VelaEventMap>());
