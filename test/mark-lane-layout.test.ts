@@ -10,6 +10,7 @@ import {
     clusterTooltip,
     markGroupLabel,
     effectiveMarkGroups,
+    foldOverlappingClusters,
     MARK_GLYPH_PX,
     MARK_CLUSTER_PX,
     MARK_LANE_INSET,
@@ -198,5 +199,97 @@ describe('marks · labels', () => {
             { id: 'dividends', label: 'Dividends' },
             { id: 'splits', label: 'Splits' },
         ]);
+    });
+});
+
+describe('marks · glyphs that would overlap fold into one cluster', () => {
+    // A dense feed on a fine timeframe: one same-group mark on each of eight consecutive bars.
+    const M = 60_000;
+    const minuteBars = Array.from({ length: 8 }, (_, i) => T0 + i * M);
+    const dense = minuteBars.map((t, i) => mark(`n${i}`, t, { group: 'news' }));
+    const lane = (pxPerBar: number, marks = dense, extra: Partial<Parameters<typeof layoutMarkLane>[0]> = {}) =>
+        layoutMarkLane({
+            marks,
+            groups: [{ id: 'news', label: 'News' }],
+            hidden: () => false,
+            barTimes: minuteBars,
+            intervalMs: M,
+            xOf: (bar) => 100 + bar * pxPerBar,
+            axisY: 400,
+            dataW: 2000,
+            expanded: null,
+            ...extra,
+        });
+
+    it('zoomed out, adjacent same-group marks fold into clusters instead of a band of overlapping glyphs', () => {
+        const l = lane(6); // six pixels per bar — sixteen-pixel glyphs would overlap
+        // 8 bars × 6 px = 48 px of lane: clusters a glyph-width apart, each holding the bars under it.
+        expect(l.glyphs.map((g) => g.cluster.marks.map((m) => m.id))).toEqual([
+            ['n0', 'n1', 'n2', 'n3'],
+            ['n4', 'n5', 'n6', 'n7'],
+        ]);
+        expect(l.glyphs.every((g) => g.size === MARK_CLUSTER_PX)).toBe(true);
+    });
+
+    it('a dense lane becomes a row of clusters that never overlap — not one giant glyph at the left edge', () => {
+        // 200 hourly stories on a 200-bar chart at nine pixels per bar (a 1 h chart on a wide screen).
+        const bars = Array.from({ length: 200 }, (_, i) => T0 + i * H);
+        const marks = bars.map((t, i) => mark(`s${i}`, t, { group: 'news' }));
+        const l = layoutMarkLane({ marks, groups: [], hidden: () => false, barTimes: bars, intervalMs: H, xOf: (bar) => 10 + bar * 9, axisY: 400, dataW: 2000, expanded: null });
+        expect(l.glyphs.length).toBeGreaterThan(50);
+        expect(l.glyphs.length).toBeLessThan(200);
+        const xs = l.glyphs.map((g) => g.x).sort((a, b) => a - b);
+        for (let i = 1; i < xs.length; i++) expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(MARK_CLUSTER_PX);
+        expect(l.glyphs.reduce((n, g) => n + g.cluster.marks.length, 0)).toBe(200); // every story is still reachable
+    });
+
+    it('zoomed in, the same marks stand apart again, one glyph per bar', () => {
+        expect(lane(MARK_CLUSTER_PX).glyphs).toHaveLength(8);
+        expect(lane(40).glyphs).toHaveLength(8);
+    });
+
+    it('a merged cluster sits on its earliest bar and keeps that key, so an open popup can follow it', () => {
+        const l = lane(6);
+        const g = l.glyphs[0]!;
+        expect(g.cluster.bar).toBe(0);
+        expect(g.cluster.key).toBe('0|news');
+        expect(g.x).toBe(100);
+        expect(g.stack).toBe(0);
+    });
+
+    it('a wide gap in the marks ends a cluster: two distant runs are two clusters', () => {
+        const bars = Array.from({ length: 44 }, (_, i) => T0 + i * M);
+        const marks = [0, 1, 2, 3, 40, 41, 42, 43].map((i) => mark(`m${i}`, bars[i]!, { group: 'news' }));
+        const l = layoutMarkLane({ marks, groups: [], hidden: () => false, barTimes: bars, intervalMs: M, xOf: (bar) => 100 + bar * 4, axisY: 400, dataW: 2000, expanded: null });
+        expect(l.glyphs.map((g) => g.cluster.marks.map((m) => m.id))).toEqual([
+            ['m0', 'm1', 'm2', 'm3'],
+            ['m40', 'm41', 'm42', 'm43'],
+        ]);
+        expect(l.glyphs.map((g) => g.cluster.key)).toEqual(['0|news', '40|news']);
+    });
+
+    it('marks of different groups never fold together, however close', () => {
+        const mixed = minuteBars.map((t, i) => mark(`x${i}`, t, { group: i % 2 ? 'earnings' : 'news' }));
+        const l = lane(6, mixed, { groups: [{ id: 'news', label: 'News' }, { id: 'earnings', label: 'Earnings' }] });
+        const byGroup = new Map<string | undefined, string[]>();
+        for (const g of l.glyphs) byGroup.set(g.cluster.group, [...(byGroup.get(g.cluster.group) ?? []), ...g.cluster.marks.map((m) => m.id)]);
+        expect(byGroup.get('news')).toEqual(['x0', 'x2', 'x4', 'x6']);
+        expect(byGroup.get('earnings')).toEqual(['x1', 'x3', 'x5', 'x7']);
+        for (const g of l.glyphs) expect(new Set(g.cluster.marks.map((m) => m.group)).size).toBe(1);
+    });
+
+    it('the folded glyph is one click target that names every story under it, and its tooltip carries the count', () => {
+        const l = lane(6);
+        const g = l.glyphs[0]!;
+        expect(markGlyphAt(l, g.x, g.y)?.cluster.marks.map((m) => m.id)).toEqual(['n0', 'n1', 'n2', 'n3']);
+        expect(clusterTooltip(g.cluster, [{ id: 'news', label: 'News' }])).toBe('News · 4');
+    });
+
+    it('foldOverlappingClusters is a pure step over per-bar clusters: marks within a cluster glyph of its anchor join it, the first to clear it starts the next', () => {
+        const clusters = clusterMarks(dense, minuteBars, M, () => false);
+        expect(clusters).toHaveLength(8);
+        expect(foldOverlappingClusters(clusters, (bar) => bar * 5).map((c) => c.marks.length)).toEqual([4, 4]); // 0,5,10,15 | 20,25,30,35
+        expect(foldOverlappingClusters(clusters, (bar) => bar * MARK_CLUSTER_PX)).toHaveLength(8); // exactly a glyph apart: clear
+        expect(foldOverlappingClusters(clusters, (bar) => bar * (MARK_CLUSTER_PX - 1)).map((c) => c.marks.length)).toEqual([2, 2, 2, 2]); // one pixel short: pairs
     });
 });

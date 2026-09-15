@@ -66,7 +66,8 @@ export interface TimelineMark {
     tooltip?: string;
     /**
      * The visibility group the mark belongs to (`'dividends'`, `'splits'`). Marks of one
-     * group that land on the same bar cluster into one glyph; groups get a checkbox each
+     * group that land on the same bar — or whose glyphs would overlap at the current zoom —
+     * cluster into one glyph (the tooltip carries the count, the popup lists them all); groups get a checkbox each
      * in the chart settings (the Events tab). Define the display label with
      * `chart.marks.defineGroup`; an undefined group shows its capitalized id.
      */
