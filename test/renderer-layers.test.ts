@@ -119,6 +119,21 @@ describe('hidden candles: the chart type\'s layer goes with them, indicator laye
         r.scene.priceStyle = 'demo'; // the active chart type's own layer is blanked with the candles — no reason to keep the bars
         expect(r.priceLayersAnchoredToBars([])).toBe(false);
     });
+
+    // With the candles hidden and NOTHING else measurable on the price pane, the bars keep
+    // driving the scale (the axis stays on the price range instead of the {0,1} placeholder).
+    // Any content that computePaneScale would measure takes the scale over as before.
+    it('reports measurable master content the way the autoscale sees it', () => {
+        type P = { paneHasMeasurableContent(models: unknown[], dr: unknown): boolean };
+        const r = new NativeRenderer() as unknown as P;
+        const m = (o: { series?: unknown[]; priceLines?: unknown[]; native?: string }) => ({ id: 'x', title: 'x', paneId: 'price', series: o.series ?? [], priceLines: o.priceLines ?? [], ...(o.native ? { native: { type: o.native } } : {}) });
+        expect(r.paneHasMeasurableContent([], null)).toBe(false);
+        expect(r.paneHasMeasurableContent([m({ native: 'volume' })], null)).toBe(false); // series-less native
+        expect(r.paneHasMeasurableContent([m({ series: [{ kind: 'line', overlay: true }] })], null)).toBe(false); // force_overlay scales via the drawings range instead
+        expect(r.paneHasMeasurableContent([m({ series: [{ kind: 'line' }] })], null)).toBe(true);
+        expect(r.paneHasMeasurableContent([m({ priceLines: [{ price: 1 }] })], null)).toBe(true);
+        expect(r.paneHasMeasurableContent([], { min: 1, max: 2 })).toBe(true);
+    });
 });
 
 describe('chart-type SDK settings (config bag + channel + notification)', () => {
