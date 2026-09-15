@@ -156,8 +156,10 @@ ${overlayScrollbarCss('.vela-sd-pane')}
    muted and non-interactive. Applied to each row's children so it survives display:contents;
    !important beats the inline opacity on labels. */
 .vela-sd-soft>*{opacity:0.4 !important;pointer-events:none !important;}
-/* A mark group nested under a parent group on the Events tab: indented one step. */
-.vela-sd-nested>*:first-child{padding-left:24px;}
+/* A mark group nested under a parent group on the Events tab: indented one step. Rows are
+   display:contents, so the indent rides the first child (the switch) as a MARGIN — padding
+   would push the switch's own tick out of its box. */
+.vela-sd-nested>*:first-child{margin-left:24px;}
 /* ── mobile presentation (.vela-sd-mobile on the scrim; structural sizes are inline in open()) ──
    The tab rail becomes a burger-opened overlay sidebar; the group TOC becomes a sticky
    row of horizontally scrollable tabs; the instance strip scrolls instead of wrapping;
