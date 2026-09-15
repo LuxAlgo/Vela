@@ -90,7 +90,9 @@ void ws.chart.ready().then(() => console.log('[vela-dev] chart ready'));
 
 // Sample timeline marks (chart.marks) — see marks.ts: a cluster, a fanning stack, a custom
 // icon with details loaded on click… spread over the visible range once the chart painted.
-void ws.chart.ready().then(() => addSampleMarks(ws.chart));
+// `?dense` in the URL adds a week of ~300 headlines — the density case.
+const denseMarks = new URLSearchParams(location.search).has('dense');
+void ws.chart.ready().then(() => addSampleMarks(ws.chart, { dense: denseMarks }));
 
 // The page shell follows the app theme — flip it from chart settings → Canvas → Theme
 // (or `ws.setTheme('light')` in the console) and the body around the chart follows.

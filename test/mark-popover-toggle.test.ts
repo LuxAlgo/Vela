@@ -12,7 +12,7 @@ import type { VelaTheme } from '../src/core/options';
 const theme: VelaTheme = { background: '#000', textColor: '#fff', gridColor: '#222', borderColor: '#333', upColor: '#0f0', downColor: '#f00', fontFamily: 'sans-serif' };
 
 function cluster(key: string): MarkCluster {
-    return { key, bar: 10, group: 'news', marks: [{ id: key, time: 1, glyph: { color: '#4af', letter: 'N' }, title: key, content: { text: 'body' } }] };
+    return { key, slot: 10, from: 10, to: 10, anchor: 10, group: 'news', marks: [{ id: key, time: 1, glyph: { color: '#4af', letter: 'N' }, title: key, content: { text: 'body' } }] };
 }
 
 describe('MarkPopover click toggle', () => {

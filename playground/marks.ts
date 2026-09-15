@@ -6,6 +6,10 @@
 // visible range when applied, so they land on any timeframe: switch timeframes and watch
 // them re-snap onto the containing bars and fold together as bars widen — the three news
 // items sit 15 minutes apart: three glyphs on a 5m or 15m chart, one cluster from 1h up.
+//
+// `dense` adds a week of wire headlines (~300, 20–50 minutes apart) — the density case: on a
+// 15-minute chart nearly every bar carries one, and the lane must read as a few counted
+// tokens per screen rather than a band. Both pages switch it on with `?dense` in the URL.
 import type { Vela, TimelineMark } from '../src';
 import { registerIcon, svg16 } from '../src/ui';
 
@@ -15,8 +19,13 @@ registerIcon('play.rocket', svg16('<path d="M9.5 2.5c1.8 0 3.5 1.7 4 4.5l-4 4-4-
 /** Charts whose `mark:click` is already echoed to the console (re-applying never double-subscribes). */
 const wired = new WeakSet<Vela>();
 
+export interface SampleMarksOptions {
+    /** Add a week of ~300 wire headlines to the `news` group — the density case. */
+    dense?: boolean;
+}
+
 /** Spread the sample marks over `chart`'s visible range — call once the chart is ready. */
-export function addSampleMarks(chart: Vela): void {
+export function addSampleMarks(chart: Vela, opts: SampleMarksOptions = {}): void {
     const range = chart.getVisibleRange();
     if (!range) return;
     const span = range.to - range.from;
@@ -129,6 +138,7 @@ export function addSampleMarks(chart: Vela): void {
             content: { text: 'Exchange maintenance window (announced). Past the newest bar a mark sits on the projected grid.' },
         },
     ];
+    if (opts.dense) marks.push(...denseHeadlines(range.to));
 
     chart.marks
         .defineGroup({ id: 'dividends', label: 'Dividends' })
@@ -142,4 +152,28 @@ export function addSampleMarks(chart: Vela): void {
         wired.add(chart);
         chart.on('mark:click', (e) => console.log('[marks] click', e));
     }
+}
+
+/** A week of wire headlines before `end`, 20–50 minutes apart (a fixed pseudo-random sequence, so every run lays out the same). */
+function denseHeadlines(end: number): TimelineMark[] {
+    let seed = 42;
+    const rnd = (): number => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+    const out: TimelineMark[] = [];
+    let t = end - 7 * 86_400_000;
+    let i = 0;
+    while (t < end) {
+        i += 1;
+        const when = new Date(t).toISOString().slice(0, 16).replace('T', ' ');
+        out.push({
+            id: `headline-${i}`,
+            time: t,
+            title: `Headline ${i}`,
+            group: 'news',
+            glyph: { color: '#26a69a', letter: 'N' },
+            tooltip: `Headline ${i} · ${when}`,
+            content: { text: `Wire story ${i}, filed ${when} UTC.` },
+        });
+        t += Math.round((20 + rnd() * 30) * 60_000);
+    }
+    return out;
 }

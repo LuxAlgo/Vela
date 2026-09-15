@@ -4,6 +4,16 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- **Timeline-mark clusters wear a count badge and stay readable at any density.** A
+  token that folds several events now shows how many on a small badge, and every token
+  is the same size. When bars sit closer together than a token is wide, neighboring
+  events of one kind fold as well, so a feed with a headline on nearly every bar reads
+  as a few counted tokens per screen instead of a solid band — zoom in and they split
+  back into one token per bar. The playground pages take `?dense` to try it with a week
+  of headlines.
+
 ### Fixed
 
 - **Timeline mark popups now toggle with a click.** Clicking the mark whose popup is

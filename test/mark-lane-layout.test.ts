@@ -1,8 +1,10 @@
 // The timeline-mark lane's geometry (src/renderers/native/chrome/marks/layout): bar
-// snapping, clustering, stacking, fan-out, hit-testing — pure, node env.
+// snapping, clustering (per bar, and per pixel slot as bars tighten), stacking, fan-out,
+// hit-testing — pure, node env.
 import { describe, it, expect } from 'vitest';
 import {
     snapMarkBar,
+    slotBars,
     clusterMarks,
     layoutMarkLane,
     markGlyphAt,
@@ -11,7 +13,7 @@ import {
     markGroupLabel,
     effectiveMarkGroups,
     MARK_GLYPH_PX,
-    MARK_CLUSTER_PX,
+    MARK_SLOT_PX,
     MARK_LANE_INSET,
     MARK_DECK_STEP,
     MARK_FAN_GAP,
@@ -24,6 +26,7 @@ const T0 = Date.UTC(2024, 5, 10);
 // Hourly bars with a closed session after bar 4: bars 0–4 are contiguous, bar 5 opens four hours after bar 4.
 const times = [0, 1, 2, 3, 4, 8, 9, 10].map((h) => T0 + h * H);
 const mark = (id: string, time: number, extra: Partial<TimelineMark> = {}): TimelineMark => ({ id, time, glyph: { color: '#2962ff', letter: id[0]! }, ...extra });
+const none = (): boolean => false;
 
 describe('marks · snapMarkBar', () => {
     it('lands inside the bar whose span contains the time', () => {
@@ -51,12 +54,24 @@ describe('marks · snapMarkBar', () => {
     });
 });
 
+describe('marks · slotBars', () => {
+    it('is one bar while a token fits per bar, and grows as bars tighten', () => {
+        expect(slotBars(40)).toBe(1);
+        expect(slotBars(MARK_SLOT_PX)).toBe(1);
+        expect(slotBars(MARK_SLOT_PX - 1)).toBe(2);
+        expect(slotBars(5)).toBe(Math.ceil(MARK_SLOT_PX / 5));
+        expect(slotBars(0)).toBe(1);
+    });
+});
+
 describe('marks · clusterMarks', () => {
     it('folds same-bar, same-group marks and orders them by time, then insertion', () => {
         const marks = [mark('b', T0 + 2 * H + 30 * 60_000, { group: 'g' }), mark('a', T0 + 2 * H + 5 * 60_000, { group: 'g' }), mark('c', T0 + 2 * H + 30 * 60_000, { group: 'g' })];
-        const out = clusterMarks(marks, times, H, () => false);
+        const out = clusterMarks(marks, times, H, none);
         expect(out).toHaveLength(1);
         expect(out[0]!.key).toBe('2|g');
+        expect(out[0]!.slot).toBe(2);
+        expect(out[0]!.anchor).toBe(2);
         expect(out[0]!.marks.map((m) => m.id)).toEqual(['a', 'b', 'c']);
     });
 
@@ -64,14 +79,28 @@ describe('marks · clusterMarks', () => {
         const fiveMin = 300_000;
         const fine = Array.from({ length: 24 }, (_, i) => T0 + i * fiveMin);
         const marks = [mark('a', T0 + 5 * fiveMin), mark('b', T0 + 9 * fiveMin)]; // 00:25 and 00:45 — two 5-minute bars, one hourly bar
-        expect(clusterMarks(marks, fine, fiveMin, () => false)).toHaveLength(2);
-        expect(clusterMarks(marks, times, H, () => false)).toHaveLength(1);
+        expect(clusterMarks(marks, fine, fiveMin, none)).toHaveLength(2);
+        expect(clusterMarks(marks, times, H, none)).toHaveLength(1);
     });
 
     it('keeps groups apart and drops hidden ones', () => {
         const marks = [mark('a', T0 + H, { group: 'x' }), mark('b', T0 + H, { group: 'y' }), mark('c', T0 + H)];
-        expect(clusterMarks(marks, times, H, () => false).map((c) => c.key).sort()).toEqual(['1|', '1|x', '1|y']);
+        expect(clusterMarks(marks, times, H, none).map((c) => c.key).sort()).toEqual(['1|', '1|x', '1|y']);
         expect(clusterMarks(marks, times, H, (g) => g === 'y').map((c) => c.key).sort()).toEqual(['1|', '1|x']);
+    });
+
+    it('with several bars per slot, neighboring bars of one group fold into one counted cluster anchored on their mean bar', () => {
+        const marks = [0, 1, 2, 3, 4, 7].map((h) => mark(`m${h}`, times[h]!, { group: 'g' }));
+        const out = clusterMarks(marks, times, H, none, 4);
+        expect(out.map((c) => c.key)).toEqual(['0|g', '4|g']);
+        expect(out[0]!.marks.map((m) => m.id)).toEqual(['m0', 'm1', 'm2', 'm3']);
+        expect(out[0]!.from).toBe(0);
+        expect(out[0]!.to).toBe(3);
+        expect(out[0]!.anchor).toBe(1.5);
+        expect(out[1]!.marks.map((m) => m.id)).toEqual(['m4', 'm7']);
+        expect(out[1]!.anchor).toBe(5.5);
+        // Slots are cut from bar 0, so the cut does not move with the view.
+        expect(clusterMarks(marks, times, H, none, 3).map((c) => c.key)).toEqual(['0|g', '3|g', '6|g']);
     });
 });
 
@@ -81,12 +110,13 @@ describe('marks · layoutMarkLane', () => {
             { id: 'x', label: 'X' },
             { id: 'y', label: 'Y' },
         ],
-        hidden: () => false,
+        hidden: none,
         barTimes: times,
         intervalMs: H,
-        xOf: (bar: number) => 100 + bar * 10,
+        pxPerBar: 40, // a token fits per bar ⇒ one bar per slot
+        xOf: (bar: number) => 100 + bar * 40,
         axisY: 400,
-        dataW: 500,
+        dataW: 800,
         expanded: null as number | null,
     };
 
@@ -95,19 +125,31 @@ describe('marks · layoutMarkLane', () => {
         expect(l.glyphs).toHaveLength(1);
         const g = l.glyphs[0]!;
         expect(g.size).toBe(MARK_GLYPH_PX);
-        expect(g.x).toBe(130);
+        expect(g.x).toBe(220);
         expect(g.y + g.size / 2).toBe(400 - MARK_LANE_INSET);
         expect(g.decked).toBe(false);
     });
 
-    it('a cluster is the larger token', () => {
+    it('a cluster is one token of the same size listing every mark (the badge tells it apart)', () => {
         const l = layoutMarkLane({ ...base, marks: [mark('a', T0 + 3 * H, { group: 'x' }), mark('b', T0 + 3 * H + 1, { group: 'x' })] });
         expect(l.glyphs).toHaveLength(1);
-        expect(l.glyphs[0]!.size).toBe(MARK_CLUSTER_PX);
+        expect(l.glyphs[0]!.size).toBe(MARK_GLYPH_PX);
         expect(l.glyphs[0]!.cluster.marks.map((m) => m.id)).toEqual(['a', 'b']);
     });
 
-    it('several groups on one bar deck: the first-defined group on top, deeper ones peeking up, painted deeper-first', () => {
+    it('as bars tighten, a slot spans several bars: a dense group reads as a few counted tokens, never a band', () => {
+        const dense = Array.from({ length: 8 }, (_, i) => mark(`d${i}`, times[i]!, { group: 'x' }));
+        const l = layoutMarkLane({ ...base, pxPerBar: 5, xOf: (bar) => 100 + bar * 5, marks: dense }); // 4 bars per slot
+        expect(l.glyphs).toHaveLength(2);
+        expect(l.glyphs.map((g) => g.cluster.marks.length)).toEqual([4, 4]);
+        expect(l.glyphs[0]!.x).toBe(100 + 1.5 * 5); // the members' mean bar
+        expect(l.glyphs[1]!.x).toBe(100 + 5.5 * 5);
+        expect(l.glyphs[1]!.x - l.glyphs[0]!.x).toBeGreaterThanOrEqual(MARK_SLOT_PX);
+        // Zooming in (a wider pitch) splits them back into one token per bar.
+        expect(layoutMarkLane({ ...base, marks: dense }).glyphs).toHaveLength(8);
+    });
+
+    it('several groups in one slot deck: the first-defined group on top, deeper ones peeking up, painted deeper-first', () => {
         const l = layoutMarkLane({ ...base, marks: [mark('b', T0 + 3 * H, { group: 'y' }), mark('a', T0 + 3 * H, { group: 'x' }), mark('c', T0 + 3 * H)] });
         const stack = l.stacks.get(3)!;
         expect(stack.map((g) => g.cluster.group)).toEqual(['x', 'y', undefined]);
@@ -126,16 +168,19 @@ describe('marks · layoutMarkLane', () => {
         expect(s[1]!.y - s[1]!.size / 2 - (s[2]!.y + s[2]!.size / 2)).toBe(MARK_FAN_GAP);
     });
 
-    it('a single-group bar never decks or fans, whatever `expanded` says', () => {
+    it('a single-group slot never decks or fans, whatever `expanded` says', () => {
         const l = layoutMarkLane({ ...base, expanded: 3, marks: [mark('a', T0 + 3 * H, { group: 'x' })] });
         expect(l.glyphs[0]!.decked).toBe(false);
         expect(l.glyphs[0]!.y + l.glyphs[0]!.size / 2).toBe(400 - MARK_LANE_INSET);
     });
 
-    it('skips stacks off the plot', () => {
-        const l = layoutMarkLane({ ...base, xOf: () => -100, marks: [mark('a', T0 + 3 * H)] });
-        expect(l.glyphs).toHaveLength(0);
-        expect(layoutMarkLane({ ...base, xOf: () => 800, marks: [mark('a', T0 + 3 * H)] }).glyphs).toHaveLength(0);
+    it('skips stacks off the plot, and any token that would straddle the plot edge into the axis gutter', () => {
+        const one = [mark('a', T0 + 3 * H)];
+        expect(layoutMarkLane({ ...base, xOf: () => -100, marks: one }).glyphs).toHaveLength(0);
+        expect(layoutMarkLane({ ...base, xOf: () => 900, marks: one }).glyphs).toHaveLength(0);
+        expect(layoutMarkLane({ ...base, xOf: () => 800 - MARK_GLYPH_PX / 2 + 1, marks: one }).glyphs).toHaveLength(0); // right edge: half a token past
+        expect(layoutMarkLane({ ...base, xOf: () => 800 - MARK_GLYPH_PX / 2, marks: one }).glyphs).toHaveLength(1); // exactly whole
+        expect(layoutMarkLane({ ...base, xOf: () => MARK_GLYPH_PX / 2 - 1, marks: one }).glyphs).toHaveLength(0); // left edge
     });
 });
 
@@ -145,12 +190,13 @@ describe('marks · hit-testing', () => {
             { id: 'x', label: 'X' },
             { id: 'y', label: 'Y' },
         ],
-        hidden: () => false,
+        hidden: none,
         barTimes: times,
         intervalMs: H,
-        xOf: (bar: number) => 100 + bar * 10,
+        pxPerBar: 40,
+        xOf: (bar: number) => 100 + bar * 40,
         axisY: 400,
-        dataW: 500,
+        dataW: 800,
     };
     const marks = [mark('a', T0 + 3 * H, { group: 'x' }), mark('b', T0 + 3 * H, { group: 'y' })];
 
@@ -180,14 +226,13 @@ describe('marks · hit-testing', () => {
 
 describe('marks · labels', () => {
     const groups = [{ id: 'dividends', label: 'Dividends' }];
+    const cluster = (over: Partial<ReturnType<typeof clusterMarks>[number]>) => ({ key: '1|dividends', slot: 1, from: 1, to: 1, anchor: 1, group: 'dividends', marks: [] as TimelineMark[], ...over });
 
     it('a lone mark shows its tooltip, else its title; a cluster names its group and size', () => {
-        const single = { key: '1|dividends', bar: 1, group: 'dividends', marks: [mark('a', T0, { title: 'Dividend', tooltip: 'Div · 0.01' })] };
-        expect(clusterTooltip(single, groups)).toBe('Div · 0.01');
-        expect(clusterTooltip({ ...single, marks: [mark('a', T0, { title: 'Dividend' })] }, groups)).toBe('Dividend');
-        const cluster = { key: '1|dividends', bar: 1, group: 'dividends', marks: [mark('a', T0), mark('b', T0)] };
-        expect(clusterTooltip(cluster, groups)).toBe('Dividends · 2');
-        expect(clusterTooltip({ ...cluster, group: 'splits', key: '1|splits' }, groups)).toBe('Splits · 2');
+        expect(clusterTooltip(cluster({ marks: [mark('a', T0, { title: 'Dividend', tooltip: 'Div · 0.01' })] }), groups)).toBe('Div · 0.01');
+        expect(clusterTooltip(cluster({ marks: [mark('a', T0, { title: 'Dividend' })] }), groups)).toBe('Dividend');
+        expect(clusterTooltip(cluster({ marks: [mark('a', T0), mark('b', T0)] }), groups)).toBe('Dividends · 2');
+        expect(clusterTooltip(cluster({ key: '1|splits', group: 'splits', marks: [mark('a', T0), mark('b', T0)] }), groups)).toBe('Splits · 2');
     });
 
     it('an undefined group falls back to its capitalized id; effectiveMarkGroups lists defined groups first', () => {

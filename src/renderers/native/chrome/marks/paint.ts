@@ -1,9 +1,10 @@
 // Canvas painting of the timeline-mark lane: one outlined token per glyph (circle, square,
 // diamond or pin) drawn in the mark's color on the plot background, carrying a letter or a
 // registry icon in that same color; a hairline stem down to the time-axis line; and a
-// background-colored halo so the cards of a collapsed deck separate. The token the pointer
-// lands on swells once and settles; the one whose popup is open (or that was just clicked)
-// paints filled — color for the body and outline, white ink. Icons are SVG in the registry; the
+// background-colored halo so the cards of a collapsed deck separate. A cluster wears a small
+// count badge on its top-right shoulder. The token the pointer lands on swells once and
+// settles; the one whose popup is open (or that was just clicked) paints filled — color for
+// the body and outline, white ink. Icons are SVG in the registry; the
 // canvas gets them as images rasterized once per (icon, ink, size) and cached — the first
 // frame after a cache miss paints the bare token and the renderer repaints when the image
 // lands.
@@ -15,12 +16,16 @@ import type { MarkLaneLayout } from './layout';
 export const MARK_PULSE_MS = 360;
 /** How much the token grows at the pulse's peak (a fraction of its size). */
 export const MARK_PULSE_AMPLITUDE = 0.1;
-/** Ink of a filled (active) token. */
+/** Ink of a filled (active) token and of the count badge. */
 const ACTIVE_INK = '#ffffff';
+/** Count-badge pill height, px (its width follows the digits). */
+const BADGE_H = 11;
 
 export interface MarkPaintDeps {
     /** The time-axis line's y — every stack's base glyph drops a stem onto it. */
     axisY: number;
+    /** The data area's width — the lane is clipped to it so no badge or halo strays into the price-axis gutter. */
+    dataW: number;
     /** The plot background: the idle token's fill and the separating halo. */
     background: string;
     /** Stem color (the axis border). */
@@ -48,6 +53,9 @@ export function pulseScale(elapsedMs: number): number {
 export function paintMarkLane(ctx: CanvasRenderingContext2D, layout: MarkLaneLayout, deps: MarkPaintDeps): void {
     if (layout.glyphs.length === 0) return;
     ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, deps.dataW, deps.axisY + 1);
+    ctx.clip();
     ctx.setLineDash([]);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -89,8 +97,31 @@ export function paintMarkLane(ctx: CanvasRenderingContext2D, layout: MarkLaneLay
             ctx.font = `600 ${Math.round(size * 0.58)}px ${deps.fontFamily}`;
             ctx.fillText(mark.glyph.letter.slice(0, 2), center.x, center.y + 0.5);
         }
+        if (g.cluster.marks.length > 1) paintBadge(ctx, g.x + size / 2 - 2, g.y - size / 2 + 2, g.cluster.marks.length, color, deps);
     }
     ctx.restore();
+}
+
+/** The count badge: a small pill in the mark's color with the count in white, haloed like the token, centered at (x, y). */
+function paintBadge(ctx: CanvasRenderingContext2D, x: number, y: number, count: number, color: string, deps: MarkPaintDeps): void {
+    const text = count > 99 ? '99+' : String(count);
+    ctx.font = `600 ${BADGE_H - 3}px ${deps.fontFamily}`;
+    const w = Math.max(BADGE_H, Math.ceil(ctx.measureText(text).width) + 6);
+    const r = BADGE_H / 2;
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2 + r, y - r);
+    ctx.lineTo(x + w / 2 - r, y - r);
+    ctx.arc(x + w / 2 - r, y, r, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(x - w / 2 + r, y + r);
+    ctx.arc(x - w / 2 + r, y, r, Math.PI / 2, (3 * Math.PI) / 2);
+    ctx.closePath();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = deps.background;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.fillStyle = ACTIVE_INK;
+    ctx.fillText(text, x, y + 0.5);
 }
 
 /** Trace a token outline centered at (x, y) and return where its symbol centers (a pin's head sits above its tail). */

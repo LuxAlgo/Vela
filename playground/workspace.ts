@@ -105,9 +105,11 @@ ws.on("cell:created", ({ id }) =>
 
 // Sample timeline marks (chart.marks) on every cell — the ones alive now and those a
 // later layout switch mints. Each waits for its own chart to paint, then spreads the
-// marks over that chart's visible range (see marks.ts).
+// marks over that chart's visible range (see marks.ts). `?dense` in the URL adds a week
+// of ~300 headlines to every cell — the density case.
+const denseMarks = new URLSearchParams(location.search).has("dense");
 const seedMarks = (chart: Vela): void => {
-  void chart.ready().then(() => addSampleMarks(chart));
+  void chart.ready().then(() => addSampleMarks(chart, { dense: denseMarks }));
 };
 for (const cell of ws.cells()) seedMarks(cell.chart);
 ws.on("cell:created", ({ id }) => {

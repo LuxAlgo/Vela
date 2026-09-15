@@ -4,27 +4,33 @@
 // read the same `MarkLaneLayout`, so what is drawn is exactly what is clickable.
 import type { MarkGroup, TimelineMark } from '../../../../core/marks/types';
 
-/** Token size of a single mark, px. */
+/** Token size, px — one size for every glyph; a cluster tells itself apart by its count badge. */
 export const MARK_GLYPH_PX = 16;
-/** Token size of a cluster (several marks of one group on one bar) — a little larger, px. */
-export const MARK_CLUSTER_PX = 20;
+/** The pixel room one token needs on the lane. Bars closer than this share a SLOT, so
+ *  neighboring marks of one group fold into one counted token instead of overlapping. */
+export const MARK_SLOT_PX = MARK_GLYPH_PX + 4;
 /** Air between a glyph's bottom edge and the time-axis line, px. */
 export const MARK_LANE_INSET = 4;
-/** In a collapsed stack (several groups on one bar) each deeper group peeks out this far above the one over it, px. */
+/** In a collapsed stack (several groups in one slot) each deeper group peeks out this far above the one over it, px. */
 export const MARK_DECK_STEP = 3;
 /** Gap between the fanned-out glyphs of an expanded stack, px. */
 export const MARK_FAN_GAP = 4;
-/** Forgiveness around a glyph for hover/click, px. */
-export const MARK_HIT_PAD = 3;
+/** Forgiveness around a glyph for hover/click, px — half the slot gap, so neighboring slots' hit areas touch but never overlap. */
+export const MARK_HIT_PAD = (MARK_SLOT_PX - MARK_GLYPH_PX) / 2;
 /** Extra reach above a fanned stack's top glyph before the fan folds — a pointer overshooting the top by a few px keeps it open, px. */
 export const MARK_FAN_HOLD = 8;
 
-/** The marks of one visibility group that snapped onto one bar. */
+/** The marks of one visibility group that fell into one lane slot. */
 export interface MarkCluster {
-    /** `${bar}|${group}` — stable across frames, what an open popup is keyed by. */
+    /** `${slot}|${group}` — stable across pans; a zoom re-cuts the slots. What an open popup is keyed by. */
     key: string;
-    /** The snapped bar index (may lie past the loaded range: the extrapolated grid). */
-    bar: number;
+    /** The slot's first bar index (may lie past the loaded range: the extrapolated grid). */
+    slot: number;
+    /** The bar range the members span, inclusive. */
+    from: number;
+    to: number;
+    /** The (fractional) bar the token centers on — the members' mean bar. */
+    anchor: number;
     group: string | undefined;
     /** Earliest time first, then insertion order. */
     marks: TimelineMark[];
@@ -37,7 +43,7 @@ export interface PlacedGlyph {
     x: number;
     y: number;
     size: number;
-    /** The stack (bar index) this glyph belongs to, and its depth in it (0 = the top group). */
+    /** The stack (slot) this glyph belongs to, and its depth in it (0 = the top group). */
     stack: number;
     depth: number;
     /** The stack holds several groups and is drawn collapsed (a deck): only its top glyph is interactive. */
@@ -47,7 +53,7 @@ export interface PlacedGlyph {
 export interface MarkLaneLayout {
     /** In paint order (a deck's deeper glyphs first, its top glyph last). */
     glyphs: PlacedGlyph[];
-    /** Per stack (bar index), depth-ordered. */
+    /** Per stack (slot), depth-ordered. */
     stacks: Map<number, PlacedGlyph[]>;
 }
 
@@ -60,12 +66,14 @@ export interface MarkLaneInput {
     /** The chart's bar open times, ascending. */
     barTimes: readonly number[];
     intervalMs: number;
-    /** Bar index → plot x of the bar's center. */
+    /** Center-to-center pixel pitch between adjacent bars — what sets how many bars a slot spans. */
+    pxPerBar: number;
+    /** (Fractional) bar index → plot x. */
     xOf: (bar: number) => number;
     /** The y of the time-axis line (the plot's data height). */
     axisY: number;
     dataW: number;
-    /** The stack (bar index) fanned out by hover/tap, if any. */
+    /** The stack (slot) fanned out by hover/tap, if any. */
     expanded: number | null;
 }
 
@@ -93,26 +101,46 @@ export function snapMarkBar(time: number, barTimes: readonly number[], intervalM
     return lo + 1; // in a gap — `time < last + interval` guarantees lo < n - 1
 }
 
-/** Fold the visible marks into clusters keyed by (snapped bar, group); each cluster's marks run earliest-first, then insertion order. */
-export function clusterMarks(marks: readonly TimelineMark[], barTimes: readonly number[], intervalMs: number, hidden: (groupId: string) => boolean): MarkCluster[] {
-    const byKey = new Map<string, MarkCluster & { seq: number[] }>();
+/** How many bars one lane slot spans at a bar pitch: 1 while a token fits per bar, more as bars tighten. */
+export function slotBars(pxPerBar: number): number {
+    return pxPerBar > 0 ? Math.max(1, Math.ceil(MARK_SLOT_PX / pxPerBar)) : 1;
+}
+
+/**
+ * Fold the visible marks into clusters keyed by (slot, group) — a slot being `barsPerSlot`
+ * consecutive bars, cut from bar 0 so the cut is stable while panning. Each cluster's marks
+ * run earliest-first, then insertion order.
+ */
+export function clusterMarks(
+    marks: readonly TimelineMark[],
+    barTimes: readonly number[],
+    intervalMs: number,
+    hidden: (groupId: string) => boolean,
+    barsPerSlot = 1,
+): MarkCluster[] {
+    const per = Math.max(1, Math.floor(barsPerSlot));
+    const byKey = new Map<string, MarkCluster & { seq: number[]; sumBar: number }>();
     marks.forEach((m, seq) => {
         if (m.group !== undefined && hidden(m.group)) return;
         const bar = snapMarkBar(m.time, barTimes, intervalMs);
         if (bar === null) return;
-        const key = `${bar}|${m.group ?? ''}`;
+        const slot = Math.floor(bar / per) * per;
+        const key = `${slot}|${m.group ?? ''}`;
         let c = byKey.get(key);
         if (!c) {
-            c = { key, bar, group: m.group, marks: [], seq: [] };
+            c = { key, slot, from: bar, to: bar, anchor: bar, group: m.group, marks: [], seq: [], sumBar: 0 };
             byKey.set(key, c);
         }
         c.marks.push(m);
         c.seq.push(seq);
+        c.sumBar += bar;
+        if (bar < c.from) c.from = bar;
+        if (bar > c.to) c.to = bar;
     });
     const out: MarkCluster[] = [];
     for (const c of byKey.values()) {
         const order = c.marks.map((m, i) => ({ m, seq: c.seq[i]! })).sort((a, b) => a.m.time - b.m.time || a.seq - b.seq);
-        out.push({ key: c.key, bar: c.bar, group: c.group, marks: order.map((o) => o.m) });
+        out.push({ key: c.key, slot: c.slot, from: c.from, to: c.to, anchor: c.sumBar / c.marks.length, group: c.group, marks: order.map((o) => o.m) });
     }
     return out;
 }
@@ -129,41 +157,43 @@ function groupRank(groups: readonly MarkGroup[], clusters: readonly MarkCluster[
 
 /** Lay the lane out for one frame. */
 export function layoutMarkLane(input: MarkLaneInput): MarkLaneLayout {
-    const clusters = clusterMarks(input.marks, input.barTimes, input.intervalMs, input.hidden);
+    const clusters = clusterMarks(input.marks, input.barTimes, input.intervalMs, input.hidden, slotBars(input.pxPerBar));
     const rankOf = groupRank(input.groups, clusters);
-    const byBar = new Map<number, MarkCluster[]>();
+    const bySlot = new Map<number, MarkCluster[]>();
     for (const c of clusters) {
-        const list = byBar.get(c.bar);
+        const list = bySlot.get(c.slot);
         if (list) list.push(c);
-        else byBar.set(c.bar, [c]);
+        else bySlot.set(c.slot, [c]);
     }
     const glyphs: PlacedGlyph[] = [];
     const stacks = new Map<number, PlacedGlyph[]>();
-    for (const [bar, list] of byBar) {
-        const x = input.xOf(bar);
-        if (!Number.isFinite(x) || x < -MARK_CLUSTER_PX || x > input.dataW + MARK_CLUSTER_PX) continue;
+    const size = MARK_GLYPH_PX;
+    for (const [slot, list] of bySlot) {
+        // The stack centers on its marks' mean bar, every group weighing in by its count.
+        let bars = 0;
+        let count = 0;
+        for (const c of list) {
+            bars += c.anchor * c.marks.length;
+            count += c.marks.length;
+        }
+        const x = input.xOf(bars / count);
+        // A token must sit whole inside the data area — one straddling the plot's edge would
+        // paint (and answer clicks) over the price-axis gutter.
+        if (!Number.isFinite(x) || x < size / 2 || x > input.dataW - size / 2) continue;
         list.sort((a, b) => rankOf(a.group) - rankOf(b.group));
         const multi = list.length > 1;
-        const expanded = multi && input.expanded === bar;
+        const expanded = multi && input.expanded === slot;
         const decked = multi && !expanded;
         const placed: PlacedGlyph[] = [];
-        // A deck draws every glyph at the TOP glyph's size so the peeking edges line up.
-        const deckSize = list[0]!.marks.length > 1 ? MARK_CLUSTER_PX : MARK_GLYPH_PX;
-        let bottom = input.axisY - MARK_LANE_INSET; // bottom edge of the next fanned glyph
         list.forEach((cluster, depth) => {
-            const size = decked ? deckSize : cluster.marks.length > 1 ? MARK_CLUSTER_PX : MARK_GLYPH_PX;
-            let y: number;
-            if (expanded) {
-                y = bottom - size / 2;
-                bottom -= size + MARK_FAN_GAP;
-            } else {
-                y = input.axisY - MARK_LANE_INSET - size / 2 - depth * MARK_DECK_STEP;
-            }
-            placed.push({ cluster, x, y, size, stack: bar, depth, decked });
+            const y = expanded
+                ? input.axisY - MARK_LANE_INSET - size / 2 - depth * (size + MARK_FAN_GAP)
+                : input.axisY - MARK_LANE_INSET - size / 2 - depth * MARK_DECK_STEP;
+            placed.push({ cluster, x, y, size, stack: slot, depth, decked });
         });
         // Deeper glyphs paint first so the top group ends up on top of the deck.
         for (let i = placed.length - 1; i >= 0; i--) glyphs.push(placed[i]!);
-        stacks.set(bar, placed);
+        stacks.set(slot, placed);
     }
     return { glyphs, stacks };
 }
@@ -179,12 +209,12 @@ export function markGlyphAt(layout: MarkLaneLayout, x: number, y: number): Place
     return null;
 }
 
-/** The stack (bar index) whose fanned or decked glyphs cover a plot point — what keeps a fan open while the pointer climbs it. */
+/** The stack (slot) whose fanned or decked glyphs cover a plot point — what keeps a fan open while the pointer climbs it. */
 export function markStackAt(layout: MarkLaneLayout, x: number, y: number): number | null {
-    for (const [bar, placed] of layout.stacks) {
+    for (const [slot, placed] of layout.stacks) {
         for (const g of placed) {
             const r = g.size / 2 + MARK_HIT_PAD;
-            if (Math.abs(x - g.x) <= r && Math.abs(y - g.y) <= r) return bar;
+            if (Math.abs(x - g.x) <= r && Math.abs(y - g.y) <= r) return slot;
         }
         // The gaps between fanned glyphs count too — a pointer climbing the fan must not collapse
         // it — and so does a short reach past the top glyph, so overshooting it by a few pixels
@@ -193,7 +223,7 @@ export function markStackAt(layout: MarkLaneLayout, x: number, y: number): numbe
             const top = placed[placed.length - 1]!;
             const base = placed[0]!;
             const r = Math.max(top.size, base.size) / 2 + MARK_HIT_PAD;
-            if (Math.abs(x - base.x) <= r && y >= top.y - top.size / 2 - MARK_FAN_HOLD && y <= base.y + base.size / 2 + MARK_HIT_PAD) return bar;
+            if (Math.abs(x - base.x) <= r && y >= top.y - top.size / 2 - MARK_FAN_HOLD && y <= base.y + base.size / 2 + MARK_HIT_PAD) return slot;
         }
     }
     return null;

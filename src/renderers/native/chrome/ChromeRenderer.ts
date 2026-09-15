@@ -176,6 +176,7 @@ export class ChromeRenderer {
             hidden: (groupId) => !markGroupVisible(scene.marks, groupId, scene.markGroups),
             barTimes: this.barTimes(scene),
             intervalMs: coords.barInterval,
+            pxPerBar: coords.pxPerBar(),
             xOf: (bar) => coords.logicalToX(bar),
             axisY: dataH,
             dataW,
@@ -184,6 +185,7 @@ export class ChromeRenderer {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         paintMarkLane(ctx, this.markLayout, {
             axisY: dataH,
+            dataW,
             background: theme.background,
             stemColor: scene.style.borderColor ?? theme.borderColor,
             fontFamily: theme.fontFamily,

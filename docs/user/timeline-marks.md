@@ -121,8 +121,9 @@ chart.marks.add({
 });
 ```
 
-Several marks of one group on one bar share a single, slightly larger token that carries the
-**first** mark's glyph (earliest time, then insertion order).
+Several marks of one group that fold together share a single token carrying the **first**
+mark's glyph (earliest time, then insertion order) and a small **count badge** on its
+top-right shoulder.
 
 ---
 
@@ -186,8 +187,13 @@ content: async () => ({ html: await fetchDividendDetails('NVDA', '2024-06-11') }
 `group` names the **kind** of event. It drives three things.
 
 **Clustering.** Marks of one group that land on the same bar fold into **one cluster glyph** —
-slightly larger than a single mark, carrying the first mark's glyph, and hovering as
-`<Group label> · <count>`. Its popup lists every mark, earliest first.
+the first mark's glyph with a count badge, hovering as `<Group label> · <count>`. Its popup
+lists every mark, earliest first. The fold also follows the **zoom**: when bars sit closer
+together than a token is wide, the lane cuts the bar axis into slots a token wide and marks
+of one group in the same slot fold too — so a feed with a headline on nearly every 15-minute
+bar reads as a few counted tokens per screen instead of a band, and splits back into one
+token per bar as you zoom in. Slots are cut from the first bar, so panning never re-cuts
+them; only a zoom does (which closes an open popup whose cluster was re-cut).
 
 **Stacking.** Marks of *different* groups on one bar form a **stack**: a small deck showing the
 top group's token with the others peeking out behind it. Hovering the deck fans the tokens out
