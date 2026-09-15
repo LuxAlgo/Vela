@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Timeline-mark groups can nest.** A group may name a `parent`: its checkbox lists indented
+  under the parent's on the Events tab and dims while the parent is off, and its marks paint
+  only while both are on. A host can now offer one master switch with sub-choices — News →
+  most recent / historical, Economic releases → high / medium / low — and a child keeps its
+  own choice for when the parent comes back.
+
 ## [v0.7.4]
 
 ### Changed

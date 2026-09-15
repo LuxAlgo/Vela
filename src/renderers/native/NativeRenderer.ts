@@ -68,7 +68,7 @@ import { formatPriceLabel } from './chrome/ticks';
 import { zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
-import { markGroupVisible, mergeMarksState } from '../shared/marks-state';
+import { markGroupOwnVisible, markGroupVisible, mergeMarksState } from '../shared/marks-state';
 import { effectiveMarkGroups } from './chrome/marks/layout';
 import { MarkPopover } from './chrome/marks/MarkPopover';
 import { MARK_PULSE_MS } from './chrome/marks/paint';
@@ -1071,7 +1071,11 @@ export class NativeRenderer implements IChartRenderer {
         }
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
-        this.settingsDialog.setMarkGroups(this.markGroupsInUse(), (id) => markGroupVisible(this.scene.marks, id, this.scene.markGroups));
+        this.settingsDialog.setMarkGroups(
+            this.markGroupsInUse(),
+            (id) => markGroupVisible(this.scene.marks, id, this.scene.markGroups),
+            (id) => markGroupOwnVisible(this.scene.marks.groups, id, this.scene.markGroups),
+        );
         this.settingsDialog.setHiddenSettings(this.hiddenSettings);
         this.syncThemeControl();
         this.settingsDialog.toggle(
