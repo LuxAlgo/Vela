@@ -2,6 +2,24 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.7.4]
+
+### Changed
+
+- **The price scale stays on the price range while the chart is hidden.** Hiding the
+  chart from the symbol legend with nothing else on the price pane used to leave the
+  price axis on a 0–1 placeholder. The axis now keeps following the hidden bars as you
+  pan and zoom, so showing the chart again lands exactly where you left it. As before,
+  when overlay indicators remain on the pane they take the scale over and fill it.
+  
+### Fixed
+
+- **Dense timeline marks fold into clusters as you zoom out.** Marks of one group used to
+  fold only when they landed on the same bar, so a busy feed on a fine timeframe drew a
+  solid band of overlapping glyphs. Neighbouring marks whose glyphs would overlap at the
+  current bar spacing now share one glyph: the tooltip carries the count, the popup lists
+  every mark, and zooming back in separates them again.
+
 ## [v0.7.3]
 
 ### Fixed
