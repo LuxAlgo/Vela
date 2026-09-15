@@ -223,8 +223,10 @@ registerWidgetAction({
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
         // ctx.setSymbol / setTimeframe / setPriceStyle / openSymbolSearch(query?)
         // ctx.togglePanel(id, open?) — open/close a docked side panel (dock stays exclusive)
-        // ctx.addIndicator({ name, script, language? }) — add a script indicator THROUGH
-        //   the shell: recorded in the unified undo/redo timeline and the indicator count
+        // ctx.addIndicator({ name, script, id?, language? }) — add a script indicator
+        //   THROUGH the shell: recorded in the unified undo/redo timeline and the
+        //   indicator count. `id` is the indicator's id on the chart (omit: minted);
+        //   undo/redo re-add under the same id
         // ctx.addNativeIndicator(type) — same, for native (core-computed) indicators
         // ctx.stateChanged() — persistable third-party state changed (debounced save)
         // ctx.host  — mount host for kit components (Dialog/Menu/Tooltip)
@@ -328,7 +330,7 @@ contributions above — **no shell option needed**:
   **attachment** owns the per-shell dialog. Everything a menu needs is public on the
   context — the native catalog via `ctx.chart.availableNativeIndicators()`, and
   **shell-routed adds** via `ctx.addNativeIndicator(type)` and
-  `ctx.addIndicator({ name, script, language? })`. Prefer these over the raw
+  `ctx.addIndicator({ name, script, id?, language? })`. Prefer these over the raw
   `ctx.chart.addNativeIndicator` / `ctx.chart.addIndicator`: the context forms enter
   the shell's unified **undo/redo timeline** and the topbar indicator count, exactly
   like an add from the built-in picker — the raw chart calls bypass the shell and stay
@@ -445,18 +447,22 @@ registerStatePersistence({
     serialize(ctx) {
         // Snapshot whatever your plugin needs to re-add its indicators later — refs
         // (slugs/ids) beat full sources: the document stays light. `undefined` = no entry.
+        // Storing each indicator's chart `id` lets the restore bring it back under the
+        // id your document already knows (`ctx.chart.indicators()` reads the live ones).
         const mine = trackedIndicators(ctx.cellId); // your bookkeeping
-        return mine.length > 0 ? mine.map((i) => ({ slug: i.slug })) : undefined;
+        return mine.length > 0 ? mine.map((i) => ({ slug: i.slug, id: i.id })) : undefined;
     },
     restore(payload, ctx) {
         // The payload is UNTRUSTED (the codec passes `ext` through opaquely) — validate.
         if (!Array.isArray(payload)) return;
         for (const item of payload) {
             if (typeof item?.slug !== 'string') continue;
+            const id = typeof item.id === 'string' && item.id ? item.id : undefined;
             void fetchSource(item.slug).then((script) =>
                 // Cell-bound adds: THIS chart (not the active one), and muted — a
-                // restore never pollutes the undo timeline.
-                ctx.addIndicator({ name: item.slug, script, language: 'pine' }),
+                // restore never pollutes the undo timeline. With `id`, the indicator
+                // comes back under the recorded id (undo/redo keep it too).
+                ctx.addIndicator({ name: item.slug, script, language: 'pine', id }),
             );
         }
     },
@@ -482,7 +488,7 @@ The resulting document (what `persist` writes and `getState()` returns):
     "version": 1,
     "layout": "4",
     "charts": [
-        { "id": "c1", "symbol": "BTCUSDT", /* … */ "ext": { "mytool.indicators": [{ "slug": "my-osc" }] } }
+        { "id": "c1", "symbol": "BTCUSDT", /* … */ "ext": { "mytool.indicators": [{ "slug": "my-osc", "id": "mytool:my-osc:1" }] } }
     ],
     "ext": { "mytool.prefs": { "starred": ["my-osc"] } }
 }

@@ -289,3 +289,60 @@ describe('ChartCell native persistence round-trip (#146/#149)', () => {
         cell.destroy();
     });
 });
+
+describe('ChartCell external indicators keep their id (ctx.addIndicator({ id }) + undo/redo)', () => {
+    // No engine is registered in this harness: the script never runs, but the indicator is
+    // still claimed, listed, and removable under its id — which is all these tests read.
+    const scriptIds = (cell: ChartCell) => cell.chart.indicators().filter((h) => h.nativeType === undefined).map((h) => h.id);
+
+    it('a host id is honored on the chart, and undo/redo re-add the indicator under the SAME id', async () => {
+        const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const cell = makeCell({ indicators: { natives: [], manifest: [] } } as Partial<CellBoot>);
+        await settle();
+        cell.addExternalIndicator({ name: 'My RSI', script: 'plot(close)', id: 'plugin:rsi:42' });
+        expect(scriptIds(cell)).toEqual(['plugin:rsi:42']);
+
+        cell.history.undo();
+        expect(scriptIds(cell)).toEqual([]);
+        cell.history.redo();
+        expect(scriptIds(cell)).toEqual(['plugin:rsi:42']); // not a freshly minted id
+        quiet.mockRestore();
+        cell.destroy();
+    });
+
+    it('without a host id the minted id is recorded too — a resurrection keeps it', async () => {
+        const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const cell = makeCell({ indicators: { natives: [], manifest: [] } } as Partial<CellBoot>);
+        await settle();
+        cell.addExternalIndicator({ name: 'Minted', script: 'plot(close)' });
+        const [minted] = scriptIds(cell);
+        expect(minted).toBeTruthy();
+        cell.history.undo();
+        cell.history.redo();
+        expect(scriptIds(cell)).toEqual([minted]);
+        quiet.mockRestore();
+        cell.destroy();
+    });
+
+    it('a host id already live on the cell is rejected: no ghost instance, no history entry, the live one untouched', async () => {
+        const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const cell = makeCell({ indicators: { natives: [], manifest: [] } } as Partial<CellBoot>);
+        await settle();
+        cell.addExternalIndicator({ name: 'A', script: 'plot(close)', id: 'same' });
+        const [live] = cell.chart.indicators().filter((h) => h.nativeType === undefined);
+        cell.addExternalIndicator({ name: 'B', script: 'plot(open)', id: 'same' });
+
+        expect(cell.instances).toHaveLength(1);
+        expect(cell.onChartRows().filter((r) => !r.native)).toHaveLength(1); // no ghost picker row
+        expect(cell.chart.indicators().filter((h) => h.nativeType === undefined)).toEqual([live]);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to add'), expect.objectContaining({ message: expect.stringContaining('"same" is already live') }));
+        // The rejected add recorded nothing: one undo removes the live one and leaves nothing to undo.
+        cell.history.undo();
+        expect(cell.history.canUndo).toBe(false);
+        expect(cell.instances).toHaveLength(0);
+        warn.mockRestore();
+        quiet.mockRestore();
+        cell.destroy();
+    });
+});

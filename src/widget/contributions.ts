@@ -57,6 +57,12 @@ export interface ExternalIndicatorEntry {
     name: string;
     /** The script source (the recorded undo/redo action re-adds from it). */
     script: string;
+    /** The indicator's id on the chart (see `AddIndicatorOptions.id`) — what a persistence
+     *  handler stores and hands back on restore so the indicator comes back under the id
+     *  its document knows. Omitted: the chart mints one. Either way undo/redo re-add the
+     *  indicator under the id it first ran with. An id already live on the cell's chart
+     *  is rejected (a warning; nothing is added). */
+    id?: string;
     /** Engine language (default: the chart's default engine). */
     language?: string;
     /** Input-value overrides applied at add time (what a persistence handler restores). */

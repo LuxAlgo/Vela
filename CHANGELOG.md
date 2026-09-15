@@ -2,6 +2,23 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Bring your own indicator ids.** `addIndicator`, `runIndicator` and `runScript` accept an
+  `id` option — an opaque string of your choosing (a document key, an editor tab, a UUID).
+  The indicator then runs under that id everywhere the chart reports one: the handle,
+  `chart.indicators()`, the `indicator:*` events, `script:run`, the legend and the pane
+  attributes — so a host that keys its own state on indicators no longer needs a side map
+  from its ids to the chart's. Leave it out and the chart mints an id as before; nothing
+  existing changes. An id already live on the chart is rejected rather than renamed:
+  `addIndicator` throws, `runIndicator`/`runScript` resolve `{ ok: false, error }`.
+  Removing the indicator frees its id. In the widget, `ctx.addIndicator({ id, … })` and
+  a persistence handler's `CellStateContext.addIndicator({ id, … })` take the same id,
+  so a plugin can store it in its document slot and restore the indicator under it —
+  and undo/redo re-add an indicator under the id it first ran with, supplied or minted.
+
 ## [v0.7.4]
 
 ### Changed

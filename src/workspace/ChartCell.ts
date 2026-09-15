@@ -187,6 +187,10 @@ export interface CellDeps {
 interface CellInstance {
     entry: ResolvedIndicator;
     handle: IndicatorHandle | null;
+    /** The id the indicator runs under on the chart — recorded on the first add (host-
+     *  supplied or minted) so an undo/redo resurrection re-adds it under the SAME id:
+     *  whatever a host keyed on it (a document, an editor tab) keeps pointing at it. */
+    id?: string;
     external?: boolean;
     values?: { inputs?: Record<string, InputValue>; props?: Record<string, InputValue> };
 }
@@ -1094,20 +1098,25 @@ export class ChartCell {
      * a persistence handler's `restore` runs silently, a user-driven call records.
      */
     addExternalIndicator(entry: ExternalIndicatorEntry): void {
+        const { id, inputs, props, hidden, ...script } = entry;
         this.addManifestInstance(
-            { ...entry, enabled: true },
-            { external: true, ...(entry.inputs ? { inputs: entry.inputs } : {}), ...(entry.props ? { props: entry.props } : {}), ...(entry.hidden ? { hidden: true } : {}) },
+            { ...script, enabled: true },
+            { external: true, ...(id !== undefined ? { id } : {}), ...(inputs ? { inputs } : {}), ...(props ? { props } : {}), ...(hidden ? { hidden: true } : {}) },
         );
     }
 
     /** Add ONE instance of a manifest entry (repeatable — duplicates are legitimate). */
     addManifestInstance(
         entry: ResolvedIndicator,
-        opts: { record?: boolean; external?: boolean; inputs?: Record<string, InputValue>; props?: Record<string, InputValue>; hidden?: boolean } = {},
+        opts: { record?: boolean; external?: boolean; id?: string; inputs?: Record<string, InputValue>; props?: Record<string, InputValue>; hidden?: boolean } = {},
     ): void {
         if (this.destroyed) return;
         const values = opts.inputs || opts.props ? { inputs: opts.inputs, props: opts.props } : undefined;
-        const it: CellInstance = { entry, handle: this.addToChart(entry, values), ...(opts.external ? { external: true } : {}), ...(values ? { values } : {}) };
+        const handle = this.addToChart(entry, values, opts.id);
+        // The chart refused the add (a host id already live on it): no instance, no
+        // history entry — a ghost row with nothing behind it would be worse than nothing.
+        if (!handle) return;
+        const it: CellInstance = { entry, handle, id: handle.id, ...(opts.external ? { external: true } : {}), ...(values ? { values } : {}) };
         // A restored `hidden` applies right after the add — the handle is usable
         // synchronously, and hiding suspends the engine session before it spends
         // anything on an indicator the user had tucked away.
@@ -1119,7 +1128,7 @@ export class ChartCell {
         this.history.push({
             undo: () => this.dropInstance(snapshot),
             redo: () => {
-                snapshot.handle = this.addToChart(snapshot.entry, snapshot.values);
+                snapshot.handle = this.addToChart(snapshot.entry, snapshot.values, snapshot.id);
                 this.instances.push(snapshot);
                 this.deps.onIndicatorsChanged(this.id);
             },
@@ -1133,7 +1142,7 @@ export class ChartCell {
         const snapshot = it;
         this.history.push({
             undo: () => {
-                snapshot.handle = this.addToChart(snapshot.entry, snapshot.values);
+                snapshot.handle = this.addToChart(snapshot.entry, snapshot.values, snapshot.id);
                 this.instances.push(snapshot);
                 this.deps.onIndicatorsChanged(this.id);
             },
@@ -1237,10 +1246,11 @@ export class ChartCell {
         });
     }
 
-    private addToChart(entry: ResolvedIndicator, values?: { inputs?: Record<string, InputValue>; props?: Record<string, InputValue> }): IndicatorHandle | null {
+    private addToChart(entry: ResolvedIndicator, values?: { inputs?: Record<string, InputValue>; props?: Record<string, InputValue> }, id?: string): IndicatorHandle | null {
         try {
             return (
                 this.inner?.addIndicator(entry.script, {
+                    ...(id !== undefined ? { id } : {}),
                     ...(entry.language !== undefined ? { language: entry.language } : {}),
                     ...(values?.inputs ? { inputs: values.inputs } : {}),
                     ...(values?.props ? { props: values.props } : {}),

@@ -348,6 +348,16 @@ export interface PaneInfo {
 
 /** Options for `chart.addIndicator(source, options?)`. */
 export interface AddIndicatorOptions {
+    /**
+     * The indicator's id — an opaque, non-empty string the host owns (a document key, an
+     * editor tab, a UUID). It is what `handle.id`, `chart.indicators()`, the `indicator:*`
+     * events, `script:run`, and the legend/pane surfaces carry, so a host that supplies
+     * it can address the indicator without keeping a side map. Omit it and the chart
+     * mints one (stable for the chart's lifetime, not across reloads). An id already live
+     * on this chart is rejected: `addIndicator` throws, `runIndicator`/`runScript`
+     * resolve `{ ok: false }` — never renamed silently.
+     */
+    id?: string;
     /** Which registered engine runs this script (by language id). Default: the chart's `defaultLanguage`. */
     language?: string;
     /** Input overrides, keyed by input title or varId. */
