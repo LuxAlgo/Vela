@@ -6,6 +6,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Two-letter mark tokens stay inside their outline.** A timeline mark carrying two
+  characters (`US`, `EU`) drew them at the single-letter size, so on a 16 px pin the pair
+  ran over the head. Pairs now share the token's width at a smaller size, and are measured
+  as drawn so a wider pair or a wider host font never overflows either; a single letter is
+  unchanged.
+
 - **"Reset defaults" keeps the chart type you are on.** Resetting the chart settings
   used to switch the chart back to the style it had when the page loaded — a line,
   Heikin Ashi, or plugin chart type went back to candles, while the style button in the
@@ -16,7 +22,6 @@ All notable changes to Vela, newest first.
   dialog stays put and simply shows the restored values, instead of closing and
   opening again. The toolbar's style button also follows a chart type that arrives
   through an imported settings template.
-
 ## [v0.7.4]
 
 ### Changed
