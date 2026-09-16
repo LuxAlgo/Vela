@@ -322,7 +322,7 @@ works — but nothing paints and `setGroupVisible` warns and no-ops.
 | `chart.marks.set(marks)` | Replace the whole set. |
 | `chart.marks.remove(id)` · `clear()` | Drop one mark, or all. |
 | `chart.marks.all()` | Every mark, in insertion order. |
-| `chart.marks.defineGroup({ id, label, visible? })` | Name a group and choose its default visibility. |
+| `chart.marks.defineGroup({ id, label, visible?, parent? })` | Name a group, choose its default visibility, and optionally nest it under another defined group on the Events tab. |
 | `chart.marks.groups()` | The defined groups, in definition order. |
 | `chart.marks.setGroupVisible(id, visible?)` · `isGroupVisible(id)` | The settings checkbox, from code. |
 | `chart.marks.supported` | Whether the active renderer paints marks. |

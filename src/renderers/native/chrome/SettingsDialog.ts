@@ -156,10 +156,10 @@ ${overlayScrollbarCss('.vela-sd-pane')}
    muted and non-interactive. Applied to each row's children so it survives display:contents;
    !important beats the inline opacity on labels. */
 .vela-sd-soft>*{opacity:0.4 !important;pointer-events:none !important;}
-/* A mark group nested under a parent group on the Events tab: indented one step. Rows are
-   display:contents, so the indent rides the first child (the switch) as a MARGIN — padding
+/* A mark group nested under a parent group on the Events tab: indented one step per level
+   (--vela-sd-depth). The indent rides the first child (the switch) as a MARGIN — padding
    would push the switch's own tick out of its box. */
-.vela-sd-nested>*:first-child{margin-left:24px;}
+.vela-sd-nested>*:first-child{margin-left:calc(var(--vela-sd-depth,1)*24px);}
 /* ── mobile presentation (.vela-sd-mobile on the scrim; structural sizes are inline in open()) ──
    The tab rail becomes a burger-opened overlay sidebar; the group TOC becomes a sticky
    row of horizontally scrollable tabs; the instance strip scrolls instead of wrapping;
@@ -676,7 +676,10 @@ export class SettingsDialog {
                     this.emit({ marks: { groups: { [g.id]: v } } });
                     refreshDimming();
                 });
-                if (depth > 0) row.classList.add('vela-sd-nested');
+                if (depth > 0) {
+                    row.classList.add('vela-sd-nested');
+                    row.style.setProperty('--vela-sd-depth', String(depth));
+                }
                 rowsById.set(g.id, row);
                 body.append(sid(row, markGroupSettingsId(g.id)));
             }

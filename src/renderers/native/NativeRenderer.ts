@@ -1072,7 +1072,7 @@ export class NativeRenderer implements IChartRenderer {
         this.settingsDialog.setTheme(this.theme);
         this.settingsDialog.setHostSections(this.hostSettingsSections);
         this.settingsDialog.setMarkGroups(
-            this.markGroupsInUse(),
+            this.markGroupsForEventsTab(),
             (id) => markGroupVisible(this.scene.marks, id, this.scene.markGroups),
             (id) => markGroupOwnVisible(this.scene.marks.groups, id, this.scene.markGroups),
         );
@@ -2367,6 +2367,16 @@ export class NativeRenderer implements IChartRenderer {
     /** Every group the lane knows: the defined ones, then those marks name without a definition. */
     private markGroupsInUse(): MarkGroup[] {
         return effectiveMarkGroups(this.scene.timelineMarks, this.scene.markGroups);
+    }
+
+    /**
+     * The groups as the Events tab lists them: nested only under a DEFINED parent. The
+     * painter's visibility chain resolves parents against the defined groups alone, so a
+     * parent that marks merely name must not nest (and dim) a child the painter still shows.
+     */
+    private markGroupsForEventsTab(): MarkGroup[] {
+        const defined = new Set(this.scene.markGroups.map((g) => g.id));
+        return this.markGroupsInUse().map((g) => (g.parent !== undefined && !defined.has(g.parent) ? { ...g, parent: undefined } : g));
     }
 
     onViewportChange(cb: (range: VisibleRange) => void): Unsubscribe {
