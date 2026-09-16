@@ -12,6 +12,18 @@ All notable changes to Vela, newest first.
   most recent / historical, Economic releases → high / medium / low — and a child keeps its
   own choice for when the parent comes back.
 
+### Fixed
+
+- **"Reset defaults" keeps the chart type you are on.** Resetting the chart settings
+  used to switch the chart back to the style it had when the page loaded — a line,
+  Heikin Ashi, or plugin chart type went back to candles, while the style button in the
+  toolbar still showed the old pick and the chart type's own settings tab vanished with
+  it. The reset now leaves the current chart type in place and returns everything else
+  to its defaults — every tab, the chart type's own settings, the candle look you gave
+  a plugin chart type from the Symbol tab, and the event groups you had hidden. The
+  dialog stays put and simply shows the restored values, instead of closing and
+  opening again. The toolbar's style button also follows a chart type that arrives
+  through an imported settings template.
 ## [v0.7.4]
 
 ### Changed

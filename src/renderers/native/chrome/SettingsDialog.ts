@@ -224,6 +224,9 @@ export class SettingsDialog {
     private activeSection: string | null = null;
     /** Mobile chrome: fullscreen card, burger-opened section sidebar, TOC as top tabs. */
     private mobileLayout = false;
+    /** Opens/closes the mobile section sidebar of the CURRENT build (the burger in the
+     *  shell header outlives pane rebuilds, so it reaches the rail through here). */
+    private toggleRail: ((open?: boolean) => void) | null = null;
 
     /** The visibility policy: setting ids hidden by the host (subtree semantics). */
     private hiddenSettings: ReadonlySet<string> = new Set();
@@ -324,7 +327,6 @@ export class SettingsDialog {
         // to catch the click-outside-to-close.
         ensureControlStyles();
         const mobile = this.mobileLayout;
-        let toggleRail: ((open?: boolean) => void) | null = null;
         let burger: HTMLButtonElement | undefined;
         if (mobile) {
             burger = document.createElement('button');
@@ -332,9 +334,85 @@ export class SettingsDialog {
             burger.className = 'vela-sd-burger';
             burger.innerHTML = iconAt('burger', 16);
             burger.title = 'Sections';
-            burger.addEventListener('click', () => toggleRail?.());
+            burger.addEventListener('click', () => this.toggleRail?.());
         }
+        const ui = new Dialog({
+            host: this.container,
+            title: 'Chart settings',
+            // Non-modal: a live-edit dialog must leave the page interactive — a modal
+            // machine locks pointer events on the whole body, killing the chart, the
+            // legend, and the body-portaled popovers (color picker, select lists).
+            modal: false,
+            contained: true,
+            align: 'top',
+            draggable: !mobile,
+            flush: true,
+            className: 'vela-dialog--settings',
+            headerStart: burger,
+            closeOnBackdrop: true,
+            footer: (foot) => {
+                foot.style.cssText = `padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;`;
+                const resetBtn = document.createElement('button');
+                resetBtn.type = 'button';
+                resetBtn.textContent = 'Reset defaults';
+                resetBtn.className = 'vela-sd-btn';
+                resetBtn.addEventListener('click', () => this.onReset?.());
+                foot.appendChild(resetBtn);
+            },
+            // A close signal may only close ITS OWN dialog: the machine reports the exit
+            // asynchronously, so a close-then-reopen in one tick would otherwise see the
+            // old instance's signal tear down the freshly opened one.
+            onOpenChange: (open) => { if (!open && this.ui === ui) this.close(); },
+        });
+        if (mobile) ui.positioner.classList.add('vela-sd-mobile');
+        ui.positioner.style.paddingTop = mobile ? '0' : '8vh';
 
+        this.root = ui.positioner;
+        this.ui = ui;
+        const panes = this.buildContent(ui, config, section, mobile);
+        ui.show();
+        this.layoutPanes(panes);
+    }
+
+    /**
+     * Re-seed every control of an OPEN dialog from `config`, in place: the shell stays
+     * (no close/open transition), only the tab rail and panes rebuild, landing back on
+     * the current tab. The reset path — the restored values must show without the
+     * dialog re-entering. No-op while closed.
+     */
+    refresh(config: ChartConfig): void {
+        const ui = this.ui;
+        if (!ui) return;
+        closeOpenPopovers();
+        closeWidthPopover();
+        for (const dispose of this.hintTips) dispose();
+        this.hintTips = [];
+        this.config = config;
+        ui.body.replaceChildren();
+        this.layoutPanes(this.buildContent(ui, config, this.activeSection ?? undefined, this.mobileLayout));
+    }
+
+    /** Structured chart-type panes (instance strip / group TOC) own their layout and
+     *  tag their rows hosts instead; each host gets its own field grid. Runs on a SHOWN
+     *  dialog — the grids measure their labels. */
+    private layoutPanes(panes: readonly HTMLElement[]): void {
+        for (const el of panes) {
+            const hosts = [...el.querySelectorAll('[data-sd-rows-host]')] as HTMLElement[];
+            if (hosts.length === 0) {
+                this.layoutSettingsGrids(el);
+                continue;
+            }
+            for (const h of hosts) this.layoutSettingsGrids(h);
+        }
+    }
+
+    /**
+     * Build the tab rail + one pane per section into `ui.body` (the linear `body` of
+     * section markers and rows is split afterwards), select `section` (the active
+     * style's own tab when none is asked for), and return the pane elements for
+     * {@link layoutPanes}.
+     */
+    private buildContent(ui: Dialog, config: ChartConfig, section: string | undefined, mobile: boolean): HTMLElement[] {
         const body = document.createElement('div');
         body.style.cssText = 'display:flex;flex-direction:column;gap:0;';
 
@@ -646,8 +724,8 @@ export class SettingsDialog {
         if (mobile) {
             railScrim = document.createElement('div');
             railScrim.className = 'vela-sd-railscrim';
-            railScrim.addEventListener('click', () => toggleRail?.());
-            toggleRail = (open?: boolean) => {
+            railScrim.addEventListener('click', () => this.toggleRail?.());
+            this.toggleRail = (open?: boolean) => {
                 const on = open ?? !rail.classList.contains('open');
                 rail.classList.toggle('open', on);
                 railScrim?.classList.toggle('open', on);
@@ -694,33 +772,6 @@ export class SettingsDialog {
             });
             if (hidActive) activate(0);
         };
-        const ui = new Dialog({
-            host: this.container,
-            title: 'Chart settings',
-            // Non-modal: a live-edit dialog must leave the page interactive — a modal
-            // machine locks pointer events on the whole body, killing the chart, the
-            // legend, and the body-portaled popovers (color picker, select lists).
-            modal: false,
-            contained: true,
-            align: 'top',
-            draggable: !mobile,
-            flush: true,
-            className: 'vela-dialog--settings',
-            headerStart: burger,
-            closeOnBackdrop: true,
-            footer: (foot) => {
-                foot.style.cssText = `padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;`;
-                const resetBtn = document.createElement('button');
-                resetBtn.type = 'button';
-                resetBtn.textContent = 'Reset defaults';
-                resetBtn.className = 'vela-sd-btn';
-                resetBtn.addEventListener('click', () => this.onReset?.());
-                foot.appendChild(resetBtn);
-            },
-            onOpenChange: (open) => { if (!open) this.close(); },
-        });
-        if (mobile) ui.positioner.classList.add('vela-sd-mobile');
-        ui.positioner.style.paddingTop = mobile ? '0' : '8vh';
 
         const activate = (idx: number): void => {
             panes.forEach((p, i) => {
@@ -730,7 +781,7 @@ export class SettingsDialog {
             this.activeSection = panes[idx]?.title ?? null;
             if (mobile) {
                 ui.titleEl.textContent = panes[idx]?.title ?? 'Chart settings';
-                toggleRail?.(false);
+                this.toggleRail?.(false);
             }
         };
         panes.forEach((p, i) => {
@@ -752,19 +803,7 @@ export class SettingsDialog {
         shell.append(rail, paneHost);
         if (railScrim) shell.append(railScrim);
         ui.body.appendChild(shell);
-        this.root = ui.positioner;
-        this.ui = ui;
-        ui.show();
-        // Structured chart-type panes (instance strip / group TOC) own their layout and
-        // tag their rows hosts instead; each host gets its own field grid.
-        for (const p of panes) {
-            const hosts = [...p.el.querySelectorAll('[data-sd-rows-host]')] as HTMLElement[];
-            if (hosts.length === 0) {
-                this.layoutSettingsGrids(p.el);
-                continue;
-            }
-            for (const h of hosts) this.layoutSettingsGrids(h);
-        }
+        return panes.map((p) => p.el);
     }
 
     close(): void {
@@ -773,6 +812,7 @@ export class SettingsDialog {
         const ui = this.ui;
         this.ui = null;
         this.root = null;
+        this.toggleRail = null;
         this.tabs = [];
         for (const dispose of this.hintTips) dispose(); // a tip open at close time must not outlive its row
         this.hintTips = [];

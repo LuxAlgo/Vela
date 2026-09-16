@@ -1,7 +1,8 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
 import { registerChartType, unregisterChartType } from '../src/chart-types/registry';
-import { CHART_CONFIG_VERSION, defaultChartStyle, factoryResetConfig, mergeConfig, type ChartConfig } from '../src/renderers/native/core/chartConfig';
+import { CHART_CONFIG_VERSION, candleOverrideFor, defaultChartStyle, factoryResetConfig, mergeConfig, type ChartConfig } from '../src/renderers/native/core/chartConfig';
+import type { PriceStyle } from '../src/core/options';
 
 /** A known-good baseline config for the pure mergeConfig tests. */
 function baseConfig(): ChartConfig {
@@ -245,9 +246,12 @@ describe('NativeRenderer.applyConfig — applies + syncs the live scene fields',
 describe('factoryResetConfig — "Reset defaults" restores chart-type SDK settings', () => {
     afterEach(() => unregisterChartType('sdktype'));
 
+    // Draws nothing candle-based: the bags below hold registry rows only (a candle-based
+    // type also carries the nine `candle*` override keys — its own test further down).
     function registerSdkType(): void {
         registerChartType({
             id: 'sdktype',
+            basePainting: 'none',
             settings: {
                 title: 'SDK Type',
                 rows: [
@@ -281,6 +285,42 @@ describe('factoryResetConfig — "Reset defaults" restores chart-type SDK settin
         expect(pushed).toContainEqual(['sdktype', { rows: 10, shade: true }]);
     });
 
+    it('keeps the LIVE price style: the reset restores settings, never the chart type', () => {
+        registerSdkType();
+        const r = new NativeRenderer();
+        const factory = r.getConfig(); // first-run style: candles
+        expect(factory.series.style).toBe('candles');
+        r.applyFeature('priceStyle', 'sdktype');
+        r.applyConfig({ chartTypes: { sdktype: { rows: 25, shade: false } } });
+        const flips: string[] = [];
+        r.onPriceStyleChange((style) => flips.push(style));
+        r.applyConfig(factoryResetConfig(factory, r.readFeature('priceStyle') as PriceStyle));
+        expect(r.readFeature('priceStyle')).toBe('sdktype'); // the type the user is looking at survives
+        expect(flips).toEqual([]); // no flip announced — the type's data engine is never suspended
+        expect(r.getConfig().chartTypes.sdktype).toEqual({ rows: 10, shade: true }); // its settings DO reset
+        // Without the live style the document still carries the snapshot's (template semantics).
+        expect(factoryResetConfig(factory).series.style).toBe('candles');
+    });
+
+    it('clears a candle-based plugin style\'s own candle rows (Symbol tab overrides → inherit again)', () => {
+        // basePainting defaults to 'candles' → the type owns the reserved candle* keys.
+        registerChartType({ id: 'sdktype', settings: { title: 'SDK Type', rows: [{ kind: 'number', key: 'rows', label: 'Rows', defval: 10 }] } });
+        const r = new NativeRenderer();
+        const factory = r.getConfig();
+        r.applyFeature('priceStyle', 'sdktype');
+        // What a "hide candles" affordance under a plugin style writes, plus a recolor.
+        r.applyConfig({ chartTypes: { sdktype: { candleBodyVisible: false, candleWickVisible: false, candleBorderVisible: false, candleUpColor: '#123456' } } });
+        r.applyConfig(factoryResetConfig(factory, 'sdktype'));
+        const bag = r.getConfig().chartTypes.sdktype!;
+        expect(bag.candleBodyVisible).toBeNull();
+        expect(bag.candleWickVisible).toBeNull();
+        expect(bag.candleBorderVisible).toBeNull();
+        expect(bag.candleUpColor).toBeNull();
+        expect(bag.rows).toBe(10); // the registry rows reset alongside
+        // A `null` override paints the shared candles block again.
+        expect(candleOverrideFor('sdktype', r.getConfig().chartTypes)?.bodyVisible).toBeNull();
+    });
+
     it('keeps values the factory snapshot itself pinned (pre-mount edits win over defvals)', () => {
         registerSdkType();
         const r = new NativeRenderer();
@@ -303,6 +343,7 @@ describe('factoryResetConfig — "Reset defaults" restores chart-type SDK settin
     it('covers structured sections: instances, subsections, ranges, and toggle swatches', () => {
         registerChartType({
             id: 'sdktype',
+            basePainting: 'none',
             settings: {
                 title: 'SDK Type',
                 instances: [
@@ -348,6 +389,7 @@ describe('factoryResetConfig — "Reset defaults" restores chart-type SDK settin
     it('covers a toggle row\'s inline number/width keys and composite `row` controls', () => {
         registerChartType({
             id: 'sdktype',
+            basePainting: 'none',
             settings: {
                 title: 'SDK Type',
                 rows: [

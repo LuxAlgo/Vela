@@ -1083,13 +1083,26 @@ export class NativeRenderer implements IChartRenderer {
             (patch) => this.applyConfig(patch),
             (json) => this.applyConfig(json),
             () => {
-                if (this.factoryConfig) this.applyConfig(factoryResetConfig(this.factoryConfig));
-                // Re-open so every control re-reads the restored values.
-                this.settingsDialog?.close();
-                this.openSettingsDialog();
+                if (this.factoryConfig) this.applyConfig(this.factoryResetDocument(this.factoryConfig));
+                // Re-seed the open dialog in place so every control shows the restored
+                // values — the shell stays put, no close/open transition.
+                this.settingsDialog?.refresh(this.getConfig());
             },
             section,
         );
+    }
+
+    /**
+     * The document "Reset defaults" applies: every setting back to its first-run value,
+     * with two things that are NOT settings held or resolved here — the price style
+     * stays the one the user is looking at, and the timeline-mark groups (an additive
+     * merge, like the type bags) are named back to their host-declared visibility.
+     */
+    private factoryResetDocument(factory: ChartConfig): ChartConfig {
+        const doc = factoryResetConfig(factory, this.scene.priceStyle);
+        const groups = { ...doc.marks.groups };
+        for (const g of this.markGroupsInUse()) groups[g.id] = g.visible !== false;
+        return { ...doc, marks: { ...doc.marks, groups } };
     }
 
     /** Close the in-chart dialogs (indicator settings + chart-settings gear). No-op when none are open. */
