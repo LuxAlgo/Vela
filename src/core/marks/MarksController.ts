@@ -3,6 +3,7 @@ import type { IChartRenderer } from '../ports/IChartRenderer';
 import type { TypedEventBus } from '../events/EventBus';
 import type { VelaEventMap } from '../events/types';
 import type { MarkGroup, TimelineMark } from './types';
+import { markGroupVisible } from './visibility';
 
 /**
  * Renderer-agnostic owner of the timeline-mark model (backs `chart.marks`). Holds the
@@ -65,6 +66,7 @@ export class MarksController {
     defineGroup(group: MarkGroup): void {
         if (!group || typeof group.id !== 'string' || group.id.length === 0) throw new Error('[vela] marks.defineGroup: `id` must be a non-empty string');
         if (typeof group.label !== 'string') throw new Error(`[vela] marks.defineGroup: group "${group.id}" needs a string \`label\``);
+        if (group.parent !== undefined && (typeof group.parent !== 'string' || group.parent.length === 0)) throw new Error(`[vela] marks.defineGroup: group "${group.id}" has a \`parent\` that is not a group id`);
         this.groups.set(group.id, { ...group });
         this.sync();
     }
@@ -87,12 +89,16 @@ export class MarksController {
         this.renderer.applyFeature('marks', { groups: { [id]: visible } });
     }
 
-    /** A group's effective visibility: the user's (persisted) choice, else the group's declared default, else visible. */
+    /**
+     * A group's effective visibility: its own switch — the user's (persisted) choice, else
+     * the declared default, else visible — AND every ancestor's, so a child under a
+     * switched-off parent reads hidden whatever its own choice says.
+     */
     isGroupVisible(id: string): boolean {
         const state = this.renderer.readFeature('marks') as { groups?: Record<string, unknown> } | undefined;
-        const chosen = state?.groups?.[id];
-        if (typeof chosen === 'boolean') return chosen;
-        return this.groups.get(id)?.visible !== false;
+        const groups: Record<string, boolean> = {};
+        for (const [gid, v] of Object.entries(state?.groups ?? {})) if (typeof v === 'boolean') groups[gid] = v;
+        return markGroupVisible(groups, id, [...this.groups.values()]);
     }
 
     destroy(): void {
