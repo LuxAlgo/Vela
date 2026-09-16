@@ -1,7 +1,7 @@
 // The timeline-mark lane's hover pulse (src/renderers/native/chrome/marks/paint): the
 // size multiplier the painter applies to the token the pointer landed on — pure, node env.
 import { describe, it, expect } from 'vitest';
-import { letterFontPx, pulseScale, MARK_PULSE_AMPLITUDE, MARK_PULSE_MS } from '../src/renderers/native/chrome/marks/paint';
+import { fitLetterPx, letterFontPx, pulseScale, symbolInnerWidth, MARK_PULSE_AMPLITUDE, MARK_PULSE_MS } from '../src/renderers/native/chrome/marks/paint';
 
 describe('marks · letterFontPx', () => {
     it('a single letter fills the token; a pair shares its width and shrinks to stay inside the outline', () => {
@@ -11,16 +11,18 @@ describe('marks · letterFontPx', () => {
         expect(letterFontPx(20, 'EU')).toBe(8);
     });
 
-    it('the widest currency pair fits a 16 px pin head and a 20 px cluster token', () => {
-        // Measured in Chrome with the host font (system-ui, 600 weight): `CH` is the widest
-        // ISO pair — 9.5 px at 6 px, 12.43 px at 8 px. A pin's head is 82% of the token, less
-        // the 1.5 px outline on each side.
-        const measuredWidthOfCH = { 6: 9.5, 8: 12.43 } as const;
-        const headInner = (size: number) => size * 0.82 - 1.5 * 2;
-        expect(letterFontPx(16, 'CH')).toBe(6);
-        expect(measuredWidthOfCH[6]).toBeLessThan(headInner(16));
-        expect(letterFontPx(20, 'CH')).toBe(8);
-        expect(measuredWidthOfCH[8]).toBeLessThan(headInner(20));
+    it('a pair that would still run over the outline in the host font is shrunk to fit; one that fits is left alone', () => {
+        const pinInner = symbolInnerWidth('pin', 16); // 10.12
+        expect(fitLetterPx(6, 9.5, pinInner)).toBe(6); // `CH` in the default font fits
+        expect(fitLetterPx(6, 12, pinInner)).toBe(5); // a wide face or `MM`: 6 × 10.12 / 12 → 5
+        expect(fitLetterPx(6, 30, pinInner)).toBe(4); // never below 4 px
+        expect(fitLetterPx(6, 0, pinInner)).toBe(6); // a zero measurement (no canvas font yet) changes nothing
+    });
+
+    it('a pin gives its letters only the head; the other tokens give the whole width, less the outline', () => {
+        expect(symbolInnerWidth('pin', 16)).toBeCloseTo(16 * 0.82 - 3, 6);
+        expect(symbolInnerWidth('circle', 16)).toBe(13);
+        expect(symbolInnerWidth('square', 20)).toBe(17);
     });
 });
 

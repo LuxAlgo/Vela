@@ -87,7 +87,14 @@ export function paintMarkLane(ctx: CanvasRenderingContext2D, layout: MarkLaneLay
         } else if (mark.glyph.letter) {
             const letter = mark.glyph.letter.slice(0, 2);
             ctx.fillStyle = ink;
-            ctx.font = `600 ${letterFontPx(size, letter)}px ${deps.fontFamily}`;
+            let px = letterFontPx(size, letter);
+            ctx.font = `600 ${px}px ${deps.fontFamily}`;
+            if (letter.length > 1) {
+                // The pair ratio was measured in one font and the host may set another: measure
+                // the pair as drawn and shrink it if it would still run over the outline.
+                px = fitLetterPx(px, ctx.measureText(letter).width, symbolInnerWidth(shape, size));
+                ctx.font = `600 ${px}px ${deps.fontFamily}`;
+            }
             ctx.fillText(letter, center.x, center.y + 0.5);
         }
     }
@@ -96,14 +103,30 @@ export function paintMarkLane(ctx: CanvasRenderingContext2D, layout: MarkLaneLay
 
 /**
  * The font size for a token's letter(s), px. One character fills the token; two must
- * share the same width, so they drop to a size where the widest pair of capitals still
- * sits inside a 16 px pin head instead of running over its outline. The ratio comes from
- * measuring `CH` (the widest ISO currency pair) in the host font at 600 weight: 9.5 px at
- * 6 px against a head that is 16 × 0.82 − 2 × 1.5 (outline) = 10.1 px wide; 6.5 px already
- * overflows. On the 20 px cluster token the same ratio gives 8 px, 12.4 px against 13.4.
+ * share the same width, so they drop to a size where a wide pair of capitals still sits
+ * inside a 16 px pin head instead of running over its outline. The ratio comes from
+ * measuring `CH` in the default host font at 600 weight: 9.5 px at 6 px against a head
+ * that is 16 × 0.82 − 2 × 1.5 (outline) = 10.1 px wide; 6.5 px already overflows. On the
+ * 20 px cluster token the same ratio gives 8 px, 12.4 px against 13.4. Wider pairs (`MM`)
+ * or a wider host font are caught by {@link fitLetterPx} at paint time.
  */
 export function letterFontPx(size: number, letter: string): number {
     return Math.round(size * (letter.length > 1 ? 0.38 : 0.58));
+}
+
+/** The width a token's symbol may use: the head for a pin, the whole token otherwise, less the 1.5 px outline each side. */
+export function symbolInnerWidth(shape: MarkShape, size: number): number {
+    return (shape === 'pin' ? size * 0.82 : size) - 3;
+}
+
+/**
+ * Shrink a font size so text that measures `width` at `px` fits inside `inner`; text that
+ * already fits is left alone, and nothing goes below 4 px (unreadable either way, but never
+ * zero or negative).
+ */
+export function fitLetterPx(px: number, width: number, inner: number): number {
+    if (!(width > inner) || !(width > 0)) return px;
+    return Math.max(4, Math.floor((px * inner) / width));
 }
 
 /** Trace a token outline centered at (x, y) and return where its symbol centers (a pin's head sits above its tail). */
