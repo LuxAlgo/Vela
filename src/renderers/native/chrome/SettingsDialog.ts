@@ -40,6 +40,7 @@ import {
     settingsIdSlug,
 } from './settings-visibility';
 import type { MarkGroup } from '../../../core/marks/types';
+import { markGroupRows } from '../../../core/marks/visibility';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -155,6 +156,10 @@ ${overlayScrollbarCss('.vela-sd-pane')}
    muted and non-interactive. Applied to each row's children so it survives display:contents;
    !important beats the inline opacity on labels. */
 .vela-sd-soft>*{opacity:0.4 !important;pointer-events:none !important;}
+/* A mark group nested under a parent group on the Events tab: indented one step per level
+   (--vela-sd-depth). The indent rides the first child (the switch) as a MARGIN — padding
+   would push the switch's own tick out of its box. */
+.vela-sd-nested>*:first-child{margin-left:calc(var(--vela-sd-depth,1)*24px);}
 /* ── mobile presentation (.vela-sd-mobile on the scrim; structural sizes are inline in open()) ──
    The tab rail becomes a burger-opened overlay sidebar; the group TOC becomes a sticky
    row of horizontally scrollable tabs; the instance strip scrolls instead of wrapping;
@@ -201,6 +206,8 @@ export class SettingsDialog {
     private hostSections: HostSettingsSection[] = [];
     /** The timeline-mark groups (defined + named by marks) — one checkbox each on the Events tab. */
     private markGroups: MarkGroup[] = [];
+    /** A group's OWN switch (what its checkbox shows) — a child under an off parent keeps its own state. */
+    private markGroupOwnVisible: (id: string) => boolean = () => true;
     private markGroupVisible: (id: string) => boolean = () => true;
     /** The Canvas → Theme row: current app theme + where a pick is raised. The row is a
      *  host callback, NOT a config patch — the app theme stays out of the persisted
@@ -230,7 +237,8 @@ export class SettingsDialog {
     }
 
     /** The timeline-mark groups and their current visibility — the Events tab's rows on next open. */
-    setMarkGroups(groups: MarkGroup[], visible: (id: string) => boolean): void {
+    setMarkGroups(groups: MarkGroup[], visible: (id: string) => boolean, ownVisible: (id: string) => boolean = visible): void {
+        this.markGroupOwnVisible = ownVisible;
         this.markGroups = groups;
         this.markGroupVisible = visible;
     }
@@ -652,9 +660,30 @@ export class SettingsDialog {
         if (this.markGroups.length > 0) {
             body.append(sid(this.section('Events'), MARKS_SETTINGS_ID));
             body.append(sid(this.sectionTitle('Visible events'), MARKS_GROUPS_SETTINGS_ID));
-            for (const g of this.markGroups) {
-                body.append(sid(this.boolRow(g.label, this.markGroupVisible(g.id), (v) => this.emit({ marks: { groups: { [g.id]: v } } })), markGroupSettingsId(g.id)));
+            // Children list indented under their parent and dim while the parent is off — the
+            // parent is the master switch, the child keeps its own choice for when it returns.
+            const rowsById = new Map<string, HTMLElement>();
+            const rows = markGroupRows(this.markGroups);
+            const refreshDimming = (): void => {
+                for (const { group } of rows) {
+                    const el = rowsById.get(group.id);
+                    if (!el || group.parent === undefined) continue;
+                    el.classList.toggle('vela-sd-soft', !this.markGroupVisible(group.parent));
+                }
+            };
+            for (const { group: g, depth } of rows) {
+                const row = this.boolRow(g.label, this.markGroupOwnVisible(g.id), (v) => {
+                    this.emit({ marks: { groups: { [g.id]: v } } });
+                    refreshDimming();
+                });
+                if (depth > 0) {
+                    row.classList.add('vela-sd-nested');
+                    row.style.setProperty('--vela-sd-depth', String(depth));
+                }
+                rowsById.set(g.id, row);
+                body.append(sid(row, markGroupSettingsId(g.id)));
             }
+            refreshDimming();
         }
 
         renderChartTypeSections('end');

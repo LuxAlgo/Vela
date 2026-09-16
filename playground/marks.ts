@@ -131,11 +131,12 @@ export function addSampleMarks(chart: Vela): void {
     ];
 
     chart.marks
-        .defineGroup({ id: 'dividends', label: 'Dividends' })
-        .defineGroup({ id: 'splits', label: 'Splits' })
-        .defineGroup({ id: 'earnings', label: 'Earnings' })
+        .defineGroup({ id: 'corporate', label: 'Corporate events' })
+        .defineGroup({ id: 'dividends', label: 'Dividends', parent: 'corporate' })
+        .defineGroup({ id: 'splits', label: 'Splits', parent: 'corporate' })
+        .defineGroup({ id: 'earnings', label: 'Earnings', parent: 'corporate' })
         .defineGroup({ id: 'news', label: 'News' })
-        .defineGroup({ id: 'releases', label: 'Releases' })
+        .defineGroup({ id: 'releases', label: 'Releases', parent: 'news', visible: false })
         .set(marks);
 
     if (!wired.has(chart)) {
