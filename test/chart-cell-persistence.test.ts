@@ -71,9 +71,22 @@ class FakeRenderer implements IChartRenderer {
     mount(): void {}
     setTheme(): void {}
     resize(): void {}
-    applyFeature(): void {}
-    readFeature(): unknown {
-        return undefined;
+    style: string = 'candles';
+    applyFeature(key: string, value: unknown): void {
+        if (key === 'priceStyle' && typeof value === 'string') this.style = value;
+    }
+    readFeature(key: string): unknown {
+        return key === 'priceStyle' ? this.style : undefined;
+    }
+    // The cosmetic-config seam: a document lands, the change is announced (the real
+    // renderer's `applyConfig` ends the same way).
+    private configCbs = new Set<() => void>();
+    applyConfig(_config: unknown): void {
+        for (const cb of this.configCbs) cb();
+    }
+    onConfigChanged(cb: () => void): Unsubscribe {
+        this.configCbs.add(cb);
+        return () => this.configCbs.delete(cb);
     }
     destroy(): void {}
     setBars(): void {}
@@ -275,6 +288,27 @@ describe('ChartCell native persistence round-trip (#146/#149)', () => {
         await settle();
         expect(volumeOf(cell)!.visible).toBe(true);
         expect(renderer.nativePushes.some(([type]) => type === 'volume')).toBe(true);
+        cell.destroy();
+    });
+
+    it('a price style changed THROUGH the config (applyConfig / template import) reaches the workspace chrome', async () => {
+        // The topbar style icon follows `onPriceStyleChanged`; before this the cell only
+        // raised it from its own `setPriceStyle`, so a style landing via `applyConfig`
+        // (a settings-dialog document, an imported template) left the icon stale.
+        const onPriceStyleChanged = vi.fn();
+        const cell = makeCell({}, { onPriceStyleChanged });
+        await settle();
+        const renderer = lastRenderer!;
+        onPriceStyleChanged.mockClear();
+        renderer.style = 'line';
+        renderer.applyConfig({ series: { style: 'line' } });
+        expect(cell.priceStyle).toBe('line');
+        expect(onPriceStyleChanged).toHaveBeenCalledWith('c1');
+        expect(cell.dehydrate().priceStyle).toBe('line');
+        // An unrelated config edit (same style) raises nothing — no spurious re-projection.
+        onPriceStyleChanged.mockClear();
+        renderer.applyConfig({ grid: { vertLines: { visible: false } } });
+        expect(onPriceStyleChanged).not.toHaveBeenCalled();
         cell.destroy();
     });
 
