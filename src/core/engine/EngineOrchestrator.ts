@@ -1207,7 +1207,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     }
 
     addIndicator(source: string, options: AddIndicatorOptions = {}): IndicatorHandle {
-        const id = this.registry.nextId();
+        const id = this.claimIndicatorId(options.id);
         const title = options.title ?? 'Indicator';
         const handle = new IndicatorHandleImpl(id, title, this, source);
         this.handles.set(id, handle);
@@ -1231,7 +1231,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             if (existing) return this.handles.get(existing.id) ?? new IndicatorHandleImpl(existing.id, existing.title, this, undefined, type);
         }
 
-        const id = this.registry.nextId('native');
+        const id = this.registry.nextId('native', (candidate) => this.handles.has(candidate));
         const title = descriptor?.title ?? type;
         const handle = new IndicatorHandleImpl(id, title, this, undefined, type);
         this.handles.set(id, handle);
@@ -1571,6 +1571,25 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     }
 
     // ── internals ───────────────────────────────────────────────
+
+    /**
+     * The id a new script indicator runs under: the host's when supplied, else a minted
+     * one. A host id is opaque but must be a non-empty string, and it must not be live
+     * on this chart — a duplicate is a programming error surfaced synchronously, never
+     * renamed behind the caller's back (the whole point of supplying one is that
+     * `handle.id` equals what was passed). "Live" reads both the records and the handle
+     * map: a fail-soft handle never enters the registry but still owns its id.
+     */
+    private claimIndicatorId(requested: string | undefined): string {
+        if (requested === undefined) return this.registry.nextId('ind', (candidate) => this.handles.has(candidate));
+        if (typeof requested !== 'string' || requested.length === 0) {
+            throw new TypeError('[vela] addIndicator: `id` must be a non-empty string');
+        }
+        if (this.handles.has(requested) || this.registry.get(requested)) {
+            throw new Error(`[vela] addIndicator: indicator id "${requested}" is already live on this chart`);
+        }
+        return requested;
+    }
 
     private async startIndicator(id: string, source: string, options: AddIndicatorOptions, handle: IndicatorHandleImpl): Promise<void> {
         try {
