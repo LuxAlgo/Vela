@@ -361,6 +361,14 @@ export class ChartCell {
             if (typeof zone === 'string' && normalizeTimezone(zone) !== normalizeTimezone(this.deps.timezone())) {
                 this.deps.setTimezone(normalizeTimezone(zone));
             }
+            // A document can carry the price style too (a template import): the renderer
+            // is already showing it, so adopt it and re-project the chrome (topbar icon,
+            // persisted state) — the `setPriceStyle` path never ran for it.
+            const style = this.priceStyle;
+            if (style !== (this.state.priceStyle ?? 'candles')) {
+                this.state.priceStyle = style;
+                this.deps.onPriceStyleChanged(this.id);
+            }
             this.syncStatuslineColors(); // a settings edit may have recolored the active style
             this.syncPlotOverlayTokens(); // a background edit may have flipped the plot's luminance
         });

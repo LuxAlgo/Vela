@@ -2,6 +2,9 @@
 // toggle plus per-group visibility. Pure (no DOM, no renderer types): the settings
 // dialog, the config reducer and the lane painter all read it, and it is node-testable.
 import type { MarkGroup } from '../../core/marks/types';
+import { markGroupVisible as groupVisible } from '../../core/marks/visibility';
+
+export { markGroupOwnVisible, markGroupRows, type MarkGroupRow } from '../../core/marks/visibility';
 
 export interface MarksDisplayState {
     /** Master visibility of the lane. */
@@ -29,10 +32,7 @@ export function mergeMarksState(base: MarksDisplayState, patch: unknown): MarksD
     return { visible: typeof p.visible === 'boolean' ? p.visible : base.visible, groups };
 }
 
-/** Whether a group's marks paint: the user's choice when one is stored, else the group's declared default, else visible. Ungrouped marks always paint. */
+/** Whether a group's marks paint under this display state — its own switch and every ancestor's; see `core/marks/visibility`. */
 export function markGroupVisible(state: MarksDisplayState, groupId: string | undefined, groups: readonly MarkGroup[]): boolean {
-    if (groupId === undefined) return true;
-    const chosen = state.groups[groupId];
-    if (typeof chosen === 'boolean') return chosen;
-    return groups.find((g) => g.id === groupId)?.visible !== false;
+    return groupVisible(state.groups, groupId, groups);
 }

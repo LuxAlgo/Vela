@@ -371,6 +371,20 @@ export function hasOwnCandlePaint(style: PriceStyle): boolean {
     return false;
 }
 
+/** The reserved per-type keys behind {@link CandlePaintOverride} — the Symbol tab's
+ *  Candles group writes them for a candle-based plugin style; `null` = inherit. */
+export const CANDLE_OVERRIDE_KEYS = [
+    'candleUpColor',
+    'candleDownColor',
+    'candleBodyVisible',
+    'candleBorderVisible',
+    'candleBorderUpColor',
+    'candleBorderDownColor',
+    'candleWickVisible',
+    'candleWickUpColor',
+    'candleWickDownColor',
+] as const;
+
 /** The candle override for a style, read from the per-type bags — null for built-ins
  *  and for `basePainting: 'none'` types (nothing of theirs is candle-painted). */
 export function candleOverrideFor(style: PriceStyle, bags: Record<string, Record<string, unknown>>): CandlePaintOverride | null {
@@ -493,8 +507,14 @@ function nullableBound(v: unknown, base: number | null): number | null {
  * section can store (instances, subsections, range min/max, toggle swatches). The
  * registry is read at call time (types may register after mount), and values the
  * snapshot itself pinned win over the defvals — they ARE the first-run state.
+ *
+ * The reset restores SETTINGS, not the view: the price style is what the user picked
+ * to look at (topbar / style menu), and the snapshot only pins whichever style was
+ * active at mount. The caller passes the LIVE style so the document keeps the chart
+ * type the user is on while every one of its settings goes back to default; left
+ * out, the snapshot's own style applies (template semantics).
  */
-export function factoryResetConfig(factory: ChartConfig): ChartConfig {
+export function factoryResetConfig(factory: ChartConfig, priceStyle: PriceStyle = factory.series.style): ChartConfig {
     const bag: Record<string, Record<string, unknown>> = {};
     for (const t of chartTypes()) {
         const section = t.settings;
@@ -521,10 +541,20 @@ export function factoryResetConfig(factory: ChartConfig): ChartConfig {
         if (!section.instances) addRows(section.rows);
         bag[t.id] = defaults;
     }
+    // The Symbol tab's candle rows of a candle-based plugin style are not registry
+    // rows — they live on reserved `candle*` keys of the same bag, `null` meaning
+    // "inherit the shared candles block". Name them too, or a hidden/recolored candle
+    // set under a plugin style survives the reset.
+    for (const t of chartTypes()) {
+        if (!hasOwnCandlePaint(t.id)) continue;
+        const defaults = bag[t.id] ?? {};
+        for (const key of CANDLE_OVERRIDE_KEYS) defaults[key] = null;
+        bag[t.id] = defaults;
+    }
     for (const [typeId, vals] of Object.entries(factory.chartTypes)) {
         bag[typeId] = { ...(bag[typeId] ?? {}), ...vals };
     }
-    return { ...factory, chartTypes: bag };
+    return { ...factory, chartTypes: bag, series: { ...factory.series, style: priceStyle } };
 }
 
 /**
