@@ -77,10 +77,18 @@ export class IndicatorRegistry {
     private readonly records = new Map<string, IndicatorRecord>();
     private counter = 0;
 
-    /** Allocate a unique, stable per-instance id. */
-    nextId(prefix = 'ind'): string {
-        this.counter += 1;
-        return `${prefix}-${this.counter}`;
+    /**
+     * Mint a unique per-instance id. Host-supplied ids share the namespace, so a minted
+     * id skips anything already recorded — and anything `taken` reports live elsewhere
+     * (a handle the orchestrator holds outside the records, e.g. a fail-soft native).
+     */
+    nextId(prefix = 'ind', taken: (id: string) => boolean = () => false): string {
+        let id: string;
+        do {
+            this.counter += 1;
+            id = `${prefix}-${this.counter}`;
+        } while (this.records.has(id) || taken(id));
+        return id;
     }
 
     add(record: IndicatorRecord): void {

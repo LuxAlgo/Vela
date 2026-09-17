@@ -87,7 +87,7 @@ What `addIndicator` returns. Usable immediately.
 
 | Member | Description |
 |---|---|
-| `id` | This instance's identity on the chart — stable for as long as the indicator stays on it (input edits, hide/show and `updateCode` all keep it). |
+| `id` | This instance's identity on the chart — the `id` you passed in the options, else one the chart minted. Stable for as long as the indicator stays on it (input edits, hide/show and `updateCode` all keep it). See the `id` option in [options.md](./options.md#per-indicator-options). |
 | `title` | Display title (overridable via the `title` option). |
 | `source` | The script source the indicator currently runs — the one it was added with, until `updateCode` replaces it; `undefined` for a native indicator. |
 | `nativeType` | The registered type of a native indicator (`'volume'`, `'sma'`, …); `undefined` for a script indicator. A handle has one of `source` or `nativeType`, never both. |

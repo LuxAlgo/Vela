@@ -2368,6 +2368,104 @@ describe('chart.runScript — execute and receive the run', () => {
     });
 });
 
+describe('host-supplied indicator ids (AddIndicatorOptions.id)', () => {
+    async function makeChart(engine: MockEngine = new RunEngine()) {
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        return { chart, renderer };
+    }
+
+    it('the supplied id IS the indicator id on every surface: handle, indicators(), events, script:run, the mounted model and its pane', async () => {
+        const { chart, renderer } = await makeChart();
+        const added: string[] = [];
+        const runs: string[] = [];
+        chart.on('indicator:added', (e) => added.push(e.id));
+        chart.on('script:run', (run) => runs.push(run.id));
+
+        const handle = chart.addIndicator('//@version=5\nindicator("RSI")\nplot(close)', { id: 'doc:rsi-1' });
+        expect(handle.id).toBe('doc:rsi-1');
+        await flush();
+
+        expect(chart.indicators().map((h) => h.id)).toEqual(['doc:rsi-1']);
+        expect(added).toEqual(['doc:rsi-1']);
+        expect(runs).toEqual(['doc:rsi-1']);
+        const model = renderer.mountedModels.find((m) => m.id === 'doc:rsi-1' && m.series.length > 0);
+        expect(model).toBeDefined();
+        expect(model!.paneId).toBe('pane-doc:rsi-1'); // the pane id is derived from the indicator id (data-vela-pane)
+
+        const removed: string[] = [];
+        chart.on('indicator:removed', (e) => removed.push(e.id));
+        handle.remove();
+        expect(removed).toEqual(['doc:rsi-1']);
+        expect(renderer.removed).toContain('doc:rsi-1');
+        chart.destroy();
+    });
+
+    it('omitting the id mints one as before, and a minted id never collides with a host id already live', async () => {
+        const { chart } = await makeChart();
+        // Claim the id the counter would mint SECOND; the second mint must skip over it.
+        const host = chart.addIndicator('plot(close)', { id: 'ind-2' });
+        const first = chart.addIndicator('plot(close)');
+        const second = chart.addIndicator('plot(close)');
+        expect(host.id).toBe('ind-2');
+        expect(first.id).toBe('ind-1');
+        expect(second.id).toBe('ind-3');
+        expect(new Set(chart.indicators().map((h) => h.id)).size).toBe(3);
+        chart.destroy();
+    });
+
+    it('addIndicator THROWS on an id already live on the chart and leaves the live indicator untouched', async () => {
+        const { chart } = await makeChart();
+        const first = chart.addIndicator('plot(close)', { id: 'dup' });
+        await flush();
+        expect(() => chart.addIndicator('plot(close)', { id: 'dup' })).toThrow(/"dup" is already live/);
+        expect(chart.indicators()).toHaveLength(1);
+        expect(chart.indicators()[0]).toBe(first);
+        // Freed by removal, the id can be claimed again.
+        first.remove();
+        expect(chart.addIndicator('plot(close)', { id: 'dup' }).id).toBe('dup');
+        chart.destroy();
+    });
+
+    it('addIndicator rejects an empty id', async () => {
+        const { chart } = await makeChart();
+        expect(() => chart.addIndicator('plot(close)', { id: '' })).toThrow(TypeError);
+        expect(chart.indicators()).toHaveLength(0);
+        chart.destroy();
+    });
+
+    it('runIndicator / runScript resolve ok:false on a duplicate id — never reject, never touch the live one', async () => {
+        const { chart } = await makeChart();
+        const live = await chart.runIndicator('plot(close)', { id: 'editor-tab-3' });
+        expect(live.ok).toBe(true);
+        expect(live.handle!.id).toBe('editor-tab-3');
+
+        const viaRun = await chart.runIndicator('plot(close)', { id: 'editor-tab-3' });
+        expect(viaRun.ok).toBe(false);
+        expect(viaRun.handle).toBeNull();
+        expect(viaRun.error?.message).toMatch(/"editor-tab-3" is already live/);
+
+        const viaScript = await chart.runScript('plot(close)', { id: 'editor-tab-3' });
+        expect(viaScript.ok).toBe(false);
+        expect(viaScript.run).toBeNull();
+        expect(viaScript.error?.message).toMatch(/"editor-tab-3" is already live/);
+
+        // The live indicator is still there and still the original — the failed calls
+        // mounted nothing, so their cleanup had nothing to remove.
+        await flush();
+        expect(chart.indicators().map((h) => h.id)).toEqual(['editor-tab-3']);
+        expect(chart.indicators()[0]).toBe(live.handle);
+
+        // runScript resolves with the host id on the run itself.
+        live.handle!.remove();
+        const fresh = await chart.runScript('plot(close)', { id: 'editor-tab-3' });
+        expect(fresh.ok).toBe(true);
+        expect(fresh.run!.id).toBe('editor-tab-3');
+        chart.destroy();
+    });
+});
+
 /** A study engine whose model carries `force_overlay`-flagged items next to own ones. */
 class ForcedOverlayEngine extends MockEngine {
     override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
