@@ -47,6 +47,23 @@ export interface StrategyTrade {
     exit?: StrategyFill;
     /** Still open at the last computed bar. */
     open: boolean;
+    /**
+     * Realized P&L of this round trip in account currency, net of commission. Absent
+     * while the trade is open, and for an engine that reports no per-trade ledger.
+     */
+    pnl?: number;
+    /** Commission charged on this trade, in account currency. */
+    commission?: number;
+    /**
+     * Worst / best unrealized excursion of THIS trade from its entry, in account
+     * currency (positive magnitudes). Read `maxDrawdown` as the adverse excursion and
+     * `maxRunup` as the favorable one — the per-trade counterparts of the account-level
+     * {@link StrategyState.maxDrawdown} / {@link StrategyState.maxRunup}. An engine
+     * defines the exact convention (intrabar extremes, commission handling); absent when
+     * it does not track them.
+     */
+    maxDrawdown?: number;
+    maxRunup?: number;
 }
 
 /** One side of a {@link StrategyTrade}. */
