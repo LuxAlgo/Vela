@@ -2202,7 +2202,21 @@ class RunEngine extends MockEngine {
                     plots: { Mock: [{ time: 1, value: 2 }] },
                     variables: { posSize: 2, len: 14 },
                     ...(this.strategy ? { strategy: this.strategy } : {}),
-                    trades: [{ id: 't1', side: 'long' as const, qty: 2, entry: { id: 'Long', time: 1, price: 100 }, open: true }],
+                    trades: [
+                        { id: 't1', side: 'long' as const, qty: 2, entry: { id: 'Long', time: 1, price: 100 }, open: true },
+                        {
+                            id: 't0',
+                            side: 'short' as const,
+                            qty: 1,
+                            entry: { id: 'Short', time: 0, price: 110 },
+                            exit: { id: 'Cover', time: 1, price: 100 },
+                            open: false,
+                            pnl: 9.5,
+                            commission: 0.5,
+                            maxDrawdown: 2.5,
+                            maxRunup: 12,
+                        },
+                    ],
                     warnings: [],
                 });
             },
@@ -2259,8 +2273,15 @@ describe('script:run — the run carries the data, not a signal to go fetch it',
 
         expect(engine.contextCalls.every((s) => !s.includes('trades'))).toBe(true); // never rides the run
         const trades = await runs[0]!.trades();
-        expect(trades).toHaveLength(1);
+        expect(trades).toHaveLength(2);
         expect(engine.contextCalls.some((s) => s.includes('trades'))).toBe(true); // pulled on demand
+        // The per-trade ledger is optional and travels untouched: present on the closed
+        // trade that reported it, absent on the open one that did not.
+        const closed = trades.find((t) => t.id === 't0')!;
+        expect(closed).toMatchObject({ pnl: 9.5, commission: 0.5, maxDrawdown: 2.5, maxRunup: 12 });
+        const open = trades.find((t) => t.id === 't1')!;
+        expect(open.pnl).toBeUndefined();
+        expect(open.maxDrawdown).toBeUndefined();
         chart.destroy();
     });
 

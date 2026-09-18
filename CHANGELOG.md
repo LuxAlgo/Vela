@@ -17,6 +17,16 @@ All notable changes to Vela, newest first.
   `commit: 'live' | 'release'` option of `buildColorPicker` / `ColorField` / the
   `color` field descriptor (default `'live'`), for hosts whose `onChange` recomputes
   rather than repaints.
+  
+### Added
+
+- **A strategy's round trips can now carry their own ledger.** Each trade an engine
+  reports through a script's execution context (`trades`) may include its realized
+  `pnl`, the `commission` charged, and its worst and best excursion from entry
+  (`maxDrawdown`, `maxRunup`) — the per-trade counterparts of the account-level
+  drawdown and run-up the strategy summary already exposed. All four are optional, so
+  an engine that tracks none of them keeps reporting trades exactly as before; a host
+  tabulating a backtest no longer has to reconstruct them from fills.
 
 ## [v0.7.6]
 
