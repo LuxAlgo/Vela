@@ -2,6 +2,22 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Dragging an indicator input's opacity slider commits once, on release.** The picker
+  emitted a new value on every pointer move, so an `input.color` slider drag in an
+  indicator's settings re-executed the script over its whole history once per frame —
+  the color looked frozen while the engine caught up, and a long drag on a deep history
+  could exhaust the tab's memory. Indicator inputs now hear the final value when the
+  pointer is released (the knob, gradient and percentage still follow it live; a plain
+  click on the track commits at the clicked position as before). Drawing styles and chart
+  settings keep their live preview: they only repaint. The policy is the new
+  `commit: 'live' | 'release'` option of `buildColorPicker` / `ColorField` / the
+  `color` field descriptor (default `'live'`), for hosts whose `onChange` recomputes
+  rather than repaints.
+
 ## [v0.7.6]
 
 ### Added
