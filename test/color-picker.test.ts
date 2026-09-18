@@ -110,6 +110,89 @@ describe('color picker custom "+" input', () => {
     });
 });
 
+describe('color picker opacity slider', () => {
+    const theme = { textColor: '#fff', fontFamily: 'sans-serif' } as unknown as VelaTheme;
+    let savedDocument: unknown;
+
+    beforeEach(() => {
+        savedDocument = (globalThis as { document?: unknown }).document;
+        (globalThis as { document: unknown }).document = { createElement: (tag: string) => fakeEl(tag) };
+    });
+    afterEach(() => {
+        (globalThis as { document?: unknown }).document = savedDocument;
+    });
+
+    type Track = FakeEl & { getBoundingClientRect(): { left: number; width: number }; setPointerCapture(id: number): void; captured: number[] };
+
+    function mount(commit?: 'live' | 'release'): { track: Track; pct: FakeEl; emitted: string[] } {
+        const emitted: string[] = [];
+        const root = buildColorPicker('#089981', theme, (v) => emitted.push(v), commit ? { commit } : {}) as unknown as FakeEl;
+        // root → [grid, recentRow, opacity label, opacity row]; opacity row → [track, "%" box].
+        const opRow = root.children[3]!;
+        const track = opRow.children[0]! as Track;
+        track.captured = [];
+        track.getBoundingClientRect = () => ({ left: 100, width: 200 });
+        track.setPointerCapture = (id) => track.captured.push(id);
+        return { track, pct: opRow.children[1]!, emitted };
+    }
+    const pointer = (type: string, clientX: number): { type: string; clientX: number; pointerId: number; stopPropagation(): void } => ({
+        type,
+        clientX,
+        pointerId: 1,
+        stopPropagation: () => {},
+    });
+
+    it("defaults to 'live': every move commits, so a cheap consumer previews the drag on the chart", () => {
+        const { track, pct, emitted } = mount();
+        track.dispatchEvent(pointer('pointerdown', 120)); // 10 %
+        track.dispatchEvent(pointer('pointermove', 200)); // 50 %
+        track.dispatchEvent(pointer('pointermove', 260)); // 80 %
+        expect(pct.textContent).toBe('80%');
+        expect(emitted).toEqual([combineColor('#089981', 0.1), combineColor('#089981', 0.5), combineColor('#089981', 0.8)]);
+        // Release adds nothing: the last move already committed the final value.
+        track.dispatchEvent(pointer('pointerup', 260));
+        expect(emitted).toHaveLength(3);
+    });
+
+    it("'release': previews the opacity while dragging and commits ONCE on release", () => {
+        const { track, pct, emitted } = mount('release');
+
+        track.dispatchEvent(pointer('pointerdown', 120)); // 10 %
+        track.dispatchEvent(pointer('pointermove', 160)); // 30 %
+        track.dispatchEvent(pointer('pointermove', 200)); // 50 %
+        track.dispatchEvent(pointer('pointermove', 260)); // 80 %
+        // The readout follows the pointer; nothing has been committed yet — a commit
+        // re-executes the script over its whole history, and a drag fires a move per frame.
+        expect(pct.textContent).toBe('80%');
+        expect(emitted).toEqual([]);
+
+        track.dispatchEvent(pointer('pointerup', 260));
+        expect(emitted).toEqual([combineColor('#089981', 0.8)]);
+
+        // Moves after release are not a drag.
+        track.dispatchEvent(pointer('pointermove', 300));
+        expect(pct.textContent).toBe('80%');
+        expect(emitted).toHaveLength(1);
+    });
+
+    it('a plain click on the track commits once at the clicked opacity, under either policy', () => {
+        for (const commit of ['live', 'release'] as const) {
+            const { track, emitted } = mount(commit);
+            track.dispatchEvent(pointer('pointerdown', 150)); // 25 %
+            track.dispatchEvent(pointer('pointerup', 150));
+            expect(emitted).toEqual([combineColor('#089981', 0.25)]);
+        }
+    });
+
+    it("'release': a cancelled drag still commits where the pointer was", () => {
+        const { track, emitted } = mount('release');
+        track.dispatchEvent(pointer('pointerdown', 120));
+        track.dispatchEvent(pointer('pointermove', 200)); // 50 %
+        track.dispatchEvent(pointer('pointercancel', 200));
+        expect(emitted).toEqual([combineColor('#089981', 0.5)]);
+    });
+});
+
 describe('color picker color math', () => {
     it('splitColor parses #RRGGBB, #RRGGBBAA, #RGB and rgba()', () => {
         expect(splitColor('#38c0fd')).toEqual({ hex6: '#38c0fd', alpha: 1 });

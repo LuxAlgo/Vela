@@ -4,6 +4,8 @@ export {
     buildColorPicker,
     closeColorPopover,
     type ColorFieldOpts,
+    type ColorCommit,
+    type ColorPickerOptions,
 } from './view';
 export {
     splitColor,

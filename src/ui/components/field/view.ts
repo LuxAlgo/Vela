@@ -290,6 +290,8 @@ export type FieldControlDesc =
         get: () => string;
         onChange: (v: string) => void;
         popover?: ColorFieldOpts['popover'];
+        /** Opacity-drag commit policy (default `'live'`): `'release'` when `onChange` recomputes rather than repaints. */
+        commit?: ColorFieldOpts['commit'];
         title?: string;
     }
     | {
@@ -384,6 +386,7 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
             shape: 'circle',
             id: desc.id,
             popover: desc.popover,
+            commit: desc.commit,
         });
         if (desc.title) el.title = desc.title;
         return { el };
