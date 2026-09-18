@@ -650,6 +650,10 @@ export class SettingsDialog {
         body.append(sid(this.toggleRow('Horizontal', config.grid.horzLines.visible, (v) => this.emit({ grid: { horzLines: { visible: v } } }), [
             this.swatch(config.grid.horzLines.color, (v) => this.emit({ grid: { horzLines: { color: v } } })),
         ]), 'canvas.grid.horizontal'));
+        body.append(sid(this.sectionTitle('Margins'), 'canvas.margins'));
+        body.append(sid(this.numberRow('Top', config.margins.top, 0, 40, 1, (v) => this.emit({ margins: { top: v } }), '%'), 'canvas.margins.top'));
+        body.append(sid(this.numberRow('Bottom', config.margins.bottom, 0, 40, 1, (v) => this.emit({ margins: { bottom: v } }), '%'), 'canvas.margins.bottom'));
+        body.append(sid(this.numberRow('Right', config.margins.right, 0, 200, 1, (v) => this.emit({ margins: { right: v } }), 'bars'), 'canvas.margins.right'));
         if (this.themeControl) {
             const tc = this.themeControl;
             body.append(sid(this.sectionTitle('Theme'), 'canvas.theme'));
@@ -1333,23 +1337,16 @@ export class SettingsDialog {
         return el;
     }
 
-    private numberRow(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
-        return fieldRow({
-            label,
-            labelSize: 'sm',
-            className: 'vela-sd-row',
-            control: buildFieldControl({
-                kind: 'number',
-                value,
-                min,
-                max,
-                step,
-                fill: false,
-                commit: 'live',
-                steppers: true,
-                onChange,
-            }).el,
-        });
+    /** `unit` (optional) trails the input as muted text — "%", "bars". */
+    private numberRow(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void, unit?: string): HTMLElement {
+        const controls = [buildFieldControl({ kind: 'number', value, min, max, step, fill: false, commit: 'live', steppers: true, onChange }).el];
+        if (unit) {
+            const u = document.createElement('span');
+            u.textContent = unit;
+            u.style.cssText = 'color:var(--vela-fg-muted);';
+            controls.push(u);
+        }
+        return this.rowWith(label, controls);
     }
 
     /** A dropdown whose option values differ from their display labels. */

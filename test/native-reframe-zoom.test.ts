@@ -1,12 +1,12 @@
 // How the view is framed when the bar series is REPLACED (a symbol/timeframe switch).
 // The pinned behavior: the first-ever series fits the content, but a replacement keeps
-// the user's zoom (bar spacing) and only re-anchors the newest bars at the default
-// right offset — a pan aimed at another market's time range is meaningless, the zoom
+// the user's zoom (bar spacing) and only re-anchors the newest bars at the configured
+// right margin — a pan aimed at another market's time range is meaningless, the zoom
 // is a preference. A view-preserving replacement (backfill, preview swap) touches
 // neither.
 import { describe, it, expect } from 'vitest';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
-import { defaultViewport } from '../src/renderers/native/core/ViewportState';
+import { DEFAULT_MARGINS } from '../src/renderers/native/core/chartConfig';
 import type { OHLCV } from '../src/core/model/ohlcv';
 
 const T0 = 1_700_000_000_000;
@@ -33,8 +33,8 @@ describe('framing across series replacements', () => {
         const { r, viewport } = makeRenderer();
         r.setBars(mkBars(500));
         const v = viewport();
-        expect(v.barSpacing).toBeCloseTo(WIDTH / 206, 3); // fit: 200 visible bars + the default right offset
-        expect(v.rightOffset).toBe(6);
+        expect(v.barSpacing).toBeCloseTo(WIDTH / (200 + DEFAULT_MARGINS.right), 3); // fit: 200 visible bars + the right margin
+        expect(v.rightOffset).toBe(DEFAULT_MARGINS.right);
     });
 
     it('a replacement keeps the zoom and resets the placement to the newest bars', () => {
@@ -44,7 +44,7 @@ describe('framing across series replacements', () => {
         r.setBars(mkBars(150)); // symbol switch — new series, no preserveView
         const v = viewport();
         expect(v.barSpacing).toBe(12); // zoom kept — NOT re-fit to the 150-bar depth
-        expect(v.rightOffset).toBe(defaultViewport().rightOffset); // pan reset to the newest bars
+        expect(v.rightOffset).toBe(DEFAULT_MARGINS.right); // pan reset to the newest bars
     });
 
     it('the kept zoom is not clamped to the new series depth — a progressive head is still backfilling', () => {
