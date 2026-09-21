@@ -224,6 +224,10 @@ new VelaWorkspace('#chart', {
       'canvas.grid',                         //   Grid group
       'canvas.grid.vertical',                //     Vertical lines toggle + color
       'canvas.grid.horizontal',              //     Horizontal lines toggle + color
+      'canvas.margins',                      //   Margins group
+      'canvas.margins.top',                  //     Top (% of pane height)
+      'canvas.margins.bottom',               //     Bottom (% of pane height)
+      'canvas.margins.right',                //     Right (bars after the newest bar)
       'canvas.theme',                        //   Theme group (Dark/Light)
 
       // ══ Events tab (timeline marks — present once marks name groups) ═

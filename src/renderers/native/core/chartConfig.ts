@@ -137,11 +137,26 @@ export const PREMARKET_SHADE = withAlpha(WARNING, 0.08);
 export const POSTMARKET_SHADE = withAlpha(ACCENT, 0.08);
 export const EXTENDED_SHADE = POSTMARKET_SHADE;
 
+/**
+ * Empty space kept around the data. `top` / `bottom` are the share of each pane's
+ * PIXEL height the autoscaled window reserves above the highest / below the lowest
+ * visible value (percent); `right` is the whitespace after the newest bar, in bars,
+ * that fit, re-frame and scroll-to-latest land on.
+ */
+export interface ChartMargins {
+    top: number;
+    bottom: number;
+    right: number;
+}
+
+export const DEFAULT_MARGINS: ChartMargins = { top: 10, bottom: 10, right: 10 };
+
 export interface ChartStyle {
     /** Per-chart-type settings (plugin SDK sections), keyed by type id then row key. */
     chartTypes: Record<string, Record<string, unknown>>;
     /** Axis/label font size in CSS px (the family stays on the theme). */
     fontSize: number;
+    margins: ChartMargins;
     gridVert: GridLineStyle;
     gridHorz: GridLineStyle;
     /** Axis frame lines (the right price-axis border); `null` ⇒ inherit `theme.borderColor`. */
@@ -162,6 +177,7 @@ export function defaultChartStyle(): ChartStyle {
     return {
         chartTypes: {},
         fontSize: 11,
+        margins: { ...DEFAULT_MARGINS },
         gridVert: { visible: true, color: null },
         gridHorz: { visible: true, color: null },
         borderColor: null,
@@ -244,6 +260,9 @@ export interface ChartConfig {
     panes: {
         separatorColor: string;
     };
+    /** Whitespace around the data (the Canvas tab's Margins group): top/bottom in percent
+     *  of pane height, right in bars. See {@link ChartMargins}. */
+    margins: ChartMargins;
     /** Strategy trade markers (the `tradeMarkers` feature): the order-fill units on the price pane. */
     trades: {
         visible: boolean;
@@ -492,6 +511,14 @@ function clampPercent(v: number): number {
 function clampFontPx(v: number): number {
     return v < 6 ? 6 : v > 40 ? 40 : v;
 }
+/** Vertical margin percent: 0–40 each, so the data always keeps at least a fifth of the pane. */
+function clampMarginPct(v: number): number {
+    return v < 0 ? 0 : v > 40 ? 40 : v;
+}
+/** Right margin in bars: a whole number, 0–200. */
+function clampMarginBars(v: number): number {
+    return Math.round(v < 0 ? 0 : v > 200 ? 200 : v);
+}
 /** A filter bound: explicit `null` clears it; a finite non-negative number sets it; else keep base. */
 function nullableBound(v: unknown, base: number | null): number | null {
     if (v === null) return null;
@@ -577,6 +604,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const ps = asObject(p.priceScale);
     const anim = asObject(p.animations);
     const panes = asObject(p.panes);
+    const margins = asObject(p.margins);
     const trades = asObject(p.trades);
     const ts = asObject(p.timeScale);
     const marks = asObject(p.marks);
@@ -636,6 +664,11 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
         },
         panes: {
             separatorColor: isColor(panes.separatorColor) ? panes.separatorColor : base.panes.separatorColor,
+        },
+        margins: {
+            top: isNum(margins.top) ? clampMarginPct(margins.top) : base.margins.top,
+            bottom: isNum(margins.bottom) ? clampMarginPct(margins.bottom) : base.margins.bottom,
+            right: isNum(margins.right) ? clampMarginBars(margins.right) : base.margins.right,
         },
         trades: {
             visible: isBool(trades.visible) ? trades.visible : base.trades.visible,

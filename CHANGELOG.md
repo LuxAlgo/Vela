@@ -2,6 +2,58 @@
 
 All notable changes to Vela, newest first.
 
+## [v0.7.7]
+
+### Added
+
+- **Exchange time zone.** The time-zone picker (bottom bar, time-axis menu, mobile sheet)
+  offers an **Exchange** row, right under UTC: pick it and every chart renders in its own market's
+  zone — Chicago for a CME future, New York for a US equity, UTC for crypto — as declared
+  by its provider. In a multi-chart grid each cell follows its own market, and the
+  bottom-bar clock shows the active chart's. The choice persists with the workspace and
+  can be set from code with `timezone: 'exchange'` or `setTimezone('exchange')`;
+  choosing a fixed zone anywhere returns the whole workspace to that zone.
+- **The date picker jumps to a month or year from its header.** In an indicator's time
+  input, the calendar month and year are buttons: click the month to pick from the twelve
+  months, or the year to pick from a decade. Choosing a year then a month returns you to
+  the days, so a far date is a few clicks instead of stepping month by month.
+- **Chart margins are now a setting.** The Canvas tab of the chart settings gains a
+  Margins group: the empty space kept above the highest and below the lowest visible
+  value (each as a percent of the pane's height, 0–40) and the whitespace after the
+  newest bar (in bars, 0–200). The vertical margins apply to every pane; the right
+  margin is where the chart lands on load, on a symbol or timeframe switch, and when you
+  scroll back to the latest bar — editing it moves the view there right away. The values
+  live in the chart config as `margins`, so saved templates and persisted charts carry
+  them. The defaults are 10 % / 10 % / 10 bars.
+
+### Changed
+
+- **Default chart margins.** The autoscaled window now keeps 10 % of the pane above and
+  below the data (previously 20 % above, 10 % below), and the chart lands 10 bars from
+  the right edge instead of 6. Set the Margins group on the Canvas tab to 20 / 10 / 6 to
+  restore the previous look.
+- **A strategy's round trips can now carry their own ledger.** Each trade an engine
+  reports through a script's execution context (`trades`) may include its realized
+  `pnl`, the `commission` charged, and its worst and best excursion from entry
+  (`maxDrawdown`, `maxRunup`) — the per-trade counterparts of the account-level
+  drawdown and run-up the strategy summary already exposed. All four are optional, so
+  an engine that tracks none of them keeps reporting trades exactly as before; a host
+  tabulating a backtest no longer has to reconstruct them from fills.
+
+### Fixed
+
+- **Dragging an indicator input's opacity slider commits once, on release.** The picker
+  emitted a new value on every pointer move, so an `input.color` slider drag in an
+  indicator's settings re-executed the script over its whole history once per frame —
+  the color looked frozen while the engine caught up, and a long drag on a deep history
+  could exhaust the tab's memory. Indicator inputs now hear the final value when the
+  pointer is released (the knob, gradient and percentage still follow it live; a plain
+  click on the track commits at the clicked position as before). Drawing styles and chart
+  settings keep their live preview: they only repaint. The policy is the new
+  `commit: 'live' | 'release'` option of `buildColorPicker` / `ColorField` / the
+  `color` field descriptor (default `'live'`), for hosts whose `onChange` recomputes
+  rather than repaints.
+
 ## [v0.7.6]
 
 ### Added

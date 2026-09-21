@@ -86,6 +86,15 @@ describe('mergeConfig — validating reducer (item 15)', () => {
         expect(mergeConfig(base, { panes: { separatorColor: 42 } }).panes.separatorColor).toBe(base.panes.separatorColor);
     });
 
+    it('margins: defaults, clamping, and malformed values', () => {
+        const base = baseConfig();
+        expect(base.margins).toEqual({ top: 10, bottom: 10, right: 10 });
+        const out = mergeConfig(base, { margins: { top: 8, bottom: 99, right: 12.4 } });
+        expect(out.margins).toEqual({ top: 8, bottom: 40, right: 12 }); // pct capped at 40, bars rounded
+        expect(mergeConfig(base, { margins: { right: -3 } }).margins.right).toBe(0);
+        expect(mergeConfig(base, { margins: { top: 'x', right: null } }).margins).toEqual(base.margins);
+    });
+
     it('always pins the current version', () => {
         const base = baseConfig();
         expect(mergeConfig(base, { version: 999 }).version).toBe(CHART_CONFIG_VERSION);
@@ -164,6 +173,12 @@ describe('NativeRenderer.applyConfig — applies + syncs the live scene fields',
         expect(r.getConfig().series.spacing).toBe(2);
         r.applyConfig({ series: { spacing: 0 } }); // floored above 0
         expect(r.getConfig().series.spacing).toBe(0.1);
+    });
+
+    it('applies the margins and reflects them in getConfig', () => {
+        const r = new NativeRenderer();
+        r.applyConfig({ margins: { top: 5, bottom: 15, right: 20 } });
+        expect(r.getConfig().margins).toEqual({ top: 5, bottom: 15, right: 20 });
     });
 
     it('candle body is visible by default and can be toggled off via config', () => {

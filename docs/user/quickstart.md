@@ -10,7 +10,7 @@ The fastest path uses **offline data** — an array of bars you already have. No
 - **Step 2** registers an engine so scripts can run.
 - **Step 3** adds an indicator from source.
 
-> Install the package first: `npm install @luxalgo/vela` (see [installation.md](./installation.md)).
+> Install the package first: `npm install @luxalgo/vela` — it is published on npm as [`@luxalgo/vela`](https://www.npmjs.com/package/@luxalgo/vela) (see [installation.md](./installation.md)).
 
 ---
 

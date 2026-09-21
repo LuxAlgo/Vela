@@ -29,7 +29,8 @@ export interface VelaShellOptions {
     indicators?: string | IndicatorManifest | IndicatorLoader;
     /** Topbar timeframe presets (chart timeframe values). */
     timeframes?: string[];
-    /** Display timezone (IANA; default 'Etc/UTC') — one zone for the whole shell. */
+    /** Display timezone — one choice for the whole shell: an IANA zone (default
+     *  'Etc/UTC'), or `'exchange'` to render every chart in its own market's zone. */
     timezone?: string;
     /** Chrome toggles (all default true). */
     statusline?: boolean;

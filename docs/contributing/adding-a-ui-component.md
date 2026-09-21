@@ -141,7 +141,12 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
   `text_area` inputs and the drawing bar's label editor.
 - **`ColorField`** / **`buildColorPicker`** — `circle` chip (settings dialogs: square
   swatch inset from a matching field border) or compact `square` trigger. `splitColor` /
-  `combineColor` stay available from `@luxalgo/vela/ui` and the browser bundle.
+  `combineColor` stay available from `@luxalgo/vela/ui` and the browser bundle. The
+  opacity slider's `commit` option decides when a drag reaches `onChange`: `'live'`
+  (default) on every move, for consumers that merely repaint (drawing styles, chart
+  settings); `'release'` once on pointerup, for consumers that recompute (indicator
+  inputs re-run the script over its whole history). The knob and readout follow the
+  pointer either way.
 - **Field layer** — `fieldGrid` / `fieldRow` / `fieldSection` / `buildFieldControl`
   turn a label + a control descriptor into the shared settings row. Chart settings,
   indicator inputs, and the drawing settings dialog all map their schemas through it.
