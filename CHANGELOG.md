@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [v0.7.7]
 
 ### Added
 
@@ -13,23 +13,6 @@ All notable changes to Vela, newest first.
   bottom-bar clock shows the active chart's. The choice persists with the workspace and
   can be set from code with `timezone: 'exchange'` or `setTimezone('exchange')`;
   choosing a fixed zone anywhere returns the whole workspace to that zone.
-
-### Fixed
-
-- **Dragging an indicator input's opacity slider commits once, on release.** The picker
-  emitted a new value on every pointer move, so an `input.color` slider drag in an
-  indicator's settings re-executed the script over its whole history once per frame —
-  the color looked frozen while the engine caught up, and a long drag on a deep history
-  could exhaust the tab's memory. Indicator inputs now hear the final value when the
-  pointer is released (the knob, gradient and percentage still follow it live; a plain
-  click on the track commits at the clicked position as before). Drawing styles and chart
-  settings keep their live preview: they only repaint. The policy is the new
-  `commit: 'live' | 'release'` option of `buildColorPicker` / `ColorField` / the
-  `color` field descriptor (default `'live'`), for hosts whose `onChange` recomputes
-  rather than repaints.
-  
-### Added
-
 - **The date picker jumps to a month or year from its header.** In an indicator's time
   input, the calendar month and year are buttons: click the month to pick from the twelve
   months, or the year to pick from a decade. Choosing a year then a month returns you to
@@ -56,6 +39,20 @@ All notable changes to Vela, newest first.
   drawdown and run-up the strategy summary already exposed. All four are optional, so
   an engine that tracks none of them keeps reporting trades exactly as before; a host
   tabulating a backtest no longer has to reconstruct them from fills.
+
+### Fixed
+
+- **Dragging an indicator input's opacity slider commits once, on release.** The picker
+  emitted a new value on every pointer move, so an `input.color` slider drag in an
+  indicator's settings re-executed the script over its whole history once per frame —
+  the color looked frozen while the engine caught up, and a long drag on a deep history
+  could exhaust the tab's memory. Indicator inputs now hear the final value when the
+  pointer is released (the knob, gradient and percentage still follow it live; a plain
+  click on the track commits at the clicked position as before). Drawing styles and chart
+  settings keep their live preview: they only repaint. The policy is the new
+  `commit: 'live' | 'release'` option of `buildColorPicker` / `ColorField` / the
+  `color` field descriptor (default `'live'`), for hosts whose `onChange` recomputes
+  rather than repaints.
 
 ## [v0.7.6]
 
