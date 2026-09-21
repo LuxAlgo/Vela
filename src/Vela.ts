@@ -27,6 +27,8 @@ import { registerVolume } from './core/native-indicators/volume';
 import { registerVpvr } from './core/native-indicators/vpvr';
 import { registerClassicIndicators } from './core/native-indicators/classics';
 
+const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)));
+
 /** Outcome of {@link Vela.runIndicator}: success carries the live handle, failure the error. */
 export interface RunIndicatorResult {
     ok: boolean;
@@ -202,7 +204,14 @@ export class Vela {
      * fetch from — the same relationship `script:run` has to `context:changed`.
      */
     runScript(source: string, options?: AddIndicatorOptions): Promise<ScriptRunResult> {
-        const handle = this.addIndicator(source, options);
+        let handle: IndicatorHandle;
+        try {
+            handle = this.addIndicator(source, options);
+        } catch (err) {
+            // A rejected `options.id` (already live) — the "never rejects" contract turns
+            // it into a structured failure, and nothing was mounted to remove.
+            return Promise.resolve({ ok: false, run: null, error: asError(err), onUpdate: () => () => undefined, remove: () => undefined });
+        }
         const updates = new Set<(run: ScriptRun) => void>();
         const drop = (): void => {
             try {
@@ -252,7 +261,12 @@ export class Vela {
     }
 
     runIndicator(source: string, options?: AddIndicatorOptions): Promise<RunIndicatorResult> {
-        const handle = this.addIndicator(source, options);
+        let handle: IndicatorHandle;
+        try {
+            handle = this.addIndicator(source, options);
+        } catch (err) {
+            return Promise.resolve({ ok: false, handle: null, error: asError(err), context: null });
+        }
         return new Promise((resolve) => {
             const offReady = handle.on('ready', () => {
                 offReady();

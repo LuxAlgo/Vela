@@ -71,9 +71,22 @@ class FakeRenderer implements IChartRenderer {
     mount(): void {}
     setTheme(): void {}
     resize(): void {}
-    applyFeature(): void {}
-    readFeature(): unknown {
-        return undefined;
+    style: string = 'candles';
+    applyFeature(key: string, value: unknown): void {
+        if (key === 'priceStyle' && typeof value === 'string') this.style = value;
+    }
+    readFeature(key: string): unknown {
+        return key === 'priceStyle' ? this.style : undefined;
+    }
+    // The cosmetic-config seam: a document lands, the change is announced (the real
+    // renderer's `applyConfig` ends the same way).
+    private configCbs = new Set<() => void>();
+    applyConfig(_config: unknown): void {
+        for (const cb of this.configCbs) cb();
+    }
+    onConfigChanged(cb: () => void): Unsubscribe {
+        this.configCbs.add(cb);
+        return () => this.configCbs.delete(cb);
     }
     destroy(): void {}
     setBars(): void {}
@@ -278,6 +291,27 @@ describe('ChartCell native persistence round-trip (#146/#149)', () => {
         cell.destroy();
     });
 
+    it('a price style changed THROUGH the config (applyConfig / template import) reaches the workspace chrome', async () => {
+        // The topbar style icon follows `onPriceStyleChanged`; before this the cell only
+        // raised it from its own `setPriceStyle`, so a style landing via `applyConfig`
+        // (a settings-dialog document, an imported template) left the icon stale.
+        const onPriceStyleChanged = vi.fn();
+        const cell = makeCell({}, { onPriceStyleChanged });
+        await settle();
+        const renderer = lastRenderer!;
+        onPriceStyleChanged.mockClear();
+        renderer.style = 'line';
+        renderer.applyConfig({ series: { style: 'line' } });
+        expect(cell.priceStyle).toBe('line');
+        expect(onPriceStyleChanged).toHaveBeenCalledWith('c1');
+        expect(cell.dehydrate().priceStyle).toBe('line');
+        // An unrelated config edit (same style) raises nothing — no spurious re-projection.
+        onPriceStyleChanged.mockClear();
+        renderer.applyConfig({ grid: { vertLines: { visible: false } } });
+        expect(onPriceStyleChanged).not.toHaveBeenCalled();
+        cell.destroy();
+    });
+
     it('the legend eye marks the cell state dirty (the save trigger for visibility)', async () => {
         const onStateDirty = vi.fn();
         const cell = makeCell({ indicators: { natives: ['aroon'], manifest: [] } } as Partial<CellBoot>, { onStateDirty });
@@ -286,6 +320,63 @@ describe('ChartCell native persistence round-trip (#146/#149)', () => {
         aroonOf(cell)!.setVisible(false);
         await settle();
         expect(onStateDirty).toHaveBeenCalled();
+        cell.destroy();
+    });
+});
+
+describe('ChartCell external indicators keep their id (ctx.addIndicator({ id }) + undo/redo)', () => {
+    // No engine is registered in this harness: the script never runs, but the indicator is
+    // still claimed, listed, and removable under its id — which is all these tests read.
+    const scriptIds = (cell: ChartCell) => cell.chart.indicators().filter((h) => h.nativeType === undefined).map((h) => h.id);
+
+    it('a host id is honored on the chart, and undo/redo re-add the indicator under the SAME id', async () => {
+        const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const cell = makeCell({ indicators: { natives: [], manifest: [] } } as Partial<CellBoot>);
+        await settle();
+        cell.addExternalIndicator({ name: 'My RSI', script: 'plot(close)', id: 'plugin:rsi:42' });
+        expect(scriptIds(cell)).toEqual(['plugin:rsi:42']);
+
+        cell.history.undo();
+        expect(scriptIds(cell)).toEqual([]);
+        cell.history.redo();
+        expect(scriptIds(cell)).toEqual(['plugin:rsi:42']); // not a freshly minted id
+        quiet.mockRestore();
+        cell.destroy();
+    });
+
+    it('without a host id the minted id is recorded too — a resurrection keeps it', async () => {
+        const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const cell = makeCell({ indicators: { natives: [], manifest: [] } } as Partial<CellBoot>);
+        await settle();
+        cell.addExternalIndicator({ name: 'Minted', script: 'plot(close)' });
+        const [minted] = scriptIds(cell);
+        expect(minted).toBeTruthy();
+        cell.history.undo();
+        cell.history.redo();
+        expect(scriptIds(cell)).toEqual([minted]);
+        quiet.mockRestore();
+        cell.destroy();
+    });
+
+    it('a host id already live on the cell is rejected: no ghost instance, no history entry, the live one untouched', async () => {
+        const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const cell = makeCell({ indicators: { natives: [], manifest: [] } } as Partial<CellBoot>);
+        await settle();
+        cell.addExternalIndicator({ name: 'A', script: 'plot(close)', id: 'same' });
+        const [live] = cell.chart.indicators().filter((h) => h.nativeType === undefined);
+        cell.addExternalIndicator({ name: 'B', script: 'plot(open)', id: 'same' });
+
+        expect(cell.instances).toHaveLength(1);
+        expect(cell.onChartRows().filter((r) => !r.native)).toHaveLength(1); // no ghost picker row
+        expect(cell.chart.indicators().filter((h) => h.nativeType === undefined)).toEqual([live]);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to add'), expect.objectContaining({ message: expect.stringContaining('"same" is already live') }));
+        // The rejected add recorded nothing: one undo removes the live one and leaves nothing to undo.
+        cell.history.undo();
+        expect(cell.history.canUndo).toBe(false);
+        expect(cell.instances).toHaveLength(0);
+        warn.mockRestore();
+        quiet.mockRestore();
         cell.destroy();
     });
 });

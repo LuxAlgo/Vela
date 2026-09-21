@@ -149,6 +149,9 @@ export type * from './core/model';
 // Series ids must come from `stableSeriesId` so renderer reconciliation and persisted
 // per-series settings survive re-runs identically whichever engine produced the series.
 export { stableSeriesId } from './core/model';
+// Resolve a series' per-surface visibility (`display` over the `visible` shorthand) the
+// way the native renderer does — for renderers, layers and host readouts alike.
+export { seriesShownOn, seriesInScale } from './core/model';
 // Evaluate an input's `when` gate the way the settings dialog does (host-built inputs UIs).
 export { inputVisible } from './core/model';
 // Diff a value bag against its schema's declaration defaults — what state-persistence

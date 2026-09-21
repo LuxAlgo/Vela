@@ -424,6 +424,9 @@ export class IndicatorInputsDialog {
                 theme: this.host.theme(),
                 get: () => String(bagOf(row, inp)[inp.key] ?? inp.defval),
                 onChange: (v) => emit(v),
+                // An input change re-executes the script over its whole history: commit the
+                // opacity drag once on release, not once per pointer move.
+                commit: 'release',
             }).el;
         }
         if (inp.type === 'symbol') return this.buildSymbol(id, String(current), emit);

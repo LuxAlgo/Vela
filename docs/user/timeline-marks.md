@@ -54,7 +54,7 @@ tooltip; click it for the popup. Open the chart settings: an **Events** tab now 
 | `glyph` | yes | How the token looks: `{ shape?, color, letter? }` or `{ shape?, color, icon }` — see [Glyphs](#glyphs). |
 | `title` | no | The popup's heading, whatever form the content takes. |
 | `tooltip` | no | Hover text on the glyph. Without it a lone mark shows its `title`. |
-| `group` | no | The kind of event (`'dividends'`, `'news'`…). Marks of one group on one bar fold together; each group gets a checkbox in settings — see [Groups](#groups-clusters-and-stacks). |
+| `group` | no | The kind of event (`'dividends'`, `'news'`…). Marks of one group on one bar — or on neighbouring bars once zoomed out far enough for their glyphs to overlap — fold together; each group gets a checkbox in settings — see [Groups](#groups-clusters-and-stacks). |
 | `content` | no | What the popup shows — text, sanitized HTML, or a panel; a value or a function resolved on click. Without it a click only emits `mark:click` — see [The popup](#the-popup). |
 
 The full type is `TimelineMark`, exported from `@luxalgo/vela`.
@@ -75,7 +75,8 @@ contains the time**:
   history backfills that far.
 
 Marks re-snap whenever the bars change: switch the timeframe and three news items 15 minutes
-apart become **three glyphs on a 5-minute chart and one cluster on an hourly chart**.
+apart become **three glyphs on a 5-minute chart and one cluster on an hourly chart**. Zoom does
+the same within a timeframe — see [Clustering](#groups-clusters-and-stacks).
 
 ```js
 const t = Date.UTC(2024, 5, 11, 14, 0);
@@ -187,7 +188,12 @@ content: async () => ({ html: await fetchDividendDetails('NVDA', '2024-06-11') }
 
 **Clustering.** Marks of one group that land on the same bar fold into **one cluster glyph** —
 slightly larger than a single mark, carrying the first mark's glyph, and hovering as
-`<Group label> · <count>`. Its popup lists every mark, earliest first.
+`<Group label> · <count>`. Its popup lists every mark, earliest first. The same fold happens
+across **neighbouring bars whenever the glyphs would overlap at the current zoom**: zoomed far
+out, same-group marks that would overlap fold into one cluster sitting on their earliest bar, and
+the next cluster starts where the glyphs clear each other — so a dense feed reads as a row of
+clusters a glyph apart, never a solid band and never one giant glyph. Zoom back in and they
+separate again. Groups never fold into each other.
 
 **Stacking.** Marks of *different* groups on one bar form a **stack**: a small deck showing the
 top group's token with the others peeking out behind it. Hovering the deck fans the tokens out
@@ -209,6 +215,23 @@ chart.marks
 A mark may name a group you never defined — it then shows its capitalized id (`'splits'` →
 *Splits*). Ungrouped marks have no checkbox and always show.
 
+**Nesting.** A group can name a `parent`. Its checkbox lists indented under the parent's and
+dims while the parent is off; its marks paint only while **both** switches are on. That gives a
+master switch with sub-choices — the child keeps its own choice for when the parent comes back:
+
+```js
+chart.marks
+    .defineGroup({ id: 'news', label: 'News', visible: false })
+    .defineGroup({ id: 'news-latest', label: 'Show most recent', parent: 'news' })
+    .defineGroup({ id: 'news-all', label: 'Show historical', parent: 'news', visible: false })
+    .defineGroup({ id: 'economic', label: 'Economic releases' })
+    .defineGroup({ id: 'economic-high', label: 'High impact', parent: 'economic' })
+    .defineGroup({ id: 'economic-low', label: 'Low impact', parent: 'economic', visible: false });
+```
+
+A parent may carry marks of its own. A `parent` that names no defined group is ignored (the
+group lists at the top level), so a typo can never make a group vanish from the tab.
+
 The user's choice is **persisted with the chart's cosmetic config** (`chart.renderer.getConfig()`
 → `marks.groups`), so it survives a reload and rides workspace templates. A stored choice for a
 group the host has not registered yet is kept verbatim until that group shows up. The same
@@ -216,7 +239,7 @@ switch is available from code:
 
 ```js
 chart.marks.setGroupVisible('news', false);
-chart.marks.isGroupVisible('news'); // false — the stored choice, else the group's declared default, else true
+chart.marks.isGroupVisible('news'); // false — the stored choice, else the group's declared default, else true; a nested group also needs every ancestor on
 
 chart.renderer.set('marks', false); // hide the whole lane
 chart.renderer.set('marks', { groups: { splits: false } }); // the settings checkbox, from code
@@ -299,7 +322,7 @@ works — but nothing paints and `setGroupVisible` warns and no-ops.
 | `chart.marks.set(marks)` | Replace the whole set. |
 | `chart.marks.remove(id)` · `clear()` | Drop one mark, or all. |
 | `chart.marks.all()` | Every mark, in insertion order. |
-| `chart.marks.defineGroup({ id, label, visible? })` | Name a group and choose its default visibility. |
+| `chart.marks.defineGroup({ id, label, visible?, parent? })` | Name a group, choose its default visibility, and optionally nest it under another defined group on the Events tab. |
 | `chart.marks.groups()` | The defined groups, in definition order. |
 | `chart.marks.setGroupVisible(id, visible?)` · `isGroupVisible(id)` | The settings checkbox, from code. |
 | `chart.marks.supported` | Whether the active renderer paints marks. |

@@ -224,6 +224,10 @@ new VelaWorkspace('#chart', {
       'canvas.grid',                         //   Grid group
       'canvas.grid.vertical',                //     Vertical lines toggle + color
       'canvas.grid.horizontal',              //     Horizontal lines toggle + color
+      'canvas.margins',                      //   Margins group
+      'canvas.margins.top',                  //     Top (% of pane height)
+      'canvas.margins.bottom',               //     Bottom (% of pane height)
+      'canvas.margins.right',                //     Right (bars after the newest bar)
       'canvas.theme',                        //   Theme group (Dark/Light)
 
       // ══ Events tab (timeline marks — present once marks name groups) ═
@@ -327,10 +331,12 @@ new Vela('#chart', {
 
 ## Per-indicator options
 
-The optional second argument to `addIndicator(source, options)`:
+The optional second argument to `addIndicator(source, options)` — `runIndicator` and
+`runScript` take the same object:
 
 | Option | Type | Meaning |
 |---|---|---|
+| `id` | string | The indicator's id on the chart — an opaque, non-empty string you own (a document key, an editor tab, a UUID). It is what `handle.id`, `chart.indicators()`, the `indicator:*` events, `script:run` and the legend/pane surfaces carry, so you can address the indicator without keeping a side map. Omit it and the chart mints one — stable while the indicator stays on the chart, not across reloads. An id already live on the chart is rejected, never renamed: `addIndicator` throws, `runIndicator`/`runScript` resolve `{ ok: false, error }`. Removing the indicator frees its id. |
 | `language` | string | Which registered engine runs this script. Defaults to the chart's `defaultLanguage`. |
 | `inputs` | `Record<string, InputValue>` | Input overrides, keyed by input title or key. |
 | `props` | `Record<string, InputValue>` | Declaration-property overrides (a strategy's `initial_capital`, an indicator's `precision`, …), keyed like the engine's props schema. Ignored by engines without props support. |

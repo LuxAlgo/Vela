@@ -106,7 +106,9 @@ export interface RendererLayerDefinition {
     /** Repaint this layer when the pointer moves (hover hit-testing UIs). Off by default:
      *  pointer moves normally repaint only the crosshair overlay, not the layers. */
     repaintOnCursor?: boolean;
-    /** Instance factory — called once per mounted renderer. */
+    /** Instance factory — called once per mounted renderer, plus once per mounted instance
+     *  of a `multiInstance` native indicator whose type equals this id (each instance paints
+     *  through its own layer instance and canvas, fed by its own channel). */
     create(): RendererLayerInstance;
 }
 

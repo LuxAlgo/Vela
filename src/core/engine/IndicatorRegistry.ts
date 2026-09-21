@@ -30,6 +30,12 @@ export interface IndicatorRecord {
     /** Declaration-prop values (effective defaults merged with user/add-time overrides).
      *  Stays empty for engines without props support and for natives. */
     propValues: Record<string, InputValue>;
+    /**
+     * A source handed to `updateCode` that is still being prepared. The latest call wins:
+     * a prepare that resolves for any other source is discarded, so two quick edits never
+     * race the older one onto the chart.
+     */
+    pendingSource?: string;
     /** The live execution session (static or streaming) — poked on input/viewport/bar changes. */
     session?: ExecutionSession;
     /**
@@ -71,10 +77,18 @@ export class IndicatorRegistry {
     private readonly records = new Map<string, IndicatorRecord>();
     private counter = 0;
 
-    /** Allocate a unique, stable per-instance id. */
-    nextId(prefix = 'ind'): string {
-        this.counter += 1;
-        return `${prefix}-${this.counter}`;
+    /**
+     * Mint a unique per-instance id. Host-supplied ids share the namespace, so a minted
+     * id skips anything already recorded — and anything `taken` reports live elsewhere
+     * (a handle the orchestrator holds outside the records, e.g. a fail-soft native).
+     */
+    nextId(prefix = 'ind', taken: (id: string) => boolean = () => false): string {
+        let id: string;
+        do {
+            this.counter += 1;
+            id = `${prefix}-${this.counter}`;
+        } while (this.records.has(id) || taken(id));
+        return id;
     }
 
     add(record: IndicatorRecord): void {

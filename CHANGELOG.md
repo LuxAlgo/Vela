@@ -16,10 +16,189 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Dragging an indicator input's opacity slider commits once, on release.** The picker
+  emitted a new value on every pointer move, so an `input.color` slider drag in an
+  indicator's settings re-executed the script over its whole history once per frame —
+  the color looked frozen while the engine caught up, and a long drag on a deep history
+  could exhaust the tab's memory. Indicator inputs now hear the final value when the
+  pointer is released (the knob, gradient and percentage still follow it live; a plain
+  click on the track commits at the clicked position as before). Drawing styles and chart
+  settings keep their live preview: they only repaint. The policy is the new
+  `commit: 'live' | 'release'` option of `buildColorPicker` / `ColorField` / the
+  `color` field descriptor (default `'live'`), for hosts whose `onChange` recomputes
+  rather than repaints.
+  
+### Added
+
+- **Chart margins are now a setting.** The Canvas tab of the chart settings gains a
+  Margins group: the empty space kept above the highest and below the lowest visible
+  value (each as a percent of the pane's height, 0–40) and the whitespace after the
+  newest bar (in bars, 0–200). The vertical margins apply to every pane; the right
+  margin is where the chart lands on load, on a symbol or timeframe switch, and when you
+  scroll back to the latest bar — editing it moves the view there right away. The values
+  live in the chart config as `margins`, so saved templates and persisted charts carry
+  them. The defaults are 10 % / 10 % / 10 bars.
+
+### Changed
+
+- **Default chart margins.** The autoscaled window now keeps 10 % of the pane above and
+  below the data (previously 20 % above, 10 % below), and the chart lands 10 bars from
+  the right edge instead of 6. Set the Margins group on the Canvas tab to 20 / 10 / 6 to
+  restore the previous look.
+- **A strategy's round trips can now carry their own ledger.** Each trade an engine
+  reports through a script's execution context (`trades`) may include its realized
+  `pnl`, the `commission` charged, and its worst and best excursion from entry
+  (`maxDrawdown`, `maxRunup`) — the per-trade counterparts of the account-level
+  drawdown and run-up the strategy summary already exposed. All four are optional, so
+  an engine that tracks none of them keeps reporting trades exactly as before; a host
+  tabulating a backtest no longer has to reconstruct them from fills.
+
+## [v0.7.6]
+
+### Added
+
+- **Bring your own indicator ids.** `addIndicator`, `runIndicator` and `runScript` accept an
+  `id` option — an opaque string of your choosing (a document key, an editor tab, a UUID).
+  The indicator then runs under that id everywhere the chart reports one: the handle,
+  `chart.indicators()`, the `indicator:*` events, `script:run`, the legend and the pane
+  attributes — so a host that keys its own state on indicators no longer needs a side map
+  from its ids to the chart's. Leave it out and the chart mints an id as before; nothing
+  existing changes. An id already live on the chart is rejected rather than renamed:
+  `addIndicator` throws, `runIndicator`/`runScript` resolve `{ ok: false, error }`.
+  Removing the indicator frees its id. In the widget, `ctx.addIndicator({ id, … })` and
+  a persistence handler's `CellStateContext.addIndicator({ id, … })` take the same id,
+  so a plugin can store it in its document slot and restore the indicator under it —
+  and undo/redo re-add an indicator under the id it first ran with, supplied or minted.
+
+## [v0.7.5]
+
+### Added
+
+- **Timeline-mark groups can nest.** A group may name a `parent`: its checkbox lists indented
+  under the parent's on the Events tab and dims while the parent is off, and its marks paint
+  only while both are on. A host can now offer one master switch with sub-choices — News →
+  most recent / historical, Economic releases → high / medium / low — and a child keeps its
+  own choice for when the parent comes back.
+
+### Fixed
+
+- **Two-letter mark tokens stay inside their outline.** A timeline mark carrying two
+  characters (`US`, `EU`) drew them at the single-letter size, so on a 16 px pin the pair
+  ran over the head. Pairs now share the token's width at a smaller size, and are measured
+  as drawn so a wider pair or a wider host font never overflows either; a single letter is
+  unchanged.
+
+- **"Reset defaults" keeps the chart type you are on.** Resetting the chart settings
+  used to switch the chart back to the style it had when the page loaded — a line,
+  Heikin Ashi, or plugin chart type went back to candles, while the style button in the
+  toolbar still showed the old pick and the chart type's own settings tab vanished with
+  it. The reset now leaves the current chart type in place and returns everything else
+  to its defaults — every tab, the chart type's own settings, the candle look you gave
+  a plugin chart type from the Symbol tab, and the event groups you had hidden. The
+  dialog stays put and simply shows the restored values, instead of closing and
+  opening again. The toolbar's style button also follows a chart type that arrives
+  through an imported settings template.
+
+## [v0.7.4]
+
+### Changed
+
+- **The price scale stays on the price range while the chart is hidden.** Hiding the
+  chart from the symbol legend with nothing else on the price pane used to leave the
+  price axis on a 0–1 placeholder. The axis now keeps following the hidden bars as you
+  pan and zoom, so showing the chart again lands exactly where you left it. As before,
+  when overlay indicators remain on the pane they take the scale over and fill it.
+  
+### Fixed
+
+- **Dense timeline marks fold into clusters as you zoom out.** Marks of one group used to
+  fold only when they landed on the same bar, so a busy feed on a fine timeframe drew a
+  solid band of overlapping glyphs. Neighbouring marks whose glyphs would overlap at the
+  current bar spacing now share one glyph: the tooltip carries the count, the popup lists
+  every mark, and zooming back in separates them again.
+
+## [v0.7.3]
+
+### Fixed
+
+- **Hiding the chart hides a plugin chart type whole.** With a plugin chart type
+  selected, hiding the chart from the symbol legend removed the candles but left the
+  chart type's own drawing on the pane. The chart type now disappears together with the
+  candles — everything the current chart type paints, its hover readouts included — and
+  comes back on show. Overlay plugin indicators that draw through a renderer layer are
+  unaffected: they stay visible while the chart is hidden, whatever the chart type.
+
+## [v0.7.2]
+
+### Fixed
+
+- **Hiding the chart no longer blanks plugin layers drawn at bar prices.** Hiding the
+  candles from the symbol legend used to empty the price pane whenever what remained on
+  it was drawn by a plugin renderer layer — a plugin chart type, or an overlay plugin
+  indicator painting through its own layer: with no series left to measure, the price
+  scale collapsed and those layers painted off-screen. The bars now keep driving the
+  price scale while such content is on the pane, so the candles disappear and everything
+  else stays exactly where it was.
+
+## [v0.7.1]
+
+### Added
+
+- **Replace an indicator's script in place.** `handle.updateCode(source)` re-runs an
+  indicator on new code without taking it off the chart: it keeps its identity, legend
+  row, pane placement, visibility and any handle you hold, and input values carry over
+  wherever the new script still declares them. The new source is compiled before the
+  running one is stopped, so a script that fails to compile leaves the current indicator
+  computing and painting and reports through the handle's `error` event. Runs caused this
+  way report `cause: 'code'` on `script:run`. Native indicators, which have no script,
+  ignore the call.
+- **Plugin indicators drawn by a renderer layer can now be added several times.** A
+  plugin native indicator that paints through its own renderer layer and allows several
+  instances (`multiInstance` on its descriptor) now gets one layer per instance: each
+  instance draws on its own canvas, on its own pane, with its own stacking order, and its
+  data never overwrites a sibling's. Previously such types had to stay single-instance.
+  Running native indicators also learn their own id (`ctx.id`), so an instance can
+  identify itself to host code — a picker or a drag handle — without ambiguity.
+- **A plot can show on some surfaces and not others.** An indicator series now carries
+  a per-surface `display`: painted in its pane, kept on the price scale, its value beside
+  the legend title, and its row in the data window are four independent switches. A
+  script can keep a helper value readable in the data window without drawing it, show a
+  value in the legend only, or paint a line that reports nowhere. The `visible: false`
+  shorthand still hides a series everywhere. Renderer and plugin authors resolve the
+  flags with `seriesShownOn` and `seriesInScale` from `@luxalgo/vela/plugin`.
+
+### Changed
+
+- **Hidden plots no longer stretch the price scale.** A series that is neither painted
+  in its pane nor shown on the price scale — a data-window-only or legend-only readout,
+  or a `visible: false` fill anchor — is left out of the pane's autoscale, so a helper
+  plot far from the drawn values no longer squashes what is actually visible. A plot
+  shown on the price scale keeps its values in view even when it is not painted.
+
+### Fixed
+
+- **Candle wicks keep their color when zoomed far out.** Once bars are packed tighter
+  than a pixel, the candles sharing a column are drawn as thin sticks; a stick used to
+  take one direction for all of its bars, so a bearish candle's long wick could turn
+  bullish green the moment the recovery candle next to it landed in the same column.
+  Each bar's range now keeps its own color — direction, `barcolor()` tint, or the
+  wick color from the candle settings, the same rules as at every other zoom level.
+- **A plugin indicator restored hidden no longer crashes the chart on load.** A saved
+  layout that carried a hidden plugin native indicator could throw while the chart was
+  being built, because the indicator was asked to suspend before it had ever started.
+  Such an indicator is now left alone until it is first shown, at which point it starts
+  as usual; removing it or closing the chart while it is still hidden is equally safe.
 - **Right-click menus and dropdowns follow the app theme, not the plot.** Changing the
   chart background in settings used to recolor those panels with the plot. They now
   use the same surface as the drawing toolbar and the chart settings dialog, and only
   a theme switch restyles them.
+- **An edit made just before a workspace is torn down is no longer lost.** Changes are
+  batched for a moment before `state:changed` fires, and destroying the workspace inside
+  that window used to drop the pending change without telling anyone — so an app saving
+  from that event lost the user's last symbol change or added indicator. `destroy()` now
+  emits the pending `state:changed` before tearing anything down, and `getState()` called
+  during teardown still describes the charts that were on screen rather than the last
+  restored document.
 - **Timeline mark popups now toggle with a click.** Clicking the mark whose popup is
   open closes it; previously that second click closed and immediately reopened the popup,
   so it took a click elsewhere to dismiss it.
@@ -29,6 +208,13 @@ All notable changes to Vela, newest first.
   only the anchor markers until the second point is placed. The Schiff and modified
   Schiff pitchforks also keep that pivot line in the finished shape, so the pivot handle
   no longer floats detached from the fork it defines.
+- **Indicator visuals no longer linger across a market switch.** Switching the symbol,
+  timeframe, or session now clears every indicator's painted output the moment the
+  switch starts, and each indicator repaints once its recomputation over the new market
+  completes. Previously, outputs that are not tied to the bar series — drawing objects
+  such as lines, boxes, labels, and polylines, plus background tints and horizontal
+  levels — could stay visible over the new market's candles until the script finished
+  recomputing, which for heavy scripts took many seconds.
 
 ## [v0.7.0]
 

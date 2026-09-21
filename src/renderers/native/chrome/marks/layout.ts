@@ -6,7 +6,7 @@ import type { MarkGroup, TimelineMark } from '../../../../core/marks/types';
 
 /** Token size of a single mark, px. */
 export const MARK_GLYPH_PX = 16;
-/** Token size of a cluster (several marks of one group on one bar) — a little larger, px. */
+/** Token size of a cluster (several marks of one group sharing a glyph) — a little larger, px; also the width one cluster must clear before the next starts (`foldOverlappingClusters`). */
 export const MARK_CLUSTER_PX = 20;
 /** Air between a glyph's bottom edge and the time-axis line, px. */
 export const MARK_LANE_INSET = 4;
@@ -19,11 +19,15 @@ export const MARK_HIT_PAD = 3;
 /** Extra reach above a fanned stack's top glyph before the fan folds — a pointer overshooting the top by a few px keeps it open, px. */
 export const MARK_FAN_HOLD = 8;
 
-/** The marks of one visibility group that snapped onto one bar. */
+/**
+ * The marks of one visibility group that share a glyph: those that snapped onto one bar,
+ * plus — once zoomed out far enough that neighbouring glyphs would overlap — the runs of
+ * adjacent bars folded together by {@link foldOverlappingClusters}.
+ */
 export interface MarkCluster {
-    /** `${bar}|${group}` — stable across frames, what an open popup is keyed by. */
+    /** `${bar}|${group}` — stable across frames, what an open popup is keyed by. A folded run keys by its earliest bar. */
     key: string;
-    /** The snapped bar index (may lie past the loaded range: the extrapolated grid). */
+    /** The snapped bar index — a folded run's earliest bar (may lie past the loaded range: the extrapolated grid). */
     bar: number;
     group: string | undefined;
     /** Earliest time first, then insertion order. */
@@ -117,6 +121,47 @@ export function clusterMarks(marks: readonly TimelineMark[], barTimes: readonly 
     return out;
 }
 
+/**
+ * Fold same-group clusters whose glyphs would overlap at the current bar spacing. Walking
+ * each group's clusters in bar order, a cluster joins the one before it while its centre
+ * sits within `bucketPx` of that cluster's ANCHOR (its earliest bar); the first cluster to
+ * clear that width starts the next one. So a dense lane becomes a row of clusters spaced
+ * at least a glyph apart — never one giant glyph at the left edge, never a band of
+ * overlapping ones. Anchoring at the earliest bar keeps a cluster's key stable while
+ * zooming out adds members on the right, so an open popup keeps following it; zooming back
+ * in separates the marks again. Groups never fold into each other. Per-bar clusters arrive
+ * earliest-first and bars ascend, so concatenating keeps the marks earliest-first.
+ */
+export function foldOverlappingClusters(clusters: readonly MarkCluster[], xOf: (bar: number) => number, bucketPx: number = MARK_CLUSTER_PX): MarkCluster[] {
+    const byGroup = new Map<string | undefined, MarkCluster[]>();
+    for (const c of clusters) {
+        const list = byGroup.get(c.group);
+        if (list) list.push(c);
+        else byGroup.set(c.group, [c]);
+    }
+    const out: MarkCluster[] = [];
+    for (const list of byGroup.values()) {
+        list.sort((a, b) => a.bar - b.bar);
+        const runs: MarkCluster[] = [];
+        let anchorX = Number.NaN; // centre of the current cluster's earliest bar — what the next glyph must clear
+        for (const c of list) {
+            const x = xOf(c.bar);
+            const run = runs[runs.length - 1];
+            if (run && Number.isFinite(x) && Number.isFinite(anchorX) && x - anchorX < bucketPx) {
+                // `run.marks` is this function's own array (created below), so appending in place is
+                // safe — and keeps a bucket that swallows thousands of marks at an extreme zoom-out
+                // linear, where re-spreading on every join would go quadratic per frame.
+                run.marks.push(...c.marks);
+            } else {
+                runs.push({ key: c.key, bar: c.bar, group: c.group, marks: [...c.marks] });
+                anchorX = x;
+            }
+        }
+        out.push(...runs);
+    }
+    return out;
+}
+
 /** Deck order of the groups: defined groups first (definition order), then undefined ones by first appearance, ungrouped marks last. */
 function groupRank(groups: readonly MarkGroup[], clusters: readonly MarkCluster[]): (group: string | undefined) => number {
     const rank = new Map<string, number>();
@@ -129,7 +174,7 @@ function groupRank(groups: readonly MarkGroup[], clusters: readonly MarkCluster[
 
 /** Lay the lane out for one frame. */
 export function layoutMarkLane(input: MarkLaneInput): MarkLaneLayout {
-    const clusters = clusterMarks(input.marks, input.barTimes, input.intervalMs, input.hidden);
+    const clusters = foldOverlappingClusters(clusterMarks(input.marks, input.barTimes, input.intervalMs, input.hidden), input.xOf);
     const rankOf = groupRank(input.groups, clusters);
     const byBar = new Map<number, MarkCluster[]>();
     for (const c of clusters) {

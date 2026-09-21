@@ -56,6 +56,27 @@ export interface MarkerPoint {
     size?: 'tiny' | 'small' | 'normal' | 'large' | 'huge';
 }
 
+/** A chart surface a series can show on (see {@link SeriesDisplay}). */
+export type SeriesSurface = 'pane' | 'priceScale' | 'legend' | 'dataWindow';
+
+/**
+ * Where a series shows, surface by surface. Every flag defaults to shown; `false` takes
+ * the series off that one surface while it keeps anchoring fills:
+ * - `pane` — painted in its pane;
+ * - `priceScale` — present on the price scale: its values keep the pane's autoscale in
+ *   view, and back any axis value label a renderer draws for it;
+ * - `legend` — its value beside the indicator's legend title;
+ * - `dataWindow` — its row in the data window.
+ * A series off both the pane and the price scale has no on-chart extent, so it never
+ * stretches the scale (see {@link seriesInScale}).
+ */
+export interface SeriesDisplay {
+    pane?: boolean;
+    priceScale?: boolean;
+    legend?: boolean;
+    dataWindow?: boolean;
+}
+
 interface SeriesBase {
     /** Content-addressed, stable across re-runs of identical source (see identity.ts). */
     id: string;
@@ -64,7 +85,13 @@ interface SeriesBase {
     paneId: string;
     /** Declared draw-order intent; the renderer owns final z-ordering. */
     zOrder?: number;
+    /**
+     * `false` hides the series from every surface — a fill anchor that shows nowhere.
+     * The shorthand form: when {@link display} is set it decides instead, surface by surface.
+     */
     visible?: boolean;
+    /** Per-surface visibility; absent ⇒ every surface {@link visible} allows. */
+    display?: SeriesDisplay;
     /** `force_overlay` → render on the price pane regardless of the indicator's pane. */
     overlay?: boolean;
 }
@@ -93,4 +120,19 @@ export type SeriesSpec = LineLikeSeries | CandleSeries | MarkerSeries;
 /** True for value series carrying `points` (line/area/step/histogram/columns/circles/cross). */
 export function isLineLikeSeries(spec: SeriesSpec): spec is LineLikeSeries {
     return spec.kind !== 'candle' && spec.kind !== 'bar' && spec.kind !== 'markers';
+}
+
+/** Whether a series shows on `surface`: its `display` flag when it carries one, else its `visible` shorthand. */
+export function seriesShownOn(spec: Pick<SeriesSpec, 'visible' | 'display'>, surface: SeriesSurface): boolean {
+    if (spec.display) return spec.display[surface] !== false;
+    return spec.visible !== false;
+}
+
+/**
+ * Whether a series takes part in its pane's autoscale: it is painted there, or its value
+ * sits on the price scale. A series that only reports a value (legend, data window) has
+ * nothing on the chart to keep in view and must not stretch the scale.
+ */
+export function seriesInScale(spec: Pick<SeriesSpec, 'visible' | 'display'>): boolean {
+    return seriesShownOn(spec, 'pane') || seriesShownOn(spec, 'priceScale');
 }
