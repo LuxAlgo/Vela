@@ -762,6 +762,7 @@ export class NativeRenderer implements IChartRenderer {
                 intro: this.intro.style !== false,
             },
             panes: { separatorColor: s.separatorColor ?? t.borderColor },
+            margins: { ...s.margins },
             trades: {
                 visible: this.scene.tradeMarkers.visible,
                 labels: this.scene.tradeMarkers.labels,
@@ -900,6 +901,13 @@ export class NativeRenderer implements IChartRenderer {
         this.intro = { style: next.animations.intro ? this.introOnStyle : false, duration: this.intro.duration || INTRO_DURATION_DEFAULT_MS };
         // panes
         s.separatorColor = keepInherit(s.separatorColor, next.panes.separatorColor, prevTheme.borderColor);
+        // margins — top/bottom flow into the next autoscale pass; a right-margin edit
+        // re-lands the newest bar on the new whitespace at the current zoom, so it shows
+        // immediately instead of on the next fit.
+        if (next.margins.right !== s.margins.right && this.coords.barCount > 0) {
+            this.applyViewport({ barSpacing: this.coords.getViewport().barSpacing, rightOffset: next.margins.right });
+        }
+        s.margins = { ...next.margins };
         // trade markers
         this.scene.tradeMarkers = {
             visible: next.trades.visible,
@@ -1203,7 +1211,7 @@ export class NativeRenderer implements IChartRenderer {
     /** Glide the view back to the most recent bars, keeping the current zoom (barSpacing). */
     private scrollToRealtime(): void {
         if (this.coords.barCount === 0) return;
-        this.glideRightOffset(ZOOM_OUT_MARGIN_BARS);
+        this.glideRightOffset(this.scene.style.margins.right);
     }
 
     /** Ease rightOffset to `target` at constant zoom (see animTick's scroll glide);
@@ -3494,6 +3502,7 @@ export class NativeRenderer implements IChartRenderer {
         const pricePane = panes.find((p) => p.kind === 'price') ?? null;
         this.chrome.prepare(this.scene, this.coords, this.theme); // wire drawing resolvers for priceRange
         const animating = this.animator.active;
+        const margins = this.scene.style.margins;
         for (const pane of panes) {
             // Manual mode (price-axis drag / vertical pan): render the user's window
             // verbatim and skip autoscale entirely for this pane.
@@ -3523,7 +3532,7 @@ export class NativeRenderer implements IChartRenderer {
                 && (!this.scene.candlesHidden || this.priceLayersAnchoredToBars(masterModels) || !this.paneHasMeasurableContent(masterModels, dr));
             // Each pane logs (or not) on its OWN flag — the price pane from the scene setting,
             // study panes from their own — so a study going log never touches the price pane.
-            pane.scaleTarget = computePaneScale(masterModels, this.bars, includeCandles, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id));
+            pane.scaleTarget = computePaneScale(masterModels, this.bars, includeCandles, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins);
             // Percent baseline for THIS pane (the first visible value it measures change from):
             // the first visible bar close on the price pane, else the master series' first
             // visible value. 0 ⇒ no reference yet, so the axis falls back to absolute.
@@ -3548,7 +3557,7 @@ export class NativeRenderer implements IChartRenderer {
                 // model carries no series, and its layer paints at BAR PRICES (that is what
                 // the price-pane overlay was showing). Scale the pane from the visible bars,
                 // the way the price pane does, so the layer lands where the axis says.
-                pane.scaleTarget = computePaneScale([], this.bars, true, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id));
+                pane.scaleTarget = computePaneScale([], this.bars, true, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins);
                 pane.percentBaseline = this.bars[i0]?.close ?? 0;
                 // Content declaring a paneAxis override is not value-mapped: no price
                 // ticks, no horizontal gridlines, no crosshair chip — and band labels
@@ -3588,7 +3597,7 @@ export class NativeRenderer implements IChartRenderer {
                     continue;
                 }
                 const mdr = this.chrome.paneDrawingsRange([model], this.scene, false, vr);
-                sl.scaleTarget = computePaneScale([model], this.bars, false, i0, i1, mdr, false, (id) => this.scene.offsetOf(id));
+                sl.scaleTarget = computePaneScale([model], this.bars, false, i0, i1, mdr, false, (id) => this.scene.offsetOf(id), margins);
                 if (!animating || !sl.initialized) {
                     sl.scale = { ...sl.scaleTarget };
                     sl.initialized = true;
@@ -3633,14 +3642,14 @@ export class NativeRenderer implements IChartRenderer {
         for (const pane of this.scene.panes.values()) pane.manualScale = null; // re-fit ⇒ autoscale resumes
         for (const sl of this.scene.indicatorScales.values()) sl.manualScale = null;
         const visibleBars = Math.min(n, 200);
-        const rightOffset = 6;
+        const rightOffset = this.scene.style.margins.right;
         const v = this.clampViewport(w / ((visibleBars + rightOffset) * this.coords.spacingScale), rightOffset);
         this.coords.setViewport(v);
         this.targetBarSpacing = v.barSpacing;
     }
 
     /** Re-frame after a series replacement (a symbol/timeframe switch): keep the user's
-     *  zoom (bar spacing), re-anchor the newest bars at the default right offset.
+     *  zoom (bar spacing), re-anchor the newest bars at the configured right margin.
      *  `clampViewport`'s fit-all-bars floor deliberately does NOT apply — a progressive
      *  head may still be backfilling toward the previous depth, and raising the spacing
      *  to its temporary bar count would lose the zoom this exists to keep. */
@@ -3649,7 +3658,7 @@ export class NativeRenderer implements IChartRenderer {
         this.panVelocity = 0;
         for (const pane of this.scene.panes.values()) pane.manualScale = null; // re-frame ⇒ autoscale resumes
         for (const sl of this.scene.indicatorScales.values()) sl.manualScale = null;
-        const v: ViewportState = { barSpacing: clampBarSpacing(this.coords.getViewport().barSpacing), rightOffset: defaultViewport().rightOffset };
+        const v: ViewportState = { barSpacing: clampBarSpacing(this.coords.getViewport().barSpacing), rightOffset: this.scene.style.margins.right };
         this.coords.setViewport(v);
         this.targetBarSpacing = v.barSpacing;
     }

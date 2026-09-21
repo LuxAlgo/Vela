@@ -3,12 +3,7 @@ import type { IndicatorModel } from '../../../core/model/indicator';
 import type { SeriesSpec } from '../../../core/model/series';
 import { isLineLikeSeries, seriesInScale } from '../../../core/model/series';
 import type { PriceScale } from './CoordinateSystem';
-
-// LWC's default scaleMargins reserve the top 20% / bottom 10% of pane PIXEL
-// height (data fills the middle 70%). Expressed over the price SPAN that is
-// span*2/7 above and span*1/7 below.
-const MARGIN_TOP = 2 / 7;
-const MARGIN_BOTTOM = 1 / 7;
+import { DEFAULT_MARGINS } from './chartConfig';
 
 /**
  * Per-pane price window from the data visible in `[i0, i1]` (bar indices).
@@ -25,6 +20,8 @@ export function computePaneScale(
     log = false,
     /** Per-model index offset (chart bar index of the model's anchor; 0 = whole-chart). */
     offsetOf: (id: string) => number = () => 0,
+    /** Top/bottom whitespace as percent of pane height (see `ChartMargins`). */
+    margins: { top: number; bottom: number } = DEFAULT_MARGINS,
 ): PriceScale {
     let min = Infinity;
     let max = -Infinity;
@@ -67,15 +64,21 @@ export function computePaneScale(
         const pad = Math.abs(min) * 0.1 || 1;
         return { min: min - pad, max: max + pad, log: log && min - pad > 0 };
     }
+    // The margins are shares of the pane's PIXEL height, so the data fills the middle
+    // `1 − top − bottom`; over the data SPAN that is `top / content` above and
+    // `bottom / content` below. `content` is floored so a degenerate pair can't divide by ≤ 0.
+    const content = Math.max(0.1, 1 - (margins.top + margins.bottom) / 100);
+    const above = margins.top / 100 / content;
+    const below = margins.bottom / 100 / content;
     // Logarithmic: apply the margins in log space (requires a positive range).
     if (log && min > 0) {
         const lmin = Math.log(min);
         const lmax = Math.log(max);
         const lspan = lmax - lmin;
-        return { min: Math.exp(lmin - lspan * MARGIN_BOTTOM), max: Math.exp(lmax + lspan * MARGIN_TOP), log: true };
+        return { min: Math.exp(lmin - lspan * below), max: Math.exp(lmax + lspan * above), log: true };
     }
     const span = max - min;
-    return { min: min - span * MARGIN_BOTTOM, max: max + span * MARGIN_TOP };
+    return { min: min - span * below, max: max + span * above };
 }
 
 /** Fold one series' visible values (bars or points + base) into `consider`. */

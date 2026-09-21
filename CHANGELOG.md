@@ -20,6 +20,21 @@ All notable changes to Vela, newest first.
   
 ### Added
 
+- **Chart margins are now a setting.** The Canvas tab of the chart settings gains a
+  Margins group: the empty space kept above the highest and below the lowest visible
+  value (each as a percent of the pane's height, 0–40) and the whitespace after the
+  newest bar (in bars, 0–200). The vertical margins apply to every pane; the right
+  margin is where the chart lands on load, on a symbol or timeframe switch, and when you
+  scroll back to the latest bar — editing it moves the view there right away. The values
+  live in the chart config as `margins`, so saved templates and persisted charts carry
+  them. The defaults are 10 % / 10 % / 10 bars.
+
+### Changed
+
+- **Default chart margins.** The autoscaled window now keeps 10 % of the pane above and
+  below the data (previously 20 % above, 10 % below), and the chart lands 10 bars from
+  the right edge instead of 6. Set the Margins group on the Canvas tab to 20 / 10 / 6 to
+  restore the previous look.
 - **A strategy's round trips can now carry their own ledger.** Each trade an engine
   reports through a script's execution context (`trades`) may include its realized
   `pnl`, the `commission` charged, and its worst and best excursion from entry
