@@ -20,6 +20,10 @@ All notable changes to Vela, newest first.
   
 ### Added
 
+- **The date picker jumps to a month or year from its header.** In an indicator's time
+  input, the calendar month and year are buttons: click the month to pick from the twelve
+  months, or the year to pick from a decade. Choosing a year then a month returns you to
+  the days, so a far date is a few clicks instead of stepping month by month.
 - **Chart margins are now a setting.** The Canvas tab of the chart settings gains a
   Margins group: the empty space kept above the highest and below the lowest visible
   value (each as a percent of the pane's height, 0–40) and the whitespace after the
