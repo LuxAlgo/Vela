@@ -333,7 +333,7 @@ silently reorder them).
 | `engines` | — | Factories; one instance per cell (merged over `registerDefaultEngine`). |
 | `indicators` | — | Shared manifest; `enabled` entries auto-add to fresh cells. |
 | `timeframes` | presets | Topbar timeframe presets. |
-| `timezone` | `'Etc/UTC'` | Display timezone (every cell). |
+| `timezone` | `'Etc/UTC'` | Display timezone (every cell): an IANA zone, or `'exchange'` — each cell renders in its own market's zone (Chicago for a CME future, New York for a US equity, UTC for crypto), as declared by its provider's symbol metadata. |
 | `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
 | `topbar` | defaults | Declarative topbar composition — `{ left, right }` lists of the VISIBLE entries, in order (see [Composing the topbar](#composing-the-topbar)). |
 | `indicatorPicker` | `true` | **Deprecated (removal in 0.7.0).** `false` removes the built-in indicator dialog's entry points. Replace it with the composition (omit `'indicators'` from `topbar.left` — same effect) or a plugin [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). |
@@ -456,7 +456,11 @@ they work from the very first keystroke, before any click.
   the active chart's timeframe, **fetches the depth its window needs**, and frames it:
   `1D`→1m, `7D`→5m, `1M`→30m, `3M`→1h, `6M`→4h, `YTD`/`1Y`→1D, `5Y`/`ALL`→1W. Changing
   the timeframe by hand leaves range mode (the chip clears and the fetch depth returns
-  to the chart's own `bars` setting).
+  to the chart's own `bars` setting). The picker's **Exchange** row (right under UTC) follows each
+  chart's own market: a CME future renders in Chicago time, a US equity in New York, crypto
+  in UTC — and in a multi-chart grid every cell reads its own market's clock. The bar's
+  clock and offset show the active cell's zone; picking a fixed zone anywhere (including
+  the settings dialog's Time zone row) switches the whole workspace back to that zone.
 - **Context menus** — right-click the chart body for reset view, removing all drawings or all
   indicators, and the settings dialog; the price axis for that pane's own scale (autoscale,
   invert, regular/percent/indexed/logarithmic, and the label and level toggles); the time axis

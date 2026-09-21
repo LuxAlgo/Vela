@@ -1,9 +1,10 @@
-// Timezone drawer (mobile) — opened by a long-press on the time axis. Lists every
-// IANA zone the desktop bottom-bar picker offers; picking one applies and closes.
+// Timezone drawer (mobile) — opened by a long-press on the time axis. Lists the same
+// rows as the desktop bottom-bar picker (exchange rule + every IANA zone); picking one
+// applies and closes.
 import { Drawer } from '../ui/components/drawer';
 import { iconEl } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
-import { TIMEZONES, tzMenuLabel, normalizeTimezone } from './timezones';
+import { timezoneMenuRows } from './timezones';
 
 const STYLE_ID = 'vela-widget-timezone-drawer';
 const CSS = `
@@ -25,6 +26,7 @@ const CSS = `
 
 export interface TimezoneDrawerOptions {
     host: HTMLElement;
+    /** The stored choice — a zone or the exchange rule. */
     timezone: () => string;
     onTimezone: (zone: string) => void;
     onOpenChange?: (open: boolean) => void;
@@ -56,15 +58,14 @@ export class TimezoneDrawer {
         this.drawer.body.replaceChildren();
         const list = doc.createElement('div');
         list.className = 'vela-tzd-list';
-        const current = normalizeTimezone(this.opts.timezone());
-        for (const tz of TIMEZONES) {
+        for (const tz of timezoneMenuRows(this.opts.timezone())) {
             const row = doc.createElement('div');
             row.className = 'vela-tzd-row';
             const label = doc.createElement('span');
             label.className = 'vela-tzd-row-label';
-            label.textContent = tzMenuLabel(tz.value, tz.label);
+            label.textContent = tz.label;
             row.appendChild(label);
-            if (tz.value === current) row.appendChild(iconEl('check', doc));
+            if (tz.checked) row.appendChild(iconEl('check', doc));
             row.addEventListener('click', () => {
                 this.opts.onTimezone(tz.value);
                 this.drawer.hide();
