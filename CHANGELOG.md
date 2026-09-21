@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Exchange in the chart settings' Time zone row.** In the widget and workspace, the Symbol
+  tab's Time zone dropdown is now the same picker as the bottom bar — UTC, **Exchange**, then
+  the catalog — so following the market is one pick away from the settings dialog too. The
+  row writes the workspace choice (it never demotes the rule to a fixed zone); its
+  visibility id is `time-zone` (`settings.hidden`). Host settings sections
+  (`setSettingsSections`) may now give a `select` row `[value, label]` options.
+
 ## [v0.7.7]
 
 ### Added

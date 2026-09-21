@@ -248,6 +248,9 @@ new VelaWorkspace('#chart', {
       'status-line.indicator-values',        //     Values
       'advanced',                            // the whole Advanced tab
       'advanced.bars',                       //   Bars to fetch
+      'time-zone',                           // the workspace Time zone group in the Symbol tab
+      'time-zone.zone',                      //   (same row — UTC, Exchange, then the catalog;
+                                             //    it replaces the renderer's `symbol.timezone`)
       'trading-session',                     // the RTH/ETH group in the Symbol tab
       'trading-session.session',             //   Session select
       'trading-session.premarket-color',     //   Pre-market shading color (day-split markets)

@@ -37,7 +37,7 @@ import {
 } from '../widget/contributions';
 import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
-import { normalizeTimezone, resolveTimezone } from '../core/timezones';
+import { isExchangeTimezone, normalizeTimezone, resolveTimezone, timezoneMenuRows } from '../core/timezones';
 import { applyPlotOverlayTokens } from '../ui';
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
@@ -335,6 +335,10 @@ export class ChartCell {
                 // The user's drawings option minus its toolbar: one SHARED bar serves
                 // the whole workspace (per-cell bars would cost a 44px gutter each).
                 drawings: cellDrawings(deps.chartDefaults.drawings),
+                // The renderer's own Time zone row edits a resolved IANA zone; the cell
+                // contributes the workspace picker instead (`time-zone`, with the
+                // exchange rule — see pushSettingsSections).
+                settings: { ...deps.chartDefaults.settings, hidden: [...(deps.chartDefaults.settings?.hidden ?? []), 'symbol.timezone'] },
             },
             { dataFeed: deps.feed },
         );
@@ -356,7 +360,7 @@ export class ChartCell {
         // keymap pops an unrelated cell entry).
         if (this.inner.renderer.supports('historyChords')) this.inner.renderer.set('historyChords', false);
         this.history.onChart(this.inner);
-        // The renderer's settings dialog owns a Time zone row too (it commits through
+        // A config document can carry a time zone too (a template import, a headless
         // applyConfig) — mirror it back so the workspace bottom bar, the other cells and
         // the persisted state never disagree with this cell's axis. `renderer.set` is a
         // feature write, not an applyConfig, so adopting the value cannot loop. The
@@ -757,6 +761,27 @@ export class ChartCell {
                 },
             ],
         };
+        // Replaces the renderer's Time zone group (hidden at construction): the same rows
+        // as the bottom bar — UTC, the exchange rule, the catalog — writing the workspace
+        // CHOICE, so picking Exchange never reaches the renderer as a zone.
+        const timezoneSection = {
+            title: 'Time zone',
+            id: 'time-zone',
+            placement: 'symbol' as const,
+            rows: [
+                {
+                    kind: 'select' as const,
+                    label: 'Time zone',
+                    id: 'zone',
+                    options: timezoneMenuRows(this.deps.timezone()).map((r) => [r.value, r.label] as const),
+                    get: () => {
+                        const choice = this.deps.timezone();
+                        return isExchangeTimezone(choice) ? choice : normalizeTimezone(choice);
+                    },
+                    set: (v: string) => this.deps.setTimezone(v),
+                },
+            ],
+        };
         const watermarkSection = {
             title: 'Watermark',
             id: 'watermark',
@@ -825,7 +850,7 @@ export class ChartCell {
                 ],
             });
         }
-        sections.push(advanced);
+        sections.push(advanced, timezoneSection);
         if (this.sessionAvailableFlag) sections.push(sessionSection);
         sections.push(watermarkSection);
         chart.renderer.setSettingsSections(sections);

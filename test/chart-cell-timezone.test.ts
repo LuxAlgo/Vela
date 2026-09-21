@@ -64,6 +64,14 @@ class ZoneRenderer implements IChartRenderer {
     readonly features: readonly string[] = ['timezone'];
     timezone = 'UTC'; // the native renderer's config default
     writes: string[] = [];
+    hiddenSettings: readonly string[] = [];
+    settingsSections: ReadonlyArray<{ title: string; rows: readonly unknown[]; id?: string; placement?: string }> = [];
+    setSettingsVisibility(policy: { hidden?: readonly string[] }): void {
+        this.hiddenSettings = policy.hidden ?? [];
+    }
+    setSettingsSections(sections: ReadonlyArray<{ title: string; rows: readonly unknown[]; id?: string; placement?: string }>): void {
+        this.settingsSections = sections;
+    }
     mount(): void {}
     setTheme(): void {}
     resize(): void {}
@@ -222,6 +230,32 @@ describe('ChartCell — the exchange time-zone rule', () => {
         zone = 'Asia/Tokyo';
         cell.applyTimezone();
         expect(renderer.timezone).toBe('Asia/Tokyo');
+        cell.destroy();
+    });
+
+    it("the chart-settings Time zone row is the workspace picker: Exchange listed, the pick stays a CHOICE", async () => {
+        type SelectRow = { kind: string; label: string; options: readonly (readonly [string, string])[]; get: () => string; set: (v: string) => void };
+        let zone = 'exchange';
+        const setTimezone = vi.fn((z: string) => (zone = z));
+        const cell = makeCell('cme:ES1!', makeDeps(makeFeed(), () => zone, { setTimezone, chartDefaults: { renderer: TrackedZoneRenderer, drawings: false, settings: { hidden: ['advanced'] } } as CellDeps['chartDefaults'] }));
+        const renderer = lastRenderer!;
+        await settle();
+
+        // The renderer's own row (a resolved zone) is hidden; the host's policy survives.
+        expect(renderer.hiddenSettings).toEqual(['advanced', 'symbol.timezone']);
+
+        const section = renderer.settingsSections.find((s) => s.id === 'time-zone')!;
+        expect(section.placement).toBe('symbol');
+        const row = section.rows[0] as SelectRow;
+        expect(row.options.slice(0, 2)).toEqual([['Etc/UTC', 'UTC'], ['exchange', 'Exchange']]);
+        expect(row.get()).toBe('exchange'); // the rule shows selected, not the resolved Chicago
+
+        row.set('Asia/Tokyo');
+        expect(setTimezone).toHaveBeenCalledWith('Asia/Tokyo'); // the workspace applies it to every cell
+        expect(row.get()).toBe('Asia/Tokyo');
+        row.set('exchange');
+        expect(setTimezone).toHaveBeenLastCalledWith('exchange');
+        expect(renderer.writes).not.toContain('exchange'); // never written as a zone
         cell.destroy();
     });
 
