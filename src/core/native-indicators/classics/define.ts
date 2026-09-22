@@ -1,7 +1,7 @@
 import type { OHLCV } from '../../model/ohlcv';
 import type { InputSchema, InputValue } from '../../model/inputs';
-import type { LineLikeKind, LineStyle, MarkerPoint, SeriesPoint, SeriesSpec } from '../../model/series';
-import type { Fill, PriceLine } from '../../model/scene';
+import type { LineLikeKind, LineStyle, MarkerPoint, SeriesDisplay, SeriesPoint, SeriesSpec } from '../../model/series';
+import type { Fill, FillGradientStop, PriceLine } from '../../model/scene';
 import type { DrawingPolyline } from '../../model/drawings';
 import { stableSeriesId } from '../../model/identity';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../NativeIndicator';
@@ -31,6 +31,12 @@ export interface ClassicPlot {
     colors?: ReadonlyArray<string | null>;
     /** Render on the price pane even when the indicator owns a study pane. */
     overlay?: boolean;
+    /**
+     * Per-surface visibility. A plot shown nowhere still anchors a {@link ClassicBand} —
+     * that is how a zone shaded against a constant (an overbought level, the 0/100 rails)
+     * is expressed without a line in the pane or a row in the legend.
+     */
+    display?: SeriesDisplay;
 }
 
 /** A soft band filled between two plots (referenced by plot key). */
@@ -39,6 +45,10 @@ export interface ClassicBand {
     from: string;
     to: string;
     color: string;
+    /** Per-bar solid color, aligned to bars by index; overrides {@link color} where set. */
+    colors?: ReadonlyArray<string | null>;
+    /** Per-bar vertical gradient (a two-tone wash across the band), aligned by index. */
+    gradient?: ReadonlyArray<FillGradientStop | null>;
 }
 
 /** A fixed horizontal level on the indicator's pane. */
@@ -159,6 +169,7 @@ class ClassicIndicator implements NativeIndicator {
                     ...(plot.base != null ? { base: plot.base } : {}),
                 },
                 ...(plot.overlay ? { overlay: true } : {}),
+                ...(plot.display ? { display: plot.display } : {}),
             });
         });
         if (out.markers && out.markers.length > 0) {
@@ -181,6 +192,8 @@ class ClassicIndicator implements NativeIndicator {
                     fromSeriesId: from,
                     toSeriesId: to,
                     color: band.color,
+                    ...(band.colors ? { colors: [...band.colors] } : {}),
+                    ...(band.gradient ? { gradient: [...band.gradient] } : {}),
                 },
             ];
         });

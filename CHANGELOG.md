@@ -2,6 +2,51 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Every built-in indicator is now fully styleable.** Each study splits its settings into
+  a **Settings** and a **Style** section, and every element it draws gets its own color:
+  Bollinger Bands ink the basis, the bands and the fill separately, MACD's histogram has
+  four colors for rising and falling on each side of zero, and the moving averages,
+  channels and cumulative volume lines can be colored by their own slope or by which side
+  of the line price is trading. Every setting carries a tooltip explaining what it does.
+- **Overbought and oversold levels are inputs, not fixed lines.** RSI, Stochastic,
+  Stochastic RSI, Williams %R, Money Flow Index, Connors RSI, the Chande Momentum
+  Oscillator, the Ultimate Oscillator and the Relative Volatility Index all let you move
+  their thresholds, and the shaded zones, dashed level lines and line coloring follow. The
+  bounded oscillators blend their line from the oversold color through neutral to the
+  overbought color, and shade the region beyond each threshold; the centered ones wash the
+  area between the reading and the zero line, fading out where the two meet.
+- **More moving averages and more display modes.** The Moving Average study offers
+  thirteen smoothings — adding Hull, Arnaud Legoux, double and triple exponential,
+  Kaufman adaptive, least-squares, McGinley and Hamming — plus an optional second average
+  with its own type, length, source and color. Linear Regression can plot its curve or its
+  slope; Rate of Change can plot a percentage or a raw momentum difference; SMI Ergodic can
+  plot its lines or its histogram; Intraday Intensity can plot the normalized oscillator or
+  the cumulative line; Pivot Points offers Traditional, Fibonacci, Camarilla and Woodie
+  ladders on an automatic or explicit anchor; and the Average True Range, Volume Flow
+  Indicator, Relative Volatility Index and Price Volume Trend let you pick their smoothing.
+- **New options on the classics.** Chandelier Exit can ratchet its stops, Balance of Power
+  and On Balance Volume can be smoothed, Bollinger Bands Width marks its squeeze and bulge
+  references, the Ulcer Index can show the raw drawdown behind it, 52 Week High/Low can add
+  the all-time high and low, and VWAP offers percentage bands beside its deviation bands.
+
+### Changed
+
+- **The built-in indicators now match their reference builds.** Defaults, formulas and
+  looks were aligned study by study, so several read differently than before: Stochastic
+  smooths %K over 3 bars instead of 1, Zero-Lag EMA defaults to 21, Connors RSI flags
+  90/10 rather than 80/20, Historical Volatility annualizes over 252 periods on a sample
+  deviation, and SuperTrend, the Klinger Oscillator, the Ulcer Index, the Hull average and
+  Williams Fractal were corrected to their published definitions. Bollinger Bands Width and
+  TRIX are no longer rescaled, so their values are smaller than before.
+  _(Breaking: VWAP's per-band color and fill settings collapse into one bullish, one
+  bearish and one band color, its Day anchor is now called Session, and it hides itself on
+  daily and higher timeframes unless you turn that guard off. The Moving Average type
+  `RMA` is now listed as `RMA (SMMA)`, though charts saved with the old name still load.)_
+
 ## [v0.7.7]
 
 ### Added
