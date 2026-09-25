@@ -314,10 +314,13 @@ export function stoch(v: readonly number[], hi: readonly number[], lo: readonly 
     return out;
 }
 
-/** Least-squares linear regression value at each bar (the fit's endpoint). */
-export function linreg(v: readonly number[], len: number): number[] {
+/**
+ * Least-squares linear regression value at each bar. `offset` steps back along the
+ * fitted line: 0 is the fit's endpoint (the current bar), `len - 1` its start.
+ */
+export function linreg(v: readonly number[], len: number, offset = 0): number[] {
     // Closed form over x = 0..len-1 with y newest-last: slope/intercept from the
-    // standard normal equations, evaluated at x = len - 1.
+    // standard normal equations, evaluated at x = len - 1 - offset.
     const sx = ((len - 1) * len) / 2;
     const sxx = ((len - 1) * len * (2 * len - 1)) / 6;
     const denom = len * sxx - sx * sx;
@@ -331,8 +334,169 @@ export function linreg(v: readonly number[], len: number): number[] {
         }
         const slope = denom === 0 ? 0 : (len * sxy - sx * sy) / denom;
         const intercept = (sy - slope * sx) / len;
-        return intercept + slope * (len - 1);
+        return intercept + slope * (len - 1 - offset);
     });
+}
+
+/**
+ * Hull moving average: WMA of `2·WMA(len/2) − WMA(len)` over √len bars. The half
+ * length TRUNCATES — rounding it up leaves a residual lag the construction is meant
+ * to cancel exactly.
+ */
+export function hma(v: readonly number[], len: number): number[] {
+    const n = Math.max(2, Math.trunc(len));
+    const raw = sub(map(wma(v, Math.max(1, Math.trunc(n / 2))), (x) => 2 * x), wma(v, n));
+    return wma(raw, Math.max(1, Math.round(Math.sqrt(n))));
+}
+
+/** Arnaud Legoux moving average — a Gaussian window whose peak `offset` slides toward the newest bar. */
+export function alma(v: readonly number[], len: number, offset: number, sigma: number): number[] {
+    const m = offset * (len - 1);
+    const s = len / Math.max(sigma, 1e-9);
+    const weights = new Array<number>(len);
+    let norm = 0;
+    for (let i = 0; i < len; i++) {
+        const d = i - m;
+        const w = Math.exp(-(d * d) / (2 * s * s));
+        weights[i] = w;
+        norm += w;
+    }
+    return windowed(v, len, (win, from, to) => {
+        let acc = 0;
+        for (let k = from; k <= to; k++) acc += win[k]! * weights[k - from]!;
+        return norm === 0 ? Number.NaN : acc / norm;
+    });
+}
+
+/** Double exponential moving average: `2·EMA − EMA(EMA)`. */
+export function dema(v: readonly number[], len: number): number[] {
+    const e1 = ema(v, len);
+    return sub(map(e1, (x) => 2 * x), ema(e1, len));
+}
+
+/** Triple exponential moving average: `3·EMA − 3·EMA² + EMA³`. */
+export function tema(v: readonly number[], len: number): number[] {
+    const e1 = ema(v, len);
+    const e2 = ema(e1, len);
+    const e3 = ema(e2, len);
+    return zip(zip(map(e1, (x) => 3 * x), map(e2, (x) => 3 * x), (a, b) => a - b), e3, (a, b) => a + b);
+}
+
+/** Kaufman's adaptive moving average — an EMA whose alpha tracks the efficiency ratio. */
+export function kama(v: readonly number[], len: number, fastAlpha = 2 / 3, slowAlpha = 2 / 31): number[] {
+    const direction = map(change(v, len), Math.abs);
+    const volatility = sum(map(change(v), Math.abs), len);
+    const out = new Array<number>(v.length).fill(Number.NaN);
+    let prev = Number.NaN;
+    for (let i = 0; i < v.length; i++) {
+        const x = v[i]!;
+        if (!Number.isFinite(x)) continue;
+        const d = direction[i]!;
+        const w = volatility[i]!;
+        if (!Number.isFinite(d) || !Number.isFinite(w)) {
+            prev = Number.isFinite(prev) ? prev : x;
+            out[i] = prev;
+            continue;
+        }
+        const er = w === 0 ? 0 : d / w;
+        const sc = (er * (fastAlpha - slowAlpha) + slowAlpha) ** 2;
+        prev = Number.isFinite(prev) ? prev + sc * (x - prev) : x;
+        out[i] = prev;
+    }
+    return out;
+}
+
+/**
+ * McGinley dynamic — an average whose step shrinks as price outruns it. It seeds on the
+ * first value rather than a warmed-up average: the `(price/prev)⁴` denominator explodes
+ * when the line starts far below price, and a lagging seed never catches up.
+ */
+export function mcginley(v: readonly number[], len: number): number[] {
+    const out = new Array<number>(v.length).fill(Number.NaN);
+    let prev = Number.NaN;
+    for (let i = 0; i < v.length; i++) {
+        const x = v[i]!;
+        if (!Number.isFinite(x)) continue;
+        if (!Number.isFinite(prev)) {
+            prev = x;
+        } else {
+            const ratio = prev === 0 ? 0 : x / prev;
+            const denom = len * ratio ** 4;
+            prev += denom === 0 ? 0 : (x - prev) / denom;
+        }
+        out[i] = prev;
+    }
+    return out;
+}
+
+/** Hamming-window weighted moving average (a raised cosine taper over the window). */
+export function hamming(v: readonly number[], len: number, a0 = 0.54, a1 = 0.46): number[] {
+    if (len <= 1) return v.map((x) => (Number.isFinite(x) ? x : Number.NaN));
+    const weights = new Array<number>(len);
+    let norm = 0;
+    for (let i = 0; i < len; i++) {
+        const w = a0 - a1 * Math.cos((2 * Math.PI * i) / (len - 1));
+        weights[i] = w;
+        norm += w;
+    }
+    // Weight 0 belongs to the OLDEST bar of the window, matching the reference's `src[i]`
+    // walk from the newest bar backwards over a window symmetric about its centre.
+    return windowed(v, len, (win, from, to) => {
+        let acc = 0;
+        for (let k = from; k <= to; k++) acc += win[k]! * weights[to - k]!;
+        return norm === 0 ? Number.NaN : acc / norm;
+    });
+}
+
+/** Chande momentum oscillator: the signed gain/loss balance over `len` bars, in −100..100. */
+export function cmo(v: readonly number[], len: number): number[] {
+    const d = change(v);
+    const up = sum(map(d, (x) => Math.max(x, 0)), len);
+    const dn = sum(map(d, (x) => Math.max(-x, 0)), len);
+    return zip(up, dn, (u, w) => (u + w === 0 ? 0 : (100 * (u - w)) / (u + w)));
+}
+
+/** Pearson correlation of two series over `len` bars. */
+export function correlation(a: readonly number[], b: readonly number[], len: number): number[] {
+    const out = new Array<number>(a.length).fill(Number.NaN);
+    for (let i = len - 1; i < a.length; i++) {
+        let sa = 0;
+        let sb = 0;
+        let ok = true;
+        for (let k = i - len + 1; k <= i; k++) {
+            const x = a[k]!;
+            const y = b[k]!;
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                ok = false;
+                break;
+            }
+            sa += x;
+            sb += y;
+        }
+        if (!ok) continue;
+        const ma = sa / len;
+        const mb = sb / len;
+        let cov = 0;
+        let va = 0;
+        let vb = 0;
+        for (let k = i - len + 1; k <= i; k++) {
+            const da = a[k]! - ma;
+            const db = b[k]! - mb;
+            cov += da * db;
+            va += da * da;
+            vb += db * db;
+        }
+        const denom = Math.sqrt(va * vb);
+        out[i] = denom === 0 ? 0 : cov / denom;
+    }
+    return out;
+}
+
+/** Bar ordinals (0, 1, 2, …) — the x axis of a regression or correlation against time. */
+export function barIndex(length: number): number[] {
+    const out = new Array<number>(length);
+    for (let i = 0; i < length; i++) out[i] = i;
+    return out;
 }
 
 /** Symmetrically weighted moving average over 4 bars (weights 1,2,2,1 / 6). */

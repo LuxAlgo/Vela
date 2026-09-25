@@ -330,13 +330,18 @@ describe('classic descriptor adapter', () => {
         expect(pointsOf(out.series![0]).every((p) => p.value === null)).toBe(true);
     });
 
-    it('flips the SuperTrend color with the trend', () => {
+    it('splits SuperTrend into complementary uptrend and downtrend legs', () => {
         const spec = classicSpecs.find((s) => s.type === 'supertrend')!;
         const up = Array.from({ length: 60 }, (_, i) => bar(100 + i * 2, i));
         const down = Array.from({ length: 60 }, (_, i) => bar(220 - i * 2, i + 60));
         const out = runOnce(spec, [...up, ...down]);
-        const colors = new Set(pointsOf(out.series![0]).map((p) => p.color).filter((c): c is string => c != null));
-        expect(colors.size).toBe(2);
+        expect(out.series!.map((s) => s.title)).toEqual(['Uptrend', 'Downtrend']);
+        const uptrend = pointsOf(out.series![0]);
+        const downtrend = pointsOf(out.series![1]);
+        // Exactly one leg carries a value on any bar the stop exists on.
+        expect(uptrend.some((p) => p.value != null)).toBe(true);
+        expect(downtrend.some((p) => p.value != null)).toBe(true);
+        expect(uptrend.every((p, i) => p.value == null || downtrend[i]!.value == null)).toBe(true);
     });
 
     it('anchors VWAP accumulation to the UTC day', () => {
@@ -347,7 +352,7 @@ describe('classic descriptor adapter', () => {
             { time: 60000, open: 20, high: 20, low: 20, close: 20, volume: 100 },
             { time: day, open: 30, high: 30, low: 30, close: 30, volume: 100 },
         ];
-        const out = runOnce(spec, bars, { anchor: 'Day', source: 'Close', color: '#ffffff' });
+        const out = runOnce(spec, bars, { anchor: 'Session', source: 'Close' });
         const points = pointsOf(out.series![0]);
         expect(points[1]!.value).toBeCloseTo(15, 10);
         expect(points[2]!.value).toBeCloseTo(30, 10); // reset at the new day
@@ -357,45 +362,47 @@ describe('classic descriptor adapter', () => {
         const spec = classicSpecs.find((s) => s.type === 'vwap')!;
         const flat = (iso: string, price: number): OHLCV => ({ time: Date.parse(iso), open: price, high: price, low: price, close: price, volume: 1 });
         const bars = [flat('2024-02-10T00:00:00Z', 10), flat('2024-03-31T23:00:00Z', 20), flat('2024-04-01T00:00:00Z', 30), flat('2025-01-01T00:00:00Z', 40)];
-        const quarter = pointsOf(runOnce(spec, bars, { anchor: 'Quarter', source: 'Close' }).series![0]);
+        // These bars sit days apart, so the daily-and-above guard has to be lifted first.
+        const quarter = pointsOf(runOnce(spec, bars, { anchor: 'Quarter', source: 'Close', hideDwm: false }).series![0]);
         expect(quarter.map((p) => p.value)).toEqual([10, 15, 30, 40]);
-        const year = pointsOf(runOnce(spec, bars, { anchor: 'Year', source: 'Close' }).series![0]);
+        const year = pointsOf(runOnce(spec, bars, { anchor: 'Year', source: 'Close', hideDwm: false }).series![0]);
         expect(year.map((p) => p.value)).toEqual([10, 15, 20, 40]);
     });
 
-    it('draws VWAP σ bands per enabled pair, each in its own color, fills optional', () => {
+    it('blanks VWAP on daily and higher timeframes unless the guard is turned off', () => {
+        const spec = classicSpecs.find((s) => s.type === 'vwap')!;
+        const daily: OHLCV[] = Array.from({ length: 5 }, (_, i) => ({ time: i * 86400000, open: 10, high: 10, low: 10, close: 10, volume: 1 }));
+        expect(pointsOf(runOnce(spec, daily).series![0]).every((p) => p.value == null)).toBe(true);
+        expect(pointsOf(runOnce(spec, daily, { hideDwm: false }).series![0]).every((p) => p.value != null)).toBe(true);
+    });
+
+    it('draws VWAP bands per enabled pair, in standard deviations or percent, fill optional', () => {
         const spec = classicSpecs.find((s) => s.type === 'vwap')!;
         // Flat bars make every source = price: vwap of (100×1, 106×2) = 104, σ = √8.
         const bars: OHLCV[] = [
             { time: 0, open: 100, high: 100, low: 100, close: 100, volume: 1 },
             { time: 60000, open: 106, high: 106, low: 106, close: 106, volume: 2 },
         ];
-        const out = runOnce(spec, bars, { band1: true, band1Mult: 1, band2: false, band3: true, band3Mult: 2.5, band1Color: '#ff0000', band3Color: '#00ff00', band1FillColor: '#ff000014', band3FillColor: '#00ff0014' });
-        expect(out.series!.map((s) => s.title)).toEqual(['VWAP', 'Upper 1σ', 'Lower 1σ', 'Upper 2.5σ', 'Lower 2.5σ']);
+        const out = runOnce(spec, bars, { band1: true, band1Mult: 1, band2: false, band3: true, band3Mult: 2.5 });
+        expect(out.series!.map((s) => s.title)).toEqual(['VWAP', 'Upper Band #1', 'Lower Band #1', 'Upper Band #2', 'Lower Band #2']);
         const sd = Math.sqrt(8);
         expect(pointsOf(out.series![1])[1]!.value).toBeCloseTo(104 + sd, 10);
         expect(pointsOf(out.series![4])[1]!.value).toBeCloseTo(104 - 2.5 * sd, 10);
+
+        // Percentage mode offsets by a share of the VWAP value instead of its deviation.
+        const percent = runOnce(spec, bars, { bandsMode: 'Percentage', band1Mult: 2 });
+        expect(pointsOf(percent.series![1])[1]!.value).toBeCloseTo(104 * 1.02, 10);
+
+        // Upper bands lean bearish, lower bands bullish, both at 40% transparency.
         const inkOf = (s: SeriesSpec): string | undefined => (isLineLikeSeries(s) ? s.style.color : undefined);
-        expect(inkOf(out.series![1]!)).toBe('#ff0000');
-        expect(inkOf(out.series![3]!)).toBe('#00ff00');
-        expect(out.fills!.map((f) => f.color)).toEqual(['#ff000014', '#00ff0014']);
+        expect(inkOf(out.series![1]!)).toBe('#f2364599');
+        expect(inkOf(out.series![2]!)).toBe('#08998199');
 
-        // Fills are per band: band 1 keeps its fill, band 2's is off.
-        const partial = runOnce(spec, bars, { band2: true, band2Fill: false });
-        expect(partial.series).toHaveLength(5);
-        expect(partial.fills!.map((f) => f.fromSeriesId)).toEqual([partial.series![1]!.id]);
-
-        // Only band 1 is on by default. Inks differ per band, and each fill defaults to its
-        // band's ink at 8% alpha.
+        // Only band 1 is on by default; each visible pair gets one fill, and the toggle kills them all.
         expect(runOnce(spec, bars).series).toHaveLength(3);
-        const all = runOnce(spec, bars, { band2: true, band3: true });
-        const inks = [1, 3, 5].map((i) => (isLineLikeSeries(all.series![i]!) ? all.series![i]!.style.color : ''));
-        expect(new Set(inks).size).toBe(3);
-        expect(all.fills!.map((f) => f.color)).toEqual(inks.map((c) => `${c}14`));
-
-        // The fill color is its own input.
-        const custom = runOnce(spec, bars, { band1FillColor: '#12345680' });
-        expect(custom.fills![0]!.color).toBe('#12345680');
+        expect(out.fills).toHaveLength(2);
+        expect(runOnce(spec, bars, { fill: false }).fills).toHaveLength(0);
+        expect(out.fills![0]!.color).toBe('#787b860d');
     });
 
     it('reads VWAP source through the shared source vocabulary', () => {
@@ -407,35 +414,20 @@ describe('classic descriptor adapter', () => {
         expect(pointsOf(runOnce(spec, bars, { source: 'HL2' }).series![0])[0]!.value).toBe(6);
     });
 
-    it('lays out VWAP bands in a Bands group and inks + fills in a trailing Style group', () => {
+    it('declares VWAP band toggles in Settings and its inks in a trailing Style group', () => {
         const spec = classicSpecs.find((s) => s.type === 'vwap')!;
         const anchor = spec.inputs.find((i) => i.key === 'anchor')!;
-        expect(anchor.options).toEqual(['Day', 'Week', 'Month', 'Quarter', 'Year']);
+        expect(anchor.options).toEqual(['Session', 'Week', 'Month', 'Quarter', 'Year']);
         for (const n of [1, 2, 3]) {
             const on = spec.inputs.find((i) => i.key === `band${n}`)!;
             const mult = spec.inputs.find((i) => i.key === `band${n}Mult`)!;
             expect(on.type).toBe('bool');
-            expect(on.group).toBe('Bands');
-            expect(mult.title).toBe(''); // the toggle carries the row's label
-            expect(mult.inline).toBe(on.inline);
-            expect(mult.group).toBe('Bands');
-            const color = spec.inputs.find((i) => i.key === `band${n}Color`)!;
-            const fill = spec.inputs.find((i) => i.key === `band${n}Fill`)!;
-            expect(color.group).toBe('Style');
-            expect(fill.type).toBe('bool');
-            expect(fill.inline).toBe(color.inline); // fill toggle sits beside its band's swatch
-            const fillColor = spec.inputs.find((i) => i.key === `band${n}FillColor`)!;
-            expect(fillColor.type).toBe('color');
-            expect(fillColor.title).toBe(''); // unlabeled — the Fill toggle names it
-            expect(fillColor.inline).toBe(color.inline);
+            expect(on.group).toBe('Settings');
+            expect(mult.type).toBe('float');
+            expect(mult.group).toBe('Settings');
         }
         const styled = spec.inputs.filter((i) => i.group === 'Style').map((i) => i.key);
-        expect(styled).toEqual([
-            'color',
-            'band1Color', 'band1Fill', 'band1FillColor',
-            'band2Color', 'band2Fill', 'band2FillColor',
-            'band3Color', 'band3Fill', 'band3FillColor',
-        ]);
+        expect(styled).toEqual(['bullColor', 'bearColor', 'bandsColor', 'fill']);
         expect(spec.inputs.slice(-styled.length).map((i) => i.key)).toEqual(styled);
     });
 });

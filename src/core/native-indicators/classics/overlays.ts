@@ -1,17 +1,17 @@
 import type { OHLCV } from '../../model/ohlcv';
 import type { MarkerPoint } from '../../model/series';
-import type { InputSchema } from '../../model/inputs';
-import { SERIES_LINE, BULLISH, BEARISH, INFO, WARNING, CATEGORICAL } from '../../palette';
+import type { DrawingPolyline } from '../../model/drawings';
+import { BULLISH, BEARISH, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicBand, ClassicIndicatorSpec, ClassicPlot } from './define';
 import { bool, num, str } from './define';
+import { SETTINGS, STYLE, boolInput, colorInput, floatInput, intInput, optionInput, sourceInput, transp } from './shared';
 import { sourceValues } from './math';
-import { colorInput, sourceInput, withAlpha } from './shared';
 
 /** Price-anchored specials: stops, anchored averages, levels, pivots, patterns. */
 
 const DAY_MS = 86400000;
 
-type Anchor = 'Day' | 'Week' | 'Month' | 'Quarter' | 'Year';
+type Anchor = 'Session' | 'Week' | 'Month' | 'Quarter' | 'Year';
 
 /** UTC period key for an anchor (epoch day 0 was a Thursday; weeks start Monday). */
 function periodKey(anchor: Anchor, time: number): number {
@@ -25,15 +25,26 @@ function periodKey(anchor: Anchor, time: number): number {
     return Math.floor(time / DAY_MS);
 }
 
+/** Median spacing between bars, in ms — the classics' only handle on the chart's timeframe. */
+function barInterval(bars: readonly OHLCV[]): number {
+    if (bars.length < 2) return 0;
+    const gaps: number[] = [];
+    for (let i = 1; i < bars.length; i++) gaps.push(bars[i]!.time - bars[i - 1]!.time);
+    gaps.sort((a, b) => a - b);
+    return gaps[Math.floor(gaps.length / 2)] ?? 0;
+}
+
 const parabolicSar: ClassicIndicatorSpec = {
     type: 'parabolic-sar',
     title: 'Parabolic SAR',
     shortTitle: 'SAR',
     overlay: true,
     inputs: [
-        { key: 'start', title: 'Start', type: 'float', defval: 0.02, min: 0.001, max: 1, step: 0.001 },
-        { key: 'increment', title: 'Increment', type: 'float', defval: 0.02, min: 0.001, max: 1, step: 0.001 },
-        { key: 'maximum', title: 'Max value', type: 'float', defval: 0.2, min: 0.01, max: 1, step: 0.01 },
+        floatInput('start', 'Start', 0.02, 0, 1, 0.01, 'Initial acceleration factor applied when a new trend begins.'),
+        floatInput('increment', 'Increment', 0.02, 0, 1, 0.01, 'Amount added to the acceleration factor each time the trend makes a new extreme point.'),
+        floatInput('maximum', 'Maximum', 0.2, 0.01, 1, 0.01, 'Upper cap on the acceleration factor.'),
+        colorInput(BULLISH, 'Bullish', 'bullColor', 'Color of the SAR crosses while they trail below price — uptrend, the stop sits under the market.'),
+        colorInput(BEARISH, 'Bearish', 'bearColor', 'Color of the SAR crosses while they sit above price — downtrend, the stop sits over the market.'),
     ],
     compute: (bars, inputs) => {
         const start = num(inputs, 'start', 0.02);
@@ -41,7 +52,6 @@ const parabolicSar: ClassicIndicatorSpec = {
         const max = num(inputs, 'maximum', 0.2);
         const n = bars.length;
         const values = new Array<number>(n).fill(Number.NaN);
-        const colors = new Array<string | null>(n).fill(null);
         if (n >= 2) {
             let long = bars[1]!.close >= bars[0]!.close;
             let sar = long ? bars[0]!.low : bars[0]!.high;
@@ -67,20 +77,22 @@ const parabolicSar: ClassicIndicatorSpec = {
                     af = Math.min(max, af + inc);
                 }
                 values[i] = sar;
-                colors[i] = long ? BULLISH : BEARISH;
             }
         }
-        return { plots: [{ key: 'sar', title: 'PSAR', values, kind: 'circles', color: SERIES_LINE, colors }] };
+        const bull = str(inputs, 'bullColor', BULLISH);
+        const bear = str(inputs, 'bearColor', BEARISH);
+        const colors = values.map((x, i) => (Number.isFinite(x) ? (x < bars[i]!.close ? bull : bear) : null));
+        return { plots: [{ key: 'sar', title: 'SAR', values, kind: 'cross', color: bull, colors }] };
     },
 };
 
-const VWAP_BANDS_GROUP = 'Bands';
-const VWAP_STYLE = 'Style';
-/** The three ±k·σ band pairs. Each band has its own ink so the pairs read apart at a glance. */
+const VWAP_ANCHORS = ['Session', 'Week', 'Month', 'Quarter', 'Year'] as const;
+const BANDS_STDEV = 'Standard Deviation';
+const BANDS_PERCENT = 'Percentage';
 const VWAP_BANDS = [
-    { on: 'band1', mult: 'band1Mult', color: 'band1Color', fill: 'band1Fill', fillColor: 'band1FillColor', defMult: 1, defOn: true, defColor: BULLISH },
-    { on: 'band2', mult: 'band2Mult', color: 'band2Color', fill: 'band2Fill', fillColor: 'band2FillColor', defMult: 2, defOn: false, defColor: WARNING },
-    { on: 'band3', mult: 'band3Mult', color: 'band3Color', fill: 'band3Fill', fillColor: 'band3FillColor', defMult: 3, defOn: false, defColor: CATEGORICAL[4]! },
+    { show: 'band1', mult: 'band1Mult', defMult: 1, defOn: true },
+    { show: 'band2', mult: 'band2Mult', defMult: 2, defOn: false },
+    { show: 'band3', mult: 'band3Mult', defMult: 3, defOn: false },
 ] as const;
 
 const vwap: ClassicIndicatorSpec = {
@@ -89,39 +101,36 @@ const vwap: ClassicIndicatorSpec = {
     shortTitle: 'VWAP',
     overlay: true,
     inputs: [
-        { key: 'anchor', title: 'Period', type: 'string', defval: 'Day', options: ['Day', 'Week', 'Month', 'Quarter', 'Year'], tooltip: 'Where the accumulation resets (UTC periods)' },
-        sourceInput('HLC3'),
-        // Each band is one row: its toggle leads, the multiplier follows unlabeled.
-        ...VWAP_BANDS.flatMap((b, i): InputSchema[] => [
-            { key: b.on, title: `Band ${i + 1} multiplier`, type: 'bool', defval: b.defOn, inline: b.on, group: VWAP_BANDS_GROUP },
-            { key: b.mult, title: '', type: 'float', defval: b.defMult, min: 0.1, max: 10, step: 0.1, inline: b.on, group: VWAP_BANDS_GROUP },
+        optionInput('anchor', 'Anchor Period', 'Session', VWAP_ANCHORS, 'Period anchoring the average. VWAP and its bands reset on the first bar of each new session, week, month, quarter or year (UTC).'),
+        sourceInput('HLC3', 'source', 'Source', 'Price used in the volume weighted average. Typical price (HLC3) is the classic choice.'),
+        optionInput('bandsMode', 'Bands Mode', BANDS_STDEV, [BANDS_STDEV, BANDS_PERCENT], 'Bands offset method: multiples of the volume weighted standard deviation of price around VWAP, or a percentage of the VWAP value.'),
+        ...VWAP_BANDS.flatMap((b, i) => [
+            boolInput(b.show, `Band #${i + 1}`, b.defOn, SETTINGS, `Show the ${['first', 'second', 'third'][i]} band pair.`),
+            floatInput(b.mult, `Band #${i + 1} Multiplier`, b.defMult, 0, 50, 0.5, 'Multiplier for this band pair, in standard deviations or percent depending on the bands mode.'),
         ]),
-        { ...colorInput(INFO, 'VWAP color'), group: VWAP_STYLE },
-        // One row per band: its ink, then the fill toggle with the fill's own (translucent) color.
-        ...VWAP_BANDS.flatMap((b, i): InputSchema[] => [
-            { ...colorInput(b.defColor, `Band ${i + 1} color`, b.color), inline: b.color, group: VWAP_STYLE },
-            { key: b.fill, title: 'Fill', type: 'bool', defval: true, inline: b.color, group: VWAP_STYLE },
-            { ...colorInput(withAlpha(b.defColor), '', b.fillColor), inline: b.color, group: VWAP_STYLE },
-        ]),
+        boolInput('hideDwm', 'Hide VWAP on 1D or Above', true, SETTINGS, 'Hide the VWAP and its bands on daily and higher timeframes, where an intraday anchored VWAP is not meaningful.'),
+        colorInput(BULLISH, 'Bullish', 'bullColor', 'VWAP line color while price closes above it, and the color of the lower (support) bands.'),
+        colorInput(BEARISH, 'Bearish', 'bearColor', 'VWAP line color while price closes below it, and the color of the upper (resistance) bands.'),
+        colorInput(NEUTRAL, 'Bands', 'bandsColor', 'Deviation bands fill color.'),
+        boolInput('fill', 'Bands Fill', true, STYLE, 'Fill the area between each visible band pair.'),
     ],
     compute: (bars, inputs) => {
-        const anchor = str(inputs, 'anchor', 'Day') as Anchor;
+        const anchor = str(inputs, 'anchor', 'Session') as Anchor;
         const src = sourceValues(bars, str(inputs, 'source', 'HLC3'));
         const n = bars.length;
+        const hidden = bool(inputs, 'hideDwm', true) && barInterval(bars) >= DAY_MS;
         const values = new Array<number>(n).fill(Number.NaN);
-        const bands = VWAP_BANDS.filter((b) => bool(inputs, b.on, b.defOn)).map((b) => ({
+        const bands = VWAP_BANDS.filter((b) => bool(inputs, b.show, b.defOn)).map((b) => ({
             mult: Math.max(0, num(inputs, b.mult, b.defMult)),
-            color: str(inputs, b.color, b.defColor),
-            fill: bool(inputs, b.fill, true),
-            fillColor: str(inputs, b.fillColor, withAlpha(b.defColor)),
             up: new Array<number>(n).fill(Number.NaN),
             down: new Array<number>(n).fill(Number.NaN),
         }));
+        const percentMode = str(inputs, 'bandsMode', BANDS_STDEV) === BANDS_PERCENT;
         let period = Number.NaN;
         let cumPV = 0;
         let cumPV2 = 0;
         let cumV = 0;
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < n && !hidden; i++) {
             const b = bars[i]!;
             const key = periodKey(anchor, b.time);
             if (key !== period) {
@@ -140,41 +149,62 @@ const vwap: ClassicIndicatorSpec = {
             if (cumV <= 0) continue;
             const mean = cumPV / cumV;
             // Variance clamped at 0 — IEEE drift can dip `E[x²] − mean²` a hair under.
-            const sd = Math.sqrt(Math.max(0, cumPV2 / cumV - mean * mean));
+            const offset = percentMode ? mean / 100 : Math.sqrt(Math.max(0, cumPV2 / cumV - mean * mean));
             values[i] = mean;
             for (const band of bands) {
-                band.up[i] = mean + band.mult * sd;
-                band.down[i] = mean - band.mult * sd;
+                band.up[i] = mean + band.mult * offset;
+                band.down[i] = mean - band.mult * offset;
             }
         }
-        const plots: ClassicPlot[] = [{ key: 'vwap', title: 'VWAP', values, color: str(inputs, 'color', INFO), width: 2 }];
+        const bull = str(inputs, 'bullColor', BULLISH);
+        const bear = str(inputs, 'bearColor', BEARISH);
+        const fillColor = transp(str(inputs, 'bandsColor', NEUTRAL), 95);
+        const plots: ClassicPlot[] = [
+            { key: 'vwap', title: 'VWAP', values, color: bull, colors: values.map((x, i) => (Number.isFinite(x) ? (bars[i]!.close >= x ? bull : bear) : null)) },
+        ];
         const fills: ClassicBand[] = [];
         bands.forEach((band, i) => {
             plots.push(
-                { key: `up${i}`, title: `Upper ${band.mult}σ`, values: band.up, color: band.color },
-                { key: `down${i}`, title: `Lower ${band.mult}σ`, values: band.down, color: band.color },
+                { key: `up${i}`, title: `Upper Band #${i + 1}`, values: band.up, color: transp(bear, 40) },
+                { key: `down${i}`, title: `Lower Band #${i + 1}`, values: band.down, color: transp(bull, 40) },
             );
-            if (band.fill) fills.push({ key: `band${i}`, from: `up${i}`, to: `down${i}`, color: band.fillColor });
+            if (bool(inputs, 'fill', true)) fills.push({ key: `band${i}`, from: `up${i}`, to: `down${i}`, color: fillColor });
         });
         return { plots, bands: fills };
     },
 };
 
+const PIVOT_TRADITIONAL = 'Traditional';
+const PIVOT_FIBONACCI = 'Fibonacci';
+const PIVOT_CAMARILLA = 'Camarilla';
+const PIVOT_WOODIE = 'Woodie';
+const PIVOT_AUTO = 'Auto';
+
 const pivotPoints: ClassicIndicatorSpec = {
     type: 'pivot-points',
-    title: 'Pivot Points',
+    title: 'Pivot Points Standard',
     shortTitle: 'Pivots',
     overlay: true,
-    inputs: [{ key: 'anchor', title: 'Period', type: 'string', defval: 'Day', options: ['Day', 'Week', 'Month'] }],
+    inputs: [
+        optionInput('kind', 'Type', PIVOT_TRADITIONAL, [PIVOT_TRADITIONAL, PIVOT_FIBONACCI, PIVOT_CAMARILLA, PIVOT_WOODIE], 'Formula used to calculate the levels. Traditional is the classic floor-trader method; Fibonacci projects 38.2/61.8/100% of the prior range around the pivot; Camarilla scales the prior range around the prior close; Woodie gives extra weight to the period open.'),
+        optionInput('anchor', 'Pivots Timeframe', PIVOT_AUTO, [PIVOT_AUTO, 'Daily', 'Weekly', 'Monthly', 'Yearly'], "Period the pivots are anchored to. 'Auto' follows the chart's bar spacing: daily pivots up to 15-minute bars, weekly on other intraday bars, monthly on daily bars, yearly above."),
+        colorInput(WARNING, 'Pivot', 'pivotColor', 'Color of the central pivot (P) level.'),
+        colorInput(BEARISH, 'Resistances', 'resistanceColor', 'Color of the resistance (R) levels.'),
+        colorInput(BULLISH, 'Supports', 'supportColor', 'Color of the support (S) levels.'),
+    ],
     compute: (bars, inputs) => {
-        const anchor = str(inputs, 'anchor', 'Day') as Anchor;
+        const interval = barInterval(bars);
+        const requested = str(inputs, 'anchor', PIVOT_AUTO);
+        const auto: Anchor = interval <= 15 * 60000 ? 'Session' : interval < DAY_MS ? 'Week' : interval <= DAY_MS ? 'Month' : 'Year';
+        const anchor: Anchor = requested === 'Daily' ? 'Session' : requested === 'Weekly' ? 'Week' : requested === 'Monthly' ? 'Month' : requested === 'Yearly' ? 'Year' : auto;
+        const kind = str(inputs, 'kind', PIVOT_TRADITIONAL);
         // Aggregate each period's OHLC; a period's levels come from the PREVIOUS one.
-        interface Agg { high: number; low: number; close: number }
+        interface Agg { open: number; high: number; low: number; close: number }
         const aggs = new Map<number, Agg>();
         for (const b of bars) {
             const key = periodKey(anchor, b.time);
             const a = aggs.get(key);
-            if (!a) aggs.set(key, { high: b.high, low: b.low, close: b.close });
+            if (!a) aggs.set(key, { open: b.open, high: b.high, low: b.low, close: b.close });
             else {
                 a.high = Math.max(a.high, b.high);
                 a.low = Math.min(a.low, b.low);
@@ -183,31 +213,63 @@ const pivotPoints: ClassicIndicatorSpec = {
         }
         const n = bars.length;
         const mk = (): number[] => new Array<number>(n).fill(Number.NaN);
-        const levels = { p: mk(), r1: mk(), s1: mk(), r2: mk(), s2: mk(), r3: mk(), s3: mk() };
+        const levels = { p: mk(), r1: mk(), s1: mk(), r2: mk(), s2: mk(), r3: mk(), s3: mk(), r4: mk(), s4: mk() };
+        let lastKey = Number.NaN;
         for (let i = 0; i < n; i++) {
-            const prev = aggs.get(periodKey(anchor, bars[i]!.time) - 1);
-            if (!prev) continue;
-            const p = (prev.high + prev.low + prev.close) / 3;
+            const key = periodKey(anchor, bars[i]!.time);
+            const fresh = key !== lastKey;
+            lastKey = key;
+            // A break on the period's first bar keeps each period's ladder a separate segment.
+            if (fresh) continue;
+            const prev = aggs.get(key - 1);
+            const curr = aggs.get(key);
+            if (!prev || !curr) continue;
+            const range = prev.high - prev.low;
+            const traditional = (prev.high + prev.low + prev.close) / 3;
+            const p = kind === PIVOT_WOODIE ? (prev.high + prev.low + 2 * curr.open) / 4 : traditional;
             levels.p[i] = p;
-            levels.r1[i] = 2 * p - prev.low;
-            levels.s1[i] = 2 * p - prev.high;
-            levels.r2[i] = p + (prev.high - prev.low);
-            levels.s2[i] = p - (prev.high - prev.low);
-            levels.r3[i] = prev.high + 2 * (p - prev.low);
-            levels.s3[i] = prev.low - 2 * (prev.high - p);
+            if (kind === PIVOT_FIBONACCI) {
+                levels.r1[i] = traditional + 0.382 * range;
+                levels.s1[i] = traditional - 0.382 * range;
+                levels.r2[i] = traditional + 0.618 * range;
+                levels.s2[i] = traditional - 0.618 * range;
+                levels.r3[i] = traditional + range;
+                levels.s3[i] = traditional - range;
+            } else if (kind === PIVOT_CAMARILLA) {
+                const cam = 1.1 * range;
+                levels.r1[i] = prev.close + cam / 12;
+                levels.s1[i] = prev.close - cam / 12;
+                levels.r2[i] = prev.close + cam / 6;
+                levels.s2[i] = prev.close - cam / 6;
+                levels.r3[i] = prev.close + cam / 4;
+                levels.s3[i] = prev.close - cam / 4;
+                levels.r4[i] = prev.close + cam / 2;
+                levels.s4[i] = prev.close - cam / 2;
+            } else {
+                // Traditional and Woodie share the R1/S1/R2/S2 shape around their own pivot.
+                levels.r1[i] = 2 * p - prev.low;
+                levels.s1[i] = 2 * p - prev.high;
+                levels.r2[i] = p + range;
+                levels.s2[i] = p - range;
+                if (kind !== PIVOT_WOODIE) {
+                    levels.r3[i] = prev.high + 2 * (p - prev.low);
+                    levels.s3[i] = prev.low - 2 * (prev.high - p);
+                }
+            }
         }
-        const plot = (key: keyof typeof levels, title: string, color: string): ClassicPlot => ({ key, title, kind: 'step', values: levels[key], color });
-        return {
-            plots: [
-                plot('p', 'P', WARNING),
-                plot('r1', 'R1', BEARISH),
-                plot('s1', 'S1', BULLISH),
-                plot('r2', 'R2', BEARISH),
-                plot('s2', 'S2', BULLISH),
-                plot('r3', 'R3', BEARISH),
-                plot('s3', 'S3', BULLISH),
-            ],
-        };
+        const resistance = str(inputs, 'resistanceColor', BEARISH);
+        const support = str(inputs, 'supportColor', BULLISH);
+        const plot = (key: keyof typeof levels, title: string, color: string): ClassicPlot => ({ key, title, values: levels[key], color });
+        const plots: ClassicPlot[] = [
+            plot('p', 'P', str(inputs, 'pivotColor', WARNING)),
+            plot('r1', 'R1', resistance),
+            plot('s1', 'S1', support),
+            plot('r2', 'R2', resistance),
+            plot('s2', 'S2', support),
+        ];
+        if (kind !== PIVOT_WOODIE) plots.push(plot('r3', 'R3', resistance), plot('s3', 'S3', support));
+        if (kind === PIVOT_CAMARILLA) plots.push(plot('r4', 'R4', resistance), plot('s4', 'S4', support));
+        return { plots };
     },
 };
 
@@ -216,16 +278,26 @@ const fiftyTwoWeek: ClassicIndicatorSpec = {
     title: '52 Week High/Low',
     shortTitle: '52W H/L',
     overlay: true,
-    inputs: [{ key: 'weeks', title: 'Weeks', type: 'int', defval: 52, min: 1, max: 520, step: 1 }],
+    inputs: [
+        intInput('weeks', 'Weeks', 52, 1, 520, 'Length of the rolling window, in weeks.'),
+        boolInput('showAllTime', 'Show All-Time High/Low', false, SETTINGS, "Additionally display the all-time high and low, tracked over the symbol's full loaded history."),
+        colorInput(BULLISH, '52 Week High', 'highColor', 'Color of the 52 week high level.'),
+        colorInput(BEARISH, '52 Week Low', 'lowColor', 'Color of the 52 week low level.'),
+        colorInput(NEUTRAL, 'All-Time High/Low', 'allTimeColor', 'Color of the all-time high and all-time low levels.'),
+    ],
     compute: (bars, inputs) => {
         const span = num(inputs, 'weeks', 52) * 7 * DAY_MS;
         const n = bars.length;
         const hi = new Array<number>(n).fill(Number.NaN);
         const lo = new Array<number>(n).fill(Number.NaN);
+        const ath = new Array<number>(n).fill(Number.NaN);
+        const atl = new Array<number>(n).fill(Number.NaN);
         // Two-pointer sliding window over the time span, monotonic deques for the extremes.
         const maxIdx: number[] = [];
         const minIdx: number[] = [];
         let from = 0;
+        let runHigh = -Infinity;
+        let runLow = Infinity;
         for (let i = 0; i < n; i++) {
             const b = bars[i]!;
             while (maxIdx.length > 0 && bars[maxIdx[maxIdx.length - 1]!]!.high <= b.high) maxIdx.pop();
@@ -237,13 +309,20 @@ const fiftyTwoWeek: ClassicIndicatorSpec = {
             while (minIdx[0]! < from) minIdx.shift();
             hi[i] = bars[maxIdx[0]!]!.high;
             lo[i] = bars[minIdx[0]!]!.low;
+            runHigh = Math.max(runHigh, b.high);
+            runLow = Math.min(runLow, b.low);
+            ath[i] = runHigh;
+            atl[i] = runLow;
         }
-        return {
-            plots: [
-                { key: 'high', title: '52W high', values: hi, kind: 'step', color: BULLISH },
-                { key: 'low', title: '52W low', values: lo, kind: 'step', color: BEARISH },
-            ],
-        };
+        const plots: ClassicPlot[] = [
+            { key: 'high', title: '52 Week High', values: hi, kind: 'step', color: str(inputs, 'highColor', BULLISH), width: 2 },
+            { key: 'low', title: '52 Week Low', values: lo, kind: 'step', color: str(inputs, 'lowColor', BEARISH), width: 2 },
+        ];
+        if (bool(inputs, 'showAllTime', false)) {
+            const ink = str(inputs, 'allTimeColor', NEUTRAL);
+            plots.push({ key: 'ath', title: 'All-Time High', values: ath, kind: 'step', color: ink }, { key: 'atl', title: 'All-Time Low', values: atl, kind: 'step', color: ink });
+        }
+        return { plots };
     },
 };
 
@@ -252,9 +331,11 @@ const zigzag: ClassicIndicatorSpec = {
     title: 'ZigZag',
     overlay: true,
     inputs: [
-        { key: 'deviation', title: 'Deviation %', type: 'float', defval: 5, min: 0.01, max: 100, step: 0.1 },
-        { key: 'depth', title: 'Depth', type: 'int', defval: 10, min: 1, max: 500, step: 1 },
-        colorInput(),
+        floatInput('deviation', 'Deviation (%)', 5, 0.01, 100, 0.1, 'Minimum reversal from the leg extreme, as a percentage of that extreme, required to confirm a new pivot.'),
+        { ...intInput('depth', 'Depth', 10, 2, 500, 'Minimum number of bars required between two consecutive pivots.') },
+        colorInput(BULLISH, 'Up Leg', 'bullColor', 'Color of rising zigzag segments.'),
+        colorInput(BEARISH, 'Down Leg', 'bearColor', 'Color of falling zigzag segments.'),
+        { key: 'lineWidth', title: 'Width', type: 'int', defval: 2, min: 1, max: 10, step: 1, group: STYLE, tooltip: 'Width of the zigzag segments.' },
     ],
     compute: (bars, inputs) => {
         const dev = num(inputs, 'deviation', 5) / 100;
@@ -270,14 +351,14 @@ const zigzag: ClassicIndicatorSpec = {
                 const b = bars[i]!;
                 if (up) {
                     if (b.high >= ext.price) ext = { i, price: b.high };
-                    else if (b.low <= ext.price * (1 - dev) && i - (pivots[pivots.length - 1]?.i ?? -depth) >= depth) {
+                    else if (b.low <= ext.price * (1 - dev) && ext.i - (pivots[pivots.length - 1]?.i ?? -depth) >= depth) {
                         pivots.push(ext);
                         up = false;
                         ext = { i, price: b.low };
                     }
                 } else if (b.low <= ext.price) {
                     ext = { i, price: b.low };
-                } else if (b.high >= ext.price * (1 + dev) && i - (pivots[pivots.length - 1]?.i ?? -depth) >= depth) {
+                } else if (b.high >= ext.price * (1 + dev) && ext.i - (pivots[pivots.length - 1]?.i ?? -depth) >= depth) {
                     pivots.push(ext);
                     up = true;
                     ext = { i, price: b.high };
@@ -285,22 +366,30 @@ const zigzag: ClassicIndicatorSpec = {
             }
             pivots.push(ext); // the provisional last leg
         }
-        return {
-            plots: [],
-            polylines: [
-                {
-                    key: 'zigzag',
-                    points: pivots.map((p) => ({ xloc: 'bar_time' as const, x: bars[p.i]!.time, price: p.price })),
-                    curved: false,
-                    closed: false,
-                    lineColor: str(inputs, 'color', SERIES_LINE),
-                    lineWidth: 2,
-                    lineStyle: 'solid' as const,
-                    arrowLeft: false,
-                    arrowRight: false,
-                },
-            ],
-        };
+        const bull = str(inputs, 'bullColor', BULLISH);
+        const bear = str(inputs, 'bearColor', BEARISH);
+        const width = num(inputs, 'lineWidth', 2);
+        // One polyline per leg, so each segment can carry its own direction ink.
+        const polylines: Array<Omit<DrawingPolyline, 'id' | 'paneId'> & { key: string }> = [];
+        for (let k = 1; k < pivots.length; k++) {
+            const a = pivots[k - 1]!;
+            const b = pivots[k]!;
+            polylines.push({
+                key: `leg${k}`,
+                points: [
+                    { xloc: 'bar_time' as const, x: bars[a.i]!.time, price: a.price },
+                    { xloc: 'bar_time' as const, x: bars[b.i]!.time, price: b.price },
+                ],
+                curved: false,
+                closed: false,
+                lineColor: b.price >= a.price ? bull : bear,
+                lineWidth: width,
+                lineStyle: 'solid' as const,
+                arrowLeft: false,
+                arrowRight: false,
+            });
+        }
+        return { plots: [], polylines };
     },
 };
 
@@ -309,10 +398,17 @@ const williamsFractal: ClassicIndicatorSpec = {
     title: 'Williams Fractal',
     shortTitle: 'Fractals',
     overlay: true,
-    inputs: [{ key: 'periods', title: 'Periods', type: 'int', defval: 2, min: 1, max: 50, step: 1 }],
+    inputs: [
+        intInput('periods', 'Periods', 2, 2, 50, "Bars required on each side of the candidate bar. 2 is Bill Williams' classic 5-bar fractal; a fractal is confirmed only once this many later bars have closed."),
+        colorInput(BEARISH, 'Up Fractal', 'upColor', 'Color of the up fractal marker (swing high), drawn above the fractal bar.'),
+        colorInput(BULLISH, 'Down Fractal', 'downColor', 'Color of the down fractal marker (swing low), drawn below the fractal bar.'),
+    ],
     compute: (bars, inputs) => {
         const p = num(inputs, 'periods', 2);
         const markers: MarkerPoint[] = [];
+        const up = str(inputs, 'upColor', BEARISH);
+        const down = str(inputs, 'downColor', BULLISH);
+        // The candidate must STRICTLY exceed every neighbour, so a tie never prints a fractal.
         const isExtreme = (i: number, pick: (b: OHLCV) => number, better: (a: number, b: number) => boolean): boolean => {
             const v = pick(bars[i]!);
             for (let k = i - p; k <= i + p; k++) {
@@ -322,12 +418,8 @@ const williamsFractal: ClassicIndicatorSpec = {
             return true;
         };
         for (let i = p; i < bars.length - p; i++) {
-            if (isExtreme(i, (b) => b.high, (a, b) => a >= b)) {
-                markers.push({ time: bars[i]!.time, position: 'aboveBar', shape: 'triangleup', color: BULLISH });
-            }
-            if (isExtreme(i, (b) => b.low, (a, b) => a <= b)) {
-                markers.push({ time: bars[i]!.time, position: 'belowBar', shape: 'triangledown', color: BEARISH });
-            }
+            if (isExtreme(i, (b) => b.high, (a, b) => a > b)) markers.push({ time: bars[i]!.time, position: 'aboveBar', shape: 'triangleup', color: up });
+            if (isExtreme(i, (b) => b.low, (a, b) => a < b)) markers.push({ time: bars[i]!.time, position: 'belowBar', shape: 'triangledown', color: down });
         }
         return { plots: [], markers };
     },
