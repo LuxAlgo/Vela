@@ -156,6 +156,8 @@ const CSS = `
 .vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--vela-bg); }
 .vela-ws-main { position: relative; display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-ws-toolbar { position: relative; flex: none; }
+.vela-ws-strips { position: relative; flex: none; display: flex; flex-direction: column; min-width: 0; }
+.vela-ws-strips:empty { display: none; }
 .vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
 .vela-cell { background: var(--vela-bg); position: relative; }
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
@@ -255,6 +257,7 @@ export class VelaWorkspace {
     readonly keymap: KeymapManager;
 
     private readonly gridEl: HTMLElement;
+    private readonly stripsEl: HTMLElement;
     private readonly events = new TypedEventBus<WorkspaceEventMap>();
     private readonly feed = new MultiProviderFeed();
     private readonly cellsById = new Map<string, ChartCell>();
@@ -574,6 +577,10 @@ export class VelaWorkspace {
         // Panels that are not registered yet keep their entry until they dock.
         if (boot?.panels) this.dock.applyState(boot.panels);
         this.root.appendChild(main);
+        // Docked strips (`ctx.dockStrip`) — before the bottom bar, which appends itself next.
+        this.stripsEl = doc.createElement('div');
+        this.stripsEl.className = 'vela-ws-strips';
+        this.root.appendChild(this.stripsEl);
         this.toastHost = new Toast(this.gridEl);
 
         // ONE attribution mark for the whole grid (bottom-left, floating above the
@@ -875,6 +882,12 @@ export class VelaWorkspace {
             setActiveCell: (id) => this.setActiveCell(id),
             openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
             togglePanel: (id, open) => this.dock.toggle(id, open),
+            dockStrip: (el) => {
+                this.stripsEl.appendChild(el);
+                return () => {
+                    if (el.parentElement === this.stripsEl) el.remove();
+                };
+            },
             root: this.root,
             toast: (message, kind) => this.toastHost.show(message, kind),
             stateDirty: () => this.markStateDirty(),

@@ -74,6 +74,8 @@ export interface CellState {
     session?: string;
     /** Symbol watermark visibility — a per-chart display pref. */
     watermark?: boolean;
+    /** The "Replay" line under the watermark while replaying — a per-chart display pref. */
+    replayWatermark?: boolean;
     /** Indicator titles (the in-chart legend rows) visibility — a per-chart display pref. */
     indicatorTitles?: boolean;
     /** Plot values beside the legend titles visibility — a per-chart display pref. */
@@ -230,6 +232,7 @@ function sanitizeCell(raw: unknown): CellState | null {
     if (typeof c.bars === 'number' && Number.isFinite(c.bars) && c.bars > 0) out.bars = c.bars;
     if (c.session === 'regular' || c.session === 'extended') out.session = c.session;
     if (typeof c.watermark === 'boolean') out.watermark = c.watermark;
+    if (typeof c.replayWatermark === 'boolean') out.replayWatermark = c.replayWatermark;
     if (typeof c.indicatorTitles === 'boolean') out.indicatorTitles = c.indicatorTitles;
     if (typeof c.indicatorValues === 'boolean') out.indicatorValues = c.indicatorValues;
     if (c.rendererConfig != null && typeof c.rendererConfig === 'object') out.rendererConfig = c.rendererConfig;

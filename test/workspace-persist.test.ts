@@ -226,11 +226,14 @@ describe('sanitizeState (the applyState gate)', () => {
             version: 1,
             layout: '1',
             favorites: ['trendline', 7, null, 'hline'],
-            charts: [{ id: 'c1', watermark: 'yes', indicatorTitles: 0 }, { id: 'c2', watermark: false, indicatorTitles: false }],
+            charts: [
+                { id: 'c1', watermark: 'yes', replayWatermark: 1, indicatorTitles: 0 },
+                { id: 'c2', watermark: false, replayWatermark: false, indicatorTitles: false },
+            ],
         });
         expect(doc!.favorites).toEqual(['trendline', 'hline']); // non-strings dropped
         expect(doc!.charts[0]).toEqual({ id: 'c1' }); // non-boolean toggles dropped
-        expect(doc!.charts[1]).toEqual({ id: 'c2', watermark: false, indicatorTitles: false });
+        expect(doc!.charts[1]).toEqual({ id: 'c2', watermark: false, replayWatermark: false, indicatorTitles: false });
         // an all-junk favorites array disappears entirely
         expect(sanitizeState({ version: 1, layout: '1', favorites: [1, 2], charts: [] })!.favorites).toBeUndefined();
     });

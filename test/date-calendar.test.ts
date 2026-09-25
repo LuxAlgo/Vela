@@ -50,14 +50,14 @@ function openCalendar(current = Date.parse(SELECTED)): Harness {
 }
 
 const all = (cal: HTMLElement, sel: string): HTMLButtonElement[] => [...cal.querySelectorAll(sel)] as HTMLButtonElement[];
-const monthSwitch = (cal: HTMLElement): HTMLButtonElement => all(cal, '.vela-ind-cal-switch')[0]!;
-const yearSwitch = (cal: HTMLElement): HTMLButtonElement => all(cal, '.vela-ind-cal-switch')[1]!;
-const prev = (cal: HTMLElement): HTMLButtonElement => all(cal, '.vela-ind-cal-nav')[0]!;
-const next = (cal: HTMLElement): HTMLButtonElement => all(cal, '.vela-ind-cal-nav')[1]!;
-const cells = (cal: HTMLElement): HTMLButtonElement[] => all(cal, '.vela-ind-cal-cell');
+const monthSwitch = (cal: HTMLElement): HTMLButtonElement => all(cal, '.vela-date-picker-switch')[0]!;
+const yearSwitch = (cal: HTMLElement): HTMLButtonElement => all(cal, '.vela-date-picker-switch')[1]!;
+const prev = (cal: HTMLElement): HTMLButtonElement => all(cal, '.vela-date-picker-nav')[0]!;
+const next = (cal: HTMLElement): HTMLButtonElement => all(cal, '.vela-date-picker-nav')[1]!;
+const cells = (cal: HTMLElement): HTMLButtonElement[] => all(cal, '.vela-date-picker-cell');
 const labels = (cal: HTMLElement): string[] => cells(cal).map((c) => c.textContent ?? '');
 const day = (cal: HTMLElement, n: number): HTMLButtonElement =>
-    all(cal, '.vela-ind-cal-day').find((b) => b.textContent === String(n))!;
+    all(cal, '.vela-date-picker-day').find((b) => b.textContent === String(n))!;
 const pick = (cal: HTMLElement, label: string): void => {
     cells(cal).find((c) => c.textContent === label)!.click();
 };

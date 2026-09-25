@@ -279,6 +279,7 @@ export class ChartCell {
      *  verbatim, so a document never loses a plugin's state in the plugin's absence. */
     private extState: Record<string, unknown> = {};
     private watermarkOn: boolean;
+    private replayWatermarkOn: boolean;
     /** Indicator titles (this cell's in-chart legend rows) shown. */
     private indicatorTitlesOn = true;
     /** Plot values beside this cell's legend titles shown. */
@@ -432,8 +433,12 @@ export class ChartCell {
         this.indicatorValuesOn = seed.indicatorValues ?? true;
         if (!this.indicatorValuesOn) this.inner.renderer.set('indicatorValues', false);
         this.watermarkOn = seed.watermark ?? deps.watermark;
+        this.replayWatermarkOn = seed.replayWatermark ?? true;
         this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60') : null;
         if (!this.watermarkOn) this.watermark?.setVisible(false);
+        if (!this.replayWatermarkOn) this.watermark?.setReplayVisible(false);
+        this.inner.on('replay:start', () => this.watermark?.setReplaying(true));
+        this.inner.on('replay:end', () => this.watermark?.setReplaying(false));
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '', (sym) => this.inner?.data.symbolIcon(sym)) : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
         this.statusline?.onChart(this.inner);
@@ -769,6 +774,13 @@ export class ChartCell {
                     get: () => this.watermarkOn,
                     set: (v: boolean) => this.setWatermarkVisible(v),
                 },
+                {
+                    kind: 'toggle' as const,
+                    label: 'Replay watermark',
+                    id: 'replay',
+                    get: () => this.replayWatermarkOn,
+                    set: (v: boolean) => this.setReplayWatermarkVisible(v),
+                },
             ],
         };
         const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol'; id?: string }> = [];
@@ -835,6 +847,13 @@ export class ChartCell {
     setWatermarkVisible(visible: boolean): void {
         this.watermarkOn = visible;
         this.watermark?.setVisible(visible);
+        this.deps.onStateDirty();
+    }
+
+    /** Show/hide the "Replay" line under this cell's watermark while it replays (persisted per cell). */
+    setReplayWatermarkVisible(visible: boolean): void {
+        this.replayWatermarkOn = visible;
+        this.watermark?.setReplayVisible(visible);
         this.deps.onStateDirty();
     }
 
@@ -1380,6 +1399,7 @@ export class ChartCell {
         if (!this.inner || this.destroyed) return;
         if (cs.priceStyle && cs.priceStyle !== this.priceStyle) this.setPriceStyle(cs.priceStyle);
         if (cs.watermark !== undefined && cs.watermark !== this.watermarkOn) this.setWatermarkVisible(cs.watermark);
+        if (cs.replayWatermark !== undefined && cs.replayWatermark !== this.replayWatermarkOn) this.setReplayWatermarkVisible(cs.replayWatermark);
         if (cs.indicatorTitles !== undefined && cs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cs.indicatorTitles);
         if (cs.indicatorValues !== undefined && cs.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(cs.indicatorValues);
         // Cosmetics + drawings round-trip (both validate untrusted input).
@@ -1424,6 +1444,7 @@ export class ChartCell {
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
             priceStyle: this.priceStyle,
             watermark: this.watermarkOn,
+            replayWatermark: this.replayWatermarkOn,
             indicatorTitles: this.indicatorTitlesOn,
             indicatorValues: this.indicatorValuesOn,
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,

@@ -39,6 +39,7 @@ import { parseSymbol } from '../../data/ProviderRegistry';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
 import { chartType, type SeriesDataEngine } from '../../chart-types/registry';
 import { resolveTheme } from '../theme';
+import type { ReplayBounds, ReplayController, ReplayEndReason, ReplayStartOptions, ReplayState, ReplayTick, ReplayTickSource } from '../ReplayControl';
 
 export interface ResolvedConfig {
     market: MarketConfig;
@@ -102,13 +103,17 @@ const GAP_FACTOR = 1.5;
  */
 const HEAL_COOLDOWN_MS = 5_000;
 
+/** Floor between two intrabar updates of a replayed bar (~one frame) — at a faster pace,
+ *  ticks are folded into one update rather than painted faster than the screen refreshes. */
+const MIN_TICK_UPDATE_MS = 16;
+
 /**
  * Renderer- and engine-agnostic orchestration: owns market data (via the injected
  * `MarketDataFeed`), runs/streams indicators through registered `ScriptingEngine`s
  * (selected by language), routes panes, and drives the injected `IChartRenderer`.
  * Imports neither a concrete renderer nor a concrete scripting engine.
  */
-export class EngineOrchestrator implements IndicatorController, PaneController {
+export class EngineOrchestrator implements IndicatorController, PaneController, ReplayController {
     readonly events = new TypedEventBus<VelaEventMap>();
     private readonly registry = new IndicatorRegistry();
     /** Top-to-bottom pane display order (price always first). The routing + `chart.panes`
@@ -157,6 +162,41 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     private lastHealAt = 0;
     /** The `visibilitychange` catch-up listener (removed on destroy). */
     private onVisible: (() => void) | null = null;
+    // ── bar replay: `rawBars` holds the history up to the cursor, the rest waits here ──
+    /** Bars still hidden right of the replay cursor, oldest first; null ≡ replay off. */
+    private replayQueue: OHLCV[] | null = null;
+    private replayTimer: ReturnType<typeof setTimeout> | null = null;
+    private replayPlaying = false;
+    private replayIntervalMs = 1_000;
+    /** The depth (`market.bars`) before a replay deepened the history — restored when it ends. */
+    private replayDepth: { bars: number | undefined } | null = null;
+    /** A start is loading older history before it can cut; `seek` = a replay was running
+     *  (and left silently to deepen), so abandoning the load must announce its end. */
+    private replayLoading: { seek: boolean } | null = null;
+    /** A replay carried over a timeframe/session switch, between the old series' silent end
+     *  and the cut of the new one: still ACTIVE for the outside (`replayState`), resumed
+     *  at `revealedEnd` once the new bars land, unless stopped (`cancelled`) meanwhile. */
+    private replayCarrying: { revealedEnd: number; playing: boolean; cancelled: boolean } | null = null;
+    /** Intrabar prices for the bars replay reveals — null ≡ whole bars. */
+    private replayTickSource: ReplayTickSource | null = null;
+    /** The bar being revealed tick by tick: its stored form (what it settles on), its ticks,
+     *  the next tick to apply, the candle built so far, the volume each tick adds when the
+     *  ticks carry none, and its pacing (ticks per update, ms between updates — one play
+     *  interval per tick — and the clock time tick 0 is due at, so late timers catch up). */
+    private replayForming: {
+        bar: OHLCV;
+        ticks: readonly ReplayTick[];
+        next: number;
+        candle: OHLCV | null;
+        volumeEach: number | null;
+        batch: number;
+        delayMs: number;
+        origin: number;
+    } | null = null;
+    /** Tick requests by bar time, shared by prefetch and playback; `ticks` once they landed. */
+    private replayTickFetches = new Map<number, { ticks: readonly ReplayTick[] | null; done: Promise<void> }>();
+    /** Aborts the tick requests in flight — renewed whenever the replay moves on. */
+    private replayTickAbort: AbortController | null = null;
     /** What the last applied bar did: refine the open candle, or open a new one (which
      *  settles the previous). Read by the `script:run` cause attribution. */
     private barCause: 'tick' | 'bar' = 'tick';
@@ -447,6 +487,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 if (this.generation !== gen || (!final && bars.length === 0)) return;
                 if (!painted && !final && bars.length < Math.min(requested, FIRST_PAINT_BARS)) return; // hold the framing paint until it can carry the view
 
+                if (painted && this.replayQueue) {
+                    this.mergeHistoryIntoReplay(bars); // a replay started before the history converged keeps its cut
+                    return;
+                }
                 this.setBarSeries(bars, painted ? { preserveView: true } : undefined);
                 if (!painted && bars.length > 0) {
                     painted = true;
@@ -617,6 +661,54 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             (next.session !== undefined && next.session !== m.session) ||
             next.data !== undefined;
         const depthChanged = next.bars !== undefined && next.bars !== m.bars;
+        // A switch that keeps the symbol and its clock (timeframe, session) carries a running
+        // replay over: the new series is cut where the old one stood — see `carryReplay`.
+        const sameClock =
+            identityChanged &&
+            next.data === undefined &&
+            (next.symbol === undefined || next.symbol === m.symbol) &&
+            (next.timeframe !== undefined || next.session !== undefined);
+        // A switch landing while an earlier carry still waits for its bars takes the carry
+        // over (same clock) or ends it (another symbol); a depth-only reload — the carry's
+        // own deepening among them — leaves it be.
+        const pending = identityChanged ? this.replayCarrying : null;
+        if (pending) {
+            this.replayCarrying = null;
+            if (!sameClock) {
+                pending.cancelled = true;
+                this.events.emit('replay:end', { reason: 'market' });
+            }
+        }
+        const replayCarry =
+            this.replayQueue && sameClock && this.rawBars.length > 0
+                ? { revealedEnd: this.rawBars[this.rawBars.length - 1]!.time + this.barIntervalMs(), playing: this.replayPlaying, cancelled: false }
+                : pending && sameClock
+                  ? { revealedEnd: pending.revealedEnd, playing: pending.playing, cancelled: false }
+                  : null;
+        if (pending) pending.cancelled = true; // superseded: whatever it was waiting on is moot
+        if (replayCarry) this.replayCarrying = replayCarry;
+        if (replayCarry && this.replayQueue) {
+            this.endReplay(null, { restore: false, resume: false }); // silent: the replay resumes on the new series
+            const depth = this.replayDepth;
+            this.replayDepth = null;
+            if (depth && next.bars === undefined) {
+                if (depth.bars === undefined) delete m.bars;
+                else m.bars = depth.bars;
+            }
+        }
+        // A reload replaces the history a replay walks. A depth-only change keeps the market,
+        // so the full history comes back first and the new depth applies to all of it.
+        if (this.replayQueue && (identityChanged || depthChanged)) this.endReplay('market', { restore: !identityChanged, resume: false });
+        // A switch during a start's history load abandons it — and must not load the new
+        // market at the depth that start borrowed.
+        if (this.replayLoading && (identityChanged || depthChanged)) {
+            const depth = this.replayDepth;
+            this.abandonReplayLoad('market');
+            if (depth && next.bars === undefined) {
+                if (depth.bars === undefined) delete m.bars;
+                else m.bars = depth.bars;
+            }
+        }
         // Same market, only deeper/shallower, with bars already on screen: handled by moving
         // the array's oldest edge instead of reloading (see `extendDepth`). An offline `data`
         // series has no source to extend from, and GROWING needs a ranged feed to fetch the
@@ -747,20 +839,30 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
             this.renderer.setVisibleRange({ from, to: Math.max(carried.right, bars[idx]!.time + 1) });
         }
 
+        // A carried replay whose point is inside the new bars cuts them right here (no history
+        // to wait for: the cut is synchronous); its restart of every consumer over the cut
+        // replaces the one below, and live updates stay off. A point OLDER than the new bars
+        // has to deepen first — the switch completes as usual and the replay resumes after.
+        const carry = replayCarry && !replayCarry.cancelled ? replayCarry : null; // stopped during the load ⇒ gone
+        const carryFrom = carry ? carry.revealedEnd - this.barIntervalMs() : 0;
+        const carryNow = carry != null && this.rawBars.length > 0 && carryFrom >= this.rawBars[0]!.time;
+        const replayBack = carryNow && this.resumeCarriedReplay(this.replayStart({ from: carryFrom }), carry);
+
         // Restart every consumer over the new market (records/panes/drawings survive). A
         // depth-only change is NOT a new market: the bars kept their identity and their
         // indices, so tearing the sessions down would recompute everything and flash a
         // stale plot for the whole load. The backfill pokes them per prepend instead —
         // the same path the initial progressive load already uses.
-        if (!depthOnly) {
+        if (!depthOnly && !replayBack) {
             this.restartNativeIndicators();
             this.restartChartTypeEngine();
             this.reexecuteIndicators();
         }
-        this.startLive(); // stopped above on every path, depth-only included
+        if (!replayBack) this.startLive(); // stopped above on every path, depth-only included
         if (identityChanged) {
             this.events.emit('market:changed', { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60', prev });
         }
+        if (carry && !carryNow) this.resumeCarriedReplay(this.replayStart({ from: carryFrom }), carry);
     }
 
     /**
@@ -903,6 +1005,435 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         return this.historyCompletePromise;
     }
 
+    // ── bar replay ──────────────────────────────────────────────
+
+    /**
+     * Enter replay — or seek, when already replaying — keeping every bar opened at or before
+     * `opts.from` and queueing the rest. A `from` inside the loaded bars cuts at once, even
+     * while older history is still streaming in: what lands later joins the tape's head
+     * (see {@link mergeHistoryIntoReplay}) and leaves the cut alone. An older `from` waits
+     * for that load, then deepens if it still has to. Consumers restart over the cut exactly
+     * as on a market switch — their models describe bars that are now hidden — and the
+     * active chart-type engine is rebuilt without live data.
+     */
+    async replayStart(opts: ReplayStartOptions): Promise<void> {
+        if (this.rawBars.length === 0) {
+            console.warn('[vela] chart.replay.start() ignored — the chart has no bars yet');
+            return;
+        }
+        let gen = this.generation;
+        if (opts.from < this.rawBars[0]!.time) {
+            await this.historyCompletePromise;
+            if (this.generation !== gen || this.rawBars.length === 0) return; // a market switch superseded the request
+        }
+        const oldest = this.rawBars[0]!.time;
+        if (opts.from < oldest && this.canHeal() && typeof this.feed.loadRange === 'function') {
+            // Deepen through the depth-only path. Bars per interval overestimates on
+            // session-bound markets, which only over-fetches; genesis clamps the rest.
+            const held = this.rawBars.length + (this.replayQueue?.length ?? 0);
+            const bars = held + Math.ceil((oldest - opts.from) / this.barIntervalMs()) + 1;
+            const seek = this.replayQueue !== null;
+            if (seek) this.endReplay(null, { restore: true, resume: false }); // a seek, not an end
+            this.replayDepth ??= { bars: this.config.market.bars };
+            // Flagged only once the deepening call has read its arguments: its own depth
+            // change must not count as a switch abandoning the load.
+            const deepened = this.setMarket({ bars });
+            this.replayLoading = { seek };
+            await deepened;
+            gen = this.generation;
+            await this.historyCompletePromise;
+            if (!this.replayLoading || this.generation !== gen || this.rawBars.length === 0) return; // cancelled or superseded
+            this.replayLoading = null;
+        }
+        this.settleFormingBar();
+        this.dropTickFetches();
+        const tape = this.replayQueue ? [...this.rawBars, ...this.replayQueue] : this.rawBars;
+        let cut = 0;
+        while (cut < tape.length && tape[cut]!.time <= opts.from) cut += 1;
+        cut = Math.max(1, cut);
+        if (cut >= tape.length) {
+            console.warn('[vela] chart.replay.start() ignored — no bar opens after the requested time');
+            return;
+        }
+        const wasPlaying = this.replayPlaying;
+        this.clearReplayTimer();
+        if (!this.replayQueue) this.stopLive();
+        this.replayQueue = tape.slice(cut);
+        this.setBarSeries(tape.slice(0, cut));
+        this.restartBarConsumers({ blank: true });
+        if (wasPlaying) this.events.emit('replay:pause', undefined);
+        this.events.emit('replay:start', { cursorTime: tape[cut - 1]!.time, remaining: this.replayQueue.length });
+        this.prefetchTicks();
+    }
+
+    /** Reveal the next queued bar through the live-bar path — or complete the bar forming
+     *  tick by tick; the last one ends the replay. */
+    replayStep(): boolean {
+        if (this.replayForming) {
+            this.finishFormingBar();
+            return true;
+        }
+        const queue = this.replayQueue;
+        const bar = queue?.shift();
+        if (!queue || !bar) return false;
+        this.replayTickFetches.delete(bar.time);
+        this.applyBar(bar);
+        this.completeReveal(bar);
+        this.prefetchTicks();
+        return true;
+    }
+
+    /**
+     * Follow up a replay carried onto a new series of the same symbol (another timeframe or
+     * session). The cut asked for keeps the bars that CLOSED by the end of what was revealed —
+     * every finer bar of the last revealed one, never a coarser bar still open at that point
+     * (no look-ahead). Once it settles: playback resumes if it was on; if the replay did not
+     * come back (nothing left after that point, or a later switch took over), it ends as a
+     * market switch would. Returns whether the replay is back already — a start with no
+     * history to wait for cuts synchronously (an async function runs up to its first await).
+     */
+    private resumeCarriedReplay(start: Promise<void>, carry: { playing: boolean; cancelled: boolean }): boolean {
+        if (this.replayQueue && this.replayCarrying === carry) this.replayCarrying = null; // back already
+        void start.then(() => {
+            if (this.replayCarrying === carry) this.replayCarrying = null;
+            if (carry.cancelled) return; // stopped or superseded meanwhile — already announced
+            if (!this.replayQueue) this.events.emit('replay:end', { reason: 'market' });
+            else if (carry.playing) this.replayPlay();
+        });
+        return this.replayQueue !== null;
+    }
+
+    replayStepUpdate(): boolean {
+        if (!this.replayQueue) return false;
+        if (this.replayForming) {
+            this.applyReplayTicks(1);
+            return true;
+        }
+        const bar = this.replayQueue[0];
+        if (!bar) return false;
+        const entry = this.replayTickSource ? this.requestTicks(bar) : null;
+        if (entry && !entry.ticks) {
+            const epoch = this.replayTickAbort;
+            // Timed playback, when on, opens the bar itself once the ticks land.
+            void entry.done.then(() => {
+                if (!this.replayPlaying && !this.replayForming && this.replayTickAbort === epoch && this.replayQueue?.[0] === bar) this.replayStepUpdate();
+            });
+            return true;
+        }
+        if (!entry?.ticks?.length) return this.replayStep();
+        this.openFormingBar(entry.ticks, 1);
+        return true;
+    }
+
+    replaySetTicks(source: ReplayTickSource | null): void {
+        this.finishFormingBar();
+        this.dropTickFetches();
+        this.replayTickSource = source;
+        this.prefetchTicks();
+    }
+
+    replayPlay(intervalMs?: number): void {
+        if (!this.replayQueue) return;
+        if (intervalMs !== undefined) {
+            if (!(Number.isFinite(intervalMs) && intervalMs > 0)) {
+                console.warn(`[vela] chart.replay.play(${intervalMs}) ignored — the interval must be a positive number of ms`);
+                return;
+            }
+            this.replayIntervalMs = intervalMs;
+        }
+        this.clearReplayTimer();
+        this.replayPlaying = true;
+        if (this.replayForming) this.paceFormingBar(this.replayForming);
+        this.scheduleReplayStep(this.replayForming?.delayMs);
+        this.events.emit('replay:play', { intervalMs: this.replayIntervalMs });
+    }
+
+    replayPause(): void {
+        if (!this.replayPlaying) return;
+        this.clearReplayTimer();
+        this.events.emit('replay:pause', undefined);
+    }
+
+    replayStop(): void {
+        const carrying = this.replayCarrying;
+        if (carrying) {
+            // Carried over a switch and not back yet: it must not resume once the bars land.
+            carrying.cancelled = true;
+            this.replayCarrying = null;
+            this.events.emit('replay:end', { reason: 'stopped' });
+        }
+        if (this.replayLoading) {
+            // A start still loading older history: shrinking back to the borrowed depth
+            // supersedes the backfill, and that reload resumes live updates itself.
+            const depth = this.replayDepth;
+            this.abandonReplayLoad('stopped');
+            void this.setMarket({ bars: depth?.bars ?? 500 });
+            return;
+        }
+        this.endReplay('stopped', { restore: true, resume: true });
+    }
+
+    private abandonReplayLoad(reason: ReplayEndReason): void {
+        const loading = this.replayLoading;
+        if (!loading) return;
+        this.replayLoading = null;
+        this.replayDepth = null;
+        if (loading.seek) this.events.emit('replay:end', { reason });
+    }
+
+    replayState(): ReplayState {
+        const active = this.replayQueue !== null;
+        return {
+            active: active || this.replayCarrying !== null, // a replay carried over a switch stays on while the new bars load
+            playing: this.replayCarrying?.playing ?? this.replayPlaying,
+            cursorTime: active ? (this.rawBars[this.rawBars.length - 1]?.time ?? null) : null,
+            remaining: this.replayQueue?.length ?? 0,
+            intervalMs: this.replayIntervalMs,
+        };
+    }
+
+    replayBounds(): ReplayBounds | null {
+        const first = this.rawBars[0];
+        const last = this.replayQueue?.[this.replayQueue.length - 1] ?? this.rawBars[this.rawBars.length - 1];
+        return first && last ? { first: first.time, last: last.time } : null;
+    }
+
+    private scheduleReplayStep(delayMs = this.replayIntervalMs): void {
+        this.replayTimer = setTimeout(() => {
+            this.replayTimer = null;
+            this.replayAdvance();
+        }, delayMs);
+    }
+
+    /** One beat of timed playback: the forming bar's next ticks, else the next bar — whole,
+     *  or opened from its ticks (waiting for them when they have not landed yet). */
+    private replayAdvance(): void {
+        if (!this.replayPlaying || !this.replayQueue) return;
+        const forming = this.replayForming;
+        if (forming) {
+            // Every tick due by the clock — a timer that fired late (throttling, a busy
+            // frame) catches up instead of stretching the bar past its interval.
+            const due = Math.floor((now() - forming.origin) / this.replayIntervalMs) + 1;
+            this.applyReplayTicks(Math.max(forming.batch, due - forming.next));
+            if (this.replayPlaying) this.scheduleReplayStep(forming.delayMs);
+            return;
+        }
+        const bar = this.replayQueue[0];
+        if (!bar) return;
+        const entry = this.replayTickSource ? this.requestTicks(bar) : null;
+        if (entry && !entry.ticks) {
+            const epoch = this.replayTickAbort;
+            void entry.done.then(() => {
+                if (this.replayPlaying && this.replayTimer == null && this.replayTickAbort === epoch && this.replayQueue?.[0] === bar) this.replayAdvance();
+            });
+            return;
+        }
+        if (!entry?.ticks?.length) {
+            if (this.replayStep() && this.replayPlaying) this.scheduleReplayStep();
+            return;
+        }
+        this.openFormingBar(entry.ticks);
+        if (this.replayPlaying) this.scheduleReplayStep(this.replayForming?.delayMs);
+    }
+
+    /** Take the next queued bar off the tape and open it at its first tick (the first
+     *  `count` ticks — default: one timed update's worth). */
+    private openFormingBar(ticks: readonly ReplayTick[], count?: number): void {
+        const bar = this.replayQueue!.shift()!;
+        const volumeEach = ticks.every((t) => t.volume === undefined) ? (bar.volume ?? 0) / ticks.length : null;
+        const forming = { bar, ticks, next: 0, candle: null, volumeEach, batch: 1, delayMs: this.replayIntervalMs, origin: 0 };
+        this.paceFormingBar(forming);
+        this.replayForming = forming;
+        this.applyReplayTicks(count ?? forming.batch);
+        this.prefetchTicks();
+    }
+
+    /** One tick per interval, batched when the interval is shorter than a frame; the clock
+     *  is anchored on the ticks already applied (a resume or a pace change carries on from
+     *  there, never jumps). */
+    private paceFormingBar(f: NonNullable<EngineOrchestrator['replayForming']>): void {
+        f.batch = Math.max(1, Math.ceil(MIN_TICK_UPDATE_MS / this.replayIntervalMs));
+        f.delayMs = this.replayIntervalMs * f.batch;
+        f.origin = now() - Math.max(0, f.next - 1) * this.replayIntervalMs;
+    }
+
+    /** Fold the next `count` ticks into the forming candle; the last one settles the bar. */
+    private applyReplayTicks(count: number): void {
+        const f = this.replayForming;
+        if (!f) return;
+        let c = f.candle;
+        const stop = Math.min(f.ticks.length, f.next + count);
+        for (; f.next < stop; f.next += 1) {
+            const t = f.ticks[f.next]!;
+            const v = f.volumeEach ?? t.volume ?? 0;
+            const hi = Math.max(t.high ?? t.price, t.price);
+            const lo = Math.min(t.low ?? t.price, t.price);
+            if (c) {
+                c = { ...c, high: Math.max(c.high, hi), low: Math.min(c.low, lo), close: t.price, volume: (c.volume ?? 0) + v };
+            } else {
+                const open = t.open ?? t.price;
+                c = { time: f.bar.time, open, high: Math.max(open, hi), low: Math.min(open, lo), close: t.price, volume: v };
+            }
+        }
+        f.candle = c;
+        if (f.next >= f.ticks.length) {
+            this.finishFormingBar();
+            return;
+        }
+        this.applyBar(c!);
+        this.events.emit('replay:tick', { cursorTime: f.bar.time, index: f.next - 1, count: f.ticks.length });
+    }
+
+    /** Settle the forming bar on its stored values and announce it revealed. */
+    private finishFormingBar(): void {
+        const f = this.replayForming;
+        if (!f) return;
+        this.replayForming = null;
+        this.replayTickFetches.delete(f.bar.time);
+        this.applyBar(f.bar);
+        this.events.emit('replay:tick', { cursorTime: f.bar.time, index: f.ticks.length - 1, count: f.ticks.length });
+        this.completeReveal(f.bar);
+    }
+
+    /** Put the forming bar back in its stored form, silently — a seek or an end rebuilds
+     *  from the tape, which must hold the stored bar. */
+    private settleFormingBar(): void {
+        const f = this.replayForming;
+        if (!f) return;
+        this.replayForming = null;
+        this.applyBar(f.bar);
+    }
+
+    /**
+     * A history answer landing mid-replay (a progressive snapshot — the whole answer so far):
+     * the tape keeps its cut and its hidden queue; bars older than the tape join its head,
+     * bars newer than it join the queue's end.
+     */
+    private mergeHistoryIntoReplay(bars: OHLCV[]): void {
+        const queue = this.replayQueue;
+        const head = this.rawBars[0];
+        if (!queue || !head) return;
+        const tail = queue[queue.length - 1] ?? this.rawBars[this.rawBars.length - 1]!;
+        let older = 0;
+        while (older < bars.length && bars[older]!.time < head.time) older += 1;
+        let newer = bars.length;
+        while (newer > older && bars[newer - 1]!.time > tail.time) newer -= 1;
+        if (newer < bars.length) queue.push(...bars.slice(newer));
+        if (older > 0) {
+            this.setBarSeries([...bars.slice(0, older), ...this.rawBars], { preserveView: true });
+            this.notifySessionsBars('backfill');
+        }
+    }
+
+    /** A bar is fully on screen: announce it, and end the replay if it was the last. */
+    private completeReveal(bar: OHLCV): void {
+        const queue = this.replayQueue;
+        if (!queue) return;
+        this.events.emit('replay:step', { cursorTime: bar.time, remaining: queue.length });
+        if (queue.length === 0) this.endReplay('finished', { restore: true, resume: true });
+    }
+
+    /** Ask for the ticks of the next hidden bar ahead of time. */
+    private prefetchTicks(): void {
+        const next = this.replayQueue?.[0];
+        if (next && this.replayTickSource) this.requestTicks(next);
+    }
+
+    /** The (shared) tick request of a queued bar — the source runs once per bar. */
+    private requestTicks(bar: OHLCV): { ticks: readonly ReplayTick[] | null; done: Promise<void> } {
+        const known = this.replayTickFetches.get(bar.time);
+        if (known) return known;
+        const source = this.replayTickSource!;
+        this.replayTickAbort ??= new AbortController();
+        const signal = this.replayTickAbort.signal;
+        const queue = this.replayQueue ?? [];
+        const end = queue[queue.indexOf(bar) + 1]?.time ?? bar.time + this.barIntervalMs();
+        const entry: { ticks: readonly ReplayTick[] | null; done: Promise<void> } = { ticks: null, done: Promise.resolve() };
+        const land = (ticks: unknown): void => {
+            entry.ticks = usableTicks(ticks);
+        };
+        const fail = (e: unknown): void => {
+            if (!signal.aborted) console.warn(`[vela] replay tick source failed — revealing the bar whole (${e instanceof Error ? e.message : String(e)})`);
+            land([]);
+        };
+        try {
+            const out = source(bar, { end, signal });
+            if (Array.isArray(out)) land(out);
+            else entry.done = Promise.resolve(out).then(land, fail);
+        } catch (e) {
+            fail(e);
+        }
+        this.replayTickFetches.set(bar.time, entry);
+        return entry;
+    }
+
+    /** Abort the tick requests in flight and forget the landed ones. */
+    private dropTickFetches(): void {
+        this.replayTickAbort?.abort();
+        this.replayTickAbort = null;
+        this.replayTickFetches.clear();
+    }
+
+    private clearReplayTimer(): void {
+        if (this.replayTimer != null) clearTimeout(this.replayTimer);
+        this.replayTimer = null;
+        this.replayPlaying = false;
+    }
+
+    /**
+     * Leave replay. `restore` puts the queued bars back and restarts the consumers over the
+     * full history (a market switch skips it: its load replaces everything anyway); `resume`
+     * restarts live updates and heals the bars that closed while replaying. A null reason
+     * leaves silently — a seek that re-enters right after.
+     */
+    private endReplay(reason: ReplayEndReason | null, opts: { restore: boolean; resume: boolean }): void {
+        const queue = this.replayQueue;
+        if (!queue) return;
+        this.clearReplayTimer();
+        if (opts.restore) this.settleFormingBar();
+        else this.replayForming = null;
+        this.dropTickFetches();
+        this.replayQueue = null;
+        // A real end hands back the depth the replay borrowed; a seek keeps it for the re-entry.
+        const depth = reason ? this.replayDepth : null;
+        if (reason) this.replayDepth = null;
+        if (depth) {
+            if (depth.bars === undefined) delete this.config.market.bars;
+            else this.config.market.bars = depth.bars;
+        }
+        if (opts.restore) {
+            const keep = depth ? (depth.bars ?? 500) : Infinity;
+            if (queue.length > 0 || this.rawBars.length > keep) {
+                const full = [...this.rawBars, ...queue];
+                this.setBarSeries(full.length > keep ? full.slice(full.length - keep) : full);
+                this.restartBarConsumers({ blank: false });
+            } else if (this.config.live) {
+                // Nothing to put back, but natives and the chart-type engine run a replay-time
+                // (non-live) form — rebuild them live.
+                this.restartNativeIndicators();
+                this.restartChartTypeEngine();
+            }
+        }
+        if (opts.resume && this.config.live) {
+            this.startLive();
+            const last = this.rawBars[this.rawBars.length - 1];
+            if (last && this.canHeal()) void this.healGap(last.time);
+        }
+        if (reason) this.events.emit('replay:end', { reason });
+    }
+
+    /**
+     * The bars were replaced by a cut or a restore of the SAME market: every consumer re-runs.
+     * A cut also blanks the mounted models first — they still paint the hidden bars' values,
+     * which must not show until the re-runs land.
+     */
+    private restartBarConsumers(opts: { blank: boolean }): void {
+        if (opts.blank) this.blankIndicatorVisuals();
+        this.restartNativeIndicators();
+        this.restartChartTypeEngine();
+        this.reexecuteIndicators();
+    }
+
     /** The primary symbol as the data layer resolves it, or null if no symbol is set. */
     private qualifiedSymbol(): string | null {
         const market = this.config.market;
@@ -993,7 +1524,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         engine.start({
             symbol: this.config.market.symbol ?? 'TEST',
             timeframe: this.config.market.timeframe ?? '60',
-            live: this.config.live ?? false,
+            live: (this.config.live ?? false) && this.replayQueue === null,
             session: this.config.market.session,
             bars: () => this.bars,
             data: this.dataControl,
@@ -1146,6 +1677,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 record.session.notifyBars(reason);
             } else if (record.native) record.native.instance.onBars();
         }
+        if (this.activeEngineStyle) this.typeEngines.get(this.activeEngineStyle)?.onBars?.();
     }
 
     /** Gap healing needs a ranged feed and a provider-backed series (offline `data` has no source). */
@@ -1171,13 +1703,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
         try {
             const bars = await this.feed.loadRange!(this.config.market, { from: fromMs });
             if (this.generation !== gen) return; // market switched / chart destroyed mid-heal — drop the stale bars
+            if (this.replayQueue) return; // replay began mid-heal — these bars lie past its cursor
             for (const b of bars) this.applyBar(b, false);
         } catch {
             // transient — the buffered ticks still apply; a later discontinuity re-triggers the heal
         } finally {
             // A superseded heal leaves the state alone: setMarket/destroy already reset it,
             // and replaying its buffer would push the OLD market's bars into the new array.
-            if (this.generation === gen) {
+            if (this.generation === gen && !this.replayQueue) {
                 this.healing = false;
                 const pending = this.healBuffer;
                 this.healBuffer = [];
@@ -1549,6 +2082,13 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
     destroy(): void {
         this.bumpGeneration(); // abandon backfill loops/loads mid-flight + release superseded setMarket awaiters
         this.resolveHistoryComplete(); // never leave historyComplete() awaiters hanging
+        this.clearReplayTimer();
+        this.replayQueue = null;
+        this.replayForming = null;
+        this.replayCarrying = null;
+        this.dropTickFetches();
+        this.replayDepth = null;
+        this.replayLoading = null;
         this.stopLive();
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportUnsub?.();
@@ -1705,7 +2245,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
                 id,
                 symbol: this.config.market.symbol ?? 'TEST',
                 timeframe: this.config.market.timeframe ?? '60',
-                live: this.config.live,
+                live: this.config.live && this.replayQueue === null,
                 session: this.config.market.session,
                 bars: () => this.bars,
                 data: this.dataControl,
@@ -2292,6 +2832,19 @@ export class EngineOrchestrator implements IndicatorController, PaneController {
  * paint in the browser (the first callback runs pre-paint, the second resumes the
  * frame after); falls back to a macrotask where rAF is unavailable (tests/headless).
  */
+function now(): number {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+/** A tick source's answer, kept to the ticks whose price (and optional fields) are finite. */
+function usableTicks(value: unknown): readonly ReplayTick[] {
+    if (!Array.isArray(value)) return [];
+    const optional = (n: number | undefined): boolean => n === undefined || Number.isFinite(n);
+    return (value as ReplayTick[]).filter(
+        (t) => t != null && Number.isFinite(t.price) && optional(t.volume) && optional(t.high) && optional(t.low) && optional(t.open),
+    );
+}
+
 function yieldToPaint(): Promise<void> {
     if (typeof requestAnimationFrame === 'function') {
         return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));

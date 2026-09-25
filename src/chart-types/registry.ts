@@ -18,7 +18,9 @@ export interface SeriesDataEngineHost {
     symbol: string;
     /** The chart's timeframe (canonical string, e.g. `'60'`). */
     timeframe: string;
-    /** Whether the chart runs live (streaming forming bar) or static history. */
+    /** Whether the chart runs live (streaming forming bar) or static history. False during
+     *  a bar replay — entering and leaving replay REBUILDS the engine, so this never
+     *  changes within one host's lifetime. */
     live: boolean;
     /** The chart's trading session (`'regular'` | `'extended'`); undefined = regular /
      *  no session model. A session switch reloads the market and REBUILDS the engine,
@@ -50,6 +52,10 @@ export interface SeriesDataEngine {
     stop(): void;
     /** The visible range changed (pan/zoom) while the style is active. */
     onViewport?(range: { from: number; to: number }): void;
+    /** The chart's bars changed while the style is active — a live tick, a new bar (a
+     *  replayed one included), or older history prepended. Re-read `host.bars()`; an
+     *  engine that streams its own live data may ignore ticks while `host.live`. */
+    onBars?(): void;
     /** New settings values from the chart-settings dialog (the type's SDK section).
      *  Also delivered once just BEFORE `start()` whenever stored values exist (a
      *  persisted config, a market switch recreating the engine) — an engine must

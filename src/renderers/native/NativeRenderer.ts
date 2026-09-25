@@ -75,7 +75,7 @@ import { MARK_PULSE_MS } from './chrome/marks/paint';
 import type { MarkClickEvent, MarkGroup, TimelineMark } from '../../core/marks/types';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint, sanitizeCrosshairOverride } from './core/chartConfig';
 import { BackdropRenderer } from './backdrop/BackdropRenderer';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
@@ -392,7 +392,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -533,6 +533,11 @@ export class NativeRenderer implements IChartRenderer {
                 this.scene.marks = mergeMarksState(this.scene.marks, value);
                 this.markPopover?.close(); // the open cluster may just have been hidden
                 break;
+            case 'crosshairOverride':
+                // Runtime-only (never in getConfig): a pick interaction restyles the cursor
+                // and a reload can never leave it stuck. `null` restores the configured crosshair.
+                this.scene.crosshairOverride = sanitizeCrosshairOverride(value);
+                break;
             case 'keyboard':
                 this.setKeyboardEnabled(Boolean(value));
                 return; // owns its own DOM (focus/listeners/live region)
@@ -626,6 +631,7 @@ export class NativeRenderer implements IChartRenderer {
             }
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'marks': return { visible: this.scene.marks.visible, groups: { ...this.scene.marks.groups } };
+            case 'crosshairOverride': return this.scene.crosshairOverride ? { ...this.scene.crosshairOverride } : null;
             case 'keyboard': return this.keyboardEnabled;
             case 'historyChords': return this.historyChordsEnabled;
             case 'settings': return this.settingsEnabled;
@@ -1947,12 +1953,18 @@ export class NativeRenderer implements IChartRenderer {
                 this.animator.start(); // glide the displayed high/low/close toward this tick
             }
         } else if (!last || bar.time > last.time) {
+            // The newest bar is scrolled off the right edge (and no glide is bringing it
+            // back): the user is reading history — hold the view on the same bars instead of
+            // sliding it along with every new one.
+            const vp = this.coords.getViewport();
+            const holdView = n > 0 && vp.rightOffset < 0 && this.scrollTargetRO === null;
             this.bars.push(bar);
             this.syncLiveEase(bar); // a fresh bar — snap (never ease across bars)
             // Warm path: O(1) append (no full times remap / median re-sort). Cold start
             // (interval not yet established) takes the robust full-median setBars path.
             if (this.coords.barInterval > 0) this.coords.appendBar(bar.time);
             else this.coords.setBars(this.bars.map((b) => b.time));
+            if (holdView) this.coords.setViewport({ ...vp, rightOffset: vp.rightOffset - 1 });
         } else {
             return;
         }

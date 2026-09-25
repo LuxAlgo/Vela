@@ -249,7 +249,12 @@ Subscribe with `chart.on(event, handler)`; every subscription returns an unsubsc
 | `indicator:error` | `{ id, error }` | An indicator failed. |
 | `script:run` | the [`ScriptRun`](#capturing-what-a-script-computes) | A script computed — the first pass over the history, a live tick, a new bar, an input edit, a viewport move, a market switch. Carries the run itself (title, cause, the plots/variables/broker state at the computed bar), so a listener reads it instead of resolving a handle and pulling a snapshot. Forming-bar (`'tick'`) runs are throttled to ~1/s; every other cause fires unconditionally. Never fires for native indicators — they run no script. |
 | `context:changed` | `{ id }` | An indicator's execution context advanced (run finished; throttled to ~1/s while streaming). Re-pull `handle.context()` if you consume it. Fires only for context-capable engines. **Prefer `script:run`**, which delivers the data rather than a signal to go fetch it. |
-| `bar` | the bar (OHLCV) | A live tick — the forming bar updated or a new bar appended. |
+| `bar` | the bar (OHLCV) | A live tick — the forming bar updated or a new bar appended. A bar revealed by a [replay](#chartreplay--the-bar-replay-control-surface) fires it too. |
+| `replay:start` | `{ cursorTime, remaining }` | Replay began (or seeked): the chart shows history up to `cursorTime`, `remaining` bars are hidden. |
+| `replay:step` | `{ cursorTime, remaining }` | Replay revealed one bar (a bar played tick by tick steps when it settles). |
+| `replay:tick` | `{ cursorTime, index, count }` | [Tick replay](#tick-replay) applied tick `index` of `count` to the bar forming at `cursorTime`. |
+| `replay:play` · `replay:pause` | `{ intervalMs }` · — | Timed reveal started (or changed pace) · paused (`pause()`, or a seek while playing). |
+| `replay:end` | `{ reason }` | Replay ended and the full history is back: `'stopped'` (`stop()`), `'finished'` (the last bar was revealed), or `'market'` (a symbol switch replaced the history — a timeframe or session switch keeps the replay). |
 | `viewport:changed` | `{ from, to }` (epoch-ms) | The visible time range moved (pan/zoom/fit) — fires per applied change, not debounced. The seam viewport-sync links between charts build on. |
 | `theme:changed` | the resolved theme object | The app theme changed — `setTheme(...)` or the in-chart settings dialog (Canvas → Theme). Host chrome around the chart (toolbars, panels, page shells) re-skins from the payload. Plot-only cosmetic edits (a `layout.background` set through the config) do **not** fire it. |
 | `mark:click` | `{ id, ids, time, group? }` | A [timeline mark](#chartmarks--the-timeline-marks-control-surface) glyph was clicked — `ids` lists every mark under it (several marks of one group on one bar fold into a cluster), `id`/`time` its first. Fires before the popup opens; a mark without content opens none, so this is where a host shows its own UI. |
@@ -462,6 +467,74 @@ chart.on('mark:click', ({ id, ids, time }) => { /* ids = every mark under the cl
 chart.on('market:changed', ({ symbol }) => chart.marks.set(marksFor(symbol)));
 chart.renderer.set('marks', false); // hide the whole lane (`{ groups: { splits: false } }` hides one group)
 ```
+
+---
+
+## `chart.replay` — the bar-replay control surface
+
+Rewind the chart to a past bar and reveal the bars that followed, one at a time, by hand or on a
+timer. The replay walks the history **already loaded** — nothing is refetched per bar. Each revealed
+bar travels the same path as a live bar: indicators update as if it had just closed (a script sees
+it as a real-time bar), chart-type data engines are told through `onBars`, and the `bar` event
+fires. While replaying, live updates are paused; stopping (or revealing the last bar) restores the
+full history, resumes them, and fetches the bars that closed in the meantime. Switching the
+timeframe (or session) keeps the replay going on the new bars, at the same point in time: the
+chart keeps the bars that had closed by the end of what was revealed (a coarser bar still open at
+that point stays hidden), and playback carries on if it was on. Switching the symbol ends the replay.
+
+| Member | Description |
+|---|---|
+| `start({ from })` | Enter replay at epoch-ms `from`: the chart keeps every bar that opened at or before it and hides the rest. Resolves once the rewound history is on screen — at once when `from` falls inside the loaded bars, even while older history is still streaming in (it joins the replay as it lands). An older `from` than the loaded history deepens it first (`from: 0` loads everything the source has), and the chart returns to its previous depth when the replay ends; a `from` with no bar after it warns and does nothing. Called while replaying, it **seeks** — backward or forward — and pauses. Every indicator re-runs over the rewound history. |
+| `step()` | Reveal the next bar — or, mid-way through a bar played tick by tick, complete it. Returns `false` when replay is off. |
+| `stepUpdate()` | Reveal the next update: with [tick replay](#tick-replay), the forming bar's next tick, or the next bar opened at its first tick (once its ticks are in); otherwise the next whole bar. Returns `false` when nothing is left. |
+| `play(intervalMs?)` | Reveal one bar every `intervalMs` — one update, with [tick replay](#tick-replay) (default: the last pace, initially 1000). Calling it again while playing changes the pace. |
+| `pause()` | Stop the timer; the replay stays where it is. |
+| `stop()` | Leave replay: full history back, live updates resumed. Called while a `start()` is still loading older history, it cancels that load instead (the chart returns to its previous depth, the pending `start()` resolves without replaying). |
+| `state` | `{ active, playing, cursorTime, remaining, intervalMs }` — `cursorTime` is the newest bar on screen (`null` when off, and while a timeframe switch reloads the bars — `active` stays `true` through it). |
+| `bounds` | `{ first, last }` — the open times of the oldest and newest bar a replay can start from (hidden bars included while replaying), or `null` before any bar loaded. A random start, or a "start from the first bar" button, reads it. |
+| `setTicks(source \| null)` | Play each revealed bar as intrabar updates instead of whole (see below); `null` goes back to whole bars. |
+
+```js
+await chart.replay.start({ from: Date.UTC(2024, 5, 3, 14) });
+chart.replay.play(2000);                 // one bar every 2 s
+chart.on('replay:step', ({ cursorTime, remaining }) => updateUi(cursorTime, remaining));
+chart.on('replay:end', ({ reason }) => hideUi(reason));
+```
+
+### Tick replay
+
+`setTicks(source)` makes a playing replay build each bar the way a live one forms: `source(bar,
+{ end, signal })` returns the bar's intrabar updates, oldest first — `{ price, high?, low?, open?,
+volume? }[]`, or a promise of it — covering `[bar.time, end)`. The forming candle opens at the
+first update (`open`, else its price), every update moves its close to `price` and stretches its
+high and low to include `high`/`low`, and the last one settles it on the stored bar, so indicators
+end exactly where a whole-bar replay leaves them. Each update travels the live-tick path
+(indicators, chart types and the `bar` event follow) and fires `replay:tick`; the bar still fires
+`replay:step` once, when it settles.
+
+- The play interval becomes the time between two **updates**: a bar lasts as many intervals as it
+  has ticks (a 15m bar from 1m updates takes 15 intervals). Below ~16 ms, updates are batched.
+- Volume adds up from the ticks' own; when none carries one, the bar's volume is spread evenly.
+- The next bar's ticks are requested while the current one plays; playback waits for them if they
+  are late. An empty answer, or a failure, reveals that bar whole.
+- A seek, a stop or a new source aborts the requests in flight (`signal`) and puts a half-formed
+  bar back in its stored form.
+
+The source decides where the prices come from — trades, a synthetic path, or finer bars.
+`lowerTimeframeTicks(chart, timeframe)` covers the last case from the chart's own provider: it
+fetches the `timeframe` bars inside each replayed bar and makes each one update — its close, its
+high and low, its volume (`barsToTicks` does that step on bars you already have).
+
+```js
+import { lowerTimeframeTicks } from '@luxalgo/vela';
+
+chart.replay.setTicks(lowerTimeframeTicks(chart, '1'));   // replay 1h bars through their 1m bars
+chart.replay.play(1000);                                  // one 1m update per second: 60 s per bar
+chart.on('replay:tick', ({ index, count }) => showProgress(index / count));
+```
+
+The price-axis countdown to bar close reads the real clock, so it stays hidden while replaying —
+every bar on screen closed long ago.
 
 ---
 

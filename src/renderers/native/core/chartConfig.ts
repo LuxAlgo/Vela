@@ -457,6 +457,43 @@ export function priceStyleIds(): PriceStyle[] {
 }
 const STAT_POSITIONS = ['above', 'below'] as const;
 
+/**
+ * A runtime override of the local crosshair (the `crosshairOverride` feature) — for an
+ * interaction that asks the user to pick something on the chart and wants the cursor to
+ * say so. Each field replaces the configured crosshair style while set; `horizontal` /
+ * `vertical: false` drop that line together with its axis chip. Never part of the
+ * saved config.
+ */
+export interface CrosshairOverride {
+    vertical?: boolean;
+    horizontal?: boolean;
+    color?: string;
+    width?: number;
+    style?: LineStyle;
+    opacity?: number;
+    /** Veil the plot right of the vertical line's bar (every pane, up to the price scale) —
+     *  e.g. to hide what comes after a time being picked. `opacity` defaults to 1. */
+    shadeRight?: { color: string; opacity?: number };
+}
+
+/** Keep the well-formed fields of a `crosshairOverride` value; anything else (or nothing left) ⇒ null. */
+export function sanitizeCrosshairOverride(value: unknown): CrosshairOverride | null {
+    if (!value || typeof value !== 'object') return null;
+    const v = value as Record<string, unknown>;
+    const out: CrosshairOverride = {};
+    if (isBool(v.vertical)) out.vertical = v.vertical;
+    if (isBool(v.horizontal)) out.horizontal = v.horizontal;
+    if (isColor(v.color)) out.color = v.color;
+    if (isNum(v.width)) out.width = Math.max(0.5, Math.min(8, v.width));
+    if (isLineStyle(v.style)) out.style = v.style;
+    if (isNum(v.opacity)) out.opacity = clampOpacity(v.opacity);
+    const shade = v.shadeRight as Record<string, unknown> | null | undefined;
+    if (shade && typeof shade === 'object' && isColor(shade.color)) {
+        out.shadeRight = isNum(shade.opacity) ? { color: shade.color, opacity: clampOpacity(shade.opacity) } : { color: shade.color };
+    }
+    return Object.keys(out).length > 0 ? out : null;
+}
+
 function isColor(v: unknown): v is string {
     return typeof v === 'string' && v.trim().length > 0;
 }

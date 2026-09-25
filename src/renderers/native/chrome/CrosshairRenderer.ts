@@ -51,21 +51,38 @@ export class CrosshairRenderer {
         if (!ch || ch.x < 0 || ch.x > dataW || ch.y < 0 || ch.y > dataH) return;
 
         const cs = scene.style.crosshair;
+        const ov = scene.crosshairOverride;
+        const vertical = ov?.vertical !== false;
+        const horizontal = ov?.horizontal !== false;
         ctx.font = `${scene.style.fontSize}px ${theme.fontFamily}`;
         ctx.textBaseline = 'middle';
 
         // snap the vertical line to the nearest bar center
         const logical = Math.round(coords.xToLogical(ch.x));
         const x = Math.round(coords.logicalToX(logical)) + 0.5;
-        ctx.strokeStyle = cs.color ?? theme.textColor;
-        ctx.lineWidth = cs.width;
-        ctx.globalAlpha = cs.opacity;
-        setDash(ctx, cs.style);
+        if (vertical && ov?.shadeRight) {
+            // From the bar's right edge: the bar under the line stays in the clear.
+            const from = Math.max(0, Math.round(coords.logicalToX(logical + 0.5)));
+            if (from < dataW) {
+                ctx.fillStyle = ov.shadeRight.color;
+                ctx.globalAlpha = ov.shadeRight.opacity ?? 1;
+                ctx.fillRect(from, 0, dataW - from, dataH);
+                ctx.globalAlpha = 1;
+            }
+        }
+        ctx.strokeStyle = ov?.color ?? cs.color ?? theme.textColor;
+        ctx.lineWidth = ov?.width ?? cs.width;
+        ctx.globalAlpha = ov?.opacity ?? cs.opacity;
+        setDash(ctx, ov?.style ?? cs.style);
         ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, dataH);
-        ctx.moveTo(0, Math.round(ch.y) + 0.5);
-        ctx.lineTo(dataW, Math.round(ch.y) + 0.5);
+        if (vertical) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, dataH);
+        }
+        if (horizontal) {
+            ctx.moveTo(0, Math.round(ch.y) + 0.5);
+            ctx.lineTo(dataW, Math.round(ch.y) + 0.5);
+        }
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.lineWidth = 1;
@@ -83,12 +100,12 @@ export class CrosshairRenderer {
         }
         const chipBg = cs.labelBackground ?? theme.borderColor;
         // An unscaled pane (axisFormat 'none') has no value axis, so no value chip either.
-        if (pane && pane.axisFormat !== 'none') {
+        if (horizontal && pane && pane.axisFormat !== 'none') {
             const price = coords.yToPrice(ch.y, pane.scale, pane.bounds);
             this.chip(ctx, dataW + 1, ch.y, formatAxisValue(pane.scale, pane.bounds.height, price, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat), chipBg, 'left', false, theme.background);
         }
         // time chip on the bottom axis
-        this.chip(ctx, x, dataH + 1, formatTimeStamp(coords.logicalToTime(logical), scene.timezone, coords.barInterval), chipBg, 'center', true, theme.background);
+        if (vertical) this.chip(ctx, x, dataH + 1, formatTimeStamp(coords.logicalToTime(logical), scene.timezone, coords.barInterval), chipBg, 'center', true, theme.background);
     }
 
     destroy(): void {

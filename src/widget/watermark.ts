@@ -1,5 +1,7 @@
-// Symbol watermark — large faded "SYMBOL · TF" centered on the price pane.
+// Symbol watermark — large faded "SYMBOL · TF" centered on the price pane, with a smaller
+// "Replay" line under it while the chart replays past bars.
 import { injectStyles } from '../ui/styles';
+import { iconEl } from '../ui/icons';
 import { timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
 
@@ -22,6 +24,7 @@ const CSS = `
     left: var(--vela-toolbar-gutter, 0px);
     right: var(--vela-scale-gutter, 0px);
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     overflow: hidden;
@@ -35,6 +38,14 @@ const CSS = `
     user-select: none;
     white-space: nowrap;
 }
+.vela-watermark-replay {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    margin-top: 0.1em;
+    font-size: 0.8em;
+}
+.vela-watermark [hidden] { display: none !important; }
 `;
 
 /**
@@ -52,9 +63,14 @@ export function watermarkFontPx(availPx: number, textPxAtMax: number): number {
 export class Watermark {
     readonly el: HTMLElement;
     private readonly text: HTMLElement;
+    private readonly replayLine: HTMLElement;
     private readonly resizeObserver: ResizeObserver | null = null;
     /** The host's visibility preference (the persisted watermark toggle). */
     private shown = true;
+    /** The host's preference for the replay line (its own persisted toggle). */
+    private replayShown = true;
+    /** The chart is replaying past bars. */
+    private replaying = false;
     /** A bar load is in flight with nothing painted — the loading affordance owns the
      *  canvas, so the mark stays out of its way. Starts true: the FIRST `load:start`
      *  fires during chart construction, before any subscriber can see it. */
@@ -68,7 +84,10 @@ export class Watermark {
         // sits behind the candles.
         this.el.dataset.velaScreenshot = 'under';
         this.text = host.ownerDocument.createElement('span');
-        this.el.appendChild(this.text);
+        this.replayLine = host.ownerDocument.createElement('span');
+        this.replayLine.className = 'vela-watermark-replay';
+        this.replayLine.append(iconEl('replay', host.ownerDocument), host.ownerDocument.createTextNode('Replay'));
+        this.el.append(this.text, this.replayLine);
         host.appendChild(this.el);
         // The el tracks the price pane (CSS insets on the host), so observing it
         // refits on splitter drags and pane-layout changes.
@@ -85,6 +104,18 @@ export class Watermark {
         this.sync();
     }
 
+    /** Show/hide the replay line (the host's toggle); it only ever shows while replaying. */
+    setReplayVisible(visible: boolean): void {
+        this.replayShown = visible;
+        this.sync();
+    }
+
+    /** The chart entered or left a bar replay. */
+    setReplaying(replaying: boolean): void {
+        this.replaying = replaying;
+        this.sync();
+    }
+
     /** Loading and the watermark never share the canvas — hidden while a load is up. */
     setLoading(loading: boolean): void {
         this.loading = loading;
@@ -92,7 +123,10 @@ export class Watermark {
     }
 
     private sync(): void {
-        this.el.style.display = this.shown && !this.loading ? '' : 'none';
+        const replay = this.replayShown && this.replaying;
+        this.text.hidden = !this.shown;
+        this.replayLine.hidden = !replay;
+        this.el.style.display = (this.shown || replay) && !this.loading ? '' : 'none';
     }
 
     update(symbol: string, timeframe: string): void {

@@ -25,6 +25,7 @@ export interface ContextHost {
     setActiveCell(id: string): void;
     openSymbolSearch(query?: string): void;
     togglePanel(id: string, open?: boolean): void;
+    dockStrip(el: HTMLElement): () => void;
     root: HTMLElement;
     toast(message: string, kind?: 'info' | 'success' | 'error'): void;
     /** Debounced dirty mark — third-party persistable state changed (`ctx.stateChanged()`). */
@@ -60,6 +61,7 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         setPriceStyle: (style) => host.active()?.setPriceStyle(style),
         openSymbolSearch: (query) => host.openSymbolSearch(query),
         togglePanel: (id, open) => host.togglePanel(id, open),
+        dockStrip: (el) => host.dockStrip(el),
         host: host.root,
         toast: (message, kind) => host.toast(message, kind),
         addIndicator: (entry) => host.active()?.addExternalIndicator(entry),

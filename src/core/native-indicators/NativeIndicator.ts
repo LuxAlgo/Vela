@@ -42,6 +42,8 @@ export interface NativeIndicatorContext {
     readonly id: string;
     readonly symbol: string;
     readonly timeframe: string;
+    /** Whether the chart streams live data. False during a bar replay — entering and
+     *  leaving replay RESTARTS the indicator, so this never changes within one context. */
     readonly live: boolean;
     /** The chart's trading session (`'regular'` | `'extended'`); undefined = regular /
      *  no session model. A session switch reloads the market and RESTARTS the
