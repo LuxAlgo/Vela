@@ -100,12 +100,13 @@ export interface TimezoneRow {
 }
 
 /**
- * The rows every zone PICKER offers (bottom bar, time-axis menu, mobile sheet): UTC,
- * then the exchange rule, then the rest of the catalog. `current` is the stored choice
- * (rule or zone). The exchange row reads plain "Exchange" — it is a rule, not a zone, so
- * it carries no offset (the bar's clock/offset label shows the resolved zone). The
- * renderer's own settings dialog does NOT use this: it edits a resolved zone and lists
- * {@link TIMEZONES} alone.
+ * The rows every zone PICKER offers (bottom bar, time-axis menu, mobile sheet, the
+ * workspace's chart-settings row): UTC, then the exchange rule, then the rest of the
+ * catalog. `current` is the stored choice (rule or zone). The exchange row reads plain
+ * "Exchange" — it is a rule, not a zone, so it carries no offset (the bar's clock/offset
+ * label shows the resolved zone). The renderer's own settings row does NOT use this: it
+ * edits a resolved zone and lists {@link TIMEZONES} alone (the workspace hides that row
+ * and contributes this list in its place).
  */
 export function timezoneMenuRows(current: string): TimezoneRow[] {
     const active = normalizeTimezone(current);

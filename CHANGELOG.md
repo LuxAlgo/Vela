@@ -6,6 +6,12 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Exchange in the chart settings' Time zone row.** In the widget and workspace, the Symbol
+  tab's Time zone dropdown is now the same picker as the bottom bar — UTC, **Exchange**, then
+  the catalog — so following the market is one pick away from the settings dialog too. The
+  row writes the workspace choice (it never demotes the rule to a fixed zone); its
+  visibility id is `time-zone` (`settings.hidden`). Host settings sections
+  (`setSettingsSections`) may now give a `select` row `[value, label]` options.
 - **Every built-in indicator is now fully styleable.** Each study splits its settings into
   a **Settings** and a **Style** section, and every element it draws gets its own color:
   Bollinger Bands ink the basis, the bands and the fill separately, MACD's histogram has
