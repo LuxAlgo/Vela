@@ -42,12 +42,17 @@ registerChartType({
         resume() {},    // style switched back
         stop() {},      // chart destroyed
         onViewport?(range) {},  // debounced visible-range pokes (backfill on scroll)
+        onBars?() {},           // the chart's bars changed: tick, new bar, prepended history
     }),
 });
 ```
 
 Lifecycle: the engine is created lazily the first time the chart enters the style
-(after `chart.ready()`), suspended/resumed on style flips, stopped at destroy.
+(after `chart.ready()`), suspended/resumed on style flips, stopped at destroy. A market
+switch, or entering/leaving a [bar replay](../user/api-reference.md#chartreplay--the-bar-replay-control-surface),
+stops it and builds a fresh one — during a replay `host.live` is `false` and `host.bars()`
+ends at the replay cursor, so an engine that keys its fetches off `host.bars()` never sees
+past it; `onBars` tells it when the cursor advanced.
 
 Two more levers for full-replacement types:
 
@@ -170,6 +175,12 @@ Every running instance also knows its own id (`ctx.id` — the same id its handl
 `inspect()` report), so an instance can name itself to host code and tell itself apart
 from its siblings.
 
+A [bar replay](../user/api-reference.md#chartreplay--the-bar-replay-control-surface)
+restarts every native when it starts and when it ends, the way a market switch does. While
+it runs, `ctx.live` is `false` and `ctx.bars()` ends at the replay cursor, so a native that
+opens its own live feed when `ctx.live` is set never streams the present into a past chart.
+Each revealed bar reaches it through `onBars()`.
+
 A native that is really **host-owned chrome** — trade markers from a journal, event flags,
 anything whose on/off switch lives in the host's own UI — can opt out of in-chart chrome with
 `legend: false` on the descriptor. Its output still computes and paints, but the chart mounts
@@ -223,6 +234,8 @@ registerWidgetAction({
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
         // ctx.setSymbol / setTimeframe / setPriceStyle / openSymbolSearch(query?)
         // ctx.togglePanel(id, open?) — open/close a docked side panel (dock stays exclusive)
+        // ctx.dockStrip(el) — dock an element as a full-width strip between the charts and
+        //   the bottom bar (the charts shrink); returns the undock
         // ctx.addIndicator({ name, script, id?, language? }) — add a script indicator
         //   THROUGH the shell: recorded in the unified undo/redo timeline and the
         //   indicator count. `id` is the indicator's id on the chart (omit: minted);

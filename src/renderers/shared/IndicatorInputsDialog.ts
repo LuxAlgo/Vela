@@ -7,6 +7,7 @@ import { attachChromeTooltip, chromeHint } from './chrome-tooltip';
 import { toggleSelectList, type SelectOption } from '../../ui/components/select';
 import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openPopoverTrigger } from '../../ui/components/popover';
 import { Dialog } from '../../ui/components/dialog';
+import { DatePicker, normalizeDateInput } from '../../ui/components/date-picker';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '../../ui/components/field';
 import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '../../ui/styles';
 
@@ -662,10 +663,16 @@ export class IndicatorInputsDialog {
                 this.calendarPop = null;
                 this.calendarAnchor = null;
             },
-            content: (el) => fillCalendar(el, current, (iso) => {
-                pop.hide();
-                onPick(iso);
-            }),
+            content: (el) => {
+                const picker = new DatePicker({
+                    value: current,
+                    onPick: (iso) => {
+                        pop.hide();
+                        onPick(iso);
+                    },
+                });
+                el.append(picker.el);
+            },
         });
         this.calendarPop = pop;
         this.calendarAnchor = anchor;
@@ -860,28 +867,6 @@ export function ensureDialogStyles(): void {
 .vela-ind-combo-chevron{position:absolute;right:0;top:0;bottom:0;width:26px;border:none;background:transparent;color:inherit;opacity:0.55;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .vela-ind-combo-chevron:hover{opacity:0.9;}
 .vela-ind-cal{background:var(--vela-bg);color:var(--vela-fg);border:none;border-radius:6px;box-shadow:var(--vela-shadow);font:14px var(--vela-font);padding:10px 12px;user-select:none;}
-.vela-ind-cal [hidden]{display:none !important;}
-.vela-ind-cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
-.vela-ind-cal-title{flex:1;display:flex;align-items:center;justify-content:center;gap:2px;min-width:0;}
-.vela-ind-cal-switch{border:none;background:transparent;color:var(--vela-fg-bright);font:inherit;font-weight:600;font-size:14px;padding:2px 6px;border-radius:4px;cursor:pointer;}
-.vela-ind-cal-switch:not(:disabled):hover{background:var(--vela-hover);}
-.vela-ind-cal-switch:disabled{cursor:default;}
-.vela-ind-cal-nav{width:24px;height:24px;border:none;background:transparent;color:var(--vela-fg-muted);border-radius:4px;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
-.vela-ind-cal-nav:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-ind-cal-week,.vela-ind-cal-grid{display:grid;grid-template-columns:repeat(7,28px);gap:2px;}
-.vela-ind-cal-week{margin-bottom:4px;color:var(--vela-fg-muted);font-size:11px;text-align:center;}
-.vela-ind-cal-week span{line-height:20px;}
-.vela-ind-cal-blank{width:28px;height:28px;}
-.vela-ind-cal-day{width:28px;height:28px;border:none;background:transparent;color:inherit;border-radius:4px;padding:0;cursor:pointer;font:inherit;font-size:14px;}
-.vela-ind-cal-day:hover{background:var(--vela-hover);}
-.vela-ind-cal-day[data-checked]{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
-.vela-ind-cal-day[data-today]:not([data-checked]){box-shadow:inset 0 0 0 1px var(--vela-border-strong);}
-.vela-ind-cal-cells{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:calc(7 * 28px + 6 * 2px);}
-.vela-ind-cal-cell{height:36px;border:none;background:transparent;color:inherit;border-radius:4px;padding:0 4px;cursor:pointer;font:inherit;font-size:14px;}
-.vela-ind-cal-cell:hover{background:var(--vela-hover);}
-.vela-ind-cal-cell[data-checked]{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
-.vela-ind-cal-cell[data-today]:not([data-checked]){box-shadow:inset 0 0 0 1px var(--vela-border-strong);}
-.vela-ind-cal-cell[data-outside]{opacity:0.45;}
 ${overlayScrollbarCss('.vela-dialog.vela-ind-dialog *', 9)}
 .vela-ind-tab{font-weight:600;font-size:13px;line-height:20px;transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
 .vela-ind-tab:not(.vela-ind-tab-active):hover{color:var(--vela-fg-bright);}
@@ -920,174 +905,7 @@ const TIME_OPTIONS: readonly { value: string; label: string }[] = Array.from({ l
     return { value: v, label: v };
 });
 
-const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
-const WEEKDAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const;
-
-/** Accept `YYYY-MM-DD` or `YYYY-M-D` and return a padded ISO date, or null if unusable. */
-export function normalizeDateInput(raw: string): string | null {
-    const t = raw.trim();
-    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
-    if (!m) return null;
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-    const dt = new Date(y, mo - 1, d);
-    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
-    return isoDate(dt);
-}
-
-function parseIsoDate(raw: string): Date | null {
-    const iso = normalizeDateInput(raw);
-    if (!iso) return null;
-    const [y, mo, d] = iso.split('-').map(Number);
-    return new Date(y!, mo! - 1, d!);
-}
-
-function isoDate(d: Date): string {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/**
- * Paint the calendar of a {@link IndicatorInputsDialog.dateField} into `el`. The header
- * month and year are the panel switches: the month opens a twelve-month grid, the year a
- * decade; picking a year leads to the months and picking a month back to the days. The
- * arrows step whichever panel is on screen — one month, one year, or ten.
- */
-function fillCalendar(el: HTMLElement, current: string, onPick: (iso: string) => void): void {
-    const today = new Date();
-    const selected = parseIsoDate(current);
-    let year = selected?.getFullYear() ?? today.getFullYear();
-    let month = selected?.getMonth() ?? today.getMonth();
-    let mode: 'date' | 'month' | 'year' = 'date';
-
-    const prev = document.createElement('button');
-    prev.type = 'button';
-    prev.className = 'vela-ind-cal-nav';
-    prev.innerHTML = iconAt('chevron-left', 14);
-    const next = document.createElement('button');
-    next.type = 'button';
-    next.className = 'vela-ind-cal-nav';
-    next.innerHTML = iconAt('chevron-right', 14);
-    const monthBtn = document.createElement('button');
-    monthBtn.type = 'button';
-    monthBtn.className = 'vela-ind-cal-switch';
-    monthBtn.setAttribute('aria-label', 'Choose month');
-    const yearBtn = document.createElement('button');
-    yearBtn.type = 'button';
-    yearBtn.className = 'vela-ind-cal-switch';
-    yearBtn.setAttribute('aria-label', 'Choose year');
-    const title = document.createElement('div');
-    title.className = 'vela-ind-cal-title';
-    title.append(monthBtn, yearBtn);
-    const head = document.createElement('div');
-    head.className = 'vela-ind-cal-head';
-    head.append(prev, title, next);
-
-    const week = document.createElement('div');
-    week.className = 'vela-ind-cal-week';
-    for (const d of WEEKDAY_LABELS) {
-        const cell = document.createElement('span');
-        cell.textContent = d;
-        week.appendChild(cell);
-    }
-    const grid = document.createElement('div');
-
-    const paint = (): void => {
-        const decade = Math.floor(year / 10) * 10;
-        monthBtn.hidden = mode !== 'date';
-        monthBtn.textContent = MONTH_LABELS[month] ?? '';
-        yearBtn.textContent = mode === 'year' ? `${decade}-${decade + 9}` : String(year);
-        yearBtn.disabled = mode === 'year'; // in the decade panel the year reads as its title
-        week.hidden = mode !== 'date';
-        prev.setAttribute('aria-label', mode === 'date' ? 'Previous month' : mode === 'month' ? 'Previous year' : 'Previous decade');
-        next.setAttribute('aria-label', mode === 'date' ? 'Next month' : mode === 'month' ? 'Next year' : 'Next decade');
-        grid.className = mode === 'date' ? 'vela-ind-cal-grid' : 'vela-ind-cal-cells';
-        grid.replaceChildren();
-
-        if (mode === 'date') {
-            const startPad = new Date(year, month, 1).getDay();
-            const days = new Date(year, month + 1, 0).getDate();
-            const todayIso = isoDate(today);
-            const selectedIso = selected ? isoDate(selected) : '';
-            for (let i = 0; i < startPad; i++) {
-                const blank = document.createElement('span');
-                blank.className = 'vela-ind-cal-blank';
-                grid.appendChild(blank);
-            }
-            for (let day = 1; day <= days; day++) {
-                const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'vela-ind-cal-day';
-                b.textContent = String(day);
-                if (iso === selectedIso) b.dataset.checked = '1';
-                if (iso === todayIso) b.dataset.today = '1';
-                b.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    onPick(iso);
-                });
-                grid.appendChild(b);
-            }
-            return;
-        }
-
-        if (mode === 'month') {
-            for (let m = 0; m < 12; m++) {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'vela-ind-cal-cell';
-                b.textContent = MONTH_SHORT[m] ?? '';
-                if (selected?.getFullYear() === year && selected.getMonth() === m) b.dataset.checked = '1';
-                if (today.getFullYear() === year && today.getMonth() === m) b.dataset.today = '1';
-                b.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    month = m;
-                    mode = 'date';
-                    paint();
-                });
-                grid.appendChild(b);
-            }
-            return;
-        }
-
-        // One padding year on each side, so the decade fills the same 3×4 grid as the months.
-        for (let y = decade - 1; y <= decade + 10; y++) {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'vela-ind-cal-cell';
-            b.textContent = String(y);
-            if (y < decade || y > decade + 9) b.dataset.outside = '1';
-            if (selected?.getFullYear() === y) b.dataset.checked = '1';
-            if (today.getFullYear() === y) b.dataset.today = '1';
-            b.addEventListener('click', (e) => {
-                e.stopPropagation();
-                year = y;
-                mode = 'month';
-                paint();
-            });
-            grid.appendChild(b);
-        }
-    };
-
-    const step = (dir: 1 | -1): void => {
-        if (mode === 'date') {
-            month += dir;
-            if (month < 0) { month = 11; year -= 1; }
-            if (month > 11) { month = 0; year += 1; }
-        } else {
-            year += mode === 'month' ? dir : dir * 10;
-        }
-        paint();
-    };
-    prev.addEventListener('click', (e) => { e.stopPropagation(); step(-1); });
-    next.addEventListener('click', (e) => { e.stopPropagation(); step(1); });
-    monthBtn.addEventListener('click', (e) => { e.stopPropagation(); mode = 'month'; paint(); });
-    yearBtn.addEventListener('click', (e) => { e.stopPropagation(); mode = 'year'; paint(); });
-
-    paint();
-    el.append(head, week, grid);
-}
+export { normalizeDateInput };
 
 /** Accept `HH:MM`, `H:MM`, or `HHMM` and return a padded `HH:MM`, or null if unusable. */
 export function normalizeTimeInput(raw: string): string | null {

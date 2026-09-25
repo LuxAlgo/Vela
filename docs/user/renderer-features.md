@@ -90,6 +90,7 @@ last non-zero duration set through the option or the feature.
 | `axisLabels` | boolean | `true` | Draw the price/time axis tick labels. |
 | `priceLabel` | boolean | `true` | The last-price axis tag. Independent of `currentPriceLine` — either can show without the other. |
 | `countdown` | boolean | `true` | The bar-close countdown tag next to the price axis. |
+| `crosshairOverride` | `{ vertical?, horizontal?, color?, width?, style?, opacity?, shadeRight? } \| null` | `null` | A temporary restyle of the crosshair for interactions that ask the user to pick a point on the chart. Each field replaces the configured crosshair style while set; `horizontal: false` (or `vertical: false`) hides that line and its axis tag. `shadeRight: { color, opacity? }` veils the plot right of the bar under the vertical line (every pane, up to the price scale) — e.g. to hide what follows a time being picked. Runtime-only: never part of `getConfig()`, so a reload can't leave it stuck. `null` restores the configured crosshair. |
 | `autoScale` | boolean | `true` | Whether the price pane auto-scales to fit visible data. Setting it to `false` freezes the current window (unlocking vertical price pan/drag); setting it to `true` drops the freeze and resumes autoscale. |
 
 ### In-chart UI

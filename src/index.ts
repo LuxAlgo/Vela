@@ -17,6 +17,16 @@ export { timeframeToMs } from './data/timeframe';
 export { DataControl } from './core/DataControl';
 export { DrawingsControl } from './core/DrawingsControl';
 export { MarksControl } from './core/MarksControl';
+export {
+    ReplayControl,
+    type ReplayState,
+    type ReplayStartOptions,
+    type ReplayEndReason,
+    type ReplayBounds,
+    type ReplayTick,
+    type ReplayTickSource,
+} from './core/ReplayControl';
+export { lowerTimeframeTicks, barsToTicks } from './core/replayTicks';
 
 // Native indicators (core-computed, no scripting engine) — register a type, then chart.addNativeIndicator(type)
 export { registerNativeIndicator, unregisterNativeIndicator, getNativeIndicator, nativeIndicatorTypes, nativeIndicatorDescriptors } from './core/native-indicators';

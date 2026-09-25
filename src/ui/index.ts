@@ -21,3 +21,4 @@ export * from './components/field';
 export * from './components/text-area';
 export * from './components/glyph-select';
 export * from './components/callout-bubble';
+export * from './components/date-picker';

@@ -113,7 +113,7 @@ expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
 ## Form primitives
 
 `Switch`, `Select`, `NumberInput`, `TextField`, `TextArea`, `ColorField` /
-`buildColorPicker`, `Popover`, the field layer (`fieldRow` / `fieldSection` /
+`buildColorPicker`, `Popover`, `DatePicker`, the field layer (`fieldRow` / `fieldSection` /
 `buildFieldControl`), and `GlyphSelect` / `widthField` are public
 (`@luxalgo/vela/ui`). They are the shared controls behind the indicator dialog,
 chart settings, and the drawing settings dialog. The drawing toolbar's compact
@@ -153,6 +153,10 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
   Rows use `display:contents` so a pane shares one label column (`max-content 1fr`).
 - **`GlyphSelect`** / **`widthField`** — icon-rendered options in a popover. Chart
   settings' line-width field is the width preset.
+- **`DatePicker`** — a month calendar whose header month and year open a twelve-month
+  grid and a decade; `onPick` receives a local `YYYY-MM-DD`, `setValue` does not emit.
+  Content only: the host (a `Popover`, a panel) owns the surface. The indicator dialog's
+  `input.time` calendar is this component.
 - **`CalloutBubble`** — a tinted icon circle whose optional click deploys a Popover
   panel of declarative text/button items (below, flipping above near the screen
   edge). The legend's contributed callouts (`registerLegendCallout`) and the

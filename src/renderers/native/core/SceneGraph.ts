@@ -5,7 +5,7 @@ import type { PaneKind } from '../../../core/model/scene';
 import type { IndicatorModel, PaneAxisBand } from '../../../core/model/indicator';
 import type { PriceStyle } from '../../../core/options';
 import type { PriceScale, PaneBounds } from './CoordinateSystem';
-import { type CandlePaintOverride, type ChartStyle, defaultChartStyle } from './chartConfig';
+import { type CandlePaintOverride, type ChartStyle, type CrosshairOverride, defaultChartStyle } from './chartConfig';
 import { defaultTradeMarkersState, type TradeMarkersState } from '../../shared/trade-markers';
 import { defaultMarksState, type MarksDisplayState } from '../../shared/marks-state';
 import type { MarkGroup, TimelineMark } from '../../../core/marks/types';
@@ -142,6 +142,8 @@ export class SceneGraph {
     /** VPVR-layer config pushed by the VPVR native indicator (null ⇒ layer off). Ephemeral. */
     vpvrLayer: VpvrLayerData | null = null;
     crosshair: { x: number; y: number } | null = null;
+    /** Runtime override of the crosshair's lines and style (the `crosshairOverride` feature). Ephemeral. */
+    crosshairOverride: CrosshairOverride | null = null;
     /** How the base price series is drawn on the price pane (candles by default). */
     priceStyle: PriceStyle = 'candles';
     /** Price-series base painting for the ACTIVE style (see ChartTypeDefinition.basePainting). */

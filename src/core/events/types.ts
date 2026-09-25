@@ -6,6 +6,7 @@ import type { VelaTheme } from "../options";
 import type { SnapMode } from "../drawings/geometry";
 import type { DrawingMode } from "../drawings/port";
 import type { MarkClickEvent } from "../marks/types";
+import type { ReplayEndReason } from "../ReplayControl";
 
 /** Chart-level events emitted on `chart.on(...)`. */
 export interface VelaEventMap extends Record<string, unknown> {
@@ -107,7 +108,7 @@ export interface VelaEventMap extends Record<string, unknown> {
    *  streaming) — re-pull `handle.context()` if you consume it. Prefer `script:run`,
    *  which delivers the data rather than a signal to go fetch it. */
   "context:changed": { id: string };
-  /** A live tick: the forming bar was updated or a new bar appended. */
+  /** A live tick: the forming bar was updated or a new bar appended (a bar revealed by replay included). */
   bar: OHLCV;
   /**
    * The visible time range moved (pan/zoom/fit — fires per applied change, NOT
@@ -128,6 +129,25 @@ export interface VelaEventMap extends Record<string, unknown> {
     oldestTime: number;
     barsLoaded: number;
   };
+  /** Replay mode began (or seeked): the chart shows history up to `cursorTime`, `remaining` bars are hidden. */
+  "replay:start": { cursorTime: number; remaining: number };
+  /** One hidden bar was revealed (it also fires `bar`, like a live bar). A bar played tick
+   *  by tick steps once, when its last tick settles it. */
+  "replay:step": { cursorTime: number; remaining: number };
+  /** An intrabar update of the bar forming at `cursorTime` (`chart.replay.setTicks`):
+   *  tick `index` of `count` is applied (batched updates report the last one). */
+  "replay:tick": { cursorTime: number; index: number; count: number };
+  /** Timed reveal started, or its pace changed. */
+  "replay:play": { intervalMs: number };
+  /** Timed reveal paused — `pause()`, or a seek (`start()` while playing). */
+  "replay:pause": undefined;
+  /**
+   * Replay mode ended: `'stopped'` = `chart.replay.stop()`, `'finished'` = the last hidden
+   * bar was revealed, `'market'` = a symbol switch replaced the history (a timeframe or
+   * session switch carries the replay over instead). The full history
+   * is back and live updates resumed.
+   */
+  "replay:end": { reason: ReplayEndReason };
   /** An indicator's script raised an alert. `indicator` names the source — the
    *  indicator's display title (what its legend row shows). */
   alert: EngineAlert & { indicator?: string };

@@ -551,6 +551,15 @@ export class Statusline {
                 this.lastBar = b;
                 if (!this.hoverBar) this.render();
             }),
+            // A replay cut or restore replaces the newest bar without a `bar` event.
+            chart.on('replay:start', () => {
+                this.lastBar = null;
+                this.render();
+            }),
+            chart.on('replay:end', () => {
+                this.lastBar = null;
+                this.render();
+            }),
             chart.renderer.onCrosshairMove((e) => {
                 this.hoverBar = e.ohlc;
                 this.render();
