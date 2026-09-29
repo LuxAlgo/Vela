@@ -85,6 +85,13 @@ export class TapeSource {
     private requestedFrom: Millis | null = null;
     private requestedTo: Millis | null = null;
 
+    /**
+     * The oldest bar the live stream has been covering, set when the stream opens. Everything
+     * from there on is covered by the tape whether or not it printed, which is what tells an
+     * EMPTY bar (a quiet minute) apart from an UNFETCHED one — a distinction a cumulative
+     * reading has to make, because summing across a hole in the data is simply wrong.
+     */
+    private streamedFrom: Millis | null = null;
     private stream: Unsubscribe | null = null;
     private abort: AbortController | null = null;
     private started = false;
@@ -117,6 +124,10 @@ export class TapeSource {
         if (this.started) return;
         this.started = true;
         if (this.access.tradeStream(this.symbol)) {
+            const bars = this.barsOf();
+            // Coverage starts at the bar being printed when we subscribed, never earlier:
+            // the prints that bar already had before this moment are the history walk's.
+            this.streamedFrom = bars[bars.length - 1]?.time ?? null;
             this.stream = this.access.subscribeTrades(this.symbol, (trades) => this.ingest(trades));
         }
     }
@@ -129,6 +140,7 @@ export class TapeSource {
         this.abort?.abort();
         this.abort = null;
         this.inflight.clear();
+        this.streamedFrom = null;
     }
 
     /** Release everything, book included. */
@@ -141,6 +153,33 @@ export class TapeSource {
         this.requestedTo = null;
         this.seen.clear();
         this.seenOrder.length = 0;
+    }
+
+    /**
+     * Whether this bar's tape is accounted for — its history was walked, or the live stream
+     * has been open since before it opened. A covered bar with no footprint genuinely had no
+     * prints; an uncovered one simply has not been read, and a cumulative sum must not run
+     * across it.
+     */
+    isCovered(time: Millis): boolean {
+        if (this.fetched.has(time)) return true;
+        return this.streamedFrom != null && time >= this.streamedFrom;
+    }
+
+    /**
+     * The longest run of CONSECUTIVE covered bars ending at the newest covered bar, as bar
+     * times — what a cumulative reading may safely be summed over. Empty when nothing is
+     * covered yet. `bars` must be the chart's ascending bars.
+     */
+    coveredTail(bars: readonly OHLCV[]): Millis[] {
+        let end = -1;
+        for (let i = bars.length - 1; i >= 0; i -= 1) {
+            if (this.isCovered(bars[i]!.time)) { end = i; break; }
+        }
+        if (end < 0) return [];
+        let start = end;
+        while (start > 0 && this.isCovered(bars[start - 1]!.time)) start -= 1;
+        return bars.slice(start, end + 1).map((b) => b.time);
     }
 
     /** Told which bar times changed after any fold. */

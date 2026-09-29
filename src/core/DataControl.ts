@@ -114,9 +114,12 @@ export class DataControl {
      * tape folded into per-bar price clusters use the aggregation layer instead of
      * bucketing it themselves.
      *
-     * Empty when the symbol does not resolve yet, when the venue serves no trade
-     * history, or when the requested window is out of the provider's reach (see
-     * {@link tradeDepth}) — never a rejection, so a view degrades instead of breaking.
+     * Empty when the symbol does not resolve yet, when the venue serves no trade history,
+     * or when the requested window is out of the provider's reach (see {@link tradeDepth}) —
+     * all three are final answers with nothing to retry. A fetch that FAILS rejects, so a
+     * caller can tell a failed window from a quiet one and retry it; accumulating a tape
+     * without that distinction means summing across a hole and reporting the result as
+     * complete.
      */
     trades(symbol: string, range: TradeRange = {}, opts?: { signal?: AbortSignal }): Promise<Trade[]> {
         return this.registry?.tradesFor(symbol, range, opts) ?? Promise.resolve([]);

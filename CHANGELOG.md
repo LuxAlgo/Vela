@@ -6,6 +6,17 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Delta and cumulative delta.** Two new indicators read the tape rather than the candles.
+  **Delta** shows, per bar, how much was bought by takers minus how much was sold — the
+  disagreement a candle hides, when a bar closes up on selling or down on buying.
+  **Cumulative Volume Delta** keeps the running total and draws it as candles, so it reads
+  the way price does; its wicks come from the path the delta took inside the bar, so a push
+  that was absorbed and reversed before the close still shows. Reset the total each day,
+  week or month, or let it run. Both appear in the indicator list only on markets whose
+  venue serves trade data, both say in the legend while they are still filling in, and a
+  cumulative total is only drawn across bars whose trades were actually read — never summed
+  over a window that failed to load.
+
 - **Order-flow data.** A chart can now read the tape — the individual trades behind each
   bar, each carrying the side that initiated it — instead of only the candles built from
   them. `chart.data.trades()` returns a past window, `chart.data.subscribeTrades()`

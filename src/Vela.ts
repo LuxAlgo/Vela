@@ -26,6 +26,7 @@ import { MultiProviderFeed } from './data/MultiProviderFeed';
 import { registerBuiltinChartTypes } from './chart-types/builtins';
 import { registerVolume } from './core/native-indicators/volume';
 import { registerVpvr } from './core/native-indicators/vpvr';
+import { registerCvd, registerDelta } from './core/native-indicators/orderflow';
 import { registerClassicIndicators } from './core/native-indicators/classics';
 
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)));
@@ -72,6 +73,8 @@ export class Vela {
         registerBuiltinChartTypes(); // built-in chart types through the public SDK registry (idempotent)
         registerVolume(); // register the built-in native indicators (idempotent)
         registerVpvr();
+        registerDelta();
+        registerCvd();
         registerClassicIndicators();
         const element = resolveElement(container);
         const theme = resolveTheme(options.theme);

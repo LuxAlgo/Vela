@@ -93,6 +93,12 @@ Because registration is explicit and the symbol index builds asynchronously, the
 | `tradeStream(symbol)` | `boolean` | Whether the venue streams a live tape. |
 | `ready()` | `Promise<void>` | Resolves when every provider's symbol index has settled. |
 
+The order-flow indicators (`'orderflow-delta'`, `'orderflow-cvd'`) read this tape. They
+offer themselves only where `tradeDepth` is not `'none'` or a live tape streams, and a
+cumulative reading is drawn only across bars whose trades were actually fetched — on a
+`'recent'` venue that means the recent bars, and on a live-only venue it means the bars
+since you opened the chart.
+
 Registering or replacing a provider on a chart that was given a **custom feed** (`deps.dataFeed`) is a no-op + console warning — that feed manages its own data.
 
 ## The bundled Binance provider

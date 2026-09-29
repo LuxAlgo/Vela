@@ -17,3 +17,5 @@ export {
 export type { FootprintBook, BarAcc, ImbalanceOptions } from './footprint';
 export { TapeSource } from './TapeSource';
 export type { TapeAccess, TapeSourceOptions } from './TapeSource';
+export { acquireTapeSource, leasedTapeSources } from './shared';
+export type { SharedTapeOptions, TapeLease } from './shared';

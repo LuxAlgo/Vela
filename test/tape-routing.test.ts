@@ -98,15 +98,14 @@ describe('chart.data tape routing', () => {
         expect(data.tradeDepth('fake:BTCUSDT')).toBe('none');
     });
 
-    it('a THROWING provider surfaces as empty, warned — a view degrades, it does not break', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    it('a FAILED fetch rejects — it must not look like a quiet window', async () => {
         const { feed, data } = harness();
         const fake = tapeProvider({ throws: true });
         await feed.registerProvider('fake', fake.provider);
 
-        expect(await data.trades('fake:BTCUSDT')).toEqual([]);
-        expect(warn).toHaveBeenCalled();
-        warn.mockRestore();
+        // Swallowing this into `[]` would let a consumer record the window as read-and-empty
+        // and then sum across it, which turns a retryable blip into a permanently wrong total.
+        await expect(data.trades('fake:BTCUSDT')).rejects.toThrow('tape down');
     });
 
     it('reports the declared depth and stream capability', async () => {

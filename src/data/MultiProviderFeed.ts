@@ -174,22 +174,22 @@ export class MultiProviderFeed implements MarketDataFeed {
     // ── Tape surface (driven by chart.data / DataControl) ──────────────────
 
     /**
-     * Fetch the tape for `raw` over `range`, routed to the owning provider. Empty when
-     * nothing resolves the symbol yet or the provider serves no trade history — an
-     * order-flow consumer degrades to whatever the live stream brings rather than
-     * failing, so this never rejects on an incapable venue (a provider that THROWS
-     * still surfaces, warned, as empty).
+     * Fetch the tape for `raw` over `range`, routed to the owning provider.
+     *
+     * Empty — final, not an error — when nothing resolves the symbol yet or the venue
+     * serves no trade history: there is nothing to retry in either case. A fetch that
+     * FAILS, however, REJECTS, unlike the bar path which swallows errors into an empty
+     * chart. The difference matters because a tape is accumulated: a consumer that cannot
+     * tell a failed window from a genuinely quiet one records the gap as "no trades here"
+     * and then sums straight across it, reporting a confidently wrong total instead of a
+     * visibly short one. Callers decide what to do with the failure (see
+     * `TapeSource.fetchMissing`, which leaves the window unfetched so a later pass retries).
      */
     async tradesFor(raw: string, range: TradeRange, opts?: { signal?: AbortSignal }): Promise<Trade[]> {
         const resolved = this.registry.resolve(raw, { default: this.primaryProvider });
         const provider = resolved ? this.registry.get(resolved.provider) : undefined;
         if (!resolved || !provider?.getTrades) return [];
-        try {
-            return await provider.getTrades(resolved.ticker, range, opts);
-        } catch (e) {
-            console.warn(`[vela] trade fetch failed for ${resolved.ticker} — ${e instanceof Error ? e.message : String(e)}`);
-            return [];
-        }
+        return provider.getTrades(resolved.ticker, range, opts);
     }
 
     /**
