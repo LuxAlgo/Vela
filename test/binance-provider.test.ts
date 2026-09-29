@@ -249,8 +249,12 @@ describe('BinanceProvider.subscribe', () => {
         }));
         const unsub = new BinanceProvider().subscribe('BTCUSDT', '1h', () => {});
         await vi.waitFor(() => expect(FakeWS.instances.length).toBe(1));
-        expect(FakeWS.instances[0]!.url).toContain('stream.binance.com:9443');
+        expect(FakeWS.instances[0]!.url).toContain('stream.binance.com');
         expect(FakeWS.instances[0]!.url).toContain('btcusdt@kline_1h');
+        // No explicit port: Binance serves streams on 9443 AND on the default 443, and pinning
+        // 9443 strands every stream behind an egress proxy that only allows CONNECT to 443 —
+        // klines quietly degrade to polling, and the tape (which has no poll fallback) goes silent.
+        expect(FakeWS.instances[0]!.url).not.toContain(':9443');
         unsub();
     });
 

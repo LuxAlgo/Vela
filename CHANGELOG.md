@@ -16,6 +16,13 @@ All notable changes to Vela, newest first.
   without offering history. This is what the order-flow views read, and a provider of
   your own joins in by adding the same two methods.
 
+### Fixed
+
+- **Live streams behind a restrictive proxy.** The Binance streams asked for a non-default
+  port, which some corporate and cloud networks refuse to open. They now use the standard
+  one, so a chart that had been falling back to polling — or showing nothing live at all —
+  streams normally.
+
 ## [0.8.0]
 
 ### Added

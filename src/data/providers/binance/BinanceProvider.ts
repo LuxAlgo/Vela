@@ -9,8 +9,14 @@ import { RateGate, RateLimitError } from './RateGate';
 const SPOT_BASE = 'https://api.binance.com/api/v3';
 const SPOT_BASE_US = 'https://api.binance.us/api/v3';
 const FUTURES_BASE = 'https://fapi.binance.com/fapi/v1';
-const SPOT_WS = 'wss://stream.binance.com:9443';
-const SPOT_WS_US = 'wss://stream.binance.us:9443';
+/**
+ * Stream hosts on the DEFAULT wss port. Binance also serves 9443, but pinning it strands the
+ * stream behind any egress proxy that only allows CONNECT to 443 — the socket never opens and
+ * the kline path silently degrades to polling while the tape, which has no poll fallback,
+ * goes quiet altogether.
+ */
+const SPOT_WS = 'wss://stream.binance.com';
+const SPOT_WS_US = 'wss://stream.binance.us';
 const FUTURES_WS = 'wss://fstream.binance.com';
 /**
  * If a kline socket opens but delivers no candle within this window, treat it as
