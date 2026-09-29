@@ -87,13 +87,17 @@ Because registration is explicit and the symbol index builds asynchronously, the
 | `symbols(provider?)` | `SymbolDescriptor[]` | Indexed symbols (for autocomplete) — for one provider, or all. |
 | `symbolInfo(symbol)` | `Promise<SymbolInfo \| undefined>` | Per-symbol metadata (Pine `syminfo.*`), via the owning provider. Callers asking for the same symbol at once share **one** call to `getSymbolInfo`, and the answer is reused for 10 minutes — a provider needs no cache of its own here. A rejected call is not remembered. |
 | `capabilities(symbol)` | `ProviderCapabilities \| null` | The full resolved per-symbol capability record (behavior flags). Null while nothing resolves the symbol yet. |
+| `trades(symbol, range?, opts?)` | `Promise<Trade[]>` | The **tape** over `{ from?, to?, limit? }`: the executions behind the bars, each with the aggressor side (`'buy'` = a taker lifted the ask). Empty — never a rejection — when the symbol does not resolve, the venue serves no trade history, or the window is out of its reach. |
+| `subscribeTrades(symbol, onTrades)` | `Unsubscribe` | Live prints, delivered in batches. A symbol that does not resolve yet is picked up when its provider registers. |
+| `tradeDepth(symbol)` | `'full' \| 'recent' \| 'none'` | How far back the tape reaches: any past window, only a window near the live tip, or no history at all. |
+| `tradeStream(symbol)` | `boolean` | Whether the venue streams a live tape. |
 | `ready()` | `Promise<void>` | Resolves when every provider's symbol index has settled. |
 
 Registering or replacing a provider on a chart that was given a **custom feed** (`deps.dataFeed`) is a no-op + console warning — that feed manages its own data.
 
 ## The bundled Binance provider
 
-`@luxalgo/vela/providers/binance` is a from-scratch Binance provider (no third-party SDK). It serves spot and USDT-margined perpetual futures (`SYMBOL.P`), paginates past Binance's 1000-candle cap, falls back from `api.binance.com` to `api.binance.us`, and aggregates timeframes Binance doesn't serve natively (e.g. `45`, `180`). No API key. Live ticks stream from a native **kline WebSocket** (spot `stream.binance.com`, perpetuals `fstream.binance.com`), with an automatic **poll fallback** if the socket can't deliver — e.g. where Binance futures streams are geo-restricted — and for aggregated timeframes that have no native stream.
+`@luxalgo/vela/providers/binance` is a from-scratch Binance provider (no third-party SDK). It serves spot and USDT-margined perpetual futures (`SYMBOL.P`), paginates past Binance's 1000-candle cap, falls back from `api.binance.com` to `api.binance.us`, and aggregates timeframes Binance doesn't serve natively (e.g. `45`, `180`). No API key. Live ticks stream from a native **kline WebSocket** (spot `stream.binance.com`, perpetuals `fstream.binance.com`), with an automatic **poll fallback** if the socket can't deliver — e.g. where Binance futures streams are geo-restricted — and for aggregated timeframes that have no native stream. It also serves the **tape** at full depth: any past window can be walked (`tradeDepth` reports `'full'`), and live prints stream from `@aggTrade`, back-filling whatever a reconnect missed.
 
 ```js
 import { BinanceProvider } from '@luxalgo/vela/providers/binance';
@@ -103,7 +107,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 
 ## The bundled Coinbase provider
 
-`@luxalgo/vela/providers/coinbase` is a from-scratch Coinbase Exchange provider (no third-party SDK, no API key). It serves spot products (`BTC-USD`, `ETH-EUR`, …), paginates past the 300-candle cap, aggregates timeframes Coinbase doesn't serve natively, and folds weekly/monthly from daily. Live candles are built from the `ticker` WebSocket stream (Coinbase has no native kline stream) with a periodic REST re-seed, plus the standard poll fallback.
+`@luxalgo/vela/providers/coinbase` is a from-scratch Coinbase Exchange provider (no third-party SDK, no API key). It serves spot products (`BTC-USD`, `ETH-EUR`, …), paginates past the 300-candle cap, aggregates timeframes Coinbase doesn't serve natively, and folds weekly/monthly from daily. Live candles are built from the `ticker` WebSocket stream (Coinbase has no native kline stream) with a periodic REST re-seed, plus the standard poll fallback. The **tape** is `'recent'` only: Coinbase offers no time seek on trades, so history is a cursor-walk back from the newest print — recent bars reconstruct, older ones come back empty rather than costing thousands of requests. Live prints stream from the `matches` channel.
 
 ```js
 import { CoinbaseProvider } from '@luxalgo/vela/providers/coinbase';
@@ -113,7 +117,7 @@ chart.data.registerProvider('coinbase', new CoinbaseProvider());
 
 ## The bundled Hyperliquid provider
 
-`@luxalgo/vela/providers/hyperliquid` is a from-scratch [Hyperliquid](https://hyperliquid.xyz) provider (no third-party SDK, no API key). It serves USD-margined perpetuals — **bare coins** like `BTC`, `ETH` (not `BTCUSDT`) — and spot pairs (`PURR/USDC`), and aggregates timeframes Hyperliquid doesn't serve natively (e.g. `45`, `180`, `360`). **Live ticks come from a real WebSocket candle stream**, with the same automatic poll fallback as Binance if a stream can't deliver.
+`@luxalgo/vela/providers/hyperliquid` is a from-scratch [Hyperliquid](https://hyperliquid.xyz) provider (no third-party SDK, no API key). It serves USD-margined perpetuals — **bare coins** like `BTC`, `ETH` (not `BTCUSDT`) — and spot pairs (`PURR/USDC`), and aggregates timeframes Hyperliquid doesn't serve natively (e.g. `45`, `180`, `360`). **Live ticks come from a real WebSocket candle stream**, with the same automatic poll fallback as Binance if a stream can't deliver. Its **tape** is live-only (`tradeDepth` reports `'none'`): the public API serves no past trades, so an order-flow view here fills in from the moment it opens and leaves earlier bars empty.
 
 ```js
 import { HyperliquidProvider } from '@luxalgo/vela/providers/hyperliquid';

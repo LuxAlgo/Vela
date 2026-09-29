@@ -1,6 +1,7 @@
 import type { OHLCV } from '../../../core/model/ohlcv';
 import type { BarRange, SymbolInfo } from '../../../core/ports/MarketDataFeed';
-import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from '../../../core/ports/DataProvider';
+import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor, TradeRange } from '../../../core/ports/DataProvider';
+import type { Trade } from '../../../core/model/tape';
 import { baseOf, ledgerCryptoIconUrl } from '../../symbol-base';
 import type { Unsubscribe } from '../../../core/util/types';
 import { RequestGate } from './RequestGate';
@@ -26,6 +27,21 @@ const LIVE_RESEED_MS = 5_000;
 /** Coinbase ranged-candle hard cap: at most 300 buckets per request (a wider range → HTTP 400). */
 const MAX_CANDLES_PER_REQ = 300;
 
+/** Trades per request (the endpoint's cap). */
+const MAX_TRADES_PER_REQ = 1000;
+/**
+ * How many pages one tape walk may cursor through. Coinbase offers NO time seek on
+ * trades — only a walk back from the live tip — so a window far in the past can only be
+ * reached by paging the whole way there. The cap is what makes this provider's trade
+ * depth `'recent'`: beyond it the walk gives up and the window is served empty, rather
+ * than spending thousands of requests to reach a bar the user scrolled past.
+ */
+const MAX_TRADE_PAGES = 20;
+/** How long live prints are buffered before one batch is delivered. */
+const TRADE_BATCH_MS = 100;
+/** Default tape window when a caller names neither end. */
+const TRADE_DEFAULT_WINDOW_MS = 60 * 60_000;
+
 /** Public REST shaping: a small concurrency cap + min-spacing keeps the sustained rate under ~10/s. */
 const REST_CONCURRENCY = 4;
 const REST_MIN_INTERVAL_MS = 120;
@@ -45,6 +61,37 @@ function retryAfterMs(res: Response, fallbackMs: number): number {
 type RawCandle = number[];
 
 /** One raw Coinbase trade. `side` is the MAKER order side (inverted to get the aggressor). */
+interface RawTrade {
+    trade_id?: number;
+    time?: string;
+    price?: string;
+    size?: string;
+    side?: string;
+}
+
+/**
+ * Map raw Coinbase trades to neutral tape prints. Coinbase reports the side of the
+ * RESTING order, so it is inverted: a trade whose maker was a `buy` (a resting bid) was
+ * filled by a seller taking that bid.
+ */
+export function coinbaseTradesToTrades(raw: readonly RawTrade[]): Trade[] {
+    const out: Trade[] = [];
+    for (const t of raw) {
+        const time = t.time ? Date.parse(t.time) : NaN;
+        const price = Number(t.price);
+        const size = Number(t.size);
+        if (!Number.isFinite(time) || !Number.isFinite(price) || !Number.isFinite(size)) continue;
+        out.push({
+            time,
+            price,
+            size,
+            side: t.side === 'buy' ? 'sell' : 'buy',
+            id: t.trade_id != null ? String(t.trade_id) : undefined,
+        });
+    }
+    return out.sort((a, b) => a.time - b.time);
+}
+
 /** The subset of a Coinbase product entry this provider reads. */
 interface CoinbaseProduct {
     id: string;
@@ -179,7 +226,7 @@ export class CoinbaseProvider implements DataProvider {
             displayName: 'Coinbase',
             requiresApiKey: false,
             supportedTimeframes: SUPPORTED_TIMEFRAMES,
-            capabilities: { enumerate: true, stream: true, symbolInfo: true },
+            capabilities: { enumerate: true, stream: true, symbolInfo: true, trades: 'recent', tradeStream: true },
         };
     }
 
@@ -426,6 +473,107 @@ export class CoinbaseProvider implements DataProvider {
             clearReseed();
             if (reconnect) clearTimeout(reconnect);
             polling?.();
+            try { ws?.close(); } catch { /* ignore */ }
+        };
+    }
+
+    /**
+     * Walk the tape back from the live tip. Coinbase has no time seek on trades: the only
+     * way back is the `cb-after` cursor, one page of 1000 at a time. So the walk starts at
+     * the tip and pages backwards until it has passed `range.from`, and gives up after
+     * {@link MAX_TRADE_PAGES} — which is what this provider's `'recent'` trade depth
+     * means. A window beyond that reach comes back EMPTY rather than costing thousands of
+     * requests; ascending and cut to `range.limit` from the newest end either way.
+     */
+    async getTrades(ticker: string, range: TradeRange, opts?: { signal?: AbortSignal }): Promise<Trade[]> {
+        const product = parseProductId(ticker);
+        const to = range.to ?? Date.now();
+        const from = range.from ?? to - TRADE_DEFAULT_WINDOW_MS;
+        if (!(to > from)) return [];
+
+        const collected: Trade[] = [];
+        let cursor: string | null = null;
+        for (let page = 0; page < MAX_TRADE_PAGES; page += 1) {
+            if (opts?.signal?.aborted) break;
+            const url = new URL(`${REST_BASE}/products/${product}/trades`);
+            url.searchParams.set('limit', String(MAX_TRADES_PER_REQ));
+            if (cursor) url.searchParams.set('after', cursor);
+
+            let res: Response;
+            try {
+                res = await this.request(url.toString());
+            } catch {
+                break; // a partial tape is honest; a rejected load is not
+            }
+            const next = res.headers.get('cb-after');
+            const body: unknown = await res.json().catch(() => null);
+            const rows = Array.isArray(body) ? (body as RawTrade[]) : [];
+            if (rows.length === 0) break;
+
+            const trades = coinbaseTradesToTrades(rows);
+            for (const t of trades) if (t.time >= from && t.time <= to) collected.push(t);
+
+            // Pages run newest → oldest. Once the page's OLDEST print predates the window,
+            // everything older does too.
+            const oldest = trades[0]?.time ?? 0;
+            if (oldest < from) break;
+            if (!next) break;
+            cursor = next;
+        }
+
+        collected.sort((a, b) => a.time - b.time);
+        return range.limit != null && collected.length > range.limit ? collected.slice(-range.limit) : collected;
+    }
+
+    /**
+     * Stream live prints off the `matches` channel, batched on a short timer. No poll
+     * fallback and no stall watchdog: polling a tape drops the prints between rounds (a
+     * permanently wrong delta), and silence on this channel means an illiquid product far
+     * more often than a broken socket.
+     */
+    subscribeTrades(ticker: string, onTrades: (trades: readonly Trade[]) => void): Unsubscribe {
+        const product = parseProductId(ticker);
+        if (typeof WebSocket === 'undefined') return () => {};
+
+        let closed = false;
+        let ws: WebSocket | null = null;
+        let reconnect: ReturnType<typeof setTimeout> | null = null;
+        let buffer: Trade[] = [];
+
+        const drain = (): void => {
+            if (closed || buffer.length === 0) return;
+            const batch = buffer;
+            buffer = [];
+            onTrades(batch);
+        };
+        const flush = setInterval(drain, TRADE_BATCH_MS);
+
+        const open = (): void => {
+            if (closed) return;
+            ws = new WebSocket(WS_URL);
+            ws.onopen = () => {
+                try { ws?.send(JSON.stringify({ type: 'subscribe', product_ids: [product], channels: ['matches'] })); }
+                catch { /* the reconnect below retries */ }
+            };
+            ws.onmessage = (ev: MessageEvent) => {
+                if (closed) return;
+                try {
+                    const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '') as RawTrade & { type?: string; product_id?: string };
+                    // `match` is a live fill; `last_match` is the snapshot sent on subscribe.
+                    if ((msg.type === 'match' || msg.type === 'last_match') && msg.product_id === product) {
+                        buffer.push(...coinbaseTradesToTrades([msg]));
+                    }
+                } catch { /* ignore non-JSON / unrelated frames */ }
+            };
+            ws.onclose = () => { if (!closed) reconnect = setTimeout(open, STREAM_RECONNECT_MS); };
+            ws.onerror = () => { try { ws?.close(); } catch { /* already closed → onclose reconnects */ } };
+        };
+        open();
+
+        return () => {
+            closed = true;
+            clearInterval(flush);
+            if (reconnect) clearTimeout(reconnect);
             try { ws?.close(); } catch { /* ignore */ }
         };
     }

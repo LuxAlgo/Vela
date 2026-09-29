@@ -1,5 +1,7 @@
 import type { MarketDataFeed, SymbolInfo, BarRange } from './ports/MarketDataFeed';
-import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './ports/DataProvider';
+import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor, TradeDepth, TradeRange } from './ports/DataProvider';
+import type { Trade } from './model/tape';
+import type { Unsubscribe } from './util/types';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import type { Resolved } from '../data/ProviderRegistry';
 
@@ -104,6 +106,44 @@ export class DataControl {
      */
     capabilities(symbol: string): ProviderCapabilities | null {
         return this.registry?.capabilitiesFor(symbol) ?? null;
+    }
+
+    /**
+     * Fetch the TAPE for `symbol` over `range` — the executions behind the bars, each
+     * with its aggressor side. This is the raw door; order-flow consumers that want the
+     * tape folded into per-bar price clusters use the aggregation layer instead of
+     * bucketing it themselves.
+     *
+     * Empty when the symbol does not resolve yet, when the venue serves no trade
+     * history, or when the requested window is out of the provider's reach (see
+     * {@link tradeDepth}) — never a rejection, so a view degrades instead of breaking.
+     */
+    trades(symbol: string, range: TradeRange = {}, opts?: { signal?: AbortSignal }): Promise<Trade[]> {
+        return this.registry?.tradesFor(symbol, range, opts) ?? Promise.resolve([]);
+    }
+
+    /**
+     * Subscribe to `symbol`'s live tape; trades arrive in batches. A no-op unsubscribe
+     * comes back when the venue streams no tape. Prefer ONE subscription shared between
+     * views over one per view — every consumer of the same symbol reads the same prints.
+     */
+    subscribeTrades(symbol: string, onTrades: (trades: readonly Trade[]) => void): Unsubscribe {
+        return this.registry?.subscribeTradesFor(symbol, onTrades) ?? (() => {});
+    }
+
+    /**
+     * How far back `symbol`'s tape reaches (see {@link TradeDepth}) — what an order-flow
+     * view checks before promising to reconstruct history. `'none'` while nothing
+     * resolves the symbol, so callers that can act later should re-read rather than
+     * latch the first answer.
+     */
+    tradeDepth(symbol: string): TradeDepth {
+        return this.registry?.tradeDepthFor(symbol) ?? 'none';
+    }
+
+    /** Whether `symbol`'s venue can stream a live tape (`subscribeTrades` delivers). */
+    tradeStream(symbol: string): boolean {
+        return this.registry?.tradeStreamFor(symbol) ?? false;
     }
 
     /** Resolves when every registered provider's eager index has settled. */

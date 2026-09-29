@@ -42,6 +42,8 @@ export type {
     DrawingTable,
 } from './drawings';
 export type { TradeExecution } from './trades';
+export type { Trade, TradeSide } from './tape';
+export type { FootprintLevel, BarFootprint, FootprintImbalance, CumulativeDeltaBar } from './orderflow';
 export type { IndicatorMeta, PaneHint, PaneAxis, PaneAxisBand, IndicatorModel } from './indicator';
 export type { DirtyRange, SeriesValueDelta, ValuePatch, SchemaPatch, ScenePatch } from './patch';
 export { stableSeriesId } from './identity';

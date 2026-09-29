@@ -125,7 +125,7 @@ export type {
     ContextSelect,
 } from './core/ports/ScriptingEngine';
 export type { MarketDataFeed, SymbolInfo, BarRange } from './core/ports/MarketDataFeed';
-export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';
+export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor, TradeDepth, TradeRange } from './core/ports/DataProvider';
 export type { Resolved, ParsedSymbol } from './data/ProviderRegistry';
 export type { SceneInspection, IndicatorSummary } from './core/engine/inspect';
 export type { VisibleRangePreset } from './core/visible-range';

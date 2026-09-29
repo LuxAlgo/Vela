@@ -1,8 +1,10 @@
 import type { OHLCV } from '../../../core/model/ohlcv';
+import type { Trade } from '../../../core/model/tape';
 import type { BarRange, SymbolInfo } from '../../../core/ports/MarketDataFeed';
-import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from '../../../core/ports/DataProvider';
+import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor, TradeRange } from '../../../core/ports/DataProvider';
 import { baseOf, ledgerCryptoIconUrl } from '../../symbol-base';
 import type { Unsubscribe } from '../../../core/util/types';
+import { RateGate, RateLimitError } from './RateGate';
 
 const SPOT_BASE = 'https://api.binance.com/api/v3';
 const SPOT_BASE_US = 'https://api.binance.us/api/v3';
@@ -21,9 +23,58 @@ const STREAM_STALL_MS = 15_000;
 /** Reconnect backoff after an unexpected socket close. */
 const STREAM_RECONNECT_MS = 2_000;
 
+/** Aggregated-trade rows per request (the endpoint's hard cap). */
+const AGG_TRADES_LIMIT = 1000;
+/**
+ * Widest `startTime`/`endTime` span the aggTrades endpoint accepts. Binance rejects a
+ * window of an hour or more outright, so a walk slices the request window and pages
+ * within each slice by trade id.
+ */
+const AGG_TRADES_WINDOW_MS = 55 * 60_000;
+/**
+ * Hard stop on one walk. A busy symbol prints faster than any window can be paged
+ * through, and an unbounded walk would keep a 429 pause cycling forever; the walk
+ * returns what it confirmed instead.
+ */
+const TRADE_WALK_MAX_REQUESTS = 300;
+/** Requests in flight per provider on the trade path (the gate's concurrency cap). */
+const TRADE_CONCURRENCY = 3;
+/** Per-minute request-weight caps the gate throttles against (spot is the looser one). */
+const WEIGHT_LIMIT_SPOT = 6_000;
+const WEIGHT_LIMIT_FUTURES = 2_400;
+/** How long live prints are buffered before one batch is delivered. */
+const TRADE_BATCH_MS = 100;
+/** Default tape window when a caller names neither end. */
+const TRADE_DEFAULT_WINDOW_MS = 60 * 60_000;
+
 
 /** One raw Binance kline row: `[openTime, open, high, low, close, volume, closeTime, …]`. */
 type RawKline = (string | number)[];
+
+/**
+ * One raw Binance aggregated-trade row — the fields this provider reads. `m` is whether
+ * the BUYER was the maker, which is the inverse of the aggressor: `m: true` means a
+ * seller took the resting bid.
+ */
+interface RawAggTrade {
+    a: number; // aggregate trade id
+    p: string | number; // price
+    q: string | number; // quantity
+    T: number; // trade time (ms)
+    m: boolean; // buyer was the maker
+}
+
+/** Map raw aggregated trades to neutral tape prints (aggressor side resolved). */
+export function aggTradesToTrades(raw: readonly RawAggTrade[]): Trade[] {
+    return raw.map((t) => ({
+        time: Number(t.T),
+        price: Number(t.p),
+        size: Number(t.q),
+        // The buyer being the maker means the SELLER lifted nothing — it hit the bid.
+        side: t.m ? ('sell' as const) : ('buy' as const),
+        id: String(t.a),
+    }));
+}
 
 /** Canonical timeframe → Binance interval string (native, no aggregation). */
 const TF_TO_INTERVAL: Record<string, string> = {
@@ -77,6 +128,12 @@ export function klineEventToOHLCV(k: KlineEvent): OHLCV {
 }
 
 
+/** A `Retry-After` header (seconds) as ms, falling back to `fallbackMs` when absent/invalid. */
+function retryAfterMs(res: Response, fallbackMs: number): number {
+    const sec = Number(res.headers.get('retry-after'));
+    return Number.isFinite(sec) && sec > 0 ? sec * 1000 : fallbackMs;
+}
+
 /** Sort by open-time and drop duplicate open-times (incoming wins) — the bar contract. */
 export function dedupeSorted(bars: OHLCV[]): OHLCV[] {
     const byTime = new Map<number, OHLCV>();
@@ -125,6 +182,13 @@ export class BinanceProvider implements DataProvider {
     private spotBaseProbe: Promise<string> | null = null;
     /** Cached symbol enumeration (exchangeInfo is large; fetch once). */
     private symbolsPromise: Promise<SymbolDescriptor[]> | null = null;
+    /**
+     * Shared gate for the TRADE path: caps concurrency, honors 429 backoff and 418 bans,
+     * and pre-emptively pauses as the used-weight header nears the cap. Bar requests are
+     * a handful per load; a tape walk is hundreds, and it is the one path that can get an
+     * IP banned — so it is the path that is gated.
+     */
+    private readonly tradeGate = new RateGate(TRADE_CONCURRENCY);
 
     info(): ProviderInfo {
         return {
@@ -132,7 +196,7 @@ export class BinanceProvider implements DataProvider {
             displayName: 'Binance',
             requiresApiKey: false,
             supportedTimeframes: SUPPORTED_TIMEFRAMES,
-            capabilities: { enumerate: true, stream: true, symbolInfo: true },
+            capabilities: { enumerate: true, stream: true, symbolInfo: true, trades: 'full', tradeStream: true },
         };
     }
 
@@ -221,7 +285,185 @@ export class BinanceProvider implements DataProvider {
     }
 
 
+    /**
+     * Walk the aggregated-trade tape over `range`. Binance refuses a time window of an
+     * hour or more, so the walk slices the window and pages each slice by trade id —
+     * which is also what makes it correct on a symbol printing more than 1000 trades in a
+     * single millisecond, where paging by time would loop forever.
+     *
+     * Every request goes through the shared rate gate; a 429 pauses it and a 418 marks the
+     * IP banned, at which point the walk returns what it has rather than extending the ban.
+     * `opts.signal` does the same. The answer is ascending, de-duplicated by trade id, and
+     * cut to `range.limit` from the NEWEST end.
+     */
+    async getTrades(ticker: string, range: TradeRange, opts?: { signal?: AbortSignal }): Promise<Trade[]> {
+        const { apiSymbol, isFutures } = parseTicker(ticker);
+        const base = isFutures ? FUTURES_BASE : await this.spotBase();
+        const to = range.to ?? Date.now();
+        const from = range.from ?? to - TRADE_DEFAULT_WINDOW_MS;
+        if (!(to > from)) return [];
+
+        const byId = new Map<number, RawAggTrade>();
+        let sliceStart = from;
+        let fromId: number | null = null;
+        let requests = 0;
+        /** Newest trade time an id page reached — id pages ignore the slice's time bounds. */
+        let pagedTo = 0;
+
+        while (sliceStart <= to && requests < TRADE_WALK_MAX_REQUESTS) {
+            if (opts?.signal?.aborted) break;
+            const sliceEnd = Math.min(sliceStart + AGG_TRADES_WINDOW_MS - 1, to);
+            let rows: RawAggTrade[];
+            try {
+                rows = await this.aggTradesChunk(base, isFutures, fromId == null
+                    ? { symbol: apiSymbol, startTime: sliceStart, endTime: sliceEnd }
+                    : { symbol: apiSymbol, fromId });
+            } catch (e) {
+                // A ban is terminal for this walk; anything else (a blip, a 4xx on one
+                // window) ends it too — a partial tape is honest, a rejected load is not.
+                if (e instanceof RateLimitError && e.banned) break;
+                break;
+            }
+            requests += 1;
+
+            // A `fromId` page ignores the time bounds, so the cut is made here.
+            let overshot = false;
+            for (const t of rows) {
+                if (t.T > pagedTo) pagedTo = t.T;
+                if (t.T > to) { overshot = true; continue; }
+                if (t.T >= from) byId.set(t.a, t);
+            }
+
+            if (rows.length === AGG_TRADES_LIMIT && !overshot) {
+                // The slice holds more than one page — continue by id from the last row.
+                fromId = rows[rows.length - 1]!.a + 1;
+                continue;
+            }
+            // Slice exhausted (or we ran past `to`): jump to the next one by time.
+            if (overshot) break;
+            fromId = null;
+            // Resume past whichever is further: the slice's end, or wherever id paging got to.
+            sliceStart = Math.max(sliceEnd, pagedTo) + 1;
+        }
+
+        const trades = aggTradesToTrades([...byId.values()].sort((a, b) => a.a - b.a));
+        return range.limit != null && trades.length > range.limit ? trades.slice(-range.limit) : trades;
+    }
+
+    /**
+     * Stream live prints. Batched on a short timer: a busy symbol prints faster than a
+     * per-trade callback can be afforded, and the consumer folds a batch as cheaply as one
+     * trade. There is no poll fallback — polling a tape drops the prints between rounds,
+     * and a dropped print is a permanently wrong delta — so a reconnect BACKFILLS the gap
+     * from the trade id it last saw instead.
+     */
+    subscribeTrades(ticker: string, onTrades: (trades: readonly Trade[]) => void): Unsubscribe {
+        const { apiSymbol, isFutures } = parseTicker(ticker);
+        if (typeof WebSocket === 'undefined') return () => {};
+
+        let closed = false;
+        let ws: WebSocket | null = null;
+        let reconnect: ReturnType<typeof setTimeout> | null = null;
+        let flush: ReturnType<typeof setInterval> | null = null;
+        let buffer: Trade[] = [];
+        /** Newest id delivered so far — the anchor a reconnect backfills from. */
+        let lastId = 0;
+        let lastTime = 0;
+        const stream = `${apiSymbol.toLowerCase()}@aggTrade`;
+
+        const deliver = (trades: readonly Trade[]): void => {
+            if (closed || trades.length === 0) return;
+            for (const t of trades) {
+                const id = Number(t.id);
+                if (Number.isFinite(id) && id > lastId) lastId = id;
+                if (t.time > lastTime) lastTime = t.time;
+            }
+            onTrades(trades);
+        };
+
+        const drain = (): void => {
+            if (buffer.length === 0) return;
+            const batch = buffer;
+            buffer = [];
+            deliver(batch);
+        };
+
+        // Re-walk what the socket missed while it was down. Overlap is expected and
+        // harmless: every print carries its id, so the consumer de-duplicates.
+        const backfill = async (): Promise<void> => {
+            if (closed || lastTime === 0) return;
+            const gap = await this.getTrades(ticker, { from: lastTime, to: Date.now() }).catch(() => [] as Trade[]);
+            deliver(gap.filter((t) => Number(t.id) > lastId));
+        };
+
+        const open = async (): Promise<void> => {
+            if (closed) return;
+            const reopening = lastId > 0;
+            const base = isFutures ? FUTURES_WS : await this.spotWsBase();
+            if (closed) return; // unsubscribed during the host probe
+            ws = new WebSocket(`${base}/ws/${stream}`);
+            ws.onopen = () => { if (reopening) void backfill(); };
+            ws.onmessage = (ev: MessageEvent) => {
+                if (closed) return;
+                try {
+                    const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '') as RawAggTrade & { e?: string };
+                    if (msg.a != null && msg.p != null) buffer.push(...aggTradesToTrades([msg]));
+                } catch { /* ignore non-JSON / control frames */ }
+            };
+            ws.onclose = () => { if (!closed) reconnect = setTimeout(() => void open(), STREAM_RECONNECT_MS); };
+            ws.onerror = () => { try { ws?.close(); } catch { /* already closed → onclose reconnects */ } };
+        };
+        flush = setInterval(drain, TRADE_BATCH_MS);
+        void open();
+
+        return () => {
+            closed = true;
+            if (reconnect) clearTimeout(reconnect);
+            if (flush) clearInterval(flush);
+            try { ws?.close(); } catch { /* ignore */ }
+        };
+    }
+
     // ── internals ────────────────────────────────────────────────────────
+
+    /**
+     * One aggTrades request, through the rate gate. The response's used-weight header
+     * feeds the gate so a long walk throttles itself before Binance does; a 429 pauses
+     * every request on the path and a 418 marks the IP banned.
+     */
+    private async aggTradesChunk(
+        base: string,
+        isFutures: boolean,
+        params: { symbol: string; startTime?: number; endTime?: number; fromId?: number },
+    ): Promise<RawAggTrade[]> {
+        const url = new URL(`${base}/aggTrades`);
+        url.searchParams.set('symbol', params.symbol);
+        url.searchParams.set('limit', String(AGG_TRADES_LIMIT));
+        if (params.fromId != null) url.searchParams.set('fromId', String(params.fromId));
+        else {
+            if (params.startTime != null) url.searchParams.set('startTime', String(params.startTime));
+            if (params.endTime != null) url.searchParams.set('endTime', String(params.endTime));
+        }
+
+        return this.tradeGate.run(async () => {
+            const res = await fetch(url.toString());
+            const used = Number(res.headers.get('x-mbx-used-weight-1m'));
+            if (Number.isFinite(used) && used > 0) {
+                this.tradeGate.noteWeight(used, isFutures ? WEIGHT_LIMIT_FUTURES : WEIGHT_LIMIT_SPOT);
+            }
+            if (res.status === 429) {
+                this.tradeGate.pauseFor(retryAfterMs(res, 5_000));
+                throw new RateLimitError(`Binance rate-limited the tape for ${params.symbol}`, false);
+            }
+            if (res.status === 418) {
+                this.tradeGate.banFor(retryAfterMs(res, 120_000));
+                throw new RateLimitError(`Binance banned this IP (418) on the tape for ${params.symbol}`, true);
+            }
+            if (!res.ok) throw new Error(`Binance HTTP ${res.status} for ${url.toString()}`);
+            const data: unknown = await res.json();
+            return Array.isArray(data) ? (data as RawAggTrade[]) : [];
+        });
+    }
 
 
     /**

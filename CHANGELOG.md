@@ -2,6 +2,20 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Order-flow data.** A chart can now read the tape — the individual trades behind each
+  bar, each carrying the side that initiated it — instead of only the candles built from
+  them. `chart.data.trades()` returns a past window, `chart.data.subscribeTrades()`
+  follows the live prints, and `chart.data.tradeDepth()` says up front how far back a
+  venue's trades reach, so a view knows whether it can rebuild history or only follow
+  along from now on. Each bundled provider serves what its venue allows: Binance walks
+  any past window, Coinbase only a recent one, and Hyperliquid streams live trades
+  without offering history. This is what the order-flow views read, and a provider of
+  your own joins in by adding the same two methods.
+
 ## [0.8.0]
 
 ### Added

@@ -115,7 +115,7 @@ export type { DrawingTypeKey } from './core/drawings/Drawing';
 export { registerIcon, iconMarkup } from './ui/icons';
 export type { KeyBindingDescriptor, ResolvedBinding } from './ui/keymap';
 export type { PriceStyle } from './core/options';
-export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';
+export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor, TradeDepth, TradeRange } from './core/ports/DataProvider';
 
 // SCRIPTING ENGINES (`chart.registerEngine` / the widget's `engines` option): a language
 // runtime implementing the `ScriptingEngine` port — prepare/execute sessions over bars
@@ -157,6 +157,25 @@ export { inputVisible } from './core/model';
 // Diff a value bag against its schema's declaration defaults — what state-persistence
 // handlers store (deltas only; defaults are never frozen into documents).
 export { inputDeltas } from './core/model';
+// Tape → footprint aggregation. A plugin building its own order-flow view reads the same
+// book the built-in ones do: fold trades in, read bars out, coarsen to the level size you
+// draw at. `TapeSource` adds the shared history walk + live subscription around it.
+export {
+    createBook,
+    levelSizeFor,
+    levelIndex,
+    levelPrice,
+    barTimeAt,
+    foldTrades,
+    pruneBefore,
+    clearBar,
+    readBar,
+    readBars,
+    footprintImbalances,
+    cumulativeDeltaBars,
+    TapeSource,
+} from './data/tape';
+export type { FootprintBook, BarAcc, ImbalanceOptions, TapeAccess, TapeSourceOptions } from './data/tape';
 // The semantic palette (fixed brand/meaning colors, never theme-dependent) so plugin
 // output — default plot colors, layer inks — matches core affordances exactly.
 export * from './core/palette';

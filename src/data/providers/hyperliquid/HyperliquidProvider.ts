@@ -3,6 +3,7 @@ import type { BarRange, SymbolInfo } from '../../../core/ports/MarketDataFeed';
 import type { DataProvider, ProviderInfo, SymbolDescriptor } from '../../../core/ports/DataProvider';
 import { baseOf, ledgerCryptoIconUrl } from '../../symbol-base';
 import type { Unsubscribe } from '../../../core/util/types';
+import type { Trade } from '../../../core/model/tape';
 
 const INFO_URL = 'https://api.hyperliquid.xyz/info';
 const WS_URL = 'wss://api.hyperliquid.xyz/ws';
@@ -15,6 +16,8 @@ const WS_URL = 'wss://api.hyperliquid.xyz/ws';
 const STREAM_STALL_MS = 15_000;
 /** Reconnect backoff after an unexpected socket close. */
 const STREAM_RECONNECT_MS = 2_000;
+/** How long live prints are buffered before one batch is delivered. */
+const TRADE_BATCH_MS = 100;
 
 /** One raw Hyperliquid candle: `{ t, T, s, i, o, h, l, c, v, n }` (prices/volume are strings). */
 interface RawCandle {
@@ -107,6 +110,31 @@ export function aggregate(sub: OHLCV[], bucketMs: number): OHLCV[] {
     return [...buckets.values()].sort((a, b) => a.time - b.time);
 }
 
+/** One raw Hyperliquid trade off the `trades` subscription (the fields this provider reads). */
+interface RawTrade {
+    coin?: string;
+    /** Aggressor side: `B` = a taker bought, `A` = a taker sold. */
+    side?: string;
+    px?: string | number;
+    sz?: string | number;
+    time?: number;
+    /** Trade id (`tid`) — numeric and monotonic per coin. */
+    tid?: number;
+}
+
+/** Map raw Hyperliquid trades to neutral tape prints (the side is already the aggressor's). */
+export function hyperliquidTradesToTrades(raw: readonly RawTrade[]): Trade[] {
+    const out: Trade[] = [];
+    for (const t of raw) {
+        const time = Number(t.time);
+        const price = Number(t.px);
+        const size = Number(t.sz);
+        if (!Number.isFinite(time) || !Number.isFinite(price) || !Number.isFinite(size)) continue;
+        out.push({ time, price, size, side: t.side === 'A' ? 'sell' : 'buy', id: t.tid != null ? String(t.tid) : undefined });
+    }
+    return out.sort((a, b) => a.time - b.time);
+}
+
 /** Largest native sub-timeframe (minutes) that evenly divides `targetMin`, or null. */
 function selectSubTf(targetMin: number): number | null {
     return NATIVE_MINUTES.filter((m) => m < targetMin && targetMin % m === 0).sort((a, b) => b - a)[0] ?? null;
@@ -140,7 +168,10 @@ export class HyperliquidProvider implements DataProvider {
             displayName: 'Hyperliquid',
             requiresApiKey: false,
             supportedTimeframes: SUPPORTED_TIMEFRAMES,
-            capabilities: { enumerate: true, stream: true, symbolInfo: true },
+            // No trade HISTORY: the public info API serves candles and order books, not a
+            // past tape — so order-flow views on this venue accumulate from the live stream
+            // forward rather than reconstructing what already printed.
+            capabilities: { enumerate: true, stream: true, symbolInfo: true, trades: 'none', tradeStream: true },
         };
     }
 
@@ -221,6 +252,69 @@ export class HyperliquidProvider implements DataProvider {
         // (aggregated timeframe, or no WebSocket) fall back to polling getBars.
         if (interval && typeof WebSocket !== 'undefined') return this.streamCandles(ticker, timeframe, coin, interval, onBar);
         return this.pollBars(ticker, timeframe, onBar);
+    }
+
+    /**
+     * Stream live prints off the `trades` subscription, batched on a short timer. This
+     * venue serves no trade history (see `info()`), so an order-flow view here builds up
+     * from the moment it subscribes — the bars already on screen when it opens stay empty.
+     *
+     * Hyperliquid reports the AGGRESSOR's side directly: `B` is a taker buying into the
+     * ask, `A` a taker selling into the bid — no inversion, unlike venues that publish the
+     * resting order's side.
+     */
+    subscribeTrades(ticker: string, onTrades: (trades: readonly Trade[]) => void): Unsubscribe {
+        const coin = parseCoin(ticker);
+        if (typeof WebSocket === 'undefined') return () => {};
+
+        let closed = false;
+        let ws: WebSocket | null = null;
+        let ping: ReturnType<typeof setInterval> | null = null;
+        let reconnect: ReturnType<typeof setTimeout> | null = null;
+        let buffer: Trade[] = [];
+
+        const clearPing = (): void => { if (ping) { clearInterval(ping); ping = null; } };
+        const drain = (): void => {
+            if (closed || buffer.length === 0) return;
+            const batch = buffer;
+            buffer = [];
+            onTrades(batch);
+        };
+        const flush = setInterval(drain, TRADE_BATCH_MS);
+
+        const open = (): void => {
+            if (closed) return;
+            ws = new WebSocket(WS_URL);
+            ws.onopen = () => {
+                try { ws?.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin } })); }
+                catch { /* the reconnect below retries */ }
+                // Keep the idle socket alive (HL replies with a pong).
+                ping = setInterval(() => { try { ws?.send(JSON.stringify({ method: 'ping' })); } catch { /* closing */ } }, 30_000);
+            };
+            ws.onmessage = (ev: MessageEvent) => {
+                if (closed) return;
+                try {
+                    const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '') as { channel?: string; data?: RawTrade[] };
+                    if (msg.channel === 'trades' && Array.isArray(msg.data)) {
+                        buffer.push(...hyperliquidTradesToTrades(msg.data.filter((t) => t.coin === coin)));
+                    }
+                } catch { /* ignore non-JSON / unrelated frames */ }
+            };
+            ws.onclose = () => {
+                clearPing();
+                if (!closed) reconnect = setTimeout(open, STREAM_RECONNECT_MS);
+            };
+            ws.onerror = () => { try { ws?.close(); } catch { /* already closed → onclose reconnects */ } };
+        };
+        open();
+
+        return () => {
+            closed = true;
+            clearPing();
+            clearInterval(flush);
+            if (reconnect) clearTimeout(reconnect);
+            try { ws?.close(); } catch { /* ignore */ }
+        };
     }
 
     // ── internals ────────────────────────────────────────────────────────

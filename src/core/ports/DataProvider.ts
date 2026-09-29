@@ -1,4 +1,5 @@
 import type { OHLCV } from '../model/ohlcv';
+import type { Trade } from '../model/tape';
 import type { BarRange, SymbolInfo } from './MarketDataFeed';
 import type { Unsubscribe } from '../util/types';
 
@@ -46,6 +47,31 @@ export interface SymbolDescriptor {
     provider?: string;
 }
 
+/**
+ * How far back a venue's TAPE reaches through {@link DataProvider.getTrades} — the one
+ * thing order-flow consumers cannot discover by trying, because a venue with no history
+ * and a quiet market both answer with an empty list.
+ *
+ * - `'full'` — time-seekable: any past window can be walked, so a footprint or a
+ *   cumulative delta reconstructs over the whole loaded history.
+ * - `'recent'` — only a window near the live tip is reachable (a cursor-walk back from
+ *   the newest print, with no time seek). Recent bars reconstruct; older ones are
+ *   served empty rather than walked unbounded.
+ * - `'none'` — no trade history at all. A provider may still stream a LIVE tape
+ *   ({@link ProviderCapabilities.tradeStream}), which accumulates going forward.
+ */
+export type TradeDepth = 'full' | 'recent' | 'none';
+
+/** A bounded tape window (epoch ms). `limit` caps the count, counted from the NEWEST print. */
+export interface TradeRange {
+    /** Oldest execution time to fetch from (inclusive). */
+    from?: number;
+    /** Newest execution time to fetch to (defaults to "now" when omitted). */
+    to?: number;
+    /** Max trades to return — the newest ones when the window holds more. */
+    limit?: number;
+}
+
 /** What a provider can do — lets the registry/UI reason without provider-specific checks. */
 export interface ProviderCapabilities {
     /** Implements `listSymbols()` (enumeration → eager index + autocomplete). */
@@ -54,6 +80,10 @@ export interface ProviderCapabilities {
     stream: boolean;
     /** Implements `getSymbolInfo()` (per-symbol metadata for engine `syminfo.*`). */
     symbolInfo: boolean;
+    /** How far back `getTrades()` reaches (see {@link TradeDepth}). Absent ⇒ `'none'`. */
+    trades?: TradeDepth;
+    /** Implements `subscribeTrades()` (a live tape). Absent ⇒ false. */
+    tradeStream?: boolean;
 }
 
 /** Provider metadata, surfaced via `chart.data.providers()`. */
@@ -148,6 +178,29 @@ export interface DataProvider {
      * consumers fall back to their own anchoring (e.g. UTC days).
      */
     getCalendar?(ticker: string, range: { from: number; to: number; session?: string }): Promise<ReadonlyArray<readonly [number, number]>>;
+
+    /**
+     * Fetch the TAPE over `range` — the individual executions behind the bars, each with
+     * its AGGRESSOR side (see {@link Trade}). Ascending by time, de-duplicated; a venue
+     * that publishes aggregated prints may return those rows as they are. The reach of
+     * this method is what {@link ProviderCapabilities.trades} declares: a `'recent'`
+     * provider serves an out-of-reach window as an EMPTY list, never by walking the
+     * whole tape to get there. `opts.signal` aborts a long walk — the consumer moved on:
+     * stop fetching promptly and resolve with what is already confirmed.
+     *
+     * Absent ⇒ the venue offers no trade history (`trades: 'none'`) and order-flow
+     * consumers either accumulate from the live stream or report themselves unavailable.
+     */
+    getTrades?(ticker: string, range: TradeRange, opts?: { signal?: AbortSignal }): Promise<Trade[]>;
+
+    /**
+     * Open a live tape for `ticker`. Trades arrive in BATCHES (a busy market prints
+     * faster than any per-trade callback can be afforded) — ascending within a batch,
+     * and never re-delivered across batches. Returns an unsubscribe fn. Absent ⇒ no
+     * live tape; there is no poll fallback, because polling a tape drops prints between
+     * rounds and a dropped print is a permanently wrong delta.
+     */
+    subscribeTrades?(ticker: string, onTrades: (trades: readonly Trade[]) => void): Unsubscribe;
 
     /** Apply runtime config (e.g. API keys). Absent ⇒ no configuration needed. */
     configure?(config: unknown): void;

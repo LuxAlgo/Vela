@@ -334,12 +334,22 @@ export class ProviderRegistry {
     infoOf(rawName: string): ProviderInfo {
         const name = normName(rawName);
         const e = this.entries.get(name);
-        if (!e) return { name, capabilities: { enumerate: false, stream: false, symbolInfo: false } };
+        if (!e) return { name, capabilities: { enumerate: false, stream: false, symbolInfo: false, trades: 'none', tradeStream: false } };
         const p = e.provider;
         return (
             p.info?.() ?? {
                 name: e.name,
-                capabilities: { enumerate: !!p.listSymbols, stream: !!p.subscribe, symbolInfo: !!p.getSymbolInfo },
+                capabilities: {
+                    enumerate: !!p.listSymbols,
+                    stream: !!p.subscribe,
+                    symbolInfo: !!p.getSymbolInfo,
+                    // Method presence cannot tell `'full'` from `'recent'` — only the provider
+                    // knows its reach — so an undeclared tape is taken as the shallower of the
+                    // two: a consumer that under-reaches serves empty older bars, while one
+                    // that over-reaches walks a cursor it will never get to the end of.
+                    trades: p.getTrades ? 'recent' : 'none',
+                    tradeStream: !!p.subscribeTrades,
+                },
             }
         );
     }

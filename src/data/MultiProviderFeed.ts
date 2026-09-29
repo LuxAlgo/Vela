@@ -1,5 +1,6 @@
 import type { MarketDataFeed, BarRange, SymbolInfo } from '../core/ports/MarketDataFeed';
-import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from '../core/ports/DataProvider';
+import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor, TradeDepth, TradeRange } from '../core/ports/DataProvider';
+import type { Trade } from '../core/model/tape';
 import type { MarketConfig } from '../core/options';
 import type { OHLCV } from '../core/model/ohlcv';
 
@@ -168,6 +169,69 @@ export class MultiProviderFeed implements MarketDataFeed {
         const provider = this.registry.get(resolved.provider);
         if (!provider) return null;
         return provider.capabilitiesFor?.(resolved.ticker) ?? this.registry.infoOf(resolved.provider).capabilities;
+    }
+
+    // ── Tape surface (driven by chart.data / DataControl) ──────────────────
+
+    /**
+     * Fetch the tape for `raw` over `range`, routed to the owning provider. Empty when
+     * nothing resolves the symbol yet or the provider serves no trade history — an
+     * order-flow consumer degrades to whatever the live stream brings rather than
+     * failing, so this never rejects on an incapable venue (a provider that THROWS
+     * still surfaces, warned, as empty).
+     */
+    async tradesFor(raw: string, range: TradeRange, opts?: { signal?: AbortSignal }): Promise<Trade[]> {
+        const resolved = this.registry.resolve(raw, { default: this.primaryProvider });
+        const provider = resolved ? this.registry.get(resolved.provider) : undefined;
+        if (!resolved || !provider?.getTrades) return [];
+        try {
+            return await provider.getTrades(resolved.ticker, range, opts);
+        } catch (e) {
+            console.warn(`[vela] trade fetch failed for ${resolved.ticker} — ${e instanceof Error ? e.message : String(e)}`);
+            return [];
+        }
+    }
+
+    /**
+     * Open a live tape for `raw`. A symbol that does not resolve YET is retried on the
+     * registry's own cadence (a provider registered after the chart was built must still
+     * reach a running order-flow view), so the returned unsubscribe may be handed a
+     * subscription that only opens later.
+     */
+    subscribeTradesFor(raw: string, onTrades: (trades: readonly Trade[]) => void): Unsubscribe {
+        let stopped = false;
+        let inner: Unsubscribe | null = null;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+
+        const attempt = (): void => {
+            if (stopped || inner) return;
+            const resolved = this.registry.resolve(raw, { default: this.primaryProvider });
+            const provider = resolved ? this.registry.get(resolved.provider) : undefined;
+            if (resolved && provider?.subscribeTrades) {
+                inner = provider.subscribeTrades(resolved.ticker, onTrades);
+                return;
+            }
+            // Unresolved (index still settling) — retry. A resolved provider WITHOUT a
+            // live tape is final: there is nothing to wait for.
+            if (!resolved) timer = setTimeout(attempt, RESOLVE_RETRY_MS);
+        };
+        attempt();
+
+        return () => {
+            stopped = true;
+            if (timer) clearTimeout(timer);
+            inner?.();
+        };
+    }
+
+    /** The tape's history reach for `raw` (see {@link TradeDepth}); `'none'` while unresolvable. */
+    tradeDepthFor(raw: string): TradeDepth {
+        return this.capabilitiesFor(raw)?.trades ?? 'none';
+    }
+
+    /** Whether `raw`'s provider can stream a live tape. False while unresolvable. */
+    tradeStreamFor(raw: string): boolean {
+        return this.capabilitiesFor(raw)?.tradeStream ?? false;
     }
 
     // ── MarketDataFeed ─────────────────────────────────────────────────────
