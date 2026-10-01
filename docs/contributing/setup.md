@@ -38,7 +38,10 @@ The four scripts that define "done" — **typecheck, lint, test, build** — are
 
 A single source tree produces **two different build artifacts**, and knowing which is which prevents a lot of confusion:
 
-- **The library build** is what application code consumes. It ships ESM, CJS, and type definitions, and **externalizes the backends** (the scripting engine and the renderer dependency are left as external imports rather than inlined). Externalized does **not** mean the consumer must hand-wire those backends: the renderer dependency remains a **required runtime dependency** that the consumer's package manager resolves normally, and the default backends still wire themselves automatically through the composition root. You only supply your own backend when you deliberately want to replace a default (see [workflow.md](./workflow.md#where-to-make-a-change-by-layer)).
-- **The self-contained browser bundle** is a single IIFE that **bundles everything** — the renderer dependency, the scripting engine, and the **inlined worker** — and exposes the library as a global (`window.Vela`).
+- **The library build** ships ESM, CJS, and type definitions for the public package entries. It includes the native renderer, which the composition root uses by default. Providers are available through their package subpaths. You can replace the renderer or data feed through dependency injection (see [workflow.md](./workflow.md#where-to-make-a-change-by-layer)).
+- **The self-contained browser bundle** exposes `window.Vela` as an IIFE, with readable and minified variants. It includes the native renderer and bundled providers for script-tag consumers.
+
+Neither build includes a scripting engine or a scripting worker. Install and register an
+engine addon separately when you need scripts (see [Scripting engines](../user/scripting-engines.md)).
 
 The **playground serves `src/` directly** (vite): changes appear on save with no build step. The browser bundle exists for CDN-style consumers of the library, not for development.
