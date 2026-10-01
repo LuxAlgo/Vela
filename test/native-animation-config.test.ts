@@ -25,7 +25,7 @@ import {
 function makeRenderer(animations?: boolean | AnimationConfig) {
     const r = new NativeRenderer({
         currentPriceLine: true, logScale: false, nativeBackend: 'canvas2d', ...resolveAnimations(animations),
-        glow: 0, upColor: '#0f0', downColor: '#f00', priceStyle: 'candles',
+        glow: 0, upColor: '#0f0', downColor: '#f00', priceStyle: 'candles', timeFormat: '',
     });
     const anyR = r as any;
     anyR.coords.setSize(800, 200, 1);

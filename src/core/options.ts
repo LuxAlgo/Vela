@@ -112,6 +112,11 @@ export interface VelaOptions extends MarketConfig {
     currentPriceLine?: boolean;
     /** Use a logarithmic price scale on the price pane (default false). */
     logScale?: boolean;
+    /** Date-format pattern for the crosshair time chip (native renderer). Tokens: `yyyy`/`yy`
+     *  year, `MM`/`M` month, `dd`/`d` day, `dddd`/`EEEE` weekday (星期一), `HH`/`hh` 24-hour,
+     *  `mm`/`m` minute (or month when not after an hour), `ss`/`s` second —
+     *  e.g. `'yyyy-MM-dd dddd HH:mm'`. Omitted = the built-in `Sun 30 Aug '26 19:00` stamp. */
+    timeFormat?: string;
     /** Native geometry backend: `'auto'` (WebGL2 if available, else canvas2d),
      *  or force `'canvas2d'` / `'webgl2'`. Native renderer only. */
     nativeBackend?: NativeBackend;
@@ -315,6 +320,8 @@ export interface RendererDisplayOptions {
     upColor: string;
     downColor: string;
     priceStyle: PriceStyle;
+    /** Crosshair time-chip date pattern (see {@link VelaOptions.timeFormat}); '' = built-in. */
+    timeFormat: string;
 }
 
 /**

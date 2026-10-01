@@ -228,16 +228,97 @@ const STEP_LADDER = [
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** Weekday indexes as Chinese numerals — the built-in format's `dddd`/`EEEE` token. */
+const WEEKDAYS_ZH = ['日', '一', '二', '三', '四', '五', '六'];
 const pad2 = (n: number): string => (n < 10 ? `0${n}` : String(n));
 
+/** Pad a number to `len` digits, left-filled with zeros. */
+const pad = (n: number, len = 2): string => String(n).padStart(len, '0');
+
+/** A letter that starts a format token in {@link applyTimeFormat}. */
+const isTokenChar = (c: string): boolean => 'yYMdDEHhms'.includes(c);
+
+/** Render one token run (a consecutive run of the SAME letter) from the zoned `Date`. */
+function renderToken(ch: string, run: number, d: Date, minuteContext: boolean): string {
+    switch (ch) {
+        case 'y':
+        case 'Y':
+            return run === 2 ? pad(d.getUTCFullYear() % 100) : pad(d.getUTCFullYear(), 4);
+        case 'M':
+            return run >= 2 ? pad(d.getUTCMonth() + 1) : String(d.getUTCMonth() + 1);
+        // Lowercase `m`: minutes right after an hour token or a `:`/`.` separator, otherwise
+        // month — so both `yyyy-mm-dd` and `hh:mm` do the obvious thing. `MM` is explicit.
+        case 'm':
+            if (!minuteContext) return run >= 2 ? pad(d.getUTCMonth() + 1) : String(d.getUTCMonth() + 1);
+            return run >= 2 ? pad(d.getUTCMinutes()) : String(d.getUTCMinutes());
+        // `dd`/`d` = day of month; a longer `d…` run (3+) is the weekday, moment-style.
+        case 'd':
+        case 'D':
+            if (run >= 3) return `星期${WEEKDAYS_ZH[d.getUTCDay()]}`;
+            return run >= 2 ? pad(d.getUTCDate()) : String(d.getUTCDate());
+        case 'E':
+            return `星期${WEEKDAYS_ZH[d.getUTCDay()]}`;
+        case 'H':
+        case 'h':
+            // 24-hour for both cases: the colloquial `hh:mm` means the same as `HH:mm`.
+            return run >= 2 ? pad(d.getUTCHours()) : String(d.getUTCHours());
+        case 's':
+            return run >= 2 ? pad(d.getUTCSeconds()) : String(d.getUTCSeconds());
+        default:
+            return ch.repeat(run);
+    }
+}
+
 /**
- * The crosshair's time-axis chip: `Sun 30 Aug '26 19:00`. Always the full calendar date
- * (weekday, day, month, two-digit year) so the stamp is unambiguous however far the view
- * is scrolled; the wall-clock time is appended only when bars are intraday — on a daily
- * or coarser bar the hh:mm would just echo the bar's open and add noise.
+ * Apply a light date-format pattern to a `Date` whose `getUTC*` accessors already read the
+ * target wall clock (see {@link zonedDate}). Tokens are runs of one letter; a single-letter
+ * run is unpadded, a longer run pads to its documented width:
+ *
+ * ```
+ *   yyyy / yy           four- / two-digit year     MM / M     month
+ *   dd / d              day of month               dddd / EEEE  weekday (星期一)
+ *   HH / hh             hour (24-hour)             mm / m       minute
+ *   ss / s              second
+ * ```
+ *
+ * A lowercase `m` run reads as a MINUTE when it follows an hour token or a `:`/`.` separator,
+ * and as MONTH otherwise; use `MM` when in doubt. Every other character is copied verbatim.
  */
-export function formatTimeStamp(ms: number, timeZone: string, barIntervalMs: number): string {
+export function applyTimeFormat(d: Date, format: string): string {
+    let out = '';
+    let prevWasHour = false;
+    let prevChar = '';
+    for (let i = 0; i < format.length; ) {
+        const ch = format[i]!;
+        if (isTokenChar(ch)) {
+            let j = i;
+            while (j < format.length && format[j] === ch) j += 1;
+            const run = j - i;
+            const minuteContext = prevWasHour || prevChar === ':' || prevChar === '.';
+            out += renderToken(ch, run, d, minuteContext);
+            prevWasHour = ch === 'H' || ch === 'h';
+            prevChar = ch;
+            i = j;
+        } else {
+            out += ch;
+            prevWasHour = false;
+            prevChar = ch;
+            i += 1;
+        }
+    }
+    return out;
+}
+
+/**
+ * The crosshair's time-axis chip. With no `format` it renders the built-in
+ * `Sun 30 Aug '26 19:00` (full calendar date + weekday + two-digit year, so the stamp is
+ * unambiguous however far the view is scrolled; the wall-clock time is appended only when
+ * bars are intraday). Pass `format` (a {@link applyTimeFormat} pattern, e.g.
+ * `yyyy-MM-dd dddd HH:mm`) to render the stamp in that shape instead.
+ */
+export function formatTimeStamp(ms: number, timeZone: string, barIntervalMs: number, format?: string | null): string {
     const d = zonedDate(ms, timeZone);
+    if (format) return applyTimeFormat(d, format);
     const date = `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} '${pad2(d.getUTCFullYear() % 100)}`;
     if (barIntervalMs >= DAY) return date;
     return `${date} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { logPriceTicks, valueDecimals, priceTicks, tickDecimals, axisDecimals, formatPriceLabel, formatAxisValue, formatTimeStamp } from '../src/renderers/native/chrome/ticks';
+import { logPriceTicks, valueDecimals, priceTicks, tickDecimals, axisDecimals, formatPriceLabel, formatAxisValue, formatTimeStamp, applyTimeFormat } from '../src/renderers/native/chrome/ticks';
 
 describe('native ticks · logPriceTicks', () => {
     it('places 1/2/5 per decade over a wide (multi-decade) range', () => {
@@ -115,5 +115,46 @@ describe('native ticks · formatTimeStamp (crosshair time chip)', () => {
 
     it('treats an unknown bar interval (no bars yet) as intraday', () => {
         expect(formatTimeStamp(sun30Aug26_19h, 'UTC', 0)).toBe("Sun 30 Aug '26 19:00");
+    });
+});
+
+describe('native ticks · formatTimeStamp with a custom format', () => {
+    const HOUR = 3_600_000;
+    const sun30Aug26_19h = Date.UTC(2026, 7, 30, 19, 0); // a Sunday
+
+    it('renders the requested pattern, including the Chinese weekday', () => {
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', HOUR, 'yyyy-MM-dd dddd HH:mm')).toBe('2026-08-30 星期日 19:00');
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', HOUR, 'YYYY年MM月DD日 EEEE HH:mm')).toBe('2026年08月30日 星期日 19:00');
+    });
+
+    it('resolves an ambiguous lowercase mm by position: month before, minute after an hour', () => {
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', HOUR, 'yyyy-mm-dd hh:mm')).toBe('2026-08-30 19:00');
+    });
+
+    it('renders the format in the chosen time zone', () => {
+        expect(formatTimeStamp(Date.UTC(2005, 11, 31, 23, 30), 'Asia/Tokyo', HOUR, 'yyyy-MM-dd HH:mm')).toBe('2006-01-01 08:30');
+    });
+
+    it('ignores the bar interval (the pattern is authoritative)', () => {
+        expect(formatTimeStamp(sun30Aug26_19h, 'UTC', 24 * HOUR, 'yyyy-MM-dd HH:mm')).toBe('2026-08-30 19:00');
+    });
+});
+
+describe('native ticks · applyTimeFormat', () => {
+    const d = new Date(Date.UTC(2026, 7, 30, 9, 5, 7)); // Sunday 2026-08-30 09:05:07 UTC
+
+    it('pads a two-letter run but not a single-letter one', () => {
+        expect(applyTimeFormat(d, 'M/d H:m:s')).toBe('8/30 9:5:7');
+        expect(applyTimeFormat(d, 'MM/dd HH:mm:ss')).toBe('08/30 09:05:07');
+    });
+
+    it('supports a two-digit year and 24-hour clock for both H and h', () => {
+        expect(applyTimeFormat(d, 'yy HH')).toBe('26 09');
+        expect(applyTimeFormat(d, 'yy hh')).toBe('26 09');
+        expect(applyTimeFormat(new Date(Date.UTC(2026, 7, 30, 15, 0)), 'hh')).toBe('15');
+    });
+
+    it('copies unknown characters verbatim', () => {
+        expect(applyTimeFormat(d, 'yyyy_MM_dd')).toBe('2026_08_30');
     });
 });
