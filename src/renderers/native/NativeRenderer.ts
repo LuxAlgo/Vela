@@ -385,6 +385,7 @@ export class NativeRenderer implements IChartRenderer {
             this.scene.priceStyle = opts.priceStyle;
             this.scene.basePainting = basePaintingOf(opts.priceStyle);
             this.scene.candleOverride = candleOverrideFor(opts.priceStyle, this.scene.style.chartTypes);
+            this.scene.timeFormat = opts.timeFormat || null;
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
         // it with the real, Vela-resolved theme). Candle colors follow opts.
@@ -392,7 +393,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'timeFormat', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -518,6 +519,10 @@ export class NativeRenderer implements IChartRenderer {
             case 'timezone':
                 this.scene.timezone = typeof value === 'string' && value ? value : 'UTC';
                 break;
+            case 'timeFormat':
+                // Crosshair time-chip pattern (`applyTimeFormat`); null/'' restores the built-in stamp.
+                this.scene.timeFormat = typeof value === 'string' && value ? value : null;
+                break;
             case 'priceStyle':
                 this.setPriceStyle(isPriceStyle(value) ? value : 'candles');
                 break;
@@ -619,6 +624,7 @@ export class NativeRenderer implements IChartRenderer {
                 return price ? price.manualScale == null : true;
             }
             case 'timezone': return this.scene.timezone;
+            case 'timeFormat': return this.scene.timeFormat ?? '';
             case 'priceStyle': return this.scene.priceStyle;
             case 'priceBaseline': return this.scene.baselineValue;
             case 'baselinePrice': {

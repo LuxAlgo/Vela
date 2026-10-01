@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Custom crosshair date format.** Charts and workspaces accept a `timeFormat` option that
+  renders the time chip under the crosshair in a pattern you choose - for example
+  `yyyy-MM-dd dddd HH:mm` - instead of the built-in stamp. The same value can be changed live
+  through the renderer's `timeFormat` feature.
+
 ## [0.8.0]
 
 ### Added
