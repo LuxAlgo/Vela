@@ -77,4 +77,14 @@ describe('focusRegion', () => {
         expect(document.activeElement).toBe(c.btns[0]);
         expect(focusRegion([], null, 1)).toBe(false);
     });
+
+    it('treats the innermost region holding the focus as the current one', () => {
+        const outer = bar(1), inner = bar(1), after = bar(1);
+        outer.el.appendChild(inner.el);
+        for (const r of [outer, inner, after]) rovingToolbar(r.el);
+        const regions = [outer.el, inner.el, after.el];
+        inner.btns[0]?.focus();
+        focusRegion(regions, document.activeElement, 1);
+        expect(document.activeElement).toBe(after.btns[0]);
+    });
 });

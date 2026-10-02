@@ -61,13 +61,16 @@ export function rovingToolbar(bar: HTMLElement, selector = 'button'): () => void
 
 /**
  * Move focus to the next (`dir` 1) or previous (-1) region after the one holding `from`,
- * wrapping at the ends; from outside every region, the first (or last) one. A region's
- * head is its roving tabindex-0 element, else its first button or link, else itself.
- * Returns false when there was nothing to focus.
+ * wrapping at the ends; from outside every region, the first (or last) one. Regions may
+ * nest (a chart holds its legends): the innermost one holding `from` counts, so list a
+ * container before the regions inside it. A region's head is its roving tabindex-0
+ * element, else its first button or link, else itself. Returns false when there was
+ * nothing to focus.
  */
 export function focusRegion(regions: HTMLElement[], from: Element | null, dir: 1 | -1): boolean {
     if (regions.length === 0) return false;
-    const idx = from ? regions.findIndex((r) => r.contains(from)) : -1;
+    let idx = -1;
+    if (from) for (let i = regions.length - 1; i >= 0; i--) if (regions[i]?.contains(from)) { idx = i; break; }
     const start = idx < 0 ? (dir === 1 ? 0 : regions.length - 1) : (idx + dir + regions.length) % regions.length;
     const region = regions[start];
     if (!region) return false;

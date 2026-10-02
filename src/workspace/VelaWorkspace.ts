@@ -153,6 +153,11 @@ const POOL_CAP = 16; // dormant slot states kept across layout shrinks
 const TIME_AXIS_H = 22; // px the renderer reserves for a time axis (mirrors NativeRenderer's)
 const ALERT_CAP = 50;
 
+/** Alt+Tab, or Alt+\` where the OS takes Alt+Tab for itself (Windows). */
+function regionChord(ev: KeyboardEvent): boolean {
+    return ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'Tab' || ev.code === 'Backquote' || ev.key === '`' || ev.key === '~');
+}
+
 const STYLE_ID = 'vela-workspace';
 const CSS = `
 .vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--vela-bg); }
@@ -165,8 +170,11 @@ const CSS = `
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
    outline on the cell is painted under them) — inert to the pointer. Scoped to
    multi-cell grids ([data-multi]): a single-cell layout always has an active cell,
-   and ringing the only chart would just be noise. */
-.vela-ws-grid[data-multi='1'] .vela-cell[data-active='1']::after {
+   and ringing the only chart would just be noise. The same overlay, in the accent, is
+   the chart's keyboard focus ring: it covers the whole cell, scales included, and sits
+   inside the well's rounded corner. */
+.vela-ws-grid[data-multi='1'] .vela-cell[data-active='1']::after,
+.vela-cell:has(canvas:focus-visible)::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -174,6 +182,10 @@ const CSS = `
     pointer-events: none;
     z-index: 10;
 }
+/* Both rules outrank the active-cell ink ring and the kit's generic focus outline
+   (:has() and :is() count as their most specific argument). */
+.vela-workspace .vela-ws-grid .vela-cell:has(canvas:focus-visible)::after { border-color: var(--vela-accent); border-width: 3px; }
+.vela-workspace .vela-ws-grid .vela-cell canvas:focus-visible { outline: none; }
 /* Splitter hover mirrors the in-chart pane separator hover (CrosshairRenderer):
    a soft band over the whole grab target + a solid 2px line on the seam center. */
 .vela-ws-splitter:hover { background: var(--vela-separator-hover-band); }
@@ -186,7 +198,7 @@ const CSS = `
 /* A maximized cell owns the whole grid: the splitter strips have no seams to grab and
    the active ring would just outline the only visible chart — both are noise here. */
 .vela-ws-grid[data-maximized='1'] .vela-ws-splitter { display: none; }
-.vela-ws-grid[data-maximized='1'] .vela-cell[data-active='1']::after { display: none; }
+.vela-ws-grid[data-maximized='1'] .vela-cell[data-active='1']:not(:has(canvas:focus-visible))::after { display: none; }
 /* Drop-target preview while a cell's drag handle is held: a dashed ring + the same
    soft wash the splitter hover uses, over the chart, inert to the pointer. */
 .vela-cell[data-drop-target='1']::before {
@@ -402,7 +414,7 @@ export class VelaWorkspace {
     /** Alt+Tab with nothing of the workspace focused enters keyboard navigation at the
      *  active chart (the root listener never sees a keystroke aimed at the page body). */
     private readonly onDocKeydown = (ev: KeyboardEvent): void => {
-        if (this.destroyed || ev.key !== 'Tab' || !ev.altKey || ev.ctrlKey || ev.metaKey) return;
+        if (this.destroyed || !regionChord(ev)) return;
         if (this.root.contains(this.root.ownerDocument.activeElement)) return;
         ev.preventDefault();
         this.active.focus();
@@ -411,18 +423,20 @@ export class VelaWorkspace {
     /**
      * Tab switches charts and nothing else: in a multi-chart grid it moves to the next
      * chart and wraps, Shift+Tab moves back; on a single chart or a bar it is swallowed.
-     * Alt+Tab / Alt+Shift+Tab walk the regions (top bar, drawing toolbar, each chart, the
-     * open side panel, bottom bar) and wrap. Fields, dialogs and menus keep native Tab.
-     * Returns true when the keystroke was handled.
+     * Alt+Tab (or Alt+\` where the OS owns Alt+Tab) walks the regions — top bar, drawing
+     * toolbar, each chart and its legends, the open side panel, bottom bar — wrapping;
+     * with Shift it walks back. Fields, dialogs and menus keep native Tab. Returns true
+     * when the keystroke was handled.
      */
     private routeTab(ev: KeyboardEvent): boolean {
-        if (ev.key !== 'Tab' || ev.ctrlKey || ev.metaKey || isEditableTarget(ev)) return false;
+        if (ev.ctrlKey || ev.metaKey || isEditableTarget(ev)) return false;
         const target = ev.target as HTMLElement;
-        if (ev.altKey) {
+        if (regionChord(ev)) {
             ev.preventDefault();
             focusRegion(this.regions(), target, ev.shiftKey ? -1 : 1);
             return true;
         }
+        if (ev.key !== 'Tab' || ev.altKey) return false;
         if (target.tagName === 'CANVAS') {
             ev.preventDefault();
             const cells = this.cells().filter((c) => c.host.style.visibility !== 'hidden');
@@ -437,9 +451,12 @@ export class VelaWorkspace {
         return false;
     }
 
-    /** The keyboard regions in Alt+Tab order, visible ones only. */
+    /** The keyboard regions in Alt+Tab order, visible ones only: each chart is followed by
+     *  its pane legends, so the walk goes chart → its indicators → next chart. */
     private regions(): HTMLElement[] {
-        const cells = this.cells().filter((c) => c.host.style.visibility !== 'hidden').map((c) => c.host);
+        const cells = this.cells()
+            .filter((c) => c.host.style.visibility !== 'hidden')
+            .flatMap((c) => [c.host, ...c.host.querySelectorAll<HTMLElement>('[data-vela-pane]')]);
         const panel = this.root.querySelector<HTMLElement>('.vela-panel:not([hidden])');
         return [this.topbar.el, this.drawToolbar?.root, ...cells, panel, this.bottombar?.el].filter((el): el is HTMLElement => !!el && el.offsetParent !== null);
     }
