@@ -869,7 +869,7 @@ export class NativeRenderer implements IChartRenderer {
             const rebase = isDarkColor(next.layout.background) ? DARK_THEME : LIGHT_THEME;
             inks = { textColor: rebase.textColor, gridColor: rebase.gridColor, borderColor: rebase.borderColor };
         }
-        this.theme = { ...this.theme, background: next.layout.background, textColor: inks.textColor, gridColor: inks.gridColor, borderColor: inks.borderColor, fontFamily: next.layout.fontFamily };
+        this.theme = { ...this.theme, background: next.layout.background, textColor: inks.textColor, gridColor: inks.gridColor, borderColor: inks.borderColor };
         s.fontSize = next.layout.fontSize;
         // `mergeConfig` runs over the RESOLVED getConfig(), so a live "inherit the theme"
         // sentinel (null) comes back as its concrete value even when the patch never named

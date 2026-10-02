@@ -10,7 +10,7 @@ export const DARK_THEME: VelaTheme = {
     borderColor: '#2a2b30',
     upColor: BULLISH,
     downColor: BEARISH,
-    fontFamily: 'sans-serif',
+    fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
 };
 
 export const LIGHT_THEME: VelaTheme = {
@@ -24,7 +24,7 @@ export const LIGHT_THEME: VelaTheme = {
     // text, never the series (a green candle stays the same green on white).
     upColor: BULLISH,
     downColor: BEARISH,
-    fontFamily: 'sans-serif',
+    fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
 };
 
 export function resolveTheme(theme?: ThemeName | VelaTheme): VelaTheme {
