@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Option shortcuts work on a Mac.** Chords such as the drawing toolbar's Option+T,
+  Option+H and Option+V now fire on macOS, where the Option key turns the typed letter into
+  a typographic character. A shortcut is matched on the key under the finger.
+
 ## [0.8.1]
 
 ### Changed
