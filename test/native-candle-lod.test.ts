@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { candleTier, wickWidth, candleGeometry, aggregateCandleColumns, CANDLE_AGG_MAX_SPACING, CANDLE_BODY_MIN_SPACING, CANDLE_WICK_W } from '../src/renderers/native/backend/candle-lod';
+import { candleTier, bodyWidth, candleGeometry, aggregateCandleColumns, CANDLE_AGG_MAX_SPACING, CANDLE_BODY_MIN_SPACING } from '../src/renderers/native/backend/candle-lod';
 import type { OHLCV } from '../src/core/model/ohlcv';
 
 describe('native candle LOD tiers', () => {
@@ -11,7 +11,7 @@ describe('native candle LOD tiers', () => {
 
     it('drops the body (wick-only) between the aggregate and body thresholds', () => {
         expect(candleTier(CANDLE_AGG_MAX_SPACING)).toBe('wick');
-        expect(candleTier(2)).toBe('wick');
+        expect(candleTier(1.5)).toBe('wick');
         expect(candleTier(CANDLE_BODY_MIN_SPACING - 0.001)).toBe('wick');
     });
 
@@ -25,27 +25,41 @@ describe('native candle LOD tiers', () => {
     });
 });
 
-describe('candle wick width', () => {
-    it('uses the full crisp width when bars are wide', () => {
-        expect(wickWidth(20)).toBe(CANDLE_WICK_W);
-        expect(wickWidth(8)).toBe(CANDLE_WICK_W);
-        expect(wickWidth(5)).toBe(CANDLE_WICK_W); // halfBody = floor(3.5)/2 = 1.5 = cap
+describe('candle body width', () => {
+    const dprs = [1, 1.5, 2, 3];
+
+    it('pins the body to 3 CSS px at 2.5–4 px spacing so a 1px border still shows fill', () => {
+        for (const dpr of dprs) {
+            for (const s of [2.5, 3, 3.5, 4]) expect(bodyWidth(s, dpr)).toBe(Math.floor(3 * dpr));
+        }
     });
 
-    it('tapers to a 1px hair when zoomed out so the wick never reads as a body', () => {
-        expect(wickWidth(2)).toBe(1); // wick tier — body is ~1.4px wide
-        expect(wickWidth(CANDLE_BODY_MIN_SPACING)).toBe(1); // full/wick boundary: halfBody = 1
-        expect(wickWidth(1)).toBe(1);
-        expect(wickWidth(0.5)).toBe(1);
+    it('nearly fills the spacing just past the pin and eases to ~0.8 of it at wide zoom', () => {
+        expect(bodyWidth(4.01, 1)).toBe(4);
+        expect(bodyWidth(4.01, 2)).toBe(8);
+        expect(bodyWidth(8, 10) / 80).toBeCloseTo(0.85, 2);
+        expect(bodyWidth(40, 1) / 40).toBeCloseTo(0.8, 1);
+        expect(bodyWidth(400, 1) / 400).toBeCloseTo(0.8, 2);
     });
 
-    it('never exceeds the body half-width and never drops below 1px', () => {
-        for (let s = 0.25; s <= 40; s += 0.25) {
-            const w = wickWidth(s);
-            const halfBody = Math.max(0.5, Math.floor(s * 0.7) / 2);
-            expect(w).toBeGreaterThanOrEqual(1);
-            expect(w).toBeLessThanOrEqual(CANDLE_WICK_W);
-            expect(w).toBeLessThanOrEqual(Math.max(1, halfBody)); // thinner than (or equal to) half the body
+    it('never exceeds the spacing outside the pin band and never drops below a device pixel', () => {
+        for (const dpr of dprs) {
+            for (let s = CANDLE_AGG_MAX_SPACING; s <= 40; s += 0.25) {
+                const w = bodyWidth(s, dpr);
+                expect(w).toBeGreaterThanOrEqual(Math.max(1, Math.floor(dpr)));
+                if (s < 2.5 || s > 4) expect(w).toBeLessThanOrEqual(Math.floor(s * dpr));
+            }
+        }
+    });
+
+    it('leaves fill visible inside a 1 CSS px border at every body-tier spacing (no border-only sticks)', () => {
+        // The regression: zoomed out to 3–4 px spacing the old 0.7·spacing body was 2 px
+        // wide, which the border covered completely.
+        for (const dpr of dprs) {
+            for (let s = 2.5; s <= 40; s += 0.25) {
+                const g = candleGeometry(5, s, dpr);
+                expect(g.bodyW - 2).toBeGreaterThan(0);
+            }
         }
     });
 });

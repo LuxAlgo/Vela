@@ -6,7 +6,7 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
+import { candleTier, CANDLE_WICK_W, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
 
@@ -718,7 +718,7 @@ export class Canvas2dBackend implements IRenderBackend {
                 continue;
             }
             ctx.strokeStyle = bc?.wickColor ?? body;
-            ctx.lineWidth = wickWidth(spacing);
+            ctx.lineWidth = CANDLE_WICK_W;
             ctx.beginPath();
             ctx.moveTo(x, hY);
             ctx.lineTo(x, lY);

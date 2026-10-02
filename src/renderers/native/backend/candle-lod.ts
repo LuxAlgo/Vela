@@ -4,7 +4,7 @@
  * same zoom thresholds.
  *
  * - `full`: high-low wick + a body (enough room for a visible body).
- * - `wick`: high-low stick only (too thin for a body — the old `spacing < 3` path).
+ * - `wick`: high-low stick only (too thin for a body to read as anything but the wick).
  * - `aggregate`: sub-pixel spacing — bars sharing a pixel column collapse to one
  *   high-low stick, so draw cost stays bounded by screen width when zoomed far out
  *   (true LOD) instead of growing with the bar count.
@@ -13,23 +13,33 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 
 export type CandleTier = 'full' | 'wick' | 'aggregate';
 
-/** Below this spacing a candle has no body (wick-only). */
-export const CANDLE_BODY_MIN_SPACING = 3;
-/** Wick line width in CSS px at wide zoom — rounded to whole device pixels per frame so it stays crisp. */
-export const CANDLE_WICK_W = 1.5;
+/** Below this spacing a candle has no body (wick-only): a body under 2 CSS px is all border. */
+export const CANDLE_BODY_MIN_SPACING = 2;
+/** Wick line width in CSS px — rounded to whole device pixels per frame so it stays crisp. */
+export const CANDLE_WICK_W = 1;
 /** Below this spacing bars are bucketed per pixel column (aggregated). */
 export const CANDLE_AGG_MAX_SPACING = 1;
 
 /**
- * Wick line width (CSS px) for a given bar spacing. The body is `~spacing·0.7` wide
- * (`half = floor(spacing·0.7)/2`), so a fixed wick reads as a solid body once bars get tight.
- * Cap the wick at the body's half-width and floor it at 1px: a crisp ~1.5px stick at wide zoom
- * that tapers to a 1px hair when zoomed out, never growing as wide as the candle body.
- * Shared by both backends so canvas2d and WebGL2 thin the wick at the same thresholds.
+ * Candle body width in DEVICE px for a bar spacing (CSS px between bar centers).
+ *
+ * Zoomed out the body must survive its 1 CSS px border, so the width tracks the spacing
+ * closely instead of a fixed fraction of it: a fixed 0.7 gives a 2 px body at 3–4 px
+ * spacing, which the border fills completely — the candle degrades to a stick. Here:
+ *
+ * - `2.5 ≤ spacing ≤ 4`: pinned to 3 CSS px — border + 1 px of fill + border — even
+ *   though that can touch or overlap the neighbour by a device pixel.
+ * - wider: the body takes a `fill` fraction of the spacing that starts at 1 (bars nearly
+ *   touch) and eases to 0.8 at wide zoom, so the inter-candle gap grows with the zoom.
+ * - narrower: whatever fits the spacing, never under one device pixel.
+ *
+ * Shared by both backends so canvas2d and WebGL2 size bodies identically.
  */
-export function wickWidth(spacing: number): number {
-    const halfBody = Math.max(0.5, Math.floor(spacing * 0.7) / 2);
-    return Math.max(1, Math.min(CANDLE_WICK_W, halfBody));
+export function bodyWidth(spacing: number, dpr: number): number {
+    if (spacing >= 2.5 && spacing <= 4) return Math.floor(3 * dpr);
+    const fill = 1 - 0.2 * (1 - (4 / Math.max(4, spacing)) ** 2);
+    const w = Math.min(Math.floor(spacing * fill * dpr), Math.floor(spacing * dpr));
+    return Math.max(1, Math.floor(dpr), w);
 }
 
 export function candleTier(spacing: number): CandleTier {
@@ -73,10 +83,12 @@ export interface CandleGeometry {
  * Shared by both backends so canvas2d and WebGL2 lay candles out identically.
  */
 export function candleGeometry(xCss: number, spacing: number, dpr: number, bodyScale = 1): CandleGeometry {
-    const wickDev = Math.max(1, Math.round(wickWidth(spacing) * dpr));
+    const wickDev = Math.max(1, Math.round(CANDLE_WICK_W * dpr));
     const wickLeftDev = Math.round(xCss * dpr - wickDev / 2);
-    let bodyDev = Math.max(wickDev, Math.round(Math.floor(spacing * 0.7 * bodyScale) * dpr));
-    if ((bodyDev - wickDev) % 2 !== 0) bodyDev += 1; // parity-match so the overhang splits evenly
+    let bodyDev = Math.max(wickDev, Math.round(bodyWidth(spacing, dpr) * bodyScale));
+    // Parity-match so the overhang splits evenly — shrink (stay inside the spacing) unless
+    // that would make the body narrower than the wick.
+    if ((bodyDev - wickDev) % 2 !== 0) bodyDev += bodyDev - 1 >= wickDev ? -1 : 1;
     const sideDev = (bodyDev - wickDev) / 2;
     return {
         wickX: wickLeftDev / dpr,

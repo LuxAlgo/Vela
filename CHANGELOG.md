@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Zoomed-out candles keep their fill.** At three or four pixels per bar a candle body was
+  only two pixels wide, so its border covered it completely and every candle collapsed to a
+  border-colored stick. The body now follows the bar spacing as you zoom: it stays at least
+  three pixels wide while there is room, bodies are drawn down to two pixels per bar, and the
+  wick is a crisp one-pixel line at every zoom. Canvas and WebGL agree on the sizes.
+
 ## [0.8.1]
 
 ### Changed
