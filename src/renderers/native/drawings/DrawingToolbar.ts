@@ -4,6 +4,7 @@ import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/dr
 import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
+import { rovingToolbar } from '../../../ui/roving';
 
 /** Expanded bar width in px — a docked host's left-gutter reservation must match it. */
 export const TOOLBAR_WIDTH = 44;
@@ -54,6 +55,7 @@ export class DrawingToolbar {
     /** Star elements of the currently open flyout, by tool type (live-updated, never stale). */
     private readonly starEls = new Map<DrawingTypeKey, HTMLElement>();
     private flyout: HTMLDivElement | null = null;
+    private readonly disposeRoving: () => void;
     private flyoutOwnerId: string | null = null; // group id (or MAGNET_ID) whose flyout is open
     private flyoutCell: HTMLElement | null = null; // the cell the open flyout is anchored to
     private readonly groupCells = new Map<string, HTMLElement>(); // the composite cell (hover/active bg + flyout anchor)
@@ -104,6 +106,7 @@ export class DrawingToolbar {
         ensureStyles();
         this.root = document.createElement('div');
         this.root.className = 'vela-dtb';
+        this.disposeRoving = rovingToolbar(this.root);
         this.styleRoot();
         host.appendChild(this.root);
     }
@@ -193,6 +196,7 @@ export class DrawingToolbar {
     }
 
     destroy(): void {
+        this.disposeRoving();
         this.closeFlyout();
         for (const dispose of this.tipDisposers.splice(0)) dispose();
         this.root.remove();
@@ -716,7 +720,7 @@ function ensureStyles(): void {
 .vela-dtb-cell[data-active='1'] .vela-dtb-icon{color:var(--vela-fg-bright);}
 .vela-dtb-cell[data-active='1'] .vela-dtb-icon .vela-dtb-hit{background:var(--vela-active);}
 .vela-dtb-arrow{position:absolute;right:1px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;opacity:0;pointer-events:none;transition:opacity var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-dtb-cell:hover .vela-dtb-arrow,.vela-dtb-icon:hover~.vela-dtb-arrow,.vela-dtb-cell.vela-open .vela-dtb-arrow{opacity:1;pointer-events:auto;}
+.vela-dtb-cell:hover .vela-dtb-arrow,.vela-dtb-icon:hover~.vela-dtb-arrow,.vela-dtb-cell.vela-open .vela-dtb-arrow,.vela-dtb-arrow:focus-visible{opacity:1;pointer-events:auto;}
 .vela-dtb-arrow:hover{color:var(--vela-fg-bright);}
 .vela-dtb-icon:hover .vela-dtb-hit,.vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-hover);}
 .vela-dtb-cell.vela-open .vela-dtb-arrow .vela-dtb-hit{background:var(--vela-active);}

@@ -396,6 +396,20 @@ export class VelaWorkspace {
     private attributionMark: HTMLElement | null = null;
     private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
 
+    /** In a multi-chart grid, Tab on a chart surface moves to the next chart and wraps at
+     *  the end; Shift+Tab moves back, and from the first chart falls through to the browser
+     *  so focus can still leave the grid. Single-chart and maximized grids keep native Tab. */
+    private readonly onGridKeydown = (ev: KeyboardEvent): void => {
+        if (ev.key !== 'Tab' || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        if ((ev.target as HTMLElement).tagName !== 'CANVAS') return;
+        const cells = this.cells().filter((c) => c.host.style.visibility !== 'hidden');
+        const idx = cells.findIndex((c) => c.host.contains(ev.target as Node));
+        if (cells.length < 2 || idx < 0) return;
+        if (ev.shiftKey && idx === 0) return;
+        ev.preventDefault();
+        cells[(idx + (ev.shiftKey ? -1 : 1)) % cells.length]?.focus();
+    };
+
     constructor(container: HTMLElement | string, opts: VelaWorkspaceOptions = {}) {
         registerBuiltinLayouts(); // idempotent — pickers and `layout` ids resolve from the registry
         registerBuiltinChartTypes(); // ditto — the topbar style menu resolves before the first cell builds
@@ -578,6 +592,7 @@ export class VelaWorkspace {
         }
         this.gridEl = doc.createElement('div');
         this.gridEl.className = 'vela-ws-grid';
+        this.gridEl.addEventListener('keydown', this.onGridKeydown);
         main.appendChild(this.gridEl);
         // One dock for the WHOLE grid (the panels follow the active cell), owning the built-ins,
         // the contributed panels, the single-open rule and the topbar's toggle group.
@@ -1317,6 +1332,7 @@ export class VelaWorkspace {
         }
         this.attachmentDisposers.clear();
         this.root.removeEventListener('keydown', this.onRootKeydown);
+        this.gridEl.removeEventListener('keydown', this.onGridKeydown);
         this.keymap.destroy();
         this.drawToolbar?.destroy();
         this.topbar.destroy();
