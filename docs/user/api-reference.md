@@ -98,7 +98,7 @@ What `addIndicator` returns. Usable immediately.
 | `setInputs(values)` | Change several inputs at once, keyed by input key or title. |
 | `setProp(key, value)` | Override one declaration property (e.g. `initial_capital`). A prop change replays the whole script. |
 | `setProps(values)` | Override several declaration properties at once. |
-| `updateCode(source)` | Replace the script and re-run it **in place** — same `id`, legend row, pane placement and handle. The new source is compiled first; only then is the running script stopped and the new one started, so a broken edit leaves the current indicator computing and painting and reports through `error`. Input and prop values survive where the new script still declares their key; anything else takes the new default. No-op for a native indicator and for an unchanged source. |
+| `updateCode(source)` | Replace the script and re-run it **in place** — same `id`, legend row, pane placement, visibility and handle. The new source is compiled first; only then is the running script stopped and the new one started. Until the new code's first run lands, any failure — at compile time or at run time — puts the previous code back with its input and prop values, keeps its visuals painting throughout, and reports through `error`. An input or prop the user edited survives where the new script still declares its key; one still at its old declared default takes the new default; the new code computes once, with its final values. Returns a `Promise<{ ok, error }>`: resolved once the new code's first run has landed, right after the compile check for a hidden indicator, at once for an unchanged source, and with `ok: false` after a failure. A call superseded by a later one resolves with that later call's outcome. Never rejects; a native indicator resolves `ok: false`. |
 | `setVisible(visible)` | Hide or show the indicator. Hiding suspends it — its visuals are dropped and its computation stops; showing re-runs it over the current bars. |
 | `on(event, handler)` | Per-indicator events — `ready`, `error` (`{ error }`), `alert` (`{ id, message, title?, time }`). Returns an unsubscribe function. |
 | `context(select?)` | `Promise` of a **read-only, serializable snapshot** of the engine's execution context — see [below](#capturing-what-a-script-computes). `null` when the engine lacks the capability or nothing ran yet. |
@@ -118,8 +118,9 @@ macd.setInput('fast', 8);
 macd.setInputs({ slow: 21, signal: 5 });
 
 // Swap the code under the same row — an editor's "run my edit". A source that fails
-// to compile leaves the current MACD running and fires `error` instead.
-macd.updateCode(editedMacdSource);
+// (to compile, or as it runs) puts the current MACD back and fires `error` instead.
+const { ok, error } = await macd.updateCode(editedMacdSource);
+if (!ok) console.warn('kept the previous MACD:', error?.message);
 
 // Hiding suspends it (visuals dropped, computation stopped); showing re-runs it.
 macd.setVisible(false);

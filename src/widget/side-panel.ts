@@ -81,6 +81,32 @@ const CSS = `
 .vela-panel-pin .vela-icon { width: 15px; height: 15px; }
 .vela-panel-pin:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-panel-pin[data-on='1'] { color: var(--vela-fg-bright); }
+.vela-panel-max {
+    all: unset;
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    color: var(--vela-fg-muted);
+}
+.vela-panel-max .vela-icon { width: 15px; height: 15px; }
+.vela-panel-max:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+/* MAXIMIZED: the panel covers the whole dock host — every chart of the shell — whatever
+   its placement; the width handle and the pin have nothing to do meanwhile. */
+.vela-panel[data-maximized] {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    max-width: none;
+    z-index: 26;
+    border-left: none;
+}
+.vela-panel[data-maximized] .vela-panel-resizer,
+.vela-panel[data-maximized] .vela-panel-pin { display: none; }
 .vela-panel-body { flex: 1; overflow: auto; padding: 8px; }
 .vela-panel-body::-webkit-scrollbar { width: 8px; }
 .vela-panel-body::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
@@ -133,6 +159,7 @@ const CSS = `
     border-left: none;
 }
 [data-layout='mobile'] .vela-panel-resizer { display: none; }
+[data-layout='mobile'] .vela-panel-max { display: none; }
 `;
 
 /** Per-panel width policy. Omitted fields fall back to the module defaults. */
@@ -147,6 +174,9 @@ export interface SidePanelOptions {
      *  its width. Docked when false/omitted. A floating panel gets a header pin the user
      *  can dock it with (see {@link SidePanel.onPlacementChange}). */
     overlay?: boolean;
+    /** A header button that MAXIMIZES the panel over every chart of the shell, and restores
+     *  it. For panels that are sometimes the main work surface (an editor). */
+    maximizable?: boolean;
 }
 
 /**
@@ -188,6 +218,8 @@ export class SidePanel {
     private readonly floatable: boolean;
     private overlayOn: boolean;
     private readonly pin: HTMLButtonElement | null = null;
+    private readonly maxButton: HTMLButtonElement | null = null;
+    private maximizedOn = false;
 
     /** `modifier` is the panel's own class, carrying its content styles (e.g. `vela-ot`). */
     constructor(host: HTMLElement, title: string, modifier: string, opts: SidePanelOptions = {}) {
@@ -232,7 +264,13 @@ export class SidePanel {
             });
             this.refreshPin();
         }
-        header.append(this.heading, this.slot, ...(this.pin ? [this.pin] : []), close);
+        if (opts.maximizable) {
+            this.maxButton = doc.createElement('button');
+            this.maxButton.className = 'vela-panel-max';
+            this.maxButton.addEventListener('click', () => this.setMaximized(!this.maximizedOn));
+            this.refreshMaxButton();
+        }
+        header.append(this.heading, this.slot, ...(this.pin ? [this.pin] : []), ...(this.maxButton ? [this.maxButton] : []), close);
         this.body = doc.createElement('div');
         this.body.className = 'vela-panel-body';
         this.el.append(header, this.body);
@@ -248,7 +286,33 @@ export class SidePanel {
     toggle(open = this.el.hidden): void {
         if (open === !this.el.hidden) return;
         this.el.hidden = !open;
+        // A closed panel reopens at its own size — maximizing is a moment, not a placement.
+        if (!open) this.setMaximized(false);
         this.onOpenChange?.(open);
+    }
+
+    /** Whether the panel covers every chart right now. */
+    get maximized(): boolean {
+        return this.maximizedOn;
+    }
+
+    /** Maximize the panel over the shell's charts, or restore it. A no-op on a panel not
+     *  declared `maximizable`. */
+    setMaximized(maximized: boolean): void {
+        if (!this.maxButton || maximized === this.maximizedOn) return;
+        this.maximizedOn = maximized;
+        if (maximized) this.el.dataset.maximized = '1';
+        else delete this.el.dataset.maximized;
+        this.refreshMaxButton();
+    }
+
+    private refreshMaxButton(): void {
+        if (!this.maxButton) return;
+        const doc = this.maxButton.ownerDocument;
+        this.maxButton.replaceChildren(iconEl(this.maximizedOn ? 'restore' : 'maximize', doc));
+        this.maxButton.title = this.maximizedOn ? 'Restore' : 'Maximize';
+        this.maxButton.setAttribute('aria-label', this.maxButton.title);
+        this.maxButton.setAttribute('aria-pressed', this.maximizedOn ? 'true' : 'false');
     }
 
     /** The scrolling body, for a panel filled from OUTSIDE the class — a contributed panel's

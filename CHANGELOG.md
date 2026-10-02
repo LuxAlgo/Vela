@@ -2,6 +2,35 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Side panels can be maximized.** A panel registered with `maximizable: true` gets a
+  Maximize button in its header that spreads it over every chart of the shell, and a
+  Restore button to bring it back. The panel can also do it from code through its
+  header (`setMaximized`). Closing the panel restores it, so it always reopens at its
+  own size.
+
+### Changed
+
+- **Updating an indicator's code tells you how it went, and never breaks a working
+  script.** `handle.updateCode(source)` now returns a promise that resolves `{ ok, error }`
+  once the new code has computed, so an editor can show a busy state and the result
+  without guessing from events. A hidden indicator resolves as soon as the code compiles.
+  If the new code fails, whether it doesn't compile or fails as it runs, the previous code
+  comes back with its settings and keeps painting, and the error is reported as before.
+  A setting you changed survives the update, while one still at its default follows the
+  script's new default. The new code computes once, with its final settings.
+
+### Fixed
+
+- **"Edit code" on a legend row opens the code the indicator runs now.** After an in-place
+  code update, a legend action still received the code the indicator was added with.
+- **Refreshing actions keeps open side panels as they are.** `refreshActions()` rebuilt
+  every contributed side panel, losing whatever it held (an editor's undo history and
+  error markers, for example). Panels whose registration did not change now stay mounted.
+
 ## [0.8.1]
 
 ### Changed

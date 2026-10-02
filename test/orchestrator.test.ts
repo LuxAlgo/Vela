@@ -228,26 +228,43 @@ class MockEngine implements ScriptingEngine {
         // `// inputs: A,B` declares that input set (default: one `Length`) — how a code update
         // that renames/adds/drops inputs is expressed to this engine.
         const keys = /\/\/ inputs:\s*([\w,]+)/.exec(source)?.[1]?.split(',') ?? ['Length'];
+        // `// default: N` declares every input's default (14 otherwise); `// runtime-broken`
+        // compiles but fails as it runs — synchronously inside execute, or `-async` a turn later.
+        const defval = Number(/\/\/ default:\s*(\d+)/.exec(source)?.[1] ?? 14);
+        const runtimeBroken = /\/\/ runtime-broken-async/.test(source) ? 'async' : /\/\/ runtime-broken/.test(source) ? 'sync' : null;
         return Promise.resolve({
             language: 'pine',
-            inputs: keys.map((key) => ({ key, title: key, type: 'int', defval: 14 })),
+            inputs: keys.map((key) => ({ key, title: key, type: 'int', defval })),
             meta: { title: 'Mock', overlay, ...(this.declareShortTitle ? { shorttitle: this.declareShortTitle } : {}) },
             reactsToViewport,
-            token: { instanceId, overlay },
+            token: { instanceId, overlay, runtimeBroken },
         });
     }
 
+    /** The `Length` input each emitted run computed with, per instance — proves single passes. */
+    runLengths: Record<string, number[]> = {};
+
     execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
-        const token = req.prepared.token as { instanceId: string; overlay: boolean };
+        const token = req.prepared.token as { instanceId: string; overlay: boolean; runtimeBroken?: 'sync' | 'async' | null };
         const id = token.instanceId;
         let inputs = req.inputs;
         let stopped = false;
         const emit = (): void => {
             if (stopped) return;
             this.runCount[id] = (this.runCount[id] ?? 0) + 1;
+            (this.runLengths[id] ??= []).push(Number(inputs?.Length ?? NaN));
             handlers.onModel(this.buildModel(req.prepared, req.getBars?.() ?? req.bars, inputs));
             handlers.onDone?.();
         };
+
+        if (token.runtimeBroken) {
+            const failNow = (): void => {
+                if (!stopped) handlers.onError?.(new Error('mock: runtime error'));
+            };
+            if (token.runtimeBroken === 'sync') failNow();
+            else queueMicrotask(failNow);
+            return { stop: () => { stopped = true; }, update: () => {}, setVisibleRange: () => {}, notifyBars: () => {} };
+        }
 
         // Live: don't emit until the test drives a tick via emitStream().
         if (req.mode === 'live') {
@@ -285,7 +302,9 @@ class MockEngine implements ScriptingEngine {
     /** Test helper: simulate a live stream emitting a fresh model (initial run or a live tick). */
     emitStream(instanceId: string): void {
         const s = this.liveSinks[instanceId];
-        if (s) s.handlers.onModel(this.buildModel(s.req.prepared, s.req.getBars?.() ?? s.req.bars, s.inputs));
+        if (!s) return;
+        (this.runLengths[instanceId] ??= []).push(Number(s.inputs?.Length ?? NaN));
+        s.handlers.onModel(this.buildModel(s.req.prepared, s.req.getBars?.() ?? s.req.bars, s.inputs));
     }
 
     private buildModel(prepared: PreparedScript, bars: OHLCV[], inputs?: Record<string, InputValue>): IndicatorModel {
@@ -2893,5 +2912,169 @@ describe('handle.updateCode — the same indicator runs new code', () => {
         expect(ind.source).toBe(OVERLAY_V2 + '\n// inputs: B');
         expect(ind.inputs.map((i) => i.key)).toEqual(['B']);
         expect(engine.runCount[ind.id]).toBe(runsBefore + 1); // the superseded edit never executed
+    });
+});
+
+describe('handle.updateCode — the outcome, rollback and declared defaults', () => {
+    const V1 = '//@version=5\nindicator("A", overlay=true)\nplot(close)';
+    const V2 = '//@version=5\nindicator("A", overlay=true)\nplot(open)';
+
+    async function makeChart(opts: { live?: boolean } = {}) {
+        const renderer = new FakeRenderer();
+        const engine = new MockEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: opts.live ?? false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        await chart.ready();
+        await flush();
+        return { chart, renderer, engine };
+    }
+
+    /** Run `fn` with console.error silenced — failures log by design. */
+    async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+        const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            return await fn();
+        } finally {
+            spy.mockRestore();
+        }
+    }
+
+    it('resolves ok once the new code has run, and an unchanged source resolves at once', async () => {
+        const { chart, engine } = await makeChart();
+        const ind = chart.addIndicator(V1);
+        await flush();
+        const runsBefore = engine.runCount[ind.id]!;
+        await expect(ind.updateCode(V2)).resolves.toEqual({ ok: true, error: null });
+        expect(engine.runCount[ind.id]).toBe(runsBefore + 1);
+        await expect(ind.updateCode(V2)).resolves.toEqual({ ok: true, error: null });
+        expect(engine.runCount[ind.id]).toBe(runsBefore + 1);
+    });
+
+    it('an edited input survives; one still on its old default takes the NEW default — computed once', async () => {
+        const { chart, engine } = await makeChart();
+        const ind = chart.addIndicator(V1 + '\n// inputs: Length,Speed');
+        await flush();
+        ind.setInput('Speed', 21); // the user's edit
+        await flush();
+        const runsBefore = engine.runLengths[ind.id]!.length;
+
+        const result = await ind.updateCode(V2 + '\n// inputs: Length,Speed\n// default: 20');
+        expect(result.ok).toBe(true);
+        expect(ind.inputValues()).toEqual({ Length: 20, Speed: 21 });
+        // Exactly one run of the new code, already with its final values — never a pass
+        // with the old default first.
+        expect(engine.runLengths[ind.id]!.slice(runsBefore)).toEqual([20]);
+    });
+
+    it('a runtime failure on trial puts the previous code back with its values — no second instance', async () => {
+        const { chart, renderer, engine } = await makeChart();
+        const ind = chart.addIndicator(V1);
+        await flush();
+        ind.setInput('Length', 21);
+        await flush();
+        const errors: string[] = [];
+        ind.on('error', ({ error }) => errors.push(error.message));
+        const runsBefore = engine.runCount[ind.id]!;
+
+        const result = await quietly(() => ind.updateCode(V2 + '\n// default: 20\n// runtime-broken'));
+        await flush();
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toBe('mock: runtime error');
+        expect(errors).toEqual(['mock: runtime error']);
+        expect(ind.source).toBe(V1); // the working code is back…
+        expect(ind.inputValues()).toEqual({ Length: 21 }); // …with the user's values
+        expect(ind.inputs.map((i) => i.defval)).toEqual([14]); // …and its own schema
+        expect(engine.runCount[ind.id]).toBe(runsBefore + 1); // and it runs again
+        expect(engine.runLengths[ind.id]!.slice(-1)).toEqual([21]);
+        expect(chart.indicators().map((h) => h.id)).toEqual([ind.id]);
+        expect(renderer.removed).not.toContain(ind.id);
+    });
+
+    it('an asynchronous runtime failure on a live chart restarts the previous stream', async () => {
+        const { chart, engine } = await makeChart({ live: true });
+        const ind = chart.addIndicator(V1);
+        await flush();
+        engine.emitStream(ind.id);
+        await flush();
+
+        const result = await quietly(() => ind.updateCode(V2 + '\n// runtime-broken-async'));
+        expect(result.ok).toBe(false);
+        expect(ind.source).toBe(V1);
+        expect(engine.streamStops[ind.id]).toBe(1); // the original stream stopped for the trial…
+        expect(engine.streamStarts[ind.id]).toBe(2); // …and was opened again afterwards
+        engine.emitStream(ind.id);
+        await flush();
+        expect(chart.indicators()).toHaveLength(1);
+    });
+
+    it('a compile failure resolves ok: false and never touches the running script', async () => {
+        const { chart, engine } = await makeChart({ live: true });
+        const ind = chart.addIndicator(V1);
+        await flush();
+        engine.emitStream(ind.id);
+        await flush();
+        const result = await quietly(() => ind.updateCode(V2 + '\n// broken'));
+        expect(result).toEqual({ ok: false, error: expect.objectContaining({ message: 'mock: syntax error' }) });
+        expect(engine.streamStops[ind.id] ?? 0).toBe(0);
+        expect(ind.source).toBe(V1);
+    });
+
+    it('a hidden indicator resolves after the compile check, without computing', async () => {
+        const { chart, engine } = await makeChart();
+        const ind = chart.addIndicator(V1);
+        await flush();
+        ind.setVisible(false);
+        const runsBefore = engine.runCount[ind.id]!;
+        await expect(ind.updateCode(V2)).resolves.toEqual({ ok: true, error: null });
+        expect(ind.source).toBe(V2);
+        expect(engine.runCount[ind.id]).toBe(runsBefore);
+        // …and a hidden update that does not compile still says so.
+        const failed = await quietly(() => ind.updateCode(V2 + '\n// broken'));
+        expect(failed.ok).toBe(false);
+        expect(ind.source).toBe(V2);
+    });
+
+    it('hiding or removing mid-trial settles the pending update', async () => {
+        const { chart, engine } = await makeChart({ live: true });
+        const a = chart.addIndicator(V1);
+        const b = chart.addIndicator(V1);
+        await flush();
+        engine.emitStream(a.id);
+        engine.emitStream(b.id);
+        await flush();
+
+        const hidden = a.updateCode(V2); // live: on trial until the stream emits
+        const removed = b.updateCode(V2);
+        await flush();
+        a.setVisible(false);
+        b.remove();
+        await expect(hidden).resolves.toEqual({ ok: true, error: null });
+        expect((await removed).ok).toBe(false);
+    });
+
+    it('two quick edits settle together, with the outcome of the latest', async () => {
+        const { chart } = await makeChart();
+        const ind = chart.addIndicator(V1);
+        await flush();
+        const first = ind.updateCode(V2 + '\n// inputs: A');
+        const second = ind.updateCode(V2 + '\n// inputs: B');
+        await expect(Promise.all([first, second])).resolves.toEqual([
+            { ok: true, error: null },
+            { ok: true, error: null },
+        ]);
+        expect(ind.inputs.map((i) => i.key)).toEqual(['B']);
+    });
+
+    it('a native indicator resolves ok: false', async () => {
+        const { chart } = await makeChart();
+        registerNativeIndicator(testNativeDescriptor);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const native = chart.addNativeIndicator(testNativeDescriptor.type);
+            await flush();
+            expect((await native.updateCode(V1)).ok).toBe(false);
+        } finally {
+            warn.mockRestore();
+            unregisterNativeIndicator(testNativeDescriptor.type);
+        }
     });
 });

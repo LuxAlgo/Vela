@@ -557,8 +557,9 @@ registerLegendAction({
 ```
 
 - `ind` is a {@link LegendIndicatorInfo}: `{ id, title, source? }` — `source` is the
-  script the indicator was added with (also exposed as `handle.source`), and is
-  `undefined` for native indicators, which is the usual `when` gate.
+  script the indicator runs NOW (the same as `handle.source`, read at click time, so an
+  in-place `updateCode` shows through), and is `undefined` for native indicators, which
+  is the usual `when` gate.
 - The descriptor resolves **per row, per click**: `when` re-evaluates as rows appear, and
   `run` receives a fresh context each time.
 - Register at import time; after a late registration call `refreshActions()` (both shells
@@ -634,6 +635,7 @@ registerSidePanel({
     minWidth: 240,
     maxWidth: 560,
     overlay: false,              // true floats the panel OVER the chart (with a pin to dock it)
+    maximizable: false,          // true adds a Maximize/Restore button to the header
     mount: (ctx, body, header) => {
         const list = document.createElement('div');
         body.appendChild(list);                       // `body` is the panel's scrolling area
@@ -665,12 +667,20 @@ registerSidePanel({
   after all (the chart makes room), released, it floats again — the user's choice, saved with
   the shell's state next to the widths. Resizing and width persistence work the same way in
   both placements.
+- **A panel can be maximized.** With `maximizable: true` the header carries a Maximize button
+  that spreads the panel over every chart of the shell, whatever its placement, and turns
+  into Restore. The contribution drives the same state from code — `header.setMaximized(on)`,
+  read back through `header.maximized`. It is a moment, not a placement: it is not
+  persisted, and closing the panel restores it. Pick it for panels that are sometimes the
+  main work surface (an editor).
 - **The dock is exclusive.** Opening a panel closes the one showing — the chart keeps its
   width, and only one column is ever docked. `onOpen` is where a lazy panel renders.
 - **`onChart` is the rebind hook**, not a one-shot: the widget hands over a new chart instance
   after a symbol/timeframe rebuild, and a workspace re-points the panel at the active cell.
-- Register at import time; after a late registration call `widget.refreshActions()` (an open
-  contributed panel stays open across the rebuild).
+- Register at import time; after a late registration call `widget.refreshActions()`. Only
+  what changed is rebuilt: a panel whose descriptor is still registered as it was stays
+  mounted as it is — content, state and open column included — while a re-registered
+  (replaced) descriptor is rebuilt, and an open one stays open.
 - A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
   than taking the shell down.
 
