@@ -19,6 +19,7 @@ import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezon
 import { closeOpenPopovers } from '../../../ui/components/popover';
 import { closeWidthPopover } from '../../../ui/components/glyph-select';
 import { Dialog } from '../../../ui/components/dialog';
+import { Menu, type MenuItemDescriptor } from '../../../ui/components/menu';
 import { overlayScrollbarCss } from '../../../ui/styles';
 import {
     fieldGrid,
@@ -27,7 +28,7 @@ import {
     fieldSeparator,
     buildFieldControl,
 } from '../../../ui/components/field';
-import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
+import { priceStyleIds, hasOwnCandlePaint, mergeConfig } from '../core/chartConfig';
 import { chromeHint } from '../../shared/chrome-tooltip';
 import {
     filterHiddenHostRows,
@@ -41,6 +42,9 @@ import {
 } from './settings-visibility';
 import type { MarkGroup } from '../../../core/marks/types';
 import { markGroupRows } from '../../../core/marks/visibility';
+
+/** localStorage entry holding the named templates (`{ [name]: ChartConfig }`). */
+const TEMPLATES_KEY = 'vela-chart-templates';
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -93,7 +97,7 @@ function styleLabel(id: string): string {
 }
 
 const SD_STYLE_ID = 'vela-settings-controls';
-const SD_STYLE_REV = '6';
+const SD_STYLE_REV = '7';
 
 /**
  * The dialog's surface palette. It follows the STABLE chrome surface (the tokens written on
@@ -123,6 +127,8 @@ ${overlayScrollbarCss('.vela-sd-pane')}
 .vela-sd-tab.on{background:var(--vela-active);color:var(--vela-fg-bright);}
 .vela-sd-btn{height:30px;padding:0 14px;font-size:var(--vela-font-size-md);color:var(--vela-fg);background:var(--vela-surface-sunken);border:1px solid var(--vela-border);border-radius:var(--vela-radius-md);cursor:pointer;font-family:inherit;transition:background var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-sd-btn:hover{background:var(--vela-hover);border-color:var(--vela-border-strong);color:var(--vela-fg-bright);}
+/* Footer Template dropdown trigger: label + chevron, the reference footer's left-hand control. */
+.vela-sd-tpl{display:inline-flex;align-items:center;gap:6px;padding-right:9px;}
 .vela-sd-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;border-radius:var(--vela-radius-sm);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-sd-close:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
 /* Rows/blocks gated away by chart-type conditions, TOC filters, or the instance strip.
@@ -201,6 +207,8 @@ export class SettingsDialog {
     private onChange: ((patch: ConfigPatch) => void) | null = null;
     private onImport: ((json: unknown) => void) | null = null;
     private onReset: (() => void) | null = null;
+    /** The footer's Template dropdown (defaults / save as / saved templates). */
+    private tplMenu: Menu | null = null;
     private config: ChartConfig | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
@@ -352,12 +360,20 @@ export class SettingsDialog {
             closeOnBackdrop: true,
             footer: (foot) => {
                 foot.style.cssText = `padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;`;
-                const resetBtn = document.createElement('button');
-                resetBtn.type = 'button';
-                resetBtn.textContent = 'Reset defaults';
-                resetBtn.className = 'vela-sd-btn';
-                resetBtn.addEventListener('click', () => this.onReset?.());
-                foot.appendChild(resetBtn);
+                // One dropdown holds the whole-document actions: factory defaults, saving the
+                // current look under a name, and re-applying a saved one.
+                const tplBtn = document.createElement('button');
+                tplBtn.type = 'button';
+                tplBtn.className = 'vela-sd-btn vela-sd-tpl';
+                tplBtn.innerHTML = `<span>Template</span>${iconAt('chevron-down', 14)}`;
+                foot.appendChild(tplBtn);
+                this.tplMenu = new Menu({
+                    trigger: tplBtn,
+                    host: this.container,
+                    placement: 'top-start',
+                    items: this.templateItems(),
+                    onSelect: (id) => this.onTemplate(id),
+                });
             },
             // A close signal may only close ITS OWN dialog: the machine reports the exit
             // asynchronously, so a close-then-reopen in one tick would otherwise see the
@@ -820,6 +836,8 @@ export class SettingsDialog {
         this.ui = null;
         this.root = null;
         this.toggleRail = null;
+        this.tplMenu?.destroy();
+        this.tplMenu = null;
         this.tabs = [];
         for (const dispose of this.hintTips) dispose(); // a tip open at close time must not outlive its row
         this.hintTips = [];
@@ -839,7 +857,58 @@ export class SettingsDialog {
     }
 
     private emit(patch: ConfigPatch): void {
+        if (this.config) this.config = mergeConfig(this.config, patch); // keep the snapshot current for "Save as"
         this.onChange?.(patch);
+    }
+
+    // ── templates: named snapshots of the whole config document ──
+    // ponytail: plain localStorage; route through the host's storage adapter if a
+    // server-backed host needs its templates to roam.
+    private readTemplates(): Record<string, ChartConfig> {
+        try {
+            return JSON.parse(localStorage.getItem(TEMPLATES_KEY) ?? '{}') as Record<string, ChartConfig>;
+        } catch {
+            return {};
+        }
+    }
+
+    private writeTemplates(all: Record<string, ChartConfig>): void {
+        try {
+            localStorage.setItem(TEMPLATES_KEY, JSON.stringify(all));
+        } catch {
+            /* quota / privacy mode: the template lives for this dialog only */
+        }
+        this.tplMenu?.setItems(this.templateItems());
+    }
+
+    private templateItems(): MenuItemDescriptor[] {
+        const names = Object.keys(this.readTemplates()).sort((a, b) => a.localeCompare(b));
+        const items: MenuItemDescriptor[] = [
+            { id: 'defaults', label: 'Apply defaults' },
+            { id: 'save', label: 'Save as…' },
+        ];
+        names.forEach((n, i) => items.push({ id: `tpl:${n}`, label: n, separatorBefore: i === 0 }));
+        if (names.length > 0) {
+            items.push({ id: 'remove', label: 'Remove', separatorBefore: true, submenu: names.map((n) => ({ id: `rm:${n}`, label: n })) });
+        }
+        return items;
+    }
+
+    private onTemplate(id: string): void {
+        if (id === 'defaults') {
+            this.onReset?.();
+        } else if (id === 'save') {
+            const name = window.prompt('Template name')?.trim();
+            if (!name || !this.config) return;
+            this.writeTemplates({ ...this.readTemplates(), [name]: this.config });
+        } else if (id.startsWith('tpl:')) {
+            const tpl = this.readTemplates()[id.slice(4)];
+            if (tpl) this.onImport?.(tpl);
+        } else if (id.startsWith('rm:')) {
+            const all = this.readTemplates();
+            delete all[id.slice(3)];
+            this.writeTemplates(all);
+        }
     }
 
     /** In-pane section title. The generous top margin is what separates groups. */
