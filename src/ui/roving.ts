@@ -34,6 +34,10 @@ export function rovingToolbar(bar: HTMLElement, selector = 'button'): () => void
             case 'End':
                 next = list.length - 1;
                 break;
+            case 'Escape':
+                // Leave keyboard navigation: nothing focused, like closing a menu.
+                (ev.target as HTMLElement).blur();
+                return;
             default:
                 return;
         }
@@ -53,4 +57,21 @@ export function rovingToolbar(bar: HTMLElement, selector = 'button'): () => void
         bar.removeEventListener('focusin', onFocusIn);
         bar.removeEventListener('keydown', onKey);
     };
+}
+
+/**
+ * Move focus to the next (`dir` 1) or previous (-1) region after the one holding `from`,
+ * wrapping at the ends; from outside every region, the first (or last) one. A region's
+ * head is its roving tabindex-0 element, else its first button or link, else itself.
+ * Returns false when there was nothing to focus.
+ */
+export function focusRegion(regions: HTMLElement[], from: Element | null, dir: 1 | -1): boolean {
+    if (regions.length === 0) return false;
+    const idx = from ? regions.findIndex((r) => r.contains(from)) : -1;
+    const start = idx < 0 ? (dir === 1 ? 0 : regions.length - 1) : (idx + dir + regions.length) % regions.length;
+    const region = regions[start];
+    if (!region) return false;
+    const head = region.querySelector<HTMLElement>('[tabindex="0"], button, a[href]') ?? region;
+    head.focus({ preventScroll: true });
+    return true;
 }

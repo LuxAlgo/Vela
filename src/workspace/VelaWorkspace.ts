@@ -17,6 +17,7 @@ import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
 import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
+import { focusRegion } from '../ui/roving';
 import { Menu } from '../ui/components/menu';
 import type { Vela } from '../Vela';
 import { Topbar, priceStyleLabel, priceStyleIcon } from '../widget/topbar';
@@ -394,21 +395,54 @@ export class VelaWorkspace {
     private extState: Record<string, unknown> = {};
     /** The single grid-wide attribution mark — re-inked on a live theme swap. */
     private attributionMark: HTMLElement | null = null;
-    private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
-
-    /** In a multi-chart grid, Tab on a chart surface moves to the next chart and wraps at
-     *  the end; Shift+Tab moves back, and from the first chart falls through to the browser
-     *  so focus can still leave the grid. Single-chart and maximized grids keep native Tab. */
-    private readonly onGridKeydown = (ev: KeyboardEvent): void => {
-        if (ev.key !== 'Tab' || ev.ctrlKey || ev.metaKey || ev.altKey) return;
-        if ((ev.target as HTMLElement).tagName !== 'CANVAS') return;
-        const cells = this.cells().filter((c) => c.host.style.visibility !== 'hidden');
-        const idx = cells.findIndex((c) => c.host.contains(ev.target as Node));
-        if (cells.length < 2 || idx < 0) return;
-        if (ev.shiftKey && idx === 0) return;
-        ev.preventDefault();
-        cells[(idx + (ev.shiftKey ? -1 : 1)) % cells.length]?.focus();
+    private readonly onRootKeydown = (ev: KeyboardEvent): void => {
+        if (!this.routeTab(ev)) this.routeTyping(ev);
     };
+
+    /** Alt+Tab with nothing of the workspace focused enters keyboard navigation at the
+     *  active chart (the root listener never sees a keystroke aimed at the page body). */
+    private readonly onDocKeydown = (ev: KeyboardEvent): void => {
+        if (this.destroyed || ev.key !== 'Tab' || !ev.altKey || ev.ctrlKey || ev.metaKey) return;
+        if (this.root.contains(this.root.ownerDocument.activeElement)) return;
+        ev.preventDefault();
+        this.active.focus();
+    };
+
+    /**
+     * Tab switches charts and nothing else: in a multi-chart grid it moves to the next
+     * chart and wraps, Shift+Tab moves back; on a single chart or a bar it is swallowed.
+     * Alt+Tab / Alt+Shift+Tab walk the regions (top bar, drawing toolbar, each chart, the
+     * open side panel, bottom bar) and wrap. Fields, dialogs and menus keep native Tab.
+     * Returns true when the keystroke was handled.
+     */
+    private routeTab(ev: KeyboardEvent): boolean {
+        if (ev.key !== 'Tab' || ev.ctrlKey || ev.metaKey || isEditableTarget(ev)) return false;
+        const target = ev.target as HTMLElement;
+        if (ev.altKey) {
+            ev.preventDefault();
+            focusRegion(this.regions(), target, ev.shiftKey ? -1 : 1);
+            return true;
+        }
+        if (target.tagName === 'CANVAS') {
+            ev.preventDefault();
+            const cells = this.cells().filter((c) => c.host.style.visibility !== 'hidden');
+            const idx = cells.findIndex((c) => c.host.contains(target));
+            if (cells.length > 1 && idx >= 0) cells[(idx + (ev.shiftKey ? cells.length - 1 : 1)) % cells.length]?.focus();
+            return true;
+        }
+        if (target.closest('[role="toolbar"]')) {
+            ev.preventDefault();
+            return true;
+        }
+        return false;
+    }
+
+    /** The keyboard regions in Alt+Tab order, visible ones only. */
+    private regions(): HTMLElement[] {
+        const cells = this.cells().filter((c) => c.host.style.visibility !== 'hidden').map((c) => c.host);
+        const panel = this.root.querySelector<HTMLElement>('.vela-panel:not([hidden])');
+        return [this.topbar.el, this.drawToolbar?.root, ...cells, panel, this.bottombar?.el].filter((el): el is HTMLElement => !!el && el.offsetParent !== null);
+    }
 
     constructor(container: HTMLElement | string, opts: VelaWorkspaceOptions = {}) {
         registerBuiltinLayouts(); // idempotent — pickers and `layout` ids resolve from the registry
@@ -592,7 +626,6 @@ export class VelaWorkspace {
         }
         this.gridEl = doc.createElement('div');
         this.gridEl.className = 'vela-ws-grid';
-        this.gridEl.addEventListener('keydown', this.onGridKeydown);
         main.appendChild(this.gridEl);
         // One dock for the WHOLE grid (the panels follow the active cell), owning the built-ins,
         // the contributed panels, the single-open rule and the topbar's toggle group.
@@ -762,6 +795,7 @@ export class VelaWorkspace {
         // Shortcut hints beside the bound tools in the shared toolbar's flyouts.
         this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap));
         this.root.addEventListener('keydown', this.onRootKeydown);
+        this.root.ownerDocument.addEventListener('keydown', this.onDocKeydown);
         this.root.tabIndex = -1; // focusable host so bare keystrokes land here
 
         this.cellBackend = this.backendFor(this.def);
@@ -1332,7 +1366,7 @@ export class VelaWorkspace {
         }
         this.attachmentDisposers.clear();
         this.root.removeEventListener('keydown', this.onRootKeydown);
-        this.gridEl.removeEventListener('keydown', this.onGridKeydown);
+        this.root.ownerDocument.removeEventListener('keydown', this.onDocKeydown);
         this.keymap.destroy();
         this.drawToolbar?.destroy();
         this.topbar.destroy();

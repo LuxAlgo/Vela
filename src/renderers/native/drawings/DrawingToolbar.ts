@@ -44,7 +44,7 @@ export interface DrawingToolbarOptions {
  * island).
  */
 export class DrawingToolbar {
-    private readonly root: HTMLDivElement;
+    readonly root: HTMLDivElement;
     private def: ToolbarDefinition = { groups: [] };
     private active: DrawingTypeKey | null = null;
     private readonly lastUsed = new Map<string, DrawingTypeKey>();

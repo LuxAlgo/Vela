@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Roving tabindex on a bar: one Tab stop, arrows move inside and wrap, Home/End jump.
 import { describe, it, expect } from 'vitest';
-import { rovingToolbar } from '../src/ui/roving';
+import { rovingToolbar, focusRegion } from '../src/ui/roving';
 
 function bar(n: number): { el: HTMLElement; btns: HTMLButtonElement[] } {
     const el = document.createElement('div');
@@ -47,5 +47,34 @@ describe('rovingToolbar', () => {
         dispose();
         key(b0, 'ArrowRight');
         expect(document.activeElement).toBe(b0);
+    });
+
+    it('drops focus on Escape, leaving keyboard navigation', () => {
+        const { el, btns } = bar(2);
+        rovingToolbar(el);
+        const b0 = btns[0];
+        if (!b0) throw new Error('bar(2) built no buttons');
+        b0.focus();
+        key(b0, 'Escape');
+        expect(document.activeElement).toBe(document.body);
+    });
+});
+
+describe('focusRegion', () => {
+    it('walks the regions in order, wrapping, and enters at the first from outside', () => {
+        const a = bar(2), b = bar(1), c = bar(3);
+        for (const r of [a, b, c]) rovingToolbar(r.el);
+        const regions = [a.el, b.el, c.el];
+        expect(focusRegion(regions, null, 1)).toBe(true);
+        expect(document.activeElement).toBe(a.btns[0]);
+        focusRegion(regions, document.activeElement, 1);
+        expect(document.activeElement).toBe(b.btns[0]);
+        focusRegion(regions, document.activeElement, 1);
+        expect(document.activeElement).toBe(c.btns[0]);
+        focusRegion(regions, document.activeElement, 1);
+        expect(document.activeElement).toBe(a.btns[0]);
+        focusRegion(regions, document.activeElement, -1);
+        expect(document.activeElement).toBe(c.btns[0]);
+        expect(focusRegion([], null, 1)).toBe(false);
     });
 });
