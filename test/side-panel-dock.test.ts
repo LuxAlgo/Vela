@@ -21,7 +21,9 @@ interface StubEl {
     appendChild(node: StubEl): StubEl;
     replaceChildren(...nodes: StubEl[]): void;
     setAttribute(name: string, value: string): void;
+    querySelectorAll(selector: string): StubEl[];
     addEventListener(type: string, fn: (e: unknown) => void): void;
+    removeEventListener(type: string, fn: (e: unknown) => void): void;
     setPointerCapture(id: number): void;
     releasePointerCapture(id: number): void;
     remove(): void;
@@ -51,7 +53,9 @@ function stubDoc(): { doc: unknown; root: StubEl } {
                 appendChild: (node) => (el.children.push(node), node),
                 replaceChildren: (...nodes) => void el.children.splice(0, el.children.length, ...nodes),
                 setAttribute: () => {},
+                querySelectorAll: () => [],
                 addEventListener: (type, fn) => void el.listeners.set(type, [...(el.listeners.get(type) ?? []), fn]),
+                removeEventListener: () => {},
                 setPointerCapture: () => {},
                 releasePointerCapture: () => {},
                 remove: () => {},

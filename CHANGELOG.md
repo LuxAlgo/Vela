@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Keyboard navigation across the workspace.** Tab cycles the charts of a multi-chart
+  grid, and each bar is one Tab stop whose controls the arrow keys walk. Alt+Tab (or
+  Alt+` where the system keeps Alt+Tab) steps through the regions: chart, its legend rows,
+  the next chart, the bars and the side panel. A focused legend row opens like a hovered
+  one, and the arrows reach its Hide, Settings, Move and Remove buttons. Every control
+  shows one accent focus ring, and a focused chart draws it around the whole cell.
+
 ## [0.8.1]
 
 ### Changed

@@ -12,6 +12,7 @@
 // its header: pinned, it docks as a column after all; the choice is the user's and persists
 // with the dock state.
 import { injectStyles } from '../ui/styles';
+import { rovingToolbar } from '../ui/roving';
 import { iconEl } from '../ui/icons';
 
 const STYLE_ID = 'vela-widget-sidepanel';
@@ -165,6 +166,7 @@ export function clampPanelWidth(px: number, min = DEFAULT_PANEL_MIN_WIDTH, max =
 
 export class SidePanel {
     readonly el: HTMLElement;
+    private readonly disposeRoving: () => void;
     /**
      * Notified whenever the panel opens or closes, by ANY path — a topbar toggle, the header ✕,
      * or another panel taking the dock. The owning shell reflects it on its chrome, so a button's
@@ -201,6 +203,7 @@ export class SidePanel {
         this.widthPx = this.declaredWidth;
         this.el = doc.createElement('div');
         this.el.className = `vela-panel ${modifier}`;
+        this.disposeRoving = rovingToolbar(this.el);
         this.el.hidden = true;
         this.floatable = opts.overlay === true;
         this.overlayOn = this.floatable;
@@ -309,6 +312,7 @@ export class SidePanel {
     }
 
     destroy(): void {
+        this.disposeRoving();
         this.el.remove();
     }
 

@@ -4,6 +4,7 @@ import type { VelaTheme, MoveTarget } from '../../core/options';
 import { withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
+import { rovingToolbar } from '../../ui/roving';
 import { attachChromeTooltip } from './chrome-tooltip';
 import { Menu, type MenuItemDescriptor } from '../../ui/components/menu';
 import { CalloutBubble } from '../../ui/components/callout-bubble';
@@ -142,6 +143,7 @@ export function legendCalloutsDisplay(open: boolean, hasCallouts: boolean): 'inl
  */
 export class InputsUI {
     private readonly legends = new Map<string, HTMLElement>(); // paneId → legend container
+    private readonly legendRoving = new Map<string, () => void>();
     private readonly rows = new Map<string, LegendRow>();
     private readonly inputsDialog: IndicatorInputsDialog;
     /** The legend row the user has clicked to select (gets a neutral outline); null when none. */
@@ -553,7 +555,7 @@ export class InputsUI {
         this.syncFoldToggle(); // a moved row must follow the fold state in its new pane
         if (prev !== 'price') {
             const lg = this.legends.get(prev);
-            if (lg && lg.childElementCount === 0) { lg.remove(); this.legends.delete(prev); }
+            if (lg && lg.childElementCount === 0) this.dropLegend(prev);
         }
     }
 
@@ -564,6 +566,19 @@ export class InputsUI {
             // Tag with the pane id so a host app can locate each pane's legend (and thus
             // its on-screen bounds) — e.g. to re-anchor its own per-pane overlays.
             lg.dataset.velaPane = paneId;
+            // Keyboard: the legend is one region — arrows move row to row and across a
+            // row's controls; a focused row opens like a hovered one so they are reachable.
+            this.legendRoving.set(paneId, rovingToolbar(lg, '[data-vela-row], button'));
+            lg.addEventListener('focusin', (ev) => {
+                const id = (ev.target as HTMLElement).closest<HTMLElement>('[data-vela-row]')?.dataset.velaRow;
+                if (id) this.setRowHighlighted(id, true);
+            });
+            lg.addEventListener('focusout', (ev) => {
+                const rowEl = (ev.target as HTMLElement).closest<HTMLElement>('[data-vela-row]');
+                const id = rowEl?.dataset.velaRow;
+                if (!rowEl || !id || rowEl.contains(ev.relatedTarget as Node | null)) return;
+                if (this.selectedId !== id) this.setRowHighlighted(id, false);
+            });
             lg.style.cssText =
                 'position:absolute;left:10px;z-index:5;display:flex;flex-direction:column;align-items:flex-start;gap:0;pointer-events:none;font:12px -apple-system,Segoe UI,sans-serif;';
             // Chart-theme tokens so action-button hovers wash against the plot surface the
@@ -708,6 +723,7 @@ export class InputsUI {
         // therefore exist as soon as a legend row does — not only once a dialog has opened.
         ensureDialogStyles();
         const el = document.createElement('div');
+        el.dataset.velaRow = id;
         // Idle rows are translucent chips sized by their title (status dot and controls are
         // hidden) — enough wash to keep the label legible when candles reach it, without a
         // solid block over the plot. Hovering/selecting fills the chip with the solid chart
@@ -1015,8 +1031,15 @@ export class InputsUI {
         // Drop an emptied non-price pane legend container (the pane itself is gone too).
         if (row && row.paneId !== 'price') {
             const lg = this.legends.get(row.paneId);
-            if (lg && lg.childElementCount === 0) { lg.remove(); this.legends.delete(row.paneId); }
+            if (lg && lg.childElementCount === 0) this.dropLegend(row.paneId);
         }
+    }
+
+    private dropLegend(paneId: string): void {
+        this.legends.get(paneId)?.remove();
+        this.legends.delete(paneId);
+        this.legendRoving.get(paneId)?.();
+        this.legendRoving.delete(paneId);
     }
 
     destroy(): void {
@@ -1029,8 +1052,7 @@ export class InputsUI {
         for (const id of [...this.extrasTips.keys()]) this.disposeTips(this.extrasTips, id);
         for (const id of [...this.calloutTips.keys()]) this.disposeTips(this.calloutTips, id);
         for (const row of this.rows.values()) for (const bubble of row.callouts) bubble.destroy();
-        for (const lg of this.legends.values()) lg.remove();
-        this.legends.clear();
+        for (const paneId of [...this.legends.keys()]) this.dropLegend(paneId);
         this.rows.clear();
         this.foldToggle = null; // its element left with the legend containers
         this.legendFolded = false;

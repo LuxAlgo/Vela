@@ -25,6 +25,9 @@ ${STATIC_DECLS}
     -webkit-user-select: none;
 }
 .vela-ui *, .vela-ui-layer * { box-sizing: border-box; }
+/* Keyboard focus: one accent ring, drawn inside the control so bars and chips keep their
+   box. Mouse focus shows nothing. The chart canvas draws its own ring on the cell overlay. */
+.vela-ui :is(button, a[href], [tabindex]):focus-visible, .vela-ui-layer :is(button, a[href], [tabindex]):focus-visible { outline: 3px solid var(--vela-accent); outline-offset: -3px; }
 /* Text ENTRY is the one exception: selection is part of editing. */
 .vela-ui :is(input, textarea), .vela-ui-layer :is(input, textarea) { user-select: text; -webkit-user-select: text; }
 /* iOS Safari zooms the page when a focused field is under 16px, and often
