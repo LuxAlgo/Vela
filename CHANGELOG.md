@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Chart templates.** The settings dialog's footer has a Template dropdown: save the
+  current look under a name, apply a saved template to any chart, remove one, or restore the
+  defaults. Templates are kept in the browser's local storage. The name is entered in a small
+  card over the dialog rather than a browser prompt.
+
 ## [0.8.1]
 
 ### Changed

@@ -871,8 +871,8 @@ export class SettingsDialog {
     }
 
     // ── templates: named snapshots of the whole config document ──
-    // ponytail: plain localStorage; route through the host's storage adapter if a
-    // server-backed host needs its templates to roam.
+    // Kept in plain localStorage: a template is a per-browser convenience, and a host that
+    // needs templates to roam between devices stores the config document on its own side.
     private readTemplates(): Record<string, ChartConfig> {
         try {
             return JSON.parse(localStorage.getItem(TEMPLATES_KEY) ?? '{}') as Record<string, ChartConfig>;
