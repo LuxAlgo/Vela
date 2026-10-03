@@ -169,9 +169,9 @@ export interface AnimationConfig {
     /** Eased cursor-anchored wheel-zoom: the bar spacing glides toward each wheel notch's
      *  target instead of jumping. Default `true` ({@link ZOOM_EASE_DEFAULT_MS}). */
     zoom?: boolean | number;
-    /** Inertial/kinetic pan — the velocity a drag releases with decays over this
-     *  time-constant (a short, snappy glide by default; `false` stops dead). Default
-     *  `true` ({@link PAN_INERTIA_DEFAULT_MS}). */
+    /** Inertial/kinetic pan on touch — the velocity a finger flick releases with decays
+     *  over this time-constant (a short, snappy glide by default; `false` stops dead). A
+     *  mouse release always stops dead. Default `true` ({@link PAN_INERTIA_DEFAULT_MS}). */
     pan?: boolean | number;
     /** The programmatic scroll glide — the scroll-to-latest button, `chart.panBy`, the
      *  keyboard pan keys — easing the view toward its target at constant zoom. Default:

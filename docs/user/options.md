@@ -104,7 +104,7 @@ capped at 1000 ms.
 | Field | Default | What it eases |
 |---|---|---|
 | `zoom` | `true` (70 ms) | The wheel zoom: bar spacing glides toward each notch's target instead of jumping. Off, the keyboard zoom keys of the widget jump too. |
-| `pan` | `true` (110 ms) | Pan momentum: the velocity a drag releases with decays over this time. `false` = the chart stops dead on release. |
+| `pan` | `true` (110 ms) | Pan momentum on touch: the velocity a finger flick releases with decays over this time. `false` = the chart stops dead on release. A mouse release always stops dead. |
 | `scroll` | follows `pan` (130 ms) | The programmatic scroll glide — the scroll-to-latest button, `chart.panBy`, the keyboard pan keys — easing the view to its target at constant zoom. Left unset it is on whenever `pan` is on, so `{ pan: false }` still means an instant pan everywhere. |
 | `autoscale` | `true` (80 ms) | The price scale's glide toward its new range while a zoom or fling is in flight (off = it snaps every frame). |
 | `liveBar` | `false` | The forming candle (and the current-price line and label) slide toward each live tick instead of snapping: `true` = a 90 ms ease. A new bar always snaps; the crosshair, legend and data window always show the real values. |

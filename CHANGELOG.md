@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **A mouse drag stops where you release it.** Letting go of the chart after a drag no
+  longer carries it on with momentum, so a quick scrub back and forth lands exactly where
+  the pointer stopped. A finger flick on a touch screen still glides to a stop, and the
+  `animations.pan` option now governs that touch glide alone.
+
 ## [0.8.1]
 
 ### Changed
