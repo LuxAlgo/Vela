@@ -27,6 +27,12 @@ describe('native ticks · logPriceTicks', () => {
     });
 });
 
+describe('native ticks · priceTicks', () => {
+    it('returns no ticks when the range is a sub-ulp sliver the step cannot cross', () => {
+        expect(priceTicks(24.43, 24.430000000000003)).toEqual([]);
+    });
+});
+
 describe('native ticks · valueDecimals', () => {
     it('shows fewer decimals as magnitude grows', () => {
         expect(valueDecimals(250)).toBe(0);

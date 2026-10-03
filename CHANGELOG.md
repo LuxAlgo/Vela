@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **A flat price pane no longer freezes the tab.** When every bar in a pane sits on the
+  same price except for a rounding-error sliver (for example an EMA converging on a flat
+  value), the price axis now renders without ticks instead of hanging the tab.
+
 ## [0.8.1]
 
 ### Changed

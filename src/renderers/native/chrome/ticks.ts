@@ -16,6 +16,7 @@ export function priceTicks(min: number, max: number, target = 6): number[] {
     const decimals = Math.max(0, -Math.floor(Math.log10(step)) + 1);
     const out: number[] = [];
     const start = Math.ceil(min / step) * step;
+    if (!(step > 0) || start + step === start) return [];
     for (let v = start; v <= max + step * 1e-6; v += step) {
         out.push(Number(v.toFixed(decimals)));
     }
