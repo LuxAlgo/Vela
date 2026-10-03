@@ -105,6 +105,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private lastBounds = new Map<string, readonly number[]>();
     private selectedIds = new Set<string>(); // selected drawings (handles shown); [first] drives the popup
     private hoveredId: string | null = null; // the drawing under the cursor (its handles show)
+    private hoveredHandleOf: string | null = null; // the drawing one of whose showing handles is under the cursor
     private activeTool: DrawingTypeKey | null = null;
     private activeToolStyle: SerializedDrawing['style'] | undefined; // last-used style for the armed tool (seeds the placement ghost)
     private intentCb: ((i: DrawingIntent) => void) | null = null;
@@ -475,6 +476,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
             }
         }
         this.interaction.down(x, y, snap, shift, mod); // the popup self-dismisses on any outside press
+        if (this.interaction.pressedHandle()) this.render(); // the held handle changes its ring at once
     }
 
     pointerMove(x: number, y: number, snap: SnapMode = 'off', shift = false, mod = false): void {
@@ -497,11 +499,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
      *  selected, so a hovered candidate doesn't already read as selected. */
     private updateHover(x: number, y: number, mod = false): void {
         let id: string | null = null;
+        let handleOf: string | null = null;
         if (!mod && this.activeTool == null && !this.interaction.isPlacing() && !this.interaction.isDragging()) {
             id = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE)?.id ?? null;
+            handleOf = this.interaction.handleAt(x, y)?.id ?? null;
         }
-        if (id !== this.hoveredId) {
+        if (id !== this.hoveredId || handleOf !== this.hoveredHandleOf) {
             this.hoveredId = id;
+            this.hoveredHandleOf = handleOf;
             this.render();
         }
     }
@@ -960,18 +965,20 @@ export class UserDrawingController implements IDrawingsRendererPort {
         // A transparent inline editor overlays the label it edits — mute the canvas copy so the
         // typed text isn't drawn twice (the callout editor is opaque, so its label stays).
         const edited = this.textEditor ? this.editedDrawing(this.textEditor.id) : null;
+        const pressedHandle = this.interaction.pressedHandle();
         const targets: PaintTargets = {
             selected: this.selectedIds,
             hovered: this.hoveredId,
             dragged: this.interaction.activeDragId(),
             mutedLabel: edited instanceof TextLabel ? edited.id : null,
+            handle: pressedHandle ? { id: pressedHandle.id, state: 'clicked' } : this.hoveredHandleOf ? { id: this.hoveredHandleOf, state: 'hovered' } : null,
         };
         // Front (non-interleaved) drawings paint fully here; the ones interleaved into the series
         // stack painted their bodies on the backend layers, so only their handles come back on top
         // — buried under the candles they'd be unusable.
         this.painter.seriesLook = this.deps.seriesLook();
         this.painter.paintAll(ctx, this.drawings.filter((d) => !this.isInterleaved(d)), proj, this.deps.theme(), targets);
-        this.painter.paintHighlights(ctx, this.drawings.filter((d) => this.isInterleaved(d)), proj, handleIdsFor(targets));
+        this.painter.paintHighlights(ctx, this.drawings.filter((d) => this.isInterleaved(d)), proj, handleIdsFor(targets), targets.handle);
         // A Ctrl-drag moves COPIES that are not in the store yet: paint them here, in full and with
         // handles, so they read as the real drawings they are about to become.
         const clones = this.interaction.dragClones();

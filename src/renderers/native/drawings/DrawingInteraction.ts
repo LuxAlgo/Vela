@@ -197,6 +197,21 @@ export class DrawingInteraction {
         return this.state.kind === 'pressed' && this.state.moved ? this.state.id : null;
     }
 
+    /** The handle under an unreleased press (held, whether or not it has moved yet), or null. */
+    pressedHandle(): { id: string; index: number } | null {
+        return this.state.kind === 'pressed' && this.state.handle >= 0 ? { id: this.state.id, index: this.state.handle } : null;
+    }
+
+    /** The showing handle under (x, y) — any selected/hovered drawing's — or null. */
+    handleAt(x: number, y: number): { id: string; index: number } | null {
+        const proj = this.deps.projector();
+        for (const d of this.handleDrawings()) {
+            const index = d.hitHandle(x, y, proj, HIT_TOLERANCE);
+            if (index >= 0) return { id: d.id, index };
+        }
+        return null;
+    }
+
     /** The drawing under a press that has not been released yet (drag or click undecided), or null. */
     pressedId(): string | null {
         return this.state.kind === 'pressed' ? this.state.id : null;
@@ -545,11 +560,9 @@ export class DrawingInteraction {
     /** A showing handle (any selected/hovered drawing) — even off the body, e.g. an ellipse's
      *  bounding-box corners — wins; otherwise the topmost drawing whose body is under (x,y). */
     private hitAt(x: number, y: number): Drawing | null {
-        const proj = this.deps.projector();
-        for (const d of this.handleDrawings()) {
-            if (d.hitHandle(x, y, proj, HIT_TOLERANCE) >= 0) return d;
-        }
-        return topDrawingAt(this.deps.drawings(), x, y, proj, HIT_TOLERANCE);
+        const handle = this.handleAt(x, y);
+        if (handle) return this.byId(handle.id);
+        return topDrawingAt(this.deps.drawings(), x, y, this.deps.projector(), HIT_TOLERANCE);
     }
 
     /** Drawings whose handles are currently shown (selected ∪ hovered) — their handles are grabbable. */
