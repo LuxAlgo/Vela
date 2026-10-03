@@ -92,8 +92,16 @@ function eventMatches(ev: KeyboardEvent, c: Chord): boolean {
         // Shift is part of producing many printable keys ('?', '+') — only enforce it
         // when the chord names a non-printable/letter key where shift is a real modifier.
         (c.key.length > 1 || /^[a-z0-9 ]$/.test(c.key) ? ev.shiftKey === c.shift : true) &&
-        ev.key.toLowerCase() === c.key
+        (ev.key.toLowerCase() === c.key || (c.alt && physicalKey(ev) === c.key))
     );
+}
+
+/** The letter/digit on the physical key (`KeyT` → `'t'`), or null for anything else. On
+ *  macOS the Option key rewrites `ev.key` to a typographic character (`alt+t` arrives as
+ *  `'†'`), so alt chords are matched on the key the finger is on, not the character. */
+function physicalKey(ev: KeyboardEvent): string | null {
+    const m = /^(?:Key|Digit)(\w)$/.exec(ev.code ?? '');
+    return m?.[1]?.toLowerCase() ?? null;
 }
 
 /**

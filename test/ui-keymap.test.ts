@@ -6,6 +6,7 @@ import { KeymapManager } from '../src/ui/keymap';
 
 interface EvInit {
     key: string;
+    code?: string;
     ctrlKey?: boolean;
     metaKey?: boolean;
     altKey?: boolean;
@@ -48,6 +49,16 @@ describe('KeymapManager', () => {
         win.register({ id: 'z', keys: 'mod+z', label: 'Undo', run });
         expect(win.handleKeydown(ev({ key: 'z', ctrlKey: true }))).toBe(true);
         expect(win.handleKeydown(ev({ key: 'z', metaKey: true }))).toBe(false);
+    });
+
+    it('alt chords match on the physical key when Option rewrites the character (mac)', () => {
+        const km = new KeymapManager({ platform: 'mac' });
+        const run = vi.fn();
+        km.register({ id: 'tl', keys: 'alt+t', label: 'Trend line', run });
+        // Option+T on a US mac layout reports key '†' — the chord must still fire.
+        expect(km.handleKeydown(ev({ key: '†', code: 'KeyT', altKey: true }))).toBe(true);
+        expect(km.handleKeydown(ev({ key: '†', code: 'KeyT' }))).toBe(false); // alt required
+        expect(run).toHaveBeenCalledTimes(1);
     });
 
     it('shift is tolerated for printable punctuation keys (e.g. "?" chords)', () => {
