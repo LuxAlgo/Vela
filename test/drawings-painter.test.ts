@@ -68,6 +68,15 @@ describe('DrawingPainter.paintAll handle highlighting', () => {
         expect(arcs()).toBe(2);
     });
 
+    it('a hovered drawing wears a halo on every one of its handles, and on no other drawing', () => {
+        const line = createDrawing('trendline', { id: 'a', paneId: 'price', anchors: [{ time: 10, price: 30 }, { time: 50, price: 60 }] })!;
+        const drawings = [line, hline('b', 50)];
+        const { ctx, arcs } = recordingCtx();
+        const handle = { id: 'a', state: 'hovered' as const };
+        new DrawingPainter().paintAll(ctx, drawings, fakeProjector(), theme, { selected: new Set(['a', 'b']), handle });
+        expect(arcs()).toBe(5); // three discs + a halo on each of a's two handles
+    });
+
     it('paints no handles when nothing is targeted', () => {
         const drawings = [hline('a', 30), hline('b', 50)];
         const { ctx, arcs } = recordingCtx();
