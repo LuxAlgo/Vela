@@ -6,7 +6,7 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
+import { candleTier, CANDLE_WICK_W, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import type { IRenderBackend } from './IRenderBackend';
 import { Batch, type RGBA } from './gl/Batch';
@@ -1104,7 +1104,7 @@ export class WebGL2Backend implements IRenderBackend {
                 b.rect(x, cY - 0.5, tickW, 1, body);
                 continue;
             }
-            const wDev = Math.max(1, Math.round(wickWidth(spacing) * coords.dpr));
+            const wDev = Math.max(1, Math.round(CANDLE_WICK_W * coords.dpr));
             const wx = (Math.round(x * coords.dpr) - (wDev >> 1)) / coords.dpr;
             b.rect(wx, hY, wDev / coords.dpr, lY - hY, parseColor(bc?.wickColor ?? bc?.color ?? (bar.close >= bar.open ? up : down)));
             const top = Math.min(oY, cY);
