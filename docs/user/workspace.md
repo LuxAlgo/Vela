@@ -39,7 +39,7 @@ const ws = new VelaWorkspace('#app', {
 (`providers`, `engines`, `indicators`, `timeframes`, `timezone`, chrome toggles,
 `persist`/`storage`) + the grid's own options (`layout`, `cells`, `sync`,
 `drawingToolbar`, `maxWebglCells`, `alertCap`). A chart option means the same thing
-everywhere: on the widget it configures *the* chart, here it is the *default* of each
+everywhere: on the widget it configures _the_ chart, here it is the _default_ of each
 cell — `upColor`, `glow`, `logScale`, `animations`, `defaultLanguage`, even `renderer`
 all apply to every cell. An explicit `nativeBackend` (other than `'auto'`) wins over
 the `maxWebglCells` budget policy.
@@ -84,24 +84,24 @@ const chart = new VelaWorkspace('#chart', {
 
 A cell's **identity** is its declared name (`btc`, `eth`, … — the keys of `cells`), or
 `c<N>` for a slot no entry declared. It is durable and never content: the symbol,
-timeframe, style, indicators and drawings are mutable state *of that identity*. The
+timeframe, style, indicators and drawings are mutable state _of that identity_. The
 layout's own `c1`…`cN` are slot POSITIONS, and declaration order is what maps an identity
 onto one. Identity is also what survives a layout change, so `4 → 2h → 4` restores the
 third and fourth cells exactly (market, renderer config, drawings, indicators) from the
 workspace pool.
 
 ```ts
-ws.active;               // the ChartCell the shared chrome reflects/acts on
-ws.chart;                // shortcut ≡ ws.active.chart (the widget.chart habit)
-ws.cell('eth');          // a specific cell BY IDENTITY — the durable handle to hold
-ws.cells();              // every live cell, in slot order
+ws.active; // the ChartCell the shared chrome reflects/acts on
+ws.chart; // shortcut ≡ ws.active.chart (the widget.chart habit)
+ws.cell('eth'); // a specific cell BY IDENTITY — the durable handle to hold
+ws.cells(); // every live cell, in slot order
 ws.setActiveCell('sol');
-ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size pool their state
+ws.setLayout('8'); // cells diff BY IDENTITY; identities past the new size pool their state
 // Shrinking never pools the ACTIVE chart: if its slot would leave the layout, it
 // moves into the last surviving slot instead (the other cells keep their order).
-ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also reachable from any cell's chart settings → Canvas → Theme)
-ws.maximizeCell('sol');  // one cell over the whole grid (null restores) — pure presentation,
-ws.maximizedCell;        //  the other cells keep everything; layout/state changes restore
+ws.setTheme('light'); // re-skins the shared chrome + EVERY cell live (also reachable from any cell's chart settings → Canvas → Theme)
+ws.maximizeCell('sol'); // one cell over the whole grid (null restores) — pure presentation,
+ws.maximizedCell; //  the other cells keep everything; layout/state changes restore
 ws.swapCells('btc', 'eth'); // the two cells trade SLOTS (arrangement only — cells untouched)
 ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
 ```
@@ -114,7 +114,7 @@ layout (`cell:destroyed`). Host code that tracks cells should **follow
 
 Layouts live in a registry (`registerLayout` from `@luxalgo/vela/workspace`), and the topbar's
 **layout dropdown** composes them on a 4×4 grid canvas: hover previews the full
-*columns × rows* rectangle from the top-left (the table-insert idiom); a click
+_columns × rows_ rectangle from the top-left (the table-insert idiom); a click
 applies it immediately. Rectangles matching a classic preset (`1`, `2h`, `2v`, `4`,
 `8`) reuse it; anything else gets a self-describing dynamic id (`g3x2` = 3 rows ×
 2 columns) that resolves without registration (persisted picks restore across boots).
@@ -207,8 +207,8 @@ whole grid**, cells created by a later layout change included:
 
 ```ts
 ws.on('script:run', (run) => {
-    run.cell;              // 'btc' — which cell computed
-    run.title;             // the script's declared title
+    run.cell; // 'btc' — which cell computed
+    run.title; // the script's declared title
     if (run.cause === 'bar') persist(run.cell, run.strategy);
 });
 ```
@@ -365,30 +365,30 @@ silently reorder them).
 
 **Shell options** (shared with the widget, same semantics):
 
-| Option | Default | What it does |
-| --- | --- | --- |
-| `providers` | — | Factories; the workspace instantiates ONCE onto the single shared feed. |
-| `engines` | — | Factories; one instance per cell (merged over `registerDefaultEngine`). |
-| `indicators` | — | Shared manifest; `enabled` entries auto-add to fresh cells. |
-| `timeframes` | presets | Topbar timeframe presets. |
-| `timezone` | `'Etc/UTC'` | Display timezone (every cell): an IANA zone, or `'exchange'` — each cell renders in its own market's zone (Chicago for a CME future, New York for a US equity, UTC for crypto), as declared by its provider's symbol metadata. |
-| `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
-| `topbar` | defaults | Declarative topbar composition — `{ left, right }` lists of the VISIBLE entries, in order (see [Composing the topbar](#composing-the-topbar)). |
-| `indicatorPicker` | `true` | **Deprecated (removal in 0.7.0).** `false` removes the built-in indicator dialog's entry points. Replace it with the composition (omit `'indicators'` from `topbar.left` — same effect) or a plugin [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). |
-| `layoutMode` | `'auto'` | Chrome size class — see [Mobile](#mobile). |
-| `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
-| `persist` / `storage` | off / localStorage | State persistence (see above). |
+| Option                                   | Default            | What it does                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `providers`                              | —                  | Factories; the workspace instantiates ONCE onto the single shared feed.                                                                                                                                                                                                                         |
+| `engines`                                | —                  | Factories; one instance per cell (merged over `registerDefaultEngine`).                                                                                                                                                                                                                         |
+| `indicators`                             | —                  | Shared manifest; `enabled` entries auto-add to fresh cells.                                                                                                                                                                                                                                     |
+| `timeframes`                             | presets            | Topbar timeframe presets.                                                                                                                                                                                                                                                                       |
+| `timezone`                               | `'Etc/UTC'`        | Display timezone (every cell): an IANA zone, or `'exchange'` — each cell renders in its own market's zone (Chicago for a CME future, New York for a US equity, UTC for crypto), as declared by its provider's symbol metadata.                                                                  |
+| `statusline` / `watermark` / `bottombar` | `true`             | Chrome toggles.                                                                                                                                                                                                                                                                                 |
+| `topbar`                                 | defaults           | Declarative topbar composition — `{ left, right }` lists of the VISIBLE entries, in order (see [Composing the topbar](#composing-the-topbar)).                                                                                                                                                  |
+| `indicatorPicker`                        | `true`             | **Deprecated (removal in 0.7.0).** `false` removes the built-in indicator dialog's entry points. Replace it with the composition (omit `'indicators'` from `topbar.left` — same effect) or a plugin [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). |
+| `layoutMode`                             | `'auto'`           | Chrome size class — see [Mobile](#mobile).                                                                                                                                                                                                                                                      |
+| `autofocus`                              | `false`            | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus).                                                                                                                                                                                                 |
+| `persist` / `storage`                    | off / localStorage | State persistence (see above).                                                                                                                                                                                                                                                                  |
 
 **Workspace options** (the grid's own):
 
-| Option | Default | What it does |
-| --- | --- | --- |
-| `layout` | `'4'` | Initial grid — preset id, picker id (`g3x2`), `registerLayout()` id, or inline definition. `false` = [single-chart mode](#single-chart-layout-false). |
-| `cells` | — | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above). |
-| `sync` | off | Initial sync links (see above). |
-| `drawingToolbar` | `true` | The one shared drawing toolbar (acts on the active cell). |
-| `maxWebglCells` | `8` | Above this many cells, every cell uses canvas2d (uniform look inside the browser's WebGL budget; `glow` unavailable there). |
-| `alertCap` | `50` | Alerts the topbar bell keeps (oldest drop beyond it). |
+| Option           | Default | What it does                                                                                                                                          |
+| ---------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layout`         | `'4'`   | Initial grid — preset id, picker id (`g3x2`), `registerLayout()` id, or inline definition. `false` = [single-chart mode](#single-chart-layout-false). |
+| `cells`          | —       | Per-cell overrides, keyed by FREE-FORM name = the cell's durable identity; declaration order fills the layout's slots (see above).                    |
+| `sync`           | off     | Initial sync links (see above).                                                                                                                       |
+| `drawingToolbar` | `true`  | The one shared drawing toolbar (acts on the active cell).                                                                                             |
+| `maxWebglCells`  | `8`     | Above this many cells, every cell uses canvas2d (uniform look inside the browser's WebGL budget; `glow` unavailable there).                           |
+| `alertCap`       | `50`    | Alerts the topbar bell keeps (oldest drop beyond it).                                                                                                 |
 
 Contributed actions/attachments (`@luxalgo/vela/plugin`) work unchanged — `ctx.chart` resolves
 to the ACTIVE cell's chart; grid-aware plugins additionally get `ctx.cells`,
@@ -463,9 +463,9 @@ they work from the very first keystroke, before any click.
   venue/timeframe beside it) plus hide/show for the chart's price series. In
   multi-cell grids it stays on one row — segments that don't fit the cell hide instead
   of wrapping (bar change first, then venue/timeframe, then the market badge; the logo
-  + ticker always stay). While the chart replays past bars, the market badge gives way to
-  a replay badge (the replay icon on the inverse chip), and the market status returns when
-  the replay ends.
+    - ticker always stay). While the chart replays past bars, the market badge gives way to
+      a replay badge (the replay icon on the inverse chip), and the market status returns when
+      the replay ends.
 - **Object tree** — a docked panel grouping every item under the pane it belongs to. Each pane is
   one column read top to bottom as front to back: its drawings, its indicators and, in the main
   pane, the price series, all in draw order — new indicators and new drawings both start under
@@ -509,6 +509,9 @@ they work from the very first keystroke, before any click.
   for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
   is independent of the main one. Each menu's settings entry opens the settings dialog on the
   tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
+- **Chart templates** — the settings dialog's footer has a Template dropdown: save the
+  current look under a name, apply a saved template to the chart, remove one, or restore
+  the defaults. Templates are kept in the browser's local storage.
 
 ## Composing the topbar
 
@@ -527,19 +530,19 @@ new VelaWorkspace('#chart', {
 
 Entries come from one shared vocabulary:
 
-| Entry | What it is |
-| --- | --- |
-| `'symbol'` | The symbol button (opens the search). |
-| `'timeframes'` | The favorite chips + timeframe dropdown group. |
-| `'style'` | The chart-style dropdown. |
-| `'layout'` | The layout dropdown (renders on multi-chart shells only). |
+| Entry          | What it is                                                                                                                                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `'symbol'`     | The symbol button (opens the search).                                                                                                                                                                                                                |
+| `'timeframes'` | The favorite chips + timeframe dropdown group.                                                                                                                                                                                                       |
+| `'style'`      | The chart-style dropdown.                                                                                                                                                                                                                            |
+| `'layout'`     | The layout dropdown (renders on multi-chart shells only).                                                                                                                                                                                            |
 | `'indicators'` | The Indicators slot — the built-in button, or a plugin's [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). Omitting it removes the button, the mobile stop, the `/` shortcut, and skips the picker dialog. |
-| `'undo-redo'` | The undo/redo pair. |
-| `'alerts'` | The alerts bell (badge included). |
-| `'panels'` | The side-panel toggle group (object tree, data window, contributed panels). |
-| `'screenshot'` | The screenshot slot — the built-in download button, or a plugin's override (which then also owns `mod+alt+S` and the mobile drawer button). |
-| `'actions'` | The FLOW slot: where contributed actions not named in the lists land, per their declared `align` (may appear once per side). |
-| any other id | A [contributed action](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)'s `id` — naming it PINS the action at that list position, overriding its declared `align`/`order`. |
+| `'undo-redo'`  | The undo/redo pair.                                                                                                                                                                                                                                  |
+| `'alerts'`     | The alerts bell (badge included).                                                                                                                                                                                                                    |
+| `'panels'`     | The side-panel toggle group (object tree, data window, contributed panels).                                                                                                                                                                          |
+| `'screenshot'` | The screenshot slot — the built-in download button, or a plugin's override (which then also owns `mod+alt+S` and the mobile drawer button).                                                                                                          |
+| `'actions'`    | The FLOW slot: where contributed actions not named in the lists land, per their declared `align` (may appear once per side).                                                                                                                         |
+| any other id   | A [contributed action](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)'s `id` — naming it PINS the action at that list position, overriding its declared `align`/`order`.                                                        |
 
 The rules that make it predictable:
 
@@ -552,8 +555,8 @@ The rules that make it predictable:
   indicators stop) and the entry's keyboard chord — `mod+alt+S` goes with
   `'screenshot'`. Ctrl+Z / Ctrl+Y stay regardless of `'undo-redo'`: they belong to
   editing, not to the buttons.
-- **Mobile keeps its own arrangement.** The composition decides *visibility* everywhere,
-  but only the desktop bar takes the *ordering* — the mobile bar and drawers keep their
+- **Mobile keeps its own arrangement.** The composition decides _visibility_ everywhere,
+  but only the desktop bar takes the _ordering_ — the mobile bar and drawers keep their
   touch-first layout.
 - Separators are the shell's business — never listed.
 
@@ -602,7 +605,7 @@ What changes on mobile:
   that jumps back to the most recent bar stays visible whenever the chart has data.
 
 Embedders need nothing special: the mode also reaches the renderer's own chrome, and a
-chart in a phone-sized *container on a desktop page* gets the same treatment — the
+chart in a phone-sized _container on a desktop page_ gets the same treatment — the
 shell's own bounds, not the viewport, are what count.
 
 ## Theming

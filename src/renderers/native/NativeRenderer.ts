@@ -1095,7 +1095,10 @@ export class NativeRenderer implements IChartRenderer {
         this.settingsDialog.toggle(
             this.getConfig(),
             (patch) => this.applyConfig(patch),
-            (json) => this.applyConfig(json),
+            (json) => {
+                this.applyConfig(json);
+                this.settingsDialog?.refresh(this.getConfig()); // a template import re-seeds every control, like reset
+            },
             () => {
                 if (this.factoryConfig) this.applyConfig(this.factoryResetDocument(this.factoryConfig));
                 // Re-seed the open dialog in place so every control shows the restored
