@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Keyboard focus comes back after a dialog is torn down.** When a host removed an open
+  dialog or drawer instead of closing it, focus was left on nothing and the next Tab started
+  from the top of the page. Focus now returns to the button that opened it.
+
 ## [0.8.1]
 
 ### Changed

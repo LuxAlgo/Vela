@@ -109,6 +109,8 @@ export class Drawer {
             // props) — the view toggles visibility from `api.open` itself.
             this.backdrop.style.display = api.open ? '' : 'none';
             this.positioner.style.display = api.open ? '' : 'none';
+            if (this.wasOpen && !api.open) this.restoreOpener();
+            this.wasOpen = api.open;
         });
     }
 
@@ -234,11 +236,23 @@ export class Drawer {
         this.titleEl.textContent = title;
     }
 
+    private opener: HTMLElement | null = null;
+    private wasOpen = false;
+
+    /** Closing hands focus back to whatever opened it (Escape, the ✕, hide(), or a
+     *  teardown that outruns the machine's close notification). */
+    private restoreOpener(): void {
+        const opener = this.opener;
+        this.opener = null;
+        if (opener?.isConnected) opener.focus({ preventScroll: true });
+    }
+
     get open(): boolean {
         return this.ctrl.connect(this.handle.service).open;
     }
 
     show(): void {
+        this.opener = this.panel.ownerDocument.activeElement as HTMLElement | null;
         this.ctrl.connect(this.handle.service).setOpen(true);
     }
 
@@ -248,6 +262,7 @@ export class Drawer {
 
     destroy(): void {
         this.handle.stop();
+        this.restoreOpener();
         this.backdrop.remove();
         this.positioner.remove();
     }
