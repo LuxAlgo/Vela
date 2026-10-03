@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **The chart uses the system UI font.** Axis text, legends and labels now render in the
+  platform's own interface face (San Francisco on macOS and iOS, Segoe UI on Windows, Roboto
+  on Android, Ubuntu on Ubuntu) instead of the browser's generic sans-serif, which macOS
+  resolved to Helvetica. A saved chart configuration picks the new face up on restore
+  rather than keeping the old one; a custom theme's `fontFamily` is honored as before.
+
 ## [0.8.1]
 
 ### Changed

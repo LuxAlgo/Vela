@@ -129,7 +129,7 @@ describe('NativeRenderer.getConfig — defaults resolve to concrete values', () 
     it('emits a complete, versioned document from the dark theme', () => {
         const cfg = new NativeRenderer().getConfig();
         expect(cfg.version).toBe(CHART_CONFIG_VERSION);
-        expect(cfg.layout).toEqual({ background: '#151619', textColor: '#b2b5be', fontFamily: 'sans-serif', fontSize: 11 });
+        expect(cfg.layout).toEqual({ background: '#151619', textColor: '#b2b5be', fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif', fontSize: 11 });
         expect(cfg.grid.vertLines).toEqual({ visible: true, color: '#20222c' });
         expect(cfg.grid.horzLines).toEqual({ visible: true, color: '#20222c' });
         expect(cfg.crosshair).toEqual({ color: '#9aa0ad', width: 1, style: 'dashed', opacity: 0.4, labelBackground: '#595959' });
