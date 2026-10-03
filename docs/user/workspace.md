@@ -426,6 +426,12 @@ The shell is keyboard-first (bindings act on the **active cell**):
   (toward now it rests on the newest candle plus the usual empty space). `alt+T` arms
   the trend line tool; `alt+H` / `alt+V` drop a horizontal / vertical line at the
   cursor — the drawing toolbar's menus show these chords beside the tools.
+- **Navigation.** `Tab` cycles the charts of a multi-chart grid; each bar (topbar, drawing
+  toolbar, bottom bar) is one Tab stop whose controls the arrow keys walk. `alt+Tab`
+  (or `` alt+` `` where the OS keeps Alt+Tab) walks the regions: chart → its legend rows →
+  next chart → the bars and the side panel. A focused legend row opens like a hovered
+  one, and the arrows move across its Hide, Settings, Move and Remove. Every control shows
+  one accent focus ring; a focused chart draws it around the whole cell.
 - Mouse: `Shift`+scroll pans through history instead of zooming, `Shift`+click starts
   the measure ruler at the cursor, and middle-click deletes the drawing under it.
 - Drawing keys (undo/redo, copy/paste, delete, nudge) come from the core — see

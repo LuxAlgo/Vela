@@ -70,7 +70,12 @@ export function rovingToolbar(bar: HTMLElement, selector = 'button'): () => void
 export function focusRegion(regions: HTMLElement[], from: Element | null, dir: 1 | -1): boolean {
     if (regions.length === 0) return false;
     let idx = -1;
-    if (from) for (let i = regions.length - 1; i >= 0; i--) if (regions[i]?.contains(from)) { idx = i; break; }
+    if (from)
+        for (let i = regions.length - 1; i >= 0; i--)
+            if (regions[i]?.contains(from)) {
+                idx = i;
+                break;
+            }
     const start = idx < 0 ? (dir === 1 ? 0 : regions.length - 1) : (idx + dir + regions.length) % regions.length;
     const region = regions[start];
     if (!region) return false;

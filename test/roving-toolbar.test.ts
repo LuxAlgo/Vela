@@ -62,7 +62,9 @@ describe('rovingToolbar', () => {
 
 describe('focusRegion', () => {
     it('walks the regions in order, wrapping, and enters at the first from outside', () => {
-        const a = bar(2), b = bar(1), c = bar(3);
+        const a = bar(2),
+            b = bar(1),
+            c = bar(3);
         for (const r of [a, b, c]) rovingToolbar(r.el);
         const regions = [a.el, b.el, c.el];
         expect(focusRegion(regions, null, 1)).toBe(true);
@@ -79,7 +81,9 @@ describe('focusRegion', () => {
     });
 
     it('treats the innermost region holding the focus as the current one', () => {
-        const outer = bar(1), inner = bar(1), after = bar(1);
+        const outer = bar(1),
+            inner = bar(1),
+            after = bar(1);
         outer.el.appendChild(inner.el);
         for (const r of [outer, inner, after]) rovingToolbar(r.el);
         const regions = [outer.el, inner.el, after.el];
