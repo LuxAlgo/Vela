@@ -43,6 +43,8 @@ export interface ValuePatch {
     polylines?: DrawingPolyline[];
     linefills?: DrawingLinefill[];
     tables?: DrawingTable[];
+    /** Pine `barcolor(...)` per-bar candle recolor, full snapshot per tick like the drawings. Absent ≡ unchanged/none. */
+    barColors?: Array<{ time: Millis; color: string }>;
     /** Trade executions follow the same full-snapshot-per-tick pattern as the drawings. */
     trades?: TradeExecution[];
 }

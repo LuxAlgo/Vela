@@ -212,6 +212,8 @@ class MockEngine implements ScriptingEngine {
     policyA = false;
     /** Test knob: emit a strategy-style trade-execution pair with every model. */
     emitTrades = false;
+    /** Test knob: emit a per-bar barcolor() recolor entry for every bar with every model. */
+    emitBarColors = false;
     /** Test knob: prepare-time meta declares this compact shorttitle. */
     declareShortTitle: string | undefined;
     runCount: Record<string, number> = {};
@@ -318,8 +320,12 @@ class MockEngine implements ScriptingEngine {
                   ],
               }
             : {};
+        const barColors = this.emitBarColors
+            ? { barColors: bars.map((b) => ({ time: b.time, color: b.close >= b.open ? '#0000ff' : '#ff8800' })) }
+            : {};
         return {
             ...trades,
+            ...barColors,
             id: token.instanceId,
             title: 'Mock',
             overlay: token.overlay,
@@ -1343,6 +1349,26 @@ describe('EngineOrchestrator', () => {
         await flush();
         const patch = renderer.updatedPatches.find((p) => p.kind === 'value' && p.indicatorId === ind.id);
         expect(patch?.kind === 'value' ? patch.trades : undefined).toHaveLength(2);
+    });
+
+    it('barcolor() recolors ride the model into value patches, not just the initial mount', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new MockEngine();
+        engine.emitBarColors = true;
+        const chart = new Vela({} as unknown as HTMLElement, { live: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+
+        const ind = chart.addIndicator('//@version=6\\nindicator("B", overlay=true)\\nx = chart.left_visible_bar_time\\nbarcolor(close >= open ? color.blue : color.orange)');
+        await chart.ready();
+        await flush();
+
+        // A non-structural re-run value-patches; the bar colors must travel as a full snapshot,
+        // otherwise newly revealed candles keep the mount-time colors (freeze during replay).
+        renderer.updatedPatches.length = 0;
+        renderer.fireViewport({ from: 1_700_000_036_000, to: 1_700_000_144_000 });
+        await new Promise((r) => setTimeout(r, 220)); // > viewport debounce
+        await flush();
+        const patch = renderer.updatedPatches.find((p) => p.kind === 'value' && p.indicatorId === ind.id);
+        expect(patch?.kind === 'value' ? (patch.barColors?.length ?? 0) : 0).toBeGreaterThan(0);
     });
 
     it('with no engine registered: candles still render, addIndicator raises an actionable error', async () => {

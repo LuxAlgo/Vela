@@ -4262,6 +4262,7 @@ function applyPatch(model: IndicatorModel, patch: ScenePatch): void {
         if (patch.polylines) model.polylines = patch.polylines;
         if (patch.linefills) model.linefills = patch.linefills;
         if (patch.tables) model.tables = patch.tables;
+        if (patch.barColors) model.barColors = patch.barColors;
         if (patch.trades) model.trades = patch.trades;
         return;
     }
