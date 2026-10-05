@@ -1,4 +1,4 @@
-import type { IndicatorHandle, IndicatorEventMap } from '../IndicatorHandle';
+import type { CodeUpdateResult, IndicatorHandle, IndicatorEventMap } from '../IndicatorHandle';
 import type { InputSchema, InputValue } from '../model/inputs';
 import type { ContextSelect, EngineContextSnapshot } from '../ports/ScriptingEngine';
 import type { MoveTarget } from '../options';
@@ -11,7 +11,7 @@ export interface IndicatorController {
     inputValuesOf(id: string): Record<string, InputValue>;
     propValuesOf(id: string): Record<string, InputValue>;
     applyProps(id: string, values: Record<string, InputValue>): void;
-    updateCode(id: string, source: string): void;
+    updateCode(id: string, source: string): Promise<CodeUpdateResult>;
     removeIndicator(id: string): void;
     setVisible(id: string, visible: boolean): void;
     moveIndicator(id: string, target: MoveTarget): void;
@@ -80,8 +80,8 @@ export class IndicatorHandleImpl implements IndicatorHandle {
         this.controller.applyProps(this.id, values);
     }
 
-    updateCode(source: string): void {
-        this.controller.updateCode(this.id, source);
+    updateCode(source: string): Promise<CodeUpdateResult> {
+        return this.controller.updateCode(this.id, source);
     }
 
     setVisible(visible: boolean): void {

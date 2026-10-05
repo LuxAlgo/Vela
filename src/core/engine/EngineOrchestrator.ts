@@ -10,13 +10,13 @@ import type { InputSchema, InputValue } from '../model/inputs';
 import type { VelaTheme, MarketConfig, MarketSwitch, MarketSnapshot, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
 import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
-import type { IndicatorHandle } from '../IndicatorHandle';
+import type { CodeUpdateResult, IndicatorHandle } from '../IndicatorHandle';
 import type { ContextSelect, EngineContextSnapshot } from '../ports/ScriptingEngine';
 import type { ScriptRun, ScriptRunCause } from '../script-run';
 import type { StrategyTrade } from '../model/strategy';
 import type { VelaEventMap } from '../events/types';
 import { TypedEventBus } from '../events/EventBus';
-import { IndicatorRegistry, type IndicatorRecord } from './IndicatorRegistry';
+import { IndicatorRegistry, type CodeSnapshot, type IndicatorRecord } from './IndicatorRegistry';
 import {
     getNativeIndicator,
     nativeIndicatorDescriptors,
@@ -1874,20 +1874,28 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     /**
      * IndicatorController: replace a SCRIPT indicator's source in place (see
      * {@link IndicatorHandle.updateCode}). Prepare-first: the running session keeps
-     * computing until the new source has compiled, so a broken edit costs the user
-     * nothing but an `error` event. Natives have no script — warn and leave them alone.
+     * computing until the new source has compiled; then the new code runs on TRIAL until
+     * its first model lands, and a failure before that puts the previous code back.
+     * Natives have no script — warn and leave them alone.
      */
-    updateCode(id: string, source: string): void {
+    updateCode(id: string, source: string): Promise<CodeUpdateResult> {
         const record = this.registry.get(id);
         const handle = this.handles.get(id);
-        if (!record || !handle) return;
+        if (!record || !handle) return Promise.resolve({ ok: false, error: new Error(`[vela] updateCode("${id}") — the indicator is no longer on the chart.`) });
         if (record.native) {
             console.warn(`[vela] updateCode("${id}") — a native indicator has no script to update.`);
-            return;
+            return Promise.resolve({ ok: false, error: new Error(`[vela] updateCode("${id}") — a native indicator has no script to update.`) });
         }
-        if (source === record.source && record.pendingSource === undefined) return;
-        record.pendingSource = source;
-        void this.swapSource(id, source, handle);
+        const busy = record.pendingSource !== undefined || record.codeTrial !== undefined;
+        if (!busy && source === record.source) return Promise.resolve({ ok: true, error: null });
+        return new Promise<CodeUpdateResult>((resolve) => {
+            (record.codeWaiters ??= []).push(resolve);
+            // Already on its way (being prepared, or on trial with nothing newer pending):
+            // this call simply joins the chain.
+            if (record.pendingSource === source || (record.pendingSource === undefined && record.codeTrial && record.source === source)) return;
+            record.pendingSource = source;
+            void this.swapSource(id, source, handle);
+        });
     }
 
     private async swapSource(id: string, source: string, handle: IndicatorHandleImpl): Promise<void> {
@@ -1900,7 +1908,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             // Only the LATEST pending edit reports; a superseded one failing is noise.
             if (record?.pendingSource === source) {
                 record.pendingSource = undefined;
-                this.fail(id, handle, err);
+                this.rejectCode(id, record, handle, err);
             }
             return;
         }
@@ -1908,21 +1916,41 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         // Removed, or superseded by a later updateCode, while preparing.
         if (!record || record.pendingSource !== source) return;
         record.pendingSource = undefined;
+        // The restore point is the last code KNOWN to run: an edit landing while another
+        // is still on trial keeps that trial's restore point, not the unproven trial.
+        const previous: CodeSnapshot = record.codeTrial?.previous ?? {
+            source: record.source,
+            engine: record.engine,
+            prepared: record.prepared,
+            inputValues: record.inputValues,
+            propValues: record.propValues,
+            inputs: [...handle.inputs],
+            props: [...handle.props],
+        };
+        // Values survive on the keys (or titles) the new schema still declares, unless they
+        // still sit on the OLD declared default — those follow the declaration. Settled
+        // here, before the first run, so the new code computes once with its final values.
+        record.inputValues = valuesOnSchema(prepared.inputs, record.inputValues, record.prepared?.inputs);
+        record.propValues = valuesOnSchema(prepared.props ?? [], record.propValues, record.prepared?.props);
         record.source = source;
         record.engine = engine;
         record.prepared = prepared;
         handle.setSource(source);
-        // Values survive on the keys (or titles) the new schema still declares; the rest
-        // fall back to the new declaration defaults — a renamed input is a new input.
-        record.inputValues = valuesOnSchema(prepared.inputs, record.inputValues);
-        record.propValues = valuesOnSchema(prepared.props ?? [], record.propValues);
         handle.setSchema(prepared.inputs);
         handle.setPropsSchema(prepared.props ?? []);
         record.session?.stop();
         record.session = undefined;
         record.pendingStructural = true; // the first model of the new source remounts over the old visuals
         record.pendingCause = 'code';
-        if (record.hidden) return; // showing runs the (now replaced) prepared script
+        // A hidden indicator computes nothing, so the compile check is all there is to wait
+        // for: it adopts the new code now, and showing runs it.
+        if (record.hidden) {
+            record.codeTrial = undefined;
+            if (record.renderHandle) this.renderer.setIndicatorInputs(record.renderHandle, record.inputValues, record.propValues);
+            this.settleCode(record, { ok: true, error: null });
+            return;
+        }
+        record.codeTrial = { previous };
         if (record.renderHandle) {
             this.renderer.setIndicatorInputs(record.renderHandle, record.inputValues, record.propValues);
             this.setLoading(record, true);
@@ -1930,6 +1958,50 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             this.mountLoadingPlaceholder(id, record); // updated before its first prepare ever landed
         }
         this.executeIndicator(id, handle);
+        // No bars, no run: the session emits nothing until bars land, so there is no first
+        // model to wait for — the compile check stands in for it, as for a hidden one.
+        if (this.bars.length === 0 && record.codeTrial) {
+            record.codeTrial = undefined;
+            this.settleCode(record, { ok: true, error: null });
+        }
+    }
+
+    /** Resolve every `updateCode` caller waiting on this record's chain of edits. */
+    private settleCode(record: IndicatorRecord, result: CodeUpdateResult): void {
+        const waiters = record.codeWaiters;
+        record.codeWaiters = undefined;
+        if (waiters) for (const resolve of waiters) resolve(result);
+    }
+
+    /**
+     * An update failed — at prepare, or on trial before its first model. A trial puts the
+     * previous code back (source, engine, prepared script, values, schema) and restarts it;
+     * its visuals were never dropped, so the chart keeps painting throughout. Then the
+     * failure reports the usual way and every waiting caller learns it.
+     */
+    private rejectCode(id: string, record: IndicatorRecord, handle: IndicatorHandleImpl, err: unknown): void {
+        const trial = record.codeTrial;
+        record.codeTrial = undefined;
+        this.fail(id, handle, err);
+        if (trial) {
+            const p = trial.previous;
+            record.session?.stop();
+            record.session = undefined;
+            record.source = p.source;
+            record.engine = p.engine;
+            record.prepared = p.prepared;
+            record.inputValues = p.inputValues;
+            record.propValues = p.propValues;
+            handle.setSource(p.source);
+            handle.setSchema(p.inputs);
+            handle.setPropsSchema(p.props);
+            record.pendingStructural = true;
+            record.pendingCause = undefined;
+            if (record.renderHandle) this.renderer.setIndicatorInputs(record.renderHandle, record.inputValues, record.propValues);
+            if (!record.hidden) this.executeIndicator(id, handle);
+        }
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.settleCode(record, { ok: false, error });
     }
 
     /** IndicatorController: tear down an indicator and (if now empty) its pane. */
@@ -1950,6 +2022,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         // auto-add fires on every load (first paint of every market), so without the
         // opt-out a removed volume resurrected on the next symbol/timeframe switch.
         if (record?.native?.type === 'volume') this.volumeOptedOut = true;
+        if (record) this.settleCode(record, { ok: false, error: new Error(`[vela] updateCode("${id}") — the indicator was removed.`) });
         record?.session?.stop();
         // A native added hidden and never started (a restored ledger entry) has nothing
         // to tear down — and its `stop()` may not expect to run without a context.
@@ -1981,6 +2054,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         if (!visible) {
             record.session?.stop();
             record.session = undefined;
+            // Hidden mid-trial: the code compiled and a hidden indicator computes nothing,
+            // so the update stands — the same outcome as updating a hidden indicator.
+            if (record.codeTrial) {
+                record.codeTrial = undefined;
+                this.settleCode(record, { ok: true, error: null });
+            }
             // Only a RUNNING instance is suspended: a record hidden right after its add
             // (a restored hidden ledger entry) has not started yet, so there is nothing
             // to suspend — and the instance's suspend() is entitled to assume start() ran.
@@ -2096,6 +2175,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         this.paneActionUnsub?.();
         // native instances free their own caches/timers in stop()
         for (const record of this.registry.all()) {
+            this.settleCode(record, { ok: false, error: new Error('[vela] updateCode — the chart was destroyed.') });
             record.session?.stop();
             if (record.native?.started) record.native.instance.stop();
         }
@@ -2183,7 +2263,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         // Stream only when the chart is live, the script is NOT viewport-dependent, and the
         // engine can stream. Viewport scripts + non-streaming engines take the static path.
         const mode: 'static' | 'live' = this.config.live && !record.prepared.reactsToViewport && record.engine.capabilities.streaming ? 'live' : 'static';
-        record.session = record.engine.execute(
+        const prepared = record.prepared;
+        const session = record.engine.execute(
             {
                 prepared: record.prepared,
                 market: this.market(),
@@ -2208,6 +2289,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                     // the pending cause stays for the real run, and no events fire.
                     if (!this.applyModel(id, model)) return;
                     record.pendingCause = undefined;
+                    if (record.codeTrial) {
+                        record.codeTrial = undefined; // the new code ran: it is the code now
+                        this.settleCode(record, { ok: true, error: null });
+                    }
                     this.emitContextChanged(id); // throttled — streamed ticks collapse to ~1/s
                     this.emitScriptRun(id, cause, first);
                 },
@@ -2225,9 +2310,21 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                     handle.emit('alert', { id: a.id, message: a.message, title: a.title, time: a.time });
                 },
                 onWarning: (w) => this.events.emit('warning', w),
-                onError: (err) => this.fail(id, handle, err),
+                onError: (err) => {
+                    // A failure while the code is on trial (before its first model) rolls
+                    // the update back; any later failure is the code's own.
+                    if (record.codeTrial) this.rejectCode(id, record, handle, err);
+                    else this.fail(id, handle, err);
+                },
             },
         );
+        // A trial that failed synchronously inside `execute` has already been rolled back,
+        // and the restored session is in place — the failed one must not overwrite it.
+        if (record.prepared !== prepared) {
+            session.stop();
+            return;
+        }
+        record.session = session;
         // A synchronous engine can emit its model DURING the execute call above — before
         // record.session exists, so the gated emit inside onModel missed. Fire once now
         // that the session (and its optional getContext) is attached; throttling dedupes.
@@ -2860,9 +2957,11 @@ function yieldToPaint(): Promise<void> {
 /**
  * Re-seat stored values on a NEW schema: every declared key takes its default, then a
  * previous value is kept where the schema still declares its key (or title — add-time
- * overrides may be title-keyed). Stale keys drop.
+ * overrides may be title-keyed). Stale keys drop. Stored values carry the merged
+ * defaults, so a value still equal to its `oldSchema` default is not an edit: it
+ * follows the declaration to the new default (the rule persistence diffs by, too).
  */
-function valuesOnSchema(schema: InputSchema[], previous: Record<string, InputValue>): Record<string, InputValue> {
+function valuesOnSchema(schema: InputSchema[], previous: Record<string, InputValue>, oldSchema: readonly InputSchema[] = []): Record<string, InputValue> {
     const out: Record<string, InputValue> = {};
     const declared = new Set<string>();
     for (const s of schema) {
@@ -2870,8 +2969,22 @@ function valuesOnSchema(schema: InputSchema[], previous: Record<string, InputVal
         declared.add(s.key);
         declared.add(s.title);
     }
-    for (const [k, v] of Object.entries(previous)) if (declared.has(k)) out[k] = v;
+    const oldDefaults = new Map<string, InputValue>();
+    for (const s of oldSchema) {
+        oldDefaults.set(s.key, s.defval);
+        if (!oldDefaults.has(s.title)) oldDefaults.set(s.title, s.defval);
+    }
+    for (const [k, v] of Object.entries(previous)) {
+        if (!declared.has(k)) continue;
+        if (oldDefaults.has(k) && sameInputValue(oldDefaults.get(k)!, v)) continue;
+        out[k] = v;
+    }
     return out;
+}
+
+function sameInputValue(a: InputValue, b: InputValue): boolean {
+    if (a === b) return true;
+    return typeof a === 'object' && a !== null && typeof b === 'object' && b !== null && JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** Build a value-only patch from a freshly-run model (used on live ticks / re-runs). */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDrawing, deserializeDrawing, DrawingStore, FibLevels, FibFan, FibTimeZones, type Projector } from '../src/core/drawings';
+import { createDrawing, deserializeDrawing, DrawingStore, FibLevels, FibRetracement, FibFan, FibTimeZones, type Projector } from '../src/core/drawings';
 
 /** Linear projector: x = time, y = 100 − price, single pane 'price'. */
 function fakeProjector(): Projector {
@@ -15,18 +15,57 @@ function fakeProjector(): Projector {
 
 describe('drawings/FibRetracement', () => {
     const proj = fakeProjector();
-    // anchors (0,0) → (50,100): price range 0..100, so a level's price = ratio·100
+    // anchors (0,0) → (50,100): price range 0..100; level 0 sits on the second anchor (price 100)
     const make = () => createDrawing('fibretracement', { paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 50, price: 100 }] })!;
 
-    it('places a horizontal level at each fib ratio of the price range', () => {
+    it('places a horizontal level at each fib ratio, level 0 on the second anchor', () => {
         const d = make();
         expect(d.anchorSchema().min).toBe(2);
         const lines = (d as FibLevels).levelLines(proj)!;
         const priceAt = (ratio: number) => lines.find((l) => l.ratio === ratio)?.price;
-        expect(priceAt(0)).toBe(0);
+        expect(priceAt(0)).toBe(100);
         expect(priceAt(0.5)).toBe(50);
+        expect(priceAt(0.618)).toBeCloseTo(38.2, 6);
+        expect(priceAt(1)).toBe(0);
+    });
+
+    it('reverse puts level 0 on the first anchor', () => {
+        const d = make();
+        d.applySettings({ reverse: true });
+        const lines = (d as FibLevels).levelLines(proj)!;
+        const priceAt = (ratio: number) => lines.find((l) => l.ratio === ratio)?.price;
+        expect(priceAt(0)).toBe(0);
         expect(priceAt(0.618)).toBeCloseTo(61.8, 6);
         expect(priceAt(1)).toBe(100);
+        expect(d.priceRange()).toEqual({ min: 0, max: 100 });
+    });
+
+    it('reverse round-trips through serialize and applies through store.update', () => {
+        const d = make();
+        expect(d.serialize().props!.reverse).toBe(false);
+        d.applySettings({ reverse: true });
+        const doc = d.serialize();
+        expect(doc.props!.reverse).toBe(true);
+        expect((deserializeDrawing(doc) as FibRetracement).reverse).toBe(true);
+
+        const store = new DrawingStore();
+        const live = store.add(createDrawing('fibretracement', { id: store.nextId(), paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 1, price: 100 }] })!);
+        store.update(live.id, { props: { ...live.serialize().props, reverse: true } });
+        expect((live as FibRetracement).reverse).toBe(true);
+    });
+
+    it('a document saved before the flag existed keeps level 0 on the first anchor', () => {
+        const doc = make().serialize();
+        delete doc.props!.reverse;
+        const old = deserializeDrawing(doc) as FibRetracement;
+        expect(old.reverse).toBe(true);
+        expect(old.levelLines(proj)!.find((l) => l.ratio === 0)?.price).toBe(0);
+    });
+
+    it('does not change the extension tool, which still measures from the first anchor', () => {
+        const d = createDrawing('fibextension', { paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 50, price: 100 }] })!;
+        expect((d as FibLevels).levelLines(proj)!.find((l) => l.ratio === 0)?.price).toBe(0);
+        expect(d.serialize().props!.reverse).toBeUndefined();
     });
 
     it('hit-tests on a level line, not in the gap; reports the full price range', () => {

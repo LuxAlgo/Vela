@@ -2,6 +2,68 @@
 
 All notable changes to Vela, newest first.
 
+## [0.8.2]
+
+### Added
+
+- **Side panels can be maximized.** A panel registered with `maximizable: true` gets a
+  Maximize button in its header that spreads it over every chart of the shell, and a
+  Restore button to bring it back. The panel can also do it from code through its
+  header (`setMaximized`). Closing the panel restores it, so it always reopens at its
+  own size.
+- **Menus and panels tell you when they open and close.** Every menu, popover, dialog,
+  drawer and side panel now raises a `vela:surface-open` event when it appears and a
+  `vela:surface-close` event as it starts to close, while it is still on screen. Both bubble,
+  so one listener on the chart's container can follow all of its chrome, for example to
+  animate a menu out or keep your own UI in step, without watching the page for changes.
+- **Fib retracement has a Reverse option.** The Levels dialog of a Fib retracement now
+  has a Reverse toggle that puts level 0 on the first point instead of the second.
+
+### Changed
+
+- **Updating an indicator's code tells you how it went, and never breaks a working
+  script.** `handle.updateCode(source)` now returns a promise that resolves `{ ok, error }`
+  once the new code has computed, so an editor can show a busy state and the result
+  without guessing from events. A hidden indicator resolves as soon as the code compiles.
+  If the new code fails, whether it doesn't compile or fails as it runs, the previous code
+  comes back with its settings and keeps painting, and the error is reported as before.
+  A setting you changed survives the update, while one still at its default follows the
+  script's new default. The new code computes once, with its final settings.
+- **Fib retracement measures from the second point.** Level 0 now sits on the point you
+  place last and level 1 on the first, so the levels read as the pullback from the latest
+  swing. Turn on Reverse in the Levels dialog to get the previous layout. Retracements
+  already saved on a chart keep their current layout.
+- **A mouse drag stops where you release it.** Letting go of the chart after a drag no
+  longer carries it on with momentum, so a quick scrub back and forth lands exactly where
+  the pointer stopped. A finger flick on a touch screen still glides to a stop, and the
+  `animations.pan` option now governs that touch glide alone.
+
+### Fixed
+
+- **Dragging the chart keeps up with the mouse on high-resolution displays.** On a 4K or
+  Retina-class screen a drag could repaint only every second or third frame, so the chart
+  trailed the pointer and looked jittery. The native renderer no longer multisamples its
+  geometry canvas: lines were already smoothed in the shader, dot markers and round line
+  ends are now smoothed there too, so the picture is unchanged and a drag now repaints on
+  every frame, including on 120 Hz and 240 Hz displays.
+- **"Edit code" on a legend row opens the code the indicator runs now.** After an in-place
+  code update, a legend action still received the code the indicator was added with.
+- **Refreshing actions keeps open side panels as they are.** `refreshActions()` rebuilt
+  every contributed side panel, losing whatever it held (an editor's undo history and
+  error markers, for example). Panels whose registration did not change now stay mounted.
+- **Dragging a drawing that sits under the candles keeps up with the mouse.** While you
+  drag such a drawing (or a selection that includes one) it rides the top drawing layer,
+  so each pointer move repaints one small layer instead of re-rasterizing and re-uploading
+  a plot-sized texture through the data frame. It settles back under the candles on
+  release. Placing a new drawing no longer triggers that data repaint on every move either.
+- **Moving the pointer over the chart costs less.** The status line above the chart used to
+  re-measure its layout every time the crosshair moved to another bar. It now re-measures
+  only when the new values could change its width, and its digits share one width, so the
+  readout no longer shifts sideways as you sweep across bars.
+- **Keyboard focus comes back after a dialog is torn down.** When a host removed an open
+  dialog or drawer instead of closing it, focus was left on nothing and the next Tab started
+  from the top of the page. Focus now returns to the button that opened it.
+
 ## [0.8.1]
 
 ### Changed

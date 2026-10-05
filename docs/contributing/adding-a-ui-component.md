@@ -106,6 +106,10 @@ expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
   so a body-portaled list still has theme tokens.
 - Keyboard-facing components integrate with `KeymapManager` scopes: report open/close via
   an `onOpenChange` option so hosts can push/pop the `'dialog'` scope.
+- A component that opens and closes a surface **announces it** with `announceSurface`
+  (`src/ui/surface-events.ts`): open once the surface shows, close while it still shows —
+  before a fade-out, `hidden`, or removal — so the event bubbles to the host. Hosts follow
+  the chrome through these events instead of watching the DOM.
 - Renderer chrome that consumes the kit **imports the component folder**, not the
   `src/ui` barrel — otherwise Zag overlay machines get pulled into the native-renderer
   bundle. Hosts and plugins import from `@luxalgo/vela/ui`.

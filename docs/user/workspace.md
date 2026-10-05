@@ -510,6 +510,28 @@ they work from the very first keystroke, before any click.
   is independent of the main one. Each menu's settings entry opens the settings dialog on the
   tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
 
+### Following menus and panels
+
+Every menu, popover, dialog, drawer and side panel announces itself with a DOM event on its
+own element: `vela:surface-open` once it shows, and `vela:surface-close` as it starts to
+close, while it is still on screen and before it fades out or leaves the DOM. Both bubble, so
+one listener on the chart's container follows all of its chrome without watching the DOM:
+
+```ts
+import { SURFACE_OPEN_EVENT, SURFACE_CLOSE_EVENT, type SurfaceEventDetail } from '@luxalgo/vela/ui';
+
+container.addEventListener(SURFACE_OPEN_EVENT, (e) => {
+    const { kind, trigger } = (e as CustomEvent<SurfaceEventDetail>).detail;
+    // e.target is the surface: a .vela-menu, .vela-popover, .vela-dialog, .vela-drawer, .vela-panel …
+});
+```
+
+`kind` is `'menu'` (submenus and the drawing toolbar's flyouts included), `'popover'` (select
+lists, color pickers, mark cards, the layout picker), `'dialog'`, `'drawer'` or `'panel'`.
+`trigger` is the element that opened it — a menu's button, a submenu's row, the control that
+had focus when a dialog opened — or `null` when there is none (a right-click menu). A surface
+created without an explicit host portals to `<body>`; listen on `document` to catch those too.
+
 ## Composing the topbar
 
 The `topbar` option DESCRIBES the bar: `{ left, right }` lists of the **visible**

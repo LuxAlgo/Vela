@@ -158,11 +158,16 @@ export class WebGL2Backend implements IRenderBackend {
         this.canvas = canvas;
         // alpha:true keeps the canvas transparent where nothing is drawn, so a layer behind it (the
         // reveal-layer background) shows through; the chart background is painted by the wrapper element.
-        // antialias smooths line-quad + polygon edges. premultipliedAlpha:TRUE is REQUIRED: the SRC_ALPHA
-        // over-blend writes PREMULTIPLIED pixels (rgb·a) to the framebuffer, so the compositor must be
-        // told so — otherwise it re-applies alpha and double-darkens every semi-transparent pixel
-        // (faint fills, and a darkened line-AA feather that reads as jaggies). Matches canvas2d exactly.
-        this.gl = canvas.getContext('webgl2', { alpha: true, antialias: true, depth: false, stencil: false, premultipliedAlpha: true });
+        // antialias:FALSE — MSAA on a full-screen hi-DPI canvas (~7 MP at 2x) costs ~10 ms per
+        // frame on the GPU, which pins a drag pan at ~70 fps on a 240 Hz display. Lines and
+        // circles (dot markers, round joins/caps) are feathered analytically in the fragment
+        // shader (see FRAG_SRC, Batch.circle), and the remaining solid geometry is axis-aligned
+        // or sits under its own line, so nothing visible is lost.
+        // premultipliedAlpha:TRUE is REQUIRED: the SRC_ALPHA over-blend writes PREMULTIPLIED
+        // pixels (rgb·a) to the framebuffer, so the compositor must be told so — otherwise it
+        // re-applies alpha and double-darkens every semi-transparent pixel (faint fills, and a
+        // darkened line-AA feather that reads as jaggies). Matches canvas2d exactly.
+        this.gl = canvas.getContext('webgl2', { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: true });
         if (!this.gl) return;
         if (!this.initGL()) {
             this.gl = null; // shaders/program failed → ok=false → renderer uses canvas2d

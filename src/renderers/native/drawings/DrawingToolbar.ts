@@ -4,6 +4,7 @@ import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/dr
 import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
+import { announceSurface } from '../../../ui/surface-events';
 
 /** Expanded bar width in px — a docked host's left-gutter reservation must match it. */
 export const TOOLBAR_WIDTH = 44;
@@ -511,6 +512,7 @@ export class DrawingToolbar {
                 );
             }
         }
+        announceSurface(fly, true, 'menu', cell);
     }
 
     private openMagnetFlyout(): void {
@@ -535,6 +537,7 @@ export class DrawingToolbar {
                 }),
             );
         }
+        announceSurface(fly, true, 'menu', cell);
     }
 
     private flyoutHeader(text: string): HTMLElement {
@@ -628,9 +631,12 @@ export class DrawingToolbar {
 
     private closeFlyout(): void {
         this.starEls.clear();
-        if (this.flyout) {
-            this.flyout.remove();
+        const fly = this.flyout;
+        if (fly) {
+            // Cleared before announcing: a listener that closes the flyout must not re-enter.
             this.flyout = null;
+            announceSurface(fly, false, 'menu', this.flyoutCell);
+            fly.remove();
             this.flyoutCell?.classList.remove('vela-open');
             this.flyoutCell = null;
             this.flyoutOwnerId = null;

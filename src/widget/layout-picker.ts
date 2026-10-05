@@ -10,6 +10,7 @@
 // inside it, same as the menu positioner).
 import { injectStyles } from '../ui/styles';
 import { Tooltip } from '../ui/components/tooltip';
+import { announceSurface } from '../ui/surface-events';
 
 const STYLE_ID = 'vela-widget-layout-picker-v14';
 // One monochrome selection language across the panel: lit cells and sync ON
@@ -174,6 +175,8 @@ export class LayoutPicker {
     private readonly opts: LayoutPickerOptions;
     private readonly doc: Document;
     private readonly layer: HTMLElement;
+    /** The picker card inside the layer — the element open/close are announced on. */
+    private readonly panel: HTMLElement;
     private readonly squares: HTMLButtonElement[] = []; // row-major, 16 entries
     private readonly infoTip: Tooltip;
     private readonly presetsEl: HTMLElement;
@@ -204,6 +207,7 @@ export class LayoutPicker {
         const panel = doc.createElement('div');
         panel.className = 'vela-lp';
         this.layer.appendChild(panel);
+        this.panel = panel;
 
         const cols = doc.createElement('div');
         cols.className = 'vela-lp-cols';
@@ -298,11 +302,15 @@ export class LayoutPicker {
         this.doc.addEventListener('pointerdown', this.onDocPointerDown, true);
         this.doc.addEventListener('keydown', this.onDocKeydown, true);
         this.opts.onOpenChange?.(true);
+        // After the host heard it — a listener that closes the picker again then reports last.
+        if (this.isOpen) announceSurface(this.panel, true, 'popover', this.opts.trigger);
     }
 
     close(): void {
         if (!this.isOpen) return;
         this.isOpen = false;
+        // Still showing — the close bubbles before the layer hides.
+        announceSurface(this.panel, false, 'popover', this.opts.trigger);
         this.layer.style.display = 'none';
         this.opts.trigger.setAttribute('aria-expanded', 'false');
         this.doc.removeEventListener('pointerdown', this.onDocPointerDown, true);

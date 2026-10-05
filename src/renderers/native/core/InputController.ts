@@ -637,7 +637,9 @@ export class InputController {
             this.deps.drawingsPointerUp?.(x, y, this.snapMode(e));
         } else if (tapRelease && this.region === 'data') {
             this.deps.onClick(x, y);
-        } else if (this.dragging && this.region === 'data') {
+        } else if (this.dragging && this.region === 'data' && wasTouch) {
+            // Only a finger flicks: a mouse release stops dead, so a scrub lands exactly
+            // where the pointer let go instead of coasting past it.
             const stale = e.timeStamp - this.lastT > FLING_STALE_MS;
             if (!stale && Math.abs(this.vx) > FLING_MIN_SPEED) {
                 const pitch = this.deps.getCoords().pxPerBar();

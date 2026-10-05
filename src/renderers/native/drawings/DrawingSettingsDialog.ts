@@ -2,6 +2,7 @@ import type { VelaTheme } from '../../../core/options';
 import type { Drawing, FrvpStyle, PositionLevelMode, SerializedDrawing } from '../../../core/drawings';
 import {
     DIRECTION_OPTIONS,
+    FibRetracement,
     FixedRangeVolumeProfile,
     LINE_STYLE_OPTIONS,
     MachFigure,
@@ -360,6 +361,17 @@ export class DrawingSettingsDialog {
                 toggle: {
                     checked: mach.showRatios !== false,
                     onChange: (v) => actions.patch({ showRatios: v }),
+                },
+            }));
+        }
+        if (drawing instanceof FibRetracement) {
+            const fib = drawing;
+            grid.appendChild(fieldRow({
+                label: 'Reverse',
+                bool: true,
+                toggle: {
+                    checked: fib.reverse,
+                    onChange: (v) => actions.patch({ reverse: v }),
                 },
             }));
         }

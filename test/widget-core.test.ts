@@ -421,6 +421,18 @@ describe('legend action contributions', () => {
 
         unregisterLegendAction('src-only');
     });
+
+    it('a click reads the indicator AGAIN — a code update since the row was built shows through', () => {
+        const seen: LegendIndicatorInfo[] = [];
+        registerLegendAction({ id: 'src-live', icon: 'code', tooltip: 'Open source', run: (_ctx, ind) => void seen.push(ind) });
+        const handle = { id: 'ind-1', title: 'EMA', source: 'v1' };
+        const chart = { indicators: () => [handle] } as never;
+        const [view] = legendActionsProviderFor(chart, () => ({}) as never)('ind-1');
+        handle.source = 'v2'; // updateCode landed after the row was built
+        view!.run();
+        expect(seen[0]?.source).toBe('v2');
+        unregisterLegendAction('src-live');
+    });
 });
 
 describe('glide math (reference port)', () => {

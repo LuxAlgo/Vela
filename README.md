@@ -12,7 +12,7 @@
 
 # Vela™
 
-  <p><strong>Fast, extensible financial charts for the web.</strong><br>
+  <p><strong>Fast, extensible financial charts for the web: the open-source core of <a href="https://vela.luxalgo.com/chart">Vela</a> by LuxAlgo.</strong><br>
   Headless core · native WebGL2 renderer · batteries-included workspace · plugin SDK</p>
 
   [![npm version][npm-version-img]][npm-link]

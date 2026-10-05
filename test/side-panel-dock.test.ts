@@ -182,6 +182,54 @@ describe('SidePanel placement', () => {
     });
 });
 
+describe('SidePanel maximize', () => {
+    it('a maximizable panel carries a header button that maximizes and restores it', () => {
+        const { root } = stubDoc();
+        const panel = new SidePanel(root as never, 'Editor', 'x-ed', { overlay: true, maximizable: true });
+        const el = panel.el as unknown as StubEl;
+        const button = find(panel.el as never, 'vela-panel-max')!;
+        expect(button).toBeDefined();
+        expect(button.title).toBe('Maximize');
+
+        panel.toggle(true);
+        button.fire('click');
+        expect(panel.maximized).toBe(true);
+        expect(el.dataset.maximized).toBe('1');
+        expect(button.title).toBe('Restore');
+        button.fire('click');
+        expect(panel.maximized).toBe(false);
+        expect(el.dataset.maximized).toBeUndefined();
+
+        // Closing restores it: a panel reopens at its own size.
+        panel.setMaximized(true);
+        panel.toggle(false);
+        expect(panel.maximized).toBe(false);
+        expect(el.dataset.maximized).toBeUndefined();
+    });
+
+    it('a panel not declared maximizable has no button and ignores the call', () => {
+        const { root } = stubDoc();
+        const panel = new SidePanel(root as never, 'Tree', 'x-tree');
+        expect(find(panel.el as never, 'vela-panel-max')).toBeUndefined();
+        panel.setMaximized(true);
+        expect(panel.maximized).toBe(false);
+    });
+
+    it('a contributed panel declares it and drives it through its header', () => {
+        const { root } = stubDoc();
+        const d = new PanelDock(root as never, { chrome: { setPanelButtons: () => {}, setPanelActive: () => {} }, context: () => ctx });
+        let header: Parameters<Parameters<typeof registerSidePanel>[0]['mount']>[2] | null = null;
+        const off = registerSidePanel({ id: 'm', title: 'M', icon: 'im', overlay: true, maximizable: true, mount: (_c, _b, h) => void (header = h) });
+        d.refresh();
+        expect(find(root, 'vela-panel-max')).toBeDefined();
+        header!.setMaximized(true);
+        expect(header!.maximized).toBe(true);
+        expect(find(root, 'vela-panel-m')!.dataset.maximized).toBe('1');
+        off();
+        d.refresh();
+    });
+});
+
 describe('registerSidePanel', () => {
     it('sorts by order, replaces by id, and unregisters through the disposer', () => {
         const mount = (): void => {};
@@ -354,7 +402,16 @@ describe('PanelDock', () => {
         d.toggle('x');
         d.refresh(); // a late registration elsewhere must not close the open panel
         expect(d.openId).toBe('x');
-        expect(mount).toHaveBeenCalledTimes(2); // rebuilt from the descriptor
+        expect(mount).toHaveBeenCalledTimes(1); // an unchanged descriptor stays mounted — its state survives
+
+        // A REPLACED descriptor (same id) is rebuilt, and the open column stays open.
+        const mount2 = vi.fn(() => ({ onChart }));
+        const off2 = registerSidePanel({ id: 'x', title: 'X2', icon: 'ix', mount: mount2 });
+        d.refresh();
+        expect(mount2).toHaveBeenCalledTimes(1);
+        expect(onChart).toHaveBeenCalledTimes(2); // the rebuilt panel binds to the current chart
+        expect(d.openId).toBe('x');
+        off2();
 
         off();
         d.refresh();

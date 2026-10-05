@@ -8,7 +8,7 @@
 // the dock never imports the topbar, and a different chrome can host the same buttons.
 import type { Vela } from '../Vela';
 import type { PanelsState } from '../state/document';
-import { DEFAULT_PANEL_ORDER, sidePanels, type SidePanelButton, type SidePanelHandle, type WidgetContext } from './contributions';
+import { DEFAULT_PANEL_ORDER, sidePanels, type SidePanelButton, type SidePanelDescriptor, type SidePanelHandle, type SidePanelHeader, type WidgetContext } from './contributions';
 import { SidePanel } from './side-panel';
 
 /** What the dock needs from whatever chrome shows its toggles. */
@@ -48,6 +48,8 @@ interface Entry {
     /** Contributed entries are created (and destroyed) by the dock; built-ins by the shell. */
     contributed: boolean;
     handle?: SidePanelHandle;
+    /** The descriptor a contributed entry was built from — a refresh keeps the entry while it is still registered. */
+    desc?: SidePanelDescriptor;
 }
 
 export class PanelDock {
@@ -73,21 +75,24 @@ export class PanelDock {
     /**
      * (Re)build the CONTRIBUTED panels from the registry — call once after the built-ins, and
      * again on `refreshActions()` so a late registration appears. Contributed panels that are
-     * gone from the registry are dropped; the ones still there are rebuilt, so a replaced
-     * descriptor takes effect.
+     * gone from the registry are dropped and a REPLACED descriptor is rebuilt; a panel whose
+     * descriptor is unchanged stays mounted as it is, so its content and state survive.
      */
     refresh(): void {
         // A rebuild must not close the column under the user: a contributed panel that is open
         // (and still registered) is reopened once its replacement is docked.
         const openBefore = this.openId;
-        for (const entry of [...this.entries]) if (entry.contributed) this.drop(entry);
-        for (const desc of sidePanels()) {
+        const registered = sidePanels();
+        for (const entry of [...this.entries]) if (entry.contributed && !registered.includes(entry.desc!)) this.drop(entry);
+        for (const desc of registered) {
+            if (this.entries.some((e) => e.desc === desc)) continue;
             const panel = new SidePanel(this.host, desc.title, `vela-panel-${desc.id}`, {
                 width: desc.width,
                 resizable: desc.resizable,
                 minWidth: desc.minWidth,
                 maxWidth: desc.maxWidth,
                 overlay: desc.overlay,
+                maximizable: desc.maximizable,
             });
             const entry: Entry = {
                 id: desc.id,
@@ -96,11 +101,20 @@ export class PanelDock {
                 order: desc.order ?? DEFAULT_PANEL_ORDER,
                 panel,
                 contributed: true,
+                desc,
             };
             // A contribution that throws on mount must not take the shell down with it: the
             // panel stays docked but empty, and the reason is on the console.
             try {
-                entry.handle = desc.mount(this.deps.context(), panel.content, { slot: panel.headerSlot, setTitle: (t) => panel.setTitle(t) }) ?? undefined;
+                const header: SidePanelHeader = {
+                    slot: panel.headerSlot,
+                    setTitle: (t) => panel.setTitle(t),
+                    get maximized() {
+                        return panel.maximized;
+                    },
+                    setMaximized: (on) => panel.setMaximized(on),
+                };
+                entry.handle = desc.mount(this.deps.context(), panel.content, header) ?? undefined;
                 if (this.chart) entry.handle?.onChart?.(this.chart);
             } catch (err) {
                 console.warn(`[vela] side panel "${desc.id}" failed to mount`, err);

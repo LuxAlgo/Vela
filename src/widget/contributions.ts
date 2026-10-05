@@ -7,6 +7,7 @@ import type { LegendActionView, LegendCalloutView } from '../core/ports/IChartRe
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { SymbolDescriptor } from '../core/ports/DataProvider';
 import type { InputValue } from '../core/model/inputs';
+import type { IndicatorHandle } from '../core/IndicatorHandle';
 import { TOPBAR_BUILTIN_IDS } from './topbar-composition';
 
 /** The runtime surface an action's `when`/`run` receives. */
@@ -159,6 +160,11 @@ export interface SidePanelHeader {
     /** Replace the header title (an empty string hides it). The topbar toggle keeps the
      *  DECLARED `title` as its tooltip. */
     setTitle(title: string): void;
+    /** Whether the panel covers every chart right now (see `maximizable`). */
+    readonly maximized: boolean;
+    /** Maximize the panel over the shell's charts, or restore it — what its header button
+     *  does. A no-op unless the descriptor is `maximizable`. Closing restores it too. */
+    setMaximized(maximized: boolean): void;
 }
 
 /**
@@ -191,6 +197,10 @@ export interface SidePanelDescriptor {
      *  column that shrinks the chart). For panels wide enough that a column would crush
      *  the plot. The dock stays exclusive either way. */
     overlay?: boolean;
+    /** A header button that maximizes the panel over every chart of the shell, and restores
+     *  it (default false). For panels that are sometimes the main work surface, like an
+     *  editor; the contribution can drive it too ({@link SidePanelHeader.setMaximized}). */
+    maximizable?: boolean;
     mount(ctx: WidgetContext, body: HTMLElement, header: SidePanelHeader): SidePanelHandle | void;
 }
 
@@ -296,8 +306,9 @@ export function widgetActions(target: WidgetActionTarget, ctx?: WidgetContext): 
 export interface LegendIndicatorInfo {
     id: string;
     title: string;
-    /** The script source the indicator was added with; undefined for a NATIVE
-     *  (core-computed) indicator. The usual `when` gate for source-centric actions. */
+    /** The script source the indicator runs NOW (read at click time, so an in-place code
+     *  update shows through); undefined for a NATIVE (core-computed) indicator. The usual
+     *  `when` gate for source-centric actions. */
     source?: string;
 }
 
@@ -347,12 +358,16 @@ export function legendActions(): LegendActionDescriptor[] {
  */
 export function legendActionsProviderFor(chart: Vela, context: () => WidgetContext): (indicatorId: string) => LegendActionView[] {
     return (indicatorId) => {
-        const handle = chart.indicators().find((h) => h.id === indicatorId);
+        const find = (): IndicatorHandle | undefined => chart.indicators().find((h) => h.id === indicatorId);
+        const infoOf = (h: IndicatorHandle): LegendIndicatorInfo => ({ id: h.id, title: h.title, ...(h.source !== undefined ? { source: h.source } : {}) });
+        const handle = find();
         if (!handle) return [];
-        const info: LegendIndicatorInfo = { id: handle.id, title: handle.title, ...(handle.source !== undefined ? { source: handle.source } : {}) };
+        const info = infoOf(handle);
+        // `run` reads the indicator AGAIN at click time: rows are built once, and an
+        // in-place code update since then must not hand the action the old source.
         return legendActions()
             .filter((d) => !d.when || d.when(info))
-            .map((d) => ({ id: d.id, icon: d.icon, tooltip: d.tooltip, run: () => d.run(context(), info) }));
+            .map((d) => ({ id: d.id, icon: d.icon, tooltip: d.tooltip, run: () => d.run(context(), infoOf(find() ?? handle)) }));
     };
 }
 
