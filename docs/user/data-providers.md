@@ -126,6 +126,18 @@ chart.data.registerProvider('hyperliquid', new HyperliquidProvider());
 
 Because Hyperliquid coins are bare, a bare `BTC` won't collide with Binance's `BTCUSDT`; register both and each symbol routes to the venue that indexes it (or name one explicitly with a `BINANCE:` / `HYPERLIQUID:` prefix).
 
+## The bundled OKX provider
+
+`@luxalgo/vela/providers/okx` is a from-scratch [OKX](https://www.okx.com) provider (no third-party SDK, no API key). Tickers are OKX instrument ids: spot pairs (`BTC-USDT`, `ETH-USDC`, …) and perpetual swaps (`BTC-USDT-SWAP`, inverse `BTC-USD-SWAP`, …), both listed for search and bare-symbol resolution. Dated futures (`BTC-USD-251226`) load by their explicit id. History reaches back to each instrument's listing, and timeframes OKX doesn't serve natively (e.g. `45`, `180`, `8h`) are aggregated. Daily, weekly (Monday-based), and monthly bars open at 00:00 UTC. Perpetual volume is reported in the base currency (BTC for `BTC-USDT-SWAP`), not in contracts, so it compares directly with spot. Live ticks stream from OKX's native candle WebSocket, with the standard poll fallback.
+
+```js
+import { OkxProvider } from '@luxalgo/vela/providers/okx';
+chart.data.registerProvider('okx', new OkxProvider());
+// BTC-USDT, ETH-USDC, … (spot) and BTC-USDT-SWAP, BTC-USD-SWAP, … (perpetuals)
+```
+
+OKX spot ids share the `BASE-QUOTE` form with Coinbase products. When you register both, a bare `BTC-EUR` resolves to whichever provider you registered first; name the venue with an `OKX:` or `COINBASE:` prefix to choose.
+
 ## Bringing your own provider
 
 Implement the `DataProvider` interface and register it under any name — see [Adding a data provider](../contributing/adding-a-data-provider.md). The only required method is `getBars`; everything else (`listSymbols`, `getSymbolInfo`, `info`, `subscribe`, `resolveSymbolIcon`) is a progressive enhancement. Symbol icons are the provider's call too: `resolveSymbolIcon(descriptor)` returns the icon URL the shells render in the symbol search, the status line and the object tree (the bundled crypto providers predefine a crypto-icon CDN; no resolver, or no URL, means a colored-initials badge — nothing breaks).

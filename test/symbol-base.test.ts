@@ -5,6 +5,7 @@ import { baseOf, ledgerCryptoIconUrl } from '../src/data/symbol-base';
 import { BinanceProvider } from '../src/data/providers/binance/BinanceProvider';
 import { CoinbaseProvider } from '../src/data/providers/coinbase/CoinbaseProvider';
 import { HyperliquidProvider } from '../src/data/providers/hyperliquid/HyperliquidProvider';
+import { OkxProvider } from '../src/data/providers/okx/OkxProvider';
 
 describe('baseOf', () => {
     it('prefers the description first segment, strips Perpetual, falls back to de-suffixed ticker', () => {
@@ -29,6 +30,7 @@ describe('bundled crypto providers predefine resolveSymbolIcon (Ledger CDN)', ()
         ['binance', new BinanceProvider()],
         ['coinbase', new CoinbaseProvider()],
         ['hyperliquid', new HyperliquidProvider()],
+        ['okx', new OkxProvider()],
     ] as const)('%s resolves from the descriptor base', (_name, p) => {
         expect(p.resolveSymbolIcon({ ticker: 'BTCUSDT', description: 'BTC / USDT' })).toBe('https://crypto-icons.ledger.com/BTC.png');
         expect(p.resolveSymbolIcon({ ticker: 'ETH-USD' })).toBe('https://crypto-icons.ledger.com/ETH.png');

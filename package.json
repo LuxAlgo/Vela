@@ -56,6 +56,11 @@
       "import": "./dist/providers/coinbase.js",
       "require": "./dist/providers/coinbase.cjs"
     },
+    "./providers/okx": {
+      "types": "./dist/providers/okx.d.ts",
+      "import": "./dist/providers/okx.js",
+      "require": "./dist/providers/okx.cjs"
+    },
     "./plugin": {
       "types": "./dist/plugin.d.ts",
       "import": "./dist/plugin.js",

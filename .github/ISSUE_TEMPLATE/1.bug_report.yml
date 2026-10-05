@@ -20,7 +20,7 @@ body:
         - Drawing tools
         - Built-in (native) indicators
         - Scripting engine integration (`ScriptingEngine` port, `@luxalgo/vela-pinets` addon)
-        - Data provider (Binance, Coinbase, Hyperliquid, or a custom provider)
+        - Data provider (Binance, Coinbase, Hyperliquid, OKX, or a custom provider)
         - Plugin SDK (`@luxalgo/vela/plugin`: chart types, renderer layers, widget actions)
         - UI kit (`@luxalgo/vela/ui`)
         - Browser bundle (`dist/vela.global.js`)

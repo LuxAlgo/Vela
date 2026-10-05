@@ -5,6 +5,7 @@ export * from './index';
 export { BinanceProvider } from './data/providers/binance';
 export { HyperliquidProvider } from './data/providers/hyperliquid';
 export { CoinbaseProvider } from './data/providers/coinbase';
+export { OkxProvider } from './data/providers/okx';
 // The drawing color picker — reused by the widget UI for its chart/indicator
 // color settings so they share the exact same swatch+opacity control as drawings.
 export { buildColorPicker, splitColor, combineColor } from './ui/components/color-picker';

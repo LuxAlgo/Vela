@@ -23,7 +23,7 @@ import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 | `@luxalgo/vela/workspace` | The full chart app (one chart or a multi-chart grid). |
 | `@luxalgo/vela/ui` | The component kit and `KeymapManager`. |
 | `@luxalgo/vela/plugin` | The extension SDK (chart types, renderer layers, widget contributions). |
-| `@luxalgo/vela/providers/binance` · `/coinbase` · `/hyperliquid` | Ready-made data providers. |
+| `@luxalgo/vela/providers/binance` · `/coinbase` · `/hyperliquid` · `/okx` | Ready-made data providers. |
 
 ## Browser bundle (script tag)
 

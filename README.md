@@ -56,7 +56,7 @@ touching the rest.
   the `KeymapManager`.
 - **`@luxalgo/vela/plugin`**: the extension SDK. Chart types, renderer layers, native
   indicators.
-- **`@luxalgo/vela/providers/*`**: data providers (Binance, Coinbase, Hyperliquid),
+- **`@luxalgo/vela/providers/*`**: data providers (Binance, Coinbase, Hyperliquid, OKX),
   ready to register. Or supply your own bars and stay fully offline.
 
 ## Installing
