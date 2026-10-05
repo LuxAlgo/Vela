@@ -10,14 +10,14 @@ const REAL_CLOCK: RequestGateClock = {
 };
 
 /**
- * A per-IP request gate for the Coinbase REST path. Coinbase Exchange throttles public
- * endpoints by request RATE (≈10 req/s sustained), not by a per-response weight header like
- * Binance — so this gate shapes throughput two ways:
+ * A per-IP request gate for REST venues that throttle public endpoints by request RATE
+ * (Coinbase ≈10 req/s, OKX 20 req/2s on history) rather than by a per-response weight header
+ * like Binance — so this gate shapes throughput two ways:
  *
  *  - **Concurrency cap** — at most `maxConcurrent` requests in flight, so overlapping
  *    burst-prone backfills (initial + scroll + live poll) can't fan out at once.
  *  - **Min spacing** — request STARTS are spaced at least `minIntervalMs` apart, holding the
- *    sustained rate under the public limit even when several `getTrades` walks run at once.
+ *    sustained rate under the public limit even when several paginated walks run at once.
  *  - **Pause** — a 429 sets a backoff ({@link pauseFor}); new work waits it out before starting.
  *
  * One instance is shared across every REST call on a provider. Pure of any HTTP or `console`,

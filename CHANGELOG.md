@@ -21,6 +21,11 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **OKX market data.** A new built-in provider, `@luxalgo/vela/providers/okx`, serves OKX
+  spot pairs (`BTC-USDT`) and perpetual swaps (`BTC-USDT-SWAP`) with no API key, and loads
+  dated futures by their id. Search lists every live spot pair and perpetual. History goes
+  back to each instrument's listing, daily and longer bars open at midnight UTC, perpetual
+  volume is shown in the base coin, and live candles stream as they form.
 - **Fib retracement has a Reverse option.** The Levels dialog of a Fib retracement now
   has a Reverse toggle that puts level 0 on the first point instead of the second.
 

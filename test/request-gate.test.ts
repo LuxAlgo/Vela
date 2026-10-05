@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RequestGate, type RequestGateClock } from '../src/data/providers/coinbase/RequestGate';
+import { RequestGate, type RequestGateClock } from '../src/data/providers/RequestGate';
 
 /** A fake clock whose `delay(ms)` advances virtual time, so spacing is deterministic. */
 function fakeClock(): RequestGateClock & { t: number } {
