@@ -6,7 +6,7 @@ import type { Unsubscribe } from '../../../core/util/types';
 import { RequestGate } from '../RequestGate';
 
 const REST_BASE = 'https://www.okx.com/api/v5';
-const WS_URL = 'wss://ws.okx.com:8443/ws/v5/business';
+const WS_URL = 'wss://ws.okx.com/ws/v5/business';
 /**
  * If a candle socket opens but delivers no candle within this window, treat it as
  * non-delivering and fall back to polling. OKX re-pushes the forming candle about every
@@ -354,6 +354,7 @@ export class OkxProvider implements DataProvider {
         const open = (): void => {
             if (closed || polling) return;
             ws = new WebSocket(WS_URL);
+            clearStall(); // a socket that closed before its first candle left its watchdog armed
             stall = setTimeout(fallToPolling, STREAM_STALL_MS);
             ws.onopen = () => {
                 try { ws?.send(JSON.stringify({ op: 'subscribe', args: [{ channel, instId }] })); }

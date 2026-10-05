@@ -244,7 +244,7 @@ describe('OkxProvider.subscribe', () => {
         const bars: OHLCV[] = [];
         const unsub = new OkxProvider().subscribe('BTC-USDT-SWAP', '1h', (b) => bars.push(b));
         const ws = FakeWS.instances[0]!;
-        expect(ws.url).toBe('wss://ws.okx.com:8443/ws/v5/business');
+        expect(ws.url).toBe('wss://ws.okx.com/ws/v5/business');
         ws._open();
         expect(JSON.parse(ws.sent[0]!)).toEqual({ op: 'subscribe', args: [{ channel: 'candle1H', instId: 'BTC-USDT-SWAP' }] });
 
@@ -265,6 +265,26 @@ describe('OkxProvider.subscribe', () => {
         await vi.advanceTimersByTimeAsync(3500); // a poll cycle + the request gate's spacing
         expect(bars.length).toBeGreaterThan(0);
         unsub();
+    });
+
+    it('a socket that closes before its first candle leaves no watchdog behind to kill the reconnected stream', async () => {
+        vi.useFakeTimers();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const FakeWS = makeFakeWS();
+        vi.stubGlobal('WebSocket', FakeWS);
+        const bars: OHLCV[] = [];
+        const unsub = new OkxProvider().subscribe('BTC-USDT', '1h', (b) => bars.push(b));
+        FakeWS.instances[0]!._open();
+        FakeWS.instances[0]!.close(); // dropped before delivering anything
+        await vi.advanceTimersByTimeAsync(2_100); // reconnect backoff
+        const second = FakeWS.instances[1]!;
+        second._open();
+        second._msg({ arg: { channel: 'candle1H', instId: 'BTC-USDT' }, data: [row(0)] });
+        await vi.advanceTimersByTimeAsync(20_000); // past the first socket's 15s window
+        expect(warn).not.toHaveBeenCalled();
+        expect(second.readyState).toBe(1);
+        unsub();
+        warn.mockRestore();
     });
 
     it('falls back to polling when the socket opens but never delivers', async () => {
