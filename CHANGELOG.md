@@ -49,6 +49,11 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Bar colors keep updating after the first paint.** A `barcolor()` script's per-bar
+  colors were applied only when the indicator first mounted; every later run sent a value
+  update that left them out, so during bar replay newly revealed candles kept the default
+  up/down colors instead of the color the script computed for them. Bar colors now travel
+  with each update, the same as the script's other drawings.
 - **"Edit code" on a legend row opens the code the indicator runs now.** After an in-place
   code update, a legend action still received the code the indicator was added with.
 - **Refreshing actions keeps open side panels as they are.** `refreshActions()` rebuilt
