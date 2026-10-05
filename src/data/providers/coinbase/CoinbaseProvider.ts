@@ -3,7 +3,7 @@ import type { BarRange, SymbolInfo } from '../../../core/ports/MarketDataFeed';
 import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from '../../../core/ports/DataProvider';
 import { baseOf, ledgerCryptoIconUrl } from '../../symbol-base';
 import type { Unsubscribe } from '../../../core/util/types';
-import { RequestGate } from './RequestGate';
+import { RequestGate } from '../RequestGate';
 
 const REST_BASE = 'https://api.exchange.coinbase.com';
 const WS_URL = 'wss://ws-feed.exchange.coinbase.com';
