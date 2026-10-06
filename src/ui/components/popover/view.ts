@@ -4,6 +4,7 @@ import type { VelaTheme } from '../../../core/options';
 import { injectStyles } from '../../styles';
 import { ensureUIHost, floatingLayerHost } from '../../tokens';
 import { announceSurface } from '../../surface-events';
+import { holdForExit, type SurfaceExit } from '../../surface-exit';
 import {
     insetRect,
     intersectRects,
@@ -34,6 +35,8 @@ export interface PopoverOptions extends PopoverControllerOptions {
 }
 
 let open: Popover | null = null;
+/** Closed popovers still playing their exit animation. */
+const leaving = new Set<Popover>();
 
 /** Close whichever kit popover is showing (dialog teardown, a second trigger). */
 export function closeOpenPopovers(): void {
@@ -85,6 +88,8 @@ export class Popover {
     private readonly fadeMs: number;
     /** The pending removal of a fading-out shell; a show() that reuses the shell cancels it. */
     private leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    /** The shell's exit animation before it leaves the DOM; a show() that reuses the shell cancels it. */
+    private exit: SurfaceExit | null = null;
 
     constructor(opts: PopoverOptions) {
         const doc = opts.trigger.ownerDocument;
@@ -131,6 +136,12 @@ export class Popover {
             clearTimeout(this.leaveTimer);
             this.leaveTimer = null;
         }
+        this.exit?.cancel();
+        this.exit = null;
+        leaving.delete(this);
+        // Owners that build a fresh popover per open (color pickers, select lists): the new
+        // one takes the place of the one still leaving from the same trigger.
+        for (const p of [...leaving]) if (p.trigger === this.trigger) p.exit?.finish();
         // A caller theme is often the live plot surface (settings dialogs pass
         // `this.theme`); stamping it on a `.vela-ui`-hosted shell would recolor the
         // list to layout.background.
@@ -203,7 +214,12 @@ export class Popover {
                 this.el.remove();
             }, this.fadeMs);
         } else {
-            this.el.remove();
+            this.exit = holdForExit(this.el, () => {
+                this.exit = null;
+                leaving.delete(this);
+                this.el.remove();
+            });
+            if (this.exit) leaving.add(this);
         }
         if (open === this) open = null;
         this.ctrl.onClose?.();
@@ -217,6 +233,7 @@ export class Popover {
 
     destroy(): void {
         this.hide();
+        this.exit?.finish();
     }
 
     reposition(): void {

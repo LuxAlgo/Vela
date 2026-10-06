@@ -5,6 +5,7 @@ import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
 import { announceSurface } from '../../../ui/surface-events';
+import { holdForExit, type SurfaceExit } from '../../../ui/surface-exit';
 
 /** Expanded bar width in px — a docked host's left-gutter reservation must match it. */
 export const TOOLBAR_WIDTH = 44;
@@ -57,6 +58,9 @@ export class DrawingToolbar {
     private flyout: HTMLDivElement | null = null;
     private flyoutOwnerId: string | null = null; // group id (or MAGNET_ID) whose flyout is open
     private flyoutCell: HTMLElement | null = null; // the cell the open flyout is anchored to
+    /** Closed flyouts still playing their exit animation, by owner id — reopening the same
+     *  owner takes its element back instead of stacking a second one on it. */
+    private readonly exitingFlyouts = new Map<string, { fly: HTMLDivElement; exit: SurfaceExit }>();
     private readonly groupCells = new Map<string, HTMLElement>(); // the composite cell (hover/active bg + flyout anchor)
     private readonly groupIcons = new Map<string, HTMLButtonElement>(); // the icon button inside each cell
     private cursorBtn: HTMLButtonElement | null = null;
@@ -195,6 +199,7 @@ export class DrawingToolbar {
 
     destroy(): void {
         this.closeFlyout();
+        for (const { exit } of [...this.exitingFlyouts.values()]) exit.finish();
         for (const dispose of this.tipDisposers.splice(0)) dispose();
         this.root.remove();
     }
@@ -453,7 +458,13 @@ export class DrawingToolbar {
      *  outside-dismiss. Callers fill it with items. */
     private beginFlyout(ownerId: string, cell: HTMLElement): HTMLDivElement {
         const t = this.theme;
-        const fly = document.createElement('div');
+        const back = this.exitingFlyouts.get(ownerId);
+        if (back) {
+            this.exitingFlyouts.delete(ownerId);
+            back.exit.cancel();
+            back.fly.replaceChildren();
+        }
+        const fly = back?.fly ?? document.createElement('div');
         fly.className = 'vela-dtb-flyout';
         // square LEFT corners (butts flush against the bar), rounded RIGHT corners; no left border so the seam is invisible
         fly.style.cssText =
@@ -636,7 +647,12 @@ export class DrawingToolbar {
             // Cleared before announcing: a listener that closes the flyout must not re-enter.
             this.flyout = null;
             announceSurface(fly, false, 'menu', this.flyoutCell);
-            fly.remove();
+            const owner = this.flyoutOwnerId ?? '';
+            const exit = holdForExit(fly, () => {
+                if (this.exitingFlyouts.get(owner)?.fly === fly) this.exitingFlyouts.delete(owner);
+                fly.remove();
+            });
+            if (exit) this.exitingFlyouts.set(owner, { fly, exit });
             this.flyoutCell?.classList.remove('vela-open');
             this.flyoutCell = null;
             this.flyoutOwnerId = null;

@@ -4,6 +4,15 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Menus, panels and dialogs can animate out with plain CSS.** As a menu, popover, dialog,
+  drawer, side panel, the layout picker or a drawing toolbar flyout closes, it now carries a
+  `data-closing` attribute and stays on screen, ignoring clicks, until the exit animation or
+  transition your stylesheet gives that attribute has played (one second at most). Reopening
+  it meanwhile brings it straight back. Without such a rule nothing changes and surfaces close
+  at once, as before.
+
 ### Fixed
 
 - **A flat price pane no longer freezes the tab.** When every bar in a pane sits on the
