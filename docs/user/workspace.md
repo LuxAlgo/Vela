@@ -351,7 +351,7 @@ at the top level and are each cell's **default** — `symbol` (bare = first decl
 provider; an `EXCHANGE:` prefix pins a venue), `timeframe`, `bars`, `priceStyle`,
 `data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`, `downColor`, `glow`,
 `animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar excepted),
-`defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
+`priceAxis`, `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
 `maxWebglCells` policy). `cells` overrides the market/view seeds per cell:
 `{ symbol, timeframe, bars, priceStyle, data, visibleRange }`.
 
@@ -509,6 +509,9 @@ they work from the very first keystroke, before any click.
   for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
   is independent of the main one. Each menu's settings entry opens the settings dialog on the
   tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
+  Rows a plugin adds sort in with the built-in ones: by default after the built-in actions and
+  before the settings entry at the bottom of the menu (see [Right-click menu
+  actions](../contributing/plugin-sdk.md#right-click-menu-actions)).
 
 ### Following menus and panels
 

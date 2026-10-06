@@ -225,7 +225,8 @@ registerWidgetAction({
                                  //  tooltip; mobile surfaces keep their text). Requires
                                  //  `icon`. The piece that makes a 'screenshot' slot
                                  //  override pixel-faithful to the button it replaces.
-    order: 10,                   // sort key within the contributed group
+    order: 10,                   // sort key: within the contributed group on the topbar;
+                                 //  among the built-in rows in a right-click menu (see below)
     align: 'left',               // topbar only: 'left' joins the primary chrome cluster
                                  //  (after the style/layout dropdowns, styled like them);
                                  //  'right' (default) the right-hand tools cluster
@@ -249,6 +250,7 @@ registerWidgetAction({
         // ctx.stateChanged() — persistable third-party state changed (debounced save)
         // ctx.host  — mount host for kit components (Dialog/Menu/Tooltip)
         // ctx.toast(message, kind?) — the widget's feedback pill
+        // ctx.pointer (context:* only) — where the right-click landed: { price, time, paneKind }
     },
 });
 ```
@@ -261,9 +263,10 @@ On the mobile chrome the split carries over: left-aligned actions get their own
 icon-only stop in the bottom bar (the built-in indicators slot), while right-aligned
 ones stay in the three-dots sheet. `mobile` overrides it per action: a left action with
 `mobile: 'menu'` becomes a three-dots row with the primary rows (right after Layout),
-and a right action with `mobile: 'bar'` gets a bottom-bar stop. `context:*` actions are appended to the matching
-right-click menu zone. Register at import time — a widget constructed later picks them
-up; after late registrations call `widget.refreshActions()`.
+and a right action with `mobile: 'bar'` gets a bottom-bar stop. `context:*` actions become
+rows of the matching right-click menu zone (see [Right-click menu
+actions](#right-click-menu-actions)). Register at import time — a widget constructed later
+picks them up; after late registrations call `widget.refreshActions()`.
 
 `align`/`order` are the action's *suggestion* — the HOST has the last word: the shell's
 `topbar: { left, right }` option (see [Composing the
@@ -286,6 +289,58 @@ Two rules keep actions portable:
 - **Kit components get `ctx.host`.** Mounting a `Dialog`/`Menu`/`Tooltip` without an
   explicit host portals it to `<body>`, outside the theme's CSS variables (invisible
   backgrounds). Pass `host: ctx.host`.
+
+### Right-click menu actions
+
+The three `context:*` targets add rows to the chart's right-click menus: `context:body` (the
+plot), `context:price-axis` (a pane's price scale) and `context:time-axis`. The context
+handed to their `when` and `run` carries **`ctx.pointer`**, where the right-click landed,
+read from the crosshair of the chart that received it (in a workspace, the cell under the
+pointer, which the right-click also makes active):
+
+- `price` — the value under the pointer on its pane: a price on the price pane, an
+  indicator value on a study pane. `null` off the plot.
+- `time` — the open time of the bar under the pointer; `null` off the bars.
+- `paneKind` — `'price'` or `'study'`; `null` off the plot.
+
+`ctx.pointer` is captured when the menu opens, so `run` sees the right-clicked spot even
+though the mouse moved through the menu to pick the row. The axis menus get what the
+crosshair reports over the axis: `price` and `paneKind` are `null` there, while `time`
+still names the bar column under the pointer (on the time axis, the bar above the click).
+Every other context (topbar actions, attachments, panels) has no `pointer`.
+
+```ts
+import { registerWidgetAction } from '@luxalgo/vela/plugin';
+
+registerWidgetAction({
+    id: 'mytool.copy-price',
+    target: 'context:body',
+    label: 'Copy price',
+    icon: 'clone',
+    order: -100,                                   // lead the menu
+    when: (ctx) => ctx.pointer?.paneKind === 'price',
+    run: (ctx) => void navigator.clipboard.writeText(String(ctx.pointer!.price)),
+});
+```
+
+Contributed rows sort **together** with the built-in rows by `order` (ascending, default
+0). The built-in rows sit at fixed ranks, exported as `CONTEXT_MENU_BUILTIN_ORDER`:
+
+| Menu | Built-in rows and ranks |
+| --- | --- |
+| `body` | Reset chart view −30 · Remove drawings −20 · Remove indicators −10 · Settings… 1000 |
+| `price-axis` | Auto −80 · Invert scale −70 · Regular −60 · Percent −50 · Indexed to 100 −40 · Logarithmic −30 · Labels −20 · Levels −10 · More settings… 1000 |
+| `time-axis` | Time zone −10 · More settings… 1000 |
+
+So an action without `order` lands after the built-in actions and before the settings row,
+`order: -100` leads the menu, and `order: 1001` follows the settings row. On a tie the
+built-in row comes first, then the actions in registration order. Separators split the menu
+into groups and never open or close it: the built-in groups (body: Reset chart view | the
+two removals | Settings…; price axis: Auto and Invert | the four scale modes | Labels and
+Levels | More settings…; time axis: Time zone | More settings…), and each run of
+consecutive contributed rows. An `order` that falls inside a built-in group
+splits it around your row. The built-in body rows carry icons; give yours an `icon` so it
+reads the same (an iconless row keeps its label aligned with the others).
 
 ## Widget attachments — `registerWidgetAttachment`
 
