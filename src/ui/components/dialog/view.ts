@@ -8,6 +8,7 @@ import { dialogController, type DialogControllerOptions } from './controller';
 import { DIALOG_CSS, DIALOG_STYLE_ID } from './styles';
 import * as zagDialog from '@zag-js/dialog';
 import { announceSurface } from '../../surface-events';
+import { holdForExit, type SurfaceExit } from '../../surface-exit';
 
 export interface DialogOptions extends DialogControllerOptions {
     title?: string;
@@ -153,16 +154,25 @@ export class Dialog {
         this.handle = runMachine(this.ctrl.machine, this.ctrl.props, (service) => {
             const api = this.ctrl.connect(service);
             // Close announces while the panel still shows (before the close props land), open once it does.
-            if (this.wasOpen && !api.open) this.announce(false);
+            const closing = this.wasOpen && !api.open;
+            if (closing) this.announce(false);
             spreadProps(this.backdrop, api.getBackdropProps(), mid);
             spreadProps(this.positioner, api.getPositionerProps(), mid);
             spreadProps(this.panel, api.getContentProps(), mid);
             spreadProps(title, api.getTitleProps(), mid);
             spreadProps(close, api.getCloseTriggerProps(), mid);
-            // Zag dialogs expect CONDITIONAL rendering (their props carry no `hidden`,
-            // unlike tooltip/menu) — the view toggles visibility from `api.open` itself.
-            this.backdrop.style.display = api.open ? '' : 'none';
-            this.positioner.style.display = api.open ? '' : 'none';
+            // Zag dialogs expect CONDITIONAL rendering (their `hidden` reaches the panel and
+            // backdrop only, and the panel's authored display beats it) — the view toggles
+            // visibility from `api.open` itself, once the exit animation of a close has run.
+            if (api.open) {
+                this.exit?.cancel();
+                this.exit = null;
+                this.setShown(true);
+            } else if (closing) {
+                this.holdExit();
+            } else if (!this.exit) {
+                this.setShown(false);
+            }
             if (api.open && !this.wasOpen) this.announce(true);
             if (this.wasOpen && !api.open) this.restoreOpener();
             this.wasOpen = api.open;
@@ -171,6 +181,42 @@ export class Dialog {
 
     private opener: HTMLElement | null = null;
     private wasOpen = false;
+    /** The panel and scrim's exit animation after a close; a reopen cancels it. */
+    private exit: SurfaceExit | null = null;
+    private destroyed = false;
+
+    private setShown(shown: boolean): void {
+        this.backdrop.style.display = shown ? '' : 'none';
+        this.positioner.style.display = shown ? '' : 'none';
+    }
+
+    /** Keep the just-closed dialog up through its exit animation, then hide it — or
+     *  remove it, when it was destroyed meanwhile. `spreadProps` re-applies the close
+     *  props' `hidden` only when its value changes, so lifting it keeps the panel and
+     *  scrim up until the exit ends. The positioner spans the viewport: inert, it lets
+     *  clicks through to the page while the panel animates out. */
+    private holdExit(): void {
+        const held = [this.panel, this.backdrop];
+        for (const el of held) el.hidden = false;
+        this.exit = holdForExit(
+            held,
+            () => {
+                this.exit = null;
+                if (this.destroyed) {
+                    this.detach();
+                } else if (!this.open) {
+                    for (const el of held) el.hidden = true;
+                    this.setShown(false);
+                }
+            },
+            { inert: [this.positioner] },
+        );
+    }
+
+    private detach(): void {
+        this.backdrop.remove();
+        this.positioner.remove();
+    }
 
     /** Closing hands focus back to whatever opened it (Escape, the ✕, hide(), or a
      *  teardown that outruns the machine's close notification). */
@@ -207,18 +253,22 @@ export class Dialog {
     }
 
     destroy(): void {
+        // Closed but not projected yet — an owner disposing of the dialog as it reports
+        // closing: project the close now, so it animates out like any other close and
+        // leaves the DOM when its exit ends. A teardown while open leaves at once.
+        if (this.wasOpen && !this.open) this.handle.flush();
         // Exit the open state before stopping so the machine unwinds its open-time
         // effects (focus restore, and the body pointer-events lock of modal dialogs)
         // instead of leaving them behind.
         if (this.open) this.hide();
         this.handle.stop();
+        this.destroyed = true;
         // Torn down while open: the stopped machine never projects the close.
         if (this.wasOpen) {
             this.wasOpen = false;
             this.announce(false);
         }
         this.restoreOpener();
-        this.backdrop.remove();
-        this.positioner.remove();
+        if (!this.exit) this.detach();
     }
 }

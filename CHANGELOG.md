@@ -27,6 +27,12 @@ All notable changes to Vela, newest first.
   with theirs), and added rows sort together with them by their `order`: the built-in rows
   sit at fixed ranks, published as `CONTEXT_MENU_BUILTIN_ORDER`, so an action without an
   `order` lands after the built-in actions and `order: -100` puts it at the top.
+- **Menus, panels and dialogs can animate out with plain CSS.** As a menu, popover, dialog,
+  drawer, side panel, the layout picker or a drawing toolbar flyout closes, it now carries a
+  `data-closing` attribute and stays on screen, ignoring clicks, until the exit animation or
+  transition your stylesheet gives that attribute has played (one second at most). Reopening
+  it meanwhile brings it straight back. Without such a rule nothing changes and surfaces close
+  at once, as before.
 
 ### Changed
 

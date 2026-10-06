@@ -14,6 +14,7 @@
 import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { announceSurface } from '../ui/surface-events';
+import { holdForExit, type SurfaceExit } from '../ui/surface-exit';
 
 const STYLE_ID = 'vela-widget-sidepanel';
 
@@ -223,6 +224,11 @@ export class SidePanel {
     private maximizedOn = false;
     /** Set while the close is announced, so a listener's own close does not re-enter. */
     private closing = false;
+    /** Open as far as the dock and the host are concerned — a closed panel can still be on
+     *  screen while its exit animation runs. */
+    private isOpen = false;
+    /** The exit animation of a close; a reopen cancels it. */
+    private exit: SurfaceExit | null = null;
 
     /** `modifier` is the panel's own class, carrying its content styles (e.g. `vela-ot`). */
     constructor(host: HTMLElement, title: string, modifier: string, opts: SidePanelOptions = {}) {
@@ -282,24 +288,48 @@ export class SidePanel {
     }
 
     get open(): boolean {
-        return !this.el.hidden;
+        return this.isOpen;
     }
 
-    /** Open/close the panel — a bare call flips it. */
-    toggle(open = this.el.hidden): void {
-        if (open === !this.el.hidden || (!open && this.closing)) return;
+    /**
+     * Open/close the panel — a bare call flips it. The panel reports closed at once, but a
+     * close keeps it on screen, marked `data-closing`, while a host exit animation runs.
+     * `instant` skips that, and also cuts short the exit of a panel already closing: a panel
+     * handing the dock to another leaves at once.
+     */
+    toggle(open = !this.isOpen, instant = false): void {
+        if (open === this.isOpen) {
+            if (!open && instant) this.exit?.finish();
+            return;
+        }
+        if (!open && this.closing) return;
         // Close announces while the panel still shows, open once it does.
         if (!open) {
             this.closing = true;
             announceSurface(this.el, false, 'panel');
             this.closing = false;
         }
-        this.el.hidden = !open;
-        // A closed panel reopens at its own size — maximizing is a moment, not a placement.
-        if (!open) this.setMaximized(false);
+        this.isOpen = open;
+        if (open) {
+            if (this.exit) {
+                this.exit.cancel();
+                this.exit = null;
+                this.setMaximized(false);
+            }
+            this.el.hidden = false;
+        } else {
+            const hide = (): void => {
+                this.exit = null;
+                this.el.hidden = true;
+                // A closed panel reopens at its own size — maximizing is a moment, not a placement.
+                this.setMaximized(false);
+            };
+            if (instant) hide();
+            else this.exit = holdForExit(this.el, hide);
+        }
         this.onOpenChange?.(open);
         // After the host heard it — a listener that closes the panel again then reports last.
-        if (open && !this.el.hidden) announceSurface(this.el, true, 'panel');
+        if (open && this.isOpen) announceSurface(this.el, true, 'panel');
     }
 
     /** Whether the panel covers every chart right now. */
@@ -385,6 +415,7 @@ export class SidePanel {
 
     destroy(): void {
         if (this.open) announceSurface(this.el, false, 'panel');
+        this.exit?.finish();
         this.el.remove();
     }
 
