@@ -175,8 +175,9 @@ fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
 - **`checkmarks`** — a checked row shows a leading ✓ instead of the selected-row
   background wash. Pointer-anchored action menus (the chart's right-click menu) use it.
-- **`iconBadges`** — a row's `icon` sits in a 28px rounded badge with a faint fill and a
-  soft border, brightened on hovered and selected rows. The chart-style dropdown and the
+- **`iconBadges`** — a row's `icon` sits in a 24px rounded badge with a faint fill and a
+  soft border; the glyph brightens on a hovered row and the badge inverts (a bright tile
+  under a surface-colored glyph) on the selected one. The chart-style dropdown and the
   right-click menu use it. A level where some rows carry an icon reserves the badge
   column on all its rows so labels align; a level without icons keeps its natural left
   edge. With both options, the ✓ column leads and the badge follows.

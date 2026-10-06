@@ -10,6 +10,9 @@ import { announceSurface } from '../../../ui/surface-events';
 export const TOOLBAR_WIDTH = 44;
 /** Collapsed-strip width in px — just the expand chevron. */
 export const TOOLBAR_COLLAPSED_WIDTH = 16;
+/** Space between the bar's edge and an open flyout: the clearance the topbar dropdowns
+ *  keep below the topbar. */
+const FLYOUT_GAP = 3;
 
 /** Cosmetic/placement options — defaults reproduce the in-renderer docked bar exactly. */
 export interface DrawingToolbarOptions {
@@ -455,12 +458,11 @@ export class DrawingToolbar {
         const t = this.theme;
         const fly = document.createElement('div');
         fly.className = 'vela-dtb-flyout';
-        // square LEFT corners (butts flush against the bar), rounded RIGHT corners; no left border so the seam is invisible
+        // A detached card like the topbar dropdowns, on the bar's own surface: over a chart of
+        // that same color its edge comes from the menu border + shadow.
         fly.style.cssText =
-            `position:absolute;z-index:23;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:0 8px 8px 0;` +
-            // The bar's own surface, so the flyout reads as an extension of the bar. Over a
-            // chart of that same color its edge comes from the stronger menu border + shadow.
-            `background:var(--vela-surface);border:1px solid ${this.borderOverride ?? 'var(--vela-border-strong)'};border-left:none;box-shadow:var(--vela-shadow);pointer-events:auto;` +
+            `position:absolute;z-index:23;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:var(--vela-radius-md);` +
+            `background:var(--vela-surface);border:1px solid ${this.borderOverride ?? 'var(--vela-border-strong)'};box-shadow:var(--vela-shadow);pointer-events:auto;` +
             `overflow-y:auto;overscroll-behavior:contain;`;
         // The flyout is hosted OUTSIDE the bar root (it must escape its overflow), so it
         // carries its own copy of the tokens.
@@ -469,10 +471,8 @@ export class DrawingToolbar {
         const r = cell.getBoundingClientRect();
         const rootR = this.root.getBoundingClientRect();
         const hostR = this.host.getBoundingClientRect();
-        // start 1px inside the bar's right edge, covering its border so the menu connects seamlessly
-        // to the (full-width) selected button — no dark gap, no border seam.
         const top = r.top - hostR.top;
-        fly.style.left = `${rootR.right - hostR.left - 1}px`;
+        fly.style.left = `${rootR.right - hostR.left + FLYOUT_GAP}px`;
         fly.style.top = `${top}px`;
         // Cap height to the remaining space in the host so long tool lists scroll instead of clipping.
         fly.style.maxHeight = `${Math.max(120, hostR.height - top - 8)}px`;
@@ -581,8 +581,8 @@ export class DrawingToolbar {
         item.className = 'vela-dtb-item';
         item.setAttribute('aria-label', opts.label);
         const badged = opts.badge === true || !!opts.icon;
-        // A badged row grows to the 28px badge, so it trims its own vertical padding.
-        const box = badged ? 'gap:10px;padding:4px 10px 4px 4px;' : 'gap:8px;padding:5px 10px 5px 8px;';
+        // A badged row grows to the 24px badge, so it trims its own vertical padding.
+        const box = badged ? 'gap:10px;padding:4px 10px 4px 6px;' : 'gap:8px;padding:5px 10px 5px 8px;';
         item.style.cssText = `display:flex;align-items:center;${box}cursor:pointer;color:${t.textColor};border-radius:var(--vela-radius-sm);font:13px ${t.fontFamily};white-space:nowrap;min-width:148px;`;
         if (opts.selected) item.dataset.selected = '1';
         if (badged) {
@@ -742,10 +742,11 @@ function ensureStyles(): void {
 .vela-dtb[data-collapsed='1'] .vela-dtb-collapse .vela-dtb-hit{width:14px;}
 .vela-dtb-item{background:transparent;border:none;transition:background var(--vela-dur-fast) ease;}
 .vela-dtb-item:hover{background:var(--vela-hover-strong);}
-.vela-dtb-badge{width:28px;height:28px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;border-radius:var(--vela-radius-md);background:var(--vela-hover);border:1px solid var(--vela-border-soft);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-dtb-badge{width:24px;height:24px;padding:3px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;border-radius:var(--vela-radius-md);background:var(--vela-hover);border:1px solid var(--vela-border);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dtb-badge:empty{background:transparent;border-color:transparent;}
-.vela-dtb-badge svg{width:16px;height:16px;}
-.vela-dtb-item:hover .vela-dtb-badge:not(:empty),.vela-dtb-item[data-selected='1'] .vela-dtb-badge:not(:empty){background:var(--vela-active);border-color:var(--vela-border-strong);color:var(--vela-fg-bright);}
+.vela-dtb-badge svg{width:100%;height:100%;}
+.vela-dtb-item:hover .vela-dtb-badge:not(:empty){background:var(--vela-active);color:var(--vela-fg-bright);}
+.vela-dtb-item[data-selected='1'] .vela-dtb-badge:not(:empty){background:color-mix(in srgb,var(--vela-fg-bright) 83%,var(--vela-surface));border-color:color-mix(in srgb,var(--vela-fg-bright) 40%,transparent);color:var(--vela-surface);}
 .vela-dtb-star{width:26px;height:22px;margin:-3px -5px -3px 0;padding:3px 5px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;opacity:0;color:inherit;border-radius:var(--vela-radius-sm);transition:opacity .1s ease,color .1s ease,background .1s ease;}
 .vela-dtb-star svg{width:16px;height:16px;}
 .vela-dtb-item:hover .vela-dtb-star{opacity:.55;}

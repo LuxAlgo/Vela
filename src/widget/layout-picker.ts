@@ -401,7 +401,8 @@ export class LayoutPicker {
         const hostRect = this.opts.host.getBoundingClientRect();
         const trigRect = this.opts.trigger.getBoundingClientRect();
         let left = trigRect.left - hostRect.left;
-        const top = trigRect.bottom - hostRect.top + 4;
+        // The kit menus' positioning gutter, so every topbar dropdown clears the bar alike.
+        const top = trigRect.bottom - hostRect.top + 8;
         const width = this.layer.offsetWidth;
         if (left + width > hostRect.width - 8) left = Math.max(8, hostRect.width - 8 - width);
         this.layer.style.left = `${left}px`;

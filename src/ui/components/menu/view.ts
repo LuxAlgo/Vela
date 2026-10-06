@@ -30,8 +30,9 @@ export interface MenuOptions extends MenuControllerOptions {
      *  edge. Submenus inherit the mode. Dropdown menus (a trigger button opening a
      *  picker) keep the default wash. */
     checkmarks?: boolean;
-    /** Sit each row's icon in a squared badge (a rounded tile with a faint fill and a soft
-     *  border) instead of a bare glyph, and brighten it on hovered and selected rows. A
+    /** Sit each row's icon in a squared badge (a 24px rounded tile with a faint fill and a soft
+     *  border) instead of a bare glyph: its glyph brightens on a hovered row, and the tile
+     *  inverts on the selected one. A
      *  level where some rows carry an icon reserves the badge column on all its rows so
      *  labels align; a level with no icon keeps its natural left edge. With `checkmarks`,
      *  the mark column leads and the badge follows. Submenus inherit the mode. */

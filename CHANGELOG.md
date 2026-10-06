@@ -10,10 +10,11 @@ All notable changes to Vela, newest first.
   multi-chart workspace, the topbar's layout button now draws the arrangement on screen,
   including uneven ones such as one large chart beside two small ones, and updates with
   every layout change. Icons in the chart-style dropdown, the drawing tool menus, and the
-  chart's right-click menu now sit in small rounded tiles that brighten on hover. The
-  drawing tool menus share the drawing toolbar's background, and the layout dropdown
-  matches the other topbar dropdowns. Your own menus can use the same tiles with the
-  `iconBadges` menu option.
+  chart's right-click menu now sit in small rounded tiles that brighten on hover, and the
+  selected entry's tile is filled. The drawing tool menus share the drawing toolbar's
+  background and open a little apart from it, like the topbar dropdowns, and the layout
+  dropdown matches the other topbar dropdowns in color and in its distance from the bar.
+  Your own menus can use the same tiles with the `iconBadges` menu option.
 
 ### Fixed
 
