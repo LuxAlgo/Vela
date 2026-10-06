@@ -172,6 +172,13 @@ linked earlier in the session. Drawings created while the link was off stay
 independent — re-enabling never copies or pairs them. A reload (or `applyState`)
 drops the pairs, so previously synced drawings are independent again.
 
+Cells a later layout change adds to a linked group arrive with every drawing of the
+active cell (or of another group member when the active cell is outside the group),
+including drawings made while the link was off or on a one-chart layout. The copies
+are linked like any synced drawing and add no undo steps on the new cell. A cell
+returning to the grid refreshes the linked copies it already holds instead of
+duplicating them.
+
 `style` mirrors the chart's presentation across same-group cells: the settings
 dialog's **Symbol** tab looks (candle body, border and wick colors, the bar, line,
 area and baseline styles, bar spacing, the animation switches and the watermark

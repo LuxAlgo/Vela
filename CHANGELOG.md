@@ -58,6 +58,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Synced drawings reach the charts a layout change adds.** With drawings sync on,
+  switching to a layout with more charts now copies the drawings already on the active
+  chart onto the new ones. The copies are linked like any synced drawing, so moving,
+  restyling or deleting any of them follows on the others, and they add no steps to the
+  new chart's undo history. A chart that comes back after a smaller layout hid it catches
+  up on the edits made in the meantime instead of showing stale copies.
 - **A flat price pane no longer freezes the tab.** When every bar in a pane sits on the
   same price except for a rounding-error sliver (for example an EMA converging on a flat
   value), the price axis now renders without ticks instead of hanging the tab.
