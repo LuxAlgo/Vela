@@ -68,6 +68,7 @@ import {
     ensureLayout,
     layoutForGrid,
     layoutShape,
+    layoutGlyph,
     occupancyGrid,
     type LayoutDefinition,
     type TrackSizes,
@@ -555,6 +556,7 @@ export class VelaWorkspace {
                     const kind = id as SyncKind;
                     this.sync.set(kind, this.syncOpts[kind] ? false : true);
                 },
+                glyph: () => layoutGlyph(this.def),
             },
             getContext: () => this.context(),
         });
@@ -2205,6 +2207,7 @@ export class VelaWorkspace {
                     const kind = id as SyncKind;
                     this.sync.set(kind, this.syncOpts[kind] ? false : true);
                 },
+                glyph: () => layoutGlyph(this.def),
             },
             onOpenChange: (open) => this.trackDialog(open),
         });
