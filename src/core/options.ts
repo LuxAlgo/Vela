@@ -150,7 +150,62 @@ export interface VelaOptions extends MarketConfig {
      *  chart with `chart.renderer.listSettingsIds()`; the catalog is documented in
      *  docs/user/options.md. */
     settings?: SettingsVisibilityPolicy;
+    /** Price-axis customization (native renderer): `ticks` replaces the built-in tick
+     *  ladder of every pane's price axis — labels and horizontal gridlines together. */
+    priceAxis?: PriceAxisOptions;
 }
+
+/** Price-axis customization (see `VelaOptions.priceAxis`). */
+export interface PriceAxisOptions {
+    /** Supplies the ticks of each pane's price axis — the labels and the horizontal
+     *  gridlines both follow them. Called per pane when the pane's range, size or mode
+     *  changes. Returning `null`/`undefined` keeps the built-in ticks. Seeds the native
+     *  renderer's runtime `priceAxisTicks` feature; `null` (the default) = built-in ticks. */
+    ticks?: PriceAxisTicksFn | null;
+}
+
+/** One price-axis tick: a gridline at `price` and its axis label. */
+export interface PriceAxisTick {
+    /** Where the tick sits, in prices (also in percent/indexed mode). */
+    price: number;
+    /** The axis label, drawn as given. */
+    label: string;
+    /** true = emphasized (semibold), false = de-emphasized (muted), omitted = the regular label. */
+    major?: boolean;
+}
+
+/** What a {@link PriceAxisTicksFn} receives for one pane. */
+export interface PriceAxisTickContext {
+    /** The pane whose axis is being built. */
+    pane: { id: string; kind: 'price' | 'study' };
+    /** The pane's visible value range, in prices (also in percent/indexed mode). */
+    min: number;
+    /** Upper end of the visible range, in prices. */
+    max: number;
+    /** Whether the pane's scale is logarithmic. */
+    log: boolean;
+    /** Pane height in CSS px. */
+    height: number;
+    /** The mode the axis labels render in this frame. */
+    mode: 'price' | 'percent' | 'indexed';
+    /** The percent/indexed baseline price (undefined in price mode). */
+    baseline?: number;
+    /** The symbol's tick size, when known. */
+    mintick?: number;
+    /** The axis font size in px. */
+    fontSize: number;
+    /** A price's pane-relative y in CSS px (honours log and inverted scales). */
+    priceToY(price: number): number;
+    /** Vela's own ticks for this frame — return them, or a filtered/extended copy, to build on the default. */
+    defaults: readonly PriceAxisTick[];
+}
+
+/**
+ * Builds a pane's price-axis ticks. Return the ticks to draw (an empty array draws none),
+ * or `null`/`undefined` to keep the built-in ones. Entries with a non-finite `price` or a
+ * non-string `label` are dropped; a function that throws falls back to the built-in ticks.
+ */
+export type PriceAxisTicksFn = (ctx: PriceAxisTickContext) => readonly PriceAxisTick[] | null | undefined;
 
 /** Settings-dialog visibility policy (see `VelaOptions.settings`). */
 export interface SettingsVisibilityPolicy {
@@ -315,6 +370,8 @@ export interface RendererDisplayOptions {
     upColor: string;
     downColor: string;
     priceStyle: PriceStyle;
+    /** Host price-axis ticks (`VelaOptions.priceAxis.ticks`); absent/null = built-in ticks. */
+    priceAxisTicks?: PriceAxisTicksFn | null;
 }
 
 /**

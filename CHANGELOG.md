@@ -6,6 +6,18 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Custom price-axis ticks.** The new `priceAxis.ticks` option lets you supply the
+  price-axis ladder yourself, for example denser minor levels or emphasized round numbers.
+  It is called for each pane with the visible range, the pane height and the axis mode,
+  along with the default ticks to build on, and the axis labels and horizontal gridlines
+  both follow what it returns. A tick can be marked major, for a semibold label, or minor,
+  for a muted one. Change or clear it at runtime with
+  `chart.renderer.set('priceAxisTicks', fn)`; returning nothing keeps the default ticks.
+- **The veiled side of a bar pick can be styled.** While a `crosshairOverride` veils the
+  bars after the picked one, the chart places an element with the class `vela-shade-right`
+  over exactly that area, under the crosshair and above the candles. Style it with CSS, for
+  example `backdrop-filter: grayscale(1)` to turn those bars grey. It changes nothing until
+  you style it.
 - **Right-click actions know where you clicked.** An action added to a chart's right-click
   menu now receives `ctx.pointer` in its `when` and `run`: the price under the pointer (an
   indicator value on a study pane), the time of the bar under it and the kind of pane, as
