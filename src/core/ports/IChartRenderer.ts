@@ -383,6 +383,16 @@ export interface IChartRenderer {
      */
     onPriceStyleChange?(cb: (style: PriceStyle) => void): Unsubscribe;
 
+    /**
+     * The renderer tells core that the base price style is ABOUT to change, `from` → `to`
+     * — the same sources as {@link onPriceStyleChange} (one runtime write path), called
+     * synchronously before the renderer touches its scene, so the chart still paints
+     * `from` while the callback runs. Never called for the constructed style or for a
+     * write of the style already shown. Callbacks must not change the style themselves.
+     * Optional — a renderer without runtime style switching omits it.
+     */
+    onPriceStyleWillChange?(cb: (from: PriceStyle, to: PriceStyle) => void): Unsubscribe;
+
     /** The renderer tells core when the user edits an input in-chart. */
     onInputChange(cb: (e: InputChangeEvent) => void): Unsubscribe;
     /** The renderer tells core when the user removes an indicator in-chart (the legend ✕). */

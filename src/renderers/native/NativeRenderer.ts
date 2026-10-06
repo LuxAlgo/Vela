@@ -376,6 +376,7 @@ export class NativeRenderer implements IChartRenderer {
     private readonly toggleVisibleCbs = new Set<(id: string, visible: boolean) => void>();
     private readonly moveIndicatorCbs = new Set<(id: string, target: MoveTarget) => void>();
     private readonly priceStyleCbs = new Set<(style: PriceStyle) => void>();
+    private readonly priceStyleWillChangeCbs = new Set<(from: PriceStyle, to: PriceStyle) => void>();
 
     constructor(opts?: RendererDisplayOptions) {
         if (opts) {
@@ -2312,14 +2313,22 @@ export class NativeRenderer implements IChartRenderer {
         return () => this.priceStyleCbs.delete(cb);
     }
 
+    onPriceStyleWillChange(cb: (from: PriceStyle, to: PriceStyle) => void): Unsubscribe {
+        this.priceStyleWillChangeCbs.add(cb);
+        return () => this.priceStyleWillChangeCbs.delete(cb);
+    }
+
     /**
      * THE single write path for the base price style at runtime (feature set / settings dialog /
-     * config template — the constructor seeds the field directly, pre-listeners). Updates the
-     * scene, eases any reveal layer toward the new style's target, and notifies the core —
-     * which owns the DATA side of styles that need one (a chart type's SeriesDataEngine).
+     * config template — the constructor seeds the field directly, pre-listeners). Announces the
+     * switch while the scene still holds the old style (a listener may paint/capture that frame),
+     * then updates the scene, eases any reveal layer toward the new style's target, and notifies
+     * the core — which owns the DATA side of styles that need one (a chart type's SeriesDataEngine).
      */
     private setPriceStyle(style: PriceStyle): void {
         if (style === this.scene.priceStyle) return;
+        const from = this.scene.priceStyle;
+        for (const cb of this.priceStyleWillChangeCbs) cb(from, style);
         this.scene.priceStyle = style;
         this.scene.basePainting = basePaintingOf(style);
         this.scene.candleOverride = candleOverrideFor(style, this.scene.style.chartTypes);
