@@ -63,7 +63,9 @@ describe('Menu iconBadges', () => {
         const list = h.querySelector('.vela-menu')!;
         expect(list.hasAttribute('data-badges')).toBe(false);
         expect(list.querySelector('.vela-menu-badge')).toBeNull();
-        expect(rows(list)).toEqual([['vela-icon', 'vela-menu-label'], ['vela-menu-label'], ['vela-icon', 'vela-menu-label']]);
+        // The icon-less row keeps an empty bare slot so its label lines up with the others.
+        expect(rows(list)).toEqual([['vela-icon', 'vela-menu-label'], ['vela-icon', 'vela-menu-label'], ['vela-icon', 'vela-menu-label']]);
+        expect(list.querySelectorAll('.vela-menu-item')[1]!.querySelector('.vela-icon')!.childElementCount).toBe(0);
         menu.destroy();
     });
 
