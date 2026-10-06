@@ -18,6 +18,21 @@ All notable changes to Vela, newest first.
   over exactly that area, under the crosshair and above the candles. Style it with CSS, for
   example `backdrop-filter: grayscale(1)` to turn those bars grey. It changes nothing until
   you style it.
+- **Right-click actions know where you clicked.** An action added to a chart's right-click
+  menu now receives `ctx.pointer` in its `when` and `run`: the price under the pointer (an
+  indicator value on a study pane), the time of the bar under it and the kind of pane, as
+  they were when the menu opened. In a multi-chart workspace it describes the chart you
+  right-clicked, so a Copy price row no longer has to follow every chart's crosshair. The
+  built-in rows of the chart menu now show icons (a row without one keeps its label in line
+  with theirs), and added rows sort together with them by their `order`: the built-in rows
+  sit at fixed ranks, published as `CONTEXT_MENU_BUILTIN_ORDER`, so an action without an
+  `order` lands after the built-in actions and `order: -100` puts it at the top.
+
+### Changed
+
+- **Settings… is now the last row of the right-click menus.** In the chart, price-axis and
+  time-axis menus, the settings entry moves below the rows that plugins add instead of
+  sitting above them. An action that should come after it can ask for an `order` above 1000.
 
 ### Fixed
 

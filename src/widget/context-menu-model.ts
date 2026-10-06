@@ -1,7 +1,7 @@
-// Chart context-menu MODEL — the item descriptors for each right-click zone plus the
-// renderer writes a selection implies. Pure functions over plain state, so the menus can
-// be tested without a DOM; `ChartContextMenu` reads the renderer, calls these and shows
-// the result.
+// Chart context-menu MODEL — the item descriptors for each right-click zone, how
+// contributed rows sort in among them, and the renderer writes a selection implies.
+// Pure functions over plain state, so the menus can be tested without a DOM;
+// `ChartContextMenu` reads the renderer, calls these and shows the result.
 import type { MenuItemDescriptor } from '../ui/components/menu';
 import { timezoneMenuRows } from './timezones';
 
@@ -29,8 +29,8 @@ export const SETTINGS_SECTION: Record<Zone, string> = {
 };
 
 /** Menu id for the settings item of a zone, carrying the tab to open. */
-function settingsItem(zone: Zone, label: string): MenuItemDescriptor {
-    return { id: `settings:${SETTINGS_SECTION[zone]}`, label, separatorBefore: true };
+function settingsItem(zone: Zone, label: string, icon?: string): MenuItemDescriptor {
+    return { id: `settings:${SETTINGS_SECTION[zone]}`, label, ...(icon ? { icon } : {}), separatorBefore: true };
 }
 
 /** The section a `settings:*` item asks for, or undefined for a bare `settings` id. */
@@ -144,9 +144,59 @@ export function timeAxisItems(timezone: string): MenuItemDescriptor[] {
  *  the menu keeps its shape. */
 export function bodyItems(counts: { drawings: number; indicators: number }): MenuItemDescriptor[] {
     return [
-        { id: 'reset-view', label: 'Reset chart view' },
-        { id: 'remove-drawings', label: 'Remove drawings', disabled: counts.drawings === 0, separatorBefore: true },
-        { id: 'remove-indicators', label: 'Remove indicators', disabled: counts.indicators === 0 },
-        settingsItem('body', 'Settings…'),
+        { id: 'reset-view', label: 'Reset chart view', icon: 'reset' },
+        { id: 'remove-drawings', label: 'Remove drawings', icon: 'eraser', disabled: counts.drawings === 0, separatorBefore: true },
+        { id: 'remove-indicators', label: 'Remove indicators', icon: 'indicators', disabled: counts.indicators === 0 },
+        settingsItem('body', 'Settings…', 'gear'),
     ];
+}
+
+/**
+ * The rank of every built-in context-menu row, by zone and row id (`settings` is each
+ * zone's settings row). Contributed `context:*` actions sort TOGETHER with these rows by
+ * their `order` (default 0), ascending; on a tie the built-in row comes first, then the
+ * actions in registration order. The built-in actions rank below 0 and the settings row at
+ * 1000, so an action without `order` lands after the built-in actions and before the
+ * settings row, and `order: -100` leads the menu.
+ */
+export const CONTEXT_MENU_BUILTIN_ORDER = {
+    body: { 'reset-view': -30, 'remove-drawings': -20, 'remove-indicators': -10, settings: 1000 },
+    'price-axis': {
+        auto: -80,
+        invert: -70,
+        'scale:regular': -60,
+        'scale:percent': -50,
+        'scale:indexed': -40,
+        'scale:log': -30,
+        labels: -20,
+        levels: -10,
+        settings: 1000,
+    },
+    'time-axis': { timezone: -10, settings: 1000 },
+} as const satisfies Record<Zone, Record<string, number>>;
+
+/** A contributed row on its way into a context menu, with the action's `order`. */
+export interface ContributedRow {
+    item: MenuItemDescriptor;
+    order?: number;
+}
+
+/**
+ * One zone's menu: the built-in rows and the contributed ones interleaved by rank (see
+ * {@link CONTEXT_MENU_BUILTIN_ORDER}). Separators fall between groups only, never at the
+ * ends: each built-in group is a run the builder already separates, and consecutive
+ * contributed rows form one group. `contributed` arrives in registration order within
+ * equal `order`s (what `widgetActions` returns) and keeps it.
+ */
+export function composeMenu(zone: Zone, builtin: readonly MenuItemDescriptor[], contributed: readonly ContributedRow[]): MenuItemDescriptor[] {
+    const ranks: Readonly<Record<string, number>> = CONTEXT_MENU_BUILTIN_ORDER[zone];
+    const rows: Array<{ item: MenuItemDescriptor; rank: number; group: number }> = [];
+    let group = 0;
+    for (const item of builtin) {
+        if (item.separatorBefore) group += 1;
+        rows.push({ item, rank: ranks[item.id.startsWith('settings') ? 'settings' : item.id] ?? 0, group });
+    }
+    for (const { item, order } of contributed) rows.push({ item, rank: order ?? 0, group: -1 });
+    rows.sort((a, b) => a.rank - b.rank);
+    return rows.map(({ item, group: g }, i) => ({ ...item, separatorBefore: i > 0 && rows[i - 1]!.group !== g }));
 }
