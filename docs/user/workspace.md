@@ -103,7 +103,7 @@ ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also r
 ws.maximizeCell('sol');  // one cell over the whole grid (null restores) — pure presentation,
 ws.maximizedCell;        //  the other cells keep everything; layout/state changes restore
 ws.swapCells('btc', 'eth'); // the two cells trade SLOTS (arrangement only — cells untouched)
-ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
+ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'cell:priceStyle' | 'state:changed', cb);
 ```
 
 **Rule of thumb:** hold the cell (or its identity), read `cell.chart` at the point of
@@ -228,6 +228,27 @@ ws.on('script:run', (run) => {
 The payload is the chart-level [`ScriptRun`](./api-reference.md#capturing-what-a-script-computes)
 plus `cell`; everything there — `cause`, `forming`, `plots`, `vars`, `strategy`, `trades()` —
 applies unchanged.
+
+## Following price-style switches
+
+A cell's style switch (candles → line, area, a chart type, …) is relayed the same way:
+`cell:priceStyle` carries the cell identity with the chart-level
+[`priceStyle:change`](./api-reference.md#chart-level-events) payload. Only the cell whose
+style changes emits, whatever the path — the topbar style menu, `ctx.setPriceStyle`,
+`chart.renderer.set('priceStyle', …)`, the chart settings dialog, a config template, or a
+state document applied in place. The event is synchronous and fires before that cell
+repaints, so the cell still shows the outgoing style while your listener runs:
+
+```ts
+ws.on('cell:priceStyle', ({ id, from, to }) => {
+    const cell = ws.cell(id)!;
+    cell.priceStyle; // still `from`
+    const outgoing = cell.chart.renderer.screenshotCanvas(); // the old frame, to animate from
+    animateSwitch(cell, outgoing, to);
+});
+```
+
+Don't change the style again from inside the listener.
 
 ## Bar replay across the grid
 

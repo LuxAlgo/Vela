@@ -33,6 +33,12 @@ All notable changes to Vela, newest first.
   transition your stylesheet gives that attribute has played (one second at most). Reopening
   it meanwhile brings it straight back. Without such a rule nothing changes and surfaces close
   at once, as before.
+- **Know when a chart's style is about to change.** A chart now raises a
+  `priceStyle:change` event just before it repaints in a new style, whichever way the style
+  was changed: the style menu, the chart settings, a template, a restored state or your own
+  code. The chart still shows the old style while your listener runs, so you can capture
+  that frame and animate the switch. A `VelaWorkspace` reports the same switch as
+  `cell:priceStyle`, naming the one chart that changed.
 
 ### Changed
 
