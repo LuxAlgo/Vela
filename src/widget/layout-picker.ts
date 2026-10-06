@@ -12,13 +12,13 @@ import { injectStyles } from '../ui/styles';
 import { Tooltip } from '../ui/components/tooltip';
 import { announceSurface } from '../ui/surface-events';
 
-const STYLE_ID = 'vela-widget-layout-picker-v14';
+const STYLE_ID = 'vela-widget-layout-picker-v15';
 // One monochrome selection language across the panel: lit cells and sync ON
 // switches both speak --vela-selected-*.
 const CSS = `
 .vela-lp-layer { position: absolute; z-index: var(--vela-z-menu); }
 .vela-lp {
-    background: var(--vela-surface-elev);
+    background: var(--vela-surface);
     color: var(--vela-fg);
     border: 1px solid var(--vela-border-strong);
     border-radius: 8px;

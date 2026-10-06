@@ -62,6 +62,32 @@ export const MENU_CSS = `
     color: var(--vela-fg-bright);
 }
 .vela-menu-item[data-checkmark] { color: var(--vela-fg-bright); }
+/* Badge mode (iconBadges): the row icon sits in a rounded tile and the row grows to fit
+   it. An icon-less row of the same level keeps an invisible slot, so labels align. */
+.vela-menu[data-badges] > .vela-menu-item { padding: 4px 10px 4px 6px; }
+.vela-menu-item .vela-menu-badge {
+    width: 28px;
+    height: 28px;
+    flex: none;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--vela-radius-md);
+    background: var(--vela-hover);
+    border: 1px solid var(--vela-border-soft);
+    color: var(--vela-fg-muted);
+    transition: background var(--vela-dur-fast) var(--vela-ease), border-color var(--vela-dur-fast) var(--vela-ease), color var(--vela-dur-fast) var(--vela-ease);
+}
+.vela-menu-item .vela-menu-badge:empty { background: transparent; border-color: transparent; }
+.vela-menu-item .vela-menu-badge .vela-icon { color: inherit; }
+.vela-menu-item[data-highlighted] .vela-menu-badge:not(:empty),
+.vela-menu-item[data-checked] .vela-menu-badge:not(:empty),
+.vela-menu-item[data-checkmark] .vela-menu-badge:not(:empty) {
+    background: var(--vela-active);
+    border-color: var(--vela-border-strong);
+    color: var(--vela-fg-bright);
+}
 /* Switch rows (boolean settings in a dropdown): a right-aligned toggle pill — the
    same control language as the settings dialog's toggles. */
 .vela-menu-switch {

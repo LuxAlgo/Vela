@@ -169,6 +169,20 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
 The primitive's **root is one element**. Chart-settings rows use `display:contents`, so a
 fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
+## Menu rows
+
+`Menu` projects `MenuItemDescriptor` rows. Two opt-in options change how a row reads:
+
+- **`checkmarks`** — a checked row shows a leading ✓ instead of the selected-row
+  background wash. Pointer-anchored action menus (the chart's right-click menu) use it.
+- **`iconBadges`** — a row's `icon` sits in a 28px rounded badge with a faint fill and a
+  soft border, brightened on hovered and selected rows. The chart-style dropdown and the
+  right-click menu use it. A level where some rows carry an icon reserves the badge
+  column on all its rows so labels align; a level without icons keeps its natural left
+  edge. With both options, the ✓ column leads and the badge follows.
+
+Submenus inherit both options.
+
 ## 3 — export it
 
 Re-export from `src/ui/index.ts`. If plugins should drive it with data descriptors
