@@ -173,15 +173,20 @@ independent — re-enabling never copies or pairs them. A reload (or `applyState
 drops the pairs, so previously synced drawings are independent again.
 
 `style` mirrors the chart's presentation across same-group cells: the settings
-dialog's **Canvas** tab (background and text, grid, pane separators), its **Scales
-and lines** tab (price-scale mode, last-price line and labels, crosshair style), and
-its **Status line** tab (segment toggles, indicator titles and values). Editing any
-of them on one cell applies the same change to its group, and enabling the link
-aligns the group to the active cell once. Cells a later layout change adds to a
-linked group inherit the group's presentation on arrival (from the active cell when
-it belongs to the group). Candle colors, line width, and other series settings stay
-per cell, and the display timezone and theme are already workspace-global, so
-neither rides this link.
+dialog's **Symbol** tab looks (candle body, border and wick colors, the bar, line,
+area and baseline styles, bar spacing, the animation switches and the watermark
+toggles), its **Canvas** tab (background and text, grid, pane separators, margins),
+its **Scales and lines** tab (price-scale mode, last-price line and labels, crosshair
+style), its **Status line** tab (segment toggles, indicator titles and values), and
+the session shading colors. A candle-based chart type registered by a plugin shares
+the candle colors it stores; its own settings section stays per cell, because those
+settings can depend on the cell's market. Editing any of them on one cell applies
+the same change to its group, and enabling the link aligns the group to the active
+cell once. Cells a later layout change adds to a linked group inherit the group's
+presentation on arrival (from the active cell when it belongs to the group). The
+chart type itself stays per cell — a candles cell and a line cell keep their types
+and share their colors — and so do the baseline price and the **Events** tab. The
+display timezone and theme are already workspace-global, so neither rides this link.
 
 **Symbol**, **Interval** (timeframe), **Crosshair** and **Style** are also switches
 in the topbar's layout dropdown (its SYNC section), and **Drawings** is a toggle on
@@ -194,7 +199,7 @@ ws.sync.set('viewport', true); // aligns followers to the active cell, then foll
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
 ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
-ws.sync.set('style', true); // canvas/scales/status-line settings mirror on all the others
+ws.sync.set('style', true); // every look in the settings dialog mirrors on all the others
 ws.sync.get('viewport'); // true
 ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true, style: true }
 ```
