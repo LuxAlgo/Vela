@@ -185,6 +185,9 @@ class Surface {
         // left edge instead of carrying an empty gutter.
         const markable = this.checkmarks
             && this.items.some((i) => !(i.submenu && i.submenu.length > 0) && !i.toggle && i.checked !== undefined);
+        // Same for icons: once a row of this level carries one, the others keep an empty
+        // icon slot so every label shares one left edge.
+        const iconic = this.items.some((i) => i.icon);
         for (const item of this.items) {
             if (item.separatorBefore) {
                 const sep = doc.createElement('li');
@@ -218,6 +221,7 @@ class Surface {
                 li.dataset.checked = '1';
             }
             if (item.icon) li.appendChild(iconEl(item.icon, doc));
+            else if (iconic) li.appendChild(iconEl('', doc));
             const label = doc.createElement('span');
             label.className = 'vela-menu-label';
             label.textContent = item.label;

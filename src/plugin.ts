@@ -103,11 +103,14 @@ export {
     type WidgetActionTarget,
     type WidgetAttachment,
     type WidgetContext,
+    type ContextMenuPointer,
     type SidePanelDescriptor,
     type SidePanelHandle,
     type SidePanelHeader,
     type SidePanelButton,
 } from './widget/contributions';
+// Where the built-in right-click rows sit in the sort `context:*` actions share with them.
+export { CONTEXT_MENU_BUILTIN_ORDER } from './widget/context-menu-model';
 // A plugin panel gets the shell's own column; these bounds are what `resizable` clamps to.
 export { clampPanelWidth, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_MIN_WIDTH, DEFAULT_PANEL_MAX_WIDTH, type SidePanelOptions } from './widget/side-panel';
 export { drawingTypes, getDrawingType, type DrawingTypeMeta } from './core/drawings/registry';
