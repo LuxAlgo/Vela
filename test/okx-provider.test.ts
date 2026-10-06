@@ -66,13 +66,13 @@ describe('OKX pure helpers', () => {
 describe('OkxProvider.getBars (stubbed fetch)', () => {
     afterEach(() => vi.unstubAllGlobals());
 
-    it('fetches a native timeframe from /market/candles, ascending, with no cursor on the first page', async () => {
+    it('fetches a native timeframe from /market/history-candles, ascending, with no cursor on the first page', async () => {
         const calls = stubFetch(() => okEnv(rowsDesc(2 * HOUR, 3, HOUR)));
         const bars = await new OkxProvider().getBars('btc-usdt', '1h', { limit: 3 });
         expect(bars.map((b) => b.time)).toEqual([0, HOUR, 2 * HOUR]);
         expect(bars[0]).toEqual({ time: 0, open: 10, high: 12, low: 9, close: 11, volume: 5 });
         expect(calls).toHaveLength(1);
-        expect(calls[0]!.pathname).toBe('/api/v5/market/candles');
+        expect(calls[0]!.pathname).toBe('/api/v5/market/history-candles');
         expect(calls[0]!.searchParams.get('instId')).toBe('BTC-USDT');
         expect(calls[0]!.searchParams.get('bar')).toBe('1H');
         expect(calls[0]!.searchParams.has('after')).toBe(false); // the forming bar is never cut by the client clock
@@ -100,33 +100,33 @@ describe('OkxProvider.getBars (stubbed fetch)', () => {
         expect(bars.map((b) => b.time)).toEqual([0, 45 * MIN]);
     });
 
-    it('pages backward past the 300-row cap, then continues into history-candles once the recent window runs out', async () => {
-        const now = Date.now();
-        const tip = Math.floor(now / MIN) * MIN;
-        // /candles serves 300 + 140 rows (its window ends), history serves the rest.
+    it('pages backward past the 300-row cap with the oldest open-time as the next cursor', async () => {
+        const tip = Math.floor(Date.now() / MIN) * MIN;
         const calls = stubFetch((u) => {
             const after = u.searchParams.get('after');
-            const newest = after ? Number(after) - MIN : tip;
-            const limit = Number(u.searchParams.get('limit'));
-            const n = u.pathname.endsWith('/candles') ? (after ? 140 : 300) : limit;
-            return okEnv(rowsDesc(newest, Math.min(n, limit), MIN));
+            return okEnv(rowsDesc(after ? Number(after) - MIN : tip, Number(u.searchParams.get('limit')), MIN));
         });
         const bars = await new OkxProvider().getBars('BTC-USDT', '1', { limit: 800 });
         expect(bars).toHaveLength(800);
         expect(bars[bars.length - 1]!.time).toBe(tip);
         expect(bars.every((b, i) => i === 0 || b.time - bars[i - 1]!.time === MIN)).toBe(true); // contiguous, ascending
-        // 300 + 140 from the recent window, then 300 + 60 from history (the 300-row cap).
-        expect(calls.map((u) => u.pathname.split('/').pop())).toEqual(['candles', 'candles', 'history-candles', 'history-candles']);
-        expect(calls[3]!.searchParams.get('limit')).toBe('60');
+        expect(calls.map((u) => u.searchParams.get('limit'))).toEqual(['300', '300', '200']);
         expect(calls[1]!.searchParams.get('after')).toBe(String(tip - 299 * MIN)); // oldest of page 1 (exclusive)
     });
 
-    it('routes a page whose cursor is older than the recent window straight to history-candles', async () => {
+    it('stops at the listing when a page comes back short', async () => {
+        const tip = Math.floor(Date.now() / HOUR) * HOUR;
+        const calls = stubFetch(() => okEnv(rowsDesc(tip, 40, HOUR)));
+        const bars = await new OkxProvider().getBars('BTC-USDT', '60', { limit: 500 });
+        expect(bars).toHaveLength(40);
+        expect(calls).toHaveLength(1);
+    });
+
+    it('treats `to` as inclusive by sending it as an exclusive `after` cursor', async () => {
         const deep = Date.now() - 5000 * HOUR;
-        const calls = stubFetch(() => okEnv(rowsDesc(deep - HOUR, 10, HOUR)));
+        const calls = stubFetch(() => okEnv(rowsDesc(deep, 10, HOUR)));
         await new OkxProvider().getBars('BTC-USDT', '60', { to: deep, limit: 10 });
-        expect(calls[0]!.pathname).toBe('/api/v5/market/history-candles');
-        expect(calls[0]!.searchParams.get('after')).toBe(String(deep + 1)); // `to` is inclusive
+        expect(calls[0]!.searchParams.get('after')).toBe(String(deep + 1));
     });
 
     it('a from-bounded range sends exclusive bounds and stops on the short page that reached `from`', async () => {

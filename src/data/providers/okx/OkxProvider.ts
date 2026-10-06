@@ -16,10 +16,8 @@ const STREAM_STALL_MS = 15_000;
 /** Reconnect backoff after an unexpected socket close. */
 const STREAM_RECONNECT_MS = 2_000;
 
-/** Both candle endpoints cap a page at 300 rows. */
+/** `/market/history-candles` caps a page at 300 rows. */
 const MAX_CANDLES_PER_REQ = 300;
-/** `/market/candles` reaches back only this many bars; older pages come from `/market/history-candles`. */
-const RECENT_WINDOW_BARS = 1440;
 
 /**
  * Public REST shaping: `history-candles` allows 20 req/2s per IP and answers the excess with
@@ -65,10 +63,7 @@ const TF_NORMALIZE: Record<string, string> = {
 };
 
 /** Native intraday timeframes in minutes (the aggregation sub-candle candidates). */
-const NATIVE_MINUTES = [1, 3, 5, 15, 30, 60, 120, 240, 360, 720];
-const MIN_TO_BAR: Record<number, string> = {
-    1: '1m', 3: '3m', 5: '5m', 15: '15m', 30: '30m', 60: '1H', 120: '2H', 240: '4H', 360: '6Hutc', 720: '12Hutc',
-};
+const NATIVE_MINUTES = Object.keys(TF_TO_BAR).map(Number).filter(Number.isFinite);
 const SUPPORTED_TIMEFRAMES = ['1', '3', '5', '15', '30', '45', '60', '120', '180', '240', '360', '480', '720', 'D', 'W', 'M'];
 
 /** Duration of one canonical-timeframe bar in ms (paging decisions only; not bar alignment). */
@@ -150,8 +145,8 @@ function clampLimit(bars: OHLCV[], limit?: number): OHLCV[] {
  * OKX market-data provider, built from scratch on the public v5 REST + WebSocket APIs — no
  * third-party SDK, no API key. Tickers are OKX instrument ids: spot (`BTC-USDT`, `ETH-USDC`),
  * perpetual swaps (`BTC-USDT-SWAP`, inverse `BTC-USD-SWAP`) and, by explicit id, dated futures
- * (`BTC-USD-251226`). History pages through `/market/candles` for the recent window and
- * `/market/history-candles` beyond it, back to listing. Timeframes OKX doesn't serve natively
+ * (`BTC-USD-251226`). History pages through `/market/history-candles`, which serves the
+ * forming bar as well as everything back to listing. Timeframes OKX doesn't serve natively
  * (e.g. `45`, `180`, `480`) are aggregated; daily and longer bars are UTC-aligned. Live ticks
  * stream from the native candle WebSocket, with a poll fallback.
  *
@@ -191,7 +186,7 @@ export class OkxProvider implements DataProvider {
             }
             const ratio = targetMin / subMin;
             const subRange: BarRange = { ...range, limit: range.limit != null ? range.limit * ratio + ratio : undefined };
-            const sub = await this.fetchCandles(instId, MIN_TO_BAR[subMin]!, subMin * 60_000, subRange);
+            const sub = await this.fetchCandles(instId, TF_TO_BAR[String(subMin)]!, subMin * 60_000, subRange);
             return clampLimit(aggregate(sub, targetMin * 60_000), range.limit);
         } catch (e) {
             // Fail soft (consistent with the other providers): empty + warning rather than rejecting.
@@ -263,11 +258,9 @@ export class OkxProvider implements DataProvider {
     }
 
     /**
-     * Walk backward from `range.to` (or the live tip) in ≤300-row pages. Pages come from
-     * `/market/candles` while the cursor sits inside its recent window, and from
-     * `/market/history-candles` once that window runs out. A `from` bound walks the whole
-     * `[from, to]` window and keeps its oldest `limit` bars; a count-only request keeps the
-     * newest `limit`. Returns ascending OHLCV.
+     * Walk backward from `range.to` (or the live tip) in ≤300-row pages. A `from` bound walks
+     * the whole `[from, to]` window and keeps its oldest `limit` bars; a count-only request
+     * keeps the newest `limit`. Returns ascending OHLCV.
      */
     private async fetchCandles(instId: string, bar: string, barMs: number, range: BarRange): Promise<OHLCV[]> {
         const derivative = instTypeOf(instId) !== 'SPOT';
@@ -280,26 +273,18 @@ export class OkxProvider implements DataProvider {
         let guard = from != null
             ? Math.ceil(((range.to ?? Date.now()) - from) / barMs / MAX_CANDLES_PER_REQ) + 4
             : Math.ceil(want / MAX_CANDLES_PER_REQ) + 4;
-        let useHistory = false;
         let out: OHLCV[] = [];
 
         while (out.length < want && guard-- > 0) {
-            useHistory ||= after != null && after <= Date.now() - RECENT_WINDOW_BARS * barMs;
             const size = Math.min(MAX_CANDLES_PER_REQ, want - out.length);
-            const rows = await this.candlesPage(useHistory ? 'history-candles' : 'candles', instId, bar, size, after, before);
+            const rows = await this.candlesPage(instId, bar, size, after, before);
             const page = rows.map((r) => candleRowToOHLCV(r, derivative)).sort((a, b) => a.time - b.time);
-            if (page.length > 0) {
-                const oldest = page[0]!.time;
-                if (after != null && oldest >= after) break; // defensive: no backward progress
-                out = page.concat(out);
-                after = oldest;
-            }
-            if (page.length === size) continue;
-            // A short page means the walk reached `from` or the listing — unless it was only the
-            // recent window running out, in which case the walk continues into history.
-            if (useHistory) break;
-            if (from != null && after != null && after - barMs < from) break;
-            useHistory = true;
+            if (page.length === 0) break;
+            const oldest = page[0]!.time;
+            if (after != null && oldest >= after) break; // defensive: no backward progress
+            out = page.concat(out);
+            after = oldest;
+            if (page.length < size) break; // reached `from` or the listing
         }
 
         const sorted = dedupeSorted(out);
@@ -308,10 +293,8 @@ export class OkxProvider implements DataProvider {
     }
 
     /** One candles request (newest-first rows), bounded by the exclusive `after`/`before` open-times. */
-    private async candlesPage(
-        endpoint: 'candles' | 'history-candles', instId: string, bar: string, limit: number, after?: number, before?: number,
-    ): Promise<RawCandle[]> {
-        const url = new URL(`${REST_BASE}/market/${endpoint}`);
+    private async candlesPage(instId: string, bar: string, limit: number, after?: number, before?: number): Promise<RawCandle[]> {
+        const url = new URL(`${REST_BASE}/market/history-candles`);
         url.searchParams.set('instId', instId);
         url.searchParams.set('bar', bar);
         url.searchParams.set('limit', String(limit));
