@@ -1176,7 +1176,7 @@ export class VelaWorkspace {
         const keep = new Set(this.order.slice(0, next.cells.length));
         // Identities live BEFORE the switch — cells that survive or round-trip through
         // the pool carry their own (already converged) state; only genuinely NEW slots
-        // need the style alignment below.
+        // need the style and drawings alignment below.
         const preexisting = new Set(this.cellsById.keys());
         for (const [id, cell] of [...this.cellsById]) {
             if (!keep.has(id) || rebuildAll) {
@@ -1191,6 +1191,7 @@ export class VelaWorkspace {
         this.applyGrid();
         this.buildCells();
         this.alignNewCellStyles(preexisting);
+        this.alignNewCellDrawings(preexisting);
         this.syncCellPresentation();
         this.refreshCellControls(); // the maximize gate follows the cell count
         this.topbar.setLayout(next.id);
@@ -1830,6 +1831,61 @@ export class VelaWorkspace {
             if (propagated.has(source)) continue; // one propagation already covered this group
             propagated.add(source);
             this.propagateStylePrefs(source);
+        }
+    }
+
+    /**
+     * Bring cells minted by a layout change into their drawings group: with the link
+     * on, a NEW cell (fresh slot, or one returning from the pool that missed edits
+     * while dormant) receives the drawings of a pre-existing group peer — the active
+     * cell when it is one. A drawing the arriving cell already holds a linked copy of
+     * is refreshed in place; any other is copied and linked like a freshly synced
+     * drawing, so later edits and removals follow both ways. The arrival is the cell's
+     * starting state, not an edit: it stays out of the cell's undo timeline, and the
+     * busy guard keeps the copies' own events from fanning back out.
+     */
+    private alignNewCellDrawings(preexisting: ReadonlySet<string>): void {
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        const ids = [...this.cellsById.keys()];
+        for (const id of ids) {
+            if (preexisting.has(id)) continue;
+            const cell = this.cellsById.get(id);
+            if (!cell?.chart.drawings.supported) continue;
+            const peers = syncTargets(id, setting, ids).filter((p) => preexisting.has(p));
+            if (peers.length === 0) continue; // an unlinked or all-new group has no source to inherit
+            const sourceId = this.activeId && peers.includes(this.activeId) ? this.activeId : peers[0]!;
+            const source = this.cellsById.get(sourceId);
+            if (!source) continue;
+            const drawings = cell.chart.drawings;
+            this.drawingSyncBusy = true;
+            try {
+                cell.history.silently(() => {
+                    const held = new Set(drawings.all().map((d) => d.id));
+                    for (const doc of source.chart.drawings.all()) {
+                        const group = this.drawingLinks.get(`${sourceId}\u0000${doc.id}`) ?? new Map([[sourceId, doc.id]]);
+                        const peerId = group.get(id);
+                        if (peerId != null && held.has(peerId)) {
+                            drawings.update(peerId, { anchors: doc.anchors, style: doc.style, text: doc.text, props: doc.props });
+                            continue;
+                        }
+                        const copy = drawings.add(doc.type, {
+                            paneId: doc.paneId,
+                            anchors: doc.anchors,
+                            style: doc.style,
+                            text: doc.text,
+                            props: doc.props,
+                            zIndex: doc.zIndex,
+                        });
+                        if (!copy) continue;
+                        if (peerId != null) this.drawingLinks.delete(`${id}\u0000${peerId}`);
+                        group.set(id, copy.id);
+                        for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
+                    }
+                });
+            } finally {
+                this.drawingSyncBusy = false;
+            }
         }
     }
 
