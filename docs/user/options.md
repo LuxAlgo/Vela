@@ -67,6 +67,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn (native renderer). |
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 | `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
+| `priceAxis` | `{ ticks?: (ctx) => PriceAxisTick[] \| null }` | built-in ticks | Your own price-axis ladder (native renderer): `ticks` returns each pane's ticks, and the axis labels and horizontal gridlines both follow them (see below). |
 
 \* `defaultLanguage` falls back to the first injected engine's language if you don't set it.
 
@@ -282,6 +283,74 @@ that have sessions, `status-line` only when the shell's status line is on,
 way. Host sections contributed through `setSettingsSections` need nothing from the
 contributor: the `id` fields are optional stability aids, label slugs are the
 fallback.
+
+### The `priceAxis` option — custom price-axis ticks
+
+`priceAxis.ticks` replaces the built-in tick ladder of the native renderer's price axes.
+It is called for each pane — the price pane and every study pane — and returns the ticks
+to draw. The axis labels and the horizontal gridlines both follow the same ticks, so they
+always line up.
+
+```js
+new Vela('#chart', {
+  data: bars,
+  priceAxis: {
+    // Emphasize the built-in levels and add a muted level between two of them
+    // wherever there is room.
+    ticks: ({ mode, defaults, priceToY }) => {
+      if (mode !== 'price') return null; // keep the built-in percent/indexed ticks
+      const out = [];
+      defaults.forEach((tick, i) => {
+        out.push({ ...tick, major: true });
+        const next = defaults[i + 1];
+        if (next && Math.abs(priceToY(next.price) - priceToY(tick.price)) > 40) {
+          const mid = (tick.price + next.price) / 2;
+          out.push({ price: mid, label: mid.toFixed(2), major: false });
+        }
+      });
+      return out;
+    },
+  },
+});
+```
+
+Each tick is `{ price, label, major? }`: `price` places the gridline and the label, `label`
+is drawn as given, and `major: true` draws the label semibold, `major: false` draws it
+muted, while leaving `major` out draws the regular label. Gridlines look the same either
+way. A label too close to the top or bottom edge of its pane is skipped, as with the
+built-in ticks.
+
+The function receives one context object per pane:
+
+| Field | Meaning |
+|---|---|
+| `pane` | `{ id, kind }` — `kind` is `'price'` or `'study'`. |
+| `min`, `max` | The pane's visible range, in prices (also in percent and indexed mode). |
+| `log` | Whether the pane's scale is logarithmic. |
+| `height` | The pane height in CSS pixels. |
+| `mode` | `'price'`, `'percent'` or `'indexed'` — how the axis labels read this frame. |
+| `baseline` | The percent/indexed baseline price (`undefined` in price mode). |
+| `mintick` | The symbol's tick size, when known. |
+| `fontSize` | The axis font size in pixels. |
+| `priceToY(price)` | A price's y within the pane, in CSS pixels (log and inverted scales included). |
+| `defaults` | The built-in ticks for this frame — return them, or a filtered or extended copy, to build on them. |
+
+- Return `null` or `undefined` to keep the built-in ticks, or an empty array to draw none.
+- Entries with a non-finite `price` or a non-string `label` are dropped.
+- If the function throws, the pane keeps its built-in ticks and the console shows one
+  warning for the chart.
+- A pane whose indicator declares its own axis (a blank or categorical axis) draws no
+  price ticks and never calls the function. The extra scale column of an indicator merged
+  onto its own scale keeps its built-in ticks.
+- The function runs again only when a pane's range, height, mode, baseline, tick size or
+  font size changes. If your ticks depend on your own state, set the function again to
+  recompute them.
+
+The option seeds the native renderer's runtime `priceAxisTicks` feature: change or clear
+it later with `chart.renderer.set('priceAxisTicks', fn)` or `null` (see
+[Renderer features](./renderer-features.md#axes--scale)). A function is never part of
+`getConfig()`. On a [workspace](./workspace.md), the top-level `priceAxis` is the default
+of every cell, including cells a later layout change creates.
 
 ### Non-obvious defaults, called out
 

@@ -19,16 +19,25 @@ import { percentScaleFor } from './ChromeRenderer';
 export class CrosshairRenderer {
     private canvas: HTMLCanvasElement | null = null;
     private ctx: CanvasRenderingContext2D | null = null;
+    private shade: { x: number; width: number; height: number } | null = null;
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
     }
 
+    /** The plot area the last frame veiled for `crosshairOverride.shadeRight` — from the
+     *  picked bar's right edge to the price scale, full plot height (the union when both the
+     *  local and a synced crosshair veil) — or null when no veil was painted. */
+    get shadeRightArea(): { x: number; width: number; height: number } | null {
+        return this.shade;
+    }
+
     /** Clear the cursor canvas and (re)draw the crosshair lines + axis chips. The optional
      *  `separatorHoverY` highlights the draggable pane separator under the cursor;
      *  `external` is a SYNCED ghost crosshair (another chart's pointer, pixel-resolved). */
     render(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, separatorHoverY: number | null = null, external: { x: number; y: number | null; time: number; price?: number | null; line?: boolean } | null = null): void {
+        this.shade = null;
         const ctx = this.ctx;
         const canvas = this.canvas;
         if (!ctx || !canvas) return;
@@ -63,12 +72,7 @@ export class CrosshairRenderer {
         if (vertical && ov?.shadeRight) {
             // From the bar's right edge: the bar under the line stays in the clear.
             const from = Math.max(0, Math.round(coords.logicalToX(logical + 0.5)));
-            if (from < dataW) {
-                ctx.fillStyle = ov.shadeRight.color;
-                ctx.globalAlpha = ov.shadeRight.opacity ?? 1;
-                ctx.fillRect(from, 0, dataW - from, dataH);
-                ctx.globalAlpha = 1;
-            }
+            if (from < dataW) this.paintShade(ctx, ov.shadeRight, from, dataW, dataH);
         }
         ctx.strokeStyle = ov?.color ?? cs.color ?? theme.textColor;
         ctx.lineWidth = ov?.width ?? cs.width;
@@ -111,6 +115,7 @@ export class CrosshairRenderer {
     destroy(): void {
         this.canvas = null;
         this.ctx = null;
+        this.shade = null;
     }
 
     /** The synced ghost: a dimmed vertical line at the bar the renderer resolved as
@@ -132,12 +137,7 @@ export class CrosshairRenderer {
         if (ov?.shadeRight) {
             // Even with the ghost off the window: left of it, every bar in view is veiled.
             const from = Math.max(0, Math.round(coords.logicalToX(Math.round(coords.xToLogical(ext.x)) + 0.5)));
-            if (from < dataW) {
-                ctx.fillStyle = ov.shadeRight.color;
-                ctx.globalAlpha = ov.shadeRight.opacity ?? 1;
-                ctx.fillRect(from, 0, dataW - from, dataH);
-                ctx.globalAlpha = 1;
-            }
+            if (from < dataW) this.paintShade(ctx, ov.shadeRight, from, dataW, dataH);
         }
         if (ext.line === false || x < 0 || x > dataW) return;
         ctx.font = `${scene.style.fontSize}px ${theme.fontFamily}`;
@@ -174,6 +174,16 @@ export class CrosshairRenderer {
         }
         this.chip(ctx, x, dataH + 1, formatTimeStamp(ext.time, scene.timezone, coords.barInterval), chipBg, 'center', true, theme.background);
         ctx.globalAlpha = 1;
+    }
+
+    /** Paint the `shadeRight` veil from `from` to the price scale and record the veiled area. */
+    private paintShade(ctx: CanvasRenderingContext2D, shade: { color: string; opacity?: number }, from: number, dataW: number, dataH: number): void {
+        ctx.fillStyle = shade.color;
+        ctx.globalAlpha = shade.opacity ?? 1;
+        ctx.fillRect(from, 0, dataW - from, dataH);
+        ctx.globalAlpha = 1;
+        const x = this.shade ? Math.min(this.shade.x, from) : from;
+        this.shade = { x, width: dataW - x, height: dataH };
     }
 
     /** A soft band + a brighter crisp center line over the hovered separator, so it reads as
