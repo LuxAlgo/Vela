@@ -48,6 +48,13 @@ All notable changes to Vela, newest first.
   background and open a little apart from it, like the topbar dropdowns, and the layout
   dropdown matches the other topbar dropdowns in color and in its distance from the bar.
   Your own menus can use the same tiles with the `iconBadges` menu option.
+- **Style sync covers every chart look.** In a multi-chart workspace, the **Style** link
+  now also mirrors the settings dialog's Symbol tab: candle body, border and wick colors,
+  the bar, line, area and baseline styles, bar spacing and the animation switches. It also
+  carries the Canvas tab's margins, the session shading colors and the watermark toggles.
+  A candle-based chart type added by a plugin shares its candle colors too, while its own
+  settings stay with each chart. The chart type itself stays individual, so a candle chart
+  and a line chart keep their types and share their colors.
 
 ### Fixed
 

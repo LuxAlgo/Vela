@@ -53,7 +53,7 @@ import { timeframeToMs } from '../data/timeframe';
 import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
 import { parseSymbol } from '../data/ProviderRegistry';
-import { syncTargets, rangesWithin, styleConfigSlice, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
+import { syncTargets, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { localStorageAdapter } from '../widget/persist';
 import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
@@ -1746,7 +1746,7 @@ export class VelaWorkspace {
         // Viewport sync: every applied pan/zoom/fit propagates to the same-group cells.
         chart.on('viewport:changed', (range) => this.propagateViewport(cell.id, range));
         // Style sync: any committed config edit (settings dialog, applyConfig) mirrors
-        // this cell's Canvas + Scales-and-lines slice onto its same-group followers.
+        // this cell's style-link slice onto its same-group followers.
         chart.renderer.onConfigChanged(() => this.propagateStylePrefs(cell.id));
         // A theme picked in ONE cell (its settings dialog's Canvas → Theme) re-skins the
         // WHOLE workspace — shared chrome plus every other cell.
@@ -1834,12 +1834,12 @@ export class VelaWorkspace {
     }
 
     /**
-     * Mirror an origin cell's presentation — the Canvas + Scales-and-lines slice of
-     * its renderer config plus its Status line tab prefs — onto its same-group
-     * followers (the style link). Loop-safe two ways: the busy guard eats the
-     * followers' SYNCHRONOUS echoes (their `applyConfig` re-fires `onConfigChanged`
-     * in the same tick), and the equality short-circuits leave already-converged
-     * followers untouched, so nothing re-emits once the group agrees.
+     * Mirror an origin cell's presentation — the style-link slice of its renderer
+     * config ({@link styleConfigPatch}) plus its Status line and watermark prefs —
+     * onto its same-group followers (the style link). Loop-safe two ways: the busy
+     * guard eats the followers' SYNCHRONOUS echoes (their `applyConfig` re-fires
+     * `onConfigChanged` in the same tick), and the equality short-circuits leave
+     * already-converged followers untouched, so nothing re-emits once the group agrees.
      */
     private propagateStylePrefs(originId: string): void {
         if (this.styleSyncBusy || this.destroyed) return;
@@ -1847,18 +1847,16 @@ export class VelaWorkspace {
         if (targets.length === 0) return;
         const origin = this.cellsById.get(originId);
         if (!origin) return;
-        // A renderer without the config port yields no slice — the status prefs still mirror.
-        const slice = styleConfigSlice(origin.chart.renderer.getConfig());
-        const sliceJson = slice ? JSON.stringify(slice) : null;
+        // A renderer without the config port yields no patch — the cell prefs still mirror.
+        const config = origin.chart.renderer.getConfig();
         const prefs = origin.statusPrefs();
         this.styleSyncBusy = true;
         try {
             for (const id of targets) {
                 const cell = this.cellsById.get(id);
                 if (!cell) continue;
-                if (slice && sliceJson !== JSON.stringify(styleConfigSlice(cell.chart.renderer.getConfig()))) {
-                    cell.chart.renderer.applyConfig(slice);
-                }
+                const patch = styleConfigPatch(config, cell.chart.renderer.getConfig());
+                if (patch) cell.chart.renderer.applyConfig(patch);
                 cell.applyStatusPrefs(prefs);
             }
         } finally {
