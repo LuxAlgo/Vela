@@ -71,6 +71,16 @@ function minOpt(a: number | undefined, b: number | undefined): number | undefine
     return Math.min(a, b);
 }
 
+/** A layer's {@link RendererLayerInstance.baseBars} answer when it can stand in for
+ *  `real` (same length, same bar times), else null. */
+export function usableBaseBars(real: readonly OHLCV[], candidate: readonly OHLCV[] | null | undefined): readonly OHLCV[] | null {
+    if (!candidate || candidate === real || candidate.length !== real.length) return null;
+    for (let i = 0; i < real.length; i += 1) {
+        if (candidate[i]?.time !== real[i]!.time) return null;
+    }
+    return candidate;
+}
+
 /** One live layer instance (per mounted renderer). */
 export interface RendererLayerInstance {
     /** The renderer created (and owns) this transparent canvas — keep the reference, paint into it. */
@@ -88,6 +98,19 @@ export interface RendererLayerInstance {
      * request. Values are clamped by the renderer.
      */
     modulateBase?(args: RendererLayerArgs): BasePaintingModulation | null;
+    /**
+     * The bars the base price series paints THIS frame instead of `args.bars` — e.g.
+     * partially grown candles while a style switch animates. Display only: the scales
+     * and autoscale, the crosshair and data readouts, indicators, the current-price
+     * line/label/countdown, user drawings and the other layers keep the real bars. The
+     * answer must match `args.bars` one to one (same length, same bar times in the same
+     * order), otherwise it is ignored. Called after `render`, in registration order, on
+     * layers that sit on the price pane only (the `modulateBase` rule); the first usable
+     * answer wins and the remaining layers are not asked that frame. Return null (or omit
+     * the method) for no opinion. Pair it with `animating()` to keep frames coming for
+     * as long as the substitute changes.
+     */
+    baseBars?(args: RendererLayerArgs): readonly OHLCV[] | null;
     /** The renderer unmounted — release everything (the canvas itself is removed by the renderer). */
     destroy?(): void;
 }

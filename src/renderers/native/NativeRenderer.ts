@@ -78,7 +78,7 @@ import { resizeSplit, type PaneSplit } from './core/paneResize';
 import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint, sanitizeCrosshairOverride } from './core/chartConfig';
 import { BackdropRenderer } from './backdrop/BackdropRenderer';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
-import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
+import { rendererLayers, foldBaseModulation, usableBaseBars, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
 import { stackLayers } from './core/layerStacking';
 import { applyAttributionMarkTheme, attributionMarkColor, createAttributionMark, createCustomMark } from './chrome/AttributionMark';
 import { rasterizeOverlay } from '../shared/dom-raster';
@@ -191,6 +191,9 @@ export class NativeRenderer implements IChartRenderer {
      * instance's pane and z key. `channel` is unique across the array.
      */
     private extLayers: ExtLayer[] = [];
+    /** A layer reported `animating()` during the current animator tick's paint. `start()` is
+     *  a no-op inside a tick, so the tick's own result must carry the request. */
+    private layerFramesWanted = false;
     /** Last applied layer-canvas order (ids below + above the data canvas) — re-slotted only on change. */
     private layerOrderSig = '';
     // The attribution mark (see chrome/AttributionMark + the NOTICE file): default-on;
@@ -367,6 +370,7 @@ export class NativeRenderer implements IChartRenderer {
     private readonly toggleVisibleCbs = new Set<(id: string, visible: boolean) => void>();
     private readonly moveIndicatorCbs = new Set<(id: string, target: MoveTarget) => void>();
     private readonly priceStyleCbs = new Set<(style: PriceStyle) => void>();
+    private readonly priceStyleWillChangeCbs = new Set<(from: PriceStyle, to: PriceStyle) => void>();
 
     constructor(opts?: RendererDisplayOptions) {
         if (opts) {
@@ -2284,14 +2288,22 @@ export class NativeRenderer implements IChartRenderer {
         return () => this.priceStyleCbs.delete(cb);
     }
 
+    onPriceStyleWillChange(cb: (from: PriceStyle, to: PriceStyle) => void): Unsubscribe {
+        this.priceStyleWillChangeCbs.add(cb);
+        return () => this.priceStyleWillChangeCbs.delete(cb);
+    }
+
     /**
      * THE single write path for the base price style at runtime (feature set / settings dialog /
-     * config template — the constructor seeds the field directly, pre-listeners). Updates the
-     * scene, eases any reveal layer toward the new style's target, and notifies the core —
-     * which owns the DATA side of styles that need one (a chart type's SeriesDataEngine).
+     * config template — the constructor seeds the field directly, pre-listeners). Announces the
+     * switch while the scene still holds the old style (a listener may paint/capture that frame),
+     * then updates the scene, eases any reveal layer toward the new style's target, and notifies
+     * the core — which owns the DATA side of styles that need one (a chart type's SeriesDataEngine).
      */
     private setPriceStyle(style: PriceStyle): void {
         if (style === this.scene.priceStyle) return;
+        const from = this.scene.priceStyle;
+        for (const cb of this.priceStyleWillChangeCbs) cb(from, style);
         this.scene.priceStyle = style;
         this.scene.basePainting = basePaintingOf(style);
         this.scene.candleOverride = candleOverrideFor(style, this.scene.style.chartTypes);
@@ -2571,7 +2583,9 @@ export class NativeRenderer implements IChartRenderer {
         if (this.easeScales(dtMs)) active = true;
         if (this.easeLiveBar(dtMs)) active = true; // glide the forming bar toward the latest tick
         this.skeletonClockMs += dtMs; // drives the loading-skeleton pulse (harmless when none show)
+        this.layerFramesWanted = false;
         this.paintData();
+        if (this.layerFramesWanted) active = true;
         this.crosshairLayer.render(this.scene, this.coords, this.theme, this.hoverSeparatorY, this.externalCrossPx());
         this.updateLegendValues(); // the animator owns the frame — renderFrame won't run
         this.emitViewportChange();
@@ -3287,6 +3301,7 @@ export class NativeRenderer implements IChartRenderer {
         this.backend.candleBodyAlpha = this.candleBodyAlpha;
         this.backend.candleStructureAlpha = this.candleStructureAlpha;
         let gridAlpha = 1; // the backdrop's gridline opacity (layers may fade it via modulateBase)
+        let baseBars: readonly OHLCV[] | null = null; // a layer's stand-in for the base series' bars (this frame only)
         const candleBodyScale = 1;
         this.backend.candleBodyScale = candleBodyScale;
         const pane = this.scene.panes.get(PRICE_PANE_ID);
@@ -3329,12 +3344,18 @@ export class NativeRenderer implements IChartRenderer {
                 const args = this.extLayerArgs(l, lp.scale, lp.bounds, nowMs);
                 l.instance.render(args);
                 // Any mounted layer may dim/slim the base painting (chart type or overlay)
-                // — folded this same frame, applied below before the backend paints. Only
-                // layers ON the price pane get a say: one moved to its own pane no longer
-                // sits over the candles it would be dimming.
-                if (lp === pane) folded = foldBaseModulation(folded, l.instance.modulateBase?.(args) ?? null);
+                // — folded this same frame, applied below before the backend paints — or
+                // stand in for its bars. Only layers ON the price pane get a say: one moved
+                // to its own pane no longer sits over the candles it would be dimming.
+                if (lp === pane) {
+                    folded = foldBaseModulation(folded, l.instance.modulateBase?.(args) ?? null);
+                    baseBars ??= usableBaseBars(args.bars, l.instance.baseBars?.(args));
+                }
                 // A pulsing/fading layer keeps the animator alive; it stops itself when done.
-                if (this.animZoom.on && l.instance.animating?.()) this.animator.start();
+                if (this.animZoom.on && l.instance.animating?.()) {
+                    this.layerFramesWanted = true;
+                    this.animator.start();
+                }
             }
             if (folded) {
                 if (folded.candleBodyScale != null) this.backend.candleBodyScale = clamp01(folded.candleBodyScale) || 0.01;
@@ -3358,7 +3379,16 @@ export class NativeRenderer implements IChartRenderer {
             this.userDrawings?.prepareSlices(this.scene.orderedPanes().map((p) => p.id)) ?? new Map(),
         );
         this.backdropRenderer.render(this.scene, this.coords, this.theme, gridAlpha); // L-2, under every layer canvas
-        this.backend.render(this.scene, this.coords, this.theme);
+        // A layer's stand-in bars reach the base series paint only (over the live-bar glide,
+        // which they replace for the frame); the chrome, drawings and readers keep the real
+        // bars, so the swap must not outlive the backend call.
+        const viewBars = this.scene.bars;
+        if (baseBars) this.scene.bars = baseBars as OHLCV[];
+        try {
+            this.backend.render(this.scene, this.coords, this.theme);
+        } finally {
+            this.scene.bars = viewBars;
+        }
         this.chrome.render(this.scene, this.coords, this.theme, this.axisSurface());
         this.trackMarkPopover();
         this.userDrawings?.render(); // L1.5 — above Pine drawings, below the crosshair

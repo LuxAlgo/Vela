@@ -135,6 +135,15 @@ export interface WorkspaceEventMap extends Record<string, unknown> {
      * change included.
      */
     'script:run': WorkspaceScriptRun;
+    /**
+     * One cell's price style is switching `from` → `to` — the per-chart
+     * `priceStyle:change` relayed up with the cell's identity, so one subscription
+     * covers the whole grid, cells added by a later layout change included. Only the
+     * cell whose style changes emits. Same timing as the chart event: synchronous,
+     * before that cell repaints, so `ws.cell(id).priceStyle` and the cell's canvas
+     * still show `from` while the listener runs.
+     */
+    'cell:priceStyle': { id: string; from: string; to: string };
     /** The grid switched layouts (cells created/destroyed/restored around it). */
     'layout:changed': { layout: string };
     /** A cell was maximized over the whole grid, or the grid restored (`id: null`). */
@@ -1672,6 +1681,7 @@ export class VelaWorkspace {
         // workspace covers a grid whose cells come and go. Each cell runs its own engine
         // session, so the `cell` field is what tells two identical scripts apart.
         chart.on('script:run', (run) => this.events.emit('script:run', { ...run, cell: cell.id }));
+        chart.on('priceStyle:change', ({ from, to }) => this.events.emit('cell:priceStyle', { id: cell.id, from, to }));
         chart.on('alert', (alert) => {
             // Provenance the way a user reads it — symbol, timeframe, and the indicator
             // that fired — captured at fire time (the cell may switch markets later).

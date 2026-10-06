@@ -108,6 +108,7 @@ registerRendererLayer({
         },
         animating?: () => false,     // return true while a pulse/fade needs frames
         modulateBase?: (args) => ({ candleBodyScale: 0.07, gridAlpha: 0 }),
+        baseBars?: (args) => null,   // or this frame's stand-in for args.bars (base series only)
         destroy?: () => {},
     }),
 });
@@ -129,8 +130,8 @@ normal object model instead of sitting outside it:
 - **Pane:** `args.scale`/`args.bounds` are the owner's pane — moving the indicator to
   its own pane takes the layer along. A study pane whose master content is only such
   layer natives autoscales from the visible bars (layer natives paint at bar prices), a
-  collapsed host pane blanks the layer, and `modulateBase` is consulted only while the
-  owner sits on the price pane.
+  collapsed host pane blanks the layer, and `modulateBase` and `baseBars` are consulted
+  only while the owner sits on the price pane.
 
 - **Multi-instance owners:** when the owning type allows several instances
   (`multiInstance: true` on its descriptor), each instance owns a layer of its own — the
@@ -142,7 +143,7 @@ normal object model instead of sitting outside it:
 Chart-type channels (no owning indicator) keep the declared `placement` and the price
 pane, exactly as before.
 
-Two per-frame levers beyond the basic contract:
+Three per-frame levers beyond the basic contract:
 
 - **`repaintOnCursor`** (definition): pointer moves normally repaint only the crosshair
   overlay; a layer that hover-tests (tooltips, row highlights) sets this flag and is
@@ -156,6 +157,33 @@ Two per-frame levers beyond the basic contract:
   opinion. When several layers speak, each field keeps the strongest (smallest)
   request. This is how a reveal-under style — or an overlay — fades candles down as
   its own layer fades in, instead of switching them off entirely.
+- **`baseBars`** (instance): the bars the base price series paints this frame instead
+  of `args.bars` — partially grown candles while a style switch animates, for example.
+  It is display only: the price scale and autoscale, the crosshair and data readouts,
+  indicators, the current-price line, label and countdown, user drawings and the other
+  layers all keep the real bars, which are back in place as soon as the series is
+  painted. The answer must match `args.bars` one to one (same length, same bar times
+  in the same order) or it is ignored. Layers are asked after `render`, in registration
+  order, and only while they sit on the price pane (the `modulateBase` rule); the first
+  usable answer wins and the remaining layers are not asked that frame. A stand-in also
+  replaces the forming bar's live glide for the frames it covers. Return null for no
+  opinion, and pair it with `animating()` so frames keep coming while the stand-in
+  changes.
+
+```ts
+// Flatten every candle to its close for as long as `until` is in the future.
+let until = 0;
+registerRendererLayer({
+    id: 'flatten',
+    create: () => ({
+        mount() {},
+        render() {},
+        animating: () => performance.now() < until,
+        baseBars: ({ bars, nowMs }) =>
+            nowMs < until ? bars.map((b) => ({ ...b, open: b.close, high: b.close, low: b.close })) : null,
+    }),
+});
+```
 
 ## Native indicators — `registerNativeIndicator`
 

@@ -4,8 +4,25 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Animate price-style switches.** A chart now announces a style switch (from candles to
+  line, area or any other style) with a `priceStyle:change` event that arrives just before
+  it repaints, whichever way the style was changed: the style menu, the chart settings, a
+  template, a restored state or your own code. The chart still shows the old style while
+  your listener runs, so you can capture that frame and animate from it. A
+  `VelaWorkspace` reports the same switch as `cell:priceStyle`, naming the one chart that
+  changed, so the other charts of the grid are left alone. A renderer layer can also hand
+  the price series its own bars for a frame, such as partly grown candles mid-animation,
+  while the price scale, the crosshair readout, indicators and the last-price label keep
+  showing the real prices.
+
 ### Fixed
 
+- **Animated renderer layers get a steady stream of frames.** A renderer layer that
+  reports it is animating now keeps the chart repainting until it settles. Before, its
+  animation only advanced when something else repainted the chart, such as a new price
+  or a mouse move, so pulses and fades could stall.
 - **A flat price pane no longer freezes the tab.** When every bar in a pane sits on the
   same price except for a rounding-error sliver (for example an EMA converging on a flat
   value), the price axis now renders without ticks instead of hanging the tab.
