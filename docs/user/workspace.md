@@ -351,7 +351,7 @@ at the top level and are each cell's **default** — `symbol` (bare = first decl
 provider; an `EXCHANGE:` prefix pins a venue), `timeframe`, `bars`, `priceStyle`,
 `data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`, `downColor`, `glow`,
 `animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar excepted),
-`defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
+`priceAxis`, `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
 `maxWebglCells` policy). `cells` overrides the market/view seeds per cell:
 `{ symbol, timeframe, bars, priceStyle, data, visibleRange }`.
 
@@ -509,6 +509,9 @@ they work from the very first keystroke, before any click.
   for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
   is independent of the main one. Each menu's settings entry opens the settings dialog on the
   tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
+  Rows a plugin adds sort in with the built-in ones: by default after the built-in actions and
+  before the settings entry at the bottom of the menu (see [Right-click menu
+  actions](../contributing/plugin-sdk.md#right-click-menu-actions)).
 
 ### Following menus and panels
 
@@ -531,6 +534,50 @@ lists, color pickers, mark cards, the layout picker), `'dialog'`, `'drawer'` or 
 `trigger` is the element that opened it — a menu's button, a submenu's row, the control that
 had focus when a dialog opened — or `null` when there is none (a right-click menu). A surface
 created without an explicit host portals to `<body>`; listen on `document` to catch those too.
+
+### Animating closes
+
+Surfaces leave the screen at once by default. To animate them out, style the `data-closing`
+attribute: as a surface starts to close (right after its `vela:surface-close`), Vela sets
+`data-closing` on it and keeps it displayed but inert — it takes no clicks and no focus — until
+every CSS animation or transition that the attribute started on it or inside it has finished,
+then hides or removes it. These elements get the attribute:
+
+| Element | Surface |
+| --- | --- |
+| `.vela-menu` | A dropdown or context menu, each submenu on its own. |
+| `.vela-popover` | Select lists, color pickers and other kit popovers. |
+| `.vela-dialog` and `.vela-dialog-backdrop` | A dialog and its scrim. |
+| `.vela-drawer` and `.vela-drawer-backdrop` | A bottom sheet (mobile chrome) and its scrim. |
+| `.vela-panel` | A side panel. |
+| `.vela-lp` | The layout picker. |
+| `.vela-dtb-flyout` | A drawing toolbar flyout. |
+
+```css
+@media (prefers-reduced-motion: no-preference) {
+    .vela-menu[data-closing],
+    .vela-popover[data-closing],
+    .vela-dialog[data-closing],
+    .vela-dialog-backdrop[data-closing] {
+        animation: host-fade-out 150ms ease forwards;
+    }
+}
+@keyframes host-fade-out {
+    to { opacity: 0; }
+}
+```
+
+- **Without exit CSS nothing changes**: no animation starts, so the surface closes at once.
+- **The wait is capped at 1 second**, and an infinite animation inside the surface (a spinner)
+  never holds it.
+- **Reopening during the exit cancels it**: the same element loses `data-closing` and is
+  interactive again. A surface its owner rebuilds on every open (the chart settings dialog)
+  lets the previous copy finish its exit beside the new one.
+- **A side panel reports closed at once** (its `open` state and the topbar button), but keeps
+  its column until the exit ends. A panel that hands the column to another one, or that a
+  restored state closes, leaves without an exit.
+- **Reduced motion is yours to honor**: Vela waits for whatever your stylesheet starts, so
+  guard the exit rules with `prefers-reduced-motion` as above.
 
 ## Composing the topbar
 

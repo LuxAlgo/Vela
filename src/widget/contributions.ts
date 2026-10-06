@@ -56,6 +56,27 @@ export interface WidgetContext {
      *  `state:changed` + storage write follows). Only needed for state with no shell
      *  event of its own — indicator adds/removals already trigger the save cycle. */
     stateChanged(): void;
+    /** Where the right-click that opened a context menu landed. Set on the context handed
+     *  to `context:*` actions (`when` and `run`); absent everywhere else. */
+    pointer?: ContextMenuPointer;
+}
+
+/**
+ * What the chart's crosshair reported when a context menu opened ({@link WidgetContext.pointer}),
+ * on the chart that received the right-click — in a workspace, the cell under the pointer.
+ * Captured once at open: moving through the menu before picking a row does not change it.
+ * The axis menus get what the crosshair reports over the axis: off the plot, `price` and
+ * `paneKind` are null, while `time` still names the bar column under the pointer (on the
+ * time axis, the bar above the click; null past the last bar).
+ */
+export interface ContextMenuPointer {
+    /** The value under the pointer on the pane it landed on: a price on the price pane, an
+     *  indicator value on a study pane (see `paneKind`). Null off the plot. */
+    price: number | null;
+    /** Open time of the bar under the pointer; null off the bars. */
+    time: number | null;
+    /** The kind of pane the pointer is on; null off the plot. */
+    paneKind: 'price' | 'study' | null;
 }
 
 /** What {@link WidgetContext.addIndicator} takes: a named script, ready to run. */
@@ -100,7 +121,12 @@ export interface WidgetActionDescriptor {
      *  one the flag is ignored (with a console warning) and the label renders. The piece
      *  that makes a `'screenshot'` slot override pixel-faithful to the native button. */
     iconOnly?: boolean;
-    /** Sort key within the contributed group (ascending; default 0). */
+    /** Sort key (ascending; default 0; ties keep registration order). On the topbar it orders
+     *  the contributed group. In a context menu (`context:*`) contributed rows sort TOGETHER
+     *  with the menu's built-in rows, which sit at the ranks of `CONTEXT_MENU_BUILTIN_ORDER`:
+     *  the built-in actions below 0 and the settings row at 1000. So an action without
+     *  `order` lands after the built-in actions and before the settings row, `order: -100`
+     *  leads the menu, and on a tie the built-in row comes first. */
     order?: number;
     /** Topbar only: which cluster the button joins. `'right'` (default) is the
      *  right-hand tools cluster; `'left'` puts it with the PRIMARY chrome buttons —

@@ -11,6 +11,7 @@ import { DrawingSceneRenderer, modelDrawingSet, type DrawingSet } from '../../sh
 import { renderTradeMarkers } from '../../shared/trade-markers';
 import type { TradeExecution } from '../../../core/model/trades';
 import { paneAxisTicks, formatAxisValue, timeTicks } from './ticks';
+import { PriceAxisTickSource } from './priceAxisTicks';
 import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
 import { DARK_THEME } from '../../../core/theme';
 import { tzOffsetMs } from './tz';
@@ -19,6 +20,9 @@ import { tagTextColor } from './contrast';
 import { markGroupVisible } from '../../shared/marks-state';
 import { clusterTooltip, layoutMarkLane, markGlyphAt, markStackAt, type MarkLaneLayout, type PlacedGlyph } from './marks/layout';
 import { MarkIconRaster, paintMarkLane } from './marks/paint';
+
+/** Opacity factor of a price-axis label whose tick is `major: false` (de-emphasized). */
+const MINOR_LABEL_ALPHA = 0.5;
 
 /**
  * Renderer-owned chrome layer (canvas2d) on its own canvas, stacked above the
@@ -44,6 +48,9 @@ export class ChromeRenderer {
     /** Bar open times of the current series, rebuilt only when the array or its length changes (a live tick keeps both). */
     private barTimesSrc: readonly OHLCV[] | null = null;
     private barTimesCache: number[] = [];
+
+    /** `axisTicks` is shared with the backdrop layer, so price labels and gridlines agree. */
+    constructor(private readonly axisTicks = new PriceAxisTickSource()) {}
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
@@ -264,13 +271,19 @@ export class ChromeRenderer {
         if (!scene.showAxisLabels) return;
         ctx.fillStyle = this.axisTextColor;
         ctx.textAlign = 'left';
+        const font = `${scene.style.fontSize}px ${theme.fontFamily}`;
+        const majorFont = `600 ${font}`;
+        const alpha = ctx.globalAlpha;
         for (const pane of panes) {
             if (pane.collapsed) continue; // collapsed strip: legend only, no scale numbers
-            const pct = percentScaleFor(scene, pane);
-            for (const t of paneAxisTicks(pane.scale, pane.bounds.height, pct, scene.priceMintick, pane.axisFormat)) {
+            for (const t of this.axisTicks.ticksFor(scene, pane, coords)) {
                 const y = coords.priceToY(t.price, pane.scale, pane.bounds);
                 if (y < pane.bounds.top + 6 || y > pane.bounds.top + pane.bounds.height - 4) continue;
+                if (t.major === true) ctx.font = majorFont;
+                else if (t.major === false) ctx.globalAlpha = alpha * MINOR_LABEL_ALPHA;
                 ctx.fillText(t.label, dataW + 6, y);
+                if (t.major === true) ctx.font = font;
+                else if (t.major === false) ctx.globalAlpha = alpha;
             }
             // A paneAxis-overridden pane labels its bands instead of prices (a
             // categorical axis) — same column, same typography as the price ticks.

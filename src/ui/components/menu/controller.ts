@@ -20,7 +20,8 @@ export interface MenuItemDescriptor {
      *  instead of the selected-row highlight, and keep the menu OPEN on selection —
      *  the shape for boolean settings living inside a dropdown. */
     toggle?: boolean;
-    /** Icon id (see the `vela/ui` icon registry) rendered before the label. */
+    /** Icon id (see the `vela/ui` icon registry) rendered before the label. A level where
+     *  any row has one gives its iconless rows an empty slot, so the labels align. */
     icon?: string;
     /** Favorite-star affordance at the row's right edge: `false` renders an outline
      *  star revealed on row hover, `true` a filled star that stays visible. Clicking

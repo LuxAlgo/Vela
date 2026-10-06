@@ -179,7 +179,7 @@ export class PanelDock {
         }
         this.pinned = new Set(state.pinned ?? []);
         for (const entry of this.entries) entry.panel.setOverlay(!this.pinned.has(entry.id));
-        for (const entry of this.entries) entry.panel.toggle(entry.id === state.open);
+        for (const entry of this.entries) entry.panel.toggle(entry.id === state.open, true);
         this.pendingOpen = state.open && !this.entries.some((e) => e.id === state.open) ? state.open : null;
     }
 
@@ -197,7 +197,7 @@ export class PanelDock {
         if (this.pinned.has(entry.id)) entry.panel.setOverlay(false);
         entry.panel.onOpenChange = (open) => {
             if (open) {
-                for (const other of this.entries) if (other !== entry) other.panel.toggle(false);
+                for (const other of this.entries) if (other !== entry) other.panel.toggle(false, true);
                 this.pendingOpen = null; // the user chose a column; a stale restore must not steal it
             }
             this.deps.chrome.setPanelActive(entry.id, open);

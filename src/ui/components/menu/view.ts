@@ -8,6 +8,7 @@ import { injectStyles } from '../../styles';
 import { floatingLayerHost } from '../../tokens';
 import { iconEl } from '../../icons';
 import { announceSurface } from '../../surface-events';
+import { holdForExit, type SurfaceExit } from '../../surface-exit';
 import { menuController, type MenuControllerOptions, type MenuItemDescriptor } from './controller';
 import { MENU_CSS, MENU_STYLE_ID } from './styles';
 import * as zagMenu from '@zag-js/menu';
@@ -80,6 +81,8 @@ class Surface {
     private pinnedAnchor: { x: number; y: number; width: number; height: number } | null = null;
     /** The open state last announced — see {@link announce}. */
     private shown = false;
+    /** The list's exit animation after a close; a reopen cancels it. */
+    private exit: SurfaceExit | null = null;
     private readonly opener: HTMLElement | null;
 
     constructor(doc: Document, opts: SurfaceOptions) {
@@ -122,12 +125,29 @@ class Surface {
         this.handle = runMachine(this.ctrl.machine, this.ctrl.props, (service) => {
             const api = this.ctrl.connect(service);
             // Close announces while the list still shows, open once it does.
-            if (this.shown && !api.open) this.announce(false);
+            const closing = this.shown && !api.open;
+            if (closing) this.announce(false);
+            if (api.open && this.exit) {
+                this.exit.cancel();
+                this.exit = null;
+            }
             if (trigger) spreadProps(trigger, api.getTriggerProps(), this.mid);
             spreadProps(this.positioner, api.getPositionerProps(), this.mid);
             spreadProps(this.list, api.getContentProps(), this.mid);
             this.project(api);
+            if (closing) this.holdExit();
             if (api.open && !this.shown) this.announce(true);
+        });
+    }
+
+    /** Keep the just-closed list up through its exit animation. `spreadProps` re-applies
+     *  `hidden` only when the machine's value for it changes, so the list stays shown until
+     *  the exit ends — or until a reopen, which projects `hidden: false` itself. */
+    private holdExit(): void {
+        this.list.hidden = false;
+        this.exit = holdForExit(this.list, () => {
+            this.exit = null;
+            if (!this.shown) this.list.hidden = true;
         });
     }
 
@@ -160,6 +180,7 @@ class Surface {
     destroy(): void {
         for (const sub of this.subs.values()) sub.destroy();
         this.subs.clear();
+        this.exit?.finish();
         this.handle.stop();
         // Torn down while open: the stopped machine never projects the close.
         if (this.shown) this.announce(false);
@@ -195,8 +216,10 @@ class Surface {
         // left edge instead of carrying an empty gutter.
         const markable = this.checkmarks
             && this.items.some((i) => !(i.submenu && i.submenu.length > 0) && !i.toggle && i.checked !== undefined);
-        // Same rule for the badge column: reserved only on a level that holds icons.
-        const badged = this.iconBadges && this.items.some((i) => !!i.icon);
+        // Same for icons: once a row of this level carries one, the others keep an empty
+        // icon slot (an empty badge in badge mode) so every label shares one left edge.
+        const iconic = this.items.some((i) => !!i.icon);
+        const badged = this.iconBadges && iconic;
         if (badged) this.list.dataset.badges = '1';
         else delete this.list.dataset.badges;
         for (const item of this.items) {
@@ -232,13 +255,14 @@ class Surface {
                 li.dataset.checked = '1';
             }
             if (badged) {
-                // Left empty on an icon-less row, so its label shares the column's edge.
                 const badge = doc.createElement('span');
                 badge.className = 'vela-menu-badge';
                 if (item.icon) badge.appendChild(iconEl(item.icon, doc));
                 li.appendChild(badge);
             } else if (item.icon) {
                 li.appendChild(iconEl(item.icon, doc));
+            } else if (iconic) {
+                li.appendChild(iconEl('', doc));
             }
             const label = doc.createElement('span');
             label.className = 'vela-menu-label';

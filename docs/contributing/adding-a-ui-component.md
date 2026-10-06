@@ -110,6 +110,11 @@ expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
   (`src/ui/surface-events.ts`): open once the surface shows, close while it still shows —
   before a fade-out, `hidden`, or removal — so the event bubbles to the host. Hosts follow
   the chrome through these events instead of watching the DOM.
+- After announcing the close, run the hide or removal through `holdForExit`
+  (`src/ui/surface-exit.ts`) so hosts can animate it out by styling `data-closing` (see
+  [Animating closes](../user/workspace.md#animating-closes)). It completes synchronously
+  when no exit animation starts; keep the returned handle to `cancel()` it on a reopen and
+  `finish()` it on teardown.
 - Renderer chrome that consumes the kit **imports the component folder**, not the
   `src/ui` barrel — otherwise Zag overlay machines get pulled into the native-renderer
   bundle. Hosts and plugins import from `@luxalgo/vela/ui`.

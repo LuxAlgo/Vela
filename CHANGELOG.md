@@ -4,8 +4,41 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Custom price-axis ticks.** The new `priceAxis.ticks` option lets you supply the
+  price-axis ladder yourself, for example denser minor levels or emphasized round numbers.
+  It is called for each pane with the visible range, the pane height and the axis mode,
+  along with the default ticks to build on, and the axis labels and horizontal gridlines
+  both follow what it returns. A tick can be marked major, for a semibold label, or minor,
+  for a muted one. Change or clear it at runtime with
+  `chart.renderer.set('priceAxisTicks', fn)`; returning nothing keeps the default ticks.
+- **The veiled side of a bar pick can be styled.** While a `crosshairOverride` veils the
+  bars after the picked one, the chart places an element with the class `vela-shade-right`
+  over exactly that area, under the crosshair and above the candles. Style it with CSS, for
+  example `backdrop-filter: grayscale(1)` to turn those bars grey. It changes nothing until
+  you style it.
+- **Right-click actions know where you clicked.** An action added to a chart's right-click
+  menu now receives `ctx.pointer` in its `when` and `run`: the price under the pointer (an
+  indicator value on a study pane), the time of the bar under it and the kind of pane, as
+  they were when the menu opened. In a multi-chart workspace it describes the chart you
+  right-clicked, so a Copy price row no longer has to follow every chart's crosshair. The
+  built-in rows of the chart menu now show icons (a row without one keeps its label in line
+  with theirs), and added rows sort together with them by their `order`: the built-in rows
+  sit at fixed ranks, published as `CONTEXT_MENU_BUILTIN_ORDER`, so an action without an
+  `order` lands after the built-in actions and `order: -100` puts it at the top.
+- **Menus, panels and dialogs can animate out with plain CSS.** As a menu, popover, dialog,
+  drawer, side panel, the layout picker or a drawing toolbar flyout closes, it now carries a
+  `data-closing` attribute and stays on screen, ignoring clicks, until the exit animation or
+  transition your stylesheet gives that attribute has played (one second at most). Reopening
+  it meanwhile brings it straight back. Without such a rule nothing changes and surfaces close
+  at once, as before.
+
 ### Changed
 
+- **Settings… is now the last row of the right-click menus.** In the chart, price-axis and
+  time-axis menus, the settings entry moves below the rows that plugins add instead of
+  sitting above them. An action that should come after it can ask for an `order` above 1000.
 - **The layout button draws your grid, and dropdown icons sit in badges.** In a
   multi-chart workspace, the topbar's layout button now draws the arrangement on screen,
   including uneven ones such as one large chart beside two small ones, and updates with
