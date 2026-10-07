@@ -431,7 +431,8 @@ export class DrawingSettingsPopup {
             this.reposition();
             return;
         }
-        const text = drawing.text;
+        // `drawing` is the instance the toolbar opened on; every edit since has replaced it.
+        const text = (actions.resolve() ?? drawing).text;
         // Textarea on top; format controls sit in a footer row so they never cover typed text.
         const panel = document.createElement('div');
         panel.style.cssText = `padding:6px;border-top:1px solid var(--vela-border);display:flex;flex-direction:column;gap:4px;`;

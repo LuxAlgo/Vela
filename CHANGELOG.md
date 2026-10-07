@@ -85,6 +85,12 @@ All notable changes to Vela, newest first.
 - **A flat price pane no longer freezes the tab.** When every bar in a pane sits on the
   same price except for a rounding-error sliver (for example an EMA converging on a flat
   value), the price axis now renders without ticks instead of hanging the tab.
+- **Drawing settings keep your edits when you reopen them.** Reopening the Levels dialog
+  of a Fibonacci tool from the same drawing toolbar now shows every change you made
+  earlier, instead of putting some levels back to older values. Cancel in a reopened
+  Levels, position-size or volume-profile dialog now only undoes what you changed since it
+  opened, rather than earlier edits too. The label field of a drawing likewise reopens with
+  the full text you typed.
 
 ## [0.8.2]
 
