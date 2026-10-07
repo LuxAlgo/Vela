@@ -185,7 +185,8 @@ A native that is really **host-owned chrome** — trade markers from a journal, 
 anything whose on/off switch lives in the host's own UI — can opt out of in-chart chrome with
 `legend: false` on the descriptor. Its output still computes and paints, but the chart mounts
 no legend row for it (no title chip, no eye/gear/✕, not counted by the fold chip) and
-`panes.list()` does not report it, so the object tree shows nothing either. The host controls
+`panes.list()` does not report it, so the object tree shows nothing either, and the workspace
+indicator picker lists it neither under On chart nor in its library. The host controls
 it through the `IndicatorHandle` it got from `addNativeIndicator` (`remove()`, `setVisible()`).
 This is different from hiding: a hidden indicator keeps its row so the user can unhide it; a
 legend-less one has no row to begin with.
