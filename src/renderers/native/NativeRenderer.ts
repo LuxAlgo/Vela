@@ -4326,6 +4326,7 @@ function applyPatch(model: IndicatorModel, patch: ScenePatch): void {
             if (!s) continue;
             if (delta.kind === 'points' && isLineLikeSeries(s)) s.points = delta.points;
             else if (delta.kind === 'bars' && (s.kind === 'candle' || s.kind === 'bar')) s.bars = delta.bars;
+            else if (delta.kind === 'markers' && s.kind === 'markers') s.markers = delta.markers;
         }
         if (patch.lines) model.lines = patch.lines;
         if (patch.boxes) model.boxes = patch.boxes;
