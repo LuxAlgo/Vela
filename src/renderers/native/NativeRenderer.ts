@@ -323,6 +323,8 @@ export class NativeRenderer implements IChartRenderer {
     private resizeAbove: PaneNode | null = null; // pane just above the dragged separator
     private resizeBelow: PaneNode | null = null; // pane just below it
     private resizeSplitStart: PaneSplit | null = null; // the two panes' shared span when the drag began
+    /** The user drawings take part in pointer input (the runtime `drawingsInteractive` feature). */
+    private drawingsInteractive = true;
     private hoverSeparatorY: number | null = null; // pixel y of the separator under the cursor (drives its hover highlight)
 
     // ── pane management (merge / reorder / collapse / maximize) ──
@@ -403,7 +405,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'priceAxisTicks'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -549,6 +551,13 @@ export class NativeRenderer implements IChartRenderer {
                 // and a reload can never leave it stuck. `null` restores the configured crosshair.
                 this.scene.crosshairOverride = sanitizeCrosshairOverride(value);
                 break;
+            case 'drawingsInteractive':
+                // Runtime-only (never in getConfig), like `crosshairOverride`: a pick takes the
+                // plot's presses for itself, and a reload can never leave the drawings inert.
+                this.drawingsInteractive = value !== false;
+                if (this.input) this.input.drawings = this.drawingsInteractive;
+                if (!this.drawingsInteractive) this.userDrawings?.clearHover();
+                return; // affects the next gesture only — clearHover repaints what it drops
             case 'priceAxisTicks':
                 // Runtime-only (a function never serializes into getConfig). Setting it again —
                 // even the same function — drops the memoized ticks, so a host can refresh them.
@@ -648,6 +657,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'marks': return { visible: this.scene.marks.visible, groups: { ...this.scene.marks.groups } };
             case 'crosshairOverride': return this.scene.crosshairOverride ? { ...this.scene.crosshairOverride } : null;
+            case 'drawingsInteractive': return this.drawingsInteractive;
             case 'priceAxisTicks': return this.priceAxisTicks.hook;
             case 'keyboard': return this.keyboardEnabled;
             case 'historyChords': return this.historyChordsEnabled;
@@ -1537,13 +1547,14 @@ export class NativeRenderer implements IChartRenderer {
             drawingsPointerDown: (x, y, snap, shift, mod) => this.userDrawings?.pointerDown(x, y, snap, shift, mod),
             drawingsPointerMove: (x, y, snap, shift, mod) => this.userDrawings?.pointerMove(x, y, snap, shift, mod),
             drawingsPointerUp: (x, y, snap) => this.userDrawings?.pointerUp(x, y, snap),
-            drawingsCursor: (x, y) => this.userDrawings?.cursorAt(x, y) ?? (this.chrome.markGlyphAt(x, y) ? 'pointer' : null),
+            drawingsCursor: (x, y) => (this.drawingsInteractive ? this.userDrawings?.cursorAt(x, y) : null) ?? (this.chrome.markGlyphAt(x, y) ? 'pointer' : null),
             drawingsDblClick: (x, y) => this.userDrawings?.dblClick(x, y) ?? false,
             drawingsClearTransient: () => this.userDrawings?.clearTransient(),
         });
         this.input.rightEdgeZoom = this.zoomAnchorMode === 'right'; // honor a pre-mount feature set
         this.input.axisDrag = this.axisDragEnabled;
         this.input.paneResize = this.paneResizeEnabled;
+        this.input.drawings = this.drawingsInteractive;
         // Attach to the data canvas so legend/gear/dialog clicks (above it) don't pan.
         this.input.attach(this.dataCanvas);
         if (this.settingsEnabled) this.setSettingsEnabled(true); // honor a pre-mount feature set
