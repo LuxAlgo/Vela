@@ -64,6 +64,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Events and indicator values stay off the price scale.** A timeline mark on a bar at
+  the chart's right edge, which happens often on a narrow screen or after scrolling back in
+  time, is now cut at the price scale like the candle beneath it instead of being drawn over
+  the scale's labels. An indicator legend row too long for a narrow chart now ends before
+  the price scale: its values are cut short with an ellipsis, and a title that does not fit
+  even on its own is shortened the same way.
 - **Synced drawings reach the charts a layout change adds.** With drawings sync on,
   switching to a layout with more charts now copies the drawings already on the active
   chart onto the new ones. The copies are linked like any synced drawing, so moving,
