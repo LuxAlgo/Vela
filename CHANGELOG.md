@@ -18,6 +18,12 @@ All notable changes to Vela, newest first.
   over exactly that area, under the crosshair and above the candles. Style it with CSS, for
   example `backdrop-filter: grayscale(1)` to turn those bars grey. It changes nothing until
   you style it.
+- **Bar picks leave drawings alone.** While your interaction asks the user to pick a point
+  on the chart, `chart.renderer.set('drawingsInteractive', false)` keeps the pointer away
+  from the drawings: a press on a drawing, or with a drawing tool selected, pans or clicks
+  as on an empty chart and reaches `onClick`, so no drawing is selected, moved, placed or
+  erased by accident. The drawings stay on screen, and `true` restores them. The setting
+  is never saved with the chart.
 - **Right-click actions know where you clicked.** An action added to a chart's right-click
   menu now receives `ctx.pointer` in its `when` and `run`: the price under the pointer (an
   indicator value on a study pane), the time of the bar under it and the kind of pane, as

@@ -508,6 +508,13 @@ export class UserDrawingController implements IDrawingsRendererPort {
         }
     }
 
+    /** Drop the hover (its handles) — the pointer no longer reaches the drawings. */
+    clearHover(): void {
+        if (this.hoveredId == null) return;
+        this.hoveredId = null;
+        this.render();
+    }
+
     pointerUp(x: number, y: number, snap: SnapMode = 'off'): void {
         if (this.eraserMode) {
             this.erasing = false;
