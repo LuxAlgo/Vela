@@ -61,15 +61,17 @@ export class DrawingSettingsDialog {
 
     open(drawing: Drawing, actions: SettingsActions, kind: DrawingDialogKind): void {
         this.close();
-        const snapshot = clonePlain(drawing.serialize());
+        // `drawing` is the instance the toolbar opened on; every edit since has replaced it.
+        const live = actions.resolve() ?? drawing;
+        const snapshot = clonePlain(live.serialize());
         const grid = fieldGrid({ variant: 'inputs' });
         grid.style.padding = '16px 20px';
         grid.style.overflowY = 'auto';
         grid.style.overflowX = 'hidden';
         grid.style.flex = '1 1 auto';
-        if (kind === 'position' && drawing instanceof PositionTool) this.buildPosition(grid, drawing, actions);
-        else if (kind === 'frvp' && drawing instanceof FixedRangeVolumeProfile) this.buildFrvp(grid, drawing, actions);
-        else if (kind === 'levels') this.buildLevels(grid, drawing, actions);
+        if (kind === 'position' && live instanceof PositionTool) this.buildPosition(grid, live, actions);
+        else if (kind === 'frvp' && live instanceof FixedRangeVolumeProfile) this.buildFrvp(grid, live, actions);
+        else if (kind === 'levels') this.buildLevels(grid, live, actions);
         else return;
 
         const ui = new Dialog({
