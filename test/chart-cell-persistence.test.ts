@@ -24,6 +24,7 @@ import { DARK_THEME } from '../src/core/theme';
 import { MultiProviderFeed } from '../src/data/MultiProviderFeed';
 import { BarStore } from '../src/data/BarStore';
 import type { DataProvider } from '../src/core/ports/DataProvider';
+import { registerNativeIndicator, unregisterNativeIndicator, type NativeIndicator, type NativeIndicatorDescriptor } from '../src/core/native-indicators/NativeIndicator';
 
 /**
  * The ChartCell persistence round-trip — the layer the unit suite never covered
@@ -453,5 +454,62 @@ describe('ChartCell indicator picker library', () => {
         expect(natives.length).toBeGreaterThan(0);
         expect(new Set(natives.map((r) => r.category))).toEqual(new Set(['Built-in']));
         cell.destroy();
+    });
+});
+
+describe('ChartCell indicator picker skips legend:false natives', () => {
+    // A host-owned overlay has no legend row and no pane listing; its on/off lives in the
+    // host's UI, so the picker must not offer it either (no On chart row, no library row).
+    const hostOverlay: NativeIndicatorDescriptor = {
+        type: 'test-host-overlay',
+        title: 'Host overlay',
+        paneHint: 'price',
+        overlay: true,
+        legend: false,
+        inputsSchema: () => [],
+        defaultInputs: () => ({}),
+        create: (): NativeIndicator => ({
+            start: () => {},
+            onBars: () => {},
+            onViewport: () => {},
+            setInputs: () => {},
+            suspend: () => {},
+            resume: () => {},
+            stop: () => {},
+        }),
+    };
+
+    it('lists no On chart row for it and keeps the removal index on the visible rows', async () => {
+        registerNativeIndicator(hostOverlay);
+        const cell = makeCell();
+        try {
+            await settle();
+            // The overlay sits BETWEEN two listed natives, so an unfiltered removal index
+            // would land on it instead of on the row the user clicked.
+            cell.addNative(hostOverlay.type);
+            cell.addNative('aroon');
+            await settle();
+            expect(cell.chart.indicators().map((h) => h.nativeType)).toEqual(['volume', hostOverlay.type, 'aroon']);
+            const rows = cell.onChartRows();
+            expect(rows.map((r) => r.nativeType)).toEqual(['volume', 'aroon']);
+            cell.removeFromChart(1);
+            await settle();
+            expect(cell.chart.indicators().map((h) => h.nativeType)).toEqual(['volume', hostOverlay.type]);
+        } finally {
+            cell.destroy();
+            unregisterNativeIndicator(hostOverlay.type);
+        }
+    });
+
+    it('lists no library row for it', async () => {
+        registerNativeIndicator(hostOverlay);
+        const cell = makeCell();
+        try {
+            await settle();
+            expect(cell.libraryRows().map((r) => r.nativeType)).not.toContain(hostOverlay.type);
+        } finally {
+            cell.destroy();
+            unregisterNativeIndicator(hostOverlay.type);
+        }
     });
 });

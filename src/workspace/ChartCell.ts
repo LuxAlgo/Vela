@@ -39,6 +39,11 @@ import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { isExchangeTimezone, normalizeTimezone, resolveTimezone, timezoneMenuRows } from '../core/timezones';
 import { applyPlotOverlayTokens } from '../ui';
+import { getNativeIndicator } from '../core/native-indicators/NativeIndicator';
+
+/** A `legend: false` type is host-owned chrome: no legend row, no pane listing, and no
+ *  picker row either (its on/off lives in the host's own UI). */
+const isLegendless = (type: string): boolean => getNativeIndicator(type)?.legend === false;
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
  *  The SAME vocabulary as the widget's chart options: the workspace's top-level chart
@@ -1182,7 +1187,7 @@ export class ChartCell {
      *  index space the picker hands back, so `libraryRows` and `addFromLibrary` MUST both
      *  read it — indexing the unsorted catalog on add would land on a different study. */
     private supportedNatives(): CellNativeInfo[] {
-        return this.nativeCatalog.filter((n) => n.supported).sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }));
+        return this.nativeCatalog.filter((n) => n.supported && !isLegendless(n.type)).sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }));
     }
 
     /** The picker's library rows: supported natives first (see {@link supportedNatives}),
@@ -1197,7 +1202,7 @@ export class ChartCell {
     /** The picker's on-chart rows: native instances first, then live script instances. */
     onChartRows(): Array<{ name: string; language?: string; native?: boolean; nativeType?: string }> {
         return [
-            ...this.nativeHandles().map((h) => ({ name: h.title, native: true, nativeType: h.nativeType })),
+            ...this.pickerNativeHandles().map((h) => ({ name: h.title, native: true, nativeType: h.nativeType })),
             ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
         ];
     }
@@ -1214,7 +1219,7 @@ export class ChartCell {
 
     /** Remove by picker ON-CHART index (native instances precede script instances — mirrors onChartRows). */
     removeFromChart(index: number): void {
-        const natives = this.nativeHandles();
+        const natives = this.pickerNativeHandles();
         if (index < natives.length) this.removeNative(natives[index]!);
         else this.removeInstance(index - natives.length);
     }
@@ -1352,10 +1357,15 @@ export class ChartCell {
         this.refreshNativeCatalog();
     }
 
-    /** The chart's native instances, insertion order — the picker's on-chart rows and
-     *  the removal index space (script instances follow them). */
+    /** The chart's native instances, insertion order. */
     private nativeHandles(): IndicatorHandle[] {
         return this.inner?.indicators().filter((h) => h.nativeType !== undefined) ?? [];
+    }
+
+    /** The native instances the picker lists — the on-chart rows and the removal index
+     *  space (script instances follow them). Legendless types are left out of both. */
+    private pickerNativeHandles(): IndicatorHandle[] {
+        return this.nativeHandles().filter((h) => !isLegendless(h.nativeType!));
     }
 
     /** Sync mirror of the chart's native instances — the removal handler looks the
