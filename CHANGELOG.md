@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Indicator markers keep up with new bars.** A marker series reached the renderer only
+  when its indicator was added. The updates that followed, as more history loaded or live
+  bars arrived, left it out, so the markers stopped at the bars that were on the chart at
+  that moment. Markers now travel with every update, like the indicator's plotted values.
+
 ## [0.8.3]
 
 ### Added

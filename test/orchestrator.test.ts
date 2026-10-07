@@ -928,6 +928,58 @@ describe('EngineOrchestrator', () => {
         }
     });
 
+    it('a marker series keeps up with a progressive history and live bars: it ends with the markers of a single load', async () => {
+        const all = makeBars(160);
+        const markersOf = (m: IndicatorModel | undefined) => (m?.series ?? []).flatMap((s) => (s.kind === 'markers' ? s.markers : []));
+
+        // The reference: Williams Fractal over every bar, loaded in one request.
+        const single = new FakeRenderer();
+        const reference = new Vela({} as unknown as HTMLElement, { live: false }, { renderer: single, engines: [], dataFeed: new GapFeed(160) });
+        const ref = reference.addNativeIndicator('williams-fractal');
+        await reference.ready();
+        await flush();
+        const want = markersOf(single.mountedModels.filter((m) => m.id === ref.id).pop());
+
+        // The same study added while the history is still streaming in, then fed live bars.
+        let emit: ((bars: OHLCV[]) => void) | null = null;
+        let finish: ((bars: OHLCV[]) => void) | null = null;
+        let push: ((bar: OHLCV) => void) | null = null;
+        const feed: MarketDataFeed = {
+            load: () => Promise.resolve([]),
+            subscribe: (_cfg, onBar) => {
+                push = onBar;
+                return () => {
+                    push = null;
+                };
+            },
+            loadProgressive: (_cfg, onBatch) => {
+                emit = onBatch;
+                return new Promise((res) => {
+                    finish = res;
+                });
+            },
+        };
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { bars: 120, live: true }, { renderer, engines: [], dataFeed: feed });
+        const h = chart.addNativeIndicator('williams-fractal');
+        await Promise.resolve(); // let loadMarketInner reach the progressive await
+        emit!(all.slice(80, 120)); // the first snapshot paints and the study mounts over it
+        await chart.ready();
+        await flush();
+        const atMount = markersOf(renderer.mountedModels.filter((m) => m.id === h.id).pop());
+        finish!(all.slice(0, 120)); // the history converges
+        await chart.historyComplete();
+        await flush();
+        for (const bar of all.slice(120)) push!(bar);
+        await flush();
+
+        // Every later run reaches the renderer as a value patch; its markers must be the whole set.
+        const patch = renderer.updatedPatches.filter((p) => p.kind === 'value' && p.indicatorId === h.id).pop();
+        const patched = patch?.kind === 'value' ? patch.series.flatMap((d) => (d.kind === 'markers' ? d.markers : [])) : [];
+        expect(atMount.length).toBeLessThan(want.length);
+        expect(patched).toEqual(want);
+    });
+
     it('addNativeIndicator with an unregistered type returns a fail-soft handle (no mount, a warning)', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const renderer = new FakeRenderer();

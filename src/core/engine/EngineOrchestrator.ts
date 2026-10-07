@@ -3035,6 +3035,12 @@ function modelToValuePatch(model: IndicatorModel): ValuePatch {
                 if (p.time < from) from = p.time;
                 if (p.time > to) to = p.time;
             }
+        } else if (s.kind === 'markers') {
+            series.push({ seriesId: s.id, kind: 'markers', markers: s.markers });
+            for (const m of s.markers) {
+                if (m.time < from) from = m.time;
+                if (m.time > to) to = m.time;
+            }
         }
     }
     return {
