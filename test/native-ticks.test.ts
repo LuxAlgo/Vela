@@ -27,6 +27,33 @@ describe('native ticks · logPriceTicks', () => {
     });
 });
 
+describe('native ticks · priceTicks', () => {
+    it('returns no ticks when the range is a sub-ulp sliver the step cannot cross', () => {
+        expect(priceTicks(24.43, 24.430000000000003)).toEqual([]);
+    });
+
+    it('terminates on slivers that straddle a power of two', () => {
+        const ranges: [number, number][] = [
+            [31.99999999999999, 32],
+            [1.999999999999998, 2],
+            [3.999999999999996, 4],
+            [1023.999999999999, 1024],
+        ];
+        for (const [below, p] of ranges) {
+            const ticks = priceTicks(below, p);
+            expect(ticks.length).toBeLessThanOrEqual(1000);
+            for (const t of ticks) {
+                expect(t).toBeGreaterThanOrEqual(below - 1e-9);
+                expect(t).toBeLessThanOrEqual(p + 1e-9);
+            }
+        }
+    });
+
+    it('still produces the regular ladder for a normal range', () => {
+        expect(priceTicks(0, 10)).toEqual([0, 2, 4, 6, 8, 10]);
+    });
+});
+
 describe('native ticks · valueDecimals', () => {
     it('shows fewer decimals as magnitude grows', () => {
         expect(valueDecimals(250)).toBe(0);

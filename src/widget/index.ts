@@ -29,6 +29,7 @@ export { ObjectTree } from './object-tree';
 export { DataWindow, dataWindowSections, type DataWindowSection, type DataWindowLine } from './data-window';
 export { ShortcutsHelp } from './shortcuts-help';
 export { ChartContextMenu, type ContextMenuCallbacks } from './context-menu';
+export { CONTEXT_MENU_BUILTIN_ORDER } from './context-menu-model';
 export {
     registerWidgetAction,
     unregisterWidgetAction,
@@ -55,6 +56,7 @@ export {
     type WidgetActionDescriptor,
     type WidgetActionTarget,
     type WidgetContext,
+    type ContextMenuPointer,
     type SidePanelDescriptor,
     type SidePanelHandle,
     type SidePanelButton,

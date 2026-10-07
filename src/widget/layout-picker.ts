@@ -11,14 +11,15 @@
 import { injectStyles } from '../ui/styles';
 import { Tooltip } from '../ui/components/tooltip';
 import { announceSurface } from '../ui/surface-events';
+import { holdForExit, type SurfaceExit } from '../ui/surface-exit';
 
-const STYLE_ID = 'vela-widget-layout-picker-v14';
+const STYLE_ID = 'vela-widget-layout-picker-v15';
 // One monochrome selection language across the panel: lit cells and sync ON
 // switches both speak --vela-selected-*.
 const CSS = `
 .vela-lp-layer { position: absolute; z-index: var(--vela-z-menu); }
 .vela-lp {
-    background: var(--vela-surface-elev);
+    background: var(--vela-surface);
     color: var(--vela-fg);
     border: 1px solid var(--vela-border-strong);
     border-radius: 8px;
@@ -183,6 +184,8 @@ export class LayoutPicker {
     private readonly syncEl: HTMLElement;
 
     private isOpen = false;
+    /** The card's exit animation after a close; a reopen cancels it. */
+    private exit: SurfaceExit | null = null;
     /** Hover preview (1-based rows/cols), null = show current shape. */
     private hover: { rows: number; cols: number } | null = null;
 
@@ -294,6 +297,8 @@ export class LayoutPicker {
     open(): void {
         if (this.isOpen) return;
         this.isOpen = true;
+        this.exit?.cancel();
+        this.exit = null;
         this.hover = null;
         this.refresh();
         this.layer.style.display = '';
@@ -311,7 +316,10 @@ export class LayoutPicker {
         this.isOpen = false;
         // Still showing — the close bubbles before the layer hides.
         announceSurface(this.panel, false, 'popover', this.opts.trigger);
-        this.layer.style.display = 'none';
+        this.exit = holdForExit(this.panel, () => {
+            this.exit = null;
+            if (!this.isOpen) this.layer.style.display = 'none';
+        });
         this.opts.trigger.setAttribute('aria-expanded', 'false');
         this.doc.removeEventListener('pointerdown', this.onDocPointerDown, true);
         this.doc.removeEventListener('keydown', this.onDocKeydown, true);
@@ -328,6 +336,7 @@ export class LayoutPicker {
 
     destroy(): void {
         this.close();
+        this.exit?.finish();
         this.infoTip.destroy();
         this.layer.remove();
     }
@@ -401,7 +410,8 @@ export class LayoutPicker {
         const hostRect = this.opts.host.getBoundingClientRect();
         const trigRect = this.opts.trigger.getBoundingClientRect();
         let left = trigRect.left - hostRect.left;
-        const top = trigRect.bottom - hostRect.top + 4;
+        // The kit menus' positioning gutter, so every topbar dropdown clears the bar alike.
+        const top = trigRect.bottom - hostRect.top + 8;
         const width = this.layer.offsetWidth;
         if (left + width > hostRect.width - 8) left = Math.max(8, hostRect.width - 8 - width);
         this.layer.style.left = `${left}px`;

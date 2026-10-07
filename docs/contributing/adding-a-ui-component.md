@@ -110,6 +110,11 @@ expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
   (`src/ui/surface-events.ts`): open once the surface shows, close while it still shows —
   before a fade-out, `hidden`, or removal — so the event bubbles to the host. Hosts follow
   the chrome through these events instead of watching the DOM.
+- After announcing the close, run the hide or removal through `holdForExit`
+  (`src/ui/surface-exit.ts`) so hosts can animate it out by styling `data-closing` (see
+  [Animating closes](../user/workspace.md#animating-closes)). It completes synchronously
+  when no exit animation starts; keep the returned handle to `cancel()` it on a reopen and
+  `finish()` it on teardown.
 - Renderer chrome that consumes the kit **imports the component folder**, not the
   `src/ui` barrel — otherwise Zag overlay machines get pulled into the native-renderer
   bundle. Hosts and plugins import from `@luxalgo/vela/ui`.
@@ -168,6 +173,21 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
 
 The primitive's **root is one element**. Chart-settings rows use `display:contents`, so a
 fragment of sibling nodes would fall onto the pane grid as extra tracks.
+
+## Menu rows
+
+`Menu` projects `MenuItemDescriptor` rows. Two opt-in options change how a row reads:
+
+- **`checkmarks`** — a checked row shows a leading ✓ instead of the selected-row
+  background wash. Pointer-anchored action menus (the chart's right-click menu) use it.
+- **`iconBadges`** — a row's `icon` sits in a 24px rounded badge with a faint fill and a
+  soft border; the glyph brightens on a hovered row and the badge inverts (a bright tile
+  under a surface-colored glyph) on the selected one. The chart-style dropdown and the
+  right-click menu use it. A level where some rows carry an icon reserves the badge
+  column on all its rows so labels align; a level without icons keeps its natural left
+  edge. With both options, the ✓ column leads and the badge follows.
+
+Submenus inherit both options.
 
 ## 3 — export it
 

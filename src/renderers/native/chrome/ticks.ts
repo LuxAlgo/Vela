@@ -14,10 +14,15 @@ export function priceTicks(min: number, max: number, target = 6): number[] {
     const norm = raw / mag;
     const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
     const decimals = Math.max(0, -Math.floor(Math.log10(step)) + 1);
-    const out: number[] = [];
     const start = Math.ceil(min / step) * step;
-    for (let v = start; v <= max + step * 1e-6; v += step) {
-        out.push(Number(v.toFixed(decimals)));
+    if (!(step > 0) || start + step === start) return [];
+    // Count the ticks up front and index them: accumulating `v += step` can stall
+    // when the float spacing changes inside the range (e.g. across a power of two).
+    const count = Math.floor((max - start) / step + 1e-6) + 1;
+    if (!(count > 0) || count > 1000) return [];
+    const out: number[] = [];
+    for (let i = 0; i < count; i += 1) {
+        out.push(Number((start + i * step).toFixed(decimals)));
     }
     return out;
 }

@@ -60,9 +60,11 @@ export function computePaneScale(
     }
 
     if (min === Infinity || max === -Infinity) return { min: 0, max: 1 };
-    if (min === max) {
-        const pad = Math.abs(min) * 0.1 || 1;
-        return { min: min - pad, max: max + pad, log: log && min - pad > 0 };
+    // A span of a few ulps is rounding noise, not a range: scale it like a flat series.
+    if (max - min <= Math.max(Math.abs(min), Math.abs(max)) * 1e-12) {
+        const mid = (min + max) / 2;
+        const pad = Math.abs(mid) * 0.1 || 1;
+        return { min: mid - pad, max: mid + pad, log: log && mid - pad > 0 };
     }
     // The margins are shares of the pane's PIXEL height, so the data fills the middle
     // `1 − top − bottom`; over the data SPAN that is `top / content` above and

@@ -99,8 +99,8 @@ export class DataWindow extends SidePanel {
         injectStyles(STYLE_ID, CSS, host.ownerDocument);
     }
 
-    override toggle(open = this.el.hidden): void {
-        super.toggle(open);
+    override toggle(open = !this.open, instant = false): void {
+        super.toggle(open, instant);
         if (open) this.refresh();
     }
 

@@ -5,11 +5,15 @@ import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
 import { announceSurface } from '../../../ui/surface-events';
+import { holdForExit, type SurfaceExit } from '../../../ui/surface-exit';
 
 /** Expanded bar width in px — a docked host's left-gutter reservation must match it. */
 export const TOOLBAR_WIDTH = 44;
 /** Collapsed-strip width in px — just the expand chevron. */
 export const TOOLBAR_COLLAPSED_WIDTH = 16;
+/** Space between the bar's edge and an open flyout: the clearance the topbar dropdowns
+ *  keep below the topbar. */
+const FLYOUT_GAP = 3;
 
 /** Cosmetic/placement options — defaults reproduce the in-renderer docked bar exactly. */
 export interface DrawingToolbarOptions {
@@ -57,6 +61,9 @@ export class DrawingToolbar {
     private flyout: HTMLDivElement | null = null;
     private flyoutOwnerId: string | null = null; // group id (or MAGNET_ID) whose flyout is open
     private flyoutCell: HTMLElement | null = null; // the cell the open flyout is anchored to
+    /** Closed flyouts still playing their exit animation, by owner id — reopening the same
+     *  owner takes its element back instead of stacking a second one on it. */
+    private readonly exitingFlyouts = new Map<string, { fly: HTMLDivElement; exit: SurfaceExit }>();
     private readonly groupCells = new Map<string, HTMLElement>(); // the composite cell (hover/active bg + flyout anchor)
     private readonly groupIcons = new Map<string, HTMLButtonElement>(); // the icon button inside each cell
     private cursorBtn: HTMLButtonElement | null = null;
@@ -195,6 +202,7 @@ export class DrawingToolbar {
 
     destroy(): void {
         this.closeFlyout();
+        for (const { exit } of [...this.exitingFlyouts.values()]) exit.finish();
         for (const dispose of this.tipDisposers.splice(0)) dispose();
         this.root.remove();
     }
@@ -453,13 +461,19 @@ export class DrawingToolbar {
      *  outside-dismiss. Callers fill it with items. */
     private beginFlyout(ownerId: string, cell: HTMLElement): HTMLDivElement {
         const t = this.theme;
-        const fly = document.createElement('div');
+        const back = this.exitingFlyouts.get(ownerId);
+        if (back) {
+            this.exitingFlyouts.delete(ownerId);
+            back.exit.cancel();
+            back.fly.replaceChildren();
+        }
+        const fly = back?.fly ?? document.createElement('div');
         fly.className = 'vela-dtb-flyout';
-        // square LEFT corners (butts flush against the bar), rounded RIGHT corners; no left border so the seam is invisible
+        // A detached card like the topbar dropdowns, on the bar's own surface: over a chart of
+        // that same color its edge comes from the menu border + shadow.
         fly.style.cssText =
-            `position:absolute;z-index:23;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:0 8px 8px 0;` +
-            // Same elevated surface as every other menu (chart settings, context menus, …).
-            `background:var(--vela-surface-elev);border:1px solid ${this.borderColor};border-left:none;box-shadow:var(--vela-shadow);pointer-events:auto;` +
+            `position:absolute;z-index:23;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:var(--vela-radius-md);` +
+            `background:var(--vela-surface);border:1px solid ${this.borderOverride ?? 'var(--vela-border-strong)'};box-shadow:var(--vela-shadow);pointer-events:auto;` +
             `overflow-y:auto;overscroll-behavior:contain;`;
         // The flyout is hosted OUTSIDE the bar root (it must escape its overflow), so it
         // carries its own copy of the tokens.
@@ -468,10 +482,8 @@ export class DrawingToolbar {
         const r = cell.getBoundingClientRect();
         const rootR = this.root.getBoundingClientRect();
         const hostR = this.host.getBoundingClientRect();
-        // start 1px inside the bar's right edge, covering its border so the menu connects seamlessly
-        // to the (full-width) selected button — no dark gap, no border seam.
         const top = r.top - hostR.top;
-        fly.style.left = `${rootR.right - hostR.left - 1}px`;
+        fly.style.left = `${rootR.right - hostR.left + FLYOUT_GAP}px`;
         fly.style.top = `${top}px`;
         // Cap height to the remaining space in the host so long tool lists scroll instead of clipping.
         fly.style.maxHeight = `${Math.max(120, hostR.height - top - 8)}px`;
@@ -490,6 +502,7 @@ export class DrawingToolbar {
         if (!cell) return;
         const fly = this.beginFlyout(group.id, cell);
         const sections: ToolSection[] = group.sections ?? [{ label: '', tools: group.tools }];
+        const badge = sections.some((s) => s.tools.some((tool) => !!tool.icon));
         for (let si = 0; si < sections.length; si++) {
             const section = sections[si]!;
             if (section.label) {
@@ -500,6 +513,7 @@ export class DrawingToolbar {
                 fly.appendChild(
                     this.makeFlyoutItem({
                         icon: tool.icon,
+                        badge,
                         label: tool.label,
                         selected: tool.type === this.active,
                         shortcut: this.shortcuts.get(tool.type),
@@ -556,11 +570,14 @@ export class DrawingToolbar {
         return div;
     }
 
-    /** A flyout row, left to right: optional leading icon, label, a check when it's the selected
-     *  entry, an optional shortcut hint, and — at the far right — the favorite star (tool rows).
-     *  Hover tint is CSS (`.vela-dtb-item:hover`), so navigating the menu stays smooth. */
+    /** A flyout row, left to right: optional leading icon badge, label, a check when it's the
+     *  selected entry, an optional shortcut hint, and — at the far right — the favorite star (tool
+     *  rows). Hover tint is CSS (`.vela-dtb-item:hover`), so navigating the menu stays smooth. */
     private makeFlyoutItem(opts: {
         icon?: string;
+        /** Reserve the badge column on an icon-less row (a flyout whose other rows carry icons),
+         *  so labels align. A row with an icon always gets its badge. */
+        badge?: boolean;
         label: string;
         selected?: boolean;
         /** Shortcut hint (pre-formatted display string) rendered right-aligned, left of the star. */
@@ -574,12 +591,16 @@ export class DrawingToolbar {
         item.type = 'button';
         item.className = 'vela-dtb-item';
         item.setAttribute('aria-label', opts.label);
-        item.style.cssText = `display:flex;align-items:center;gap:8px;padding:5px 10px 5px 8px;cursor:pointer;color:${t.textColor};border-radius:var(--vela-radius-sm);font:13px ${t.fontFamily};white-space:nowrap;min-width:148px;`;
-        if (opts.icon) {
-            const icon = document.createElement('span');
-            icon.style.cssText = 'width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none;';
-            icon.innerHTML = sizedIcon(opts.icon);
-            item.appendChild(icon);
+        const badged = opts.badge === true || !!opts.icon;
+        // A badged row grows to the 24px badge, so it trims its own vertical padding.
+        const box = badged ? 'gap:10px;padding:4px 10px 4px 6px;' : 'gap:8px;padding:5px 10px 5px 8px;';
+        item.style.cssText = `display:flex;align-items:center;${box}cursor:pointer;color:${t.textColor};border-radius:var(--vela-radius-sm);font:13px ${t.fontFamily};white-space:nowrap;min-width:148px;`;
+        if (opts.selected) item.dataset.selected = '1';
+        if (badged) {
+            const badge = document.createElement('span');
+            badge.className = 'vela-dtb-badge';
+            if (opts.icon) badge.innerHTML = opts.icon;
+            item.appendChild(badge);
         }
         const label = document.createElement('span');
         label.textContent = opts.label;
@@ -636,7 +657,12 @@ export class DrawingToolbar {
             // Cleared before announcing: a listener that closes the flyout must not re-enter.
             this.flyout = null;
             announceSurface(fly, false, 'menu', this.flyoutCell);
-            fly.remove();
+            const owner = this.flyoutOwnerId ?? '';
+            const exit = holdForExit(fly, () => {
+                if (this.exitingFlyouts.get(owner)?.fly === fly) this.exitingFlyouts.delete(owner);
+                fly.remove();
+            });
+            if (exit) this.exitingFlyouts.set(owner, { fly, exit });
             this.flyoutCell?.classList.remove('vela-open');
             this.flyoutCell = null;
             this.flyoutOwnerId = null;
@@ -732,6 +758,11 @@ function ensureStyles(): void {
 .vela-dtb[data-collapsed='1'] .vela-dtb-collapse .vela-dtb-hit{width:14px;}
 .vela-dtb-item{background:transparent;border:none;transition:background var(--vela-dur-fast) ease;}
 .vela-dtb-item:hover{background:var(--vela-hover-strong);}
+.vela-dtb-badge{width:24px;height:24px;padding:3px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;border-radius:var(--vela-radius-md);background:var(--vela-hover);border:1px solid var(--vela-border);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-dtb-badge:empty{background:transparent;border-color:transparent;}
+.vela-dtb-badge svg{width:100%;height:100%;}
+.vela-dtb-item:hover .vela-dtb-badge:not(:empty){background:var(--vela-active);color:var(--vela-fg-bright);}
+.vela-dtb-item[data-selected='1'] .vela-dtb-badge:not(:empty){background:color-mix(in srgb,var(--vela-fg-bright) 83%,var(--vela-surface));border-color:color-mix(in srgb,var(--vela-fg-bright) 40%,transparent);color:var(--vela-surface);}
 .vela-dtb-star{width:26px;height:22px;margin:-3px -5px -3px 0;padding:3px 5px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;opacity:0;color:inherit;border-radius:var(--vela-radius-sm);transition:opacity .1s ease,color .1s ease,background .1s ease;}
 .vela-dtb-star svg{width:16px;height:16px;}
 .vela-dtb-item:hover .vela-dtb-star{opacity:.55;}

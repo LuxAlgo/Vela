@@ -87,13 +87,13 @@ export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'b
  *  sub-key (see {@link cellDrawings}). */
 export type CellChartDefaults = Pick<
     VelaOptions,
-    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings' | 'settings'
+    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings' | 'settings' | 'priceAxis'
 >;
 
 /** The {@link CellChartDefaults} pick of a workspace's options (pure, for the build). */
 export function cellChartDefaults(opts: CellChartDefaults): CellChartDefaults {
-    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings } = opts;
-    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings };
+    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, priceAxis } = opts;
+    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, priceAxis };
 }
 
 /** The cell form of the shell's `drawings` option: everything passes through EXCEPT the
@@ -105,13 +105,16 @@ export function cellDrawings(opt: DrawingsOption | undefined): DrawingsOption {
     return { ...opt, toolbar: false };
 }
 
-/** A cell's Status line tab prefs as one bundle — the segment toggles (null when the
- *  shell runs without status lines) plus the indicator legend's titles/values. What
- *  the workspace's STYLE link mirrors across same-group cells. */
+/** A cell's own look prefs as one bundle — the Status line tab's segment toggles (null
+ *  when the shell runs without status lines) and indicator legend titles/values, plus
+ *  the Symbol tab's watermark toggles. What the workspace's STYLE link mirrors across
+ *  same-group cells, next to the renderer config. */
 export interface CellStatusPrefs {
     parts: Record<StatuslinePart, boolean> | null;
     indicatorTitles: boolean;
     indicatorValues: boolean;
+    watermark: boolean;
+    replayWatermark: boolean;
 }
 
 /** One entry of the shared indicator picker's native catalog, per cell. */
@@ -174,7 +177,7 @@ export interface CellDeps {
     onPriceStyleChanged(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
-    /** A Status line tab pref changed on this cell (the style link mirrors upstream). */
+    /** A Status line tab or watermark pref changed on this cell (the style link mirrors upstream). */
     onStatusPrefsChanged(id: string): void;
     /** Persistable per-cell state changed outside the market/indicator channels
      *  (bars budget, watermark/titles toggles) — the workspace debounces a save. */
@@ -896,6 +899,7 @@ export class ChartCell {
         this.watermarkOn = visible;
         this.watermark?.setVisible(visible);
         this.deps.onStateDirty();
+        this.deps.onStatusPrefsChanged(this.id);
     }
 
     /** Show/hide the "Replay" line under this cell's watermark while it replays (persisted per cell). */
@@ -903,6 +907,7 @@ export class ChartCell {
         this.replayWatermarkOn = visible;
         this.watermark?.setReplayVisible(visible);
         this.deps.onStateDirty();
+        this.deps.onStatusPrefsChanged(this.id);
     }
 
     /** Show/hide this cell's indicator titles — the in-chart legend rows (persisted per cell). */
@@ -927,7 +932,7 @@ export class ChartCell {
         this.deps.onStatusPrefsChanged(this.id);
     }
 
-    /** This cell's Status line tab prefs as one bundle (see {@link CellStatusPrefs}). */
+    /** This cell's Status line tab and watermark prefs as one bundle (see {@link CellStatusPrefs}). */
     statusPrefs(): CellStatusPrefs {
         const sl = this.statusline;
         return {
@@ -936,12 +941,14 @@ export class ChartCell {
                 : null,
             indicatorTitles: this.indicatorTitlesOn,
             indicatorValues: this.indicatorValuesOn,
+            watermark: this.watermarkOn,
+            replayWatermark: this.replayWatermarkOn,
         };
     }
 
-    /** Converge this cell's Status line tab prefs to `prefs` — the follower half of
-     *  the workspace's style link. Idempotent: matching values change nothing, so a
-     *  propagated echo dies on its own. */
+    /** Converge this cell's Status line tab and watermark prefs to `prefs` — the
+     *  follower half of the workspace's style link. Idempotent: matching values change
+     *  nothing, so a propagated echo dies on its own. */
     applyStatusPrefs(prefs: CellStatusPrefs): void {
         if (prefs.parts && this.statusline) {
             for (const part of Object.keys(prefs.parts) as StatuslinePart[]) {
@@ -950,6 +957,8 @@ export class ChartCell {
         }
         if (prefs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(prefs.indicatorTitles);
         if (prefs.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(prefs.indicatorValues);
+        if (prefs.watermark !== this.watermarkOn) this.setWatermarkVisible(prefs.watermark);
+        if (prefs.replayWatermark !== this.replayWatermarkOn) this.setReplayWatermarkVisible(prefs.replayWatermark);
     }
 
     /** The LIVE chart of this cell — never cache it across a layout change (the cell's

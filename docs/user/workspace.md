@@ -103,7 +103,7 @@ ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also r
 ws.maximizeCell('sol');  // one cell over the whole grid (null restores) — pure presentation,
 ws.maximizedCell;        //  the other cells keep everything; layout/state changes restore
 ws.swapCells('btc', 'eth'); // the two cells trade SLOTS (arrangement only — cells untouched)
-ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'state:changed', cb);
+ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'cell:priceStyle' | 'state:changed', cb);
 ```
 
 **Rule of thumb:** hold the cell (or its identity), read `cell.chart` at the point of
@@ -172,16 +172,28 @@ linked earlier in the session. Drawings created while the link was off stay
 independent — re-enabling never copies or pairs them. A reload (or `applyState`)
 drops the pairs, so previously synced drawings are independent again.
 
+Cells a later layout change adds to a linked group arrive with every drawing of the
+active cell (or of another group member when the active cell is outside the group),
+including drawings made while the link was off or on a one-chart layout. The copies
+are linked like any synced drawing and add no undo steps on the new cell. A cell
+returning to the grid refreshes the linked copies it already holds instead of
+duplicating them.
+
 `style` mirrors the chart's presentation across same-group cells: the settings
-dialog's **Canvas** tab (background and text, grid, pane separators), its **Scales
-and lines** tab (price-scale mode, last-price line and labels, crosshair style), and
-its **Status line** tab (segment toggles, indicator titles and values). Editing any
-of them on one cell applies the same change to its group, and enabling the link
-aligns the group to the active cell once. Cells a later layout change adds to a
-linked group inherit the group's presentation on arrival (from the active cell when
-it belongs to the group). Candle colors, line width, and other series settings stay
-per cell, and the display timezone and theme are already workspace-global, so
-neither rides this link.
+dialog's **Symbol** tab looks (candle body, border and wick colors, the bar, line,
+area and baseline styles, bar spacing, the animation switches and the watermark
+toggles), its **Canvas** tab (background and text, grid, pane separators, margins),
+its **Scales and lines** tab (price-scale mode, last-price line and labels, crosshair
+style), its **Status line** tab (segment toggles, indicator titles and values), and
+the session shading colors. A candle-based chart type registered by a plugin shares
+the candle colors it stores; its own settings section stays per cell, because those
+settings can depend on the cell's market. Editing any of them on one cell applies
+the same change to its group, and enabling the link aligns the group to the active
+cell once. Cells a later layout change adds to a linked group inherit the group's
+presentation on arrival (from the active cell when it belongs to the group). The
+chart type itself stays per cell — a candles cell and a line cell keep their types
+and share their colors — and so do the baseline price and the **Events** tab. The
+display timezone and theme are already workspace-global, so neither rides this link.
 
 **Symbol**, **Interval** (timeframe), **Crosshair** and **Style** are also switches
 in the topbar's layout dropdown (its SYNC section), and **Drawings** is a toggle on
@@ -194,7 +206,7 @@ ws.sync.set('viewport', true); // aligns followers to the active cell, then foll
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
 ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
-ws.sync.set('style', true); // canvas/scales/status-line settings mirror on all the others
+ws.sync.set('style', true); // every look in the settings dialog mirrors on all the others
 ws.sync.get('viewport'); // true
 ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true, style: true }
 ```
@@ -216,6 +228,27 @@ ws.on('script:run', (run) => {
 The payload is the chart-level [`ScriptRun`](./api-reference.md#capturing-what-a-script-computes)
 plus `cell`; everything there — `cause`, `forming`, `plots`, `vars`, `strategy`, `trades()` —
 applies unchanged.
+
+## Following price-style switches
+
+A cell's style switch (candles → line, area, a chart type, …) is relayed the same way:
+`cell:priceStyle` carries the cell identity with the chart-level
+[`priceStyle:change`](./api-reference.md#chart-level-events) payload. Only the cell whose
+style changes emits, whatever the path — the topbar style menu, `ctx.setPriceStyle`,
+`chart.renderer.set('priceStyle', …)`, the chart settings dialog, a config template, or a
+state document applied in place. The event is synchronous and fires before that cell
+repaints, so the cell still shows the outgoing style while your listener runs:
+
+```ts
+ws.on('cell:priceStyle', ({ id, from, to }) => {
+    const cell = ws.cell(id)!;
+    cell.priceStyle; // still `from`
+    const outgoing = cell.chart.renderer.screenshotCanvas(); // the old frame, to animate from
+    animateSwitch(cell, outgoing, to);
+});
+```
+
+Don't change the style again from inside the listener.
 
 ## Bar replay across the grid
 
@@ -351,7 +384,7 @@ at the top level and are each cell's **default** — `symbol` (bare = first decl
 provider; an `EXCHANGE:` prefix pins a venue), `timeframe`, `bars`, `priceStyle`,
 `data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`, `downColor`, `glow`,
 `animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar excepted),
-`defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
+`priceAxis`, `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
 `maxWebglCells` policy). `cells` overrides the market/view seeds per cell:
 `{ symbol, timeframe, bars, priceStyle, data, visibleRange }`.
 
@@ -509,6 +542,9 @@ they work from the very first keystroke, before any click.
   for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
   is independent of the main one. Each menu's settings entry opens the settings dialog on the
   tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
+  Rows a plugin adds sort in with the built-in ones: by default after the built-in actions and
+  before the settings entry at the bottom of the menu (see [Right-click menu
+  actions](../contributing/plugin-sdk.md#right-click-menu-actions)).
 
 ### Following menus and panels
 
@@ -531,6 +567,50 @@ lists, color pickers, mark cards, the layout picker), `'dialog'`, `'drawer'` or 
 `trigger` is the element that opened it — a menu's button, a submenu's row, the control that
 had focus when a dialog opened — or `null` when there is none (a right-click menu). A surface
 created without an explicit host portals to `<body>`; listen on `document` to catch those too.
+
+### Animating closes
+
+Surfaces leave the screen at once by default. To animate them out, style the `data-closing`
+attribute: as a surface starts to close (right after its `vela:surface-close`), Vela sets
+`data-closing` on it and keeps it displayed but inert — it takes no clicks and no focus — until
+every CSS animation or transition that the attribute started on it or inside it has finished,
+then hides or removes it. These elements get the attribute:
+
+| Element | Surface |
+| --- | --- |
+| `.vela-menu` | A dropdown or context menu, each submenu on its own. |
+| `.vela-popover` | Select lists, color pickers and other kit popovers. |
+| `.vela-dialog` and `.vela-dialog-backdrop` | A dialog and its scrim. |
+| `.vela-drawer` and `.vela-drawer-backdrop` | A bottom sheet (mobile chrome) and its scrim. |
+| `.vela-panel` | A side panel. |
+| `.vela-lp` | The layout picker. |
+| `.vela-dtb-flyout` | A drawing toolbar flyout. |
+
+```css
+@media (prefers-reduced-motion: no-preference) {
+    .vela-menu[data-closing],
+    .vela-popover[data-closing],
+    .vela-dialog[data-closing],
+    .vela-dialog-backdrop[data-closing] {
+        animation: host-fade-out 150ms ease forwards;
+    }
+}
+@keyframes host-fade-out {
+    to { opacity: 0; }
+}
+```
+
+- **Without exit CSS nothing changes**: no animation starts, so the surface closes at once.
+- **The wait is capped at 1 second**, and an infinite animation inside the surface (a spinner)
+  never holds it.
+- **Reopening during the exit cancels it**: the same element loses `data-closing` and is
+  interactive again. A surface its owner rebuilds on every open (the chart settings dialog)
+  lets the previous copy finish its exit beside the new one.
+- **A side panel reports closed at once** (its `open` state and the topbar button), but keeps
+  its column until the exit ends. A panel that hands the column to another one, or that a
+  restored state closes, leaves without an exit.
+- **Reduced motion is yours to honor**: Vela waits for whatever your stylesheet starts, so
+  guard the exit rules with `prefers-reduced-motion` as above.
 
 ## Composing the topbar
 
