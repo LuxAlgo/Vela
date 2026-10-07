@@ -171,7 +171,8 @@ export class ChromeRenderer {
         this.drawMarkLane(ctx, scene, coords, theme, dataW, dataH);
     }
 
-    /** The timeline-mark lane — after the axis, so the tokens read over the plot's bottom edge. */
+    /** The timeline-mark lane — after the axis, so the tokens read over the plot's bottom edge,
+     *  but clipped to the data area so a glyph on the edge bar never paints over the price scale. */
     private drawMarkLane(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, dataH: number): void {
         if (!scene.marks.visible || scene.timelineMarks.length === 0) {
             this.markLayout = { glyphs: [], stacks: new Map() };
@@ -189,6 +190,10 @@ export class ChromeRenderer {
             expanded: scene.marksExpandedStack,
         });
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, dataW, dataH);
+        ctx.clip();
         paintMarkLane(ctx, this.markLayout, {
             axisY: dataH,
             background: theme.background,
@@ -202,6 +207,7 @@ export class ChromeRenderer {
             flashKey: scene.marksFlash && scene.marksFlash.until > nowMs ? scene.marksFlash.key : null,
             nowMs,
         });
+        ctx.restore();
     }
 
     private barTimes(scene: SceneGraph): readonly number[] {
