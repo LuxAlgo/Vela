@@ -2,6 +2,7 @@ import type { Unsubscribe } from '../util/types';
 import { Drawing, type SerializedDrawing } from './Drawing';
 import { deserializeDrawing } from './registry';
 import { migrate, type DrawingsDocument, DRAWINGS_DOC_VERSION } from './document';
+import { sanitizeShowOn } from './visibility';
 
 /**
  * The single source of truth for a chart's user drawings. Owns identity + paint
@@ -61,6 +62,7 @@ export class DrawingStore {
         if (patch.visible !== undefined) d.visible = patch.visible;
         if (patch.zIndex !== undefined) d.zIndex = patch.zIndex;
         if (patch.props !== undefined) d.applyProps(patch.props); // per-type extras (e.g. fib levels)
+        if ('showOn' in patch) d.showOn = sanitizeShowOn(patch.showOn); // present-but-undefined lifts the limit
         this.emit();
         return d;
     }

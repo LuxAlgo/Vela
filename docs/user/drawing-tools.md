@@ -69,11 +69,34 @@ the magnet so the locked angle is kept exactly.
 
 Select a drawing (click it) to show its **handles** and a compact **quick-settings popup** floating
 beside it. The popup is built from each tool's own schema, so it shows only the controls that tool
-supports — line color/width/style, fill, text, and (for Fibonacci tools) a **gear** panel to
-enable/recolor/label each level. The popup also locks and deletes the drawing, and its overflow
-menu (the `⋮` button) duplicates it in place, reorders it (bring-to-front / send-to-back), or
-resets its settings. A duplicate lands exactly on its source and becomes the selection, ready to
-drag away.
+supports — line color/width/style, fill and text. The popup also locks and deletes the drawing, and
+its overflow menu (the `⋮` button) duplicates it in place, reorders it (bring-to-front /
+send-to-back), or resets its settings. A duplicate lands exactly on its source and becomes the
+selection, ready to drag away.
+
+**The settings panel.** The popup's **gear**, or a double-click on the drawing, opens the full
+settings panel, laid out the same way for every tool:
+
+- **The look** — line color, width and dash, fill, arrowheads and, on a trend line, whether it
+  extends past either point to the chart's edge.
+- **The tool's own options** — a Fib's levels, a position's sizing, a volume profile's rows, a
+  regression channel's lines, and so on. Levelled tools list every level in a two-column grid
+  (on/off, ratio, color), including the ones that are off.
+- **Label** — the words, their styling and, on line tools, where they sit along the line and on
+  which side. Placement options appear only once the label has words.
+- **Points** — each anchor's price, editable, and its time in the chart's time zone.
+- **Show on** — every timeframe, intraday only, 1H and up, or a custom set. The timeframe list
+  appears only for a custom set, and a dot marks the chart's own timeframe. A drawing limited to
+  other timeframes is neither painted nor clickable on this chart.
+
+Sections fold to a one-line summary and reopen as you left them. Edits are live; **Cancel** (or
+Escape) puts the drawing back as it was when the panel opened, points and timeframes included.
+The panel leaves the chart usable: you can still drag the drawing's points while it is open.
+
+**Styles.** The panel's header menu lists the tool's styles: ready-made looks (support,
+resistance and projection for line tools; demand and supply for areas) and the ones you saved
+with **Save as style…**. Hover a style to preview it on the drawing and click it to apply it.
+**Reset to default** returns the drawing to the tool's factory look.
 
 **Text is typed on the chart.** Placing a text annotation opens a blinking caret at the click point
 next to an `Enter Text` placeholder, framed by a thin gray box that marks the text as being edited,
@@ -195,7 +218,7 @@ drawings among themselves, and the tree keeps them in one block above the series
 
 ## Tool catalogue
 
-**67 tools across 9 groups.** The **Type key** is the string you pass to
+**79 tools across 10 groups.** The **Type key** is the string you pass to
 `chart.drawings.setTool('…')` or [`chart.drawings.add('…')`](#driving-drawings-from-code). Eraser,
 Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable types, so they have no key.
 
@@ -271,8 +294,8 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 
 | Tool | Type key | What it does |
 |---|---|---|
-| Fib Retracement | `fibretracement` | Horizontal retracement levels between two points. |
-| Fib Extension | `fibextension` | Extension levels projected from two points. |
+| Fib Retracement | `fibretracement` | Horizontal retracement levels between two points. The settings panel offers three level sets: **Classic** (the standard pullback ratios from the second point), **Extension** (measured from the first point, projecting targets past the second) and **OTE** (the 0.62–0.79 entry zone, equilibrium at 0.5, and targets beyond the swing). Every set lists the whole ladder of levels, the unused ones off. |
+| Fib Extension | `fibextension` | Extension levels projected from two points. Like the retracement, its levels can extend to the chart's edge and show their ratio, price, both or neither, on either side. |
 | Trend-Based Fib Extension | `fibextensiontrend` | Extension levels from a three-point move. |
 | Fib Fan | `fibfan` | Fan of rays at the Fibonacci ratios. |
 | Fib Time Zones | `fibtimezones` | Vertical lines at Fibonacci time intervals. |
@@ -287,10 +310,22 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 | Gann Box | `gannbox` | A box gridded at Gann ratios. |
 | Gann Square | `gannsquare` | A Gann grid + angle fan + concentric arcs over a box. |
 | Dedekind Tessellation | `dedekind` | Modular-group tiling of a user-defined time×price range (semicircles + verticals). Density via max curvature. |
-| Sonic | `sonic` | Mach-1 wavefront figure: circles sized from a user-drawn diameter, piled into a perpendicular shock wall. Per-circle colors via the levels gear. |
-| Supersonic | `supersonic` | Mach cone (M>1): same diameter-sized first circle, with a conical envelope. Mach number is adjustable. Per-circle colors via the levels gear. |
+| Sonic | `sonic` | Mach-1 wavefront figure: circles sized from a user-drawn diameter, piled into a perpendicular shock wall. Per-circle colors in the settings panel. |
+| Supersonic | `supersonic` | Mach cone (M>1): same diameter-sized first circle, with a conical envelope. Mach number is adjustable. Per-circle colors in the settings panel. |
 | Golden Sonic | `goldensonic` | Sonic Mach figure whose circle radii follow Fibonacci ratios (including under 1: 0.236…0.786, then 1, φ, φ², …). |
 | Golden Supersonic | `goldensupersonic` | Supersonic Mach cone with the same Fibonacci radii (under-1 through extensions). |
+
+### Price Action
+
+Placed with one click on a candle, these tools read the chart's own candles: they find their
+zone or level, follow price as new candles arrive, and stop at the event you pick in the settings
+panel, marking where it happened.
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Fair Value Gap | `fairvaluegap` | Click the middle candle of three whose outer candles leave a gap (or a candle near it). The gap runs right until price tests it, reaches its halfway line or fills it, and a dot marks where. Set to flip, a filled gap that price then closes through carries on the other way. |
+| Order Block | `orderblock` | Click the candle: a down-close candle marks a bullish (demand) block, an up-close one a bearish (supply) block, over its body or its full range. It runs right until price tests it, reaches its halfway line or closes through it; a broken block can carry on as a breaker, the other way, until price returns to it. |
+| Liquidity | `liquidity` | Click near a candle's high for the liquidity resting above it, or near its low for the liquidity below. The level runs right until price sweeps it (a wick through) or breaks it (a close beyond), and a cross marks the sweep. |
 
 ### Patterns
 
@@ -316,7 +351,7 @@ whether it falls in that pattern's ideal Fibonacci band.
 | Tool | Type key | What it does |
 |---|---|---|
 | Date & Price Range | `datepricerange` | A box reporting the time span + price/% change it covers. |
-| Long/Short Position | `position` | An entry/stop/target box: click the entry, then drag in the profit direction (up for a long, down for a short). Shows risk:reward, percentages, dollar loss, and position size from your risk % and account balance (size is editable and back-solves the risk %). The gear panel has a long/short switch (mirrors the levels across the entry), exact level values in price or points, and per-label display toggles; zone colors and label styling sit on the quick bar. |
+| Long/Short Position | `position` | An entry/stop/target box: click the entry, then drag in the profit direction (up for a long, down for a short). Shows risk:reward, percentages, dollar loss, and position size from your risk % and account balance (size is editable and back-solves the risk %). The settings panel has a long/short switch (mirrors the levels across the entry), exact level values in price or points, and per-label display toggles; zone colors and label styling sit on the quick bar. |
 | Magnifier | `magnifier` | A press-drag-release rectangle whose interior shows the same market at a **lower timeframe**, rendered in the chart's own price style *and colors* (candles, bars, line, area, Heikin Ashi; custom chart types fall back to candles) at true time/price positions. The timeframe chip on the rectangle's bottom-left corner is a dropdown — click it to switch — and the same pick leads the quick bar, beside the up/down color overrides and the border style; **Auto** subdivides the chart's timeframe, and both pickers offer only timeframes below the chart's own. The finer bars load in the background and follow live data; when the chart is already at the finest timeframe, or the area needs more bars than the tool will fetch, a notice inside the rectangle says so. Needs a market with a ranged data source (offline `data` arrays have nothing to fetch). |
 
 ---
@@ -402,6 +437,20 @@ the next load.
   back to `chart.drawings.fromJSON(doc)` to restore. The restore path is lenient with untrusted
   input — malformed or unknown-type entries are dropped, never thrown. Drawings are **not**
   auto-persisted; storing the document is up to your app.
+- **Tool settings.** Each tool remembers how its last drawing was styled: its colors, widths, text
+  styling (never the words) and its own settings, such as a Fib's levels or a position's account
+  size. The next drawing of that type starts from them, whether you style one drawing or several
+  at once. `chart.drawings.toolDefaults()` returns them as plain JSON and `setToolDefaults()`
+  restores them; the workspace and widget save them in their state document, together with the
+  magnet and stay-in-drawing-mode, so a reload keeps them. `resetToolDefaults(type)` sends a tool
+  back to its factory look.
+- **Saved styles.** `chart.drawings.toolTemplates()` returns every tool's saved styles and
+  `setToolTemplates()` restores them; `saveToolTemplate(type, name, settings)` and
+  `removeToolTemplate(type, name)` edit them, and `drawing:templates` follows changes. The
+  workspace and widget keep them with the other tool settings.
+- **Timeframes.** A drawing's `showOn` lists the timeframe bands it shows on (`'s'`, `'1'`, `'5'`,
+  `'15'`, `'60'`, `'240'`, `'D'`, `'W'`, `'M'`); a chart on any other timeframe — a custom one
+  counts as the band below it — hides it. Leave it unset to show the drawing everywhere.
 - **Undo / redo.** `chart.drawings.undo()` / `redo()` (and `canUndo()` / `canRedo()`) walk a
   snapshot history. A multi-target action (multi-drag, multi-delete, duplicate, paste) is one
   undo step.

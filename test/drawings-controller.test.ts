@@ -525,7 +525,8 @@ describe('buildToolbar grouping', () => {
         ]);
 
         const fibGroup = definition.groups.find((g) => g.id === 'fibonacci-gann');
-        expect(fibGroup?.sections?.map((s) => s.label)).toEqual(['Fibonacci', 'Gann', 'Geometry']);
+        expect(fibGroup?.sections?.map((s) => s.label)).toEqual(['Fibonacci', 'Price Action', 'Gann', 'Geometry']);
+        expect(fibGroup?.sections?.find((s) => s.label === 'Price Action')?.tools.map((t) => t.type)).toEqual(['fairvaluegap', 'orderblock', 'liquidity']);
         expect(fibGroup?.sections?.find((s) => s.label === 'Gann')?.tools.map((t) => t.type)).toEqual(['gannfan', 'gannbox', 'gannsquare']);
         expect(fibGroup?.sections?.find((s) => s.label === 'Geometry')?.tools.map((t) => t.type)).toEqual([
             'dedekind',

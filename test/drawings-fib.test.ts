@@ -82,10 +82,11 @@ describe('drawings/FibRetracement', () => {
         expect(a.type).toBe('fibretracement');
     });
 
-    it('exposes editable levels; disabling one drops it from the rendered lines', () => {
+    it('exposes editable levels — the classic seven on, the rest of the ladder off; disabling one drops it from the rendered lines', () => {
         const d = make();
         const levels = d.editableLevels()!;
-        expect(levels.length).toBe(7);
+        expect(levels.filter((l) => l.enabled).map((l) => l.ratio)).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
+        expect(levels.length).toBeGreaterThan(20);
         const i = levels.findIndex((l) => l.ratio === 0.5);
         d.applySettings({ [`levels.${i}.enabled`]: false }); // toggle the 0.5 level off
         const lines = (d as FibLevels).levelLines(proj)!;

@@ -1,5 +1,5 @@
 import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
-import { SegmentDrawing, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
+import { SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, PriceActionZone, Liquidity, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
 import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE, uprightLineAngle } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
@@ -276,6 +276,16 @@ export class DrawingPainter {
             this.paintMagnifier(ctx, d, proj, theme);
             return;
         }
+        if (d instanceof PriceActionZone) {
+            this.paintPriceZone(ctx, d, proj, theme);
+            this.paintLabel(ctx, d, proj, theme);
+            return;
+        }
+        if (d instanceof Liquidity) {
+            this.paintLiquidity(ctx, d, proj);
+            this.paintLabel(ctx, d, proj, theme);
+            return;
+        }
         if (d instanceof PatternDrawing) {
             this.paintPattern(ctx, d, proj, theme);
             return;
@@ -318,9 +328,11 @@ export class DrawingPainter {
             case 'arrow': {
                 const pts = d.handlePoints(proj);
                 if (pts.length < 2) return;
+                const ext = d instanceof TrendLine ? d.extension() : 'none';
+                const [ex1, ey1, ex2, ey2] = extendEndpoints(pts[0]![0], pts[0]![1], pts[1]![0], pts[1]![1], ext, proj.width, proj.height);
                 this.stroke(ctx, d.style, () => {
-                    ctx.moveTo(pts[0]![0], pts[0]![1]);
-                    ctx.lineTo(pts[1]![0], pts[1]![1]);
+                    ctx.moveTo(ex1, ey1);
+                    ctx.lineTo(ex2, ey2);
                 });
                 if (d.style.arrowRight) this.paintArrowhead(ctx, pts[0]!, pts[1]!, d.style);
                 if (d.style.arrowLeft) this.paintArrowhead(ctx, pts[1]!, pts[0]!, d.style);
@@ -467,9 +479,18 @@ export class DrawingPainter {
         ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${fs}px ${theme.fontFamily}`;
         ctx.textBaseline = 'top';
         ctx.textAlign = layout.align;
-        ctx.fillStyle = text.color ?? theme.textColor;
         const lh = labelLineHeight(fs);
         const lines = text.value.split('\n');
+        // A halo in the chart background keeps the words readable where a line (its own, or
+        // another drawing's) runs through them. Free text and a box's centered label sit clear
+        // of any line and keep their plain look.
+        if (d.type !== 'text' && d.type !== 'box') {
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = theme.background;
+            lines.forEach((line, i) => ctx.strokeText(line, layout.x, layout.top + i * lh));
+        }
+        ctx.fillStyle = text.color ?? theme.textColor;
         lines.forEach((line, i) => ctx.fillText(line, layout.x, layout.top + i * lh));
         if (d.type === 'text') this.paintTextFrame(ctx, d.id, layout.x, layout.top, lines, fs, theme);
         ctx.restore();
@@ -525,6 +546,79 @@ export class DrawingPainter {
         }
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
+    }
+
+    /** Paint a price-action zone (fair value gap, order block): the box and its halfway line,
+     *  quieter once it has run its course, a dot where it stopped, and — once price flips it —
+     *  the dashed box it carries on as. With no zone under the anchor, a faint tick marks it. */
+    private paintPriceZone(ctx: CanvasRenderingContext2D, d: PriceActionZone, proj: Projector, theme: VelaTheme): void {
+        const z = d.zone(proj);
+        if (!z) {
+            const a = d.anchors[0];
+            if (!a) return;
+            const x = Math.round(proj.xOf(a.time)) + 0.5;
+            this.stroke(ctx, { lineColor: withAlpha(theme.textColor, 0.35), lineWidth: 1, lineStyle: 'dashed' }, () => {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, proj.height);
+            });
+            return;
+        }
+        const h = z.yBottom - z.yTop;
+        ctx.save();
+        ctx.globalAlpha *= z.faded ? 0.6 : 1;
+        ctx.fillStyle = z.fill;
+        ctx.fillRect(z.x1, z.yTop, z.x2 - z.x1, h);
+        if (z.border) {
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            ctx.strokeStyle = z.stroke;
+            ctx.strokeRect(Math.round(z.x1) + 0.5, Math.round(z.yTop) + 0.5, Math.round(z.x2 - z.x1), Math.round(h));
+        }
+        if (z.midY != null) {
+            const y = Math.round(z.midY) + 0.5;
+            this.stroke(ctx, { lineColor: z.stroke, lineWidth: 1, lineStyle: 'dashed' }, () => {
+                ctx.moveTo(z.x1, y);
+                ctx.lineTo(z.x2, y);
+            });
+        }
+        ctx.restore();
+        if (z.flip) {
+            const f = z.flip;
+            ctx.save();
+            ctx.fillStyle = f.fill;
+            ctx.fillRect(f.x1, z.yTop, f.x2 - f.x1, h);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = f.stroke;
+            ctx.setLineDash([5, 4]);
+            ctx.strokeRect(Math.round(f.x1) + 0.5, Math.round(z.yTop) + 0.5, Math.round(f.x2 - f.x1), Math.round(h));
+            ctx.restore();
+        }
+        if (z.marker) {
+            ctx.beginPath();
+            ctx.arc(z.marker.x, z.marker.y, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = z.stroke;
+            ctx.fill();
+        }
+    }
+
+    /** Paint a liquidity level: the line to where it stopped, and a cross where it was swept. */
+    private paintLiquidity(ctx: CanvasRenderingContext2D, d: Liquidity, proj: Projector): void {
+        const l = d.line(proj);
+        if (!l) return;
+        const y = Math.round(l.y) + 0.5;
+        this.stroke(ctx, d.style, () => {
+            ctx.moveTo(l.x1, y);
+            ctx.lineTo(l.x2, y);
+        });
+        if (l.sweep) {
+            const { x, y: sy } = l.sweep;
+            this.stroke(ctx, { lineColor: d.style.lineColor, lineWidth: 1.75, lineStyle: 'solid' }, () => {
+                ctx.moveTo(x - 4, sy - 4);
+                ctx.lineTo(x + 4, sy + 4);
+                ctx.moveTo(x + 4, sy - 4);
+                ctx.lineTo(x - 4, sy + 4);
+            });
+        }
     }
 
     /** Paint a concentric-ring fib tool (circles / arcs / wedge): each enabled level as an arc of
@@ -1797,11 +1891,15 @@ function labelLayout(d: Drawing, proj: Projector): {
             if (pts.length < 2) return null;
             const [x1, y1] = pts[0]!;
             const [x2, y2] = pts[1]!;
+            // `place` slides the label along the segment (from the first anchor's end), `side`
+            // puts it under the line instead of over it; both default to the original middle-over.
+            const t = text.place === 'start' ? 0.12 : text.place === 'end' ? 0.88 : 0.5;
+            const below = text.side === 'below';
             return {
                 x: 0,
-                top: -6 - lh * lines,
+                top: below ? 6 : -6 - lh * lines,
                 align: 'center',
-                rotate: { angle: uprightLineAngle(x1, y1, x2, y2), cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 },
+                rotate: { angle: uprightLineAngle(x1, y1, x2, y2), cx: x1 + (x2 - x1) * t, cy: y1 + (y2 - y1) * t },
             };
         }
         case 'box': {

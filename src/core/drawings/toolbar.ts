@@ -63,6 +63,8 @@ const FIBONACCI_TYPES: DrawingTypeKey[] = [
     'fibspiral',
 ];
 
+const PRICE_ACTION_TYPES: DrawingTypeKey[] = ['fairvaluegap', 'orderblock', 'liquidity'];
+
 const GANN_TYPES: DrawingTypeKey[] = ['gannfan', 'gannbox', 'gannsquare'];
 
 const GEOMETRY_TYPES: DrawingTypeKey[] = ['dedekind', 'sonic', 'supersonic', 'goldensonic', 'goldensupersonic'];
@@ -105,6 +107,7 @@ const TOOLBAR_LAYOUT: readonly ToolbarGroupLayout[] = [
         label: 'Fibonacci',
         sections: [
             { label: 'Fibonacci', types: FIBONACCI_TYPES },
+            { label: 'Price Action', types: PRICE_ACTION_TYPES },
             { label: 'Gann', types: GANN_TYPES },
             { label: 'Geometry', types: GEOMETRY_TYPES },
         ],

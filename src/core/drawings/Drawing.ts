@@ -2,6 +2,7 @@ import type { DrawingPoint, FreeAxis, Projector } from './geometry';
 import type { DrawingStyle, DrawingText } from './style';
 import { defaultStyle, defaultText } from './style';
 import type { SettingsSchema } from './schema';
+import { sanitizeShowOn } from './visibility';
 
 /**
  * The interactive user-drawing types. The lean-core set ships first; new types
@@ -83,7 +84,10 @@ export type DrawingTypeKey =
     | 'butterfly'
     | 'crab'
     | 'shark'
-    | 'cypher';
+    | 'cypher'
+    | 'fairvaluegap'
+    | 'orderblock'
+    | 'liquidity';
 
 /** One anchor's role + which axes its handle may move along. */
 export interface AnchorSlot {
@@ -113,6 +117,8 @@ export interface SerializedDrawing {
     createdAt: number;
     /** Per-type extras (e.g. box `extend`) — keeps the base closed. */
     props?: Record<string, unknown>;
+    /** The timeframe bands the drawing shows on (see `TIMEFRAME_BANDS`); absent = every one. */
+    showOn?: string[];
 }
 
 /**
@@ -133,6 +139,8 @@ export abstract class Drawing {
     locked = false;
     visible = true;
     zIndex = 0;
+    /** The timeframe bands the drawing shows on; `undefined` = every timeframe. */
+    showOn?: string[];
     readonly createdAt: number;
 
     // Public so the registry can construct concrete subclasses; `abstract` still
@@ -146,6 +154,7 @@ export abstract class Drawing {
         this.locked = init.locked ?? false;
         this.visible = init.visible ?? true;
         this.zIndex = init.zIndex ?? 0;
+        this.showOn = sanitizeShowOn(init.showOn);
         this.createdAt = init.createdAt ?? Date.now();
         if (init.props) this.readProps(init.props);
     }
@@ -265,6 +274,9 @@ export abstract class Drawing {
             zIndex: this.zIndex,
             createdAt: this.createdAt,
             props: this.writeProps(),
+            // Always present (undefined = every timeframe) so an edit can lift a limit; JSON
+            // drops the undefined value, so unlimited drawings save as before.
+            showOn: this.showOn ? [...this.showOn] : undefined,
         };
     }
 
