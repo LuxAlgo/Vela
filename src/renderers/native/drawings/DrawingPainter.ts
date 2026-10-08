@@ -1,5 +1,5 @@
 import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
-import { SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
+import { SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, PriceActionZone, Liquidity, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
 import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE, uprightLineAngle } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
@@ -276,6 +276,16 @@ export class DrawingPainter {
             this.paintMagnifier(ctx, d, proj, theme);
             return;
         }
+        if (d instanceof PriceActionZone) {
+            this.paintPriceZone(ctx, d, proj, theme);
+            this.paintLabel(ctx, d, proj, theme);
+            return;
+        }
+        if (d instanceof Liquidity) {
+            this.paintLiquidity(ctx, d, proj);
+            this.paintLabel(ctx, d, proj, theme);
+            return;
+        }
         if (d instanceof PatternDrawing) {
             this.paintPattern(ctx, d, proj, theme);
             return;
@@ -536,6 +546,79 @@ export class DrawingPainter {
         }
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
+    }
+
+    /** Paint a price-action zone (fair value gap, order block): the box and its halfway line,
+     *  quieter once it has run its course, a dot where it stopped, and — once price flips it —
+     *  the dashed box it carries on as. With no zone under the anchor, a faint tick marks it. */
+    private paintPriceZone(ctx: CanvasRenderingContext2D, d: PriceActionZone, proj: Projector, theme: VelaTheme): void {
+        const z = d.zone(proj);
+        if (!z) {
+            const a = d.anchors[0];
+            if (!a) return;
+            const x = Math.round(proj.xOf(a.time)) + 0.5;
+            this.stroke(ctx, { lineColor: withAlpha(theme.textColor, 0.35), lineWidth: 1, lineStyle: 'dashed' }, () => {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, proj.height);
+            });
+            return;
+        }
+        const h = z.yBottom - z.yTop;
+        ctx.save();
+        ctx.globalAlpha *= z.faded ? 0.6 : 1;
+        ctx.fillStyle = z.fill;
+        ctx.fillRect(z.x1, z.yTop, z.x2 - z.x1, h);
+        if (z.border) {
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            ctx.strokeStyle = z.stroke;
+            ctx.strokeRect(Math.round(z.x1) + 0.5, Math.round(z.yTop) + 0.5, Math.round(z.x2 - z.x1), Math.round(h));
+        }
+        if (z.midY != null) {
+            const y = Math.round(z.midY) + 0.5;
+            this.stroke(ctx, { lineColor: z.stroke, lineWidth: 1, lineStyle: 'dashed' }, () => {
+                ctx.moveTo(z.x1, y);
+                ctx.lineTo(z.x2, y);
+            });
+        }
+        ctx.restore();
+        if (z.flip) {
+            const f = z.flip;
+            ctx.save();
+            ctx.fillStyle = f.fill;
+            ctx.fillRect(f.x1, z.yTop, f.x2 - f.x1, h);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = f.stroke;
+            ctx.setLineDash([5, 4]);
+            ctx.strokeRect(Math.round(f.x1) + 0.5, Math.round(z.yTop) + 0.5, Math.round(f.x2 - f.x1), Math.round(h));
+            ctx.restore();
+        }
+        if (z.marker) {
+            ctx.beginPath();
+            ctx.arc(z.marker.x, z.marker.y, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = z.stroke;
+            ctx.fill();
+        }
+    }
+
+    /** Paint a liquidity level: the line to where it stopped, and a cross where it was swept. */
+    private paintLiquidity(ctx: CanvasRenderingContext2D, d: Liquidity, proj: Projector): void {
+        const l = d.line(proj);
+        if (!l) return;
+        const y = Math.round(l.y) + 0.5;
+        this.stroke(ctx, d.style, () => {
+            ctx.moveTo(l.x1, y);
+            ctx.lineTo(l.x2, y);
+        });
+        if (l.sweep) {
+            const { x, y: sy } = l.sweep;
+            this.stroke(ctx, { lineColor: d.style.lineColor, lineWidth: 1.75, lineStyle: 'solid' }, () => {
+                ctx.moveTo(x - 4, sy - 4);
+                ctx.lineTo(x + 4, sy + 4);
+                ctx.moveTo(x + 4, sy - 4);
+                ctx.lineTo(x - 4, sy + 4);
+            });
+        }
     }
 
     /** Paint a concentric-ring fib tool (circles / arcs / wedge): each enabled level as an arc of

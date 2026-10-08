@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
     disconnect() {}
 };
 
-import { createDrawing, deserializeDrawing, drawingTypes, applyToolDefaults, type Drawing, type FibRetracement, type DrawingToolDefaults, type DrawingToolTemplate, type DrawingTypeKey } from '../src/core/drawings';
+import { createDrawing, deserializeDrawing, drawingTypes, applyToolDefaults, type Drawing, type FairValueGap, type FibRetracement, type DrawingToolDefaults, type DrawingToolTemplate, type DrawingTypeKey } from '../src/core/drawings';
 import { DARK_THEME } from '../src/core/theme';
 import { DrawingSettingsPopup, type SettingsActions } from '../src/renderers/native/drawings/DrawingSettingsPopup';
 
@@ -281,6 +281,19 @@ describe('the drawing settings panel', () => {
         input.value = '-0.5';
         input.dispatchEvent(new Event('blur'));
         expect((s.live() as FibRetracement).levels[1]!.ratio).toBe(-0.5);
+        s.popup.destroy();
+    });
+
+    it('an option that matters only in one mode appears only in that mode', async () => {
+        const s = setup(make('fairvaluegap', { anchors: ANCHORS.slice(0, 1) }));
+        await s.openPanel();
+        const flip = (): HTMLElement => s.$$('.vela-dsp-chip').find((c) => c.textContent === 'Flip when closed through')!;
+        expect(flip().hidden).toBe(false);
+        s.segButton('Extend right', 'Until 50%').click();
+        expect((s.live() as FairValueGap).gap.extend).toBe('half');
+        expect(flip().hidden).toBe(true);
+        s.segButton('Extend right', 'Until filled').click();
+        expect(flip().hidden).toBe(false);
         s.popup.destroy();
     });
 

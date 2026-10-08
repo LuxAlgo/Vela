@@ -84,7 +84,10 @@ export type DrawingTypeKey =
     | 'butterfly'
     | 'crab'
     | 'shark'
-    | 'cypher';
+    | 'cypher'
+    | 'fairvaluegap'
+    | 'orderblock'
+    | 'liquidity';
 
 /** One anchor's role + which axes its handle may move along. */
 export interface AnchorSlot {

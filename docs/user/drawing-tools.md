@@ -218,7 +218,7 @@ drawings among themselves, and the tree keeps them in one block above the series
 
 ## Tool catalogue
 
-**67 tools across 9 groups.** The **Type key** is the string you pass to
+**79 tools across 10 groups.** The **Type key** is the string you pass to
 `chart.drawings.setTool('…')` or [`chart.drawings.add('…')`](#driving-drawings-from-code). Eraser,
 Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable types, so they have no key.
 
@@ -314,6 +314,18 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 | Supersonic | `supersonic` | Mach cone (M>1): same diameter-sized first circle, with a conical envelope. Mach number is adjustable. Per-circle colors in the settings panel. |
 | Golden Sonic | `goldensonic` | Sonic Mach figure whose circle radii follow Fibonacci ratios (including under 1: 0.236…0.786, then 1, φ, φ², …). |
 | Golden Supersonic | `goldensupersonic` | Supersonic Mach cone with the same Fibonacci radii (under-1 through extensions). |
+
+### Price Action
+
+Placed with one click on a candle, these tools read the chart's own candles: they find their
+zone or level, follow price as new candles arrive, and stop at the event you pick in the settings
+panel, marking where it happened.
+
+| Tool | Type key | What it does |
+|---|---|---|
+| Fair Value Gap | `fairvaluegap` | Click the middle candle of three whose outer candles leave a gap (or a candle near it). The gap runs right until price tests it, reaches its halfway line or fills it, and a dot marks where. Set to flip, a filled gap that price then closes through carries on the other way. |
+| Order Block | `orderblock` | Click the candle: a down-close candle marks a bullish (demand) block, an up-close one a bearish (supply) block, over its body or its full range. It runs right until price tests it, reaches its halfway line or closes through it; a broken block can carry on as a breaker, the other way, until price returns to it. |
+| Liquidity | `liquidity` | Click near a candle's high for the liquidity resting above it, or near its low for the liquidity below. The level runs right until price sweeps it (a wick through) or breaks it (a close beyond), and a cross marks the sweep. |
 
 ### Patterns
 
