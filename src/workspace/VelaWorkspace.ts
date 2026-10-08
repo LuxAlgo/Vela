@@ -54,7 +54,7 @@ import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { syncTargets, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
-import { encodeState, decodeState, sanitizeState, type WorkspaceState, type WorkspaceStorage } from './persist';
+import { encodeState, decodeState, sanitizeState, type DrawingToolsState, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { localStorageAdapter } from '../widget/persist';
 import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
 import { buildContext, type WorkspaceWidgetContext } from './context';
@@ -328,6 +328,10 @@ export class VelaWorkspace {
     private historyUnsub: (() => void) | null = null;
     /** Favorite drawing tools — a WORKSPACE preference (one star set, every cell). */
     private favs: string[] = [];
+    /** Every drawing tool's remembered settings — a SHARED pref, mirrored onto every cell. */
+    private toolDefs: Record<string, unknown> = {};
+    /** Re-entrancy guard while one cell's remembered settings fan out to the others. */
+    private toolDefsBusy = false;
     /** Favorite timeframes — the shared topbar's quick-switch chips, one set for the grid. */
     private tfFavs: string[] = [];
     /** Live sync configuration (mutable copy of the option). */
@@ -445,6 +449,7 @@ export class VelaWorkspace {
         this.timezone = boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         if (boot?.favorites) this.favs = [...boot.favorites];
         if (boot?.timeframeFavorites) this.tfFavs = [...boot.timeframeFavorites];
+        if (boot?.drawingTools) this.adoptDrawingTools(boot.drawingTools);
         const sync = boot?.sync ?? opts.sync;
         for (const kind of SYNC_KINDS) this.applySyncSetting(kind, sync?.[kind]);
         // Single-chart mode pins the grid to '1' — a persisted document's layout is
@@ -976,6 +981,8 @@ export class VelaWorkspace {
         if (this.activeId) state.activeCellId = this.activeId;
         if (this.favs.length > 0) state.favorites = [...this.favs];
         if (this.tfFavs.length > 0) state.timeframeFavorites = [...this.tfFavs];
+        const tools = this.drawingToolsState();
+        if (tools) state.drawingTools = tools;
         if (this.trackSizes.size > 0) state.trackSizes = Object.fromEntries([...this.trackSizes].map(([k, v]) => [k, { ...v }]));
         const panels = this.dock.getState();
         if (panels) state.panels = panels;
@@ -1014,6 +1021,7 @@ export class VelaWorkspace {
         const st = sanitizeState(state);
         if (!st) return;
         if (st.favorites) this.favs = [...st.favorites]; // newborn cells inherit below (buildCells)
+        if (st.drawingTools) this.adoptDrawingTools(st.drawingTools); // ditto; the active cell takes the magnet/stay mirrors
         if (st.timeframeFavorites) {
             this.tfFavs = [...st.timeframeFavorites];
             this.topbar.setTimeframeFavorites(this.tfFavs);
@@ -1039,6 +1047,7 @@ export class VelaWorkspace {
             if (st.favorites) {
                 for (const cell of this.cellsById.values()) cell.chart.drawings.setFavorites(this.favs as never[]);
             }
+            if (st.drawingTools) this.pushToolDefaults(null);
             this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
             // Restored slots differ legitimately — with the style link on, an unguarded
             // rehydrate would smear each cell's restored config over its peers.
@@ -1406,6 +1415,35 @@ export class VelaWorkspace {
         if (this.activeId) this.cellsById.get(this.activeId)?.chart.renderer.focus();
     }
 
+    /** Take a document's drawing-tool prefs as the shared mirrors (cells pick them up as they
+     *  are built, or from {@link pushToolDefaults} / the active-cell projection). */
+    private adoptDrawingTools(tools: DrawingToolsState): void {
+        if (tools.defaults) this.toolDefs = { ...tools.defaults };
+        if (tools.magnet) this.globalSnap = tools.magnet;
+        if (tools.stay !== undefined) this.globalStay = tools.stay;
+    }
+
+    /** Mirror the shared remembered settings onto every cell but `from` (the cell they came from). */
+    private pushToolDefaults(from: ChartCell | null): void {
+        this.toolDefsBusy = true;
+        try {
+            for (const other of this.cellsById.values()) {
+                if (other !== from) other.chart.drawings.setToolDefaults(this.toolDefs);
+            }
+        } finally {
+            this.toolDefsBusy = false;
+        }
+    }
+
+    /** The drawing-tool prefs worth saving; null when every one is at its default. */
+    private drawingToolsState(): DrawingToolsState | null {
+        const out: DrawingToolsState = {};
+        if (Object.keys(this.toolDefs).length > 0) out.defaults = { ...this.toolDefs };
+        if (this.globalSnap !== 'off') out.magnet = this.globalSnap;
+        if (this.globalStay) out.stay = true;
+        return Object.keys(out).length > 0 ? out : null;
+    }
+
     /** Debounced dirty mark: one `state:changed` (+ one storage write in persist mode)
      *  per burst of edits, flushed hard on unload/destroy. */
     private markStateDirty(): void {
@@ -1658,6 +1696,16 @@ export class VelaWorkspace {
             // The shared star set is a workspace pref — every newborn cell inherits it
             // silently (equal-set idempotence keeps the favorites event from echoing).
             if (this.favs.length > 0) cell.chart.drawings.setFavorites(this.favs as never[]);
+            // Same for the tools' remembered settings: a new chart's first trend line looks
+            // like the last one drawn anywhere in the workspace.
+            if (Object.keys(this.toolDefs).length > 0) {
+                this.toolDefsBusy = true; // inheriting is not an edit — no echo, no dirty mark
+                try {
+                    cell.chart.drawings.setToolDefaults(this.toolDefs);
+                } finally {
+                    this.toolDefsBusy = false;
+                }
+            }
             // The indicator ledger: a restored cell re-adds ITS recorded set (held until
             // the manifest resolves); a fresh cell seeds the manifest's enabled entries.
             cell.setManifest(this.manifest, pooled?.indicators == null);
@@ -1707,6 +1755,14 @@ export class VelaWorkspace {
             this.drawToolbar?.setFavorites(favorites as never[]);
             this.markStateDirty();
         });
+        // The tools' remembered settings are a WORKSPACE preference too: styling a drawing in
+        // any cell becomes the default for that tool on every cell, and `getState()` keeps it.
+        chart.on('drawing:defaults', () => {
+            if (this.toolDefsBusy) return;
+            this.toolDefs = chart.drawings.toolDefaults() as Record<string, unknown>;
+            this.pushToolDefaults(cell);
+            this.markStateDirty();
+        });
         // Crosshair sync: mirror THIS cell's pointer time onto its same-group followers
         // as ghost markers. Leave already emits `time: null` — the clear rides along.
         // The horizontal level travels only when the cursor is on the PRICE pane — a
@@ -1741,13 +1797,17 @@ export class VelaWorkspace {
         });
         chart.on('drawing:snap', ({ mode }) => {
             if (cell.id !== this.activeId) return;
+            const changed = mode !== this.globalSnap;
             this.globalSnap = mode;
             this.drawToolbar?.setMagnetMode(mode);
+            if (changed) this.markStateDirty();
         });
         chart.on('drawing:stay', ({ on }) => {
             if (cell.id !== this.activeId) return;
+            const changed = on !== this.globalStay;
             this.globalStay = on;
             this.drawToolbar?.setStayMode(on);
+            if (changed) this.markStateDirty();
         });
         chart.on('drawing:mode', ({ mode }) => {
             if (cell.id !== this.activeId) return;

@@ -59,6 +59,18 @@ export interface PanelsState {
     pinned?: string[];
 }
 
+/**
+ * The drawing tools' shared preferences — one set per shell, like the favorite stars:
+ * each tool's remembered settings (what its next drawing starts from), the magnet, and
+ * stay-in-drawing-mode. `defaults` maps a tool type to its settings and passes through
+ * opaquely; `drawings.setToolDefaults` validates each entry at restore time.
+ */
+export interface DrawingToolsState {
+    defaults?: Record<string, unknown>;
+    magnet?: 'off' | 'weak' | 'strong';
+    stay?: boolean;
+}
+
 /** Per-chart (per-cell) state: the market, the display prefs, the content documents,
  *  and the indicator ledger. The widget's whole chart state is ONE of these. */
 export interface CellState {
@@ -130,6 +142,8 @@ export interface WorkspaceState {
     favorites?: string[];
     /** Favorite timeframes (the topbar's quick-switch chips) — a SHARED preference. */
     timeframeFavorites?: string[];
+    /** The drawing tools' remembered settings, magnet and stay mode — a SHARED preference. */
+    drawingTools?: DrawingToolsState;
     /** The docked side panels: which one is open, and the widths the user dragged. */
     panels?: PanelsState;
     /** Per-chart state, one entry per SLOT (a single `c1` entry for the widget).
@@ -196,6 +210,8 @@ export function sanitizeState(doc: unknown): WorkspaceState | null {
         const favs = d.timeframeFavorites.filter((f): f is string => typeof f === 'string');
         if (favs.length > 0) out.timeframeFavorites = favs;
     }
+    const tools = sanitizeDrawingTools(d.drawingTools);
+    if (tools) out.drawingTools = tools;
     const sync = sanitizeSync(d.sync);
     if (sync) out.sync = sync;
     const tracks = sanitizeTrackSizes(d.trackSizes);
@@ -218,6 +234,24 @@ function sanitizeExt(raw: unknown): Record<string, unknown> | null {
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
         if (key.length > 0 && value !== undefined) out[key] = value;
     }
+    return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Shapes only: each remembered-settings entry must be an object (its contents are the
+ *  restoring chart's to validate); the magnet must be a known mode. */
+function sanitizeDrawingTools(raw: unknown): DrawingToolsState | null {
+    if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const r = raw as Record<string, unknown>;
+    const out: DrawingToolsState = {};
+    if (r.defaults != null && typeof r.defaults === 'object' && !Array.isArray(r.defaults)) {
+        const defaults: Record<string, unknown> = {};
+        for (const [type, value] of Object.entries(r.defaults as Record<string, unknown>)) {
+            if (type.length > 0 && value != null && typeof value === 'object' && !Array.isArray(value)) defaults[type] = value;
+        }
+        if (Object.keys(defaults).length > 0) out.defaults = defaults;
+    }
+    if (r.magnet === 'off' || r.magnet === 'weak' || r.magnet === 'strong') out.magnet = r.magnet;
+    if (typeof r.stay === 'boolean') out.stay = r.stay;
     return Object.keys(out).length > 0 ? out : null;
 }
 

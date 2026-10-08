@@ -89,6 +89,10 @@ export interface VelaEventMap extends Record<string, unknown> {
   "drawing:selected": { id: string | null; ids: string[] };
   /** The favorite-tool set changed (star toggles or a bulk restore). */
   "drawing:favorites": { favorites: string[] };
+  /** A tool's remembered settings changed — the ones its next drawing starts from (the last
+   *  drawing of that type the user styled, a bulk restore, or a reset). Read them back with
+   *  `drawings.toolDefaults()`. */
+  "drawing:defaults": { type: DrawingTypeKey };
   /** The armed drawing tool changed — toolbar click, one-shot tool finishing (back to
    *  the pointer, `null`), or a programmatic `drawings.setTool`. */
   "drawing:tool": { type: DrawingTypeKey | null };

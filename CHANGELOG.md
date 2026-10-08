@@ -2,6 +2,23 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Drawing tools remember their settings.** Each tool now starts its next drawing from the
+  last one you styled: colors, widths, text styling and the tool's own settings, such as a Fib's
+  levels or a position's account size. Styling several drawings at once counts too. Read and
+  restore the set with `chart.drawings.toolDefaults()` and `setToolDefaults()`, follow changes
+  on `drawing:defaults`, and send a tool back to its factory look with `resetToolDefaults()`.
+
+### Fixed
+
+- **Drawing tool settings survive a reload.** A workspace or widget now saves each tool's
+  remembered settings in its state document, along with the magnet and stay-in-drawing-mode,
+  and shares them across every chart in the grid. Before, they lasted only until the page
+  closed, and only on the chart where you made them.
+
 ## [0.8.3]
 
 ### Added

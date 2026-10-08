@@ -381,11 +381,14 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `all()` | no | Every drawing as plain JSON, in paint order. |
 | `toJSON()` / `fromJSON(doc)` | no | Snapshot / restore a versioned `DrawingsDocument` (untrusted-safe). |
 | `getConfig()` / `applyConfig(doc)` | no | Aliases of `toJSON` / `fromJSON`, mirroring `chart.renderer`. |
+| `toolDefaults()` · `setToolDefaults(map)` · `resetToolDefaults(type?)` | no | Each tool's remembered settings, by type: the style, text styling and per-type settings (fib levels, position sizing…) its next drawing starts from. Plain JSON — save `toolDefaults()` and hand it back to `setToolDefaults` on the next load (malformed entries and unknown types are dropped). Changes land on `drawing:defaults`. The workspace and widget keep them in their state document for you. |
 
 Drawing lifecycle is also surfaced as chart events (`drawing:created` / `drawing:edited` /
 `drawing:removed` / `drawing:selected` / `drawing:settings` — `drawing:selected` carries the
 primary `id` plus `ids`, every member of a multi-selection), and the tool/mode state as
-`drawing:tool` / `drawing:snap` / `drawing:stay` / `drawing:mode` — the seam an external toolbar mirrors. See
+`drawing:tool` / `drawing:snap` / `drawing:stay` / `drawing:mode` — the seam an external toolbar mirrors.
+`drawing:defaults` fires when a tool's remembered settings change (the user styled a drawing of
+that type, or a restore or reset replaced them). See
 [Drawing tools](./drawing-tools.md) for the tool catalogue, toolbar UX, and keyboard shortcuts.
 
 ---
