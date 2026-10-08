@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **The trend angle's degree readout no longer sits on its line.** On a rising line the
+  readout moved above the baseline, where the line runs, so the line crossed the digits.
+  It now sits on the side of the baseline the line leaves empty, with a halo that keeps it
+  legible over candles.
+
 ## [0.8.3]
 
 ### Added
