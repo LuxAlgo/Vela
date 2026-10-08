@@ -3,7 +3,7 @@ import type { DrawingTypeKey, SerializedDrawing } from './Drawing';
 import type { SnapMode } from './geometry';
 import type { DrawingSeriesGateway } from './series';
 import type { ToolbarDefinition } from './toolbar';
-import type { DrawingToolDefaults } from './defaults';
+import type { DrawingToolDefaults, DrawingToolTemplate } from './defaults';
 
 /**
  * The renderer-local drawing MODES beyond an armed tool: the transient measure ruler,
@@ -36,6 +36,10 @@ export type DrawingIntent =
     | { kind: 'settings'; id: string }
     | { kind: 'tool-finished'; type: DrawingTypeKey }
     | { kind: 'favorite'; type: DrawingTypeKey; on: boolean } // flyout star toggled
+    /** The settings panel saved the drawing's look as a named style for its tool. */
+    | { kind: 'template-save'; type: DrawingTypeKey; name: string; settings: DrawingToolDefaults }
+    /** The settings panel deleted one of a tool's saved styles. */
+    | { kind: 'template-remove'; type: DrawingTypeKey; name: string }
     // The renderer-local magnet / mode state changed (in-chart toolbar click, or a
     // mutual-exclusion side effect — arming a tool exits measure/eraser). The core
     // mirrors the value and re-emits it as a chart event; an equal value is a no-op,
@@ -80,6 +84,9 @@ export interface IDrawingsRendererPort {
     /** Push the FAVORITE tool set (flyout stars + any favorites-driven UI). Optional —
      *  favorites still work headless without a renderer reflection. */
     setFavorites?(types: readonly DrawingTypeKey[]): void;
+    /** Push every tool's saved looks (the settings panel's style menu). Optional — the
+     *  styles still round-trip through the core without a renderer reflection. */
+    setToolTemplates?(map: Readonly<Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>>>): void;
     /** Push per-tool shortcut hints — PRE-FORMATTED display strings (e.g. `'Alt+T'`)
      *  shown beside the tools in the toolbar flyouts. The host owns the keymap and the
      *  platform formatting; the renderer only displays. Optional. */

@@ -13,7 +13,15 @@ import { createDrawing, deserializeDrawing } from './registry';
 import type { Drawing, DrawingTypeKey, SerializedDrawing } from './Drawing';
 import type { SnapMode } from './geometry';
 import { clonePlain, type DrawingsDocument } from './document';
-import { applyToolDefaults, captureToolDefaults, sameToolDefaults, sanitizeToolDefaults, type DrawingToolDefaults } from './defaults';
+import {
+    applyToolDefaults,
+    captureToolDefaults,
+    sameToolDefaults,
+    sanitizeToolDefaults,
+    sanitizeToolTemplates,
+    type DrawingToolDefaults,
+    type DrawingToolTemplate,
+} from './defaults';
 
 /** What a fresh, unstyled drawing of `d`'s type would remember — the factory look, keeping
  *  `d`'s pane so a pane-dependent default compares like for like. */
@@ -61,6 +69,8 @@ export class DrawingController {
     private clipboard: SerializedDrawing[] = []; // in-memory copy buffer (per chart)
     /** Per-tool remembered settings — the last drawing of each type the user styled seeds the next. */
     private readonly defaults = new Map<DrawingTypeKey, DrawingToolDefaults>();
+    /** Per-tool saved looks ("styles"), in the order they were saved. */
+    private templates = new Map<DrawingTypeKey, DrawingToolTemplate[]>();
     private readonly subs: Unsubscribe[] = [];
 
     constructor(
@@ -211,6 +221,57 @@ export class DrawingController {
             this.defaults.delete(t);
             this.events.emit('drawing:defaults', { type: t });
         }
+    }
+
+    /** Every tool's saved looks, by type (plain JSON — persist it as-is). */
+    toolTemplates(): Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>> {
+        const out: Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>> = {};
+        for (const [type, list] of this.templates) out[type] = clonePlain(list);
+        return out;
+    }
+
+    /** Replace every tool's saved looks (restoring persisted prefs). Unknown types and
+     *  malformed entries are dropped; an unchanged set is a no-op and emits nothing. */
+    setToolTemplates(map: Readonly<Record<string, unknown>> | null | undefined): void {
+        const next = new Map<DrawingTypeKey, DrawingToolTemplate[]>();
+        for (const [type, raw] of Object.entries(map ?? {})) {
+            if (!getDrawingType(type)) continue;
+            const list = sanitizeToolTemplates(raw);
+            if (list.length > 0) next.set(type as DrawingTypeKey, list);
+        }
+        const changed = [...new Set<DrawingTypeKey>([...this.templates.keys(), ...next.keys()])].filter(
+            (t) => JSON.stringify(this.templates.get(t) ?? []) !== JSON.stringify(next.get(t) ?? []),
+        );
+        if (changed.length === 0) return;
+        this.templates = next;
+        this.pushTemplates();
+        for (const type of changed) this.events.emit('drawing:templates', { type });
+    }
+
+    /** Save the given settings as a named look for a tool (a same-named one is replaced). */
+    saveToolTemplate(type: DrawingTypeKey, name: string, settings: DrawingToolDefaults): void {
+        if (!getDrawingType(type)) return;
+        const [entry] = sanitizeToolTemplates([{ name, settings }]);
+        if (!entry) return;
+        const list = (this.templates.get(type) ?? []).filter((t) => t.name !== entry.name);
+        this.templates.set(type, [...list, clonePlain(entry)]);
+        this.pushTemplates();
+        this.events.emit('drawing:templates', { type });
+    }
+
+    /** Delete a tool's saved look by name. */
+    removeToolTemplate(type: DrawingTypeKey, name: string): void {
+        const list = this.templates.get(type);
+        if (!list?.some((t) => t.name === name)) return;
+        const rest = list.filter((t) => t.name !== name);
+        if (rest.length > 0) this.templates.set(type, rest);
+        else this.templates.delete(type);
+        this.pushTemplates();
+        this.events.emit('drawing:templates', { type });
+    }
+
+    private pushTemplates(): void {
+        this.port?.setToolTemplates?.(this.toolTemplates());
     }
 
     setToolbar(option: DrawingsOption): void {
@@ -568,6 +629,12 @@ export class DrawingController {
                 break;
             case 'favorite':
                 this.setFavorite(i.type, i.on);
+                break;
+            case 'template-save':
+                this.saveToolTemplate(i.type, i.name, i.settings);
+                break;
+            case 'template-remove':
+                this.removeToolTemplate(i.type, i.name);
                 break;
             case 'snap-mode':
                 // In-chart magnet click (already applied renderer-side) — mirror + announce.

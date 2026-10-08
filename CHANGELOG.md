@@ -11,6 +11,27 @@ All notable changes to Vela, newest first.
   levels or a position's account size. Styling several drawings at once counts too. Read and
   restore the set with `chart.drawings.toolDefaults()` and `setToolDefaults()`, follow changes
   on `drawing:defaults`, and send a tool back to its factory look with `resetToolDefaults()`.
+- **A full settings panel for every drawing.** The gear on a drawing's toolbar, or a
+  double-click on the drawing, opens one panel with all of the tool's settings: its look, its own
+  options, its label, the price and time of each point, and the timeframes it shows on. Options
+  appear only when they apply, sections fold to a one-line summary, and Cancel puts the drawing
+  back as it was. The chart stays usable behind the panel.
+- **Styles for every tool.** Save a drawing's look as a named style and apply it to any drawing
+  of that tool in one click, with a live preview on hover. Line and area tools come with
+  ready-made styles. Styles are kept with the other tool settings; read and restore them with
+  `chart.drawings.toolTemplates()` and `setToolTemplates()`.
+- **Drawings can show on chosen timeframes.** Limit a drawing to intraday charts, to 1H and up,
+  or to any set of timeframes; other charts hide it. The limit is saved with the drawing as
+  `showOn`.
+- **Trend lines extend.** A trend line can run on past either point to the edge of the chart,
+  and its label can sit at the start, middle or end of the line, above or below it.
+
+### Changed
+
+- **One settings button.** The drawing toolbar's separate Levels, Position size and Settings
+  buttons are now a single Settings button that opens the full panel for every tool.
+- **Labels stay readable over lines.** A drawing's label now carries a thin outline in the chart's
+  background color, so a line running through it no longer hides the words.
 
 ### Fixed
 

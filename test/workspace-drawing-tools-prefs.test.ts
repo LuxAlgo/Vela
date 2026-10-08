@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// The drawing tools' shared preferences in a workspace: a tool's remembered settings follow
-// across charts, ride `getState()`, and come back on `applyState()` — together with the
-// magnet and stay-in-drawing-mode — so a reload keeps them.
+// The drawing tools' shared preferences in a workspace: a tool's remembered settings and saved
+// styles follow across charts, ride `getState()`, and come back on `applyState()` — together
+// with the magnet and stay-in-drawing-mode — so a reload keeps them.
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 
 // This jsdom build ships no `CSS` global; the style injector only needs `escape`.
@@ -93,6 +93,19 @@ describe('drawing tool preferences in a workspace', () => {
         const c = second.cell('c1')!.chart.drawings;
         expect(c.getSnapMode()).toBe('strong');
         expect(c.getStayMode()).toBe(true);
+    });
+
+    it('a style saved on one chart is offered on every chart and survives a restore', () => {
+        const first = mountWorkspace({ layout: '2h' });
+        const settings = { style: { lineColor: '#ff8800', lineWidth: 3 } };
+        first.cell('c1')!.chart.drawings.saveToolTemplate('trendline', 'Weekly', settings);
+        expect(first.cell('c2')!.chart.drawings.toolTemplates().trendline).toEqual([{ name: 'Weekly', settings }]);
+
+        const saved = JSON.parse(JSON.stringify(first.getState()));
+        expect(saved.drawingTools?.templates?.trendline).toEqual([{ name: 'Weekly', settings }]);
+        const second = mountWorkspace({ layout: '1' });
+        second.applyState(saved);
+        expect(second.cell('c1')!.chart.drawings.toolTemplates().trendline).toEqual([{ name: 'Weekly', settings }]);
     });
 
     it('untouched preferences add nothing to the saved document', () => {

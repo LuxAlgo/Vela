@@ -93,6 +93,9 @@ export interface VelaEventMap extends Record<string, unknown> {
    *  drawing of that type the user styled, a bulk restore, or a reset). Read them back with
    *  `drawings.toolDefaults()`. */
   "drawing:defaults": { type: DrawingTypeKey };
+  /** A tool's saved looks changed (saved, deleted, or a bulk restore) — read them back with
+   *  `drawings.toolTemplates()`. */
+  "drawing:templates": { type: DrawingTypeKey };
   /** The armed drawing tool changed — toolbar click, one-shot tool finishing (back to
    *  the pointer, `null`), or a programmatic `drawings.setTool`. */
   "drawing:tool": { type: DrawingTypeKey | null };

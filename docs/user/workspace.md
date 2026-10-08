@@ -298,9 +298,9 @@ The state SURFACE is the product; persistence is an adapter on top of it.
 const state = ws.getState();
 // → { version: 1, layout, trackSizes?, activeCellId?, sync?, timezone?, favorites?,
 //     timeframeFavorites?, drawingTools?, charts: […], ext? }
-// `drawingTools` = { defaults?, magnet?, stay? }: each drawing tool's remembered settings
-// (what its next drawing starts from), the magnet and stay-in-drawing-mode — shared by
-// every chart of the workspace, like the favorite stars.
+// `drawingTools` = { defaults?, templates?, magnet?, stay? }: each drawing tool's remembered
+// settings (what its next drawing starts from), its saved styles, the magnet and
+// stay-in-drawing-mode — shared by every chart of the workspace, like the favorite stars.
 // One ORDERED `charts` entry per cell, live AND dormant — array position i restores
 // into slot i, `id` is the cell's durable name: { id: 'btc', symbol, provider?, timeframe,
 //   priceStyle, bars?, watermark?, indicatorTitles?, rendererConfig (renderer.getConfig() document),

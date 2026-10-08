@@ -2,6 +2,7 @@ import type { Drawing } from './Drawing';
 import type { DrawingStyle, DrawingText } from './style';
 import { defaultText } from './style';
 import { clonePlain } from './document';
+import { BEARISH, BULLISH, NEUTRAL } from '../palette';
 
 /**
  * A tool's remembered settings — what the next drawing of that type starts from. Captured
@@ -58,4 +59,53 @@ export function sanitizeToolDefaults(raw: unknown): DrawingToolDefaults | null {
     const props = obj(r.props);
     if (props) out.props = props;
     return out.style || out.text || out.props ? out : null;
+}
+
+/** A named, saved look for one tool (a "style"): applied, it sets the same settings a
+ *  remembered default does — style, text styling and per-type settings. */
+export interface DrawingToolTemplate {
+    name: string;
+    settings: DrawingToolDefaults;
+}
+
+/** Longest template name kept (a label, not a note). */
+const TEMPLATE_NAME_MAX = 60;
+
+/** Coerce an untrusted list into templates: named, de-duplicated by name (last wins, in
+ *  first-seen position), with valid settings. */
+export function sanitizeToolTemplates(raw: unknown): DrawingToolTemplate[] {
+    if (!Array.isArray(raw)) return [];
+    const byName = new Map<string, DrawingToolTemplate>();
+    for (const entry of raw) {
+        if (entry == null || typeof entry !== 'object') continue;
+        const e = entry as Record<string, unknown>;
+        const name = typeof e.name === 'string' ? e.name.trim().slice(0, TEMPLATE_NAME_MAX) : '';
+        const settings = sanitizeToolDefaults(e.settings);
+        if (name && settings) byName.set(name, { name, settings });
+    }
+    return [...byName.values()];
+}
+
+const LINE_TOOLS = new Set(['trendline', 'ray', 'extendedline', 'hline', 'hray', 'vline', 'crossline', 'infoline', 'trendangle']);
+const AREA_TOOLS = new Set(['box', 'rotatedrect', 'ellipse', 'circle', 'triangle', 'parallelchannel', 'disjointchannel', 'flattopbottom']);
+const BULL = BULLISH;
+const BEAR = BEARISH;
+const MUTED = NEUTRAL;
+
+/** The looks every chart offers for a tool before the user saves any of their own. */
+export function builtinToolTemplates(type: string): DrawingToolTemplate[] {
+    if (LINE_TOOLS.has(type)) {
+        return [
+            { name: 'Support', settings: { style: { lineColor: BULL, lineWidth: 2, lineStyle: 'solid' } } },
+            { name: 'Resistance', settings: { style: { lineColor: BEAR, lineWidth: 2, lineStyle: 'solid' } } },
+            { name: 'Projection', settings: { style: { lineColor: MUTED, lineWidth: 1, lineStyle: 'dashed' } } },
+        ];
+    }
+    if (AREA_TOOLS.has(type)) {
+        return [
+            { name: 'Demand', settings: { style: { lineColor: BULL, fillColor: `${BULL}26` } } },
+            { name: 'Supply', settings: { style: { lineColor: BEAR, fillColor: `${BEAR}26` } } },
+        ];
+    }
+    return [];
 }

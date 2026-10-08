@@ -67,6 +67,8 @@ export interface PanelsState {
  */
 export interface DrawingToolsState {
     defaults?: Record<string, unknown>;
+    /** Each tool's saved looks — a list of `{ name, settings }`, by tool type. */
+    templates?: Record<string, unknown[]>;
     magnet?: 'off' | 'weak' | 'strong';
     stay?: boolean;
 }
@@ -249,6 +251,13 @@ function sanitizeDrawingTools(raw: unknown): DrawingToolsState | null {
             if (type.length > 0 && value != null && typeof value === 'object' && !Array.isArray(value)) defaults[type] = value;
         }
         if (Object.keys(defaults).length > 0) out.defaults = defaults;
+    }
+    if (r.templates != null && typeof r.templates === 'object' && !Array.isArray(r.templates)) {
+        const templates: Record<string, unknown[]> = {};
+        for (const [type, list] of Object.entries(r.templates as Record<string, unknown>)) {
+            if (type.length > 0 && Array.isArray(list) && list.length > 0) templates[type] = list;
+        }
+        if (Object.keys(templates).length > 0) out.templates = templates;
     }
     if (r.magnet === 'off' || r.magnet === 'weak' || r.magnet === 'strong') out.magnet = r.magnet;
     if (typeof r.stay === 'boolean') out.stay = r.stay;

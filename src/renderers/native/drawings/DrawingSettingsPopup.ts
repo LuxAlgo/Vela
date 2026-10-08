@@ -1,5 +1,5 @@
 import type { VelaTheme } from '../../../core/options';
-import type { Drawing, RegressionStyle, VwapStyle, SerializedDrawing } from '../../../core/drawings';
+import type { Drawing, DrawingToolDefaults, DrawingToolTemplate, RegressionStyle, VwapStyle, SerializedDrawing } from '../../../core/drawings';
 import {
     DEFAULT_DRAWING_COLOR,
     TEXT_SIZE_OPTIONS,
@@ -10,7 +10,6 @@ import {
     MACH_WAVE_COUNT_OPTIONS,
     MACH_NUMBER_OPTIONS,
     MachFigure,
-    FixedRangeVolumeProfile,
     PositionTool,
     Magnifier,
     MAGNIFIER_TIMEFRAME_OPTIONS,
@@ -24,7 +23,7 @@ import { NumberInput } from '../../../ui/components/number-input';
 import { TextArea } from '../../../ui/components/text-area';
 import { buildColorPicker } from '../../../ui/components/color-picker';
 import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
-import { DrawingSettingsDialog } from './DrawingSettingsDialog';
+import { DrawingSettingsPanel, type DrawingPanelEnv } from './DrawingSettingsPanel';
 
 /** A `{ path: value }` patch emitted as the user edits a control. */
 export type SettingsPatch = Record<string, unknown>;
@@ -41,8 +40,18 @@ export interface SettingsActions {
     duplicate(): void;
     resetSettings(): void;
     remove(): void;
-    /** Restore a serialized snapshot (Cancel in the settings dialog). */
+    /** Restore a serialized snapshot (Cancel in the settings panel). */
     restore?(doc: SerializedDrawing): void;
+    /** The saved styles of the drawing's tool. */
+    templates?(): readonly DrawingToolTemplate[];
+    /** Save the drawing's current look as a named style for its tool. */
+    saveTemplate?(name: string): void;
+    /** Delete one of the tool's saved styles. */
+    removeTemplate?(name: string): void;
+    /** Apply a whole set of tool settings (a style) as one edit. */
+    applyToolSettings?(settings: DrawingToolDefaults): void;
+    /** Show a style on the drawing without committing it; `null` puts the drawing back. */
+    preview?(settings: DrawingToolDefaults | null): void;
 }
 
 /** The value of a control whose drawings disagree — the bar shows it as "mixed" and the first
@@ -122,7 +131,9 @@ export class DrawingSettingsPopup {
     private el: HTMLDivElement | null = null;
     private tipEl: HTMLDivElement | null = null; // floating hover-label (above/below the toolbar)
     private textPanel: HTMLDivElement | null = null;
-    private readonly settingsDialog: DrawingSettingsDialog;
+    private readonly panel: DrawingSettingsPanel;
+    /** The single drawing the bar is open on (a multi-selection has no settings panel). */
+    private current: { drawing: Drawing; actions: SettingsActions; anchor: PopupAnchor | null } | null = null;
     private colorPop: Popover | null = null;
     private colorOwner: HTMLElement | null = null;
     private menuPop: Popover | null = null;
@@ -133,12 +144,20 @@ export class DrawingSettingsPopup {
     constructor(
         private readonly host: HTMLElement,
         theme: VelaTheme,
-        /** One chart bar in ms — timeframe pickers drop the choices at/above it. */
-        private readonly chartBarMs: () => number = () => 0,
+        /** What the chart tells the bar and its settings panel (its timeframe, time zone, price precision). */
+        env: Partial<DrawingPanelEnv> = {},
     ) {
         this.theme = theme;
-        this.settingsDialog = new DrawingSettingsDialog(host, theme);
+        this.chartBarMs = env.chartBarMs ?? (() => 0);
+        this.panel = new DrawingSettingsPanel(host, theme, {
+            chartBarMs: this.chartBarMs,
+            timeZone: env.timeZone ?? (() => 'UTC'),
+            priceDecimals: env.priceDecimals ?? (() => null),
+        });
     }
+
+    /** One chart bar in ms — timeframe pickers drop the choices at/above it. */
+    private readonly chartBarMs: () => number;
 
     /** The magnifier timeframe choices strictly below the chart's own bar duration
      *  (`auto` rides along while at least one concrete lower step exists). */
@@ -151,7 +170,7 @@ export class DrawingSettingsPopup {
 
     setTheme(theme: VelaTheme): void {
         this.theme = theme;
-        this.settingsDialog.setTheme(theme);
+        this.panel.setTheme(theme);
     }
 
     isOpen(): boolean {
@@ -161,7 +180,28 @@ export class DrawingSettingsPopup {
     /** Whether `node` belongs to this popup — the bar, its host-floated color/menu shells,
      *  or a kit popover (select list / color chip) portaled into the chart host. */
     contains(node: Node | null): boolean {
-        return node != null && (this.isOwnChrome(node) || this.settingsDialog.contains(node));
+        return node != null && (this.isOwnChrome(node) || this.panel.contains(node));
+    }
+
+    /** Open the full settings panel for the drawing the bar is open on. False when there is
+     *  none (no bar, or a multi-selection). */
+    openPanel(): boolean {
+        const cur = this.current;
+        if (!cur) return false;
+        this.hideTip();
+        this.closeColorPopover();
+        this.closeMenu();
+        this.panel.open(cur.drawing, cur.actions, cur.anchor);
+        return true;
+    }
+
+    isPanelOpen(): boolean {
+        return this.panel.isOpen();
+    }
+
+    /** The drawings changed under the panel (a drag, an undo) — let it re-read them. */
+    syncPanel(): void {
+        this.panel.sync();
     }
 
     /** Open the quick toolbar for `drawings` (one, or a whole multi-selection), floating clear of
@@ -172,9 +212,13 @@ export class DrawingSettingsPopup {
      *  programmatic close), with the dismissing press when there is one, so the caller can tell a
      *  modifier press (multi-select) from a plain one. */
     open(drawings: readonly Drawing[], anchor: PopupAnchor | null, actions: SettingsActions, onClose?: (e?: PointerEvent) => void): void {
-        this.close();
         const drawing = drawings[0];
+        // Re-opening the bar on the drawing the settings panel edits (a click on it, the end of
+        // a drag) keeps the panel as it is.
+        const keepPanel = this.panel.isOpen() && drawings.length === 1 && drawing != null && this.current?.drawing.id === drawing.id;
+        this.close(keepPanel);
         if (!drawing) return;
+        this.current = drawings.length === 1 ? { drawing, actions, anchor } : null;
         ensureStyles();
         this.onClose = onClose ?? null;
         const t = this.theme;
@@ -263,8 +307,7 @@ export class DrawingSettingsPopup {
         // initialize the Fill swatch to the color actually painted (validity tint / line-color wash /
         // background fallback), not a stale default — same source the renderer fills with.
         if (paths.has('style.fillColor')) bar.appendChild(swatch('Fill', BUCKET_ICON, (d) => effectiveFillColor(d, this.theme) ?? d.style.fillColor ?? DEFAULT_DRAWING_COLOR, 'style.fillColor'));
-        // Fixed-range VP: all settings live in the gear panel (nothing inline on the quick bar).
-        const isFrvp = paths.has('frvp.rows') && drawing instanceof FixedRangeVolumeProfile;
+        // Fixed-range VP: all settings live in the settings panel (nothing inline on the quick bar).
         // Position tool: zone colors sit on the bar; risk/reward numbers + display toggles live
         // in the gear panel (they drive the loss/size labels).
         const isPosition = paths.has('riskPercent') && every((d) => d instanceof PositionTool);
@@ -355,13 +398,11 @@ export class DrawingSettingsPopup {
             bar.appendChild(this.dropdown('Label size', sizes, common((d) => fib(d).labelsSize ?? 'normal'), (s) => labelSizeIcon(s), (v) => actions.patch({ labelsSize: v }), { label: sizeLabel }));
         }
 
-        // Trailing group: settings wheel (when the tool has one) sits just left of the lock,
-        // and a kebab overflow (z-order + reset) sits just right of delete. The gear panels edit
-        // one drawing's own data (levels, sizing, profile rows) — they stay off a multi-selection.
+        // Trailing group: the settings wheel sits just left of the lock, and a kebab overflow
+        // (z-order + reset) sits just right of delete. The settings panel edits one drawing (its
+        // points, levels, sizing) — it stays off a multi-selection.
         bar.appendChild(this.divider());
-        if (!multi && isFrvp) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'frvp')));
-        if (!multi && isPosition) bar.appendChild(this.iconBtn('Position size', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'position')));
-        if (!multi && editableLevels) bar.appendChild(this.iconBtn('Levels', GEAR_ICON, () => this.settingsDialog.open(drawing, actions, 'levels')));
+        if (!multi) bar.appendChild(this.iconBtn('Settings', GEAR_ICON, () => this.openPanel()));
         bar.appendChild(this.toggle('Lock', LOCK_ICON, common((d) => d.locked), (v) => actions.setLocked(v), UNLOCK_ICON));
         const del = this.iconBtn('Delete', TRASH_ICON, () => actions.remove());
         del.style.color = 'var(--vela-danger)';
@@ -384,16 +425,17 @@ export class DrawingSettingsPopup {
         setTimeout(() => document.addEventListener('pointerdown', this.onOutside), 0);
     }
 
-    close(): void {
+    close(keepPanel = false): void {
         document.removeEventListener('pointerdown', this.onOutside);
         this.closeColorPopover();
         this.closeMenu();
         this.hideTip();
-        this.settingsDialog.close();
+        if (!keepPanel) this.panel.close();
         this.el?.remove();
         this.el = null;
         this.textPanel = null;
         this.onClose = null;
+        this.current = null;
     }
 
     destroy(): void {
@@ -402,9 +444,12 @@ export class DrawingSettingsPopup {
 
     private readonly onOutside = (e: Event): void => {
         const node = e.target as Node;
-        if (this.settingsDialog.isOpen()) {
-            if (this.settingsDialog.contains(node) || this.isOwnChrome(node)) return;
-            this.settingsDialog.close();
+        if (this.panel.isOpen()) {
+            if (this.panel.contains(node) || this.isOwnChrome(node)) return;
+            // A press on the chart is the chart's: dragging the drawing keeps the panel open,
+            // while picking another drawing or the empty plot ends the edit through the selection.
+            if (this.host.contains(node)) return;
+            this.panel.close();
             return;
         }
         if (this.isOwnChrome(node)) return;
