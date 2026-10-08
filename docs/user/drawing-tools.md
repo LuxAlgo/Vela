@@ -80,7 +80,8 @@ settings panel, laid out the same way for every tool:
 - **The look** — line color, width and dash, fill, arrowheads and, on a trend line, whether it
   extends past either point to the chart's edge.
 - **The tool's own options** — a Fib's levels, a position's sizing, a volume profile's rows, a
-  regression channel's lines, and so on.
+  regression channel's lines, and so on. Levelled tools list every level in a two-column grid
+  (on/off, ratio, color), including the ones that are off.
 - **Label** — the words, their styling and, on line tools, where they sit along the line and on
   which side. Placement options appear only once the label has words.
 - **Points** — each anchor's price, editable, and its time in the chart's time zone.
@@ -293,8 +294,8 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 
 | Tool | Type key | What it does |
 |---|---|---|
-| Fib Retracement | `fibretracement` | Horizontal retracement levels between two points. |
-| Fib Extension | `fibextension` | Extension levels projected from two points. |
+| Fib Retracement | `fibretracement` | Horizontal retracement levels between two points. The settings panel offers three level sets: **Classic** (the standard pullback ratios from the second point), **Extension** (measured from the first point, projecting targets past the second) and **OTE** (the 0.62–0.79 entry zone, equilibrium at 0.5, and targets beyond the swing). Every set lists the whole ladder of levels, the unused ones off. |
+| Fib Extension | `fibextension` | Extension levels projected from two points. Like the retracement, its levels can extend to the chart's edge and show their ratio, price, both or neither, on either side. |
 | Trend-Based Fib Extension | `fibextensiontrend` | Extension levels from a three-point move. |
 | Fib Fan | `fibfan` | Fan of rays at the Fibonacci ratios. |
 | Fib Time Zones | `fibtimezones` | Vertical lines at Fibonacci time intervals. |

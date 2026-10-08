@@ -2,7 +2,11 @@ import type { VelaTheme } from '../../../core/options';
 import type { Drawing, DrawingToolDefaults, DrawingToolTemplate, SerializedDrawing, SettingsField } from '../../../core/drawings';
 import {
     DEFAULT_DRAWING_COLOR,
+    FIB_PRESETS,
+    FibLevels,
+    FibRetracement,
     FixedRangeVolumeProfile,
+    MachFigure,
     LINE_STYLE_OPTIONS,
     MAGNIFIER_TIMEFRAME_OPTIONS,
     PositionTool,
@@ -12,6 +16,7 @@ import {
     clonePlain,
     effectiveFillColor,
     getDrawingType,
+    matchFibPreset,
     timeframeBandOf,
 } from '../../../core/drawings';
 import { applyChromeTokens } from '../../shared/theme-tokens';
@@ -20,7 +25,7 @@ import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
 import { buildFieldControl, fieldGrid } from '../../../ui/components/field';
 import { TextArea } from '../../../ui/components/text-area';
 import { formatTimeStamp, valueDecimals } from '../chrome/ticks';
-import { buildLevelsSection, buildPositionSection, buildProfileSection } from './DrawingSettingsSections';
+import { buildPositionSection, buildProfileSection } from './DrawingSettingsSections';
 import type { PopupAnchor, SettingsActions, SettingsPatch } from './DrawingSettingsPopup';
 
 /** What the panel needs from the chart beyond the drawing itself. */
@@ -41,7 +46,7 @@ const NO_POINTS = new Set(['freehand', 'highlighter', 'vline', 'position']);
 const MAX_POINTS = 8;
 /** Paths the rich sections own, kept out of the generic rows. */
 const POSITION_PATHS = new Set(['riskPercent', 'accountBalance', 'quantity', 'direction', 'entryPrice', 'stopPrice', 'targetPrice', 'showText', 'showHeader', 'showLossSize', 'showTargetLabel', 'showStopLabel', 'showPrices']);
-const LEVEL_PATHS = new Set(['showRatios', 'reverse']);
+const LEVEL_PATHS = new Set(['showRatios', 'showPrices', 'labelSide', 'background', 'reverse']);
 
 /** "Show on" shortcuts, as timeframe bands. */
 const INTRADAY = ['s', '1', '5', '15', '60', '240'];
@@ -123,6 +128,11 @@ function ensureStyles(): void {
 .vela-dsp-tf > button[aria-pressed='true'] { background: var(--vela-active); border-color: transparent; color: var(--vela-fg-bright); }
 .vela-dsp-tf > button[data-here]::after { content: ''; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--vela-selected-bg); }
 .vela-dsp-grid { padding: 0; }
+.vela-dsp-lv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+.vela-dsp-lv-c { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.vela-dsp-lv-c .vela-num:not([data-fill])[data-compact] { width: 76px; }
+.vela-dsp-lv-c .vela-num input { height: 28px; }
+.vela-dsp-lv-c[data-off] .vela-num input { color: var(--vela-fg-muted); }
 .vela-dsp-style { all: unset; box-sizing: border-box; cursor: pointer; flex: none; height: 28px; max-width: 150px; padding: 0 6px 0 10px; border-radius: 6px; border: 1px solid var(--vela-border-strong); display: inline-flex; align-items: center; gap: 4px; color: var(--vela-fg); font-size: 12px; }
 .vela-dsp-style > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-dsp-style:hover, .vela-dsp-style[aria-expanded='true'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
@@ -314,7 +324,7 @@ export class DrawingSettingsPanel {
         if (schema.textIsContent && has('text.value')) out.push(this.textContentBlock(b, has));
         const style = this.styleBlock(b, fields, has);
         if (style) out.push(style);
-        if (d.editableLevels()) out.push(this.richBlock('Levels', (grid) => buildLevelsSection(grid, d, b.actions, this.theme)));
+        if (d.editableLevels()) out.push(this.levelsBlock(b));
         if (d instanceof PositionTool) out.push(this.richBlock('Position', (grid) => buildPositionSection(grid, d, b.actions, this.theme)));
         if (d instanceof FixedRangeVolumeProfile) out.push(this.richBlock('Profile', (grid) => buildProfileSection(grid, d, b.actions, this.theme)));
         const own = this.optionsBlock(b, fields, d);
@@ -438,6 +448,115 @@ export class DrawingSettingsPanel {
             default:
                 return null;
         }
+    }
+
+    /** A levelled tool's levels: every level in a two-column grid (on/off, ratio, color) — the
+     *  ones that are off stay listed, ready to switch on. A retracement leads with its ready-made
+     *  sets; the horizontal fibs follow with how their level text and fill show. */
+    private levelsBlock(b: Build): HTMLElement {
+        const d = b.live();
+        const rows: HTMLElement[] = [];
+        const grid = document.createElement('div');
+        grid.className = 'vela-dsp-lv';
+        const key = (): string => JSON.stringify(b.live().editableLevels() ?? []);
+        let last = '';
+        // A level edited here is already shown — only a change from elsewhere (a preset, an
+        // undo) rebuilds the grid, and never under the field being typed in.
+        const mine = (p: SettingsPatch): void => {
+            b.edit(p);
+            last = key();
+        };
+        const fill = (): void => {
+            last = key();
+            grid.replaceChildren();
+            const free = b.live() instanceof FibLevels; // horizontal levels may sit at or beyond either anchor
+            (b.live().editableLevels() ?? []).forEach((lv, i) => {
+                const cell = document.createElement('div');
+                cell.className = 'vela-dsp-lv-c';
+                cell.toggleAttribute('data-off', !lv.enabled);
+                const on = buildFieldControl({
+                    kind: 'switch',
+                    checked: lv.enabled,
+                    onChange: (v) => {
+                        cell.toggleAttribute('data-off', !v);
+                        mine({ [`levels.${i}.enabled`]: v });
+                    },
+                });
+                let ratio = lv.ratio;
+                const num = buildFieldControl({
+                    kind: 'number',
+                    value: lv.ratio,
+                    min: free ? undefined : 0,
+                    step: 0.01,
+                    compact: true,
+                    fill: false,
+                    commit: 'blur',
+                    title: `Level ${i + 1}`,
+                    onChange: (n) => {
+                        if (!Number.isFinite(n) || (!free && n <= 0)) {
+                            num.setValue?.(ratio);
+                            return;
+                        }
+                        ratio = n;
+                        mine({ [`levels.${i}.ratio`]: n });
+                    },
+                });
+                let color = lv.color;
+                const swatch = buildFieldControl({
+                    kind: 'color',
+                    theme: this.theme,
+                    title: `Level ${lv.ratio} color`,
+                    get: () => color,
+                    onChange: (v) => {
+                        color = v;
+                        mine({ [`levels.${i}.color`]: v });
+                    },
+                });
+                cell.append(on.el, num.el, swatch.el);
+                grid.appendChild(cell);
+            });
+        };
+        b.watch(() => {
+            if (key() !== last && !grid.contains(document.activeElement)) fill();
+        });
+
+        if (d instanceof FibRetracement) {
+            rows.push(
+                this.seg(
+                    b,
+                    'Level set',
+                    FIB_PRESETS.map((p) => ({ value: p.key, html: p.label })),
+                    () => {
+                        const f = b.live() as FibRetracement;
+                        return matchFibPreset(f.levels, f.reverse) ?? undefined;
+                    },
+                    (k) => {
+                        const preset = FIB_PRESETS.find((p) => p.key === k)!;
+                        b.edit({ levels: clonePlain(preset.levels), reverse: preset.reverse });
+                    },
+                    true,
+                ),
+            );
+        }
+        if (d instanceof MachFigure) rows.push(row('Ratios', this.switch(b, () => (b.live() as MachFigure).showRatios !== false, (v) => b.edit({ showRatios: v }))));
+        rows.push(grid);
+        if (d instanceof FibLevels) {
+            const fib = (): FibLevels => b.live() as FibLevels;
+            rows.push(row('Labels', chips(this.chip(b, 'Ratios', () => fib().showRatios, (on) => b.edit({ showRatios: on })), this.chip(b, 'Prices', () => fib().showPrices, (on) => b.edit({ showPrices: on })))));
+            rows.push(
+                row(
+                    'Label side',
+                    this.seg(b, 'Label side', [
+                        { value: 'left', html: 'Left' },
+                        { value: 'right', html: 'Right' },
+                    ], () => fib().labelSide, (v) => b.edit({ labelSide: v })),
+                ),
+            );
+            const flags = [this.chip(b, 'Background', () => fib().background, (on) => b.edit({ background: on }))];
+            if (d instanceof FibRetracement) flags.push(this.chip(b, 'Reverse', () => (b.live() as FibRetracement).reverse, (on) => b.edit({ reverse: on })));
+            rows.push(row('Show', chips(...flags)));
+        }
+        return block('Levels', ...rows);
     }
 
     /** A rich per-type section on the shared field grid. */

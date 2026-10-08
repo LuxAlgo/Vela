@@ -62,7 +62,7 @@ function setup(drawing: Drawing) {
     const barButton = (tip: string): HTMLButtonElement => host.querySelector<HTMLButtonElement>(`.vela-dpop [data-tip="${tip}"]`)!;
     const dialogButton = (label: string): HTMLButtonElement =>
         [...host.querySelectorAll<HTMLButtonElement>('.vela-dsp button')].find((b) => b.textContent === label)!;
-    const ratioInputs = (): HTMLInputElement[] => [...host.querySelectorAll<HTMLInputElement>('.vela-dsp .vela-field-grid input[type="number"]')];
+    const ratioInputs = (): HTMLInputElement[] => [...host.querySelectorAll<HTMLInputElement>('.vela-dsp .vela-dsp-lv input')];
     return { host, popup, live: c.live, barButton, dialogButton, ratioInputs };
 }
 

@@ -1,6 +1,6 @@
 import type { VelaTheme } from '../../../core/options';
-import type { Drawing, FrvpStyle, PositionLevelMode } from '../../../core/drawings';
-import { DIRECTION_OPTIONS, FibRetracement, FixedRangeVolumeProfile, LINE_STYLE_OPTIONS, MachFigure, PositionTool } from '../../../core/drawings';
+import type { FrvpStyle, PositionLevelMode } from '../../../core/drawings';
+import { DIRECTION_OPTIONS, FixedRangeVolumeProfile, LINE_STYLE_OPTIONS, PositionTool } from '../../../core/drawings';
 import { contrastColor } from '../../shared/drawing-geometry';
 import { fieldRow, fieldSection, buildFieldControl } from '../../../ui/components/field';
 import type { SelectOption } from '../../../ui/components/select';
@@ -8,7 +8,7 @@ import type { SettingsActions } from './DrawingSettingsPopup';
 
 /**
  * The rich, per-type sections of the drawing settings panel — the parts a schema field list
- * can't express (a position's sizing maths, a profile's level lines, a fib's level table).
+ * can't express (a position's sizing maths, a profile's level lines).
  * Each appends its rows to a field grid and edits through the panel's actions.
  */
 
@@ -240,86 +240,4 @@ export function buildProfileSection(grid: HTMLElement, drawing: FixedRangeVolume
     levelRow('POC', 'showPoc', 'pocColor', 'pocStyle');
     levelRow('Developing POC', 'showDevelopingPoc', 'developingPocColor', 'developingPocStyle');
     levelRow('Developing VA', 'showDevelopingVa', 'developingVaColor', 'developingVaStyle');
-}
-
-/** A levelled tool (fibs, Gann, Mach figures): each level's switch, color, ratio and label. */
-export function buildLevelsSection(grid: HTMLElement, drawing: Drawing, actions: SettingsActions, theme: VelaTheme): void {
-    const levels = drawing.editableLevels();
-    if (!levels) return;
-    const isMach = drawing instanceof MachFigure;
-    if (isMach) {
-        const mach = drawing as MachFigure;
-        grid.appendChild(fieldRow({
-            label: 'Show ratio labels',
-            bool: true,
-            toggle: {
-                checked: mach.showRatios !== false,
-                onChange: (v) => actions.patch({ showRatios: v }),
-            },
-        }));
-    }
-    if (drawing instanceof FibRetracement) {
-        const fib = drawing;
-        grid.appendChild(fieldRow({
-            label: 'Reverse',
-            bool: true,
-            toggle: {
-                checked: fib.reverse,
-                onChange: (v) => actions.patch({ reverse: v }),
-            },
-        }));
-    }
-    levels.forEach((lv, i) => {
-        const row = document.createElement('div');
-        row.className = 'vela-field-span';
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;';
-        const sw = buildFieldControl({
-            kind: 'switch',
-            checked: lv.enabled,
-            onChange: (v) => actions.patch({ [`levels.${i}.enabled`]: v }),
-        });
-        let curC = lv.color;
-        const col = buildFieldControl({
-            kind: 'color',
-            theme: theme,
-            get: () => curC,
-            onChange: (v) => {
-                curC = v;
-                actions.patch({ [`levels.${i}.color`]: v });
-            },
-        });
-        let curRatio = lv.ratio;
-        const ratio = buildFieldControl({
-            kind: 'number',
-            value: curRatio,
-            min: 0,
-            step: 0.01,
-            fill: isMach,
-            compact: !isMach,
-            commit: 'blur',
-            onChange: (n) => {
-                if (n <= 0) {
-                    ratio.setValue?.(curRatio);
-                    return;
-                }
-                curRatio = n;
-                actions.patch({ [`levels.${i}.ratio`]: n });
-            },
-        });
-        if (isMach) ratio.el.style.flex = '1';
-        row.append(sw.el, col.el, ratio.el);
-        if (!isMach) {
-            const label = buildFieldControl({
-                kind: 'text',
-                value: lv.label ?? '',
-                fill: true,
-                placeholder: 'label…',
-                onChange: (v) => actions.patch({ [`levels.${i}.label`]: v }),
-            });
-            label.el.style.flex = '1';
-            label.el.style.minWidth = '60px';
-            row.appendChild(label.el);
-        }
-        grid.appendChild(row);
-    });
 }

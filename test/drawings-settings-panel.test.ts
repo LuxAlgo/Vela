@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
     disconnect() {}
 };
 
-import { createDrawing, deserializeDrawing, drawingTypes, applyToolDefaults, type Drawing, type DrawingToolDefaults, type DrawingToolTemplate, type DrawingTypeKey } from '../src/core/drawings';
+import { createDrawing, deserializeDrawing, drawingTypes, applyToolDefaults, type Drawing, type FibRetracement, type DrawingToolDefaults, type DrawingToolTemplate, type DrawingTypeKey } from '../src/core/drawings';
 import { DARK_THEME } from '../src/core/theme';
 import { DrawingSettingsPopup, type SettingsActions } from '../src/renderers/native/drawings/DrawingSettingsPopup';
 
@@ -243,6 +243,44 @@ describe('the drawing settings panel', () => {
         const names = s.$$('.vela-dsp-mi .vela-dsp-mi-t').map((n) => n.textContent);
         expect(names).toContain('Weekly');
         expect(s.$('.vela-dsp-style')?.textContent).toContain('Weekly');
+        s.popup.destroy();
+    });
+
+    it("a fib's settings list every level in two columns, the ones that are off included", async () => {
+        const s = setup(make('fibretracement'));
+        await s.openPanel();
+        const cells = s.$$('.vela-dsp-lv-c');
+        expect(cells.length).toBe((s.live() as FibRetracement).levels.length);
+        expect(cells.filter((c) => !c.hasAttribute('data-off')).length).toBe(7);
+        expect(getComputedStyle(s.$('.vela-dsp-lv')!).gridTemplateColumns).toContain('repeat(2');
+        s.popup.destroy();
+    });
+
+    it('choosing OTE swaps which levels are on, and editing a level clears the choice', async () => {
+        const s = setup(make('fibretracement'));
+        await s.openPanel();
+        const pressed = (): string[] => s.$$('.vela-dsp-seg[aria-label="Level set"] button[aria-pressed="true"]').map((b) => b.textContent ?? '');
+        expect(pressed()).toEqual(['Classic']);
+
+        s.segButton('Level set', 'OTE').click();
+        expect(pressed()).toEqual(['OTE']);
+        const on = (): number[] => (s.live() as FibRetracement).levels.filter((l) => l.enabled).map((l) => l.ratio);
+        expect(on()).toContain(0.705);
+        expect(s.$$('.vela-dsp-lv-c').filter((c) => !c.hasAttribute('data-off')).length).toBe(on().length);
+
+        // Switch a level off from the grid: the set is no longer the ready-made one.
+        s.$<HTMLButtonElement>('.vela-dsp-lv-c:not([data-off]) .vela-switch')!.click();
+        expect(pressed()).toEqual([]);
+        s.popup.destroy();
+    });
+
+    it('a retracement level can be set beyond the swing, as a negative ratio', async () => {
+        const s = setup(make('fibretracement'));
+        await s.openPanel();
+        const input = s.$$<HTMLInputElement>('.vela-dsp-lv-c input')[1]!;
+        input.value = '-0.5';
+        input.dispatchEvent(new Event('blur'));
+        expect((s.live() as FibRetracement).levels[1]!.ratio).toBe(-0.5);
         s.popup.destroy();
     });
 
