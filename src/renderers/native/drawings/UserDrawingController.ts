@@ -5,6 +5,7 @@ import type {
     DrawingMode,
     DrawingPoint,
     DrawingSeriesGateway,
+    DrawingToolDefaults,
     DrawingTypeKey,
     IDrawingsRendererPort,
     Projector,
@@ -108,7 +109,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private selectedIds = new Set<string>(); // selected drawings (handles shown); [first] drives the popup
     private hoveredId: string | null = null; // the drawing under the cursor (its handles show)
     private activeTool: DrawingTypeKey | null = null;
-    private activeToolStyle: SerializedDrawing['style'] | undefined; // last-used style for the armed tool (seeds the placement ghost)
+    private activeToolDefaults: DrawingToolDefaults | undefined; // the armed tool's remembered settings (seed the placement ghost)
     private intentCb: ((i: DrawingIntent) => void) | null = null;
     /** Another chart's in-progress placement, mirrored here as a ghost (drawings sync). */
     private externalGhost: Drawing | null = null;
@@ -183,7 +184,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
             },
             openSettings: (id, x, y) => this.openSettingsById(id, x, y),
             snap: (pt, paneId, mode, cursorPx) => this.deps.snap(pt, paneId, mode, cursorPx),
-            lastStyle: () => this.activeToolStyle,
+            toolDefaults: () => this.activeToolDefaults,
         });
     }
 
@@ -275,7 +276,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return lo <= hi ? { min: lo, max: hi } : null;
     }
 
-    setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style']): void {
+    setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style'], defaults?: DrawingToolDefaults): void {
         if (type != null) {
             this.finishTextEditor(true); // arming a real tool ends an open inline edit (keeping the text)
             // Picking a drawing tool cancels the ruler and the eraser — a mutual-exclusion
@@ -286,7 +287,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
             });
         }
         this.activeTool = type;
-        this.activeToolStyle = lastStyle; // seeds the placement ghost so it matches the last-used color
+        // Seeds the placement ghost so it matches what will be committed; a caller that only
+        // knows the style still gets a matching color.
+        this.activeToolDefaults = defaults ?? (lastStyle ? { style: lastStyle } : undefined);
         this.toolbar.setActiveTool(type);
         if (type == null) this.interaction.onToolCleared();
         else this.clearSelection(); // arming a tool dismisses an open settings popup + selection

@@ -3,6 +3,7 @@ import type { DrawingTypeKey, SerializedDrawing } from './Drawing';
 import type { SnapMode } from './geometry';
 import type { DrawingSeriesGateway } from './series';
 import type { ToolbarDefinition } from './toolbar';
+import type { DrawingToolDefaults } from './defaults';
 
 /**
  * The renderer-local drawing MODES beyond an armed tool: the transient measure ruler,
@@ -70,8 +71,10 @@ export interface IDrawingsRendererPort {
     syncDrawings(docs: readonly SerializedDrawing[]): void;
     /** Arm/disarm a tool (`null` = selection/idle, pan resumes). `lastStyle` is the
      *  tool's last-used style (if any) so the placement preview matches what will be
-     *  committed, rather than falling back to the type default. */
-    setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style']): void;
+     *  committed, rather than falling back to the type default; `defaults` carries the
+     *  tool's whole remembered settings (style, text styling, per-type settings) for a
+     *  renderer that previews more than the style. */
+    setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style'], defaults?: DrawingToolDefaults): void;
     /** Reflect which drawings are selected (drives handle painting); `[]` = none. */
     setSelection(ids: readonly string[]): void;
     /** Push the FAVORITE tool set (flyout stars + any favorites-driven UI). Optional —

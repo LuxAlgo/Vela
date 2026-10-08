@@ -402,6 +402,13 @@ the next load.
   back to `chart.drawings.fromJSON(doc)` to restore. The restore path is lenient with untrusted
   input — malformed or unknown-type entries are dropped, never thrown. Drawings are **not**
   auto-persisted; storing the document is up to your app.
+- **Tool settings.** Each tool remembers how its last drawing was styled: its colors, widths, text
+  styling (never the words) and its own settings, such as a Fib's levels or a position's account
+  size. The next drawing of that type starts from them, whether you style one drawing or several
+  at once. `chart.drawings.toolDefaults()` returns them as plain JSON and `setToolDefaults()`
+  restores them; the workspace and widget save them in their state document, together with the
+  magnet and stay-in-drawing-mode, so a reload keeps them. `resetToolDefaults(type)` sends a tool
+  back to its factory look.
 - **Undo / redo.** `chart.drawings.undo()` / `redo()` (and `canUndo()` / `canRedo()`) walk a
   snapshot history. A multi-target action (multi-drag, multi-delete, duplicate, paste) is one
   undo step.
