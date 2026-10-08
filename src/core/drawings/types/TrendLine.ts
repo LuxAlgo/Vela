@@ -2,9 +2,10 @@ import { Drawing, type AnchorSlot } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_FIELDS } from '../schema';
-import { distToSegment, handleAt } from '../hittest';
+import { distToSegment, extendRay, handleAt } from '../hittest';
 
-/** A two-point trend line. Both endpoints move freely on time + price. */
+/** A two-point trend line. Both endpoints move freely on time + price; either end can run on
+ *  to the chart edge. */
 export class TrendLine extends Drawing {
     readonly type = 'trendline' as const;
 
@@ -22,9 +23,17 @@ export class TrendLine extends Drawing {
         return [proj.xOf(a.time), y1, proj.xOf(b.time), y2];
     }
 
+    /** Which ends run on past the anchors. */
+    extension(): 'none' | 'left' | 'right' | 'both' {
+        const { extendLeft: l, extendRight: r } = this.style;
+        return l && r ? 'both' : l ? 'left' : r ? 'right' : 'none';
+    }
+
     hitTest(px: number, py: number, proj: Projector, tol: number): boolean {
         const p = this.pixels(proj);
-        return p != null && distToSegment(px, py, p[0], p[1], p[2], p[3]) <= tol;
+        if (!p) return false;
+        const [x1, y1, x2, y2] = extendRay(p[0], p[1], p[2], p[3], this.extension(), proj.width, proj.height);
+        return distToSegment(px, py, x1, y1, x2, y2) <= tol;
     }
 
     handlePoints(proj: Projector): Array<[number, number]> {
@@ -56,6 +65,8 @@ export class TrendLine extends Drawing {
             fields: [
                 ...LINE_FIELDS,
                 { path: 'style.arrowRight', label: 'Arrow', kind: 'boolean', group: 'line' },
+                { path: 'style.extendLeft', label: 'Extend left', kind: 'boolean', group: 'line' },
+                { path: 'style.extendRight', label: 'Extend right', kind: 'boolean', group: 'line' },
                 ...TEXT_FIELDS,
             ],
         };

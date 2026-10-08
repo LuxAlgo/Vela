@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// Every edit rebuilds the drawing instances (the store re-syncs the renderer), so a panel opened
-// from the drawing toolbar must show — and on Cancel restore — the drawing as it is now, not as it
-// was when the toolbar opened.
+// Every edit rebuilds the drawing instances (the store re-syncs the renderer), so the settings panel
+// opened from the drawing toolbar must show — and on Cancel restore — the drawing as it is now, not
+// as it was when the toolbar opened.
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 
 (globalThis as { CSS?: unknown }).CSS ??= { escape: (v: string) => v };
@@ -61,8 +61,8 @@ function setup(drawing: Drawing) {
     popup.open([drawing], null, c.actions);
     const barButton = (tip: string): HTMLButtonElement => host.querySelector<HTMLButtonElement>(`.vela-dpop [data-tip="${tip}"]`)!;
     const dialogButton = (label: string): HTMLButtonElement =>
-        [...host.querySelectorAll<HTMLButtonElement>('.vela-dialog--form button')].find((b) => b.textContent === label)!;
-    const ratioInputs = (): HTMLInputElement[] => [...host.querySelectorAll<HTMLInputElement>('.vela-dialog--form input[type="number"]')];
+        [...host.querySelectorAll<HTMLButtonElement>('.vela-dsp button')].find((b) => b.textContent === label)!;
+    const ratioInputs = (): HTMLInputElement[] => [...host.querySelectorAll<HTMLInputElement>('.vela-dsp .vela-field-grid input[type="number"]')];
     return { host, popup, live: c.live, barButton, dialogButton, ratioInputs };
 }
 
@@ -77,9 +77,9 @@ const fib = (): Drawing =>
 const ratios = (d: Drawing): number[] => (d as FibRetracement).levels.map((l) => l.ratio);
 
 describe('drawing settings reopened from the same toolbar', () => {
-    it('the levels dialog shows every ratio edited in an earlier session', async () => {
+    it('the settings panel shows every level ratio edited in an earlier session', async () => {
         const s = setup(fib());
-        s.barButton('Levels').click();
+        s.barButton('Settings').click();
         await settled();
         commit(s.ratioInputs()[1]!, 0.25);
         commit(s.ratioInputs()[2]!, 0.4);
@@ -87,22 +87,22 @@ describe('drawing settings reopened from the same toolbar', () => {
         await settled();
         expect(ratios(s.live()).slice(0, 3)).toEqual([0, 0.25, 0.4]);
 
-        s.barButton('Levels').click();
+        s.barButton('Settings').click();
         await settled();
         expect(s.ratioInputs().slice(0, 3).map((i) => Number(i.value))).toEqual([0, 0.25, 0.4]);
         s.popup.destroy();
     });
 
-    it('cancelling a reopened levels dialog keeps the edits made before it opened', async () => {
+    it('cancelling a reopened settings panel keeps the edits made before it opened', async () => {
         const s = setup(fib());
-        s.barButton('Levels').click();
+        s.barButton('Settings').click();
         await settled();
         commit(s.ratioInputs()[1]!, 0.25);
         commit(s.ratioInputs()[2]!, 0.4);
         s.dialogButton('Ok').click();
         await settled();
 
-        s.barButton('Levels').click();
+        s.barButton('Settings').click();
         await settled();
         commit(s.ratioInputs()[3]!, 0.55);
         s.dialogButton('Cancel').click();

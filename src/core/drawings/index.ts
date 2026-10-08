@@ -8,6 +8,16 @@ export { defaultStyle, defaultText, DEFAULT_DRAWING_COLOR } from './style';
 export type { FieldKind, SettingsField, SettingsSchema } from './schema';
 export { LINE_FIELDS, FILL_FIELDS, LINE_STYLE_OPTIONS, TEXT_FIELDS, TEXT_SIZE_OPTIONS } from './schema';
 export { Drawing, setByPath } from './Drawing';
+export {
+    captureToolDefaults,
+    applyToolDefaults,
+    sanitizeToolDefaults,
+    sanitizeToolTemplates,
+    builtinToolTemplates,
+    type DrawingToolDefaults,
+    type DrawingToolTemplate,
+} from './defaults';
+export { TIMEFRAME_BANDS, timeframeBandOf, shownOnTimeframe, sanitizeShowOn, type TimeframeBand } from './visibility';
 export type { DrawingTypeKey, AnchorSlot, SerializedDrawing } from './Drawing';
 export { effectiveFillColor, VALID_FILL, INVALID_FILL, type EffectiveColorTheme } from './effectiveColor';
 export { TrendLine } from './types/TrendLine';

@@ -65,7 +65,7 @@ import { IndicatorDrawingSlices, mergeSlices } from './drawings/IndicatorDrawing
 import { createProjector } from './drawings/Projector';
 import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
-import { formatPriceLabel } from './chrome/ticks';
+import { formatPriceLabel, tickDecimals } from './chrome/ticks';
 import { zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
@@ -1614,6 +1614,8 @@ export class NativeRenderer implements IChartRenderer {
                 };
             },
             chartBarMs: () => this.coords.barInterval,
+            timeZone: () => this.scene.timezone,
+            priceDecimals: () => (this.scene.priceMintick ? tickDecimals(this.scene.priceMintick) : null),
             snap: (pt, paneId, mode, cursorPx) => this.snapToCandle(pt, paneId, mode, cursorPx),
             setSnapMode: (mode) => this.setSnapMode(mode),
             setToolbarGutter: (px) => this.setToolbarGutter(px),

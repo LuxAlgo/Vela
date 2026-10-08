@@ -45,6 +45,7 @@ function recordingCtx() {
         translate() {},
         rotate() {},
         fillText() {},
+        strokeText() {},
         measureText: () => ({ width: 0 }),
     };
     return { ctx: ctx as unknown as CanvasRenderingContext2D, arcs: () => arcs, lines: () => lines };
@@ -238,6 +239,25 @@ describe('DrawingPainter trendline label follows the line', () => {
         expect(angles).toHaveLength(1);
         // projector y = 100 − price: (0,100) → (50,50) is up-right → −π/4
         expect(angles[0]).toBeCloseTo(-Math.PI / 4);
+    });
+
+    it("keeps the label readable where a line crosses it with a halo in the chart's background", () => {
+        const d = createDrawing('trendline', {
+            id: 't',
+            paneId: 'price',
+            anchors: [
+                { time: 0, price: 0 },
+                { time: 50, price: 50 },
+            ],
+            text: { value: 'zone', size: 'normal', hAlign: 'center', vAlign: 'top' },
+        })!;
+        const { ctx } = recordingCtx();
+        const halos: string[] = [];
+        (ctx as unknown as Record<string, unknown>).strokeText = function (this: CanvasRenderingContext2D) {
+            halos.push(String(this.strokeStyle));
+        };
+        new DrawingPainter().paintAll(ctx, [d], fakeProjector(), { ...theme, background: '#101010' } as VelaTheme);
+        expect(halos).toEqual(['#101010']);
     });
 
     it('does not rotate a flat text annotation', () => {

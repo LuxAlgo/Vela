@@ -14,6 +14,7 @@ const fullDoc: WorkspaceState = {
     timezone: 'Europe/Paris',
     favorites: ['trendline', 'hline'],
     timeframeFavorites: ['15', '60', 'D'],
+    drawingTools: { defaults: { trendline: { style: { lineColor: '#ff8800', lineWidth: 3 } } }, magnet: 'weak', stay: true },
     sync: { viewport: true, symbol: { c1: 'a', c2: 'a' }, crosshair: true, drawings: true, style: true },
     trackSizes: { '4': { cols: [1.4, 0.6], rows: [1, 1] } },
     panels: { open: 'objects', widths: { objects: 320 }, pinned: ['vendor.editor'] },
@@ -219,6 +220,18 @@ describe('sanitizeState (the applyState gate)', () => {
             sync: { symbol: { c1: 'a', c2: 9 }, timeframe: { c1: 3 } },
         });
         expect(doc!.sync).toEqual({ symbol: { c1: 'a' } }); // timeframe record emptied → dropped
+    });
+
+    it('keeps the drawing tool preferences, dropping a bad magnet, a non-boolean stay and non-object entries', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            charts: [],
+            drawingTools: { defaults: { trendline: { style: { lineColor: '#f00' } }, box: 'junk', hline: [1] }, magnet: 'sticky', stay: 'yes' },
+        });
+        expect(doc!.drawingTools).toEqual({ defaults: { trendline: { style: { lineColor: '#f00' } } } });
+        expect(sanitizeState({ version: 1, layout: '1', charts: [], drawingTools: { magnet: 1 } })!.drawingTools).toBeUndefined();
+        expect(sanitizeState({ version: 1, layout: '1', charts: [], drawingTools: 'junk' })!.drawingTools).toBeUndefined();
     });
 
     it('filters shared favorites and per-chart display toggles by type', () => {
