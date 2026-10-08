@@ -1,5 +1,5 @@
-import type { Drawing, DrawingIntent, DrawingPoint, DrawingStyle, DrawingTypeKey, FreeAxis, Projector, SnapMode } from '../../../core/drawings';
-import { createDrawing, deserializeDrawing } from '../../../core/drawings';
+import type { Drawing, DrawingIntent, DrawingPoint, DrawingToolDefaults, DrawingTypeKey, FreeAxis, Projector, SnapMode } from '../../../core/drawings';
+import { applyToolDefaults, createDrawing, deserializeDrawing } from '../../../core/drawings';
 import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
 
 /** Pixels of motion before a press counts as a drag (vs a click → open settings). */
@@ -30,9 +30,9 @@ export interface InteractionDeps {
     openSettings(id: string, x: number, y: number): void;
     /** Snap a data point to the nearest candle (time + OHLC), per the magnet mode + cursor pixel. */
     snap(point: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }): DrawingPoint;
-    /** The armed tool's last-used style (if any) — seeds the placement draft so its ghost
-     *  previews the last color/width, not the type default. */
-    lastStyle(): DrawingStyle | undefined;
+    /** The armed tool's remembered settings (if any) — seed the placement draft so its ghost
+     *  previews them (color, width, fib levels…), not the type default. */
+    toolDefaults(): DrawingToolDefaults | undefined;
 }
 
 /** A drawing riding along with a body drag, with its anchors as they were at the press. */
@@ -249,8 +249,9 @@ export class DrawingInteraction {
         const tool = this.deps.activeTool();
         if (tool) {
             const paneId = proj.paneIdAtY(y) ?? 'price';
-            const draft = createDrawing(tool, { paneId, anchors: [this.resolve(x, y, paneId, mode)], style: this.deps.lastStyle() });
+            const draft = createDrawing(tool, { paneId, anchors: [this.resolve(x, y, paneId, mode)] });
             if (!draft) return;
+            applyToolDefaults(draft, this.deps.toolDefaults());
             this.state = { kind: 'placing', draft, need: draft.anchorSchema().max, cursor: null };
             // Fixed tools (max === min) finalize as soon as the count is met; variable/freehand wait for a gesture.
             if (draft.placementMode() === 'click' && draft.anchors.length >= this.state.need) this.finalize();
@@ -471,7 +472,8 @@ export class DrawingInteraction {
         if (this.state.kind !== 'placing') return null;
         const { draft, cursor } = this.state;
         if (!cursor) return draft.anchors.length >= 1 && draft.type === 'hline' ? draft : null;
-        return createDrawing(draft.type, { paneId: draft.paneId, anchors: [...draft.anchors, this.placementAnchor(draft, cursor)], style: draft.style });
+        const { paneId, style, text, props } = draft.serialize();
+        return createDrawing(draft.type, { paneId, anchors: [...draft.anchors, this.placementAnchor(draft, cursor)], style, text, props });
     }
 
     /** Map a raw placement cursor to the anchor the drawing actually stores.

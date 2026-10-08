@@ -12,8 +12,23 @@ import { DrawingHistory } from './DrawingHistory';
 import { createDrawing, deserializeDrawing } from './registry';
 import type { Drawing, DrawingTypeKey, SerializedDrawing } from './Drawing';
 import type { SnapMode } from './geometry';
-import type { DrawingStyle } from './style';
 import { clonePlain, type DrawingsDocument } from './document';
+import {
+    applyToolDefaults,
+    captureToolDefaults,
+    sameToolDefaults,
+    sanitizeToolDefaults,
+    sanitizeToolTemplates,
+    type DrawingToolDefaults,
+    type DrawingToolTemplate,
+} from './defaults';
+
+/** What a fresh, unstyled drawing of `d`'s type would remember — the factory look, keeping
+ *  `d`'s pane so a pane-dependent default compares like for like. */
+function factoryDefaults(d: Drawing): DrawingToolDefaults | undefined {
+    const fresh = createDrawing(d.type, { paneId: d.paneId });
+    return fresh ? captureToolDefaults(fresh) : undefined;
+}
 
 /** Optional seed for a programmatic {@link DrawingController.add}. */
 export interface AddInit {
@@ -52,7 +67,10 @@ export class DrawingController {
     private favs = new Set<DrawingTypeKey>();
     private selectedIds: string[] = []; // ordered; [0] is the primary (settings-popup) selection
     private clipboard: SerializedDrawing[] = []; // in-memory copy buffer (per chart)
-    private readonly lastStyle = new Map<DrawingTypeKey, DrawingStyle>(); // per-tool "last used" style
+    /** Per-tool remembered settings — the last drawing of each type the user styled seeds the next. */
+    private readonly defaults = new Map<DrawingTypeKey, DrawingToolDefaults>();
+    /** Per-tool saved looks ("styles"), in the order they were saved. */
+    private templates = new Map<DrawingTypeKey, DrawingToolTemplate[]>();
     private readonly subs: Unsubscribe[] = [];
 
     constructor(
@@ -83,9 +101,10 @@ export class DrawingController {
         if (!this.port) return;
         const changed = type !== this.activeTool;
         this.activeTool = type;
-        // Seed the renderer's placement preview with the tool's last-used style so the
-        // ghost matches what will be committed (the `create` intent re-applies it too).
-        this.port.setActiveTool(type, type ? this.lastStyle.get(type) : undefined);
+        // Seed the renderer's placement preview with the tool's remembered settings so the
+        // ghost matches what will be committed (the `create` intent re-applies them too).
+        const defaults = type ? this.defaults.get(type) : undefined;
+        this.port.setActiveTool(type, defaults?.style as SerializedDrawing['style'] | undefined, defaults);
         // Announce every ACTUAL change — arm, one-shot tool-finished, or programmatic —
         // so external toolbars (a workspace's shared bar) reflect the armed tool.
         if (changed) this.events.emit('drawing:tool', { type });
@@ -169,6 +188,92 @@ export class DrawingController {
         this.events.emit('drawing:favorites', { favorites: list });
     }
 
+    /** Every tool's remembered settings, by type (plain JSON — persist it as-is). */
+    toolDefaults(): Partial<Record<DrawingTypeKey, DrawingToolDefaults>> {
+        const out: Partial<Record<DrawingTypeKey, DrawingToolDefaults>> = {};
+        for (const [type, d] of this.defaults) out[type] = clonePlain(d);
+        return out;
+    }
+
+    /** Replace every tool's remembered settings (restoring persisted prefs). Unknown types and
+     *  malformed entries are dropped; an unchanged set is a no-op and emits nothing. */
+    setToolDefaults(map: Readonly<Record<string, unknown>> | null | undefined): void {
+        const next = new Map<DrawingTypeKey, DrawingToolDefaults>();
+        for (const [type, raw] of Object.entries(map ?? {})) {
+            if (!getDrawingType(type)) continue;
+            const d = sanitizeToolDefaults(raw);
+            if (d) next.set(type as DrawingTypeKey, clonePlain(d));
+        }
+        const changed = new Set<DrawingTypeKey>([...this.defaults.keys(), ...next.keys()]);
+        for (const type of [...changed]) if (sameToolDefaults(this.defaults.get(type), next.get(type))) changed.delete(type);
+        if (changed.size === 0) return;
+        this.defaults.clear();
+        for (const [type, d] of next) this.defaults.set(type, d);
+        if (this.activeTool && changed.has(this.activeTool)) this.setTool(this.activeTool); // re-seed the placement preview
+        for (const type of changed) this.events.emit('drawing:defaults', { type });
+    }
+
+    /** Forget a tool's remembered settings (every tool's when `type` is omitted) — new drawings
+     *  start from the factory defaults again. */
+    resetToolDefaults(type?: DrawingTypeKey): void {
+        const types = type ? (this.defaults.has(type) ? [type] : []) : [...this.defaults.keys()];
+        for (const t of types) {
+            this.defaults.delete(t);
+            this.events.emit('drawing:defaults', { type: t });
+        }
+    }
+
+    /** Every tool's saved looks, by type (plain JSON — persist it as-is). */
+    toolTemplates(): Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>> {
+        const out: Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>> = {};
+        for (const [type, list] of this.templates) out[type] = clonePlain(list);
+        return out;
+    }
+
+    /** Replace every tool's saved looks (restoring persisted prefs). Unknown types and
+     *  malformed entries are dropped; an unchanged set is a no-op and emits nothing. */
+    setToolTemplates(map: Readonly<Record<string, unknown>> | null | undefined): void {
+        const next = new Map<DrawingTypeKey, DrawingToolTemplate[]>();
+        for (const [type, raw] of Object.entries(map ?? {})) {
+            if (!getDrawingType(type)) continue;
+            const list = sanitizeToolTemplates(raw);
+            if (list.length > 0) next.set(type as DrawingTypeKey, list);
+        }
+        const changed = [...new Set<DrawingTypeKey>([...this.templates.keys(), ...next.keys()])].filter(
+            (t) => JSON.stringify(this.templates.get(t) ?? []) !== JSON.stringify(next.get(t) ?? []),
+        );
+        if (changed.length === 0) return;
+        this.templates = next;
+        this.pushTemplates();
+        for (const type of changed) this.events.emit('drawing:templates', { type });
+    }
+
+    /** Save the given settings as a named look for a tool (a same-named one is replaced). */
+    saveToolTemplate(type: DrawingTypeKey, name: string, settings: DrawingToolDefaults): void {
+        if (!getDrawingType(type)) return;
+        const [entry] = sanitizeToolTemplates([{ name, settings }]);
+        if (!entry) return;
+        const list = (this.templates.get(type) ?? []).filter((t) => t.name !== entry.name);
+        this.templates.set(type, [...list, clonePlain(entry)]);
+        this.pushTemplates();
+        this.events.emit('drawing:templates', { type });
+    }
+
+    /** Delete a tool's saved look by name. */
+    removeToolTemplate(type: DrawingTypeKey, name: string): void {
+        const list = this.templates.get(type);
+        if (!list?.some((t) => t.name === name)) return;
+        const rest = list.filter((t) => t.name !== name);
+        if (rest.length > 0) this.templates.set(type, rest);
+        else this.templates.delete(type);
+        this.pushTemplates();
+        this.events.emit('drawing:templates', { type });
+    }
+
+    private pushTemplates(): void {
+        this.port?.setToolTemplates?.(this.toolTemplates());
+    }
+
     setToolbar(option: DrawingsOption): void {
         this.port?.setToolbar(buildToolbar(option).definition);
     }
@@ -187,21 +292,23 @@ export class DrawingController {
     // ── programmatic CRUD (facade-facing) ── each is one undo step
     add(type: DrawingTypeKey, init: AddInit = {}): Drawing | null {
         if (!this.enabled) return null;
-        const last = this.lastStyle.get(type);
-        const style = { ...(last ?? {}), ...(init.style ?? {}) } as SerializedDrawing['style'] | undefined;
+        const defaults = this.defaults.get(type);
         const d = createDrawing(type, {
             id: this.store.nextId(),
             paneId: init.paneId ?? 'price',
             anchors: init.anchors,
-            style,
             text: init.text,
-            props: init.props,
             zIndex: init.zIndex ?? this.startZ(type, init.paneId ?? 'price'),
         });
         if (!d) return null;
+        // The tool's remembered settings first, then whatever the caller passed explicitly.
+        applyToolDefaults(d, defaults);
+        if (init.style) d.style = { ...d.style, ...init.style };
+        if (init.text) d.text = { ...(d.text ?? init.text), ...init.text };
+        if (init.props) d.applyProps(init.props);
         this.history.record(this.store.serialize());
         this.store.add(d);
-        this.captureStyle(d.id);
+        this.captureDefaults(d.id);
         this.events.emit('drawing:created', { id: d.id });
         return d;
     }
@@ -221,7 +328,7 @@ export class DrawingController {
             patch.style && cur ? { ...patch, style: { ...cur.style, ...patch.style } } : patch;
         if (this.store.update(id, resolved)) {
             this.history.record(before);
-            this.captureStyle(id);
+            this.captureDefaults(id);
             this.events.emit('drawing:edited', { id });
         }
     }
@@ -232,6 +339,7 @@ export class DrawingController {
         for (const { id, patch } of patches) {
             if (this.store.update(id, patch)) {
                 this.history.markDirty();
+                this.captureDefaults(id);
                 this.events.emit('drawing:edited', { id });
             }
         }
@@ -441,10 +549,19 @@ export class DrawingController {
         return ids.map((id) => this.store.get(id)).filter((d): d is Drawing => d != null);
     }
 
-    /** Remember a drawing's style as the "last used" for its type (seeds the next one). */
-    private captureStyle(id: string): void {
+    /** Remember a drawing's settings as its tool's defaults (they seed the next one), and
+     *  announce a real change so a host can save it. Moves and nudges leave them as they were. */
+    private captureDefaults(id: string): void {
         const d = this.store.get(id);
-        if (d) this.lastStyle.set(d.type, { ...d.style });
+        if (!d) return;
+        // A drawing still on its factory look sets nothing: factory settings are never frozen
+        // into the remembered set, so a later change to them still reaches the user.
+        const captured = captureToolDefaults(d);
+        const next = sameToolDefaults(captured, factoryDefaults(d)) ? undefined : captured;
+        if (sameToolDefaults(this.defaults.get(d.type), next)) return;
+        if (next) this.defaults.set(d.type, next);
+        else this.defaults.delete(d.type);
+        this.events.emit('drawing:defaults', { type: d.type });
     }
 
     private sync(): void {
@@ -464,14 +581,13 @@ export class DrawingController {
                 break;
             case 'create': {
                 const before = this.store.serialize();
-                const last = this.lastStyle.get(i.doc.type); // a freshly drawn shape inherits the last-used style
-                const style = last ? { ...i.doc.style, ...last } : i.doc.style;
-                const d = deserializeDrawing({ ...i.doc, id: this.store.nextId(), style });
+                const d = deserializeDrawing({ ...i.doc, id: this.store.nextId() });
                 if (!d) return;
+                applyToolDefaults(d, this.defaults.get(d.type)); // a freshly drawn shape starts from its tool's remembered settings
                 if (!d.zIndex) d.zIndex = this.startZ(d.type, d.paneId) ?? 0; // a freshly placed drawing starts under the price (or over the stack when it covers the series)
                 this.history.record(before);
                 this.store.add(d);
-                this.captureStyle(d.id);
+                this.captureDefaults(d.id);
                 this.events.emit('drawing:created', { id: d.id });
                 // No auto-select: selection (= the drawing being edited) is driven by the
                 // settings popup. A freshly drawn shape shows handles via hover instead.
@@ -481,7 +597,7 @@ export class DrawingController {
                 const before = this.store.serialize();
                 if (this.store.update(i.doc.id, i.doc)) {
                     this.history.record(before);
-                    this.captureStyle(i.doc.id);
+                    this.captureDefaults(i.doc.id);
                     this.events.emit('drawing:edited', { id: i.doc.id });
                 }
                 break;
@@ -491,6 +607,7 @@ export class DrawingController {
                 for (const doc of i.docs) {
                     if (this.store.update(doc.id, doc)) {
                         this.history.markDirty();
+                        this.captureDefaults(doc.id);
                         this.events.emit('drawing:edited', { id: doc.id });
                     }
                 }
@@ -512,6 +629,12 @@ export class DrawingController {
                 break;
             case 'favorite':
                 this.setFavorite(i.type, i.on);
+                break;
+            case 'template-save':
+                this.saveToolTemplate(i.type, i.name, i.settings);
+                break;
+            case 'template-remove':
+                this.removeToolTemplate(i.type, i.name);
                 break;
             case 'snap-mode':
                 // In-chart magnet click (already applied renderer-side) — mirror + announce.

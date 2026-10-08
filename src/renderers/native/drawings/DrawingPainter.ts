@@ -1,5 +1,5 @@
 import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
-import { SegmentDrawing, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
+import { SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
 import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE, uprightLineAngle } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
@@ -318,9 +318,11 @@ export class DrawingPainter {
             case 'arrow': {
                 const pts = d.handlePoints(proj);
                 if (pts.length < 2) return;
+                const ext = d instanceof TrendLine ? d.extension() : 'none';
+                const [ex1, ey1, ex2, ey2] = extendEndpoints(pts[0]![0], pts[0]![1], pts[1]![0], pts[1]![1], ext, proj.width, proj.height);
                 this.stroke(ctx, d.style, () => {
-                    ctx.moveTo(pts[0]![0], pts[0]![1]);
-                    ctx.lineTo(pts[1]![0], pts[1]![1]);
+                    ctx.moveTo(ex1, ey1);
+                    ctx.lineTo(ex2, ey2);
                 });
                 if (d.style.arrowRight) this.paintArrowhead(ctx, pts[0]!, pts[1]!, d.style);
                 if (d.style.arrowLeft) this.paintArrowhead(ctx, pts[1]!, pts[0]!, d.style);
@@ -467,9 +469,18 @@ export class DrawingPainter {
         ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${fs}px ${theme.fontFamily}`;
         ctx.textBaseline = 'top';
         ctx.textAlign = layout.align;
-        ctx.fillStyle = text.color ?? theme.textColor;
         const lh = labelLineHeight(fs);
         const lines = text.value.split('\n');
+        // A halo in the chart background keeps the words readable where a line (its own, or
+        // another drawing's) runs through them. Free text and a box's centered label sit clear
+        // of any line and keep their plain look.
+        if (d.type !== 'text' && d.type !== 'box') {
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = theme.background;
+            lines.forEach((line, i) => ctx.strokeText(line, layout.x, layout.top + i * lh));
+        }
+        ctx.fillStyle = text.color ?? theme.textColor;
         lines.forEach((line, i) => ctx.fillText(line, layout.x, layout.top + i * lh));
         if (d.type === 'text') this.paintTextFrame(ctx, d.id, layout.x, layout.top, lines, fs, theme);
         ctx.restore();
@@ -1797,11 +1808,15 @@ function labelLayout(d: Drawing, proj: Projector): {
             if (pts.length < 2) return null;
             const [x1, y1] = pts[0]!;
             const [x2, y2] = pts[1]!;
+            // `place` slides the label along the segment (from the first anchor's end), `side`
+            // puts it under the line instead of over it; both default to the original middle-over.
+            const t = text.place === 'start' ? 0.12 : text.place === 'end' ? 0.88 : 0.5;
+            const below = text.side === 'below';
             return {
                 x: 0,
-                top: -6 - lh * lines,
+                top: below ? 6 : -6 - lh * lines,
                 align: 'center',
-                rotate: { angle: uprightLineAngle(x1, y1, x2, y2), cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 },
+                rotate: { angle: uprightLineAngle(x1, y1, x2, y2), cx: x1 + (x2 - x1) * t, cy: y1 + (y2 - y1) * t },
             };
         }
         case 'box': {

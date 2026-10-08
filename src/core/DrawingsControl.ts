@@ -4,6 +4,7 @@ import type { DrawingsDocument } from './drawings/document';
 import type { SnapMode } from './drawings/geometry';
 import type { DrawingMode } from './drawings/port';
 import type { DrawingsOption } from './drawings/toolbar';
+import type { DrawingToolDefaults, DrawingToolTemplate } from './drawings/defaults';
 
 /**
  * The chart's drawing control surface (`chart.drawings`) — sibling of
@@ -239,6 +240,51 @@ export class DrawingsControl {
     /** Replace the whole favorite set (e.g. restoring persisted prefs). */
     setFavorites(types: readonly DrawingTypeKey[]): this {
         if (this.ok('setFavorites')) this.ctrl.setFavorites([...types]);
+        return this;
+    }
+
+    /** Every tool's remembered settings, by type — what the next drawing of each type starts
+     *  from (its style, text styling and per-type settings such as fib levels). Plain JSON:
+     *  persist it and hand it back to {@link setToolDefaults} on the next load. */
+    toolDefaults(): Partial<Record<DrawingTypeKey, DrawingToolDefaults>> {
+        return this.ctrl.toolDefaults();
+    }
+
+    /** Replace every tool's remembered settings (e.g. restoring persisted prefs). Malformed
+     *  entries and unknown types are dropped. Follow changes on `drawing:defaults`. */
+    setToolDefaults(map: Readonly<Record<string, unknown>>): this {
+        this.ctrl.setToolDefaults(map);
+        return this;
+    }
+
+    /** Forget one tool's remembered settings (every tool's without an argument). */
+    resetToolDefaults(type?: DrawingTypeKey): this {
+        this.ctrl.resetToolDefaults(type);
+        return this;
+    }
+
+    /** Every tool's saved looks ("styles" in the settings panel), by type. Plain JSON —
+     *  persist it and hand it back to {@link setToolTemplates}. */
+    toolTemplates(): Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>> {
+        return this.ctrl.toolTemplates();
+    }
+
+    /** Replace every tool's saved looks (e.g. restoring persisted prefs). Follow changes on
+     *  `drawing:templates`. */
+    setToolTemplates(map: Readonly<Record<string, unknown>>): this {
+        this.ctrl.setToolTemplates(map);
+        return this;
+    }
+
+    /** Save settings as a named look for a tool; a look with the same name is replaced. */
+    saveToolTemplate(type: DrawingTypeKey, name: string, settings: DrawingToolDefaults): this {
+        this.ctrl.saveToolTemplate(type, name, settings);
+        return this;
+    }
+
+    /** Delete one of a tool's saved looks. */
+    removeToolTemplate(type: DrawingTypeKey, name: string): this {
+        this.ctrl.removeToolTemplate(type, name);
         return this;
     }
 

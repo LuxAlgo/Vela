@@ -5,6 +5,8 @@ import type {
     DrawingMode,
     DrawingPoint,
     DrawingSeriesGateway,
+    DrawingToolDefaults,
+    DrawingToolTemplate,
     DrawingTypeKey,
     IDrawingsRendererPort,
     Projector,
@@ -12,7 +14,7 @@ import type {
     SnapMode,
     ToolbarDefinition,
 } from '../../../core/drawings';
-import { deserializeDrawing, getDrawingType, resetDrawingSettings, Callout, Magnifier, TextLabel } from '../../../core/drawings';
+import { applyToolDefaults, captureToolDefaults, deserializeDrawing, getDrawingType, resetDrawingSettings, shownOnTimeframe, Callout, Magnifier, TextLabel } from '../../../core/drawings';
 import type { Unsubscribe } from '../../../core/util/types';
 import { contrastColor, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { withAlpha } from '../core/chartConfig';
@@ -61,6 +63,11 @@ export interface UserDrawingDeps {
     seriesLook(): { style: string; upColor: string; downColor: string; lineColor: string };
     /** One chart bar in ms (the chart's own timeframe) — pickers drop choices at/above it. */
     chartBarMs(): number;
+    /** The chart's time zone (IANA name) — the settings panel shows point times in it. */
+    timeZone?(): string;
+    /** Decimals of the symbol's price increment, or null when unknown — point prices in the
+     *  settings panel are shown to it. */
+    priceDecimals?(): number | null;
     /** Snap a data point to the nearest candle (time + OHLC), per magnet `mode` + the cursor pixel. */
     snap(point: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }): DrawingPoint;
     /** Set the sticky magnet mode (driven by the toolbar's 3-state button). */
@@ -108,7 +115,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private selectedIds = new Set<string>(); // selected drawings (handles shown); [first] drives the popup
     private hoveredId: string | null = null; // the drawing under the cursor (its handles show)
     private activeTool: DrawingTypeKey | null = null;
-    private activeToolStyle: SerializedDrawing['style'] | undefined; // last-used style for the armed tool (seeds the placement ghost)
+    private activeToolDefaults: DrawingToolDefaults | undefined; // the armed tool's remembered settings (seed the placement ghost)
+    private toolTemplates: Readonly<Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>>> = {}; // saved styles, per tool
     private intentCb: ((i: DrawingIntent) => void) | null = null;
     /** Another chart's in-progress placement, mirrored here as a ghost (drawings sync). */
     private externalGhost: Drawing | null = null;
@@ -150,7 +158,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
         private readonly deps: UserDrawingDeps,
     ) {
         this.ctx = canvas.getContext('2d');
-        this.popup = new DrawingSettingsPopup(overlayHost, deps.theme(), () => deps.chartBarMs());
+        this.popup = new DrawingSettingsPopup(overlayHost, deps.theme(), {
+            chartBarMs: () => deps.chartBarMs(),
+            timeZone: () => deps.timeZone?.() ?? 'UTC',
+            priceDecimals: () => deps.priceDecimals?.() ?? null,
+        });
         this.toolbar = new DrawingToolbar(
             toolbarHost,
             deps.theme(),
@@ -173,7 +185,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.interaction = new DrawingInteraction({
             projector: () => this.deps.projector(),
             activeTool: () => this.activeTool,
-            drawings: () => this.drawings,
+            drawings: () => this.onScreen(),
             hoveredId: () => this.hoveredId,
             selectedIds: () => this.selectedIds,
             emit: (i) => this.emit(i),
@@ -183,7 +195,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
             },
             openSettings: (id, x, y) => this.openSettingsById(id, x, y),
             snap: (pt, paneId, mode, cursorPx) => this.deps.snap(pt, paneId, mode, cursorPx),
-            lastStyle: () => this.activeToolStyle,
+            toolDefaults: () => this.activeToolDefaults,
         });
     }
 
@@ -245,6 +257,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.invalidateSlices();
         this.render();
         this.deps.requestScaleUpdate();
+        this.popup.syncPanel();
     }
 
     /** The pane's series stack in z terms — how the core places a new drawing (just under
@@ -275,7 +288,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return lo <= hi ? { min: lo, max: hi } : null;
     }
 
-    setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style']): void {
+    setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style'], defaults?: DrawingToolDefaults): void {
         if (type != null) {
             this.finishTextEditor(true); // arming a real tool ends an open inline edit (keeping the text)
             // Picking a drawing tool cancels the ruler and the eraser — a mutual-exclusion
@@ -286,7 +299,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
             });
         }
         this.activeTool = type;
-        this.activeToolStyle = lastStyle; // seeds the placement ghost so it matches the last-used color
+        // Seeds the placement ghost so it matches what will be committed; a caller that only
+        // knows the style still gets a matching color.
+        this.activeToolDefaults = defaults ?? (lastStyle ? { style: lastStyle } : undefined);
         this.toolbar.setActiveTool(type);
         if (type == null) this.interaction.onToolCleared();
         else this.clearSelection(); // arming a tool dismisses an open settings popup + selection
@@ -296,6 +311,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
     /** Core push: the favorite tool set changed — reflect the flyout stars. */
     setFavorites(types: readonly DrawingTypeKey[]): void {
         this.toolbar.setFavorites(types);
+    }
+
+    /** Core push: every tool's saved styles — the settings panel's style menu reads them. */
+    setToolTemplates(map: Readonly<Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>>>): void {
+        this.toolTemplates = map;
     }
 
     /** Core push: per-tool shortcut hints (display strings) shown in the toolbar flyouts. */
@@ -382,8 +402,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
     /** The topmost visible (unlocked) magnifier whose timeframe chip contains (x, y) —
      *  the chip's rect is what the painter measured last frame. */
     private magnifierChipAt(x: number, y: number): Magnifier | null {
-        for (let i = this.drawings.length - 1; i >= 0; i -= 1) {
-            const d = this.drawings[i]!;
+        const shown = this.onScreen();
+        for (let i = shown.length - 1; i >= 0; i -= 1) {
+            const d = shown[i]!;
             if (!(d instanceof Magnifier) || !d.visible || d.locked) continue;
             const r = d.chipRect;
             if (r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return d;
@@ -411,7 +432,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
      *  `withSelection` so a hit on a member of a multi-selection removes the selection's
      *  unlocked members — whichever member was hit, locked or not. */
     deleteAt(x: number, y: number, withSelection = false): boolean {
-        const hit = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE);
+        const hit = topDrawingAt(this.onScreen(), x, y, this.deps.projector(), HIT_TOLERANCE);
         if (!hit) return false;
         const ids = deleteTargets(hit, this.selectedIds, this.drawings, withSelection);
         if (ids.length === 0) return false;
@@ -500,7 +521,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private updateHover(x: number, y: number, mod = false): void {
         let id: string | null = null;
         if (!mod && this.activeTool == null && !this.interaction.isPlacing() && !this.interaction.isDragging()) {
-            id = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE)?.id ?? null;
+            id = topDrawingAt(this.onScreen(), x, y, this.deps.projector(), HIT_TOLERANCE)?.id ?? null;
         }
         if (id !== this.hoveredId) {
             this.hoveredId = id;
@@ -779,16 +800,25 @@ export class UserDrawingController implements IDrawingsRendererPort {
         return false;
     }
 
-    /** Double-click over a drawing → suppress the chart's view reset (single-click already
-     *  opens settings). Returns true only when a drawing is under the cursor. */
+    /** Double-click over a drawing opens its full settings panel (a callout or text label edits
+     *  its words in place instead) and suppresses the chart's view reset. Returns true only
+     *  when a drawing is under the cursor. */
     dblClick(x: number, y: number): boolean {
         if (this.interaction.finishPlacing(true)) return true; // double-click finishes a polyline (drops the dup point)
-        const hit = topDrawingAt(this.drawings, x, y, this.deps.projector(), HIT_TOLERANCE);
+        const hit = topDrawingAt(this.onScreen(), x, y, this.deps.projector(), HIT_TOLERANCE);
         if (isInlineEditable(hit)) {
             this.editTextInline(hit.id); // double-click a callout / text label → edit its text in place
             return true;
         }
+        if (hit) this.openSettingsPanel(hit.id);
         return hit != null;
+    }
+
+    /** Programmatic twin of double-clicking the drawing: select it and open its full settings panel. */
+    openSettingsPanel(id: string): void {
+        if (!this.drawings.some((d) => d.id === id)) return;
+        if (this.popupMulti || !this.selectedIds.has(id) || !this.popup.isOpen()) this.openSettingsById(id, 0, 0);
+        this.popup.openPanel();
     }
 
     /** Keyboard pre-empt: Escape (popup/placing/selection), undo/redo, copy/paste/duplicate,
@@ -893,6 +923,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.render();
     }
 
+    /** The drawings shown on the chart's current timeframe. One limited to other timeframes
+     *  ("show on") is neither painted nor clickable here, but stays in the model: the object
+     *  tree still lists it, and its own visibility flag is untouched. */
+    private onScreen(): Drawing[] {
+        const barMs = this.deps.chartBarMs();
+        return this.drawings.filter((d) => shownOnTimeframe(d.showOn, barMs));
+    }
+
     /** Whether the drawing's z puts it INSIDE the series stack (per the last-known boundaries)
      *  rather than over it — i.e. its body belongs to an interleave layer, not the top canvas. */
     private isInterleaved(d: Drawing): boolean {
@@ -933,7 +971,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         const proj = this.deps.projector();
         const theme = this.deps.theme();
         const buckets = new Map<string, { paneId: string; beforeZ: number; drawings: Drawing[] }>(); // keyed `paneId|beforeZ`
-        for (const d of this.drawings) {
+        for (const d of this.onScreen()) {
             if (!d.visible || this.lifted.has(d.id)) continue; // a dragged drawing rides the top canvas
             const beforeZ = sliceKeyFor(d.zIndex, this.lastBounds.get(d.paneId) ?? []);
             if (beforeZ === null) continue; // over the stack → top canvas
@@ -993,8 +1031,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
         // — buried under the candles they'd be unusable.
         this.painter.seriesLook = this.deps.seriesLook();
         const onTop = (d: Drawing) => !this.isInterleaved(d) || this.lifted.has(d.id);
-        this.painter.paintAll(ctx, this.drawings.filter(onTop), proj, this.deps.theme(), targets);
-        this.painter.paintHighlights(ctx, this.drawings.filter((d) => !onTop(d)), proj, handleIdsFor(targets));
+        const shown = this.onScreen();
+        this.painter.paintAll(ctx, shown.filter(onTop), proj, this.deps.theme(), targets);
+        this.painter.paintHighlights(ctx, shown.filter((d) => !onTop(d)), proj, handleIdsFor(targets));
         // A Ctrl-drag moves COPIES that are not in the store yet: paint them here, in full and with
         // handles, so they read as the real drawings they are about to become.
         const clones = this.interaction.dragClones();
@@ -1133,6 +1172,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.emit({ kind: 'select', ids: [id] }); // editing this drawing → it stays highlighted while the popup is open
         this.emit({ kind: 'settings', id });
         const anchor = drawing.bounds(this.deps.projector()); // float the toolbar clear of the drawing
+        let previewBase: SerializedDrawing | null = null; // the look under a style being previewed
         this.popup.open([drawing], anchor, {
             // Sync rebuilds instances, so a panel that reads values back after a patch (e.g. the
             // position tool's price fields, where one edit can flip another level) resolves fresh.
@@ -1170,11 +1210,41 @@ export class UserDrawingController implements IDrawingsRendererPort {
             restore: (doc) => {
                 const d = live();
                 if (!d) return;
-                if (doc.style) d.style = { ...doc.style };
-                if (doc.text !== undefined) d.text = doc.text ? { ...doc.text } : undefined;
-                if (doc.props !== undefined) d.applyProps(doc.props);
+                // A label added since the snapshot is emptied rather than dropped: an edit without
+                // text leaves the core's text as it is.
+                const text = doc.text ?? (d.text ? { ...d.text, value: '' } : undefined);
+                restoreLook(d, { ...doc, text });
+                d.anchors = doc.anchors.map((a) => ({ ...a }));
+                d.showOn = doc.showOn ? [...doc.showOn] : undefined;
                 this.render();
-                this.emit({ kind: 'edit', doc });
+                this.emit({ kind: 'edit', doc: { ...doc, text } });
+            },
+            templates: () => this.toolTemplates[drawing.type] ?? [],
+            saveTemplate: (name) => {
+                const d = live();
+                if (d) this.emit({ kind: 'template-save', type: d.type, name, settings: captureToolDefaults(d) });
+            },
+            removeTemplate: (name) => this.emit({ kind: 'template-remove', type: drawing.type, name }),
+            applyToolSettings: (settings) => {
+                const d = live();
+                if (!d) return;
+                applyToolDefaults(d, settings);
+                this.render();
+                this.emit({ kind: 'edit', doc: d.serialize() });
+            },
+            // A hovered style paints on the drawing without an edit; leaving puts the look back.
+            preview: (settings) => {
+                const d = live();
+                if (!d) return;
+                if (settings) {
+                    if (previewBase) restoreLook(d, previewBase);
+                    else previewBase = d.serialize();
+                    applyToolDefaults(d, settings);
+                } else if (previewBase) {
+                    restoreLook(d, previewBase);
+                    previewBase = null;
+                } else return;
+                this.render();
             },
             remove: () => {
                 this.closeTextEditor(); // else the editor floats over the deleted label until it loses focus
@@ -1240,4 +1310,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
         }
         this.intentCb?.(i);
     }
+}
+
+/** Put a drawing's look (style, label, per-type settings) back to a serialized one. */
+function restoreLook(d: Drawing, doc: SerializedDrawing): void {
+    d.style = { ...doc.style };
+    d.text = doc.text ? { ...doc.text } : undefined;
+    if (doc.props !== undefined) d.applyProps(doc.props);
 }
