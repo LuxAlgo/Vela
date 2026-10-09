@@ -4325,7 +4325,10 @@ function applyPatch(model: IndicatorModel, patch: ScenePatch): void {
             const s = model.series.find((x) => x.id === delta.seriesId);
             if (!s) continue;
             if (delta.kind === 'points' && isLineLikeSeries(s)) s.points = delta.points;
-            else if (delta.kind === 'bars' && (s.kind === 'candle' || s.kind === 'bar')) s.bars = delta.bars;
+            else if (delta.kind === 'bars' && (s.kind === 'candle' || s.kind === 'bar')) {
+                s.bars = delta.bars;
+                if (delta.barColors !== undefined) s.barColors = delta.barColors;
+            }
         }
         if (patch.lines) model.lines = patch.lines;
         if (patch.boxes) model.boxes = patch.boxes;

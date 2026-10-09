@@ -33,6 +33,7 @@ import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor
 import type { Pane } from '../src/core/model/scene';
 import type { DrawingLine } from '../src/core/model/drawings';
 import type { IndicatorModel } from '../src/core/model/indicator';
+import type { CandleSeries } from '../src/core/model/series';
 import type { ScenePatch } from '../src/core/model/patch';
 import type { InputValue } from '../src/core/model/inputs';
 import type { VelaTheme, PriceStyle } from '../src/core/options';
@@ -1366,6 +1367,62 @@ describe('EngineOrchestrator', () => {
         expect(renderer.mountedModels.some((m) => m.id === ind.id)).toBe(false);
         expect(err).toHaveBeenCalled();
         err.mockRestore();
+    });
+});
+
+describe('EngineOrchestrator — per-bar candle colors in live value patches', () => {
+    /** Adds a candle series over the request's bars to every model the mock emits; `palette` colors it per bar, `null` leaves it uncolored. */
+    class CandleColorEngine extends MockEngine {
+        palette: [string, string] | null = ['#0000ff', '#ff8800'];
+        override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+            const withCandles = (m: IndicatorModel): IndicatorModel => {
+                const bars = req.getBars?.() ?? req.bars;
+                const candles: CandleSeries = { id: `${m.id}:candle:trend#0`, title: 'Trend', paneId: 'unrouted', kind: 'candle', bars };
+                const palette = this.palette;
+                if (palette) candles.barColors = bars.map((_, i) => ({ color: palette[i % 2] }));
+                return { ...m, series: [...m.series, candles] };
+            };
+            return super.execute(req, { ...handlers, onModel: (m) => handlers.onModel(withCandles(m)) });
+        }
+    }
+
+    /** Mounts on the first emit, then returns the `bars` delta of the value patch a same-session tick sends. */
+    async function tickDelta(engine: CandleColorEngine, beforeTick: () => void = () => {}) {
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: true }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const ind = chart.addIndicator('//@version=5\nindicator("Trend", overlay=true)\nplotcandle(open, high, low, close)');
+        await chart.ready();
+        await flush();
+
+        engine.emitStream(ind.id); // first model → mount
+        await flush();
+        beforeTick();
+        engine.emitStream(ind.id); // same-session tick → value patch
+        await flush();
+
+        const patch = renderer.updatedPatches.filter((p) => p.kind === 'value' && p.indicatorId === ind.id).pop();
+        const delta = patch?.kind === 'value' ? patch.series.find((d) => d.kind === 'bars') : undefined;
+        return delta?.kind === 'bars' ? delta : undefined;
+    }
+
+    it('a tick carries the colors its run set, together with the bars', async () => {
+        const engine = new CandleColorEngine();
+        const delta = await tickDelta(engine, () => {
+            engine.palette = ['#00ff00', '#ff0000']; // the run after mount recolors every bar
+        });
+
+        expect(delta?.bars.length).toBeGreaterThan(0);
+        expect(delta?.barColors).toEqual(delta?.bars.map((_, i) => ({ color: i % 2 === 0 ? '#00ff00' : '#ff0000' })));
+    });
+
+    it('a tick whose run emits no colors states an empty set, so the renderer clears the old one', async () => {
+        const engine = new CandleColorEngine();
+        const delta = await tickDelta(engine, () => {
+            engine.palette = null;
+        });
+
+        expect(delta?.bars.length).toBeGreaterThan(0);
+        expect(delta?.barColors).toEqual([]);
     });
 });
 
