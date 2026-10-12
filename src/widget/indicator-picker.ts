@@ -97,6 +97,10 @@ export interface IndicatorPickerOptions {
     onChart: () => readonly IndicatorRow[];
     onAdd: (libraryIndex: number) => void;
     onRemove: (instanceIndex: number) => void;
+    /** Native category heading and on-chart badge text. */
+    nativeCategory?: string | false;
+    /** Relative order of native indicators and manifest categories. */
+    order?: 'native-first' | 'manifest-first';
     onOpenChange?: (open: boolean) => void;
     host?: HTMLElement;
 }
@@ -178,7 +182,12 @@ export class IndicatorPicker {
         const instances = this.opts.onChart();
         this.list.replaceChildren();
         const match = (r: IndicatorRow): boolean => !q || r.name.toLowerCase().includes(q);
-
+        const nativeLabel =
+            this.opts.nativeCategory === false
+                ? undefined
+                : this.opts.nativeCategory ??
+                library.find((r) => r.native)?.category ??
+                'Built-in';
         const rowEl = (r: IndicatorRow, opts: { library?: number; instance?: number }): HTMLElement => {
             const row = doc.createElement('div');
             row.className = 'vela-ip-row';
@@ -196,7 +205,7 @@ export class IndicatorPicker {
                 row.appendChild(beta);
             }
             if (opts.instance !== undefined) {
-                const badgeText = r.native ? 'vela' : r.language;
+                const badgeText = r.native ? nativeLabel : r.language;
                 if (badgeText) {
                     const badge = doc.createElement('span');
                     badge.className = 'vela-ip-badge';
@@ -225,26 +234,71 @@ export class IndicatorPicker {
             this.list.appendChild(card);
         }
 
-        // The library, grouped by category — clicking ADDS an instance (repeatable).
+        const nativeRows: Array<readonly [IndicatorRow, number]> = [];
         const byCat = new Map<string, Array<readonly [IndicatorRow, number]>>();
         library.forEach((r, i) => {
             if (!match(r)) return;
+
+            if (r.native) {
+                if (nativeLabel !== undefined) {
+                    nativeRows.push([r, i]);
+                }
+                return;
+            }
+
             const cat = r.category ?? 'General';
             const bucket = byCat.get(cat) ?? [];
-            bucket.push([r, i] as const);
+            bucket.push([r, i]);
             byCat.set(cat, bucket);
         });
-        for (const [cat, bucket] of byCat) {
+
+        const renderGroup = (
+            category: string,
+            bucket: readonly (readonly [IndicatorRow, number])[],
+        ): void => {
+            if (bucket.length === 0) return;
+
             const title = doc.createElement('div');
             title.className = 'vela-ip-group';
-            title.textContent = cat;
+            title.textContent = category;
             this.list.appendChild(title);
-            for (const [r, i] of bucket) this.list.appendChild(rowEl(r, { library: i }));
+
+            for (const [r, i] of bucket) {
+                this.list.appendChild(rowEl(r, { library: i }));
+            }
+        };
+
+        const renderNative = (): void => {
+            if (nativeLabel !== undefined) {
+                renderGroup(nativeLabel, nativeRows);
+            }
+        };
+
+        const renderManifest = (): void => {
+            for (const [category, bucket] of byCat) {
+                renderGroup(category, bucket);
+            }
+        };
+
+        if (this.opts.order === 'manifest-first') {
+            renderManifest();
+            renderNative();
+        } else {
+            renderNative();
+            renderManifest();
         }
-        if (!onChart.length && byCat.size === 0) {
+
+        const visibleLibraryCount = library.filter(
+            (r) => !r.native || nativeLabel !== undefined,
+        ).length;
+
+        if (!onChart.length && nativeRows.length === 0 && byCat.size === 0) {
             const empty = doc.createElement('div');
             empty.className = 'vela-ip-empty';
-            empty.textContent = library.length ? 'No indicators match.' : 'No indicators in the manifest.';
+            empty.textContent =
+                visibleLibraryCount === 0 && !q
+                    ? 'No indicators in the manifest.'
+                    : 'No indicators match.';
             this.list.appendChild(empty);
         }
     }
