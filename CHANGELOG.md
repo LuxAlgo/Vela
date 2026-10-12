@@ -13,6 +13,7 @@ All notable changes to Vela, newest first.
   readout moved above the baseline, where the line runs, so the line crossed the digits.
   It now sits on the side of the baseline the line leaves empty, with a halo that keeps it
   legible over candles.
+- **The indicator picker’s native category and ordering are now configurable.** You can  customize the native indicator category and on-chart badge, hide native indicators from the library, and choose whether native indicators or manifest categories appear first.
 
 ## [0.8.3]
 
