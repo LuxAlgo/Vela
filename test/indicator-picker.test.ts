@@ -60,7 +60,6 @@ describe('IndicatorPicker native category configuration', () => {
         vi.stubGlobal('document', dom.window.document);
         vi.stubGlobal('Document', dom.window.Document);
         vi.stubGlobal('Node', dom.window.Node);
-        // The stylesheet helper uses CSS.escape to build an id selector.
         vi.stubGlobal('CSS', { escape: (value: string) => value });
         host = dom.window.document.createElement('div');
         dom.window.document.body.appendChild(host);

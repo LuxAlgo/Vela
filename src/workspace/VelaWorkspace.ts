@@ -500,6 +500,11 @@ export class VelaWorkspace {
                 ? opts.indicatorPicker
                 : undefined;
 
+        // The picker exists only while it has an entry point left: the deprecated
+        // `indicatorPicker: false`, a composition without 'indicators', or an OVERRIDE
+        // of the slot all remove every one of them (topbar button, mobile-bar item,
+        // `/`), so the dialog is not built. The shared manifest still resolves and
+        // auto-adds either way.
         this.indicatorPicker =
             opts.indicatorPicker !== false &&
             !this.indicatorsOverride &&
@@ -513,6 +518,8 @@ export class VelaWorkspace {
                       nativeCategory: indicatorPickerConfig?.nativeCategory,
                       order: indicatorPickerConfig?.order,
                       onOpenChange: (open) => {
+                          // Same rule as the symbol search: the renderer's in-chart dialogs never see
+                          // an outside-dismiss from a topbar dialog — close them on every cell.
                           if (open) {
                               for (const cell of this.cells()) {
                                   cell.chart.renderer.closeDialogs();

@@ -235,6 +235,7 @@ export class IndicatorPicker {
         }
 
         const nativeRows: Array<readonly [IndicatorRow, number]> = [];
+        // The library, grouped by category — clicking ADDS an instance (repeatable).
         const byCat = new Map<string, Array<readonly [IndicatorRow, number]>>();
         library.forEach((r, i) => {
             if (!match(r)) return;
@@ -248,7 +249,7 @@ export class IndicatorPicker {
 
             const cat = r.category ?? 'General';
             const bucket = byCat.get(cat) ?? [];
-            bucket.push([r, i]);
+            bucket.push([r, i] as const);
             byCat.set(cat, bucket);
         });
 
