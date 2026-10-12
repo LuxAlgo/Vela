@@ -13,7 +13,7 @@ const bar = (time: number, close: number): OHLCV => ({ time, open: 100, high: Ma
 function makeRenderer(animLiveBar: number) {
     const r = new NativeRenderer({
         currentPriceLine: true, logScale: false, nativeBackend: 'canvas2d', ...resolveAnimations({ liveBar: animLiveBar }),
-        glow: 0, upColor: '#0f0', downColor: '#f00', priceStyle: 'candles',
+        glow: 0, upColor: '#0f0', downColor: '#f00', priceStyle: 'candles', timeFormat: '',
     });
     const anyR = r as any;
     anyR.coords.setSize(800, 200, 1); // unmounted, but sized — the bar/ease math is pure

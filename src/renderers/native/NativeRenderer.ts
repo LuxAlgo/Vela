@@ -397,6 +397,7 @@ export class NativeRenderer implements IChartRenderer {
             this.scene.priceStyle = opts.priceStyle;
             this.scene.basePainting = basePaintingOf(opts.priceStyle);
             this.scene.candleOverride = candleOverrideFor(opts.priceStyle, this.scene.style.chartTypes);
+            this.scene.timeFormat = opts.timeFormat || null;
             if (typeof opts.priceAxisTicks === 'function') this.priceAxisTicks.setHook(opts.priceAxisTicks);
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
@@ -531,6 +532,10 @@ export class NativeRenderer implements IChartRenderer {
             case 'timezone':
                 this.scene.timezone = typeof value === 'string' && value ? value : 'UTC';
                 break;
+            case 'timeFormat':
+                // Crosshair time-chip pattern (`applyTimeFormat`); null/'' restores the built-in stamp.
+                this.scene.timeFormat = typeof value === 'string' && value ? value : null;
+                break;
             case 'priceStyle':
                 this.setPriceStyle(isPriceStyle(value) ? value : 'candles');
                 break;
@@ -644,6 +649,7 @@ export class NativeRenderer implements IChartRenderer {
                 return price ? price.manualScale == null : true;
             }
             case 'timezone': return this.scene.timezone;
+            case 'timeFormat': return this.scene.timeFormat ?? '';
             case 'priceStyle': return this.scene.priceStyle;
             case 'priceBaseline': return this.scene.baselineValue;
             case 'baselinePrice': {

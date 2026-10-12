@@ -179,6 +179,9 @@ export class SceneGraph {
     percentBaseline = 0;
     /** IANA time zone for the time axis + crosshair/data-window stamps (`'UTC'` default). */
     timezone = 'UTC';
+    /** Optional date-format pattern for the crosshair time chip (see `applyTimeFormat`);
+     *  null uses the built-in `Sun 30 Aug '26 19:00` stamp. */
+    timeFormat: string | null = null;
     /** Draw the background gridlines (price + time). Master toggle (`gridlines`
      *  feature); per-axis visibility + colors live in `style.gridVert`/`gridHorz`. */
     showGrid = true;

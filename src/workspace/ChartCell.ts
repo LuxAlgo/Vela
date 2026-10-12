@@ -87,13 +87,13 @@ export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'b
  *  sub-key (see {@link cellDrawings}). */
 export type CellChartDefaults = Pick<
     VelaOptions,
-    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings' | 'settings' | 'priceAxis'
+    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings' | 'settings' | 'timeFormat'
 >;
 
 /** The {@link CellChartDefaults} pick of a workspace's options (pure, for the build). */
 export function cellChartDefaults(opts: CellChartDefaults): CellChartDefaults {
-    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, priceAxis } = opts;
-    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, priceAxis };
+    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, timeFormat } = opts;
+    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, timeFormat };
 }
 
 /** The cell form of the shell's `drawings` option: everything passes through EXCEPT the
