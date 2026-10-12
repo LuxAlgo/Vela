@@ -391,8 +391,8 @@ export class ObjectTree extends SidePanel {
         this.body.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     }
 
-    override toggle(open = this.el.hidden): void {
-        super.toggle(open);
+    override toggle(open = !this.open, instant = false): void {
+        super.toggle(open, instant);
         if (open) this.refresh();
     }
 

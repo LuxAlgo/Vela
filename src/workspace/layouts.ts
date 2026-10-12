@@ -38,6 +38,7 @@ export interface LayoutDefinition {
 /** Grid track sizes overriding a layout's declared weights (splitter drags). */
 // TrackSizes is part of the shared state document (`src/state/document.ts`).
 import type { TrackSizes } from '../state/document';
+import { svg16 } from '../core/icons';
 
 export type { TrackSizes } from '../state/document';
 
@@ -164,6 +165,66 @@ export function occupancyGrid(def: LayoutDefinition): string[][] {
     if (def.areas) return def.areas.map((row) => row.trim().split(/\s+/));
     const cols = def.cols.length;
     return def.rows.map((_, r) => def.cols.map((_, c) => def.cells[r * cols + c]?.id ?? `·${r}x${c}`));
+}
+
+/** The glyph's frame: a 13px square inset 1.5px in the 16px box. */
+const GLYPH_MIN = 1.5;
+const GLYPH_SPAN = 13;
+
+/** Track boundaries on the glyph frame, proportional to the declared weights. */
+function glyphStops(weights: readonly number[], n: number): number[] {
+    const w = Array.from({ length: n }, (_, i) => {
+        const v = weights[i];
+        return v !== undefined && Number.isFinite(v) && v > 0 ? v : 1;
+    });
+    const total = w.reduce((a, b) => a + b, 0);
+    const stops = [GLYPH_MIN];
+    let acc = 0;
+    for (const v of w) {
+        acc += v;
+        stops.push(Math.round((GLYPH_MIN + (GLYPH_SPAN * acc) / total) * 100) / 100);
+    }
+    return stops;
+}
+
+/**
+ * A 16px line glyph of a layout's cell arrangement (`<svg>` markup) — PURE. The frame
+ * is the whole grid; a seam is drawn only where two neighboring tracks hold DIFFERENT
+ * slots (the {@link occupancyGrid} rule the splitters follow), so a cell spanning
+ * several tracks reads as one. Seams sit at the declared track weights.
+ */
+export function layoutGlyph(def: LayoutDefinition): string {
+    const grid = occupancyGrid(def);
+    const rows = grid.length;
+    const cols = grid.reduce((n, row) => Math.max(n, row.length), 0);
+    const xs = glyphStops(def.cols, cols);
+    const ys = glyphStops(def.rows, rows);
+    const at = (r: number, c: number): string | undefined => grid[r]?.[c];
+    const seams: string[] = [];
+    for (let c = 1; c < cols; c += 1) {
+        let start = -1;
+        for (let r = 0; r <= rows; r += 1) {
+            const split = r < rows && at(r, c - 1) !== at(r, c);
+            if (split && start < 0) start = r;
+            if (!split && start >= 0) {
+                seams.push(`M${xs[c]} ${ys[start]}V${ys[r]}`);
+                start = -1;
+            }
+        }
+    }
+    for (let r = 1; r < rows; r += 1) {
+        let start = -1;
+        for (let c = 0; c <= cols; c += 1) {
+            const split = c < cols && at(r - 1, c) !== at(r, c);
+            if (split && start < 0) start = c;
+            if (!split && start >= 0) {
+                seams.push(`M${xs[start]} ${ys[r]}H${xs[c]}`);
+                start = -1;
+            }
+        }
+    }
+    const frame = `<rect x="${GLYPH_MIN}" y="${GLYPH_MIN}" width="${GLYPH_SPAN}" height="${GLYPH_SPAN}" rx="1.5"/>`;
+    return svg16(seams.length > 0 ? `${frame}<path d="${seams.join('')}"/>` : frame);
 }
 
 /** Inline styles for the grid container + each cell — PURE (the workspace applies them). */

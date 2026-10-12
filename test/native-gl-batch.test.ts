@@ -78,4 +78,16 @@ describe('native WebGL2 · Batch (triangle geometry)', () => {
         b.circle(0, 0, 5, RED, 16);
         expect(b.vertexCount).toBe(16 * 3);
     });
+
+    it('circle feathers its rim: edgeDist runs 0 at the center to r + pad at the padded rim, edgeHalf = r', () => {
+        const b = new Batch();
+        b.circle(10, 20, 3, RED, 16);
+        const v = b.view;
+        for (let i = 0; i < b.vertexCount; i += 1) {
+            const fromCenter = Math.hypot(v[i * STRIDE]! - 10, v[i * STRIDE + 1]! - 20);
+            expect(v[i * STRIDE + 6]!).toBeCloseTo(fromCenter, 5); // edgeDist = distance from the center (float32)
+            expect(v[i * STRIDE + 7]!).toBeCloseTo(3, 9); // edgeHalf = the true radius
+            expect([0, 4]).toContainEqual(Math.round(fromCenter)); // center, or rim padded by 1
+        }
+    });
 });

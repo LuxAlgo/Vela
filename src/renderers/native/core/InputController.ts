@@ -205,6 +205,11 @@ export class InputController {
     /** When true (the default), the separators between stacked panes are draggable to
      *  resize the panes above/below. When false, a press there is a normal data-area pan. */
     paneResize = true;
+    /** When true (the default), the user drawings take part in pointer input: they claim a
+     *  press over a drawing or with a tool armed, and see hover moves. When false, every press
+     *  is a plain pan/click and hover leaves them alone; a drawing gesture already under way
+     *  still finishes. */
+    drawings = true;
     private el: HTMLElement | null = null;
     private dragging = false;
     private moved = false;
@@ -235,6 +240,12 @@ export class InputController {
     private lastTapT = 0;
     private lastTapX = 0;
     private lastTapY = 0;
+    // Whether the last two primary presses were claimed by the drawings layer. A double-click
+    // is the last press plus the one before it; a tool-driven click pair must never fall through
+    // to the pane maximize toggle, even when the tool disarmed itself between the two clicks
+    // (a finished placement leaves plain cursor mode for the second click).
+    private lastPressDrawing = false;
+    private prevPressDrawing = false;
 
     constructor(private readonly deps: InputControllerDeps) {}
 
@@ -326,7 +337,7 @@ export class InputController {
     private readonly onModifier = (e: KeyboardEvent): void => {
         if (e.repeat || (e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Meta')) return;
         if (Number.isNaN(this.cursorX)) return; // pointer is not over the chart
-        if (this.dragging && this.region !== 'drawing') return; // mid pan/axis gesture — nothing to re-shape
+        if (this.dragging ? this.region !== 'drawing' : !this.drawings) return; // nothing of the drawings' to re-shape
         this.deps.drawingsPointerMove?.(this.cursorX, this.cursorY, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
     };
 
@@ -359,7 +370,7 @@ export class InputController {
             // Middle-click deletes the drawing under the cursor. The flag lets the
             // mousedown/auxclick companions suppress autoscroll/paste for THIS press only.
             const { x, y } = this.local(e);
-            this.middleDeleted = this.deps.drawingsDeleteAt?.(x, y) ?? false;
+            this.middleDeleted = this.drawings && (this.deps.drawingsDeleteAt?.(x, y) ?? false);
             if (this.middleDeleted) e.preventDefault();
             return;
         }
@@ -368,7 +379,7 @@ export class InputController {
             // tool, ruler, or eraser — reverting to the pointer. The flag lets the
             // contextmenu companion suppress the host's chart menu for THIS press
             // only — a plain right-click still opens it.
-            this.rightCancelled = this.deps.drawingsCancelPlacement?.() ?? false;
+            this.rightCancelled = this.drawings && (this.deps.drawingsCancelPlacement?.() ?? false);
             if (this.rightCancelled) e.preventDefault();
             return;
         }
@@ -391,24 +402,29 @@ export class InputController {
         this.moved = false;
         this.startX = x;
         this.startY = y;
+        this.prevPressDrawing = this.lastPressDrawing;
+        this.lastPressDrawing = false;
         // The drawings layer gets first refusal: when a tool is armed or the press is
         // over a drawing/handle it claims the WHOLE gesture (no pan/fling), atomically.
-        if (this.deps.drawingsClaim?.(x, y)) {
+        if (this.drawings && this.deps.drawingsClaim?.(x, y)) {
             this.region = 'drawing';
+            this.lastPressDrawing = true;
             this.deps.drawingsPointerDown?.(x, y, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
             this.capture(e.pointerId);
             return;
         }
         // Shift+press on the empty plot starts the measure ruler in one gesture (a press
         // over a drawing keeps the additive-select meaning of shift, via the claim above).
-        if (e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y, this.snapMode(e))) {
+        if (this.drawings && e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y, this.snapMode(e))) {
             this.region = 'drawing';
+            this.lastPressDrawing = true;
             this.capture(e.pointerId);
             return;
         }
         // Ctrl/Cmd+press on the empty plot sweeps a selection box over the drawings.
-        if ((e.ctrlKey || e.metaKey) && this.regionAt(x, y) === 'data' && this.deps.drawingsMarqueeStart?.(x, y)) {
+        if (this.drawings && (e.ctrlKey || e.metaKey) && this.regionAt(x, y) === 'data' && this.deps.drawingsMarqueeStart?.(x, y)) {
             this.region = 'drawing';
+            this.lastPressDrawing = true;
             this.capture(e.pointerId);
             return;
         }
@@ -574,7 +590,7 @@ export class InputController {
             this.el.style.cursor = drawCursor ?? (r === 'price' ? 'ns-resize' : r === 'time' ? 'ew-resize' : r === 'separator' ? 'row-resize' : '');
             // Forward hover moves so the drawings layer can advance a placing ghost
             // (placing is click-based, so the cursor follow happens with no button down).
-            this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
+            if (this.drawings) this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
         }
         // Hover crosshair is a MOUSE affordance. A touch never hovers: its crosshair
         // comes only from the long-press inspect path (region 'crosshair' above) —
@@ -626,7 +642,9 @@ export class InputController {
             this.deps.drawingsPointerUp?.(x, y, this.snapMode(e));
         } else if (tapRelease && this.region === 'data') {
             this.deps.onClick(x, y);
-        } else if (this.dragging && this.region === 'data') {
+        } else if (this.dragging && this.region === 'data' && wasTouch) {
+            // Only a finger flicks: a mouse release stops dead, so a scrub lands exactly
+            // where the pointer let go instead of coasting past it.
             const stale = e.timeStamp - this.lastT > FLING_STALE_MS;
             if (!stale && Math.abs(this.vx) > FLING_MIN_SPEED) {
                 const pitch = this.deps.getCoords().pxPerBar();
@@ -693,11 +711,12 @@ export class InputController {
     /** Shared double-click / double-tap routing, by the region under the point. */
     private doubleActivate(x: number, y: number): void {
         // A drawing double-click opens its settings — suppress the view/scale reset.
-        if (this.deps.drawingsDblClick?.(x, y)) return;
+        if (this.drawings && this.deps.drawingsDblClick?.(x, y)) return;
         const region = this.regionAt(x, y);
         if (region === 'price') this.deps.resetPriceScale(x, y);
         else if (region === 'separator') this.deps.resetPaneSize(y);
         else if (region === 'time') this.deps.resetView(); // fit-to-content on the time axis
+        else if (this.lastPressDrawing || this.prevPressDrawing) return; // drawing interaction, not a pane gesture
         else this.deps.dataDblClick(x, y);
     }
 

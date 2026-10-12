@@ -197,6 +197,9 @@ export interface TopbarOptions {
         /** SYNC switch rows (re-read on every open and after each toggle). */
         syncs: () => Array<{ id: string; label: string; checked: boolean }>;
         onToggleSync: (id: string) => void;
+        /** The current layout's 16px glyph (`<svg>` markup) for the button, re-read on
+         *  every {@link Topbar.setLayout}. Omitted ⇒ the registered `'layout'` icon. */
+        glyph?: () => string;
     };
     onIndicatorsClick?: () => void;
     /** Unified undo/redo (same stack as Ctrl+Z / Ctrl+Y). Enabled state is pushed with
@@ -471,6 +474,7 @@ export class Topbar {
             host,
             items: this.styleItems(),
             onSelect: (id) => opts.onPriceStyle(id),
+            iconBadges: true,
         });
     }
 
@@ -544,10 +548,16 @@ export class Topbar {
     private renderLayoutButton(doc: Document): void {
         if (!this.layoutButton) return;
         this.layoutButton.replaceChildren();
-        // Icon when a 'layout' icon is registered (the workspace registers one);
-        // otherwise fall back to the current layout id as text.
-        if (iconMarkup('layout')) this.layoutButton.appendChild(iconEl('layout', doc));
-        else this.layoutButton.appendChild(doc.createTextNode(this.layoutId ?? ''));
+        // The host's glyph of the current layout, else the registered 'layout' icon;
+        // with neither, the current layout id as text.
+        const glyph = this.opts.layout?.glyph?.();
+        if (glyph || iconMarkup('layout')) {
+            const icon = iconEl('layout', doc);
+            if (glyph) icon.innerHTML = glyph;
+            this.layoutButton.appendChild(icon);
+        } else {
+            this.layoutButton.appendChild(doc.createTextNode(this.layoutId ?? ''));
+        }
         this.layoutButton.setAttribute('aria-label', `Layout — ${this.layoutId ?? ''}`);
     }
 

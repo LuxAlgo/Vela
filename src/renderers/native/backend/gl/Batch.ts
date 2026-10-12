@@ -158,15 +158,23 @@ export class Batch {
         this.seg(x, y + h, x, y, lineWidth, c); // left
     }
 
-    /** Filled circle (triangle fan). */
+    /**
+     * Filled circle (triangle fan), feathered like a line: the rim is padded by {@link AA_PAD} and
+     * edgeDist runs from 0 at the center to the padded radius at the rim, with edgeHalf = r. The
+     * distance grows linearly along each spoke, so the shader's line feather gives a round soft edge.
+     */
     circle(cx: number, cy: number, r: number, c: RGBA, segments = 16): void {
-        let px = cx + r;
+        const ext = r + AA_PAD;
+        let px = cx + ext;
         let py = cy;
+        this.ensure(segments * 3);
         for (let i = 1; i <= segments; i += 1) {
             const a = (i / segments) * Math.PI * 2;
-            const nx = cx + Math.cos(a) * r;
-            const ny = cy + Math.sin(a) * r;
-            this.tri(cx, cy, c, px, py, c, nx, ny, c);
+            const nx = cx + Math.cos(a) * ext;
+            const ny = cy + Math.sin(a) * ext;
+            this.v(cx, cy, c, 0, r);
+            this.v(px, py, c, ext, r);
+            this.v(nx, ny, c, ext, r);
             px = nx;
             py = ny;
         }

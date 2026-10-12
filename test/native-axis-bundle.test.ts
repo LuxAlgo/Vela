@@ -112,6 +112,44 @@ describe('timezone helpers (item 14d)', () => {
     });
 });
 
+describe('timeTicks calendar alignment', () => {
+    const H = 3600000;
+
+    it('year ticks land on January 1 and carry that year', () => {
+        // ~10.7 years of weekly bars: the ladder picks the year step.
+        const ticks = timeTicks(Date.UTC(2016, 0, 4), Date.UTC(2026, 8, 28), 8);
+        expect(ticks.length).toBeGreaterThan(0);
+        for (const t of ticks) {
+            const d = new Date(t.time);
+            expect([d.getUTCMonth(), d.getUTCDate(), d.getUTCHours()]).toEqual([0, 1, 0]);
+            expect(t.label).toBe(String(d.getUTCFullYear()));
+        }
+        expect(ticks.map((t) => t.label)).toEqual(['2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026']);
+    });
+
+    it('quarter ticks land on the first of Jan/Apr/Jul/Oct', () => {
+        const ticks = timeTicks(Date.UTC(2025, 10, 15), Date.UTC(2026, 8, 28), 8);
+        expect(ticks.length).toBeGreaterThan(0);
+        for (const t of ticks) {
+            const d = new Date(t.time);
+            expect(d.getUTCDate()).toBe(1);
+            expect(d.getUTCMonth() % 3).toBe(0);
+        }
+    });
+
+    it('month ticks land on the first of each month', () => {
+        const ticks = timeTicks(Date.UTC(2026, 0, 10), Date.UTC(2026, 6, 20), 8);
+        expect(ticks.map((t) => t.label)).toEqual(['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']);
+        for (const t of ticks) expect(new Date(t.time).getUTCDate()).toBe(1);
+    });
+
+    it('calendar ticks follow the zone offset', () => {
+        const ticks = timeTicks(Date.UTC(2016, 0, 4), Date.UTC(2026, 8, 28), 8, -5 * H);
+        expect(ticks[0]!.label).toBe('2017');
+        expect(ticks[0]!.time).toBe(Date.UTC(2017, 0, 1) + 5 * H);
+    });
+});
+
 describe('keyboard key→action mapping (item 11)', () => {
     it('arrows step the crosshair; shift pans a chunk', () => {
         expect(keyToAction({ key: 'ArrowLeft', shiftKey: false })).toEqual({ kind: 'step', delta: -1 });

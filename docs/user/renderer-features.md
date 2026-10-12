@@ -90,8 +90,34 @@ last non-zero duration set through the option or the feature.
 | `axisLabels` | boolean | `true` | Draw the price/time axis tick labels. |
 | `priceLabel` | boolean | `true` | The last-price axis tag. Independent of `currentPriceLine` — either can show without the other. |
 | `countdown` | boolean | `true` | The bar-close countdown tag next to the price axis. |
-| `crosshairOverride` | `{ vertical?, horizontal?, color?, width?, style?, opacity?, shadeRight? } \| null` | `null` | A temporary restyle of the crosshair for interactions that ask the user to pick a point on the chart. Each field replaces the configured crosshair style while set; `horizontal: false` (or `vertical: false`) hides that line and its axis tag. `shadeRight: { color, opacity? }` veils the plot right of the bar under the vertical line (every pane, up to the price scale) — e.g. to hide what follows a time being picked. It styles and veils an external (synced) crosshair the same way (`renderer.setExternalCrosshair`), so a pick spanning several charts reads the same on each. Runtime-only: never part of `getConfig()`, so a reload can't leave it stuck. `null` restores the configured crosshair. |
+| `crosshairOverride` | `{ vertical?, horizontal?, color?, width?, style?, opacity?, shadeRight? } \| null` | `null` | A temporary restyle of the crosshair for interactions that ask the user to pick a point on the chart. Each field replaces the configured crosshair style while set; `horizontal: false` (or `vertical: false`) hides that line and its axis tag. `shadeRight: { color, opacity? }` veils the plot right of the bar under the vertical line (every pane, up to the price scale) — e.g. to hide what follows a time being picked. It styles and veils an external (synced) crosshair the same way (`renderer.setExternalCrosshair`), so a pick spanning several charts reads the same on each. Runtime-only: never part of `getConfig()`, so a reload can't leave it stuck. `null` restores the configured crosshair. The veiled area also carries a styleable element — see [Styling the `shadeRight` veil](#styling-the-shaderight-veil). |
+| `drawingsInteractive` | boolean | `true` | Whether the pointer reaches the user drawings. Set it to `false` while an interaction asks the user to pick a point on the chart (usually alongside a `crosshairOverride`): a press over a drawing, or with a drawing tool armed, then pans or clicks like one on the empty plot and reaches `onClick`, so nothing is selected, moved, placed or erased, and hovering shows no drawing handles. A drawing gesture already under way finishes first. The drawings still show, and `chart.drawings` keeps working. Runtime-only: never part of `getConfig()`, so a reload can't leave the drawings inert. `true` (or `null`) restores it. |
+| `priceAxisTicks` | `(ctx) => PriceAxisTick[] \| null` \| `null` | `null` | Your own price-axis ticks: called per pane, it returns `{ price, label, major? }` entries that replace the built-in ladder — the axis labels and the horizontal gridlines together. `null`/`undefined` from the function keeps the built-in ticks; `major: true` draws a semibold label, `major: false` a muted one. Seeded by the [`priceAxis.ticks` option](./options.md#the-priceaxis-option--custom-price-axis-ticks), which documents the context fields. It runs again only when a pane's range, height or mode changes — set the function again to recompute. Runtime-only: never part of `getConfig()`. `null` restores the built-in ticks. |
 | `autoScale` | boolean | `true` | Whether the price pane auto-scales to fit visible data. Setting it to `false` freezes the current window (unlocking vertical price pan/drag); setting it to `true` drops the freeze and resumes autoscale. |
+
+#### Styling the `shadeRight` veil
+
+While a `crosshairOverride` with `shadeRight` paints its veil, the chart also places an
+empty element with the class `vela-shade-right` over exactly the veiled area: from the
+right edge of the picked bar to the price scale, across the full plot height. It sits
+below the crosshair layer and above the candles, indicators and drawings, so a
+`backdrop-filter` on it reaches the bars under the veil but never the crosshair line or the
+veil color itself:
+
+```css
+.vela-shade-right { backdrop-filter: grayscale(1); }
+```
+
+```js
+chart.renderer.set('crosshairOverride', {
+  horizontal: false,
+  shadeRight: { color: 'rgba(0, 0, 0, 0)' }, // a transparent veil: grey bars, no darkening
+});
+```
+
+The element is transparent unless you style it, ignores the pointer, is hidden from
+assistive technology, and carries the `hidden` attribute whenever no veil is painted. It
+follows a synced crosshair's veil too.
 
 ### In-chart UI
 

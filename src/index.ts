@@ -88,8 +88,12 @@ export type {
     IntroAnimation,
     AddIndicatorOptions,
     SettingsVisibilityPolicy,
+    PriceAxisOptions,
+    PriceAxisTick,
+    PriceAxisTickContext,
+    PriceAxisTicksFn,
 } from './core/options';
-export type { IndicatorHandle, IndicatorEventMap } from './core/IndicatorHandle';
+export type { CodeUpdateResult, IndicatorHandle, IndicatorEventMap } from './core/IndicatorHandle';
 export type { VelaEventMap } from './core/events/types';
 // The script-run surface: the `script:run` payload and what `chart.runScript()` resolves.
 export type { ScriptRun, ScriptRunCause, ScriptRunResult } from './core/script-run';

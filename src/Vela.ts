@@ -85,6 +85,7 @@ export class Vela {
             downColor: options.downColor ?? BEARISH,
             priceStyle: options.priceStyle ?? 'candles',
             timeFormat: options.timeFormat ?? '',
+            priceAxisTicks: options.priceAxis?.ticks ?? null,
         };
         const RendererClass = options.renderer ?? NativeRenderer;
         if (typeof RendererClass !== 'function') {

@@ -9,6 +9,14 @@ export interface IndicatorEventMap extends Record<string, unknown> {
     alert: { id: string; message: string; title?: string; time: number };
 }
 
+/** How a {@link IndicatorHandle.updateCode} call ended. Never a rejection. */
+export interface CodeUpdateResult {
+    /** The new code is the one running (or, hidden, the one that will run when shown). */
+    ok: boolean;
+    /** Why the update did not land — the previous code is running again. Null on success. */
+    error: Error | null;
+}
+
 /**
  * What `chart.addIndicator(...)` returns to the developer. The handle is usable
  * synchronously; data renders when execution resolves (see `on('ready')`).
@@ -48,13 +56,23 @@ export interface IndicatorHandle {
      * Replace the script and re-run it **in place** — same `id`, same legend row, same
      * pane placement, same handle; the seam for a host editor's "run my edit" and for a
      * library's "update to the new version". The new source is prepared first: only once
-     * it compiles is the running script stopped and the new one started, so a broken edit
-     * leaves the current indicator computing and painting and reports through `error`.
-     * Input and prop values survive where the new script still declares their key;
-     * anything else takes the new declaration default. No-op for a native indicator and
-     * for an unchanged source.
+     * it compiles is the running script stopped and the new one started. Until the new
+     * code's first run has landed, a failure — at compile time or at run time — puts the
+     * previous code back, with its input and prop values, and reports through `error`; the
+     * visuals on the chart are never dropped in between.
+     *
+     * An edited input or prop value survives where the new script still declares its key;
+     * a value still at its old declared default takes the NEW default, and anything else
+     * takes the new declaration default — all before the first run, so the new code
+     * computes once, with its final values.
+     *
+     * Resolves once the new code's first run has landed (`{ ok: true }`), or with
+     * `{ ok: false, error }` after a failure. A HIDDEN indicator resolves as soon as the
+     * source has compiled — it computes nothing until shown. An unchanged source resolves
+     * at once; a call superseded by a later one resolves with that later call's outcome.
+     * Never rejects; a native indicator resolves `ok: false`.
      */
-    updateCode(source: string): void;
+    updateCode(source: string): Promise<CodeUpdateResult>;
     /**
      * Hide or show the indicator. Hiding **suspends** it — its visuals are dropped (the legend
      * row stays, marked hidden) and its computation stops (the engine session is torn down), so a

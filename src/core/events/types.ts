@@ -61,6 +61,18 @@ export interface VelaEventMap extends Record<string, unknown> {
    * leave the app theme alone.
    */
   "theme:changed": VelaTheme;
+  /**
+   * The base price style is switching `from` → `to` (candles, line, area, a chart-type
+   * id, …). Fires synchronously BEFORE the chart repaints in the new style, whatever
+   * the path: the topbar style menu, `ctx.setPriceStyle`,
+   * `chart.renderer.set('priceStyle', …)`, the settings dialog, `applyConfig` and
+   * config templates, or a state restore. Never fires for the style the chart was
+   * created with, nor for a set to the style already shown. While it runs the chart
+   * still shows `from`, so a listener can capture the outgoing frame
+   * (`chart.renderer.screenshotCanvas()`) to animate the switch. Listeners must not
+   * change the price style again from inside it.
+   */
+  "priceStyle:change": { from: string; to: string };
   /** A study pane was reordered one slot (`dir`) — carries enough to invert for undo/redo. */
   "pane:moved": { paneId: string; dir: "up" | "down" };
   /** A user drawing was created (interactively or via `chart.drawings.add`). */

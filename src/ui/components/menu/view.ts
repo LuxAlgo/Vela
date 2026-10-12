@@ -7,6 +7,8 @@ import { runMachine, spreadProps, type HandleOf } from '../../zag';
 import { injectStyles } from '../../styles';
 import { floatingLayerHost } from '../../tokens';
 import { iconEl } from '../../icons';
+import { announceSurface } from '../../surface-events';
+import { holdForExit, type SurfaceExit } from '../../surface-exit';
 import { menuController, type MenuControllerOptions, type MenuItemDescriptor } from './controller';
 import { MENU_CSS, MENU_STYLE_ID } from './styles';
 import * as zagMenu from '@zag-js/menu';
@@ -29,6 +31,13 @@ export interface MenuOptions extends MenuControllerOptions {
      *  edge. Submenus inherit the mode. Dropdown menus (a trigger button opening a
      *  picker) keep the default wash. */
     checkmarks?: boolean;
+    /** Sit each row's icon in a squared badge (a 24px rounded tile with a faint fill and a soft
+     *  border) instead of a bare glyph: its glyph brightens on a hovered row, and the tile
+     *  inverts on the selected one. A
+     *  level where some rows carry an icon reserves the badge column on all its rows so
+     *  labels align; a level with no icon keeps its natural left edge. With `checkmarks`,
+     *  the mark column leads and the badge follows. Submenus inherit the mode. */
+    iconBadges?: boolean;
 }
 
 interface SurfaceOptions {
@@ -37,11 +46,14 @@ interface SurfaceOptions {
     onSelect: (id: string) => void;
     onOpenChange?: (open: boolean) => void;
     trigger?: HTMLElement;
+    /** A submenu's branch row — announced as its opener (it takes trigger-ITEM props, not `trigger`'s). */
+    opener?: HTMLElement;
     triggerId?: string;
     id?: string;
     minWidth?: string;
     onFavorite?: (id: string, on: boolean) => void;
     checkmarks?: boolean;
+    iconBadges?: boolean;
 }
 
 /**
@@ -60,12 +72,18 @@ class Surface {
     private readonly onSelect: (id: string) => void;
     private readonly onFavorite?: (id: string, on: boolean) => void;
     private readonly checkmarks: boolean;
+    private readonly iconBadges: boolean;
     private items: readonly MenuItemDescriptor[] = [];
     /** Branch item id → the surface it opens. */
     private readonly subs = new Map<string, Surface>();
     /** Trigger rect captured when this level opened — the list stays put if the
      *  trigger then moves (favorite chips shifting the caret). */
     private pinnedAnchor: { x: number; y: number; width: number; height: number } | null = null;
+    /** The open state last announced — see {@link announce}. */
+    private shown = false;
+    /** The list's exit animation after a close; a reopen cancels it. */
+    private exit: SurfaceExit | null = null;
+    private readonly opener: HTMLElement | null;
 
     constructor(doc: Document, opts: SurfaceOptions) {
         this.doc = doc;
@@ -73,6 +91,7 @@ class Surface {
         this.onSelect = opts.onSelect;
         this.onFavorite = opts.onFavorite;
         this.checkmarks = opts.checkmarks === true;
+        this.iconBadges = opts.iconBadges === true;
 
         this.positioner = doc.createElement('div');
         this.positioner.className = 'vela-ui-layer';
@@ -83,6 +102,7 @@ class Surface {
         this.host.appendChild(this.positioner);
 
         const trigger = opts.trigger;
+        this.opener = trigger ?? opts.opener ?? null;
         this.ctrl = menuController({
             items: [],
             id: opts.id,
@@ -104,15 +124,40 @@ class Surface {
         if (opts.triggerId && trigger) trigger.id = opts.triggerId;
         this.handle = runMachine(this.ctrl.machine, this.ctrl.props, (service) => {
             const api = this.ctrl.connect(service);
+            // Close announces while the list still shows, open once it does.
+            const closing = this.shown && !api.open;
+            if (closing) this.announce(false);
+            if (api.open && this.exit) {
+                this.exit.cancel();
+                this.exit = null;
+            }
             if (trigger) spreadProps(trigger, api.getTriggerProps(), this.mid);
             spreadProps(this.positioner, api.getPositionerProps(), this.mid);
             spreadProps(this.list, api.getContentProps(), this.mid);
             this.project(api);
+            if (closing) this.holdExit();
+            if (api.open && !this.shown) this.announce(true);
+        });
+    }
+
+    /** Keep the just-closed list up through its exit animation. `spreadProps` re-applies
+     *  `hidden` only when the machine's value for it changes, so the list stays shown until
+     *  the exit ends — or until a reopen, which projects `hidden: false` itself. */
+    private holdExit(): void {
+        this.list.hidden = false;
+        this.exit = holdForExit(this.list, () => {
+            this.exit = null;
+            if (!this.shown) this.list.hidden = true;
         });
     }
 
     get api(): zagMenu.Api {
         return this.ctrl.connect(this.handle.service);
+    }
+
+    private announce(open: boolean): void {
+        this.shown = open;
+        announceSurface(this.list, open, 'menu', this.opener);
     }
 
     setItems(items: readonly MenuItemDescriptor[]): void {
@@ -135,7 +180,10 @@ class Surface {
     destroy(): void {
         for (const sub of this.subs.values()) sub.destroy();
         this.subs.clear();
+        this.exit?.finish();
         this.handle.stop();
+        // Torn down while open: the stopped machine never projects the close.
+        if (this.shown) this.announce(false);
         this.positioner.remove();
     }
 
@@ -168,6 +216,12 @@ class Surface {
         // left edge instead of carrying an empty gutter.
         const markable = this.checkmarks
             && this.items.some((i) => !(i.submenu && i.submenu.length > 0) && !i.toggle && i.checked !== undefined);
+        // Same for icons: once a row of this level carries one, the others keep an empty
+        // icon slot (an empty badge in badge mode) so every label shares one left edge.
+        const iconic = this.items.some((i) => !!i.icon);
+        const badged = this.iconBadges && iconic;
+        if (badged) this.list.dataset.badges = '1';
+        else delete this.list.dataset.badges;
         for (const item of this.items) {
             if (item.separatorBefore) {
                 const sep = doc.createElement('li');
@@ -200,7 +254,16 @@ class Surface {
                 // marks the active entry (hover stays the lighter wash).
                 li.dataset.checked = '1';
             }
-            if (item.icon) li.appendChild(iconEl(item.icon, doc));
+            if (badged) {
+                const badge = doc.createElement('span');
+                badge.className = 'vela-menu-badge';
+                if (item.icon) badge.appendChild(iconEl(item.icon, doc));
+                li.appendChild(badge);
+            } else if (item.icon) {
+                li.appendChild(iconEl(item.icon, doc));
+            } else if (iconic) {
+                li.appendChild(iconEl('', doc));
+            }
             const label = doc.createElement('span');
             label.className = 'vela-menu-label';
             label.textContent = item.label;
@@ -246,9 +309,11 @@ class Surface {
                 const sub = new Surface(doc, {
                     host: this.host,
                     placement: 'right-start',
+                    opener: li,
                     onSelect: this.onSelect,
                     onFavorite: this.onFavorite,
                     checkmarks: this.checkmarks,
+                    iconBadges: this.iconBadges,
                     id: `${this.mid}--${item.id}`,
                 });
                 sub.setItems(item.submenu ?? []);
@@ -278,6 +343,7 @@ export class Menu {
             minWidth: opts.minWidth,
             onFavorite: opts.onFavorite,
             checkmarks: opts.checkmarks,
+            iconBadges: opts.iconBadges,
         });
         this.root.setItems(opts.items);
     }

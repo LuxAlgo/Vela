@@ -442,3 +442,16 @@ describe('ChartCell symbol metadata — the session verdict does not wait for th
         cell.destroy();
     });
 });
+
+describe('ChartCell indicator picker library', () => {
+    // Vela is now the name of whole charting products built on this library, so the
+    // library's own indicators can't be filed under "Vela" in their picker.
+    it('files the built-in indicators under "Built-in", never under the product name', async () => {
+        const cell = makeCell();
+        await settle();
+        const natives = cell.libraryRows().filter((r) => r.native);
+        expect(natives.length).toBeGreaterThan(0);
+        expect(new Set(natives.map((r) => r.category))).toEqual(new Set(['Built-in']));
+        cell.destroy();
+    });
+});

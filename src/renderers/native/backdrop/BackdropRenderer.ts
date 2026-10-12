@@ -1,7 +1,8 @@
 import type { VelaTheme } from '../../../core/options';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
-import { percentScaleFor, type SceneGraph } from '../core/SceneGraph';
-import { paneAxisTicks, timeTicks } from '../chrome/ticks';
+import type { SceneGraph } from '../core/SceneGraph';
+import { timeTicks } from '../chrome/ticks';
+import { PriceAxisTickSource } from '../chrome/priceAxisTicks';
 import { tzOffsetMs } from '../chrome/tz';
 
 /** Clip one time-band rectangle to its permitted horizontal paint interval. */
@@ -36,6 +37,9 @@ export function bandEdgeSlot(logical: number): number {
 export class BackdropRenderer {
     private canvas: HTMLCanvasElement | null = null;
     private ctx: CanvasRenderingContext2D | null = null;
+
+    /** `axisTicks` is shared with the chrome layer, so gridlines and price labels agree. */
+    constructor(private readonly axisTicks = new PriceAxisTickSource()) {}
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
@@ -122,9 +126,8 @@ export class BackdropRenderer {
             if (scene.showGrid && gridHorz.visible && !pane.collapsed) {
                 ctx.globalAlpha = gridAlpha; // fade horizontal gridlines so they don't show through fading candles
                 ctx.strokeStyle = horzColor;
-                const pct = percentScaleFor(scene, pane);
                 ctx.beginPath();
-                for (const t of paneAxisTicks(pane.scale, pane.bounds.height, pct, undefined, pane.axisFormat)) {
+                for (const t of this.axisTicks.ticksFor(scene, pane, coords)) {
                     const y = Math.round(coords.priceToY(t.price, pane.scale, pane.bounds)) + 0.5;
                     if (y < pane.bounds.top || y > pane.bounds.top + pane.bounds.height) continue;
                     ctx.moveTo(0, y);

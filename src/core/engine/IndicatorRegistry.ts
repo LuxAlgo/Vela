@@ -1,10 +1,22 @@
 import type { IndicatorModel } from '../model/indicator';
-import type { InputValue } from '../model/inputs';
+import type { InputSchema, InputValue } from '../model/inputs';
+import type { CodeUpdateResult } from '../IndicatorHandle';
 import type { PreparedScript, ScriptingEngine, ExecutionSession } from '../ports/ScriptingEngine';
 import type { IndicatorRenderHandle } from '../ports/IChartRenderer';
 import type { AddIndicatorOptions } from '../options';
 import type { ScriptRunCause } from '../script-run';
 import type { NativeIndicator, NativeIndicatorDescriptor } from '../native-indicators/NativeIndicator';
+
+/** Everything `updateCode` swaps — what a failed update restores. */
+export interface CodeSnapshot {
+    source: string;
+    engine?: ScriptingEngine;
+    prepared?: PreparedScript;
+    inputValues: Record<string, InputValue>;
+    propValues: Record<string, InputValue>;
+    inputs: InputSchema[];
+    props: InputSchema[];
+}
 
 /** Per-indicator instance state held by the orchestrator. */
 export interface IndicatorRecord {
@@ -36,6 +48,16 @@ export interface IndicatorRecord {
      * race the older one onto the chart.
      */
     pendingSource?: string;
+    /**
+     * Callers of `updateCode` awaiting the current chain of edits. One list on purpose:
+     * the latest edit's outcome settles every call it superseded.
+     */
+    codeWaiters?: Array<(result: CodeUpdateResult) => void>;
+    /**
+     * A swapped-in source whose first run has not landed yet, with the state a failure
+     * puts back — the last code KNOWN to run, kept across superseding edits.
+     */
+    codeTrial?: { previous: CodeSnapshot };
     /** The live execution session (static or streaming) — poked on input/viewport/bar changes. */
     session?: ExecutionSession;
     /**
