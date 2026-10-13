@@ -65,7 +65,7 @@ import { IndicatorDrawingSlices, mergeSlices } from './drawings/IndicatorDrawing
 import { createProjector } from './drawings/Projector';
 import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
-import { formatPriceLabel } from './chrome/ticks';
+import { formatPriceLabel, tickDecimals } from './chrome/ticks';
 import { zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
@@ -1614,6 +1614,8 @@ export class NativeRenderer implements IChartRenderer {
                 };
             },
             chartBarMs: () => this.coords.barInterval,
+            timeZone: () => this.scene.timezone,
+            priceDecimals: () => (this.scene.priceMintick ? tickDecimals(this.scene.priceMintick) : null),
             snap: (pt, paneId, mode, cursorPx) => this.snapToCandle(pt, paneId, mode, cursorPx),
             setSnapMode: (mode) => this.setSnapMode(mode),
             setToolbarGutter: (px) => this.setToolbarGutter(px),
@@ -4325,7 +4327,10 @@ function applyPatch(model: IndicatorModel, patch: ScenePatch): void {
             const s = model.series.find((x) => x.id === delta.seriesId);
             if (!s) continue;
             if (delta.kind === 'points' && isLineLikeSeries(s)) s.points = delta.points;
-            else if (delta.kind === 'bars' && (s.kind === 'candle' || s.kind === 'bar')) s.bars = delta.bars;
+            else if (delta.kind === 'bars' && (s.kind === 'candle' || s.kind === 'bar')) {
+                s.bars = delta.bars;
+                if (delta.barColors !== undefined) s.barColors = delta.barColors;
+            }
         }
         if (patch.lines) model.lines = patch.lines;
         if (patch.boxes) model.boxes = patch.boxes;

@@ -3024,7 +3024,9 @@ function modelToValuePatch(model: IndicatorModel): ValuePatch {
     let to = 0;
     for (const s of model.series) {
         if (s.kind === 'candle' || s.kind === 'bar') {
-            series.push({ seriesId: s.id, kind: 'bars', bars: s.bars });
+            // ALWAYS stated, `[]` included: the renderer keeps colors a delta omits, and they are
+            // index-aligned to the bars, so a stale set would slide onto whatever bar now holds its index.
+            series.push({ seriesId: s.id, kind: 'bars', bars: s.bars, barColors: s.barColors ?? [] });
             for (const b of s.bars) {
                 if (b.time < from) from = b.time;
                 if (b.time > to) to = b.time;

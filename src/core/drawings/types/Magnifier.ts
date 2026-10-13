@@ -28,6 +28,14 @@ export const MAGNIFIER_TIMEFRAME_OPTIONS: ReadonlyArray<{ value: string; label: 
     { value: 'D', label: '1D', ms: 86_400_000 },
 ];
 
+/** The choices strictly below a chart bar of `chartMs` (all of them when it is unknown);
+ *  `auto` rides along while at least one concrete lower step exists. */
+export function magnifierTimeframesBelow(chartMs: number): Array<{ value: string; label: string; ms: number }> {
+    if (!(chartMs > 0)) return [...MAGNIFIER_TIMEFRAME_OPTIONS];
+    const lower = MAGNIFIER_TIMEFRAME_OPTIONS.filter((o) => o.ms > 0 && o.ms < chartMs);
+    return lower.length > 0 ? [MAGNIFIER_TIMEFRAME_OPTIONS[0]!, ...lower] : [];
+}
+
 /** Display label for a magnifier timeframe value (`'60'` → `'1h'`, `'auto'` → `'Auto'`). */
 export function magnifierTimeframeLabel(value: string): string {
     const opt = MAGNIFIER_TIMEFRAME_OPTIONS.find((o) => o.value === value);

@@ -1,9 +1,9 @@
 import { FibLevels } from './FibLevels';
 import type { FibLevel } from './FibRatios';
-import { fibLevels } from '../levelPalette';
+import { FIB_PRESETS } from '../fibPresets';
 
-/** Standard retracement ratios (0 → 1). */
-const LEVELS = fibLevels([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
+/** The classic set: the standard pullback ratios on, the rest of the ladder off. */
+const LEVELS = FIB_PRESETS[0]!.levels;
 
 /**
  * Fibonacci retracement: horizontal levels between two swing anchors. Level 0 sits on the

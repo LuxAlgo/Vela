@@ -2,7 +2,7 @@ import { Drawing, type DrawingTypeKey, type SerializedDrawing } from './Drawing'
 import type { DrawingStyle } from './style';
 import { DEFAULT_DRAWING_COLOR } from './style';
 import { svg24 } from '../icons';
-import { ACCENT, BEARISH, BULLISH, INFO, MARKER, NEUTRAL } from '../palette';
+import { ACCENT, BEARISH, BULLISH, INFO, MARKER, NEUTRAL, WARNING } from '../palette';
 import { TrendLine } from './types/TrendLine';
 import { HorizontalLine } from './types/HorizontalLine';
 import { Ray } from './types/Ray';
@@ -75,6 +75,9 @@ import { Cypher } from './types/Cypher';
 import { DatePriceRange } from './types/DatePriceRange';
 import { PositionTool } from './types/PositionTool';
 import { Magnifier } from './types/Magnifier';
+import { FairValueGap } from './types/FairValueGap';
+import { OrderBlock } from './types/OrderBlock';
+import { Liquidity } from './types/Liquidity';
 
 /** What a drawing type contributes to the toolbar + factory (renderer-neutral). */
 export interface DrawingTypeMeta {
@@ -973,4 +976,39 @@ registerDrawingType({
     icon: FRVP_ICON,
     defaultStyle: { lineColor: BULLISH, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FixedRangeVolumeProfile(init),
+});
+
+// ── price action ──
+const FVG_ICON = svg24('<path d="M6 15v6M12 3v18M18 2v6"/><rect x="3.5" y="9.5" width="17" height="5" rx="1" fill="currentColor" fill-opacity="0.28" stroke-width="1.4"/>');
+const ORDER_BLOCK_ICON = svg24('<rect x="4" y="7.5" width="5" height="8" rx="1"/><path d="M6.5 4v3.5M6.5 15.5V19"/><rect x="9" y="7.5" width="11.5" height="8" rx="1" fill="currentColor" fill-opacity="0.22" stroke-width="1.4"/>');
+const LIQUIDITY_ICON = svg24('<path d="M3 8h12" stroke-dasharray="2.5 2.5"/><path d="m16.5 4.5 4 4m0-4-4 4"/><path d="M3.5 20 8 13.5l4 3.5 5-8"/>');
+
+registerDrawingType({
+    type: 'fairvaluegap',
+    group: 'priceaction',
+    label: 'Fair Value Gap',
+    icon: FVG_ICON,
+    defaultStyle: { lineColor: BULLISH, lineWidth: 1, lineStyle: 'solid' },
+    placementHint: 'Click the middle candle of a gap',
+    create: (init) => new FairValueGap(init),
+});
+
+registerDrawingType({
+    type: 'orderblock',
+    group: 'priceaction',
+    label: 'Order Block',
+    icon: ORDER_BLOCK_ICON,
+    defaultStyle: { lineColor: BULLISH, lineWidth: 1, lineStyle: 'solid' },
+    placementHint: 'Click the candle that forms the block',
+    create: (init) => new OrderBlock(init),
+});
+
+registerDrawingType({
+    type: 'liquidity',
+    group: 'priceaction',
+    label: 'Liquidity',
+    icon: LIQUIDITY_ICON,
+    defaultStyle: { lineColor: WARNING, lineWidth: 1, lineStyle: 'solid' },
+    placementHint: "Click near a candle's high or low",
+    create: (init) => new Liquidity(init),
 });

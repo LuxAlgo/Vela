@@ -16,6 +16,10 @@ export interface DrawingStyle {
     fillOpacity?: number;
     arrowLeft?: boolean;
     arrowRight?: boolean;
+    /** Run the line past its first anchor to the chart edge (trend line). */
+    extendLeft?: boolean;
+    /** Run the line past its second anchor to the chart edge (trend line). */
+    extendRight?: boolean;
 }
 
 /** A drawing's editable text/annotation block. */
@@ -28,6 +32,10 @@ export interface DrawingText {
     vAlign: 'top' | 'center' | 'bottom';
     bold?: boolean;
     italic?: boolean;
+    /** Where a line's label sits along it (line tools); absent = the middle. */
+    place?: 'start' | 'middle' | 'end';
+    /** Which side of the line its label sits on (line tools); absent = above. */
+    side?: 'above' | 'below';
 }
 
 /** The default drawing accent — the Vela logo blue. */

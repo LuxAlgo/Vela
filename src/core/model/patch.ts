@@ -1,6 +1,6 @@
 import type { Millis } from './time';
 import type { OHLCV } from './ohlcv';
-import type { SeriesPoint, SeriesSpec, MarkerPoint } from './series';
+import type { SeriesPoint, SeriesSpec, MarkerPoint, CandleBarColor } from './series';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from './drawings';
 import type { TradeExecution } from './trades';
 
@@ -12,7 +12,17 @@ export interface DirtyRange {
 /** Per-series changed tail in a value patch. */
 export type SeriesValueDelta =
     | { seriesId: string; kind: 'points'; points: SeriesPoint[] }
-    | { seriesId: string; kind: 'bars'; bars: OHLCV[] }
+    | {
+          seriesId: string;
+          kind: 'bars';
+          bars: OHLCV[];
+          /**
+           * The series' per-bar colors (see `CandleSeries.barColors`), index-aligned to `bars`.
+           * Omitted keeps the current ones; the orchestrator always states them, `[]` included,
+           * so a run that emits no colors clears the previous set instead of leaving it on new bars.
+           */
+          barColors?: Array<CandleBarColor | null>;
+      }
     | { seriesId: string; kind: 'markers'; markers: MarkerPoint[] };
 
 /**

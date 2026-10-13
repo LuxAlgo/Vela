@@ -22,7 +22,7 @@ export { localStorageAdapter, type VelaStorage, type WidgetStorage } from './per
 // The unified shell-state document — the SAME format `vela/workspace` exposes; the
 // widget's `getState()`/`applyState()` speak it with a single `c1` cell.
 export { encodeState, decodeState, sanitizeState } from '../state/document';
-export type { WorkspaceState, CellState, ChartState, PanelsState } from '../state/document';
+export type { WorkspaceState, CellState, ChartState, PanelsState, DrawingToolsState } from '../state/document';
 export { SidePanel, clampPanelWidth, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_MIN_WIDTH, DEFAULT_PANEL_MAX_WIDTH, type SidePanelOptions } from './side-panel';
 export { PanelDock, type PanelChrome, type PanelDockDeps, type BuiltInPanel } from './panel-dock';
 export { ObjectTree } from './object-tree';

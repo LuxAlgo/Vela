@@ -20,6 +20,9 @@ export interface SettingsField {
     options?: ReadonlyArray<{ value: string; label: string }>;
     /** Cosmetic grouping in the popup. */
     group?: 'line' | 'fill' | 'text' | 'behavior';
+    /** Only offered while another setting holds one of these values (an option that matters
+     *  only in some modes). */
+    when?: { path: string; in: readonly unknown[] };
 }
 
 export interface SettingsSchema {

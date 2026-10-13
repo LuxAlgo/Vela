@@ -4,7 +4,7 @@ import { createProjector } from '../src/renderers/native/drawings/Projector';
 import { deletableSelection, deleteTargets } from '../src/renderers/native/drawings/DrawingHitTester';
 import { effectiveSnapMode } from '../src/renderers/native/core/InputController';
 import { CoordinateSystem } from '../src/renderers/native/core/CoordinateSystem';
-import { createDrawing, DEFAULT_DRAWING_COLOR, MAX_PATH_POINTS, type Drawing, type DrawingIntent, type DrawingStyle, type DrawingTypeKey, type Projector } from '../src/core/drawings';
+import { createDrawing, DEFAULT_DRAWING_COLOR, MAX_PATH_POINTS, type Drawing, type DrawingIntent, type DrawingStyle, type DrawingToolDefaults, type DrawingTypeKey, type Projector } from '../src/core/drawings';
 
 /** Linear projector: x = time, y = 100 − price, single pane 'price'. */
 function fakeProjector(): Projector {
@@ -21,7 +21,7 @@ function fakeProjector(): Projector {
 function harness(tool: DrawingTypeKey | null, drawings: Drawing[] = []) {
     let active = tool;
     let hovered: string | null = null;
-    let lastStyle: DrawingStyle | undefined;
+    let defaults: DrawingToolDefaults | undefined;
     const selected = new Set<string>();
     const intents: DrawingIntent[] = [];
     const settings: Array<[string, number, number]> = [];
@@ -45,7 +45,7 @@ function harness(tool: DrawingTypeKey | null, drawings: Drawing[] = []) {
             }
             return snapped;
         },
-        lastStyle: () => lastStyle,
+        toolDefaults: () => defaults,
     });
     return {
         it,
@@ -53,7 +53,8 @@ function harness(tool: DrawingTypeKey | null, drawings: Drawing[] = []) {
         settings,
         setTool: (t: DrawingTypeKey | null) => (active = t),
         setHovered: (s: string | null) => (hovered = s),
-        setLastStyle: (s: DrawingStyle | undefined) => (lastStyle = s),
+        setLastStyle: (s: DrawingStyle | undefined) => (defaults = s ? { style: s } : undefined),
+        setDefaults: (d: DrawingToolDefaults | undefined) => (defaults = d),
         setSelected: (ids: string[]) => {
             selected.clear();
             for (const id of ids) selected.add(id);
@@ -92,6 +93,22 @@ describe('DrawingInteraction: placing', () => {
         expect(ghost!.style.lineColor).toBe('#ff0000');
         expect(ghost!.style.lineWidth).toBe(4);
         expect(ghost!.style.lineStyle).toBe('dashed');
+    });
+
+    it('the placement ghost previews a tool\'s remembered levels too, not just its colors', () => {
+        const h = harness('fibretracement');
+        const levels = [
+            { ratio: 0, color: '#111111', enabled: true },
+            { ratio: 0.705, color: '#222222', enabled: true },
+            { ratio: 1, color: '#333333', enabled: true },
+        ];
+        h.setDefaults({ props: { levels, reverse: true } });
+        h.it.down(10, 90);
+        h.it.move(40, 60);
+        const ghost = h.it.ghost() as unknown as { levels: Array<{ ratio: number }>; reverse: boolean } | null;
+        expect(ghost).not.toBeNull();
+        expect(ghost!.levels.map((l) => l.ratio)).toEqual([0, 0.705, 1]);
+        expect(ghost!.reverse).toBe(true);
     });
 
     it('falls back to the type default color when no last-used style exists', () => {

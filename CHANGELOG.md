@@ -4,6 +4,54 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Drawing tools remember their settings.** Each tool now starts its next drawing from the
+  last one you styled: colors, widths, text styling and the tool's own settings, such as a Fib's
+  levels or a position's account size. Styling several drawings at once counts too. A
+  workspace or widget saves these settings in its state document, along with the magnet and
+  stay-in-drawing-mode, and shares them across every chart in the grid, so they survive a
+  reload. Read and restore the set with `chart.drawings.toolDefaults()` and
+  `setToolDefaults()`, follow changes on `drawing:defaults`, and send a tool back to its
+  factory look with `resetToolDefaults()`.
+- **A full settings panel for every drawing.** The gear on a drawing's toolbar, or a
+  double-click on the drawing, opens one panel with all of the tool's settings: its look, its own
+  options, its label, the price and time of each point, and the timeframes it shows on. Options
+  appear only when they apply, sections fold to a one-line summary, and Cancel puts the drawing
+  back as it was. The chart stays usable behind the panel.
+- **Styles for every tool.** Save a drawing's look as a named style and apply it to any drawing
+  of that tool in one click, with a live preview on hover. Line and area tools come with
+  ready-made styles. Styles are kept with the other tool settings; read and restore them with
+  `chart.drawings.toolTemplates()` and `setToolTemplates()`.
+- **Drawings can show on chosen timeframes.** Limit a drawing to intraday charts, to 1H and up,
+  or to any set of timeframes; other charts hide it. The limit is saved with the drawing as
+  `showOn`.
+- **Trend lines extend.** A trend line can run on past either point to the edge of the chart,
+  and its label can sit at the start, middle or end of the line, above or below it.
+- **Fib level sets.** The Fib retracement offers Classic, Extension and OTE level sets. Classic
+  shows the standard pullback ratios; Extension measures from the swing's start and projects
+  targets past its end; OTE marks the 0.62–0.79 entry zone with equilibrium at 0.5 and targets
+  beyond the swing. Every set keeps the whole ladder of levels, the unused ones switched off.
+  Retracement and extension levels can also run on to the chart's edge, show their ratio, their
+  price, both or neither, on the left or the right, and drop the tinted background between them.
+- **Price action tools.** A new Price Action section in the Fibonacci flyout holds three tools,
+  each placed with one click on a candle: **Fair Value Gap**, **Order Block** and **Liquidity**.
+  Each finds its zone or level on the candles and runs right until the event you choose (tested,
+  half-filled, filled, broken or swept), then marks it. A filled gap can flip once price closes
+  through it, and a broken order block can carry on as a breaker. In the settings panel, an option
+  that only matters in some modes appears only in them.
+
+### Changed
+
+- **One settings button.** The drawing toolbar's separate Levels, Position size and Settings
+  buttons are now a single Settings button that opens the full panel for every tool.
+- **Levels in a grid.** Fibs, Gann tools and Mach figures list every level in a two-column grid
+  of on/off, ratio and color. A new retracement or extension carries a longer ladder of levels,
+  with the familiar ones on. Level labels set before still show, but are no longer edited in the
+  panel.
+- **Labels stay readable over lines.** A drawing's label now carries a thin outline in the chart's
+  background color, so a line running through it no longer hides the words.
+
 ### Fixed
 
 - **Arrow mark labels no longer cover the arrow.** Text on an Arrow Mark Up now sits
@@ -14,6 +62,12 @@ All notable changes to Vela, newest first.
   It now sits on the side of the baseline the line leaves empty, with a halo that keeps it
   legible over candles.
 - **The indicator picker’s native category and ordering are now configurable.** You can  customize the native indicator category and on-chart badge, hide native indicators from the library, and choose whether native indicators or manifest categories appear first.
+- **Per-bar candle colors stay on their candles as an indicator updates.** The colors a
+  `plotcandle()` or `plotbar()` series sets for each bar were applied only when the
+  indicator was added. Later recalculations, such as each live tick, replaced the candles but
+  kept the old colors: a color change on an existing bar never showed, colors could land on
+  the wrong candles, and new candles kept the default up/down colors. Every recalculation now
+  repaints the candles with the colors it sets, and one that sets none clears the old ones.
 
 ## [0.8.3]
 
