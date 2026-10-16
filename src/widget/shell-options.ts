@@ -10,6 +10,15 @@ import type { IndicatorManifest, IndicatorLoader } from './indicators';
 import type { VelaStorage } from './persist';
 import type { TopbarComposition } from './topbar-composition';
 
+export interface IndicatorPickerConfig {
+    /** Label for the native indicator group and its on-chart badge.
+     *  `false` hides native entries from the picker library and suppresses their badge. */
+    nativeCategory?: string | false;
+
+    /** Order of the native group relative to manifest categories. */
+    order?: 'native-first' | 'manifest-first';
+}
+
 /** What a shell (widget or workspace) accepts BEYOND the chart options themselves. */
 export interface VelaShellOptions {
     /** Provider factories, keyed by provider name. The shell owns the call cycle: the
@@ -47,15 +56,10 @@ export interface VelaShellOptions {
      *  for `'screenshot'`); Ctrl+Z / Ctrl+Y stay — they belong to editing, not to the
      *  `'undo-redo'` buttons. */
     topbar?: TopbarComposition;
-    /** The built-in indicator picker's entry points — the topbar button, the mobile-bar
-     *  item, and the `/` shortcut. `false` removes them. The `indicators` manifest
-     *  still resolves and auto-adds.
-     *  @deprecated Removed in 0.7.0. To HIDE the built-in surface, omit `'indicators'`
-     *  from `topbar.left` (same effect: no button, no mobile stop, no `/`, no dialog).
-     *  To REPLACE it, a plugin registers its action under the id `'indicators'`
-     *  (`registerWidgetAction`) — the override takes the slot's whole surface and
-     *  needs no shell option at all. */
-    indicatorPicker?: boolean;
+    /** The built-in indicator picker. `false` disables the entire picker.
+     *  An object configures the native indicator group and its ordering.
+     *  The indicator manifest still resolves and enabled entries still auto-add. */
+    indicatorPicker?: boolean | IndicatorPickerConfig;
     /** Chrome size class. `'auto'` (default) follows the CONTAINER width plus a
      *  coarse-pointer heuristic; `'mobile'` / `'desktop'` pin it. Mobile swaps the
      *  topbar + desktop bottombar for one touch-first bottom bar, presents pickers

@@ -411,7 +411,7 @@ silently reorder them).
 | `timezone` | `'Etc/UTC'` | Display timezone (every cell): an IANA zone, or `'exchange'` — each cell renders in its own market's zone (Chicago for a CME future, New York for a US equity, UTC for crypto), as declared by its provider's symbol metadata. |
 | `statusline` / `watermark` / `bottombar` | `true` | Chrome toggles. |
 | `topbar` | defaults | Declarative topbar composition — `{ left, right }` lists of the VISIBLE entries, in order (see [Composing the topbar](#composing-the-topbar)). |
-| `indicatorPicker` | `true` | **Deprecated (removal in 0.7.0).** `false` removes the built-in indicator dialog's entry points. Replace it with the composition (omit `'indicators'` from `topbar.left` — same effect) or a plugin [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). |
+| `indicatorPicker` | `true` | `false` removes the built-in picker entry points. An object configures the native indicator category and ordering: `nativeCategory` accepts a custom label or `false` to hide native library entries; `order` accepts `'native-first'` (default) or `'manifest-first'`. [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). |
 | `layoutMode` | `'auto'` | Chrome size class — see [Mobile](#mobile). |
 | `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
 | `persist` / `storage` | off / localStorage | State persistence (see above). |
