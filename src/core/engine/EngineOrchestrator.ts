@@ -24,6 +24,7 @@ import {
     type NativeIndicatorContext,
     type NativeIndicatorInfo,
     type NativeIndicatorOutput,
+    type NativeIndicator,
 } from '../native-indicators/NativeIndicator';
 import { LiveSession } from './LiveSession';
 import { IndicatorHandleImpl, type IndicatorController } from './IndicatorHandleImpl';
@@ -156,6 +157,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private unresolvedUnsub: Unsubscribe | null = null;
     /** Latest chart visible range (left/right bar times), fed to viewport-dependent scripts. */
     private visibleRange: VisibleBarRange | null = null;
+    private viewportRevision = 0;
+    private readonly nativeViewportRevisions = new WeakMap<NativeIndicator, number>();
     private viewportUnsub: Unsubscribe | null = null;
     private viewportTimer: ReturnType<typeof setTimeout> | null = null;
     // ── live gap-heal state (missed bars while a tab was backgrounded/frozen) ──
@@ -334,6 +337,15 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         return r ? { left: r.from, right: r.to } : undefined;
     }
 
+    private notifyNativeViewport(record: IndicatorRecord, range: VisibleBarRange, revision: number): void {
+        const native = record.native!;
+        if (!native.started) return;
+        const instance = native.instance;
+        if (this.nativeViewportRevisions.get(instance) === revision) return;
+        instance.onViewport({ from: range.left, to: range.right });
+        this.nativeViewportRevisions.set(instance, revision);
+    }
+
     /** Resolve the engine for a language, defaulting when unspecified. */
     private engineFor(language?: string): ScriptingEngine {
         const lang = language ?? this.defaultLanguage;
@@ -382,6 +394,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     private onViewportChange(range: VisibleRange): void {
         this.visibleRange = { left: range.from, right: range.to };
+        const revision = ++this.viewportRevision;
         this.events.emit('viewport:changed', { from: range.from, to: range.to });
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportTimer = setTimeout(() => {
@@ -395,7 +408,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                 if (record.session && record.prepared?.reactsToViewport) {
                     record.pendingCause = 'viewport';
                     record.session.setVisibleRange(window);
-                } else if (record.native?.descriptor.reactsToViewport) record.native.instance.onViewport({ from: window.left, to: window.right });
+                } else if (record.native?.descriptor.reactsToViewport) this.notifyNativeViewport(record, window, revision);
             }
             // An active chart-type data engine streams in newly-visible data as the user scrolls.
             if (this.activeEngineStyle) this.typeEngines.get(this.activeEngineStyle)?.onViewport?.({ from: window.left, to: window.right });
@@ -2460,6 +2473,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             };
             native.instance.start(ctx, record.inputValues);
             native.started = true;
+            if (native.descriptor.reactsToViewport) {
+                const range = this.currentVisibleRange();
+                if (range) this.notifyNativeViewport(record, range, this.viewportRevision);
+            }
         } catch (err) {
             this.fail(id, handle, err);
         }
