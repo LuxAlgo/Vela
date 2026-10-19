@@ -4,17 +4,6 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
-### Changed
-
-- **Linear Regression is now two studies: an LSMA and a slope.** The Linear Regression
-  Curve opened an empty pane below the chart while its curve drew over the candles. It is
-  replaced by the **Least Squares Moving Average**, which draws on the price chart like the
-  other averages, colored by its slope and with a regression offset, and the **Linear
-  Regression Slope**, which plots the fit's change per bar in its own pane around a zero
-  line. Saved charts keep their study: a saved curve opens as an LSMA with the same length,
-  and a saved slope as a Linear Regression Slope.
-  _(Breaking: the `linear-regression` built-in type is gone. Add `lsma` or
-  `linear-regression-slope` instead.)_
 ### Added
 
 - **Size panes from code.** `chart.panes.setHeightWeight(paneId, weight)` sets how much of the
@@ -48,6 +37,18 @@ All notable changes to Vela, newest first.
   them, and the price scale keeps their values in view. Engines get this by emitting points
   beyond the last bar, one per future bar; older engines are unaffected.
 
+### Changed
+
+- **Linear Regression is now two studies: an LSMA and a slope.** The Linear Regression
+  Curve opened an empty pane below the chart while its curve drew over the candles. It is
+  replaced by the **Least Squares Moving Average**, which draws on the price chart like the
+  other averages, colored by its slope and with a regression offset, and the **Linear
+  Regression Slope**, which plots the fit's change per bar in its own pane around a zero
+  line. Saved charts keep their study: a saved curve opens as an LSMA with the same length,
+  and a saved slope as a Linear Regression Slope.
+  _(Breaking: the `linear-regression` built-in type is gone. Add `lsma` or
+  `linear-regression-slope` instead.)_
+
 ### Fixed
 
 - **Built-in indicators stay on their candles while history loads.** When older candles
@@ -77,6 +78,9 @@ All notable changes to Vela, newest first.
   the new bars arrived, and data the old market was still loading could land on the new one
   afterwards. The old market's visuals now disappear as soon as you switch, and nothing it was
   still loading is drawn.
+- **Viewport-aware native indicators start with the current visible range.** Native indicators
+  that react to viewport changes now receive the active range immediately after they start,
+  including after a market or timeframe change, without waiting for a later pan or zoom.
 
 ## [0.8.4]
 
