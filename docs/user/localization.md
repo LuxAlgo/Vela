@@ -290,7 +290,8 @@ Supply any of `price`, `percent`, `compact`, `timeTick`, `timeStamp`, `duration`
 `clock` in `formatters`. Each receives the value and a context: the `locale`, the display
 `timeZone`, the `surface` the value appears on (`'priceAxis'`, `'crosshair'`, `'lastPrice'`,
 `'timeAxis'`, `'legend'`, `'dataWindow'`, …), the formatter's own fields, and `fallback()`,
-which returns Vela's built-in formatting:
+which returns Vela's built-in formatting. On a daily or coarser chart, `timeStamp` receives
+`timeZone: 'UTC'`: those bars are dates stamped at 00:00 UTC, and read the same in every zone.
 
 ```ts
 new Vela('#chart', {

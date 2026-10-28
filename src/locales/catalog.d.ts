@@ -126,6 +126,7 @@ export interface VelaCoreMessageCatalog {
     'chart.settings.revealOnLoadHint': string;
     'chart.settings.right': string;
     'chart.settings.scaleBorderColor': string;
+    'chart.settings.scalePriceOnly': string;
     'chart.settings.scalesAndLines': string;
     'chart.settings.sections': string;
     'chart.settings.solid': string;
@@ -2013,6 +2014,7 @@ export interface VelaCoreMessageCatalog {
     'widget.contextMenu.scale.log': string;
     'widget.contextMenu.scale.percent': string;
     'widget.contextMenu.scale.regular': string;
+    'widget.contextMenu.scalePriceOnly': string;
     'widget.contextMenu.settings': string;
     'widget.contextMenu.timezone': string;
     'widget.dataWindow.close': string;

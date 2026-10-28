@@ -7,6 +7,7 @@
 import type { PctScale } from '../core/SceneGraph';
 import { ENGLISH_FORMAT } from '../../../core/format/formatters';
 import type { FormatSurface, ResolvedFormatters, TimeTickUnit } from '../../../core/format/types';
+import { displayZone } from './tz';
 
 export function priceTicks(min: number, max: number, target = 6): number[] {
     if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return [];
@@ -237,7 +238,8 @@ const STEP_LADDER = [
  * The crosshair's time-axis chip: `Sun 30 Aug '26 19:00`. Always the full calendar date
  * (weekday, day, month, two-digit year) so the stamp is unambiguous however far the view
  * is scrolled; the wall-clock time is appended only when bars are intraday — on a daily
- * or coarser bar the hh:mm would just echo the bar's open and add noise.
+ * or coarser bar the hh:mm would just echo the bar's open and add noise. A daily or coarser
+ * bar reads its UTC date in every zone (see {@link displayZone}).
  */
 export function formatTimeStamp(
     ms: number,
@@ -246,7 +248,7 @@ export function formatTimeStamp(
     fmt: ResolvedFormatters = ENGLISH_FORMAT,
     surface: FormatSurface = 'crosshair',
 ): string {
-    return fmt.timeStamp(ms, { timeZone, withTime: barIntervalMs < DAY, surface });
+    return fmt.timeStamp(ms, { timeZone: displayZone(timeZone, barIntervalMs), withTime: barIntervalMs < DAY, surface });
 }
 
 function pickStep(targetMs: number): number {

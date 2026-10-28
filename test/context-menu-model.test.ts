@@ -9,6 +9,7 @@ import {
     invertWrite,
     paneScaleAt,
     priceAxisItems,
+    priceOnlyState,
     scaleChoiceOf,
     scaleWrites,
     settingsSectionOf,
@@ -112,6 +113,21 @@ describe('price-axis menu', () => {
         expect(items.filter((i) => i.id.startsWith('scale:') && i.checked).map((i) => i.id)).toEqual(['scale:indexed']);
     });
 
+    it('offers "Scale price chart only" right under auto on the price scale, checked when on', () => {
+        const off = priceAxisItems({ ...AXIS_STATE, priceOnly: false });
+        expect(off.map((i) => i.label).slice(0, 3)).toEqual(['Auto (fits data to screen)', 'Scale price chart only', 'Invert scale']);
+        expect(off.find((i) => i.id === 'price-only')?.checked).toBe(false);
+        expect(priceAxisItems({ ...AXIS_STATE, priceOnly: true }).find((i) => i.id === 'price-only')?.checked).toBe(true);
+    });
+
+    it('"Scale price chart only" belongs to the price scale: a study pane\'s axis does not offer it', () => {
+        expect(priceOnlyState(null, true)).toBe(true);
+        expect(priceOnlyState(pane('price', 'price', 0, 100), false)).toBe(false);
+        expect(priceOnlyState(pane('p2', 'study', 0, 100), true)).toBeUndefined();
+        const study = priceAxisItems({ ...AXIS_STATE, priceOnly: priceOnlyState(pane('p2', 'study', 0, 100), true) });
+        expect(study.some((i) => i.id === 'price-only')).toBe(false);
+    });
+
     it('the submenu toggles mirror the label/level feature states', () => {
         const items = priceAxisItems({ ...AXIS_STATE, axisLabels: false, countdown: true, priceLine: false });
         const labels = items.find((i) => i.id === 'labels')!.submenu!;
@@ -180,7 +196,7 @@ describe('contributed rows sort together with the built-in ones', () => {
     it('every built-in row has a documented rank', () => {
         const zones = {
             body: BODY,
-            'price-axis': priceAxisItems(AXIS_STATE),
+            'price-axis': priceAxisItems({ ...AXIS_STATE, priceOnly: false }),
             'time-axis': timeAxisItems('Etc/UTC'),
         } as const;
         for (const [zone, items] of Object.entries(zones) as Array<[keyof typeof zones, MenuItemDescriptor[]]>) {

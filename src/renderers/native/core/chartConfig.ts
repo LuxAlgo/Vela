@@ -234,6 +234,8 @@ export interface ChartConfig {
         log: boolean;
         /** Inverted price axis (high at the bottom). */
         invert: boolean;
+        /** Autoscale fits the price bars only; indicators no longer widen the window. */
+        priceOnly: boolean;
         borderColor: string;
         labelsVisible: boolean;
         currentPriceLine: boolean;
@@ -686,6 +688,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             mode: isScaleMode(ps.mode) ? ps.mode : base.priceScale.mode,
             log: isBool(ps.log) ? ps.log : base.priceScale.log,
             invert: isBool(ps.invert) ? ps.invert : base.priceScale.invert,
+            priceOnly: isBool(ps.priceOnly) ? ps.priceOnly : base.priceScale.priceOnly,
             borderColor: isColor(ps.borderColor) ? ps.borderColor : base.priceScale.borderColor,
             labelsVisible: isBool(ps.labelsVisible) ? ps.labelsVisible : base.priceScale.labelsVisible,
             currentPriceLine: isBool(ps.currentPriceLine) ? ps.currentPriceLine : base.priceScale.currentPriceLine,

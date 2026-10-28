@@ -85,7 +85,8 @@ last non-zero duration set through the option or the feature.
 | Feature | Type | Default | Notes |
 |---|---|---|---|
 | `scaleMode` | `'price' \| 'percent'` | `'price'` | Price-axis display: absolute price, or percent change vs the first visible bar. Gridlines, axis labels, and the crosshair chip all follow it. |
-| `timezone` | IANA zone string | `'UTC'` | Time zone for the time-axis ticks and crosshair / data-window stamps, e.g. `'America/New_York'`. |
+| `scalePriceOnly` | boolean | `false` | Scale price chart only: the price pane's autoscale fits the price bars alone. Indicator plots, their price lines and script drawings no longer widen the window; they paint where they fall, off the edge of the pane when outside it. Study panes are unaffected, and with the price series hidden the pane keeps fitting its indicators. Saved as `priceScale.priceOnly` in `getConfig()`. |
+| `timezone` | IANA zone string | `'UTC'` | Time zone for the time-axis ticks and crosshair / data-window stamps, e.g. `'America/New_York'`. Applies to intraday bars; a daily or coarser bar is a date, stamped at 00:00 UTC, and shows that date in every zone. |
 | `gridlines` | boolean | `true` | Master toggle for the background gridlines (per-axis visibility/colors live in the rich config). |
 | `axisLabels` | boolean | `true` | Draw the price/time axis tick labels. |
 | `priceLabel` | boolean | `true` | The last-price axis tag. Independent of `currentPriceLine` — either can show without the other. |

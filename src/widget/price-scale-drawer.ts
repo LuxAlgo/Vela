@@ -1,5 +1,5 @@
 // Price-scale drawer (mobile) — opened by a long-press on the price axis. Mirrors the
-// desktop right-click price-axis menu: auto / invert / scale modes / label & level
+// desktop right-click price-axis menu: auto / price only / invert / scale modes / label & level
 // toggles, plus a hop into the full Scales settings tab.
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
@@ -10,6 +10,7 @@ import {
     invertWrite,
     paneScaleAt,
     priceAxisItems,
+    priceOnlyState,
     scaleChoiceOf,
     scaleWrites,
     settingsSectionOf,
@@ -97,6 +98,7 @@ export class PriceScaleDrawer {
         const pane = this.pane;
         const items = priceAxisItems({
             auto: chart.renderer.get('autoScale') !== false,
+            priceOnly: priceOnlyState(pane, this.flag('scalePriceOnly')),
             invert: pane ? pane.invert : this.flag('invertScale'),
             choice: scaleChoiceOf(pane ?? { mode: String(chart.renderer.get('scaleMode') ?? 'price'), log: this.flag('logScale') }),
             axisLabels: this.flag('axisLabels'),
@@ -171,6 +173,16 @@ export class PriceScaleDrawer {
                     checked: item.checked,
                     onClick: () => {
                         chart.renderer.set('autoScale', chart.renderer.get('autoScale') === false);
+                        this.render();
+                    },
+                });
+                continue;
+            }
+            if (item.id === 'price-only') {
+                row(item.label, {
+                    checked: item.checked,
+                    onClick: () => {
+                        chart.renderer.set('scalePriceOnly', !this.flag('scalePriceOnly'));
                         this.render();
                     },
                 });

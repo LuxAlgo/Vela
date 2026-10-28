@@ -75,7 +75,7 @@ import { createProjector } from './drawings/Projector';
 import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
 import { formatPriceLabel, tickDecimals } from './chrome/ticks';
-import { zonedDate } from './chrome/tz';
+import { displayZone, zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { markGroupOwnVisible, markGroupVisible, mergeMarksState } from '../shared/marks-state';
@@ -434,7 +434,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -548,6 +548,9 @@ export class NativeRenderer implements IChartRenderer {
                     return; // setPaneInvert invalidates
                 }
                 this.scene.invertScale = Boolean(value);
+                break;
+            case 'scalePriceOnly':
+                this.scene.scalePriceOnly = Boolean(value);
                 break;
             case 'autoScale':
                 // Auto on ⇒ drop every pane's frozen window so autoscale resumes (same as
@@ -666,6 +669,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'axisLabels': return this.scene.showAxisLabels;
             case 'scaleMode': return this.scene.scaleMode;
             case 'invertScale': return this.scene.invertScale;
+            case 'scalePriceOnly': return this.scene.scalePriceOnly;
             case 'paneScales': return this.paneScaleInfos();
             case 'autoScale': {
                 // Auto when the price pane isn't holding a frozen (manual) window.
@@ -810,6 +814,7 @@ export class NativeRenderer implements IChartRenderer {
                 mode: this.scene.scaleMode,
                 log: this.scene.logScale,
                 invert: this.scene.invertScale,
+                priceOnly: this.scene.scalePriceOnly,
                 borderColor: s.borderColor ?? t.borderColor,
                 labelsVisible: this.scene.showAxisLabels,
                 currentPriceLine: this.scene.showPriceLine,
@@ -948,6 +953,7 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.scaleMode = next.priceScale.mode;
         this.scene.logScale = next.priceScale.log;
         this.scene.invertScale = next.priceScale.invert;
+        this.scene.scalePriceOnly = next.priceScale.priceOnly;
         s.borderColor = keepInherit(s.borderColor, next.priceScale.borderColor, prevTheme.borderColor);
         this.scene.showAxisLabels = next.priceScale.labelsVisible;
         this.scene.showPriceLine = next.priceScale.currentPriceLine;
@@ -3280,7 +3286,7 @@ export class NativeRenderer implements IChartRenderer {
         const pricePane = this.dataWindowPricePane();
         const ohlc = this.dataWindowOHLC(bar, pricePane);
         const parts: string[] = [];
-        if (bar) parts.push(formatStamp(bar.time, this.scene.timezone));
+        if (bar) parts.push(formatStamp(bar.time, displayZone(this.scene.timezone, this.coords.barInterval)));
         if (ohlc) parts.push(this.t(TEXT.barSummary, { open: ohlc.o, high: ohlc.h, low: ohlc.l, close: ohlc.c }));
         for (const group of this.dataWindowGroups(idx, pricePane)) {
             for (const row of group.rows) parts.push(this.t(TEXT.valueSummary, { name: row.label, value: row.value }));
@@ -3298,7 +3304,7 @@ export class NativeRenderer implements IChartRenderer {
         const idx = this.hoverLogical != null ? this.hoverLogical : n - 1;
         const bar = this.bars[idx];
         const pricePane = this.dataWindowPricePane();
-        const parts = bar ? formatStampParts(bar.time, this.scene.timezone) : { date: '', time: '' };
+        const parts = bar ? formatStampParts(bar.time, displayZone(this.scene.timezone, this.coords.barInterval)) : { date: '', time: '' };
         return { date: parts.date, time: parts.time, ohlc: this.dataWindowOHLC(bar, pricePane), groups: this.dataWindowGroups(idx, pricePane) };
     }
 
@@ -3765,7 +3771,13 @@ export class NativeRenderer implements IChartRenderer {
                 && (!this.scene.candlesHidden || this.priceLayersAnchoredToBars(masterModels) || !this.paneHasMeasurableContent(masterModels, dr));
             // Each pane logs (or not) on its OWN flag — the price pane from the scene setting,
             // study panes from their own — so a study going log never touches the price pane.
-            pane.scaleTarget = computePaneScale(masterModels, this.bars, includeCandles, i0, s1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins);
+            // Scale price chart only: the bars alone set the price window, and indicator plots,
+            // price lines and Pine drawings paint where they fall (off the edge when outside it).
+            // With the bars out of the scale there is nothing else to fit, so it does not apply.
+            const priceOnly = pane === pricePane && this.scene.scalePriceOnly && includeCandles;
+            pane.scaleTarget = priceOnly
+                ? computePaneScale([], this.bars, true, i0, s1, null, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins)
+                : computePaneScale(masterModels, this.bars, includeCandles, i0, s1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins);
             // Percent baseline for THIS pane (the first visible value it measures change from):
             // the first visible bar close on the price pane, else the master series' first
             // visible value. 0 ⇒ no reference yet, so the axis falls back to absolute.

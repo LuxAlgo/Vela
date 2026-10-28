@@ -169,6 +169,9 @@ export class SceneGraph {
     logScale = false;
     /** Inverted price axis on the price pane (high at the bottom). Study panes carry their own. */
     invertScale = false;
+    /** The price pane's autoscale fits the bars alone: indicator plots, their price lines
+     *  and Pine drawings paint where they fall instead of widening the window. */
+    scalePriceOnly = false;
     /** Exchange tick size for the active symbol (e.g. 0.01), when known. Drives the
      *  price-axis decimals — the instrument's true precision instead of the zoom-derived
      *  formula. Undefined until symbol metadata loads (the formula is the fallback). */

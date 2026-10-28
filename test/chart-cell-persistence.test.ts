@@ -138,6 +138,11 @@ class FakeRenderer implements IChartRenderer {
         this.nativePushes.push([type, data]);
     }
     setIndicatorStatus(): void {}
+    /** The host settings tabs the cell pushes (the Status line tab among them). */
+    settingsSections: ReadonlyArray<{ id?: string; rows: readonly unknown[] }> = [];
+    setSettingsSections(sections: ReadonlyArray<{ id?: string; rows: readonly unknown[] }>): void {
+        this.settingsSections = sections;
+    }
 }
 
 /** The most recently constructed FakeRenderer (Vela instantiates the class). */
@@ -452,6 +457,47 @@ describe('ChartCell indicator picker library', () => {
         const natives = cell.libraryRows().filter((r) => r.native);
         expect(natives.length).toBeGreaterThan(0);
         expect(new Set(natives.map((r) => r.category))).toEqual(new Set(['Built-in']));
+        cell.destroy();
+    });
+});
+
+describe('ChartCell status line parts are saved with the chart', () => {
+    type ToggleRow = { kind: string; id?: string; get?: () => boolean; set?: (v: boolean) => void };
+    /** The Status line tab's switch for one part, as the settings dialog shows it. */
+    const statusLineRow = (id: string): ToggleRow => {
+        const tab = lastRenderer!.settingsSections.find((s) => s.id === 'status-line')!;
+        return (tab.rows as ToggleRow[]).find((r) => r.kind === 'toggle' && r.id === id)!;
+    };
+
+    it('a part switched off in the Status line tab is saved and asks for a save', async () => {
+        const onStateDirty = vi.fn();
+        const cell = makeCell({}, { statusline: true, onStateDirty });
+        await settle();
+        onStateDirty.mockClear();
+        statusLineRow('ohlc').set!(false);
+        expect(onStateDirty).toHaveBeenCalled();
+        expect(cell.dehydrate().statuslineParts).toEqual({ logo: true, name: true, market: true, ohlc: false, change: true });
+        cell.destroy();
+    });
+
+    it('a chart reopened from a saved document shows the parts it was saved with', async () => {
+        const cell = makeCell({ statuslineParts: { market: false, ohlc: false, change: false } }, { statusline: true });
+        await settle();
+        expect(statusLineRow('name').get!()).toBe(true);
+        expect(statusLineRow('market').get!()).toBe(false);
+        expect(statusLineRow('ohlc').get!()).toBe(false);
+        expect(statusLineRow('change').get!()).toBe(false);
+        expect(cell.dehydrate().statuslineParts).toEqual({ logo: true, name: true, market: false, ohlc: false, change: false });
+        cell.destroy();
+    });
+
+    it('applying a saved document to an open chart brings its status line back to the saved parts', async () => {
+        const cell = makeCell({}, { statusline: true });
+        await settle();
+        cell.rehydrate({ ...SEED, statuslineParts: { ohlc: false, change: false } });
+        expect(statusLineRow('ohlc').get!()).toBe(false);
+        expect(statusLineRow('change').get!()).toBe(false);
+        expect(statusLineRow('market').get!()).toBe(true);
         cell.destroy();
     });
 });

@@ -95,6 +95,7 @@ const TEXT = {
     indexedTo100: msg('chart.settings.indexedTo100', 'Indexed to 100'),
     logarithmic: msg('chart.settings.logarithmic', 'Logarithmic'),
     invertScale: msg('chart.settings.invertScale', 'Invert scale'),
+    scalePriceOnly: msg('chart.settings.scalePriceOnly', 'Scale price chart only'),
     lastPriceLine: msg('chart.settings.lastPriceLine', 'Last price line'),
     lastPriceLabel: msg('chart.settings.lastPriceLabel', 'Last price label'),
     countdownToBarClose: msg('chart.settings.countdownToBarClose', 'Countdown to bar close'),
@@ -726,6 +727,7 @@ export class SettingsDialog {
             ), 'scales.price-scale.mode'),
         );
         body.append(sid(this.boolRow(TEXT.invertScale, config.priceScale.invert, (v) => this.emit({ priceScale: { invert: v } })), 'scales.price-scale.invert'));
+        body.append(sid(this.boolRow(TEXT.scalePriceOnly, config.priceScale.priceOnly, (v) => this.emit({ priceScale: { priceOnly: v } })), 'scales.price-scale.price-only'));
         body.append(sid(this.separator(), 'scales.price-scale'));
         body.append(sid(this.boolRow(TEXT.lastPriceLine, config.priceScale.currentPriceLine, (v) => this.emit({ priceScale: { currentPriceLine: v } })), 'scales.price-scale.last-price-line'));
         body.append(sid(this.boolRow(TEXT.lastPriceLabel, config.priceScale.priceLabel, (v) => this.emit({ priceScale: { priceLabel: v } })), 'scales.price-scale.last-price-label'));

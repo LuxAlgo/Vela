@@ -15,7 +15,7 @@ import { paneAxisTicks, formatAxisValue, timeTicks } from './ticks';
 import { PriceAxisTickSource } from './priceAxisTicks';
 import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
 import { DARK_THEME } from '../../../core/theme';
-import { tzOffsetMs } from './tz';
+import { displayZone, tzOffsetMs } from './tz';
 import { countdownText } from './countdown';
 import { tagTextColor } from './contrast';
 import { markGroupVisible } from '../../shared/marks-state';
@@ -461,7 +461,7 @@ export class ChromeRenderer {
         ctx.textAlign = 'center';
         const y = dataH + (fullH - dataH) / 2;
         const tr = coords.visibleTimeRange();
-        const offset = tzOffsetMs((tr.from + tr.to) / 2, scene.timezone);
+        const offset = tzOffsetMs((tr.from + tr.to) / 2, displayZone(scene.timezone, coords.barInterval));
         // Width-adaptive density so a narrow surface — a phone, a multi-chart cell —
         // asks for fewer ticks instead of cramming the default eight. The floor of 3
         // keeps a narrow axis populated (a too-small target snaps the ladder to a huge

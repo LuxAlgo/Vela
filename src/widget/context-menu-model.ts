@@ -14,6 +14,7 @@ const TEXT = {
     indexed: msg('widget.contextMenu.scale.indexed', 'Indexed to 100'),
     log: msg('widget.contextMenu.scale.log', 'Logarithmic'),
     auto: msg('widget.contextMenu.auto', 'Auto (fits data to screen)'),
+    priceOnly: msg('widget.contextMenu.scalePriceOnly', 'Scale price chart only'),
     invert: msg('widget.contextMenu.invert', 'Invert scale'),
     labels: msg('widget.contextMenu.labels', 'Labels'),
     axisLabels: msg('widget.contextMenu.axisLabels', 'Price axis labels'),
@@ -107,6 +108,12 @@ export function scaleWrites(choice: ScaleChoice, pane: PaneScaleInfo | null): Ar
     ];
 }
 
+/** The price-only row's state for the axis under the pointer: the price pane's setting, or
+ *  undefined (no row) on a study pane, whose window has no bars to fit. */
+export function priceOnlyState(pane: PaneScaleInfo | null, flag: boolean): boolean | undefined {
+    return mainScale(pane) ? flag : undefined;
+}
+
 /** Renderer write inverting one pane's axis (high at the bottom). */
 export function invertWrite(next: boolean, pane: PaneScaleInfo | null): [string, unknown] {
     return mainScale(pane) ? ['invertScale', next] : ['invertScale', { pane: pane!.id, value: next }];
@@ -115,6 +122,8 @@ export function invertWrite(next: boolean, pane: PaneScaleInfo | null): [string,
 export interface PriceAxisState {
     /** Autoscale on — the axis fits the visible data instead of a frozen window. */
     auto: boolean;
+    /** Autoscale fits the price bars only. Absent for a study pane's axis, which has no bars. */
+    priceOnly?: boolean;
     invert: boolean;
     choice: ScaleChoice;
     axisLabels: boolean;
@@ -128,6 +137,7 @@ export function priceAxisItems(s: PriceAxisState, i18n?: Translator | null): Men
     const t = (m: MessageDescriptor): string => textOf(i18n, m);
     return [
         { id: 'auto', label: t(TEXT.auto), checked: s.auto },
+        ...(s.priceOnly === undefined ? [] : [{ id: 'price-only', label: t(TEXT.priceOnly), checked: s.priceOnly }]),
         { id: 'invert', label: t(TEXT.invert), checked: s.invert },
         ...SCALE_CHOICES.map(([choice, label], i) => ({
             id: `scale:${choice}`,
@@ -190,6 +200,7 @@ export const CONTEXT_MENU_BUILTIN_ORDER = {
     body: { 'reset-view': -30, 'remove-drawings': -20, 'remove-indicators': -10, settings: 1000 },
     'price-axis': {
         auto: -80,
+        'price-only': -75,
         invert: -70,
         'scale:regular': -60,
         'scale:percent': -50,

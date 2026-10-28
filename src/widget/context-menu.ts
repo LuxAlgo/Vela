@@ -11,6 +11,7 @@ import {
     invertWrite,
     paneScaleAt,
     priceAxisItems,
+    priceOnlyState,
     scaleChoiceOf,
     scaleWrites,
     settingsSectionOf,
@@ -141,6 +142,7 @@ export class ChartContextMenu {
             const pane = this.lastPane;
             return priceAxisItems({
                 auto: this.chart?.renderer.get('autoScale') !== false,
+                priceOnly: priceOnlyState(pane, this.flag('scalePriceOnly')),
                 invert: pane ? pane.invert : this.flag('invertScale'),
                 choice: scaleChoiceOf(pane ?? { mode: String(this.chart?.renderer.get('scaleMode') ?? 'price'), log: this.flag('logScale') }),
                 axisLabels: this.flag('axisLabels'),
@@ -181,6 +183,8 @@ export class ChartContextMenu {
             else chart.renderer.set('timezone', resolveTimezone(zone, undefined));
         } else if (id === 'auto') {
             chart.renderer.set('autoScale', chart.renderer.get('autoScale') === false);
+        } else if (id === 'price-only') {
+            chart.renderer.set('scalePriceOnly', !this.flag('scalePriceOnly'));
         } else if (id === 'invert') {
             const pane = this.lastPane;
             const [feature, value] = invertWrite(!(pane ? pane.invert : this.flag('invertScale')), pane);

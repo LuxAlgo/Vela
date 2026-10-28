@@ -8,6 +8,16 @@
  */
 import { zoneOffsetMs } from '../../../core/format/dates';
 
+const DAY_MS = 86_400_000;
+
+/** The zone a bar time is read in. Bars of a day or longer (D, W, M and their multiples)
+ *  are stamped at 00:00 UTC of their trading date: a date, not an instant. Shifting one
+ *  into a zone behind UTC would move it onto the previous day, so they read in UTC whatever
+ *  the display zone. Intraday bars are real instants and read in `timeZone`. */
+export function displayZone(timeZone: string, barIntervalMs: number): string {
+    return barIntervalMs >= DAY_MS ? 'UTC' : timeZone;
+}
+
 /** The zone's offset from UTC at `ms`, in milliseconds (e.g. New York in winter ⇒ -5h).
  *  Returns 0 for UTC / empty / unknown zones so callers degrade to plain UTC. The
  *  formatter behind it stays pinned to en-US whatever the chart's locale: it PARSES the

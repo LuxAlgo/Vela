@@ -199,7 +199,9 @@ describe('host formatters', () => {
                 },
             },
         });
+        formatTimeStamp(SEP_5_2026_1430, 'Asia/Tokyo', 3_600_000, t.format);
+        // A daily bar's date reads in UTC whatever the display zone.
         formatTimeStamp(SEP_5_2026_1430, 'Asia/Tokyo', 86_400_000, t.format);
-        expect(seen).toEqual(['crosshair Asia/Tokyo en false']);
+        expect(seen).toEqual(['crosshair Asia/Tokyo en true', 'crosshair UTC en false']);
     });
 });

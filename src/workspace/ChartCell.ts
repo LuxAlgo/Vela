@@ -249,6 +249,11 @@ function instanceDeltas(handle: IndicatorHandle | null): { inputs?: Record<strin
 /** The names the indicator picker's search matches for a native type besides its shown
  *  title: the title in English, and the short title (`RSI`) in `i18n`'s language and in
  *  English. */
+/** A saved status-line parts bag as typed entries; parts it leaves out keep their default. */
+function statuslinePartEntries(parts: CellState['statuslineParts']): Array<[StatuslinePart, boolean]> {
+    return Object.entries(parts ?? {}).filter((e): e is [StatuslinePart, boolean] => typeof e[1] === 'boolean');
+}
+
 function nativeAliases(type: string, i18n: Translator | undefined): { aliases?: string[] } {
     const entry = nativeIndicatorEntry(type);
     if (!entry) return {};
@@ -501,6 +506,7 @@ export class ChartCell {
         this.inner.on('replay:end', () => this.watermark?.setReplaying(false));
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '', (sym) => this.inner?.data.symbolIcon(sym)) : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
+        for (const [part, visible] of statuslinePartEntries(seed.statuslineParts)) this.statusline?.setPartVisible(part, visible);
         this.statusline?.onChart(this.inner);
         // The status line's right-click menu: part toggles route through the cell so the
         // style link mirrors them; the chart toggle is the object tree's same eye seam.
@@ -974,6 +980,7 @@ export class ChartCell {
     /** Show/hide one status-line segment (the settings dialog's Status line tab). */
     private setStatuslinePart(part: StatuslinePart, visible: boolean): void {
         this.statusline?.setPartVisible(part, visible);
+        this.deps.onStateDirty();
         this.deps.onStatusPrefsChanged(this.id);
     }
 
@@ -1525,6 +1532,9 @@ export class ChartCell {
         if (cs.replayWatermark !== undefined && cs.replayWatermark !== this.replayWatermarkOn) this.setReplayWatermarkVisible(cs.replayWatermark);
         if (cs.indicatorTitles !== undefined && cs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cs.indicatorTitles);
         if (cs.indicatorValues !== undefined && cs.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(cs.indicatorValues);
+        for (const [part, visible] of statuslinePartEntries(cs.statuslineParts)) {
+            if (this.statusline && this.statusline.partVisible(part) !== visible) this.setStatuslinePart(part, visible);
+        }
         // Cosmetics + drawings round-trip (both validate untrusted input).
         if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
         if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
@@ -1562,6 +1572,7 @@ export class ChartCell {
         // budget — in range mode the config carries the chip's transient fetch budget.
         const live = this.inner?.market;
         const ext = this.inner ? this.dehydrateExt() : Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined;
+        const statuslineParts = this.statusPrefs().parts;
         return {
             ...this.state,
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
@@ -1570,6 +1581,7 @@ export class ChartCell {
             replayWatermark: this.replayWatermarkOn,
             indicatorTitles: this.indicatorTitlesOn,
             indicatorValues: this.indicatorValuesOn,
+            ...(statuslineParts ? { statuslineParts } : {}),
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
             // Natives from the chart's SYNC registry read — an async catalog mirror here

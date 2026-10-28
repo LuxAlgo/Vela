@@ -226,6 +226,7 @@ new VelaWorkspace('#chart', {
       'scales.price-scale',                  //   Price scale group
       'scales.price-scale.mode',             //     Regular/Percent/Indexed/Logarithmic
       'scales.price-scale.invert',           //     Invert scale
+      'scales.price-scale.price-only',       //     Scale price chart only
       'scales.price-scale.last-price-line',  //     Last price line
       'scales.price-scale.last-price-label', //     Last price label
       'scales.price-scale.countdown',        //     Countdown to bar close

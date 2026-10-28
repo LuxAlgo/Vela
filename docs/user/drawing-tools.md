@@ -84,7 +84,8 @@ settings panel, laid out the same way for every tool:
   (on/off, ratio, color), including the ones that are off.
 - **Label** — the words, their styling and, on line tools, where they sit along the line and on
   which side. Placement options appear only once the label has words.
-- **Points** — each anchor's price, editable, and its time in the chart's time zone.
+- **Points** — each anchor's price, editable, and its time in the chart's time zone. On a
+  daily or coarser chart the point shows its bar's date, the same in every time zone.
 - **Show on** — every timeframe, intraday only, 1H and up, or a custom set. The timeframe list
   appears only for a custom set, and a dot marks the chart's own timeframe. A drawing limited to
   other timeframes is neither painted nor clickable on this chart.

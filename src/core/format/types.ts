@@ -22,7 +22,8 @@ export type TimeTickUnit = 'year' | 'month' | 'day' | 'hour' | 'minute' | 'secon
 export interface FormatContext {
     /** The chart's locale (a BCP 47 tag). */
     readonly locale: string;
-    /** The display time zone (an IANA id, or `'UTC'`). */
+    /** The display time zone (an IANA id, or `'UTC'`). The date of a daily or coarser bar
+     *  reads in `'UTC'` whatever the display zone. */
     readonly timeZone: string;
     /** Where the value appears. */
     readonly surface: FormatSurface;

@@ -1,6 +1,6 @@
 {
   "name": "@luxalgo/vela",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "The open-source core of Vela by LuxAlgo: a charting library with a native high-performance renderer, drawing tools, pluggable chart types and pluggable scripting engines.",
   "keywords": [
     "charting library",

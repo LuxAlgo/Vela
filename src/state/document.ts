@@ -94,6 +94,9 @@ export interface CellState {
     indicatorTitles?: boolean;
     /** Plot values beside the legend titles visibility — a per-chart display pref. */
     indicatorValues?: boolean;
+    /** The status line's segments, by part, as the settings dialog's Status line tab and
+     *  the status line's right-click menu leave them — a per-chart display pref. */
+    statuslineParts?: Partial<Record<'logo' | 'name' | 'market' | 'ohlc' | 'change', boolean>>;
     /** The renderer's cosmetic config document (`renderer.getConfig()`). */
     rendererConfig?: unknown;
     /** The user-drawings document (`drawings.toJSON()`). */
@@ -282,6 +285,8 @@ function successorNative(entry: PersistedNativeEntry): PersistedNativeEntry {
     return hasInputs || hidden ? { type: next, ...(hasInputs ? { inputs } : {}), ...(hidden ? { hidden } : {}) } : next;
 }
 
+const STATUSLINE_PART_KEYS = ['logo', 'name', 'market', 'ohlc', 'change'] as const;
+
 function sanitizeCell(raw: unknown): CellState | null {
     if (raw == null || typeof raw !== 'object') return null;
     const c = raw as Record<string, unknown>;
@@ -296,6 +301,12 @@ function sanitizeCell(raw: unknown): CellState | null {
     if (typeof c.replayWatermark === 'boolean') out.replayWatermark = c.replayWatermark;
     if (typeof c.indicatorTitles === 'boolean') out.indicatorTitles = c.indicatorTitles;
     if (typeof c.indicatorValues === 'boolean') out.indicatorValues = c.indicatorValues;
+    if (c.statuslineParts != null && typeof c.statuslineParts === 'object') {
+        const bag = c.statuslineParts as Record<string, unknown>;
+        const parts: NonNullable<CellState['statuslineParts']> = {};
+        for (const key of STATUSLINE_PART_KEYS) if (typeof bag[key] === 'boolean') parts[key] = bag[key];
+        if (Object.keys(parts).length > 0) out.statuslineParts = parts;
+    }
     if (c.rendererConfig != null && typeof c.rendererConfig === 'object') out.rendererConfig = c.rendererConfig;
     if (c.drawings != null && typeof c.drawings === 'object') out.drawings = c.drawings;
     const ind = c.indicators as Record<string, unknown> | undefined;

@@ -2,6 +2,31 @@
 
 All notable changes to Vela, newest first.
 
+## [0.9.1]
+
+### Added
+
+- **Scale price chart only.** A new option in the price axis's right-click menu (and the
+  Scales and lines settings tab) fits the price scale to the candles alone, so an indicator
+  that plots far from price no longer squashes the chart; its plots and drawings stay where
+  they are and simply run off the edge. Set it in code with the `scalePriceOnly` feature; it
+  is saved with the chart settings.
+
+- **The status line keeps the parts you choose.** Turning the symbol name, market status,
+  OHLC values, bar change values or symbol logo on or off, from the chart settings' Status
+  line tab or the status line's right-click menu, now saves with the chart, so a reload or
+  a saved layout brings the status line back as you left it.
+
+### Fixed
+
+- **Daily, weekly and monthly bars keep their date in every time zone.** In a time zone
+  behind UTC, such as New York or Exchange for futures, each bar on a daily or coarser
+  chart showed one day early: Friday's bar read Thursday, Monday's read Sunday. A bar of a
+  day or longer now always shows its own trading date, on the time axis and grid, in the
+  crosshair label, the data window and drawing points, whatever time zone you pick.
+  Switching the time zone on such a chart no longer moves any label; intraday charts
+  follow the chosen zone as before.
+
 ## [0.9.0]
 
 ### Added
