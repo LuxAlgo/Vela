@@ -20,6 +20,7 @@ import type {
     ExecutionRequest,
     ExecutionHandlers,
     ExecutionSession,
+    ExecutionMarket,
 } from '../src/core/ports/ScriptingEngine';
 import type { MarketDataFeed, BarRange } from '../src/core/ports/MarketDataFeed';
 import type { MarketConfig } from '../src/core/options';
@@ -176,6 +177,7 @@ class RecordingEngine implements ScriptingEngine {
     readonly language = 'pine';
     readonly capabilities: EngineCapabilities = { streaming: false, visibleRange: false, inputs: true };
     executions: Array<{ symbol: string; timeframe: string; barClose: number | undefined }> = [];
+    markets: ExecutionMarket[] = [];
     stops = 0;
 
     prepare(_source: string, instanceId: string): Promise<PreparedScript> {
@@ -192,6 +194,7 @@ class RecordingEngine implements ScriptingEngine {
         const id = (req.prepared.token as { instanceId: string }).instanceId;
         const bars = req.getBars?.() ?? req.bars;
         this.executions.push({ symbol: req.market.symbol, timeframe: req.market.timeframe, barClose: bars[0]?.close });
+        this.markets.push(req.market);
         handlers.onModel({
             id,
             title: 'Rec',
@@ -482,6 +485,46 @@ describe('setMarket — in-place market switch', () => {
 
         expect(engine.stops).toBe(1); // the old session was torn down
         expect(engine.executions[1]).toEqual({ symbol: 'BBB', timeframe: '60', barClose: PRICE.BBB });
+    });
+
+    it("hands engines the chart's trading session on ExecutionRequest.market", async () => {
+        const engine = new RecordingEngine();
+        const chart = make({ symbol: 'AAA', timeframe: '60', session: 'extended', volume: false }, { renderer: new FakeRenderer(), engines: [engine], dataFeed: new SwitchFeed() });
+        chart.addIndicator('rec');
+        await chart.ready();
+        await flush();
+        expect(engine.markets).toHaveLength(1);
+        expect(engine.markets[0]!.session).toBe('extended');
+    });
+
+    it('leaves market.session undefined on a chart without a session', async () => {
+        const engine = new RecordingEngine();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer: new FakeRenderer(), engines: [engine], dataFeed: new SwitchFeed() });
+        chart.addIndicator('rec');
+        await chart.ready();
+        await flush();
+        expect(engine.markets).toHaveLength(1);
+        expect(engine.markets[0]!.session).toBeUndefined();
+    });
+
+    it('a session switch stops the execution and starts one that receives the new session', async () => {
+        const engine = new RecordingEngine();
+        const chart = make({ symbol: 'AAA', timeframe: '60', volume: false }, { renderer: new FakeRenderer(), engines: [engine], dataFeed: new SwitchFeed() });
+        chart.addIndicator('rec');
+        await chart.ready();
+        await flush();
+
+        await chart.setMarket({ session: 'extended' });
+        await flush();
+        expect(engine.stops).toBe(1);
+        expect(engine.markets).toHaveLength(2);
+        expect(engine.markets[1]).toMatchObject({ symbol: 'AAA', timeframe: '60', session: 'extended' });
+
+        await chart.setMarket({ session: 'regular' });
+        await flush();
+        expect(engine.stops).toBe(2);
+        expect(engine.markets).toHaveLength(3);
+        expect(engine.markets[2]!.session).toBe('regular');
     });
 
     it('an identity switch blanks mounted indicator visuals for the gap (nothing stale outlives the old market)', async () => {

@@ -47,12 +47,13 @@ Because `prepare` is cheap and data-free, the core can call it eagerly to build 
 
 Where `prepare` is async, `execute(request, handlers)` is the opposite: it returns an **execution session synchronously**, even though the actual run is asynchronous. The session is a handle the core holds immediately; results arrive later through the handlers. This split is the single biggest source of confusion for new authors, so keep it crisp: the call returns a control surface right away, and the work happens behind it.
 
-The request carries everything the run needs: the prepared script, market context (symbol, timeframe, optional symbol info), the bar snapshot, resolved input values, an optional visible range, the `fetchSeries` gateway, a `mode`, and where the chart's history load stands (`historyState` — see [*History backfill*](#history-backfill-partial-bars-engine-owned-run-policy)).
+The request carries everything the run needs: the prepared script, market context (symbol, timeframe, optional symbol info, price style and trading session), the bar snapshot, resolved input values, an optional visible range, the `fetchSeries` gateway, a `mode`, and where the chart's history load stands (`historyState` — see [*History backfill*](#history-backfill-partial-bars-engine-owned-run-policy)).
 
-Two request fields deserve care:
+Three request fields deserve care:
 
 - **`market.symbolInfo` arrives asynchronously.** The feed fetches it in the background, so the first run may see it absent — or a synthesized fallback — and a later run the real values. Tolerate both; never treat its absence as an error.
 - **`market.chartStyle` is metadata, not a request to transform.** On a bar-transforming price style (e.g. Heikin Ashi) the bars you receive are *already* the transformed view. What the engine does with the flag: encode it into the chart's ticker identity (the extended ticker, `"SYM;heikinashi"`), so a security-style secondary fetch can distinguish "the chart's derived series" from raw data — the standard ticker opts back into raw. Engines with no such feature may ignore it.
+- **`market.session` is metadata, too.** It names the chart's trading session (`'regular'` or `'extended'`; absent means regular, or a market without sessions), and the bars you receive already belong to it. Use it where the language exposes the chart's session, or to keep data the engine obtains elsewhere on the same session as the chart. It follows the chart's setting, not the symbol, so a market without sessions may still carry one: ignore it there. A session switch stops every execution and starts new ones, so the value never changes within one execution.
 
 ## The data inversion (the heart of it)
 

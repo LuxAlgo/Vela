@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [0.9.2]
+
+### Added
+
+- **Scripting engines know the chart's trading session.** Every execution request now
+  carries the session the chart shows in `market.session` (`'regular'` | `'extended'`;
+  absent on a chart without one), so an engine that computes on its own copy of the
+  market works on the same bars as the chart. Switching the session restarts every
+  script with the new value. Engines that ignore the field behave exactly as before.
+
 ## [0.9.1]
 
 ### Added

@@ -361,6 +361,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             timeframe: this.config.market.timeframe ?? '60',
             symbolInfo: this.feed.symbolInfo?.(this.config.market),
             chartStyle: this.priceStyle,
+            session: this.config.market.session,
         };
     }
 
