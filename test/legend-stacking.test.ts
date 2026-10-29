@@ -76,6 +76,22 @@ describe('legend rows follow the stacking', () => {
     });
 });
 
+describe('upsert re-routing a row tidies the emptied pane', () => {
+    function panes(container: HTMLElement): string[] {
+        return [...container.querySelectorAll<HTMLElement>('[data-vela-pane]')].map((el) => el.dataset.velaPane!);
+    }
+
+    it('drops an emptied non-price legend container, as setPane does', () => {
+        const { ui, container } = setup();
+        ui.upsert('rsi', 'RSI', [], {}, 'pane-rsi');
+        expect(panes(container)).toContain('pane-rsi');
+
+        ui.upsert('rsi', 'RSI', [], {}, 'pane-macd');
+        expect(panes(container)).not.toContain('pane-rsi');
+        expect(panes(container)).toContain('pane-macd');
+    });
+});
+
 describe('an overlay\'s menus lead with its restacking steps', () => {
     function stackApi(): LegendStackApi {
         return {

@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Moving an indicator to another pane no longer leaves an empty legend behind.** When an
+  indicator that lives in its own pane is moved to a different pane, the pane's now-empty
+  legend is removed instead of lingering, so repeated moves no longer accumulate stale
+  legends.
+
 ## [0.9.1]
 
 ### Added
