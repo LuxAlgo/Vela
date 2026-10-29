@@ -886,9 +886,14 @@ export class InputsUI {
             existing.propValues = { ...(opts.propValues ?? {}) };
             existing.titleEl.textContent = title;
             if (existing.paneId !== paneId) { // re-routed to a different pane
+                const prev = existing.paneId;
                 existing.paneId = paneId;
                 this.attach(this.legendFor(paneId), existing.el, existing.native);
                 this.syncFoldToggle(); // a re-routed row must follow the fold state in its new pane
+                if (prev !== 'price') {
+                    const lg = this.legends.get(prev);
+                    if (lg && lg.childElementCount === 0) { lg.remove(); this.legends.delete(prev); }
+                }
             }
             return;
         }
