@@ -3,7 +3,7 @@
 // the contribution system anticipated), plus additive multi-chart extensions. Existing
 // plugins keep working unchanged; grid-aware ones narrow to WorkspaceWidgetContext.
 import type { Vela } from '../Vela';
-import type { PanelDockView, TopbarItems, WidgetContext } from '../widget/contributions';
+import type { DockedStrip, DockStripOptions, PanelDockView, TopbarItems, WidgetContext } from '../widget/contributions';
 import type { ChartCell } from './ChartCell';
 import type { WorkspaceReplay } from './WorkspaceReplay';
 import type { Translator } from '../core/i18n/types';
@@ -30,7 +30,8 @@ export interface ContextHost {
     setActiveCell(id: string): void;
     openSymbolSearch(query?: string): void;
     togglePanel(id: string, open?: boolean): void;
-    dockStrip(el: HTMLElement): () => void;
+    dockStrip(el: HTMLElement, opts?: DockStripOptions): DockedStrip;
+    dockEdge(el: HTMLElement, side: 'right'): () => void;
     root: HTMLElement;
     /** The workspace's translator (one object for its lifetime). */
     i18n: Translator;
@@ -72,7 +73,8 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         setPriceStyle: (style) => host.active()?.setPriceStyle(style),
         openSymbolSearch: (query) => host.openSymbolSearch(query),
         togglePanel: (id, open) => host.togglePanel(id, open),
-        dockStrip: (el) => host.dockStrip(el),
+        dockStrip: (el, opts) => host.dockStrip(el, opts),
+        dockEdge: (el, side) => host.dockEdge(el, side),
         host: host.root,
         i18n: host.i18n,
         toast: (message, kind) => host.toast(message, kind),

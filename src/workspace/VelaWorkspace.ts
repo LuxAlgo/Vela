@@ -37,7 +37,7 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
+import { legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { MobileBar } from '../widget/mobile-bar';
@@ -176,6 +176,28 @@ const CSS = `
 .vela-ws-toolbar { position: relative; flex: none; }
 .vela-ws-strips { position: relative; flex: none; display: flex; flex-direction: column; min-width: 0; }
 .vela-ws-strips:empty { display: none; }
+/* REGIONS: once a plugin uses a layout region (a full-height column panel, the right edge,
+   a covering strip), the shell lays out as a grid — the chart column (topbar, main row,
+   strips, bottom bar, lower strips), the column-panel region, the edge — with the mobile
+   bar across the foot. Every known child is placed explicitly, so one hidden by CSS
+   (the topbar on mobile) never shifts the others. */
+.vela-workspace[data-vela-regions] { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: auto minmax(0, 1fr) auto auto auto auto; }
+[data-vela-regions] > .vela-widget-topbar { grid-area: 1 / 1; }
+[data-vela-regions] > .vela-ws-main { grid-area: 2 / 1; }
+[data-vela-regions] > .vela-ws-strips { grid-area: 3 / 1; }
+[data-vela-regions] > .vela-widget-bottombar { grid-area: 4 / 1; }
+[data-vela-regions] > .vela-ws-strips-below { grid-area: 5 / 1; }
+[data-vela-regions] > .vela-mobilebar { grid-area: 6 / 1 / 7 / -1; }
+[data-vela-regions] > .vela-ws-column { grid-area: 1 / 2 / 6 / 3; position: relative; display: flex; min-height: 0; }
+[data-vela-regions] > .vela-ws-edge { grid-area: 1 / 3 / 6 / 4; position: relative; display: flex; min-height: 0; }
+/* Covering, the strip takes the area whatever height it set itself while docked. */
+[data-vela-regions] > [data-vela-cover] { grid-area: 1 / 1 / 5 / 2; z-index: 30; min-height: 0; min-width: 0; height: auto !important; max-height: none !important; align-self: stretch; }
+/* Maximized, a column panel covers the chart column with it. */
+[data-vela-regions] > .vela-ws-column:has(> .vela-panel[data-maximized]) { grid-column: 1 / 3; z-index: 26; }
+/* Mobile: a column panel covers the chart area like any panel, above the bottom bar; the
+   region lets the pointer through while it holds no open panel. */
+[data-layout='mobile'][data-vela-regions] > .vela-ws-column { grid-area: 1 / 1 / 6 / -1; z-index: 25; pointer-events: none; }
+[data-layout='mobile'][data-vela-regions] > .vela-ws-column > .vela-panel { pointer-events: auto; }
 .vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
 .vela-cell { background: var(--vela-bg); position: relative; }
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
@@ -319,6 +341,10 @@ export class VelaWorkspace {
 
     private readonly gridEl: HTMLElement;
     private readonly stripsEl: HTMLElement;
+    /** Strips docked under the bottom bar. */
+    private readonly stripsBelowEl: HTMLElement;
+    /** The layout regions a plugin brought into use (see {@link region}). */
+    private readonly regions = new Map<'column' | 'edge', HTMLElement>();
     private readonly events = new TypedEventBus<WorkspaceEventMap>();
     private readonly feed = new MultiProviderFeed();
     private readonly cellsById = new Map<string, ChartCell>();
@@ -663,6 +689,7 @@ export class VelaWorkspace {
             context: () => this.context(),
             changed: () => this.markStateDirty(),
             i18n: this.localeState,
+            columnHost: () => this.region('column'),
         });
         this.objectTree = new ObjectTree(main, (sym) => this.feed.symbolIcon(sym), this.localeState);
         this.dataWindow = new DataWindow(main, this.localeState);
@@ -774,6 +801,10 @@ export class VelaWorkspace {
                       onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
                 : null;
+        // Strips docked under the bottom bar (`dockStrip(el, { position: 'below-bottombar' })`).
+        this.stripsBelowEl = doc.createElement('div');
+        this.stripsBelowEl.className = 'vela-ws-strips vela-ws-strips-below';
+        this.root.appendChild(this.stripsBelowEl);
 
         // The mobile bar is the bottom bar of the mobile size class — the same chrome
         // toggle governs both; CSS (data-layout) decides which one is visible. Every
@@ -1041,10 +1072,12 @@ export class VelaWorkspace {
             setActiveCell: (id) => this.setActiveCell(id),
             openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
             togglePanel: (id, open) => this.dock.toggle(id, open),
-            dockStrip: (el) => {
-                this.stripsEl.appendChild(el);
+            dockStrip: (el, opts) => this.dockStrip(el, opts),
+            dockEdge: (el) => {
+                const edge = this.region('edge');
+                edge.appendChild(el);
                 return () => {
-                    if (el.parentElement === this.stripsEl) el.remove();
+                    if (el.parentElement === edge) el.remove();
                 };
             },
             root: this.root,
@@ -1055,6 +1088,48 @@ export class VelaWorkspace {
             topbar: this.topbarItems,
             panels: () => (this.dockView ??= this.dock.view()),
         });
+    }
+
+    /** A layout region, created on first use — from then on the shell lays out as a grid. */
+    private region(kind: 'column' | 'edge'): HTMLElement {
+        let el = this.regions.get(kind);
+        if (!el) {
+            el = this.root.ownerDocument.createElement('div');
+            el.className = kind === 'column' ? 'vela-ws-column' : 'vela-ws-edge';
+            this.root.appendChild(el);
+            this.regions.set(kind, el);
+            this.root.setAttribute('data-vela-regions', '');
+        }
+        return el;
+    }
+
+    /** `ctx.dockStrip`: a strip above or under the bottom bar, which can cover the chart column. */
+    private dockStrip(el: HTMLElement, opts?: DockStripOptions): DockedStrip {
+        const home = opts?.position === 'below-bottombar' ? this.stripsBelowEl : this.stripsEl;
+        home.appendChild(el);
+        // Covering, the strip is a grid item of the root; the placeholder keeps its spot in the column.
+        let placeholder: Comment | null = null;
+        const uncover = (): void => {
+            if (!placeholder) return;
+            el.removeAttribute('data-vela-cover');
+            if (el.parentElement === this.root) placeholder.replaceWith(el);
+            else placeholder.remove();
+            placeholder = null;
+        };
+        const strip = (() => {
+            uncover();
+            if (el.parentElement === home) el.remove();
+        }) as DockedStrip;
+        strip.cover = (on) => {
+            if (!on) return uncover();
+            if (placeholder || el.parentElement !== home) return;
+            placeholder = this.root.ownerDocument.createComment('vela-strip');
+            el.replaceWith(placeholder);
+            el.setAttribute('data-vela-cover', '');
+            this.root.setAttribute('data-vela-regions', '');
+            this.root.appendChild(el);
+        };
+        return strip;
     }
 
     /** Re-project contributed topbar actions + side panels, and mount late-registered attachments. */

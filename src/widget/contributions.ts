@@ -34,10 +34,15 @@ export interface WidgetContext {
      *  are ignored. The seam a plugin uses to open ITS OWN panel programmatically. */
     togglePanel(id: string, open?: boolean): void;
     /** Dock `el` as a full-width strip in the shell's layout, between the chart area and
-     *  the bottom bar — the charts shrink to make room. Strips stack in docking order.
-     *  Returns the undock (removes `el`; a no-op once it has left the strip area). The
-     *  caller owns `el`, its content and styling. */
-    dockStrip(el: HTMLElement): () => void;
+     *  the bottom bar (or under the bottom bar, see {@link DockStripOptions}) — the charts
+     *  shrink to make room. Strips stack in docking order. Returns the undock (removes
+     *  `el`; a no-op once it has left the strip area), which also carries `cover(on)` (see
+     *  {@link DockedStrip}). The caller owns `el`, its content and styling. */
+    dockStrip(el: HTMLElement, opts?: DockStripOptions): DockedStrip;
+    /** Dock `el` at the shell's outer right edge, full height — beside the chart column and
+     *  any `placement: 'column'` panel, outside both (a rail of toggles). Edge elements
+     *  stack left to right in docking order and keep their own width. Returns the undock. */
+    dockEdge(el: HTMLElement, side: 'right'): () => void;
     /** The widget's root element — pass it as `host` when mounting kit components
      *  (Dialog/Menu/Tooltip) from an action; without an explicit host they portal to
      *  the body, OUTSIDE the theme variables. A multi-chart shell hands its own root. */
@@ -113,6 +118,20 @@ export interface PanelDockView {
      *  added or removed. Returns the unsubscribe. */
     onDidChange(cb: () => void): () => void;
 }
+/** Where {@link WidgetContext.dockStrip} places a strip. */
+export interface DockStripOptions {
+    /** `'above-bottombar'` (default): between the charts and the bottom bar.
+     *  `'below-bottombar'`: under the bottom bar, at the foot of the chart column. */
+    position?: 'above-bottombar' | 'below-bottombar';
+}
+
+/**
+ * A docked strip: call it to undock. `cover(true)` lays the strip over the whole chart
+ * column — the topbar, the charts, the strips and the bottom bar — but not over a
+ * `placement: 'column'` panel, an edge element ({@link WidgetContext.dockEdge}) or the
+ * mobile layout's bottom bar; `cover(false)` puts it back in its place in the column.
+ */
+export type DockedStrip = (() => void) & { cover(on: boolean): void };
 
 /**
  * What the chart's crosshair reported when a context menu opened ({@link WidgetContext.pointer}),
@@ -291,6 +310,11 @@ export interface SidePanelDescriptor {
      *  (default `'default'`). On the mobile layout the header's close is the panel's only
      *  way out, so a headless panel must provide one. */
     header?: 'default' | 'none';
+    /** `'chart'` (default): a column in the chart row, beside the charts only. `'column'`: a
+     *  full-height column at the shell's right, beside the topbar, the charts, the strips and
+     *  the bottom bar, which all narrow to make room. On the mobile layout both kinds cover
+     *  the chart area alike; maximized, a `'column'` panel covers the chart column too. */
+    placement?: 'chart' | 'column';
     mount(ctx: WidgetContext, body: HTMLElement, header: SidePanelHeader): SidePanelHandle | void;
 }
 

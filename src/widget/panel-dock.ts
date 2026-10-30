@@ -29,6 +29,9 @@ export interface PanelDockDeps {
     changed?(): void;
     /** The shell's translator (panel titles). Absent: English. */
     i18n?: Translator;
+    /** Where `placement: 'column'` panels mount — the shell's full-height column region.
+     *  Absent: they mount with the others. */
+    columnHost?(): HTMLElement;
 }
 
 /** A panel the SHELL owns and destroys — the dock only docks it. */
@@ -91,7 +94,8 @@ export class PanelDock {
         for (const entry of [...this.entries]) if (entry.contributed && !registered.includes(entry.desc!)) this.drop(entry);
         for (const desc of registered) {
             if (this.entries.some((e) => e.desc === desc)) continue;
-            const panel = new SidePanel(this.host, desc.title, `vela-panel-${desc.id}`, {
+            const host = desc.placement === 'column' && this.deps.columnHost ? this.deps.columnHost() : this.host;
+            const panel = new SidePanel(host, desc.title, `vela-panel-${desc.id}`, {
                 width: desc.width,
                 resizable: desc.resizable,
                 minWidth: desc.minWidth,

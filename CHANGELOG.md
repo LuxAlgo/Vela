@@ -15,6 +15,14 @@ All notable changes to Vela, newest first.
   from it. On the mobile layout, a contributed bottom-bar button whose condition depends on
   the layout now appears or leaves when the shell switches layouts, and contributed buttons
   carry their action's id for styling.
+- **Plugins can lay out full-height panels, a rail and covering strips.** A side panel can
+  take the full height of the shell beside the topbar, the charts and the bottom bar
+  (`registerSidePanel({ placement: 'column' })`), which all narrow to make room. A plugin
+  can dock an element at the shell's outer right edge for a rail (`ctx.dockEdge`), dock a
+  strip under the bottom bar (`ctx.dockStrip(el, { position: 'below-bottombar' })`), and lay
+  a docked strip over the whole chart column and back (`cover`), leaving full-height panels,
+  the rail and the mobile bottom bar uncovered. A shell that uses none of these keeps its
+  layout exactly as before.
 
 ## [0.9.3]
 
