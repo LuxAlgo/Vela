@@ -6,6 +6,21 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Buttons, tabs, toggle groups and badges in the UI kit.** `@luxalgo/vela/ui` now has
+  `Button` (default, outline, secondary, ghost, destructive and link, in four heights and
+  their square icon sizes, with icons on either side and toggle states), `Tabs` (an
+  island, an underlined strip, and the filled, soft and vertical rail looks, with keyboard
+  navigation, tabs that can hide, and the full tabs semantics), `ToggleGroup` (one choice
+  among a few options, or several toggled on their own) and `Badge` (status labels and
+  counts). Variant, size and part names follow shadcn's. Each comes with a controller that
+  holds its state and hands out its parts' attributes without touching the DOM, so another
+  view layer can render the same component with the same keyboard behavior and
+  accessibility.
+- **The indicator settings, the symbol picker and the drawings drawer use them.** Their
+  tabs and the settings dialogs' buttons look as before. The indicator settings tabs now
+  answer the arrow keys, announce themselves as tabs with their panels, and brighten on
+  hover as they were meant to.
+
 - **Plugins can shape the shell's chrome without touching its markup.** A plugin can hide
   the shell's own topbar items at runtime (`ctx.topbar.setVisible('alerts', false)`), which
   also removes their row in the mobile menu, their bottom-bar stop and their keyboard

@@ -24,6 +24,7 @@ import {
 } from '../../../core/drawings';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { Dialog } from '../../../ui/components/dialog';
+import { Button } from '../../../ui/components/button';
 import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
 import { buildFieldControl, fieldGrid } from '../../../ui/components/field';
 import { TextArea } from '../../../ui/components/text-area';
@@ -172,7 +173,6 @@ function ensureStyles(): void {
 .vela-dsp .vela-dialog-header { padding: 8px 8px 8px 16px; gap: 6px; }
 .vela-dsp .vela-dialog-title { font-size: 15px; line-height: 22px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-dsp .vela-dialog-footer { padding: 10px 12px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--vela-border); }
-.vela-dsp .vela-dialog-btn { height: 30px; font-size: 13px; }
 .vela-dsp-scroll { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
 .vela-dsp-block { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .vela-dsp-block + .vela-dsp-block, .vela-dsp-fold { border-top: 1px solid var(--vela-border); }
@@ -1244,12 +1244,7 @@ function separator(): HTMLElement {
 }
 
 function button(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.className = primary ? 'vela-dialog-btn vela-dialog-btn-primary' : 'vela-dialog-btn';
-    b.addEventListener('click', onClick);
-    return b;
+    return new Button({ text: label, variant: primary ? 'default' : 'outline', size: 'sm', onClick }).el;
 }
 
 /** A menu row's text, in the row's text slot. */

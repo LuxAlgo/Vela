@@ -174,6 +174,57 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
 The primitive's **root is one element**. Chart-settings rows use `display:contents`, so a
 fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
+## Headless primitives
+
+`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives. Their
+controllers go one step further than the form primitives: besides the state, they return
+each part's **attributes** as a plain record — the role, the ARIA state, the tab stop, a
+`data-slot` naming the part and the `data-*` hooks the stylesheet keys on (`rootProps()`,
+`listProps()`, `tabProps(id)`, `panelProps(id)`, `itemProps(id)`). The vanilla view writes
+them with `applyProps`; a React view spreads the same record on its own element
+(`tabindex` becomes `tabIndex`), so behavior and accessibility never fork between view
+layers. They depend on nothing but the kit.
+
+Variant, size and part names follow shadcn's (`data-slot="tabs-trigger"`,
+`variant: 'outline'`, `size: 'icon-sm'`), so a host built on shadcn reads them without a
+glossary. Change callbacks stay `onChange`, like the rest of the kit.
+
+- **`Button`** — `variant`: `default` (filled with the selection color: OK, Apply),
+  `outline` (bordered: the dialogs' Cancel), `secondary` (a sunken fill), `ghost` (no
+  border or fill until hovered), `destructive` (tinted with `--vela-danger`), `link`.
+  `size`: `xs` 26px, `sm` 30px (panels), `default` 34px (dialog footers), `lg` 40px
+  (touch); `icon-xs`, `icon-sm`, `icon`, `icon-lg` are the same heights, square, showing
+  only `icon` (`label` names them). `icon` sits before the text and `iconEnd` after it
+  (`data-icon="inline-start"` / `"inline-end"`); `pressed` makes a toggle (`aria-pressed`);
+  a button that opens a menu keeps its hover look while `aria-expanded="true"`.
+- **`Tabs`** — WAI-ARIA tabs: one tab stop on the selected tab, arrow keys along the
+  `orientation` (mirrored for `dir: 'rtl'`), Home and End, disabled and hidden tabs
+  skipped. `activationMode: 'automatic'` selects as focus moves; `'manual'` waits for
+  Enter or Space. `panels: true` links each tab to a panel the caller renders
+  (`panelProps(id)`); a strip that filters one view leaves it off. `setHidden(id, true)`
+  takes a tab out of the strip, and hiding the selected one selects the first available
+  (notified). Variants: `default` (a tinted track, the island), `line` (the indicator
+  dialog's underlined strip), `filled` (the symbol picker's strip), `soft` (the drawings
+  drawer's strip), `nav` (a vertical settings rail). Only an inactive tab reacts to hover.
+  `className` adds the host's layout of the strip.
+- **`ToggleGroup`** — a few options side by side on a tinted track. `type: 'single'`
+  (default) is a radio group where one option is always chosen and the arrow keys choose
+  (a segmented control); `type: 'multiple'` toggles each option on its own (`aria-pressed`)
+  and the arrow keys only move focus. `size` `default` 32px or `sm` 28px, `fill` to share
+  the parent's width, `iconOnly` with each label as its option's accessible name.
+- **`Badge`** — a short status label or a round `count`: `default`, `secondary`,
+  `outline`, `destructive`, and the market colors `up` and `down`.
+
+`setValue` / `setPressed` / `setItems` never notify; a user's click or key does, once, and
+only when the value changed.
+
+**Still candidates.** These surfaces style their own controls and could move onto the
+primitives next: the settings dialog's rail (`nav` tabs) and its action buttons
+(`secondary` buttons); the icon buttons of the pane controls, the cell controls, the object
+tree and the legend rows (`ghost`, `icon-xs`); the bottom bar's session button and range
+chips, and the timeframe drawer's chips (a single `ToggleGroup`); the drawing settings
+panel's chips; the callout bubble's buttons.
+
 ## Menu rows
 
 `Menu` projects `MenuItemDescriptor` rows. Two opt-in options change how a row reads:

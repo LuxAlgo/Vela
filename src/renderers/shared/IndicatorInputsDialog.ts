@@ -10,6 +10,9 @@ import { attachChromeTooltip, chromeHint } from './chrome-tooltip';
 import { toggleSelectList, type SelectOption } from '../../ui/components/select';
 import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openPopoverTrigger } from '../../ui/components/popover';
 import { Dialog } from '../../ui/components/dialog';
+import { Button } from '../../ui/components/button';
+import { Tabs } from '../../ui/components/tabs';
+import { applyProps } from '../../ui/headless';
 import { DatePicker, normalizeDateInput } from '../../ui/components/date-picker';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '../../ui/components/field';
 import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '../../ui/styles';
@@ -131,8 +134,6 @@ export class IndicatorInputsDialog {
         this.propSnapshot = { ...row.propValues };
         ensureDialogStyles();
         const t = this.host.theme();
-        const border = 'var(--vela-border)';
-        const fg = 'var(--vela-fg-bright)';
         const host = this.host.dialogHost() ?? this.host.container;
 
         const ui = new Dialog({
@@ -181,49 +182,38 @@ export class IndicatorInputsDialog {
             if (existing) existing.inputs.push(...propDecls);
             else tabDefs.push({ name: PROPS_TAB, inputs: propDecls });
         }
-        const tabs = document.createElement('div');
-        tabs.style.cssText = `display:flex;gap:12px;padding:0 20px;border-bottom:1px solid ${border};flex:0 0 auto;`;
-        const tabEls: HTMLElement[] = [];
         const bodies: HTMLElement[] = [];
         const gates: VisibilityGate[] = [];
-        let active = 0;
-        const activate = (idx: number): void => {
-            active = idx;
-            for (let i = 0; i < tabEls.length; i += 1) {
-                const on = i === idx;
-                const el = tabEls[i]!;
-                el.style.borderBottomColor = on ? fg : 'transparent';
-                el.style.color = on ? 'inherit' : 'var(--vela-fg-muted)';
-                el.classList.toggle('vela-ind-tab-active', on);
-                bodies[i]!.style.display = on ? 'grid' : 'none';
-            }
+        const tabGates: Array<{ id: string; visible: VisibilityGate['visible'] }> = [];
+        const showBody = (id: string): void => {
+            bodies.forEach((body, i) => {
+                applyProps(body, tabs.panelProps(String(i)));
+                body.style.display = String(i) === id ? 'grid' : 'none';
+            });
         };
+        const tabs = new Tabs({
+            variant: 'line',
+            className: 'vela-ind-tabs',
+            panels: true,
+            items: tabDefs.map((def, idx) => ({ id: String(idx), label: this.tabLabel(def.name) })),
+            onChange: showBody,
+        });
         for (const [idx, def] of tabDefs.entries()) {
-            const tab = document.createElement('div');
-            tab.textContent = this.tabLabel(def.name);
-            tab.className = 'vela-ind-tab';
-            tab.style.cssText = `padding:0 0 8px;margin-bottom:-1px;border-bottom:2px solid transparent;${tabDefs.length > 1 ? 'cursor:pointer;' : ''}`;
-            tab.addEventListener('click', () => activate(idx));
-            tabs.appendChild(tab);
-            tabEls.push(tab);
             bodies.push(this.buildTabBody(def.inputs, row, gates));
             // The strip label leaves only when every input on the tab is gated out —
             // possible only when all of them carry a `when`.
             if (def.inputs.every((d) => d.when)) {
-                gates.push({ el: tab, visible: (bag) => def.inputs.some((d) => inputVisible(d.when, bag)) });
+                tabGates.push({ id: String(idx), visible: (bag) => def.inputs.some((d) => inputVisible(d.when, bag)) });
             }
         }
-        ui.body.appendChild(tabs);
+        ui.body.appendChild(tabs.el);
         for (const b of bodies) ui.body.appendChild(b);
-        activate(0);
+        showBody(tabs.value ?? '0');
         const refresh = (): void => {
             const bag = valuesBag(row);
             for (const g of gates) g.el.style.display = g.visible(bag) ? '' : 'none';
-            // An edit that gates the ACTIVE tab out lands the user on the first live one.
-            if (tabEls[active]?.style.display === 'none') {
-                const next = tabEls.findIndex((el) => el.style.display !== 'none');
-                if (next >= 0) activate(next);
-            }
+            // Gating the ACTIVE tab out lands the user on the first live one.
+            for (const g of tabGates) tabs.setHidden(g.id, !g.visible(bag));
         };
         this.refreshVisibility = refresh;
         refresh();
@@ -771,14 +761,7 @@ export class IndicatorInputsDialog {
     }
 
     private dialogButton(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = label;
-        // Primary = filled inverse chip; Cancel = outlined. Both hover states are in the
-        // scoped stylesheet.
-        b.className = primary ? 'vela-dialog-btn vela-dialog-btn-primary' : 'vela-dialog-btn';
-        b.addEventListener('click', onClick);
-        return b;
+        return new Button({ text: label, variant: primary ? 'default' : 'outline', onClick }).el;
     }
 }
 
@@ -926,8 +909,8 @@ export function ensureDialogStyles(): void {
 .vela-ind-combo-chevron:hover{opacity:0.9;}
 .vela-ind-cal{background:var(--vela-bg);color:var(--vela-fg);border:none;border-radius:6px;box-shadow:var(--vela-shadow);font:14px var(--vela-font);padding:10px 12px;user-select:none;}
 ${overlayScrollbarCss('.vela-dialog.vela-ind-dialog *', 9)}
-.vela-ind-tab{font-weight:600;font-size:13px;line-height:20px;transition:color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
-.vela-ind-tab:not(.vela-ind-tab-active):hover{color:var(--vela-fg-bright);}
+.vela-ind-tabs{padding:0 20px;flex:0 0 auto;}
+.vela-ind-tabs>.vela-tab:only-child{cursor:default;}
 .vela-ind-ctl,.vela-ind-close{background-color:transparent;color:inherit;transition:color var(--vela-dur-fast) ease,background-color var(--vela-dur-fast) ease;}
 .vela-ind-ctl svg,.vela-ind-close svg{width:${LEGEND_ICON_PX}px;height:${LEGEND_ICON_PX}px;display:block;flex:none;stroke-width:1;}
 .vela-ind-ctl:hover{background-color:var(--vela-hover-strong);}
