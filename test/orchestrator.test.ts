@@ -577,9 +577,40 @@ describe('EngineOrchestrator', () => {
             // The handle tells which native type it is (scripts carry `source` instead).
             expect(h1.nativeType).toBe('test-native');
             expect(h1.source).toBeUndefined();
+            expect(h1.language).toBeUndefined(); // no engine runs a native
         } finally {
             unregisterNativeIndicator('test-native');
         }
+    });
+
+    it('a script handle names its engine language: the chart default, else the language option, kept by updateCode', async () => {
+        const renderer = new FakeRenderer();
+        const other = new MockEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [new MockEngine()], dataFeed: new MockDataFeed() });
+        chart.registerEngine('other', other);
+
+        const byDefault = chart.addIndicator('//@version=5\nindicator("A", overlay=true)\nplot(close)');
+        const explicit = chart.addIndicator('//@version=5\nindicator("B", overlay=true)\nplot(close)', { language: 'other' });
+        // Synchronous: a host gate reads it before the script is even prepared.
+        expect(byDefault.language).toBe('pine');
+        expect(explicit.language).toBe('other');
+
+        await chart.ready();
+        await flush();
+        expect(other.runCount[explicit.id]).toBeGreaterThan(0); // the named engine is the one that runs it
+        expect(other.runCount[byDefault.id]).toBeUndefined();
+
+        const result = await explicit.updateCode('//@version=5\nindicator("B2", overlay=true)\nplot(close)');
+        expect(result.ok).toBe(true);
+        expect(explicit.source).toContain('B2');
+        expect(explicit.language).toBe('other');
+    });
+
+    it("a script without a language option takes the chart's defaultLanguage", () => {
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false, defaultLanguage: 'other' }, { renderer: new FakeRenderer(), engines: [new MockEngine()], dataFeed: new MockDataFeed() });
+        chart.registerEngine('other', new MockEngine());
+        expect(chart.addIndicator('//@version=5\nindicator("A", overlay=true)\nplot(close)').language).toBe('other');
+        chart.destroy();
     });
 
     it('addNativeIndicator: a multiInstance type creates a fresh instance per add, each mounted and removable on its own', async () => {

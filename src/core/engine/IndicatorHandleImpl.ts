@@ -26,6 +26,8 @@ export class IndicatorHandleImpl implements IndicatorHandle {
     source?: string;
     /** The native type (see {@link IndicatorHandle.nativeType}); undefined for scripts. */
     readonly nativeType?: string;
+    /** The resolved engine language (see {@link IndicatorHandle.language}); undefined for natives. */
+    readonly language?: string;
     private schema: InputSchema[] = [];
     private propsSchema: InputSchema[] = [];
     private visibleState = true;
@@ -37,11 +39,13 @@ export class IndicatorHandleImpl implements IndicatorHandle {
         private readonly controller: IndicatorController,
         source?: string,
         nativeType?: string,
+        language?: string,
     ) {
         this.id = id;
         this.title = title;
         if (source !== undefined) this.source = source;
         if (nativeType !== undefined) this.nativeType = nativeType;
+        if (language !== undefined) this.language = language;
     }
 
     get inputs(): readonly InputSchema[] {
