@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Resize a rectangle from any side.** A selected rectangle now has eight handles: one on
+  each corner and one in the middle of each side. Drag a corner to resize the box in both
+  directions, or a side handle to move just that side, so you can stretch a zone to a new
+  high or extend it in time without touching its other edges.
+
 ## [0.9.2]
 
 ### Added

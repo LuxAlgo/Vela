@@ -1,4 +1,4 @@
-import type { Drawing, DrawingIntent, DrawingPoint, DrawingToolDefaults, DrawingTypeKey, FreeAxis, Projector, SnapMode } from '../../../core/drawings';
+import type { Drawing, DrawingIntent, DrawingPoint, DrawingToolDefaults, DrawingTypeKey, Projector, SnapMode } from '../../../core/drawings';
 import { applyToolDefaults, createDrawing, deserializeDrawing } from '../../../core/drawings';
 import { topDrawingAt, HIT_TOLERANCE } from './DrawingHitTester';
 
@@ -358,13 +358,10 @@ export class DrawingInteraction {
         if (this.state.handle < 0) {
             this.dragBody(d, x, y);
         } else {
-            const a = d.anchors[this.state.handle]; // a handle snaps to the candle
-            if (a) {
-                // Shift on a two-point line re-locks the dragged endpoint's angle around the other one.
-                const pivot = shift && ANGLE_SNAP_TYPES.has(d.type) && d.anchors.length === 2 ? d.anchors[1 - this.state.handle] : undefined;
-                const point = pivot ? this.resolveAngleSnapped(pivot, d.paneId, x, y) : this.resolve(x, y, d.paneId, mode);
-                applyFree(a, point, d.anchorSchema().slots[this.state.handle]?.free ?? 'both');
-            }
+            // Shift on a two-point line re-locks the dragged endpoint's angle around the other one.
+            const pivot = shift && ANGLE_SNAP_TYPES.has(d.type) && d.anchors.length === 2 ? d.anchors[1 - this.state.handle] : undefined;
+            const point = pivot ? this.resolveAngleSnapped(pivot, d.paneId, x, y) : this.resolve(x, y, d.paneId, mode); // a handle snaps to the candle
+            d.dragHandle(this.state.handle, point);
             d.constrainHandleDrag(this.state.handle); // e.g. a position flips its reward/stop to stay opposed
         }
         this.deps.changed();
@@ -588,8 +585,3 @@ function rectsIntersect(a: PxRect, b: PxRect): boolean {
     return a.x <= b.x + b.w && b.x <= a.x + a.w && a.y <= b.y + b.h && b.y <= a.y + a.h;
 }
 
-/** Move an anchor toward `pt`, honoring which axes its handle is free to move along. */
-function applyFree(anchor: DrawingPoint, pt: DrawingPoint, free: FreeAxis): void {
-    if (free === 'both' || free === 'x') anchor.time = pt.time;
-    if (free === 'both' || free === 'y') anchor.price = pt.price;
-}

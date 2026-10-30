@@ -191,6 +191,19 @@ export abstract class Drawing {
     }
 
     /**
+     * Move handle `index` to `pt`. By default handle `i` IS anchor `i`, moved along the axes its slot
+     * frees; a type with more handles than anchors (a box's edge midpoints) maps each extra handle
+     * onto the anchor coordinates it edits.
+     */
+    dragHandle(index: number, pt: DrawingPoint): void {
+        const a = this.anchors[index];
+        if (!a) return;
+        const free = this.anchorSchema().slots[index]?.free ?? 'both';
+        if (free === 'both' || free === 'x') a.time = pt.time;
+        if (free === 'both' || free === 'y') a.price = pt.price;
+    }
+
+    /**
      * After a single handle (anchor `index`) is dragged, re-impose any cross-anchor invariant —
      * e.g. a position keeps its stop and target on opposite sides of the entry, flipping the
      * non-dragged side across the entry when a drag would put them on the same side. Default: no-op.

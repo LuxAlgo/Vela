@@ -1,11 +1,16 @@
 import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot } from '../Drawing';
-import type { Projector } from '../geometry';
+import type { DrawingPoint, Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { TEXT_FIELDS, BORDER_FIELDS } from '../schema';
 import { distToSegment, handleAt, pointInBox } from '../hittest';
 
-/** A rectangle defined by two opposite corners. Optional fill + border. */
+/**
+ * A rectangle defined by two opposite corners. Optional fill + border.
+ *
+ * Eight handles: the two anchor corners (0, 1), the other two corners (2, 3), then the edge
+ * midpoints (4–7). Corners resize both ways; an edge handle moves only its own side.
+ */
 export class Box extends Drawing {
     readonly type = 'box' as const;
 
@@ -39,7 +44,40 @@ export class Box extends Drawing {
 
     handlePoints(proj: Projector): Array<[number, number]> {
         const r = this.rect(proj);
-        return r ? [[r.x1, r.y1], [r.x2, r.y2]] : [];
+        if (!r) return [];
+        const mx = (r.x1 + r.x2) / 2;
+        const my = (r.y1 + r.y2) / 2;
+        // The anchor corners stay first: the painter and the label read the box from points 0 and 1.
+        return [
+            [r.x1, r.y1],
+            [r.x2, r.y2],
+            [r.x2, r.y1],
+            [r.x1, r.y2],
+            [mx, r.y1],
+            [r.x2, my],
+            [mx, r.y2],
+            [r.x1, my],
+        ];
+    }
+
+    override dragHandle(index: number, pt: DrawingPoint): void {
+        const a = this.anchors[0];
+        const b = this.anchors[1];
+        if (!a || !b) return;
+        // Which anchor supplies each handle's x (time) and y (price); null = that axis stays put.
+        const map: Array<[DrawingPoint | null, DrawingPoint | null]> = [
+            [a, a],
+            [b, b],
+            [b, a],
+            [a, b],
+            [null, a],
+            [b, null],
+            [null, b],
+            [a, null],
+        ];
+        const [tx, ty] = map[index] ?? [null, null];
+        if (tx) tx.time = pt.time;
+        if (ty) ty.price = pt.price;
     }
 
     hitHandle(px: number, py: number, proj: Projector, tol: number): number {
