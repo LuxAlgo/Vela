@@ -634,15 +634,19 @@ registerLegendAction({
     id: 'mytool.open-source',
     icon: 'code',                                  // vela/ui icon registry
     tooltip: 'Open the source',
-    when: (ind) => ind.source !== undefined,       // per-indicator gate
+    when: (ind) => ind.language === 'pine',        // per-indicator gate: the scripts this editor reads
     run: (ctx, ind) => myEditor.open(ind.source!), // ctx = the shell's WidgetContext
 });
 ```
 
-- `ind` is a {@link LegendIndicatorInfo}: `{ id, title, source? }` — `source` is the
-  script the indicator runs NOW (the same as `handle.source`, read at click time, so an
-  in-place `updateCode` shows through), and is `undefined` for native indicators, which
-  is the usual `when` gate.
+- `ind` is a {@link LegendIndicatorInfo}: `{ id, title, source?, language? }` — `source`
+  is the script the indicator runs NOW (the same as `handle.source`, read at click time,
+  so an in-place `updateCode` shows through); `language` is the language id of the
+  engine running it (the same as `handle.language`: the indicator's `language` option,
+  else the chart's `defaultLanguage`). Both are `undefined` for native indicators. Gate
+  on `source` for an action that suits any script, and on `language` for one that only a
+  single language supports: an editor for one language must not open a script that
+  another engine runs.
 - The descriptor resolves **per row, per click**: `when` re-evaluates as rows appear, and
   `run` receives a fresh context each time.
 - Register at import time; after a late registration call `refreshActions()` (both shells
