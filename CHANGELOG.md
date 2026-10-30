@@ -55,6 +55,12 @@ All notable changes to Vela, newest first.
   Switching the time zone on such a chart no longer moves any label; intraday charts
   follow the chosen zone as before.
 
+- **Native indicators without a legend stay out of the indicator picker.** A native
+  indicator registered with `legend: false` no longer appears in the workspace's indicator
+  picker, neither under On chart with a remove button nor in the library, so its on/off
+  switch stays in your own UI, as the legend and `panes.list()` already assume. The remove
+  buttons of the other On chart rows still remove the indicator they belong to.
+
 ## [0.9.0]
 
 ### Added
