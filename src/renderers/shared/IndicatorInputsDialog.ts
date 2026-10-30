@@ -10,6 +10,7 @@ import { attachChromeTooltip, chromeHint } from './chrome-tooltip';
 import { toggleSelectList, type SelectOption } from '../../ui/components/select';
 import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openPopoverTrigger } from '../../ui/components/popover';
 import { Dialog } from '../../ui/components/dialog';
+import { Button } from '../../ui/components/button';
 import { DatePicker, normalizeDateInput } from '../../ui/components/date-picker';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '../../ui/components/field';
 import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '../../ui/styles';
@@ -771,14 +772,7 @@ export class IndicatorInputsDialog {
     }
 
     private dialogButton(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = label;
-        // Primary = filled inverse chip; Cancel = outlined. Both hover states are in the
-        // scoped stylesheet.
-        b.className = primary ? 'vela-dialog-btn vela-dialog-btn-primary' : 'vela-dialog-btn';
-        b.addEventListener('click', onClick);
-        return b;
+        return new Button({ text: label, variant: primary ? 'primary' : 'secondary', onClick }).el;
     }
 }
 
