@@ -29,6 +29,30 @@ export interface StrategyState {
     maxDrawdown: number;
     maxRunup: number;
     initialCapital: number;
+    /**
+     * Compound annual growth of the account over the backtest, in percent. Absent when the
+     * engine does not compute it, or cannot (a span too short to annualize, an account
+     * wiped out).
+     */
+    cagr?: number;
+    /**
+     * Risk-adjusted performance of the equity curve: excess return over its volatility
+     * (`sharpe`) and over its downside volatility only (`sortino`). An engine defines the
+     * sampling and the risk-free rate (monthly returns are the common convention). Absent
+     * when the engine does not compute them.
+     */
+    sharpe?: number;
+    sortino?: number;
+    /**
+     * The buy-and-hold benchmark: buying the instrument with the whole initial capital
+     * and holding it to the last bar — its P&L in account currency (`buyHoldPnl`) and its
+     * gain in percent (`buyHoldPct`) — and the strategy's net profit beyond it
+     * (`outperformance`, `netPnl − buyHoldPnl`). An engine defines the entry it anchors
+     * on. Absent when the engine does not compute it.
+     */
+    buyHoldPnl?: number;
+    buyHoldPct?: number;
+    outperformance?: number;
 }
 
 /**

@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **A strategy's risk-adjusted and benchmark figures.** A strategy's state can now carry
+  its compound annual growth (`cagr`), its Sharpe and Sortino ratios (`sharpe`,
+  `sortino`) and the buy-and-hold benchmark (`buyHoldPnl`, `buyHoldPct`,
+  `outperformance`), so a dashboard shows the figures the engine computed over every
+  bar. All are optional: an engine that does not compute them leaves them out, and
+  nothing changes for existing engines or hosts.
+
 ## [0.9.2]
 
 ### Added

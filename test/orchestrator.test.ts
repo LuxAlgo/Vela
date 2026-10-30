@@ -22,6 +22,7 @@ import type {
     ContextSelect,
 } from '../src/core/ports/ScriptingEngine';
 import type { MarketDataFeed, BarRange } from '../src/core/ports/MarketDataFeed';
+import type { StrategyState } from '../src/core/model/strategy';
 import { MultiProviderFeed } from '../src/data/MultiProviderFeed';
 import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from '../src/core/ports/DataProvider';
 import type { OHLCV } from '../src/core/model/ohlcv';
@@ -2198,7 +2199,9 @@ describe('Vela.runIndicator — execute-and-inject with structured failure', () 
     });
 });
 
-const STRATEGY_STATE = {
+// The optional risk and benchmark figures ride along: every path below hands the host the
+// engine's state as it is.
+const STRATEGY_STATE: StrategyState = {
     position: 2,
     avgPrice: 100,
     equity: 10_500,
@@ -2212,6 +2215,12 @@ const STRATEGY_STATE = {
     maxDrawdown: 80,
     maxRunup: 300,
     initialCapital: 10_000,
+    cagr: 12.5,
+    sharpe: 0.84,
+    sortino: 1.21,
+    buyHoldPnl: 320,
+    buyHoldPct: 3.2,
+    outperformance: 180,
 };
 
 describe('handle.context — positive proof the capability is wired end to end', () => {
