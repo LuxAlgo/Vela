@@ -37,7 +37,7 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type WidgetActionDescriptor } from '../widget/contributions';
+import { legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { MobileBar } from '../widget/mobile-bar';
@@ -433,6 +433,14 @@ export class VelaWorkspace {
     /** Bell retention — `alertCap` option, default {@link ALERT_CAP}. */
     private readonly alertCap: number;
     private alertsMenu: Menu | null = null;
+    /** Built-in topbar items a plugin hid at runtime (`ctx.topbar`). */
+    private readonly topbarHidden = new Set<string>();
+    private readonly topbarItems: TopbarItems = {
+        isVisible: (id) => this.topbarVisible(id),
+        setVisible: (id, visible) => this.setTopbarItemVisible(id, visible),
+    };
+    private dockView: PanelDockView | null = null;
+    private screenshotKeyOff: (() => void) | null = null;
     // ── mobile chrome (same components as the widget shell; CSS keys off data-layout
     // on the root, the drawers build lazily on first open and act on the ACTIVE cell) ──
     /** Writes `data-layout` on the root and pushes mode flips into every cell's renderer. */
@@ -1044,6 +1052,8 @@ export class VelaWorkspace {
             toast: (message, kind) => this.toastHost.show(message, kind),
             stateDirty: () => this.markStateDirty(),
             replay: this.replay,
+            topbar: this.topbarItems,
+            panels: () => (this.dockView ??= this.dock.view()),
         });
     }
 
@@ -2361,6 +2371,38 @@ export class VelaWorkspace {
             cell.setControlsSuspended(mode === 'mobile'); // the mobile bar's maximize stop replaces the cluster
         }
         this.syncCellPresentation(); // the legend's overview override is mode-scoped
+        // A contributed action's `when` may read the layout: its bar stop is decided again.
+        this.mobileBar?.renderActions();
+    }
+
+    /** Whether a built-in topbar item shows: in the host's composition, and not hidden by a plugin. */
+    private topbarVisible(id: string): boolean {
+        return topbarHas(this.topbarComp, id) && !this.topbarHidden.has(id);
+    }
+
+    /** `ctx.topbar.setVisible` — the item and every other entry point of it (drawer row, bar stop, chord). */
+    private setTopbarItemVisible(id: string, visible: boolean): void {
+        if (id === 'actions' || !(TOPBAR_BUILTIN_IDS as readonly string[]).includes(id)) return;
+        if (visible === !this.topbarHidden.has(id)) return;
+        if (visible) this.topbarHidden.delete(id);
+        else this.topbarHidden.add(id);
+        this.topbar.setItemVisible(id, visible);
+        // The drawer reads the composition when it is built: the next open rebuilds it.
+        this.moreDrawer?.destroy();
+        this.moreDrawer = null;
+        if (id === 'indicators') this.mobileBar?.setIndicatorsVisible(visible);
+        if (id === 'alerts' && !visible) {
+            this.alertsMenu?.destroy();
+            this.alertsMenu = null;
+        }
+        if (id === 'screenshot') {
+            if (visible) this.registerScreenshotKey();
+            else {
+                // The binding's own disposer: a user's rebinding of the chord survives the hide.
+                this.screenshotKeyOff?.();
+                this.screenshotKeyOff = null;
+            }
+        }
     }
 
     /** Push the layout-shape-dependent chrome onto every cell: multi-cell grids keep
@@ -2411,9 +2453,9 @@ export class VelaWorkspace {
     }
 
     private openMoreDrawer(): void {
-        // The drawer is the mobile counterpart of the topbar's tools — composition-
-        // hidden entries lose their drawer rows too (handlers omitted ⇒ rows omitted).
-        const has = (id: string): boolean => topbarHas(this.topbarComp, id);
+        // The drawer is the mobile counterpart of the topbar's tools — hidden entries (by
+        // the composition or a plugin) lose their drawer rows too (handlers omitted ⇒ rows omitted).
+        const has = (id: string): boolean => this.topbarVisible(id);
         this.moreDrawer ??= new MoreDrawer({
             host: this.root,
             i18n: this.localeState,
@@ -2544,6 +2586,19 @@ export class VelaWorkspace {
         if (!action.when || action.when(ctx)) action.run(ctx);
     }
 
+    /** The screenshot chord, while the screenshot slot shows. */
+    private registerScreenshotKey(): void {
+        if (!this.topbarVisible('screenshot')) return;
+        const ov = this.screenshotOverride;
+        this.screenshotKeyOff = this.keymap.register({
+            id: 'chart.screenshot',
+            keys: 'mod+alt+s',
+            label: ov ? ov.label : TEXT.screenshot,
+            category: TEXT.categoryChart,
+            run: ov ? () => this.runOverride(ov) : () => this.downloadScreenshot(),
+        });
+    }
+
     /** The default shortcut set — every binding acts on the ACTIVE cell. */
     private registerDefaultKeys(): void {
         // The screenshot chord belongs to the screenshot SLOT — a composition that
@@ -2551,16 +2606,7 @@ export class VelaWorkspace {
         // the chord over (a host replacing the surface must not keep the old behavior
         // reachable). Ctrl+Z/Y below are editing primitives and stay regardless of the
         // 'undo-redo' buttons.
-        if (topbarHas(this.topbarComp, 'screenshot')) {
-            const ov = this.screenshotOverride;
-            this.keymap.register({
-                id: 'chart.screenshot',
-                keys: 'mod+alt+s',
-                label: ov ? ov.label : TEXT.screenshot,
-                category: TEXT.categoryChart,
-                run: ov ? () => this.runOverride(ov) : () => this.downloadScreenshot(),
-            });
-        }
+        this.registerScreenshotKey();
         this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: TEXT.resetView, category: TEXT.categoryChart, run: () => this.active.chart.setVisibleRangePreset('ALL') });
         this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: TEXT.toggleLog, category: TEXT.categoryChart, run: () => this.active.chart.renderer.set('logScale', !this.active.chart.renderer.get('logScale')) });
         this.keymap.register({

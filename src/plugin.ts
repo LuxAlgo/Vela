@@ -153,6 +153,10 @@ export {
     type SidePanelHandle,
     type SidePanelHeader,
     type SidePanelButton,
+    type TopbarItems,
+    type TopbarItemId,
+    type PanelDockView,
+    type DockedPanelInfo,
 } from './widget/contributions';
 // Where the built-in right-click rows sit in the sort `context:*` actions share with them.
 export { CONTEXT_MENU_BUILTIN_ORDER } from './widget/context-menu-model';

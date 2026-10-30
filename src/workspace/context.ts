@@ -3,7 +3,7 @@
 // the contribution system anticipated), plus additive multi-chart extensions. Existing
 // plugins keep working unchanged; grid-aware ones narrow to WorkspaceWidgetContext.
 import type { Vela } from '../Vela';
-import type { WidgetContext } from '../widget/contributions';
+import type { PanelDockView, TopbarItems, WidgetContext } from '../widget/contributions';
 import type { ChartCell } from './ChartCell';
 import type { WorkspaceReplay } from './WorkspaceReplay';
 import type { Translator } from '../core/i18n/types';
@@ -38,6 +38,9 @@ export interface ContextHost {
     /** Debounced dirty mark — third-party persistable state changed (`ctx.stateChanged()`). */
     stateDirty(): void;
     replay: WorkspaceReplay;
+    topbar: TopbarItems;
+    /** The dock's view — a function: the context is built before the dock exists. */
+    panels(): PanelDockView;
 }
 
 /** Build a fresh context bound to the CURRENT active cell. EVERY read resolves live —
@@ -84,5 +87,9 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         },
         setActiveCell: (id) => host.setActiveCell(id),
         replay: host.replay,
+        topbar: host.topbar,
+        get panels() {
+            return host.panels();
+        },
     };
 }

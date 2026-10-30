@@ -261,6 +261,10 @@ registerWidgetAction({
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
         // ctx.setSymbol / setTimeframe / setPriceStyle / openSymbolSearch(query?)
         // ctx.togglePanel(id, open?) — open/close a docked side panel (dock stays exclusive)
+        // ctx.panels — the dock as data: list() (built-ins flagged), openId(),
+        //   isMaximized(id), onDidChange(cb) (see Side panels)
+        // ctx.topbar — the built-in topbar items: isVisible(id), setVisible(id, visible)
+        //   (see Hiding built-in topbar items)
         // ctx.dockStrip(el) — dock an element as a full-width strip between the charts and
         //   the bottom bar (the charts shrink); returns the undock
         // ctx.replay (workspace) — bar replay across every cell on one clock; drive it
@@ -286,7 +290,11 @@ On the mobile chrome the split carries over: left-aligned actions get their own
 icon-only stop in the bottom bar (the built-in indicators slot), while right-aligned
 ones stay in the three-dots sheet. `mobile` overrides it per action: a left action with
 `mobile: 'menu'` becomes a three-dots row with the primary rows (right after Layout),
-and a right action with `mobile: 'bar'` gets a bottom-bar stop. `context:*` actions become
+and a right action with `mobile: 'bar'` gets a bottom-bar stop. The bottom bar asks `when`
+again whenever the shell switches between its desktop and mobile layouts, so a gate that
+reads the layout (`ctx.host.closest('[data-layout]')`) shows a phone-only stop as soon as
+the shell turns mobile. Every contributed button and stop carries its action's id as
+`data-action-id`. `context:*` actions become
 rows of the matching right-click menu zone (see [Right-click menu
 actions](#right-click-menu-actions)). Register at import time — a widget constructed later
 picks them up; after late registrations call `widget.refreshActions()`.
@@ -297,6 +305,31 @@ topbar](../user/workspace.md#composing-the-topbar)) can pin an action id at an e
 position (overriding both), or omit the `'actions'` flow slot entirely, in which case
 unpinned actions don't render on that side. Publish your action ids (a stable exported
 constant) so hosts can compose with them.
+
+### Hiding built-in topbar items
+
+A plugin that hosts one of the shell's own controls elsewhere (its own alerts surface, a
+rail of panel toggles) hides the built-in at runtime through `ctx.topbar`:
+
+```ts
+registerWidgetAttachment({
+    id: 'mytool.alerts',
+    mount: (ctx) => {
+        ctx.topbar.setVisible('alerts', false);   // the bell, its mobile menu row
+        return () => ctx.topbar.setVisible('alerts', true);
+    },
+});
+```
+
+The ids are the built-in composition ids: `'symbol'`, `'timeframes'`, `'style'`,
+`'layout'`, `'indicators'`, `'undo-redo'`, `'alerts'`, `'panels'` and `'screenshot'`.
+Runtime visibility narrows the host's `topbar` composition and follows its rule: hiding an
+item removes its other entry points with it — its row in the mobile three-dots menu, its
+bottom-bar stop, its keyboard chord (`mod+alt+S` for `'screenshot'`). Hiding `'panels'`
+also removes the panel rows from the mobile menu, so a plugin that moves the panel toggles
+elsewhere on the desktop keeps them reachable on a phone by hiding `'panels'` only on the
+desktop layout. `ctx.topbar.isVisible(id)` reads the result. It never shows an item the
+composition left out, and it is not saved with the layout: apply it again when you mount.
 
 Two rules keep actions portable:
 
@@ -723,6 +756,7 @@ registerSidePanel({
     maxWidth: 560,
     overlay: false,              // true floats the panel OVER the chart (with a pin to dock it)
     maximizable: false,          // true adds a Maximize/Restore button to the header
+    header: 'default',           // 'none': no header row — the panel draws its own
     mount: (ctx, body, header) => {
         const list = document.createElement('div');
         body.appendChild(list);                       // `body` is the panel's scrolling area
@@ -742,6 +776,17 @@ registerSidePanel({
   name); `header.setTitle` rewrites the title text (an empty string hides it, letting the
   slot own the row). The close button and the row itself stay the shell's, and the topbar
   toggle keeps the DECLARED `title` as its tooltip.
+- **Or draw your own header.** With `header: 'none'` the shell renders no header row: the
+  panel lays out its own at the top of `body` and wires its close control to
+  `header.close()` (and its maximize control, if any, to `header.setMaximized`). On the
+  mobile layout the panel covers the chart and the header's close is the way out, so a
+  headless panel must offer one.
+- **Read the dock through `ctx.panels`.** `list()` reports every docked panel in dock order,
+  the built-ins included (`builtIn: true`), with its title in the shell's language;
+  `openId()` names the open one (or null); `isMaximized(id)` says whether it covers the
+  charts; `onDidChange(cb)` fires after a panel opens, closes, maximizes or restores, and
+  after panels are added or removed, and returns the unsubscribe. `ctx.togglePanel` acts on
+  the same dock.
 
 - **Width is a per-panel choice.** Omit `resizable` for a fixed column; with it, the drag is
   clamped to `[minWidth, maxWidth]` (defaults 200/640) and the width the user settles on is
