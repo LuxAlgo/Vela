@@ -2,20 +2,22 @@
 // attributes. No DOM.
 import type { PartProps } from '../../headless';
 
-/** `secondary` = outlined (the dialogs' Cancel); `primary` = filled with the selection color
- *  (OK, Apply); `ghost` = no border or fill until hovered (toolbar and header icons);
- *  `subtle` = a sunken fill (settings actions). */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'subtle';
-/** `md` = 34px / 14px (dialog footers); `sm` = 30px / 13px (panels, compact dialogs);
- *  `xs` = 26px / 12px (header and row actions). */
-export type ButtonSize = 'xs' | 'sm' | 'md';
+/** `default` = filled with the selection color (OK, Apply); `outline` = bordered (the
+ *  dialogs' Cancel); `secondary` = a sunken fill (settings actions); `ghost` = no border or
+ *  fill until hovered (toolbar and header icons); `destructive` = tinted with the danger
+ *  color (Remove, Delete); `link` = text that underlines on hover. */
+export type ButtonVariant = 'default' | 'outline' | 'secondary' | 'ghost' | 'destructive' | 'link';
+/** Heights: `xs` 26px, `sm` 30px (panels), `default` 34px (dialog footers), `lg` 40px
+ *  (touch). The `icon*` sizes are the same heights, square, for a button that shows only
+ *  an icon (its `label` names it). */
+export type ButtonSize = 'default' | 'xs' | 'sm' | 'lg' | 'icon' | 'icon-xs' | 'icon-sm' | 'icon-lg';
 
 export interface ButtonControllerOptions {
+    /** Default `default`. */
     variant?: ButtonVariant;
+    /** Default `default`. */
     size?: ButtonSize;
-    /** A square icon button: the label becomes its accessible name. */
-    iconOnly?: boolean;
-    /** Accessible name — required for an icon-only button. */
+    /** Accessible name — required for the `icon*` sizes. */
     label?: string;
     /** A toggle button's state (`aria-pressed`). Omitted: not a toggle. */
     pressed?: boolean;
@@ -25,6 +27,7 @@ export interface ButtonControllerOptions {
 export interface ButtonController {
     readonly variant: ButtonVariant;
     readonly size: ButtonSize;
+    /** The size shows only an icon. */
     readonly iconOnly: boolean;
     readonly pressed: boolean | undefined;
     readonly disabled: boolean;
@@ -39,9 +42,9 @@ export function buttonController(opts: ButtonControllerOptions = {}): ButtonCont
     let pressed = opts.pressed;
     let disabled = opts.disabled ?? false;
     let label = opts.label;
-    const variant = opts.variant ?? 'secondary';
-    const size = opts.size ?? 'md';
-    const iconOnly = opts.iconOnly ?? false;
+    const variant = opts.variant ?? 'default';
+    const size = opts.size ?? 'default';
+    const iconOnly = size.startsWith('icon');
     return {
         variant,
         size,
@@ -63,9 +66,9 @@ export function buttonController(opts: ButtonControllerOptions = {}): ButtonCont
         },
         rootProps: () => ({
             type: 'button',
+            'data-slot': 'button',
             'data-variant': variant,
             'data-size': size,
-            'data-icon-only': iconOnly,
             'data-pressed': pressed === true,
             'aria-pressed': pressed === undefined ? undefined : String(pressed),
             'aria-label': iconOnly ? label : undefined,

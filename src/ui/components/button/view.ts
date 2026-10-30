@@ -1,4 +1,4 @@
-// Button VIEW — a <button> with an optional leading icon and a text label.
+// Button VIEW — a <button> with optional icons before and after a text label.
 import { injectStyles } from '../../styles';
 import { iconEl } from '../../icons';
 import { applyProps } from '../../headless';
@@ -6,10 +6,12 @@ import { buttonController, type ButtonController, type ButtonControllerOptions }
 import { BUTTON_CSS, BUTTON_STYLE_ID } from './styles';
 
 export interface ButtonOptions extends ButtonControllerOptions {
-    /** The visible text (an icon-only button shows none; `label` names it). */
+    /** The visible text (the `icon*` sizes show none; `label` names them). */
     text?: string;
-    /** Icon id from the kit's registry, before the text. */
+    /** Icon id from the kit's registry, before the text (the icon of an `icon*` size). */
     icon?: string;
+    /** Icon id after the text (a menu trigger's chevron). */
+    iconEnd?: string;
     onClick?: (e: MouseEvent) => void;
     /** Extra class names on the button (layout hooks). */
     className?: string;
@@ -24,13 +26,17 @@ export class Button {
         injectStyles(BUTTON_STYLE_ID, BUTTON_CSS, document);
         this.ctrl = buttonController({ ...opts, label: opts.label ?? opts.text });
         const b = document.createElement('button');
+        const doc = b.ownerDocument;
         b.className = opts.className ? `vela-btn ${opts.className}` : 'vela-btn';
-        if (opts.icon) {
-            b.dataset.hasIcon = '';
-            b.appendChild(iconEl(opts.icon, b.ownerDocument));
-        }
-        this.textNode = !this.ctrl.iconOnly && opts.text !== undefined ? b.ownerDocument.createTextNode(opts.text) : null;
+        const icon = (id: string, side: 'inline-start' | 'inline-end'): HTMLElement => {
+            const el = iconEl(id, doc);
+            el.dataset.icon = side;
+            return el;
+        };
+        if (opts.icon) b.appendChild(icon(opts.icon, 'inline-start'));
+        this.textNode = !this.ctrl.iconOnly && opts.text !== undefined ? doc.createTextNode(opts.text) : null;
         if (this.textNode) b.appendChild(this.textNode);
+        if (opts.iconEnd && !this.ctrl.iconOnly) b.appendChild(icon(opts.iconEnd, 'inline-end'));
         if (opts.onClick) b.addEventListener('click', opts.onClick);
         this.el = b;
         this.paint();
@@ -50,7 +56,7 @@ export class Button {
         this.paint();
     }
 
-    /** New text (or, icon-only, a new accessible name). */
+    /** New text (or, for an `icon*` size, a new accessible name). */
     setText(text: string): void {
         this.ctrl.setLabel(text);
         if (this.textNode) this.textNode.data = text;

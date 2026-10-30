@@ -1,30 +1,33 @@
-// Badge CONTROLLER — tone and shape of a short status label or count. No DOM.
+// Badge CONTROLLER — variant and shape of a short status label or count. No DOM.
 import type { PartProps } from '../../headless';
 
-/** `neutral` (default), `accent` (the theme's accent), `up` / `down` (the market colors). */
-export type BadgeTone = 'neutral' | 'accent' | 'up' | 'down';
+/** `default` = filled with the selection color; `secondary` = a neutral tint; `outline` =
+ *  bordered; `destructive` = tinted with the danger color; `up` / `down` = tinted with the
+ *  market colors. */
+export type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive' | 'up' | 'down';
 
 export interface BadgeControllerOptions {
-    tone?: BadgeTone;
+    /** Default `default`. */
+    variant?: BadgeVariant;
     /** A round count pill (`3`, `9+`) rather than a label. */
     count?: boolean;
 }
 
 export interface BadgeController {
-    readonly tone: BadgeTone;
-    setTone(tone: BadgeTone): void;
+    readonly variant: BadgeVariant;
+    setVariant(variant: BadgeVariant): void;
     rootProps(): PartProps;
 }
 
 export function badgeController(opts: BadgeControllerOptions = {}): BadgeController {
-    let tone = opts.tone ?? 'neutral';
+    let variant = opts.variant ?? 'default';
     return {
-        get tone() {
-            return tone;
+        get variant() {
+            return variant;
         },
-        setTone(v) {
-            tone = v;
+        setVariant(v) {
+            variant = v;
         },
-        rootProps: () => ({ 'data-tone': tone, 'data-count': opts.count === true }),
+        rootProps: () => ({ 'data-slot': 'badge', 'data-variant': variant, 'data-count': opts.count === true }),
     };
 }

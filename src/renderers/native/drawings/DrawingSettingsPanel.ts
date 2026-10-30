@@ -1244,7 +1244,7 @@ function separator(): HTMLElement {
 }
 
 function button(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-    return new Button({ text: label, variant: primary ? 'primary' : 'secondary', size: 'sm', onClick }).el;
+    return new Button({ text: label, variant: primary ? 'default' : 'outline', size: 'sm', onClick }).el;
 }
 
 /** A menu row's text, in the row's text slot. */

@@ -34,9 +34,9 @@ export function rovingMove(key: string, orientation: 'horizontal' | 'vertical', 
     return key === forward ? 'next' : key === back ? 'prev' : null;
 }
 
-/** The enabled item a move lands on from `from`, wrapping around (null: nothing enabled). */
-export function rovingTarget<T extends { id: string; disabled?: boolean }>(items: readonly T[], from: string | null, move: RovingMove): string | null {
-    const enabled = items.filter((i) => !i.disabled);
+/** The enabled, shown item a move lands on from `from`, wrapping around (null: nothing to reach). */
+export function rovingTarget<T extends { id: string; disabled?: boolean; hidden?: boolean }>(items: readonly T[], from: string | null, move: RovingMove): string | null {
+    const enabled = items.filter((i) => !i.disabled && !i.hidden);
     if (enabled.length === 0) return null;
     if (move === 'first') return enabled[0]!.id;
     if (move === 'last') return enabled[enabled.length - 1]!.id;

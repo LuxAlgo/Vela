@@ -1,53 +1,49 @@
-// Segmented VIEW — a row of option buttons on one track. Clicks and the arrow keys choose.
+// ToggleGroup VIEW — a row of option buttons on one track. Clicks press; the arrow keys move
+// (and, for `single`, choose).
 import { injectStyles } from '../../styles';
 import { iconEl } from '../../icons';
 import { applyProps } from '../../headless';
-import { segmentedController, type SegmentedController, type SegmentedControllerOptions, type SegmentedItem } from './controller';
-import { SEGMENTED_CSS, SEGMENTED_STYLE_ID } from './styles';
+import { toggleGroupController, type ToggleGroupController, type ToggleGroupControllerOptions, type ToggleGroupItem } from './controller';
+import { TOGGLE_GROUP_CSS, TOGGLE_GROUP_STYLE_ID } from './styles';
 
-export interface SegmentedOptions extends SegmentedControllerOptions {
-    /** `md` (default) = 32px; `sm` = 28px. */
-    size?: 'sm' | 'md';
+export type ToggleGroupOptions = ToggleGroupControllerOptions & {
+    /** `default` = 32px; `sm` = 28px. */
+    size?: 'default' | 'sm';
     /** Stretch across the parent, options sharing the width. */
     fill?: boolean;
     className?: string;
-}
+};
 
-export class Segmented {
+export class ToggleGroup {
     readonly el: HTMLElement;
-    private readonly ctrl: SegmentedController;
+    private readonly ctrl: ToggleGroupController;
     private readonly iconOnly: boolean;
     private readonly buttons = new Map<string, HTMLButtonElement>();
 
-    constructor(opts: SegmentedOptions) {
-        injectStyles(SEGMENTED_STYLE_ID, SEGMENTED_CSS, document);
+    constructor(opts: ToggleGroupOptions) {
+        injectStyles(TOGGLE_GROUP_STYLE_ID, TOGGLE_GROUP_CSS, document);
         this.iconOnly = opts.iconOnly ?? false;
-        this.ctrl = segmentedController({
-            ...opts,
-            onChange: (id) => {
-                this.paint();
-                opts.onChange?.(id);
-            },
-        });
+        this.ctrl = toggleGroupController(opts);
         this.el = document.createElement('div');
-        this.el.className = opts.className ? `vela-segmented ${opts.className}` : 'vela-segmented';
-        this.el.dataset.size = opts.size ?? 'md';
+        this.el.className = opts.className ? `vela-toggle-group ${opts.className}` : 'vela-toggle-group';
+        this.el.dataset.size = opts.size ?? 'default';
         if (opts.fill) this.el.dataset.fill = '';
         this.el.addEventListener('keydown', (e) => this.onKey(e));
         this.build();
     }
 
-    get value(): string | null {
-        return this.ctrl.value;
+    /** The options turned on. */
+    get values(): readonly string[] {
+        return this.ctrl.values;
     }
 
-    /** Show an option as chosen without notifying. */
-    setValue(id: string | null): void {
-        this.ctrl.setValue(id);
+    /** Show options as on without notifying. */
+    setValue(value: string | readonly string[] | null): void {
+        this.ctrl.setValue(value);
         this.paint();
     }
 
-    setItems(items: readonly SegmentedItem[]): void {
+    setItems(items: readonly ToggleGroupItem[]): void {
         this.ctrl.setItems(items);
         this.build();
     }
@@ -58,12 +54,12 @@ export class Segmented {
         this.el.replaceChildren(
             ...this.ctrl.items.map((item) => {
                 const b = doc.createElement('button');
-                b.className = 'vela-segment';
+                b.className = 'vela-toggle-group-item';
                 if (item.icon) b.appendChild(iconEl(item.icon, doc));
                 if (this.iconOnly && item.icon) b.dataset.iconOnly = '';
                 else b.appendChild(doc.createTextNode(item.label));
                 b.addEventListener('click', () => {
-                    if (this.ctrl.select(item.id)) this.paint();
+                    if (this.ctrl.toggle(item.id)) this.paint();
                 });
                 this.buttons.set(item.id, b);
                 return b;
@@ -84,6 +80,6 @@ export class Segmented {
         if (target === null) return;
         e.preventDefault();
         this.buttons.get(target)?.focus();
-        if (this.ctrl.select(target)) this.paint();
+        if (this.ctrl.type === 'single' && this.ctrl.toggle(target)) this.paint();
     }
 }

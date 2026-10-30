@@ -25,6 +25,6 @@ export * from './components/callout-bubble';
 export * from './components/date-picker';
 export * from './components/button';
 export * from './components/tabs';
-export * from './components/segmented';
+export * from './components/toggle-group';
 export * from './components/badge';
 export { applyProps, nextPartId, rovingMove, rovingTarget, type PartProps, type RovingMove } from './headless';

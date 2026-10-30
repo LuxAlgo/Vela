@@ -1,7 +1,7 @@
 // Badge VIEW — a <span> label or count.
 import { injectStyles } from '../../styles';
 import { applyProps } from '../../headless';
-import { badgeController, type BadgeController, type BadgeControllerOptions, type BadgeTone } from './controller';
+import { badgeController, type BadgeController, type BadgeControllerOptions, type BadgeVariant } from './controller';
 import { BADGE_CSS, BADGE_STYLE_ID } from './styles';
 
 export interface BadgeOptions extends BadgeControllerOptions {
@@ -26,8 +26,8 @@ export class Badge {
         this.el.textContent = text;
     }
 
-    setTone(tone: BadgeTone): void {
-        this.ctrl.setTone(tone);
+    setVariant(variant: BadgeVariant): void {
+        this.ctrl.setVariant(variant);
         applyProps(this.el, this.ctrl.rootProps());
     }
 }

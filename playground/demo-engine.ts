@@ -14,6 +14,7 @@
  *     title    Moving averages          // legend title
  *     overlay  true                     // price pane (false = its own pane)
  *     input    fast = 10                // an int input → the gear dialog
+ *     input    slow = 30 tab "Slow"     // on its own tab of the dialog
  *     plot     sma(close, fast) "Fast" #f0b90b width=2
  *     plot     rsi(close, 14) "RSI" style=area
  *
@@ -163,9 +164,13 @@ function parseProgram(source: string): Program {
                 prog.overlay = tail !== 'false';
                 break;
             case 'input': {
+                // A trailing `tab "Name"` puts the input on its own tab of the settings dialog.
+                const tabMatch = /\s+tab\s+"([^"]+)"$/.exec(tail);
+                const decl = tabMatch ? tail.slice(0, tabMatch.index) : tail;
+                const tab = tabMatch ? { tab: tabMatch[1]! } : {};
                 // A bar-source default (`input source = close`) declares a dropdown over
                 // the sources; anything else must be numeric.
-                const src = /^(\w+)\s*=\s*([a-z]\w*)$/.exec(tail);
+                const src = /^(\w+)\s*=\s*([a-z]\w*)$/.exec(decl);
                 if (src && src[2]! in SOURCES) {
                     prog.inputs.push({
                         key: src[1]!,
@@ -173,11 +178,12 @@ function parseProgram(source: string): Program {
                         type: 'string',
                         defval: src[2]!,
                         options: Object.keys(SOURCES),
+                        ...tab,
                     });
                     break;
                 }
-                const m = /^(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/.exec(tail);
-                if (!m) throw new Error(`bad input declaration: "${line}" (expected: input name = number|source)`);
+                const m = /^(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/.exec(decl);
+                if (!m) throw new Error(`bad input declaration: "${line}" (expected: input name = number|source [tab "Name"])`);
                 const defval = Number(m[2]);
                 prog.inputs.push({
                     key: m[1]!,
@@ -185,6 +191,7 @@ function parseProgram(source: string): Program {
                     type: Number.isInteger(defval) ? 'int' : 'float',
                     defval,
                     min: 1,
+                    ...tab,
                 });
                 break;
             }
@@ -442,7 +449,7 @@ plot     ema(source, length) "EMA" #f0b90b width=2`,
     bands: `title    Bollinger Bands
 overlay  true
 input    length = 20
-input    mult = 2
+input    mult = 2 tab "Bands"
 plot     sma(close, length) "Basis" #2962ff
 plot     sma(close, length) + mult * stdev(close, length) "Upper" #787b86
 plot     sma(close, length) - mult * stdev(close, length) "Lower" #787b86`,

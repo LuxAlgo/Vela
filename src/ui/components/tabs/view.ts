@@ -5,10 +5,10 @@ import { applyProps } from '../../headless';
 import { tabsController, type TabItem, type TabsController, type TabsControllerOptions } from './controller';
 import { TABS_CSS, TABS_STYLE_ID } from './styles';
 
-export type TabsVariant = 'filled' | 'soft' | 'underline' | 'nav';
+export type TabsVariant = 'default' | 'line' | 'filled' | 'soft' | 'nav';
 
 export interface TabsOptions extends TabsControllerOptions {
-    /** Default `underline` (`nav` reads best vertical). */
+    /** Default `default` (`nav` reads best vertical). */
     variant?: TabsVariant;
     /** Extra class names on the list (the host's layout of the strip). */
     className?: string;
@@ -25,7 +25,7 @@ export class Tabs {
 
     constructor(opts: TabsOptions) {
         injectStyles(TABS_STYLE_ID, TABS_CSS, document);
-        this.variant = opts.variant ?? 'underline';
+        this.variant = opts.variant ?? 'default';
         this.tabClassName = opts.tabClassName;
         this.ctrl = tabsController({
             ...opts,
@@ -54,6 +54,12 @@ export class Tabs {
     setItems(items: readonly TabItem[]): void {
         this.ctrl.setItems(items);
         this.build();
+    }
+
+    /** Hide or show a tab. Hiding the selected tab selects the first available one (notified). */
+    setHidden(id: string, hidden: boolean): void {
+        this.ctrl.setHidden(id, hidden);
+        this.paint();
     }
 
     /** The button of a tab (null: unknown id). */
@@ -93,7 +99,7 @@ export class Tabs {
     private onKey(e: KeyboardEvent): void {
         const from = [...this.buttons].find(([, b]) => b === e.target)?.[0];
         if (from === undefined) return;
-        if (this.ctrl.activation === 'manual' && (e.key === 'Enter' || e.key === ' ')) {
+        if (this.ctrl.activationMode === 'manual' && (e.key === 'Enter' || e.key === ' ')) {
             e.preventDefault();
             if (this.ctrl.select(from)) this.paint();
             return;
@@ -102,6 +108,6 @@ export class Tabs {
         if (target === null) return;
         e.preventDefault();
         this.buttons.get(target)?.focus();
-        if (this.ctrl.activation === 'automatic' && this.ctrl.select(target)) this.paint();
+        if (this.ctrl.activationMode === 'automatic' && this.ctrl.select(target)) this.paint();
     }
 }
