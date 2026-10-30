@@ -62,9 +62,56 @@ export interface WidgetContext {
      *  `state:changed` + storage write follows). Only needed for state with no shell
      *  event of its own — indicator adds/removals already trigger the save cycle. */
     stateChanged(): void;
+    /** The shell's built-in topbar items, shown or hidden at runtime — for a plugin that
+     *  hosts one of those controls elsewhere (its own alerts surface, a rail of panel
+     *  toggles). See {@link TopbarItems}. */
+    topbar: TopbarItems;
+    /** The shell's side-panel dock as data: which panels it holds (built-ins included),
+     *  which one is open, and a change event. See {@link PanelDockView}. */
+    panels: PanelDockView;
     /** Where the right-click that opened a context menu landed. Set on the context handed
      *  to `context:*` actions (`when` and `run`); absent everywhere else. */
     pointer?: ContextMenuPointer;
+}
+
+/** A built-in topbar item a plugin can hide at runtime — every built-in id but the `'actions'` flow slot. */
+export type TopbarItemId = Exclude<(typeof TOPBAR_BUILTIN_IDS)[number], 'actions'>;
+
+/**
+ * Runtime visibility of the shell's built-in topbar items ({@link WidgetContext.topbar}).
+ * It narrows the host's `topbar` composition and follows the same rule: hiding an item
+ * removes its other entry points with it — its row in the mobile three-dots menu, its
+ * bottom-bar stop, its keyboard chord. It never adds an item the composition left out,
+ * and it is not saved with the layout: a plugin applies it again when it mounts.
+ */
+export interface TopbarItems {
+    /** Whether the item shows right now: in the composition, and not hidden at runtime. */
+    isVisible(id: TopbarItemId): boolean;
+    /** Hide the item (`false`) or give it back (`true`). Unknown ids are ignored. */
+    setVisible(id: TopbarItemId, visible: boolean): void;
+}
+
+/** One panel the dock holds, as {@link PanelDockView.list} reports it. */
+export interface DockedPanelInfo {
+    id: string;
+    /** The panel's title in the shell's language. */
+    title: string;
+    icon: string;
+    /** The shell's own panel (object tree, data window) rather than a contributed one. */
+    builtIn: boolean;
+}
+
+/** The side-panel dock as data ({@link WidgetContext.panels}); `ctx.togglePanel` acts on it. */
+export interface PanelDockView {
+    /** Every docked panel, built-ins included, in dock order. */
+    list(): ReadonlyArray<DockedPanelInfo>;
+    /** The open panel's id, or null when the column is closed. */
+    openId(): string | null;
+    /** Whether the panel covers the shell's charts right now (see `maximizable`). */
+    isMaximized(id: string): boolean;
+    /** Called after a panel opens, closes, maximizes or restores, and after panels are
+     *  added or removed. Returns the unsubscribe. */
+    onDidChange(cb: () => void): () => void;
 }
 
 /**
@@ -200,6 +247,9 @@ export interface SidePanelHeader {
     /** Maximize the panel over the shell's charts, or restore it — what its header button
      *  does. A no-op unless the descriptor is `maximizable`. Closing restores it too. */
     setMaximized(maximized: boolean): void;
+    /** Close the panel — what the header's close button does. A panel declared
+     *  `header: 'none'` wires its own close control to this. */
+    close(): void;
 }
 
 /**
@@ -236,6 +286,11 @@ export interface SidePanelDescriptor {
      *  it (default false). For panels that are sometimes the main work surface, like an
      *  editor; the contribution can drive it too ({@link SidePanelHeader.setMaximized}). */
     maximizable?: boolean;
+    /** `'none'` drops the shell's header row (title, header buttons, close) so the panel
+     *  draws its own in its body, wiring its close control to {@link SidePanelHeader.close}
+     *  (default `'default'`). On the mobile layout the header's close is the panel's only
+     *  way out, so a headless panel must provide one. */
+    header?: 'default' | 'none';
     mount(ctx: WidgetContext, body: HTMLElement, header: SidePanelHeader): SidePanelHandle | void;
 }
 

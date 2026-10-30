@@ -462,7 +462,75 @@ describe('PanelDock', () => {
         d.refresh();
         warn.mockRestore();
     });
+
+    it("a panel declared header: 'none' has no header row and closes through its header surface", () => {
+        const { root } = stubDoc();
+        const d = new PanelDock(root as never, { chrome: { setPanelButtons: () => {}, setPanelActive: () => {} }, context: () => ctx });
+        let close: (() => void) | null = null;
+        const off = registerSidePanel({
+            id: 'own',
+            title: 'Own header',
+            icon: 'io',
+            header: 'none',
+            mount: (_ctx, _body, header) => {
+                close = () => header.close();
+            },
+        });
+        d.refresh();
+        const panel = find(root, 'vela-panel-own')!;
+        expect(find(panel, 'vela-panel-header')!.hidden).toBe(true);
+        d.toggle('own', true);
+        expect(d.openId).toBe('own');
+        close!();
+        expect(d.openId).toBeNull();
+        // The default keeps the row.
+        const plain = new SidePanel(root as never, 'Plain', 'x-plain');
+        expect(find(plain.el as never, 'vela-panel-header')!.hidden).toBe(false);
+        off();
+        d.refresh();
+    });
+
+    it('a view lists every panel with the built-ins flagged, reports the open and maximized ones, and announces changes', () => {
+        const { dock: d } = dock();
+        const view = d.view();
+        let calls = 0;
+        const stop = view.onDidChange(() => void (calls += 1));
+        const off = registerSidePanel({ id: 'm', title: 'Max', icon: 'im', maximizable: true, mount: () => {} });
+        d.refresh();
+        expect(view.list()).toEqual([
+            { id: 'a', title: 'A', icon: 'ia', builtIn: true },
+            { id: 'b', title: 'B', icon: 'ib', builtIn: true },
+            { id: 'm', title: 'Max', icon: 'im', builtIn: false },
+        ]);
+        const afterAdd = calls;
+        expect(afterAdd).toBeGreaterThan(0); // a panel docked
+
+        d.toggle('m', true);
+        expect(view.openId()).toBe('m');
+        expect(calls).toBeGreaterThan(afterAdd);
+
+        const beforeMax = calls;
+        find(find(dockRoot(d), 'vela-panel-m')!, 'vela-panel-max')!.fire('click');
+        expect(view.isMaximized('m')).toBe(true);
+        expect(calls).toBe(beforeMax + 1);
+
+        d.toggle('m', false); // closing restores it
+        expect(view.openId()).toBeNull();
+        expect(view.isMaximized('m')).toBe(false);
+
+        stop();
+        const settled = calls;
+        d.toggle('a', true);
+        expect(calls).toBe(settled); // unsubscribed
+        off();
+        d.refresh();
+    });
 });
+
+/** The root a dock built by `dock()` mounts its panels in. */
+function dockRoot(d: PanelDock): StubEl {
+    return (d as unknown as { host: StubEl }).host;
+}
 
 describe('sanitizeState — panels', () => {
     const base = { version: 1, layout: '1', charts: [] };

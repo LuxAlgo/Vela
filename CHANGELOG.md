@@ -2,6 +2,20 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Plugins can shape the shell's chrome without touching its markup.** A plugin can hide
+  the shell's own topbar items at runtime (`ctx.topbar.setVisible('alerts', false)`), which
+  also removes their row in the mobile menu, their bottom-bar stop and their keyboard
+  shortcut, and gives them back the same way. It can read the side-panel dock (which panels
+  it holds, which one is open or maximized) and follow its changes (`ctx.panels`). A side
+  panel can draw its own header (`registerSidePanel({ header: 'none' })`) and close itself
+  from it. On the mobile layout, a contributed bottom-bar button whose condition depends on
+  the layout now appears or leaves when the shell switches layouts, and contributed buttons
+  carry their action's id for styling.
+
 ## [0.9.3]
 
 ### Added
