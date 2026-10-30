@@ -345,6 +345,10 @@ export interface LegendIndicatorInfo {
      *  update shows through); undefined for a NATIVE (core-computed) indicator. The usual
      *  `when` gate for source-centric actions. */
     source?: string;
+    /** The language id of the engine running the script (`IndicatorHandle.language`);
+     *  undefined for a NATIVE indicator. The `when` gate for actions that only make sense
+     *  for one language, such as opening the row in that language's editor. */
+    language?: string;
 }
 
 /**
@@ -387,6 +391,16 @@ export function legendActions(): LegendActionDescriptor[] {
     return [...legendRegistry.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
+/** The {@link LegendIndicatorInfo} of one indicator — natives carry neither `source` nor `language`. */
+function legendInfoOf(h: IndicatorHandle): LegendIndicatorInfo {
+    return {
+        id: h.id,
+        title: h.title,
+        ...(h.source !== undefined ? { source: h.source } : {}),
+        ...(h.language !== undefined ? { language: h.language } : {}),
+    };
+}
+
 /**
  * The provider a shell hands to `chart.renderer.setLegendActions` — resolves the row's
  * indicator on THAT chart, gates each descriptor, and binds `run` to a fresh context per
@@ -395,15 +409,14 @@ export function legendActions(): LegendActionDescriptor[] {
 export function legendActionsProviderFor(chart: Vela, context: () => WidgetContext): (indicatorId: string) => LegendActionView[] {
     return (indicatorId) => {
         const find = (): IndicatorHandle | undefined => chart.indicators().find((h) => h.id === indicatorId);
-        const infoOf = (h: IndicatorHandle): LegendIndicatorInfo => ({ id: h.id, title: h.title, ...(h.source !== undefined ? { source: h.source } : {}) });
         const handle = find();
         if (!handle) return [];
-        const info = infoOf(handle);
+        const info = legendInfoOf(handle);
         // `run` reads the indicator AGAIN at click time: rows are built once, and an
         // in-place code update since then must not hand the action the old source.
         return legendActions()
             .filter((d) => !d.when || d.when(info))
-            .map((d) => ({ id: d.id, icon: d.icon, tooltip: textOf(chart.i18n, d.tooltip), run: () => d.run(context(), infoOf(find() ?? handle)) }));
+            .map((d) => ({ id: d.id, icon: d.icon, tooltip: textOf(chart.i18n, d.tooltip), run: () => d.run(context(), legendInfoOf(find() ?? handle)) }));
     };
 }
 
@@ -494,7 +507,7 @@ export function legendCalloutsProviderFor(chart: Vela, context: () => WidgetCont
     return (indicatorId) => {
         const handle = chart.indicators().find((h) => h.id === indicatorId);
         if (!handle) return [];
-        const info: LegendIndicatorInfo = { id: handle.id, title: handle.title, ...(handle.source !== undefined ? { source: handle.source } : {}) };
+        const info = legendInfoOf(handle);
         const views: LegendCalloutView[] = [];
         const t = (m: MessageLike): string => textOf(chart.i18n, m);
         for (const d of legendCallouts()) {

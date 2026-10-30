@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Know which language runs each script.** An indicator handle now tells which
+  scripting language runs it, in `language`: the language you added it with, or the
+  chart's `defaultLanguage`. It is available as soon as `addIndicator` returns, stays the
+  same after `updateCode`, and is absent on native indicators. Legend actions and legend
+  callouts receive it too, so an action that only suits one language, such as opening
+  that language's editor, can show only on the scripts it supports.
+
 ## [0.9.2]
 
 ### Added
