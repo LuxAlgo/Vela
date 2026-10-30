@@ -157,6 +157,8 @@ export {
     type TopbarItemId,
     type PanelDockView,
     type DockedPanelInfo,
+    type DockStripOptions,
+    type DockedStrip,
 } from './widget/contributions';
 // Where the built-in right-click rows sit in the sort `context:*` actions share with them.
 export { CONTEXT_MENU_BUILTIN_ORDER } from './widget/context-menu-model';

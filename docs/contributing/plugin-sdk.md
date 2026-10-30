@@ -265,8 +265,11 @@ registerWidgetAction({
         //   isMaximized(id), onDidChange(cb) (see Side panels)
         // ctx.topbar — the built-in topbar items: isVisible(id), setVisible(id, visible)
         //   (see Hiding built-in topbar items)
-        // ctx.dockStrip(el) — dock an element as a full-width strip between the charts and
-        //   the bottom bar (the charts shrink); returns the undock
+        // ctx.dockStrip(el, { position? }) — dock an element as a full-width strip above
+        //   (default) or under the bottom bar (the charts shrink); returns the undock, which
+        //   also carries cover(on) (see Layout regions)
+        // ctx.dockEdge(el, 'right') — dock an element at the shell's outer right edge, full
+        //   height (a rail); returns the undock
         // ctx.replay (workspace) — bar replay across every cell on one clock; drive it
         //   rather than one cell's chart.replay so every chart replays together
         // ctx.addIndicator({ name, script, id?, language? }) — add a script indicator
@@ -757,6 +760,7 @@ registerSidePanel({
     overlay: false,              // true floats the panel OVER the chart (with a pin to dock it)
     maximizable: false,          // true adds a Maximize/Restore button to the header
     header: 'default',           // 'none': no header row — the panel draws its own
+    placement: 'chart',          // 'column': full height beside the topbar, charts and bottom bar
     mount: (ctx, body, header) => {
         const list = document.createElement('div');
         body.appendChild(list);                       // `body` is the panel's scrolling area
@@ -815,6 +819,43 @@ registerSidePanel({
   (replaced) descriptor is rebuilt, and an open one stays open.
 - A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
   than taking the shell down.
+
+## Layout regions
+
+The shell lays out a **chart column** (the topbar, the chart row, the docked strips and the
+bottom bar), and plugins can add to it in three places without reaching into its markup:
+
+```ts
+// A full-height panel beside the whole chart column, not only beside the charts.
+registerSidePanel({ id: 'mytool.watch', title: 'Watchlist', icon: 'list', placement: 'column', mount });
+
+registerWidgetAttachment({
+    id: 'mytool.chrome',
+    mount: (ctx) => {
+        const offRail = ctx.dockEdge(myRail, 'right');                         // outer right edge, full height
+        const dock = ctx.dockStrip(myDock, { position: 'below-bottombar' });   // under the bottom bar
+        maximizeButton.onclick = () => dock.cover(!covered);                    // over the chart column
+        return () => { offRail(); dock(); };
+    },
+});
+```
+
+- **`placement: 'column'`** puts a side panel at the shell's right, full height: the topbar,
+  the charts, the strips and the bottom bar narrow to make room. It shares the dock with the
+  other panels (still one open at a time). On the mobile layout it covers the chart area
+  above the bottom bar, like any panel; maximized, it covers the chart column too.
+- **`ctx.dockEdge(el, 'right')`** docks an element outside everything else on the right,
+  full height — the place for a rail of toggles. Edge elements keep their own width and
+  stack in docking order.
+- **`ctx.dockStrip(el, { position: 'below-bottombar' })`** docks a strip under the bottom bar
+  instead of above it. The undock `dockStrip` returns also carries **`cover(on)`**:
+  `cover(true)` lays the strip over the whole chart column — topbar, charts, strips and
+  bottom bar — at that size whatever height the strip set itself, but not over a column
+  panel, an edge element or the mobile layout's bottom bar; `cover(false)` puts it back in
+  its spot.
+
+A shell that uses none of these keeps its plain column layout; the first one in use switches
+the shell to a grid with these regions for the rest of its life.
 
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 
