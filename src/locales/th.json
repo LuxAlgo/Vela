@@ -1974,6 +1974,7 @@
     "ui.menu.removeFavorite": "นำออกจากรายการโปรด",
     "ui.numberInput.decrease": "ลดค่า",
     "ui.numberInput.increase": "เพิ่มค่า",
+    "vela.sidebar.label": "แถบด้านข้าง",
     "widget.bottombar.chartSettings": "การตั้งค่ากราฟ",
     "widget.bottombar.extended": "ETH",
     "widget.bottombar.range.1d": "1D",

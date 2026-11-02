@@ -74,9 +74,27 @@ export interface WidgetContext {
     /** The shell's side-panel dock as data: which panels it holds (built-ins included),
      *  which one is open, and a change event. See {@link PanelDockView}. */
     panels: PanelDockView;
+    /** The shell's right-edge toolbar (the `sidebar` option): badges on its entries, and a
+     *  redraw after a sidebar action's `active` or `when` changed. See {@link SidebarControl}. */
+    sidebar: SidebarControl;
     /** Where the right-click that opened a context menu landed. Set on the context handed
      *  to `context:*` actions (`when` and `run`); absent everywhere else. */
     pointer?: ContextMenuPointer;
+}
+
+/**
+ * The shell's right-edge toolbar ({@link WidgetContext.sidebar}). Its entries are the
+ * side-panel toggles and the actions registered with `target: 'sidebar'`. Every method is
+ * a no-op while the shell shows no sidebar (the option is off, or the layout is mobile).
+ */
+export interface SidebarControl {
+    /** Whether the shell was built with a sidebar. */
+    readonly enabled: boolean;
+    /** A small count or mark on an entry (a panel id or a sidebar action id). `null`, `0`
+     *  and `''` clear it; numbers above 99 show as `99+`. */
+    setBadge(id: string, badge: string | number | null): void;
+    /** Redraw the entries: re-read each sidebar action's `active` and `when`. */
+    refresh(): void;
 }
 
 /** A built-in topbar item a plugin can hide at runtime — every built-in id but the `'actions'` flow slot. */
@@ -177,7 +195,7 @@ export interface ExternalIndicatorEntry {
 }
 
 /** Where an action is projected. */
-export type WidgetActionTarget = 'topbar' | 'context:body' | 'context:price-axis' | 'context:time-axis';
+export type WidgetActionTarget = 'topbar' | 'sidebar' | 'context:body' | 'context:price-axis' | 'context:time-axis';
 
 export interface WidgetActionDescriptor {
     /** Stable id — re-registering an id replaces it. */
@@ -197,7 +215,7 @@ export interface WidgetActionDescriptor {
      *  that makes a `'screenshot'` slot override pixel-faithful to the native button. */
     iconOnly?: boolean;
     /** Sort key (ascending; default 0; ties keep registration order). On the topbar it orders
-     *  the contributed group. In a context menu (`context:*`) contributed rows sort TOGETHER
+     *  the contributed group, and on the sidebar the `'actions'` flow slot. In a context menu (`context:*`) contributed rows sort TOGETHER
      *  with the menu's built-in rows, which sit at the ranks of `CONTEXT_MENU_BUILTIN_ORDER`:
      *  the built-in actions below 0 and the settings row at 1000. So an action without
      *  `order` lands after the built-in actions and before the settings row, `order: -100`
@@ -215,6 +233,10 @@ export interface WidgetActionDescriptor {
     mobile?: 'bar' | 'menu';
     /** Runtime gate — omitted ⇒ always shown. */
     when?: (ctx: WidgetContext) => boolean;
+    /** Sidebar only: the pressed look of a toggle that is on (a panel of the plugin's own,
+     *  a mode). Read whenever the sidebar redraws — call `ctx.sidebar.refresh()` after the
+     *  state behind it changed. */
+    active?: (ctx: WidgetContext) => boolean;
     run: (ctx: WidgetContext) => void;
 }
 
