@@ -164,6 +164,44 @@ describe('the sidebar option', () => {
         ws.destroy();
     });
 
+    it('marks its buttons with the action and panel ids plugins anchor to', () => {
+        disposers.push(registerWidgetAction({ id: 'probe.alerts', target: 'sidebar', label: 'Alerts', icon: 'bell', run: () => {} }));
+        const { ws, root } = mountWorkspace({ sidebar: true });
+        expect(root.querySelector('.vela-sidebar [data-action-id="probe.alerts"]')).toBe(button(root, 'probe.alerts'));
+        expect(root.querySelector('.vela-sidebar [data-panel-id="objects"]')).toBe(button(root, 'objects'));
+        expect(button(root, 'objects').hasAttribute('data-action-id')).toBe(false);
+        ws.destroy();
+    });
+
+    it('hides and gives back entries at runtime, never adding what the composition left out', () => {
+        disposers.push(registerWidgetAction({ id: 'probe.alerts', target: 'sidebar', label: 'Alerts', icon: 'bell', run: () => {} }));
+        const { ws, root } = mountWorkspace({ sidebar: { top: [], bottom: ['objects', '|', 'actions'] } });
+        const sidebar = ws.context().sidebar;
+        expect(sidebar.isVisible('objects')).toBe(true);
+        expect(sidebar.isVisible('dataWindow')).toBe(false); // left out by the composition
+        sidebar.setVisible('dataWindow', true);
+        expect(sidebar.isVisible('dataWindow')).toBe(false);
+
+        sidebar.setVisible('probe.alerts', false);
+        sidebar.setVisible('objects', false);
+        expect(entries(root).bottom).toEqual([]);
+        expect(sidebar.isVisible('probe.alerts')).toBe(false);
+        sidebar.setVisible('objects', true);
+        sidebar.setVisible('probe.alerts', true);
+        expect(entries(root).bottom).toEqual(['objects', '|', 'probe.alerts']);
+        ws.destroy();
+    });
+
+    it('takes a hidden action out of the three-dots menu too', () => {
+        disposers.push(registerWidgetAction({ id: 'probe.alerts', target: 'sidebar', label: 'Price alerts', icon: 'bell', run: () => {} }));
+        const { ws, root } = mountWorkspace({ sidebar: true, layoutMode: 'mobile' });
+        ws.context().sidebar.setVisible('probe.alerts', false);
+        root.querySelector<HTMLElement>('.vela-mb-more')!.click();
+        const rows = [...document.querySelectorAll('.vela-md-row .vela-md-row-label')].map((e) => e.textContent ?? '');
+        expect(rows).not.toContain('Price alerts');
+        ws.destroy();
+    });
+
     it('hands its actions to the three-dots menu on the mobile layout', () => {
         disposers.push(registerWidgetAction({ id: 'probe.alerts', target: 'sidebar', label: 'Price alerts', icon: 'bell', run: () => {} }));
         const { ws, root } = mountWorkspace({ sidebar: true, layoutMode: 'mobile' });

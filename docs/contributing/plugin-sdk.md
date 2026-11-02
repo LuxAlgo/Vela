@@ -265,8 +265,8 @@ registerWidgetAction({
         //   isMaximized(id), onDidChange(cb) (see Side panels)
         // ctx.topbar — the built-in topbar items: isVisible(id), setVisible(id, visible)
         //   (see Hiding built-in topbar items)
-        // ctx.sidebar — the right-edge toolbar: enabled, setBadge(id, value), refresh()
-        //   (see The sidebar)
+        // ctx.sidebar — the right-edge toolbar: enabled, setBadge(id, value), refresh(),
+        //   isVisible(id), setVisible(id, visible) (see The sidebar)
         // ctx.dockStrip(el, { position? }) — dock an element as a full-width strip above
         //   (default) or under the bottom bar (the charts shrink); returns the undock, which
         //   also carries cover(on) (see Layout regions)
@@ -884,8 +884,17 @@ registerWidgetAction({
   call **`ctx.sidebar.refresh()`**.
 - **`ctx.sidebar.setBadge(id, value)`** puts a small count on an entry, a sidebar action or a
   panel (`null`, `0` or `''` clear it; above 99 shows `99+`).
-- **`ctx.sidebar.enabled`** tells whether the shell has a sidebar; with none, `setBadge` and
-  `refresh` do nothing, so a plugin can call them unconditionally.
+- **`ctx.sidebar.setVisible(id, visible)`** hides an entry, a panel toggle or a sidebar
+  action, and gives it back; **`ctx.sidebar.isVisible(id)`** tells whether it shows. Like
+  `ctx.topbar.setVisible`, it never adds an entry the host's composition left out, a hidden
+  action leaves the mobile three-dots menu too, and it is not saved with the layout.
+- **Anchor your own UI to your button.** Sidebar buttons carry the same hooks as the topbar's
+  and the mobile bar's: `data-action-id` on an action's button, `data-panel-id` on a panel
+  toggle. A `run` that opens a popover or a menu anchors it to
+  `ctx.host.querySelector('[data-action-id="mytool.alerts.toggle"]')`.
+- **`ctx.sidebar.enabled`** tells whether the shell has a sidebar; with none, `setBadge`,
+  `refresh` and `setVisible` do nothing and `isVisible` is false, so a plugin can call them
+  unconditionally.
 - An action registered after the shell is built shows on the next `refreshActions()`, like
   topbar actions.
 - On the mobile layout the sidebar is hidden and its actions are rows in the three-dots menu.

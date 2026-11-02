@@ -108,6 +108,8 @@ export class Sidebar implements PanelChrome {
     private onPanel: (id: string) => void = () => {};
     private readonly open = new Set<string>();
     private readonly badges = new Map<string, string>();
+    /** Entries a plugin hid at runtime (`ctx.sidebar.setVisible`). */
+    private readonly hidden = new Set<string>();
     private readonly buttons = new Map<string, HTMLButtonElement>();
     private tooltips: Tooltip[] = [];
     /** The shell finished building: the actions (which read the context) may show. */
@@ -149,6 +151,17 @@ export class Sidebar implements PanelChrome {
         this.render();
     }
 
+    isVisible(id: string): boolean {
+        return this.buttons.has(id);
+    }
+
+    setVisible(id: string, visible: boolean): void {
+        if (visible === !this.hidden.has(id)) return;
+        if (visible) this.hidden.delete(id);
+        else this.hidden.add(id);
+        this.render();
+    }
+
     /** The shell is built: show the actions from now on. */
     activate(): void {
         this.live = true;
@@ -164,7 +177,10 @@ export class Sidebar implements PanelChrome {
             ...this.panels.map((p, i) => ({ id: p.id, kind: 'panel' as const, order: i, title: p.title, icon: p.icon, active: this.open.has(p.id), run: () => this.onPanel(p.id) })),
             ...(this.live ? this.actions(this.opts.context()) : []),
         ];
-        const layout = composeSidebar(entries, this.opts.composition);
+        const layout = composeSidebar(
+            entries.filter((e) => !this.hidden.has(e.id)),
+            this.opts.composition,
+        );
         this.topEl.replaceChildren(...this.groups(layout.top));
         this.bottomEl.replaceChildren(...this.groups(layout.bottom));
     }
@@ -225,6 +241,10 @@ export class Sidebar implements PanelChrome {
         b.className = 'vela-sidebar-btn';
         b.dataset.id = e.id;
         b.dataset.kind = e.kind;
+        // The same hooks as the topbar's and the mobile bar's buttons: a plugin anchors its
+        // popover to `[data-action-id="<its id>"]`.
+        if (e.kind === 'action') b.dataset.actionId = e.id;
+        else b.dataset.panelId = e.id;
         b.setAttribute('aria-label', e.title);
         b.appendChild(iconEl(e.icon, doc));
         const badge = this.badges.get(e.id);
@@ -259,6 +279,8 @@ export function sidebarControl(get: () => Sidebar | null): SidebarControl {
         },
         setBadge: (id, badge) => get()?.setBadge(id, badge),
         refresh: () => get()?.render(),
+        isVisible: (id) => get()?.isVisible(id) ?? false,
+        setVisible: (id, visible) => get()?.setVisible(id, visible),
     };
 }
 
