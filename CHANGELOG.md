@@ -6,6 +6,13 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **A toolbar on the shell's right edge.** `sidebar: true` gives the shell a toolbar on its
+  fourth side, beside the topbar, the charts and the bottom bar. It takes over the
+  side-panel toggles from the topbar and hosts the entries plugins register with
+  `registerWidgetAction({ target: 'sidebar' })`, which can show a pressed state (`active`)
+  and a badge (`ctx.sidebar.setBadge`). Hosts lay its upper and lower sections out with
+  `{ top, bottom }`, as they compose the topbar. It is off by default and desktop only: on
+  the mobile layout the panels keep their menu rows and the sidebar's entries join them.
 - **Buttons, tabs, toggle groups and badges in the UI kit.** `@luxalgo/vela/ui` now has
   `Button` (default, outline, secondary, ghost, destructive and link, in four heights and
   their square icon sizes, with icons on either side and toggle states), `Tabs` (an
@@ -20,7 +27,6 @@ All notable changes to Vela, newest first.
   tabs and the settings dialogs' buttons look as before. The indicator settings tabs now
   answer the arrow keys, announce themselves as tabs with their panels, and brighten on
   hover as they were meant to.
-
 - **Plugins can shape the shell's chrome without touching its markup.** A plugin can hide
   the shell's own topbar items at runtime (`ctx.topbar.setVisible('alerts', false)`), which
   also removes their row in the mobile menu, their bottom-bar stop and their keyboard
@@ -30,6 +36,14 @@ All notable changes to Vela, newest first.
   from it. On the mobile layout, a contributed bottom-bar button whose condition depends on
   the layout now appears or leaves when the shell switches layouts, and contributed buttons
   carry their action's id for styling.
+- **Plugins can lay out full-height panels, a rail and covering strips.** A side panel can
+  take the full height of the shell beside the topbar, the charts and the bottom bar
+  (`registerSidePanel({ placement: 'column' })`), which all narrow to make room. A plugin
+  can dock an element at the shell's outer right edge for a rail (`ctx.dockEdge`), dock a
+  strip under the bottom bar (`ctx.dockStrip(el, { position: 'below-bottombar' })`), and lay
+  a docked strip over the whole chart column and back (`cover`), leaving full-height panels,
+  the rail and the mobile bottom bar uncovered. A shell that uses none of these keeps its
+  layout exactly as before.
 
 ## [0.9.3]
 
