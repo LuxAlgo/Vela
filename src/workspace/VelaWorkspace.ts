@@ -2616,7 +2616,8 @@ export class VelaWorkspace {
         const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
         const ctx = this.context();
         const topbar = widgetActions('topbar', ctx).filter((a) => mobilePlacement(a) === 'menu' && (a.align === 'left') === (cluster === 'left') && !builtin.has(a.id));
-        const sidebar = this.sidebar && cluster === 'right' ? sidebarActions(ctx) : [];
+        // Only the sidebar actions that show there: the host's composition and runtime hiding decide.
+        const sidebar = this.sidebar && cluster === 'right' ? sidebarActions(ctx).filter((a) => this.sidebar!.isVisible(a.id)) : [];
         return [...topbar, ...sidebar].map((a) => ({ label: this.t(a.label), icon: a.icon, run: () => a.run(this.context()) }));
     }
 

@@ -10,9 +10,12 @@ All notable changes to Vela, newest first.
   fourth side, beside the topbar, the charts and the bottom bar. It takes over the
   side-panel toggles from the topbar and hosts the entries plugins register with
   `registerWidgetAction({ target: 'sidebar' })`, which can show a pressed state (`active`)
-  and a badge (`ctx.sidebar.setBadge`). Hosts lay its upper and lower sections out with
-  `{ top, bottom }`, as they compose the topbar. It is off by default and desktop only: on
-  the mobile layout the panels keep their menu rows and the sidebar's entries join them.
+  and a badge (`ctx.sidebar.setBadge`). Plugins can hide and give back its entries at
+  runtime (`ctx.sidebar.setVisible`), as they do the topbar's, and anchor their own popovers
+  to their buttons, which carry `data-action-id` like the topbar's. Hosts lay its upper and
+  lower sections out with `{ top, bottom }`, as they compose the topbar. It is off by
+  default and desktop only: on the mobile layout the panels keep their menu rows and the
+  sidebar's entries join them.
 - **Buttons, tabs, toggle groups and badges in the UI kit.** `@luxalgo/vela/ui` now has
   `Button` (default, outline, secondary, ghost, destructive and link, in four heights and
   their square icon sizes, with icons on either side and toggle states), `Tabs` (an

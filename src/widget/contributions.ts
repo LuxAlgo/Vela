@@ -74,8 +74,9 @@ export interface WidgetContext {
     /** The shell's side-panel dock as data: which panels it holds (built-ins included),
      *  which one is open, and a change event. See {@link PanelDockView}. */
     panels: PanelDockView;
-    /** The shell's right-edge toolbar (the `sidebar` option): badges on its entries, and a
-     *  redraw after a sidebar action's `active` or `when` changed. See {@link SidebarControl}. */
+    /** The shell's right-edge toolbar (the `sidebar` option): badges on its entries, its
+     *  entries hidden or shown at runtime, and a redraw after a sidebar action's `active` or
+     *  `when` changed. See {@link SidebarControl}. */
     sidebar: SidebarControl;
     /** Where the right-click that opened a context menu landed. Set on the context handed
      *  to `context:*` actions (`when` and `run`); absent everywhere else. */
@@ -95,6 +96,13 @@ export interface SidebarControl {
     setBadge(id: string, badge: string | number | null): void;
     /** Redraw the entries: re-read each sidebar action's `active` and `when`. */
     refresh(): void;
+    /** Whether an entry (a panel id or a sidebar action id) shows right now: placed by the
+     *  host's composition, available, and not hidden at runtime. */
+    isVisible(id: string): boolean;
+    /** Hide an entry (`false`) or give it back (`true`), as `ctx.topbar.setVisible` does for
+     *  the topbar. It never adds an entry the composition left out, and it is not saved with
+     *  the layout: a plugin applies it again when it mounts. */
+    setVisible(id: string, visible: boolean): void;
 }
 
 /** A built-in topbar item a plugin can hide at runtime — every built-in id but the `'actions'` flow slot. */
