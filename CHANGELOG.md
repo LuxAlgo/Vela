@@ -12,10 +12,10 @@ All notable changes to Vela, newest first.
   island, an underlined strip, and the filled, soft and vertical rail looks, with keyboard
   navigation, tabs that can hide, and the full tabs semantics), `ToggleGroup` (one choice
   among a few options, or several toggled on their own) and `Badge` (status labels and
-  counts). Variant, size and part names follow shadcn's. Each comes with a controller that
-  holds its state and hands out its parts' attributes without touching the DOM, so another
-  view layer can render the same component with the same keyboard behavior and
-  accessibility.
+  counts). Variant, size and part names follow shadcn's. Tabs and toggle groups run Zag
+  state machines, which own their keyboard behavior and accessibility, so another view
+  layer can run the same machines and behave the same; buttons and badges hand out their
+  attributes from a plain controller.
 - **The indicator settings, the symbol picker and the drawings drawer use them.** Their
   tabs and the settings dialogs' buttons look as before. The indicator settings tabs now
   answer the arrow keys, announce themselves as tabs with their panels, and brighten on

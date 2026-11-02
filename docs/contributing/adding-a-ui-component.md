@@ -176,14 +176,21 @@ fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
 ## Headless primitives
 
-`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives. Their
-controllers go one step further than the form primitives: besides the state, they return
-each part's **attributes** as a plain record — the role, the ARIA state, the tab stop, a
-`data-slot` naming the part and the `data-*` hooks the stylesheet keys on (`rootProps()`,
-`listProps()`, `tabProps(id)`, `panelProps(id)`, `itemProps(id)`). The vanilla view writes
-them with `applyProps`; a React view spreads the same record on its own element
-(`tabindex` becomes `tabIndex`), so behavior and accessibility never fork between view
-layers. They depend on nothing but the kit.
+`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives.
+
+- **`Tabs` and `ToggleGroup` run Zag machines** (`@zag-js/tabs`, `@zag-js/toggle-group`):
+  their controllers map Vela's options to the machine (`{ machine, props, connect }`, the
+  overlay pattern above), and the machine owns roving focus, the keyboard and the ARIA.
+  A React view runs the same machine and props through Zag's React adapter. Zag applies
+  events on a microtask, so the views mirror the value for synchronous reads and keep
+  `setValue` silent by swallowing the machine's report of a host write.
+- **`Button` and `Badge` have no behavior to run**: their controllers return the root's
+  attributes as a plain record (`rootProps()`), which the vanilla view writes with
+  `applyProps` and a React view spreads on its own element.
+
+Every part carries a `data-slot` naming it (`button`, `tabs-list`, `tabs-trigger`,
+`tabs-content`, `toggle-group`, `toggle-group-item`, `badge`), next to Zag's own
+`data-scope` / `data-part` and state attributes (`data-selected`, `data-state`).
 
 Variant, size and part names follow shadcn's (`data-slot="tabs-trigger"`,
 `variant: 'outline'`, `size: 'icon-sm'`), so a host built on shadcn reads them without a
@@ -208,9 +215,9 @@ glossary. Change callbacks stay `onChange`, like the rest of the kit.
   drawer's strip), `nav` (a vertical settings rail). Only an inactive tab reacts to hover.
   `className` adds the host's layout of the strip.
 - **`ToggleGroup`** — a few options side by side on a tinted track. `type: 'single'`
-  (default) is a radio group where one option is always chosen and the arrow keys choose
-  (a segmented control); `type: 'multiple'` toggles each option on its own (`aria-pressed`)
-  and the arrow keys only move focus. `size` `default` 32px or `sm` 28px, `fill` to share
+  (default) is a radio group where one option is always chosen (a segmented control);
+  `type: 'multiple'` toggles each option on its own (`aria-pressed`). The arrow keys move
+  focus; Space and Enter press. `size` `default` 32px or `sm` 28px, `fill` to share
   the parent's width, `iconOnly` with each label as its option's accessible name.
 - **`Badge`** — a short status label or a round `count`: `default`, `secondary`,
   `outline`, `destructive`, and the market colors `up` and `down`.

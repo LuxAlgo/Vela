@@ -12,7 +12,6 @@ import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openP
 import { Dialog } from '../../ui/components/dialog';
 import { Button } from '../../ui/components/button';
 import { Tabs } from '../../ui/components/tabs';
-import { applyProps } from '../../ui/headless';
 import { DatePicker, normalizeDateInput } from '../../ui/components/date-picker';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '../../ui/components/field';
 import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '../../ui/styles';
@@ -187,7 +186,6 @@ export class IndicatorInputsDialog {
         const tabGates: Array<{ id: string; visible: VisibilityGate['visible'] }> = [];
         const showBody = (id: string): void => {
             bodies.forEach((body, i) => {
-                applyProps(body, tabs.panelProps(String(i)));
                 body.style.display = String(i) === id ? 'grid' : 'none';
             });
         };
@@ -207,7 +205,10 @@ export class IndicatorInputsDialog {
             }
         }
         ui.body.appendChild(tabs.el);
-        for (const b of bodies) ui.body.appendChild(b);
+        bodies.forEach((b, i) => {
+            tabs.attachPanel(String(i), b);
+            ui.body.appendChild(b);
+        });
         showBody(tabs.value ?? '0');
         const refresh = (): void => {
             const bag = valuesBag(row);
