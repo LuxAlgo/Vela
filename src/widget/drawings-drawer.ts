@@ -5,6 +5,7 @@
 // the docked bar paints (`ToolbarDefinition`), so custom `options.drawings` sets and
 // plugin-registered types appear here automatically.
 import { Drawer } from '../ui/components/drawer';
+import { Tabs } from '../ui/components/tabs';
 import { iconEl } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import type { ToolbarDefinition, ToolDefinition } from '../core/drawings/toolbar';
@@ -61,21 +62,6 @@ const CSS = `
     background: var(--vela-surface);
 }
 .vela-dd-tabs::-webkit-scrollbar { display: none; }
-.vela-dd-tab {
-    all: unset;
-    flex: none;
-    min-height: 36px;
-    padding: 0 12px;
-    display: inline-flex;
-    align-items: center;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--vela-fg-muted);
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-.vela-dd-tab[data-active='1'] { color: var(--vela-fg-bright); background: var(--vela-hover); }
 .vela-dd-list { padding: 6px 0 4px; }
 .vela-dd-section {
     padding: 10px 2px 6px;
@@ -134,7 +120,7 @@ export interface DrawingsDrawerOptions {
 export class DrawingsDrawer {
     private readonly drawer: Drawer;
     private readonly input: HTMLInputElement;
-    private readonly tabs: HTMLElement;
+    private readonly tabs: Tabs;
     private readonly list: HTMLElement;
     private definition: ToolbarDefinition = { groups: [] };
     private activeGroup = '';
@@ -162,9 +148,22 @@ export class DrawingsDrawer {
         this.input.addEventListener('input', () => this.renderList());
         search.appendChild(this.input);
 
-        this.tabs = doc.createElement('div');
-        this.tabs.className = 'vela-dd-tabs';
-        sticky.append(search, this.tabs);
+        this.tabs = new Tabs({
+            variant: 'soft',
+            className: 'vela-dd-tabs',
+            items: [],
+            onChange: (id) => {
+                this.activeGroup = id;
+                this.renderList();
+            },
+        });
+        // Picking a tab — the active one included — leaves search mode.
+        this.tabs.el.addEventListener('click', (e) => {
+            if (!(e.target instanceof Element) || !e.target.closest('.vela-tab') || !this.input.value) return;
+            this.input.value = '';
+            this.renderList();
+        });
+        sticky.append(search, this.tabs.el);
 
         this.list = doc.createElement('div');
         this.list.className = 'vela-dd-list';
@@ -205,25 +204,12 @@ export class DrawingsDrawer {
         this.activeGroup = next.id;
         this.renderTabs();
         this.renderList();
-        this.tabs.querySelector('[data-active="1"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+        this.tabs.tab(next.id)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
 
     private renderTabs(): void {
-        const doc = this.tabs.ownerDocument;
-        this.tabs.replaceChildren();
-        for (const group of this.definition.groups) {
-            const tab = doc.createElement('button');
-            tab.className = 'vela-dd-tab';
-            tab.textContent = this.t(group.label);
-            if (group.id === this.activeGroup) tab.dataset.active = '1';
-            tab.addEventListener('click', () => {
-                this.activeGroup = group.id;
-                this.input.value = ''; // picking a tab leaves search mode
-                this.renderTabs();
-                this.renderList();
-            });
-            this.tabs.appendChild(tab);
-        }
+        this.tabs.setItems(this.definition.groups.map((g) => ({ id: g.id, label: this.t(g.label) })));
+        this.tabs.setValue(this.activeGroup);
     }
 
     private renderList(): void {

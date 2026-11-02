@@ -23,3 +23,8 @@ export * from './components/text-area';
 export * from './components/glyph-select';
 export * from './components/callout-bubble';
 export * from './components/date-picker';
+export * from './components/button';
+export * from './components/tabs';
+export * from './components/toggle-group';
+export * from './components/badge';
+export { applyProps, type PartProps } from './headless';

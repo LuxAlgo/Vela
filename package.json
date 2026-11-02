@@ -116,6 +116,8 @@
     "@zag-js/dialog": "^1.42.0",
     "@zag-js/dom-query": "^1.42.0",
     "@zag-js/menu": "^1.42.0",
+    "@zag-js/tabs": "^1.42.0",
+    "@zag-js/toggle-group": "^1.42.0",
     "@zag-js/tooltip": "^1.42.0",
     "@zag-js/types": "^1.42.0",
     "@zag-js/vanilla": "^1.42.0"
