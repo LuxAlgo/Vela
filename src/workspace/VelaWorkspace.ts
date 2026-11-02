@@ -40,6 +40,7 @@ import { toolShortcutHints } from '../widget/tool-shortcuts';
 import { legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
+import { Sidebar, sidebarActions, sidebarControl } from '../widget/sidebar';
 import { MobileBar } from '../widget/mobile-bar';
 import { TimeframeDrawer } from '../widget/timeframe-drawer';
 import { DrawingsDrawer } from '../widget/drawings-drawer';
@@ -190,6 +191,8 @@ const CSS = `
 [data-vela-regions] > .vela-mobilebar { grid-area: 6 / 1 / 7 / -1; }
 [data-vela-regions] > .vela-ws-column { grid-area: 1 / 2 / 6 / 3; position: relative; display: flex; min-height: 0; }
 [data-vela-regions] > .vela-ws-edge { grid-area: 1 / 3 / 6 / 4; position: relative; display: flex; min-height: 0; }
+/* The sidebar hosts the panel toggles on the desktop layout; the topbar's group steps aside. */
+.vela-workspace[data-vela-sidebar]:not([data-layout='mobile']) .vela-widget-panels { display: none; }
 /* Covering, the strip takes the area whatever height it set itself while docked. */
 [data-vela-regions] > [data-vela-cover] { grid-area: 1 / 1 / 5 / 2; z-index: 30; min-height: 0; min-width: 0; height: auto !important; max-height: none !important; align-self: stretch; }
 /* Maximized, a column panel covers the chart column with it. */
@@ -466,6 +469,9 @@ export class VelaWorkspace {
         setVisible: (id, visible) => this.setTopbarItemVisible(id, visible),
     };
     private dockView: PanelDockView | null = null;
+    /** The right-edge toolbar (`sidebar` option), or null when the shell has none. */
+    private sidebar: Sidebar | null = null;
+    private readonly sidebarCtl = sidebarControl(() => this.sidebar);
     private screenshotKeyOff: (() => void) | null = null;
     // ── mobile chrome (same components as the widget shell; CSS keys off data-layout
     // on the root, the drawers build lazily on first open and act on the ACTIVE cell) ──
@@ -682,10 +688,32 @@ export class VelaWorkspace {
         this.gridEl = doc.createElement('div');
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
+        // The sidebar exists before the dock: the dock publishes the built-in panels' toggles
+        // as it docks them.
+        if (opts.sidebar) {
+            this.sidebar = new Sidebar({
+                composition: opts.sidebar === true ? undefined : opts.sidebar,
+                host: this.root,
+                i18n: this.localeState,
+                context: () => this.context(),
+            });
+            this.region('edge').appendChild(this.sidebar.el);
+            this.root.setAttribute('data-vela-sidebar', '');
+        }
         // One dock for the WHOLE grid (the panels follow the active cell), owning the built-ins,
-        // the contributed panels, the single-open rule and the topbar's toggle group.
+        // the contributed panels, the single-open rule and the toggle groups (the topbar's, and
+        // the sidebar's when there is one — on the desktop layout the sidebar's replaces it).
         this.dock = new PanelDock(main, {
-            chrome: this.topbar,
+            chrome: {
+                setPanelButtons: (buttons, onClick) => {
+                    this.topbar.setPanelButtons(buttons, onClick);
+                    this.sidebar?.setPanelButtons(buttons, onClick);
+                },
+                setPanelActive: (id, open) => {
+                    this.topbar.setPanelActive(id, open);
+                    this.sidebar?.setPanelActive(id, open);
+                },
+            },
             context: () => this.context(),
             changed: () => this.markStateDirty(),
             i18n: this.localeState,
@@ -883,6 +911,7 @@ export class VelaWorkspace {
             this.manifestSettled = true; // nothing will ever resolve — settled empty from the start
         }
         this.mountAttachments();
+        this.sidebar?.activate();
         // A sync-storage boot restores third-party document-level state here — the shell
         // is fully built (cells live, attachments mounted). The async-adapter boot and
         // host `applyState` calls reach the same handlers through applyState.
@@ -1045,6 +1074,7 @@ export class VelaWorkspace {
         this.bottombar?.relocalize();
         this.mobileBar?.relocalize();
         this.dock.relocalize();
+        this.sidebar?.relocalize();
         this.toolbarDef = buildToolbar(this.opts.drawings, this.localeState).definition;
         this.drawToolbar?.setDefinition(this.toolbarDef);
         this.drawToolbar?.relabel();
@@ -1087,6 +1117,7 @@ export class VelaWorkspace {
             replay: this.replay,
             topbar: this.topbarItems,
             panels: () => (this.dockView ??= this.dock.view()),
+            sidebar: this.sidebarCtl,
         });
     }
 
@@ -1138,6 +1169,7 @@ export class VelaWorkspace {
         this.topbar.renderActions();
         this.mobileBar?.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
+        this.sidebar?.render();
         // Re-project every cell's legend rows so a late registerLegendAction /
         // registerLegendCallout (or a callout's own state change) appears there too.
         for (const cell of this.cells()) {
@@ -1553,6 +1585,7 @@ export class VelaWorkspace {
         this.priceScaleDrawer?.destroy();
         this.layoutCtl.destroy();
         this.dock.destroy(); // contributed panels; the two built-ins are ours to drop
+        this.sidebar?.destroy();
         this.objectTree.destroy();
         this.dataWindow.destroy();
         this.symbolPicker.destroy();
@@ -2577,12 +2610,14 @@ export class VelaWorkspace {
         this.moreDrawer.open();
     }
 
-    /** The contributed topbar actions the mobile menu lists, from one cluster. */
+    /** The contributed actions the mobile menu lists, from one cluster — the sidebar's (hidden
+     *  on the mobile layout) close the right one. */
     private drawerActions(cluster: 'left' | 'right'): Array<{ label: string; icon?: string; run: () => void }> {
         const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
-        return widgetActions('topbar', this.context())
-            .filter((a) => mobilePlacement(a) === 'menu' && (a.align === 'left') === (cluster === 'left') && !builtin.has(a.id))
-            .map((a) => ({ label: this.t(a.label), icon: a.icon, run: () => a.run(this.context()) }));
+        const ctx = this.context();
+        const topbar = widgetActions('topbar', ctx).filter((a) => mobilePlacement(a) === 'menu' && (a.align === 'left') === (cluster === 'left') && !builtin.has(a.id));
+        const sidebar = this.sidebar && cluster === 'right' ? sidebarActions(ctx) : [];
+        return [...topbar, ...sidebar].map((a) => ({ label: this.t(a.label), icon: a.icon, run: () => a.run(this.context()) }));
     }
 
     /** Display text in the workspace's language. */

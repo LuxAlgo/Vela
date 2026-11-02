@@ -265,6 +265,8 @@ registerWidgetAction({
         //   isMaximized(id), onDidChange(cb) (see Side panels)
         // ctx.topbar — the built-in topbar items: isVisible(id), setVisible(id, visible)
         //   (see Hiding built-in topbar items)
+        // ctx.sidebar — the right-edge toolbar: enabled, setBadge(id, value), refresh()
+        //   (see The sidebar)
         // ctx.dockStrip(el, { position? }) — dock an element as a full-width strip above
         //   (default) or under the bottom bar (the charts shrink); returns the undock, which
         //   also carries cover(on) (see Layout regions)
@@ -856,6 +858,39 @@ registerWidgetAttachment({
 
 A shell that uses none of these keeps its plain column layout; the first one in use switches
 the shell to a grid with these regions for the rest of its life.
+
+## The sidebar
+
+A host can give the shell a toolbar along its right edge (`sidebar: true`, see
+[the workspace guide](../user/workspace.md#the-sidebar)). It holds the side-panel toggles,
+and a plugin adds its own entries as widget actions with `target: 'sidebar'`:
+
+```ts
+registerWidgetAction({
+    id: 'mytool.alerts.toggle',
+    target: 'sidebar',
+    label: msg('mytool.alerts', 'Price alerts'),  // the button's accessible name and tooltip
+    icon: 'bell',
+    order: 10,                                     // within the 'actions' flow slot
+    active: (ctx) => alertsOpen,                   // pressed look, read on every redraw
+    run: (ctx) => {
+        toggleAlerts();
+        ctx.sidebar.setBadge('mytool.alerts.toggle', unread());
+    },
+});
+```
+
+- A press redraws the sidebar. When the state behind `active` or `when` changes on its own,
+  call **`ctx.sidebar.refresh()`**.
+- **`ctx.sidebar.setBadge(id, value)`** puts a small count on an entry, a sidebar action or a
+  panel (`null`, `0` or `''` clear it; above 99 shows `99+`).
+- **`ctx.sidebar.enabled`** tells whether the shell has a sidebar; with none, `setBadge` and
+  `refresh` do nothing, so a plugin can call them unconditionally.
+- An action registered after the shell is built shows on the next `refreshActions()`, like
+  topbar actions.
+- On the mobile layout the sidebar is hidden and its actions are rows in the three-dots menu.
+- Which entries show, and where, is the host's call (its `sidebar` composition). A plugin that
+  wants its entry somewhere specific documents the id for hosts to place.
 
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 

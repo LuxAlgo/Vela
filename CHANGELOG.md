@@ -6,6 +6,13 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **A toolbar on the shell's right edge.** `sidebar: true` gives the shell a toolbar on its
+  fourth side, beside the topbar, the charts and the bottom bar. It takes over the
+  side-panel toggles from the topbar and hosts the entries plugins register with
+  `registerWidgetAction({ target: 'sidebar' })`, which can show a pressed state (`active`)
+  and a badge (`ctx.sidebar.setBadge`). Hosts lay its upper and lower sections out with
+  `{ top, bottom }`, as they compose the topbar. It is off by default and desktop only: on
+  the mobile layout the panels keep their menu rows and the sidebar's entries join them.
 - **Plugins can shape the shell's chrome without touching its markup.** A plugin can hide
   the shell's own topbar items at runtime (`ctx.topbar.setVisible('alerts', false)`), which
   also removes their row in the mobile menu, their bottom-bar stop and their keyboard
