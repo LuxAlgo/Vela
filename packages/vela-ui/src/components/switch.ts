@@ -1,11 +1,14 @@
 // Switch: a square check toggle, filled with a check mark when on. `bright` fills with the
-// bright foreground (the settings dialogs), `selected` with the selection color.
+// bright foreground (the settings dialogs), `selected` with the selection color. Behavior,
+// keyboard and ARIA come from Zag's switch machine: a label holding a hidden checkbox.
+import * as zagSwitch from '@zag-js/switch';
 import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants } from '../lib/variants';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
 export type SwitchSize = 'sm' | 'md';
 /** `bright` = settings-dialog fill (`--vela-fg-bright`); `selected` = `--vela-selected-bg`. */
@@ -104,7 +107,11 @@ const injectStyles = defineStyles(
                 &:hover {
                     border-color: ${t.fg.muted};
                 }
-                &[data-checked] {
+                &[data-focus-visible] {
+                    outline: 2px solid ${t.focus};
+                    outline-offset: 1px;
+                }
+                &[data-state='checked'] {
                     background: ${t.fg.bright};
                     border-color: ${t.fg.bright};
                     color: ${t.bg};
@@ -117,17 +124,17 @@ const injectStyles = defineStyles(
                 &[data-size='sm']:hover {
                     border-color: ${t.fg.muted};
                 }
-                &[data-size='sm'][data-checked] {
+                &[data-size='sm'][data-state='checked'] {
                     background: ${t.selected.bg};
                     border-color: ${t.selected.bg};
                     color: ${t.selected.fg};
                 }
-                &[data-tone='selected'][data-checked] {
+                &[data-tone='selected'][data-state='checked'] {
                     background: ${t.selected.bg};
                     border-color: ${t.selected.bg};
                     color: ${t.selected.fg};
                 }
-                &[disabled] {
+                &[data-disabled] {
                     opacity: 0.4;
                     cursor: default;
                 }
@@ -137,45 +144,69 @@ const injectStyles = defineStyles(
 );
 
 export class Switch {
-    readonly el: HTMLButtonElement;
-    private readonly ctrl: SwitchController;
+    readonly el: HTMLLabelElement;
+    private readonly input: HTMLInputElement;
+    private readonly machine: HandleOf<typeof zagSwitch.machine>;
+    private readonly mid: string;
+    /** The state as the switch's users see it, at once: the machine settles a beat later. */
+    private current: boolean;
 
     constructor(opts: SwitchOptions = {}) {
         injectStyles(document);
-        this.ctrl = switchController(opts);
+        this.mid = nextUid('vela-switch');
+        this.current = opts.checked ?? false;
         const icon = iconEl('check', document);
         icon.dataset.slot = switchDef.slot('icon');
-        const b = h('button', { className: 'vela-switch', slot: switchDef.slot('root'), attrs: { type: 'button', id: opts.id, role: 'switch', ...switchVariants({ size: this.ctrl.size, tone: this.ctrl.tone }) } }, icon);
-        b.disabled = this.ctrl.disabled;
-        this.el = b;
-        this.paint();
-        // Suppress the default mousedown focus: when this press outside-dismisses an open
-        // popover, Chrome's focus action can scroll the dialog body under the pointer.
-        b.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            b.focus({ preventScroll: true });
+        this.input = h('input', {});
+        this.el = h('label', { className: 'vela-switch', slot: switchDef.slot('root'), attrs: switchVariants({ size: opts.size ?? 'md', tone: opts.tone ?? 'bright' }) }, this.input, icon);
+        this.machine = runMachine(
+            zagSwitch.machine,
+            {
+                id: this.mid,
+                // The host's id names the focusable control, so its own `<label for>` reaches it.
+                ...(opts.id ? { ids: { hiddenInput: opts.id } } : {}),
+                defaultChecked: this.current,
+                disabled: opts.disabled ?? false,
+            },
+            (service) => this.render(service),
+        );
+        // Only the user's toggles change the checkbox with an event, and they report at once,
+        // as callers expect; `setChecked` never reaches here.
+        this.input.addEventListener('change', () => {
+            this.current = this.input.checked;
+            opts.onChange?.(this.current);
         });
-        b.addEventListener('click', () => {
-            this.ctrl.toggle();
-            this.paint();
+        // A press must not focus by scrolling: when it outside-dismisses an open popover,
+        // Chrome's focus action can scroll the dialog body under the pointer.
+        this.el.addEventListener('pointerdown', (e) => {
+            if (opts.disabled) return;
+            e.preventDefault();
+            this.input.focus({ preventScroll: true });
         });
     }
 
     get checked(): boolean {
-        return this.ctrl.checked;
+        return this.current;
     }
 
     setChecked(v: boolean): void {
-        this.ctrl.setChecked(v);
-        this.paint();
+        if (v === this.current) return;
+        this.current = v;
+        this.api().setChecked(v);
     }
 
-    destroy(): void {}
+    destroy(): void {
+        this.machine.stop();
+    }
 
-    private paint(): void {
-        const on = this.ctrl.checked;
-        this.el.setAttribute('aria-checked', on ? 'true' : 'false');
-        this.el.toggleAttribute('data-checked', on);
+    private api(): zagSwitch.Api {
+        return zagSwitch.connect(this.machine.service, normalizeProps);
+    }
+
+    private render(service: zagSwitch.Service): void {
+        const api = zagSwitch.connect(service, normalizeProps);
+        spreadProps(this.el, api.getRootProps(), this.mid);
+        spreadProps(this.input, api.getHiddenInputProps(), this.mid);
     }
 }
 

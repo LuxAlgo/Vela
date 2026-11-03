@@ -319,7 +319,8 @@ describe('the drawing settings panel', () => {
     it('a retracement level can be set beyond the swing, as a negative ratio', async () => {
         const s = setup(make('fibretracement'));
         await s.openPanel();
-        const input = s.$$<HTMLInputElement>('.vela-dsp-lv-c input')[1]!;
+        // The level's ratio field (each level's switch holds a checkbox too).
+        const input = s.$$<HTMLInputElement>('.vela-dsp-lv-c input:not([type="checkbox"])')[1]!;
         input.value = '-0.5';
         input.dispatchEvent(new Event('blur'));
         expect((s.live() as FibRetracement).levels[1]!.ratio).toBe(-0.5);

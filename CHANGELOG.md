@@ -98,6 +98,12 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The switch runs on Zag's switch machine.** Its root (`Switch.el`) is now a `<label>`
+  holding a hidden checkbox, the control that takes focus and carries the `id` given, so a
+  host's own `<label for>` still reaches it. The root carries its state as `data-state`
+  (`checked`, `unchecked`) and `data-disabled`, and shows the kit's focus ring on keyboard
+  focus only. It looks the same at rest and on hover; `onChange` still reports the user's
+  toggles at once, and `setChecked` still reports nothing.
 - **The drawing toolbar runs the shell's full height once a layout region is in use.** A
   shell with a full-height column panel, a right-edge element or a docked strip lays out as
   a grid, and the drawing toolbar now has its own column there: from under the topbar to the
