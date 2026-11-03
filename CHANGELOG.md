@@ -6,6 +6,11 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Users can trim the sidebar.** A right-click on it lists its entries, ticked while they
+  show; unticking one hides it and *Show all* gives every entry back. The choice is saved
+  with the layout (`sidebarHidden` in the state document). A host turns the menu off with
+  `customizable: false` in its `sidebar` composition. Entries a plugin hides at runtime stay
+  out of the menu.
 - **Plugins can give shell options a default.** `registerShellDefaults({ sidebar })` gives
   every shell built afterwards the right-edge sidebar (or a composition of it) where its host
   said nothing about it; the host's own value, `false` included, always wins, and shells

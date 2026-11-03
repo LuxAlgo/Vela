@@ -698,6 +698,10 @@ new VelaWorkspace('#chart', {
   sidebar action ids, the flow slots `'panels'` and `'actions'` (everything of that kind not
   listed elsewhere, in order) and `'|'` for a separator. An undeclared section keeps its
   default: `top: ['panels']`, `bottom: ['objects', 'dataWindow', '|', 'actions']`.
+- **The user can trim it.** A right-click on the sidebar lists its entries, ticked while they
+  show: unticking one hides it, and *Show all* gives every entry back. The choice is part of
+  the saved layout (`getState().sidebarHidden`). `{ customizable: false }` in the
+  composition turns the menu off and leaves the right-click to the page.
 - **Desktop only.** On the mobile layout the sidebar is hidden: the panels keep their rows
   in the three-dots menu, and the sidebar actions join them there.
 - It sits outermost on the right, outside full-height `placement: 'column'` panels and any

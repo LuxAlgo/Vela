@@ -1975,6 +1975,7 @@
     "ui.numberInput.decrease": "Verringern",
     "ui.numberInput.increase": "Erhöhen",
     "vela.sidebar.label": "Seitenleiste",
+    "vela.sidebar.showAll": "Alle anzeigen",
     "widget.bottombar.chartSettings": "Charteinstellungen",
     "widget.bottombar.extended": "ETH",
     "widget.bottombar.range.1d": "1D",

@@ -1975,6 +1975,7 @@
     "ui.numberInput.decrease": "إنقاص",
     "ui.numberInput.increase": "زيادة",
     "vela.sidebar.label": "الشريط الجانبي",
+    "vela.sidebar.showAll": "إظهار الكل",
     "widget.bottombar.chartSettings": "إعدادات الرسم البياني",
     "widget.bottombar.extended": "ETH",
     "widget.bottombar.range.1d": "1D",
