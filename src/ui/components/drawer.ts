@@ -1,14 +1,172 @@
-// Drawer VIEW — a bottom sheet: dimmed backdrop, a panel that slides up from the host's
-// bottom edge, a grab handle with drag-to-dismiss. The body is caller-owned. Built for
-// the mobile chrome, but host-agnostic like every kit component.
-import { runMachine, spreadProps, type HandleOf } from '../../zag';
-import { injectStyles } from '../../styles';
-import { drawerController, type DrawerControllerOptions } from './controller';
-import { DRAWER_CSS, DRAWER_STYLE_ID } from './styles';
-import * as zagDialog from '@zag-js/dialog';
-import { announceSurface } from '../../surface-events';
-import { holdForExit, type SurfaceExit } from '../../surface-exit';
+// Drawer: a bottom sheet. A dimmed backdrop, a panel that slides up from the host's bottom
+// edge, and a grab handle with drag-to-dismiss; the body is the caller's. It rides Zag's
+// dialog machine (focus trap, dismissal, ARIA) with drawer defaults: a backdrop tap
+// dismisses. Built for the mobile chrome, but host-agnostic like every kit component.
+import * as dialog from '@zag-js/dialog';
+import { css, defineStyles } from '../lib/css';
+import { defineComponent } from '../lib/define';
+import { t } from '../lib/t';
+import { announceSurface } from '../surface-events';
+import { holdForExit, type SurfaceExit } from '../surface-exit';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../zag';
 
+export interface DrawerControllerOptions {
+    closeOnEscape?: boolean;
+    /** Tap outside (on the backdrop) dismisses — default true. */
+    closeOnInteractOutside?: boolean;
+    /** Element to focus on open (default: the machine's first-tabbable pick). The view
+     *  points this at the sheet itself so opening never focuses an input — on touch
+     *  devices that would pop the on-screen keyboard over the sheet. */
+    initialFocusEl?: () => HTMLElement | null;
+    onOpenChange?: (open: boolean) => void;
+}
+
+export type DrawerService = dialog.Service;
+export type DrawerApi = dialog.Api;
+
+export interface DrawerController {
+    machine: typeof dialog.machine;
+    props: Partial<dialog.Props>;
+    connect(service: DrawerService): DrawerApi;
+}
+
+/** Zag's dialog machine with the drawer's defaults, for any view layer. */
+export function drawerController(opts: DrawerControllerOptions = {}): DrawerController {
+    return {
+        machine: dialog.machine,
+        props: {
+            id: nextUid('vela-drawer'),
+            modal: true,
+            closeOnEscape: opts.closeOnEscape ?? true,
+            closeOnInteractOutside: opts.closeOnInteractOutside ?? true,
+            initialFocusEl: opts.initialFocusEl,
+            onOpenChange: (d: dialog.OpenChangeDetails) => opts.onOpenChange?.(d.open),
+        } satisfies Partial<dialog.Props>,
+        connect: (service: DrawerService): DrawerApi => dialog.connect(service, normalizeProps),
+    };
+}
+
+export const drawerDef = defineComponent({
+    name: 'drawer',
+    parts: ['backdrop', 'positioner', 'content', 'grab', 'title', 'body'],
+    settings: { radius: '14px 14px 0 0', 'grab-radius': '2px' },
+});
+
+const injectStyles = defineStyles(
+    'vela-ui-drawer',
+    css`
+        @layer vela.ui {
+            [data-slot='drawer-backdrop'] {
+                position: fixed;
+                inset: 0;
+                background: ${t.backdrop};
+                z-index: ${t.z.dialog};
+
+                /* Inside a shell that declares a size class, the sheet scopes to the SHELL's
+                   bounds (the widget root is position:relative) instead of the whole viewport:
+                   an embedded chart must not curtain the host page. */
+                &:is([data-layout] *) {
+                    position: absolute;
+                }
+            }
+            [data-slot='drawer-positioner'] {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                align-items: flex-end;
+                justify-content: center;
+                z-index: ${t.z.dialog};
+
+                &:is([data-layout] *) {
+                    position: absolute;
+                }
+            }
+            [data-slot='drawer-content'] {
+                background: ${t.surface};
+                color: ${t.fg};
+                border: 1px solid ${t.border.strong};
+                border-bottom: none;
+                border-radius: ${drawerDef.vars.radius};
+                box-shadow: ${t.shadow.dialog};
+                font-size: 13px;
+                width: 100%;
+                max-height: 85%;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                outline: 2px solid transparent;
+
+                &[data-state='open'] {
+                    animation: vela-drawer-in ${t.dur.med} ${t.ease};
+                }
+            }
+            @keyframes vela-drawer-in {
+                from {
+                    transform: translateY(100%);
+                }
+                to {
+                    transform: translateY(0);
+                }
+            }
+            /* The grab zone owns its touches (drag-to-dismiss), so the browser must not scroll it. */
+            [data-slot='drawer-grab'] {
+                flex: none;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 10px 0 6px;
+                cursor: grab;
+                touch-action: none;
+                user-select: none;
+
+                &::before {
+                    content: '';
+                    width: 36px;
+                    height: 4px;
+                    border-radius: ${drawerDef.vars['grab-radius']};
+                    background: ${t.border.strong};
+                }
+            }
+            [data-slot='drawer-title'] {
+                flex: none;
+                padding: 0 16px 10px;
+                font-size: 15px;
+                font-weight: 600;
+                letter-spacing: 0.2px;
+                color: ${t.fg.bright};
+                user-select: none;
+
+                &:empty {
+                    display: none;
+                }
+            }
+            [data-slot='drawer-body'] {
+                flex: 1 1 auto;
+                min-height: 0;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+                -webkit-overflow-scrolling: touch;
+                /* Vertical pans stay native scrolling; horizontal moves reach the sheet's
+                   gesture recognizer as pointer events (tab swipes). Without this the browser
+                   claims a sideways touch as a scroll attempt and CANCELS the pointer stream,
+                   so swipes never registered on real touch devices. Sideways-scrolling strips
+                   inside the body opt back in with their own touch-action: pan-x. */
+                touch-action: pan-y;
+                padding: 0 ${t.space[3]} calc(${t.space[3]} + env(safe-area-inset-bottom, 0px));
+
+                &::-webkit-scrollbar {
+                    width: 8px;
+                }
+                &::-webkit-scrollbar-thumb {
+                    background: ${t.scroll};
+                    border-radius: ${t.radius.sm};
+                    border: 2px solid transparent;
+                    background-clip: padding-box;
+                }
+            }
+        }
+    `,
+);
 /** Drag past this fraction of the sheet's height (or this many px, whichever is
  *  smaller) and the release dismisses; anything less springs back. */
 const DISMISS_FRACTION = 0.33;
@@ -17,6 +175,8 @@ const DISMISS_PX = 96;
 const SLOP_PX = 8;
 /** A horizontal swipe must travel at least this far to fire `onSwipe`. */
 const HSWIPE_MIN_PX = 48;
+
+export type DrawerProps = DrawerOptions;
 
 export interface DrawerOptions extends DrawerControllerOptions {
     title?: string;
@@ -64,20 +224,23 @@ export class Drawer {
     private readonly positioner: HTMLElement;
     private readonly panel: HTMLElement;
     private readonly titleEl: HTMLElement;
-    private readonly handle: HandleOf<typeof zagDialog.machine>;
-    private readonly ctrl: ReturnType<typeof drawerController>;
+    private readonly handle: HandleOf<typeof dialog.machine>;
+    private readonly ctrl: DrawerController;
 
     constructor(opts: DrawerOptions = {}) {
         const doc = (opts.host ?? document.body).ownerDocument;
-        injectStyles(DRAWER_STYLE_ID, DRAWER_CSS, doc);
+        injectStyles(doc);
         const host = opts.host ?? doc.body;
 
         this.backdrop = doc.createElement('div');
         this.backdrop.className = 'vela-drawer-backdrop vela-ui-layer';
+        this.backdrop.dataset.slot = drawerDef.slot('backdrop');
         this.positioner = doc.createElement('div');
         this.positioner.className = 'vela-drawer-positioner vela-ui-layer';
+        this.positioner.dataset.slot = drawerDef.slot('positioner');
         this.panel = doc.createElement('div');
         this.panel.className = 'vela-drawer';
+        this.panel.dataset.slot = drawerDef.slot('content');
         // Programmatically focusable: the sheet itself takes the dialog machine's initial
         // focus — focusing the first tabbable (often a search input) would pop the
         // on-screen keyboard over a surface that just slid in.
@@ -85,12 +248,15 @@ export class Drawer {
 
         const grab = doc.createElement('div');
         grab.className = 'vela-drawer-grab';
+        grab.dataset.slot = drawerDef.slot('grab');
         this.titleEl = doc.createElement('div');
         this.titleEl.className = 'vela-drawer-title';
+        this.titleEl.dataset.slot = drawerDef.slot('title');
         this.titleEl.textContent = opts.title ?? '';
 
         this.body = doc.createElement('div');
         this.body.className = 'vela-drawer-body';
+        this.body.dataset.slot = drawerDef.slot('body');
         if (opts.content instanceof Node) this.body.appendChild(opts.content);
         else if (typeof opts.content === 'function') opts.content(this.body);
 
@@ -330,4 +496,8 @@ export class Drawer {
         this.restoreOpener();
         if (!this.exit) this.detach();
     }
+}
+
+export function createDrawer(props: DrawerProps = {}): Drawer {
+    return new Drawer(props);
 }

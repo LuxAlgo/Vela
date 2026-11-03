@@ -1,46 +1,122 @@
 # Adding a UI-kit component
 
-`@luxalgo/vela/ui` is a **headless-first** component kit: every component splits into a
-framework-agnostic **controller** (behavior, no DOM) and a thin vanilla **view**
-(DOM projection over the design tokens). Overlay chrome — menu, dialog, drawer,
-tooltip — wraps a [Zag.js](https://zagjs.com) state machine. Form primitives
-(switch, select, number-input, text-field, text-area, color-picker, popover,
-field, glyph-select) use vanilla controllers so they can match existing settings
-chrome without a behavior drift;
-a later Zag adoption per component stays a controller-only swap.
+`@luxalgo/vela/ui` is the component kit behind the widget's chrome and the renderer's
+dialogs. Each component is **one file**, `src/ui/components/<name>.ts`, holding its
+declaration, its variants, its CSS and its `create<Name>` function. Overlays (menu, dialog,
+drawer, tooltip) and composite controls (tabs, toggle group) run a
+[Zag.js](https://zagjs.com) state machine, which owns their keyboard behavior and
+accessibility; form controls keep small vanilla state objects.
 
-A future React build reuses the controllers unchanged and swaps only the views —
-so keep logic out of the view.
+## One file per component
 
-## The uniform skeleton
-
-Every component lives in `src/ui/components/<name>/` with the same four files:
-
-```
-components/<name>/
-├── controller.ts   # Zag machine mapping, or vanilla behavior (NO DOM)
-├── view.ts         # vanilla DOM projection
-├── styles.ts       # the component's CSS (a template-literal string over the tokens)
-└── index.ts        # public re-exports
-```
-
-## 1 — controller.ts (Zag overlay)
-
-Wrap the machine and map Vela™-level options to machine props. Export an explicit
-interface for the return type (TypeScript can't name Zag's inferred types portably):
+A component file reads top to bottom:
 
 ```ts
-import * as tooltip from '@zag-js/tooltip';
-import { nextUid, normalizeProps } from '../../zag';
+// Gauge: … what it is and how it behaves, for the reader of the file.
+import { css, defineStyles } from '../lib/css';
+import { defineComponent } from '../lib/define';
+import { h } from '../lib/h';
+import { t } from '../lib/t';
+import { variants, type VariantProps } from '../lib/variants';
 
-export interface TooltipControllerOptions { /* your option surface */ }
+// Its name, its parts (each part's data-slot) and its settings (custom properties a theme
+// or a host's CSS can set, with their defaults).
+export const gaugeDef = defineComponent({ name: 'gauge', parts: ['root', 'needle'], settings: { radius: t.radius.lg } });
 
-export interface TooltipController {
-    machine: typeof tooltip.machine;
-    props: Partial<tooltip.Props>;
-    connect(service: tooltip.Service): tooltip.Api;
+// Its variants: the names type the props, the first value is the default.
+export const gaugeVariants = variants({ size: ['md', 'sm'] });
+
+export interface GaugeProps extends VariantProps<typeof gaugeVariants> {
+    value: number;
 }
 
+export interface GaugeHandle {
+    readonly el: HTMLElement;
+    setValue(value: number): void;
+    destroy(): void;
+}
+
+const injectStyles = defineStyles(
+    'vela-ui-gauge',
+    css`
+        @layer vela.ui {
+            [data-slot='gauge'] {
+                border-radius: ${gaugeDef.vars.radius};
+                background: ${t.surface.sunken};
+
+                &[data-size='sm'] { … }
+                & > [data-slot='gauge-needle'] { color: ${t.accent}; }
+            }
+        }
+    `,
+);
+
+class GaugeImpl implements GaugeHandle { … }   // methods shared across instances
+
+export function createGauge(props: GaugeProps): GaugeHandle {
+    return new GaugeImpl(props);
+}
+```
+
+Released components keep their class (`new Switch(…)`, `new Tooltip(trigger, …)`) and
+their controller (`switchController`, `tooltipController`) next to the `create…`
+function; the class is the instance the function returns. New components start from the
+shape above.
+
+## The helpers (`src/ui/lib/`)
+
+- **`h(tag, props, ...children)`** builds an element, typed by its tag. `slot` writes the
+  `data-slot`, `data` the `data-*` attributes (`true` writes an empty value, `false` and
+  `null` nothing), `attrs`, `on` and `text` the rest. Class names are layout hooks, never
+  the styling contract.
+- **`css`** marks a template as CSS (editors highlight it, stylelint checks it) and
+  **`defineStyles(id, text)`** returns the injector a component calls at creation, never
+  at import: it declares the layer order once per document or shadow root, then injects
+  the sheet, id-guarded.
+- **`t`** reads the design tokens: `${t.radius.md}` prints `var(--vela-radius-md)`, and a
+  name that does not exist fails the typecheck. A test checks that `t` and the tokens the
+  theme writes match in both directions.
+- **`variants(spec)`** turns `{ variant: [...], size: [...] }` into the `data-*` attributes
+  the CSS keys on, and types the props through `VariantProps`.
+- **`defineComponent({ name, parts, settings })`** links a name to its CSS: `slot(part)`
+  is the part's `data-slot` (`name` for `root`, `name-part` otherwise), and `vars.<setting>`
+  prints `var(--vela-<name>-<setting>, <default>)`.
+- **`addSlot(el, part)`** adds a part to an element's slot. A shell one component owns and
+  another builds on carries both, `data-slot="popover-content select-content"`, and CSS
+  matches either with `[data-slot~='…']`.
+
+## CSS rules
+
+- Everything sits in **`@layer vela.ui`**, below unlayered CSS, so a page's own rule wins
+  without `!important` or a more specific selector. Selectors start with one of the
+  component's own parts (`[data-slot='gauge-needle']`), nest with `&`, and key on state
+  attributes (`data-state`, `data-selected`, `aria-expanded`), never on classes.
+- A root that can be `hidden` takes its `display` under `:where(:not([hidden]))`; a rule
+  that depends on an ancestor (the mobile layout) reads `&:is([data-layout='mobile'] *)`,
+  which keeps the selector's weight.
+- Values come from `t` or the component's settings; durations from `t.dur`; directions are
+  logical (`padding-inline`, `inset-inline-end`, `text-align: start`).
+- `npm run lint` checks every template with stylelint and the postcss-lit syntax: the
+  `vela/layer`, `vela/slot-scope`, `vela/token-values` and `vela/no-raw-token-var` rules
+  (`scripts/stylelint-plugin-vela.mjs`), no hex or named colors, no class or id
+  selectors, no `!important`, no `box-sizing: content-box` (the kit's border-box reset is
+  unlayered, as the chrome relies on it: size the full box instead). A template the parser
+  cannot read fails the run instead of going unchecked.
+- The build flattens the nesting (`scripts/flatten-css.mjs`, with Lightning CSS) for the
+  browsers that brought `@layer`: Chrome and Edge 99, Firefox 97, Safari 15.4. The
+  playground and the tests run the nested source.
+- Three rules stay outside the layer on purpose, each next to a comment saying why: the
+  kit's border-box reset, the field rows' dimmed state, and the reset of a dragged
+  dialog's offset in the mobile layout.
+
+## Zag machines
+
+Wrap the machine in a controller function that maps the component's options to machine
+props, with an explicit return interface (TypeScript cannot name Zag's inferred types
+portably), then start it with `runMachine` and re-project the api's props on every
+notification with `spreadProps`:
+
+```ts
 export function tooltipController(opts: TooltipControllerOptions = {}): TooltipController {
     return {
         machine: tooltip.machine,
@@ -48,43 +124,18 @@ export function tooltipController(opts: TooltipControllerOptions = {}): TooltipC
         connect: (service) => tooltip.connect(service, normalizeProps),
     };
 }
+
+// in the component class:
+this.handle = runMachine(ctrl.machine, ctrl.props, (service) => {
+    const api = ctrl.connect(service);
+    spreadProps(trigger, api.getTriggerProps(), mid);
+    // …spread the other parts onto their elements
+});
 ```
 
-Vanilla form primitives skip Zag: export a small state object (getters + `set*` /
-`sync` that do not emit, plus the mutating method that does) so a `vela-sync`
-refresh can rewrite the displayed value without firing `onChange`.
-
-## 2 — view.ts
-
-For overlay chrome, build your DOM, start the machine with `runMachine`, and
-re-project the api's props on every notification with `spreadProps`:
-
-```ts
-import { runMachine, spreadProps, type HandleOf } from '../../zag';
-import { injectStyles } from '../../styles';
-
-export class Tooltip {
-    private readonly handle: HandleOf<typeof zagTooltip.machine>;
-
-    constructor(trigger: HTMLElement, opts: TooltipOptions) {
-        injectStyles(STYLE_ID, CSS, trigger.ownerDocument);
-        const ctrl = tooltipController(opts);
-        const mid = String(ctrl.props.id);
-        this.handle = runMachine(ctrl.machine, ctrl.props, (service) => {
-            const api = ctrl.connect(service);
-            spreadProps(trigger, api.getTriggerProps(), mid);
-            // …spread the other parts onto your elements
-        });
-    }
-
-    destroy(): void {
-        this.handle.stop();
-    }
-}
-```
-
-Form-primitive views construct DOM once, subscribe to clicks/input themselves, and
-expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
+Form controls skip Zag: a small state object (getters, `set*` / `sync` that do not emit,
+and the one method that does) lets a `vela-sync` refresh rewrite the displayed value
+without firing `onChange`.
 
 ## Rules (learned the hard way)
 
@@ -95,10 +146,9 @@ expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
   option on Tooltip/Menu).
 - **Dialog-like machines expect conditional rendering** — their props carry no `hidden`;
   toggle visibility from `api.open` in your render (tooltip/menu props DO carry it).
-- **Style through the tokens** (`--vela-*` custom properties) and inject the sheet with
-  `injectStyles` (id-guarded, Shadow-DOM-friendly). Never hard-code colors: the tokens are
-  derived from the theme in `src/core/tokens.ts`, and the fixed brand/meaning colors live in
-  `src/core/palette.ts`. A test scans `src/` and fails on a stray hex literal.
+- **Never hard-code colors**: the tokens are derived from the theme in
+  `src/core/tokens.ts`, and the fixed brand/meaning colors live in `src/core/palette.ts`. A
+  test scans `src/` and fails on a stray hex literal.
 - **Take icons from the registry** (`src/core/icons.ts`) rather than inlining SVG: 16×16 at
   stroke 1.2 for UI chrome, 24×24 at stroke 1.8 for drawing tools, always `currentColor`.
 - Floating layers mount into the nearest `.vela-ui` host (token inheritance); use the
@@ -115,9 +165,10 @@ expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
   [Animating closes](../user/workspace.md#animating-closes)). It completes synchronously
   when no exit animation starts; keep the returned handle to `cancel()` it on a reopen and
   `finish()` it on teardown.
-- Renderer chrome that consumes the kit **imports the component folder**, not the
-  `src/ui` barrel — otherwise Zag overlay machines get pulled into the native-renderer
-  bundle. Hosts and plugins import from `@luxalgo/vela/ui`.
+- Renderer chrome that consumes the kit **imports the component file**
+  (`src/ui/components/<name>`), not the `src/ui` barrel — otherwise Zag overlay machines
+  get pulled into the native-renderer bundle. Hosts and plugins import from
+  `@luxalgo/vela/ui`.
 
 ## Form primitives
 
@@ -176,33 +227,7 @@ fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
 ## Primitives
 
-`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives. They, the
-switch, the text field, the text area and the tooltip are written in the one-file shape the
-rest of the kit is moving to:
-
-- **One file per component** (`src/ui/components/button.ts`, `tabs.ts`, …) holds the
-  component's declaration (`defineComponent({ name, parts, settings })`), its variants
-  (`variants({ variant: [...], size: [...] })`, whose names type its props), its CSS, and a
-  `create<Name>(props)` function returning a handle (`{ el, set…, destroy }`). Elements are
-  built with `h()`, and every part takes its `data-slot` from the declaration
-  (`buttonDef.slot('icon')` is `button-icon`). The helpers live in `src/ui/lib/`.
-- **CSS** is a `css` template inside `@layer vela.ui`, nested under the part's
-  `[data-slot]` and keyed on state attributes (`data-selected`, `data-disabled`,
-  `aria-expanded`). Values come from the tokens through `t` (`${t.radius.md}` prints
-  `var(--vela-radius-md)`, and a wrong name fails the typecheck) or from the component's
-  settings (`${tabsDef.vars['track-radius']}` prints `var(--vela-tabs-track-radius, 8px)`,
-  which a host's CSS can set). The sheet is injected when the first instance is created.
-  The layer sits below unlayered CSS, so a page's own rule wins without `!important`; a
-  root that can be `hidden` takes its `display` under `:where(:not([hidden]))` instead of
-  a `[hidden] { display: none !important }` override.
-- **`npm run lint`** checks these templates with stylelint and the postcss-lit syntax:
-  `vela/layer`, `vela/slot-scope`, `vela/token-values` and `vela/no-raw-token-var`
-  (`scripts/stylelint-plugin-vela.mjs`), plus no hex or named colors, no class or id
-  selectors, logical directions only, and durations from the tokens. A template the parser
-  cannot read fails the run instead of going unchecked.
-- **The build flattens the nesting** (`scripts/flatten-css.mjs`, with Lightning CSS) for
-  the browsers that brought `@layer`: Chrome and Edge 99, Firefox 97, Safari 15.4. The
-  playground and the tests run the nested source.
+`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives.
 
 Behavior:
 
@@ -213,9 +238,6 @@ Behavior:
   report of a host write.
 - **`Button` and `Badge` have no behavior to run**: their files build the element and
   write its attributes.
-- **Released components keep their classes** (`new Switch(…)`, `new Tooltip(trigger, …)`)
-  and controllers next to the new `create…` functions; the classes are the instances those
-  functions return.
 
 Every part carries a `data-slot` naming it (`button`, `button-icon`, `tabs-list`,
 `tabs-trigger`, `tabs-content`, `toggle-group`, `toggle-group-item`, `badge`, `switch`,
@@ -280,8 +302,6 @@ panel's chips; the callout bubble's buttons.
 
 Submenus inherit both options.
 
-## 3 — export it
+## Export it
 
-Re-export from `src/ui/index.ts`. If plugins should drive it with data descriptors
-(menu items, actions), keep the descriptor type in the controller file — descriptors are
-the currency the widget's contribution system projects.
+Add the component's public names to `src/ui/index.ts`: the `create…` function, its props and handle types, and anything a host needs (a descriptor type, a pure helper). The barrel lists names one by one, so a component file's other exports (its declaration, its CSS, internal helpers) stay internal. If plugins should drive it with data descriptors (menu items, actions), keep the descriptor type in the component file — descriptors are the currency the widget's contribution system projects.

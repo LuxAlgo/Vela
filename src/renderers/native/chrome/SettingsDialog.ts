@@ -447,7 +447,7 @@ export class SettingsDialog {
             align: 'top',
             draggable: !mobile,
             flush: true,
-            className: 'vela-dialog--settings',
+            variant: 'settings',
             headerStart: burger,
             closeOnBackdrop: true,
             footer: (foot) => {

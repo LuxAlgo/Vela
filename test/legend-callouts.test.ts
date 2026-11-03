@@ -1,5 +1,5 @@
 // Legend callout contributions (src/widget/contributions.ts), the callout-bubble
-// controller's pure projection rules (src/ui/components/callout-bubble/controller.ts),
+// controller's pure projection rules (src/ui/components/callout-bubble.ts),
 // and the legend-row display rule (src/renderers/shared/InputsUI.ts).
 // DOM-free — node env; the bubble's rendering and the deployed panel are proven in the
 // browser (the view is a thin projection over these).

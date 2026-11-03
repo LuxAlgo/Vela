@@ -175,10 +175,11 @@ descriptors working when multiple charts exist.
 
 - Kit components built before their trigger is in the DOM need an **explicit `host`** —
   the `closest()` fallback silently portals to `<body>`, outside the theme variables.
-- Any authored `display` on a component's root defeats the `[hidden]` UA rule — pair it
-  with `[hidden] { display: none !important; }`.
-- New components follow the uniform skeleton (`controller.ts` + `view.ts` + `styles.css`
-  - `index.ts`) documented in `docs/contributing/adding-a-ui-component.md`.
+- Any authored `display` on a component's root defeats the `[hidden]` UA rule — give the
+  root its `display` under `:where(:not([hidden]))` (kit CSS has no `!important`).
+- Components are one file each (`src/ui/components/<name>.ts`: declaration, variants, CSS
+  in `@layer vela.ui`, a `create…` function), documented in
+  `docs/contributing/adding-a-ui-component.md`; `npm run lint` checks their CSS.
 
 **Interface text.**
 

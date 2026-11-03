@@ -218,8 +218,10 @@ Three rules:
 - **Never name other charting products** in code, comments, commit messages, or docs.
   Describe a feature by its own behavior.
 - **Match the surrounding code**: naming, comment density, file layout. New UI-kit
-  components follow the `controller.ts` + `view.ts` + `styles.css` + `index.ts`
-  skeleton in [docs/contributing/adding-a-ui-component.md](docs/contributing/adding-a-ui-component.md).
+  components are one file each (`src/ui/components/<name>.ts`: the declaration, the
+  variants, the layered CSS and a `create…` function), as
+  [docs/contributing/adding-a-ui-component.md](docs/contributing/adding-a-ui-component.md)
+  describes.
 
 ---
 

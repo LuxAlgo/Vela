@@ -1,26 +1,340 @@
-// Menu VIEW — projects MenuItemDescriptor[] into a floating list driven by the Zag menu
-// machine (keyboard nav, typeahead, dismiss handled by the machine). An item carrying
-// `submenu` becomes a trigger row owning a nested machine + list, registered as this
-// machine's child: Zag then drives hover intent, arrow-key traversal and the dismiss
-// chain across levels instead of the view faking any of it.
-import { runMachine, spreadProps, type HandleOf } from '../../zag';
-import { injectStyles } from '../../styles';
-import { floatingLayerHost } from '../../tokens';
-import { iconEl } from '../../icons';
-import { announceSurface } from '../../surface-events';
-import { holdForExit, type SurfaceExit } from '../../surface-exit';
-import { menuController, type MenuControllerOptions, type MenuItemDescriptor } from './controller';
-import { MENU_CSS, MENU_STYLE_ID } from './styles';
+// Menu: MenuItemDescriptor[] projected into a floating list over Zag's menu machine
+// (keyboard navigation, typeahead and dismissal belong to the machine). Items are data
+// descriptors, the plugin contribution currency. An item carrying `submenu` becomes a
+// trigger row owning a nested machine and list, registered as this machine's child: Zag
+// drives hover intent, arrow-key traversal and the dismiss chain across levels.
 import * as zagMenu from '@zag-js/menu';
-import { msg } from '../../../core/i18n/message';
-import { textOf } from '../../../core/i18n/text';
-import type { Translator } from '../../../core/i18n/types';
-import { kitTranslator } from '../../kit-text';
+import { msg } from '../../core/i18n/message';
+import { textOf } from '../../core/i18n/text';
+import type { Translator } from '../../core/i18n/types';
+import { iconEl } from '../icons';
+import { kitTranslator } from '../kit-text';
+import { css, defineStyles } from '../lib/css';
+import { defineComponent } from '../lib/define';
+import { addSlot } from '../lib/h';
+import { t } from '../lib/t';
+import { announceSurface } from '../surface-events';
+import { holdForExit, type SurfaceExit } from '../surface-exit';
+import { floatingLayerHost } from '../tokens';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../zag';
+
+/** One menu entry. `id` is the selection value reported to `onSelect`. */
+export interface MenuItemDescriptor {
+    id: string;
+    label: string;
+    disabled?: boolean;
+    /** Draw a separator line above this item. */
+    separatorBefore?: boolean;
+    /** Right-aligned hint (e.g. a shortcut display from KeymapManager). */
+    hint?: string;
+    /** Selected state (undefined = plain item). A plain checked item renders as a
+     *  highlighted row (brighter surface + bright ink) — or, in a menu built with
+     *  `checkmarks`, as a leading ✓ with the row surface left free for hover. */
+    checked?: boolean;
+    /** Render as a SWITCH row (a right-aligned toggle pill reflecting `checked`)
+     *  instead of the selected-row highlight, and keep the menu OPEN on selection —
+     *  the shape for boolean settings living inside a dropdown. */
+    toggle?: boolean;
+    /** Icon id (see the `vela/ui` icon registry) rendered before the label. A level where
+     *  any row has one gives its iconless rows an empty slot, so the labels align. */
+    icon?: string;
+    /** Favorite-star affordance at the row's right edge: `false` renders an outline
+     *  star revealed on row hover, `true` a filled star that stays visible. Clicking
+     *  it reports through the menu's `onFavorite` WITHOUT selecting (or closing) the
+     *  row — undefined rows carry no star at all. */
+    favorite?: boolean;
+    /** Nested entries — the row becomes a submenu trigger opening its own list to the side.
+     *  A branch is not selectable itself: `onSelect` only ever reports leaf ids. */
+    submenu?: readonly MenuItemDescriptor[];
+}
+
+export interface MenuControllerOptions {
+    items: readonly MenuItemDescriptor[];
+    onSelect?: (id: string) => void;
+    placement?: zagMenu.Props['positioning'] extends infer P | undefined ? (P extends { placement?: infer PL } ? PL : never) : never;
+    onOpenChange?: (open: boolean) => void;
+    /** Pin the floating list to this rect (viewport coords). Used to keep an open
+     *  menu still when its trigger moves — starring a timeframe adds a chip and
+     *  would otherwise drag the list with the caret. `null` falls through to the
+     *  live trigger. */
+    getAnchorRect?: () => { x: number; y: number; width: number; height: number } | null;
+    /** Share the trigger's DOM id with other machines composed on the same element. */
+    triggerId?: string;
+    /** Pin the machine's own id instead of taking a fresh one. A parent registers its
+     *  submenus under this key, so rebuilding a branch replaces its entry rather than
+     *  piling a new one on top. */
+    id?: string;
+}
+
+export type MenuService = zagMenu.Service;
+export type MenuApi = zagMenu.Api;
+
+export interface MenuController {
+    machine: typeof zagMenu.machine;
+    props: Partial<zagMenu.Props>;
+    connect(service: MenuService): MenuApi;
+}
+
+/** Zag's menu machine with the options mapped onto it, for any view layer. */
+export function menuController(opts: MenuControllerOptions): MenuController {
+    return {
+        machine: zagMenu.machine,
+        props: {
+            id: opts.id ?? nextUid('vela-menu'),
+            ids: opts.triggerId ? { trigger: opts.triggerId } : undefined,
+            positioning: {
+                placement: opts.placement ?? 'bottom-start',
+                ...(opts.getAnchorRect ? { getAnchorRect: () => opts.getAnchorRect!() } : {}),
+            },
+            onSelect: (d: zagMenu.SelectionDetails) => opts.onSelect?.(d.value),
+            onOpenChange: (d: zagMenu.OpenChangeDetails) => opts.onOpenChange?.(d.open),
+        } satisfies Partial<zagMenu.Props>,
+        connect: (service: MenuService): MenuApi => zagMenu.connect(service, normalizeProps),
+    };
+}
+
+export const menuDef = defineComponent({
+    name: 'menu',
+    parts: ['content', 'item', 'icon', 'label', 'hint', 'mark', 'badge', 'star', 'switch', 'arrow', 'separator'],
+    settings: { radius: t.radius.md, 'switch-radius': '9px' },
+});
+
+const injectStyles = defineStyles(
+    'vela-ui-menu',
+    css`
+        @layer vela.ui {
+            [data-slot~='menu-content'] {
+                /* The list is a <ul>: without this, block rows (the separator) paint a ::marker dot. */
+                list-style: none;
+                margin: 0;
+                background: ${t.surface};
+                color: ${t.fg};
+                border: 1px solid ${t.border.strong};
+                border-radius: ${menuDef.vars.radius};
+                box-shadow: ${t.shadow};
+                padding: 6px;
+                min-width: 180px;
+                max-height: 60vh;
+                overflow-y: auto;
+                font-size: 13px;
+                z-index: ${t.z.menu};
+                outline: 2px solid transparent;
+
+                &[data-state='open'] {
+                    animation: vela-menu-in ${t.dur.fast} ${t.ease};
+                }
+            }
+            @keyframes vela-menu-in {
+                from {
+                    opacity: 0;
+                    transform: translateY(-3px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            [data-slot~='menu-item'] {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 7px 10px;
+                border-radius: ${t.radius.sm};
+                cursor: pointer;
+                user-select: none;
+                white-space: nowrap;
+
+                &[data-highlighted] {
+                    background: ${t.hover};
+                }
+                &[data-disabled] {
+                    opacity: 0.4;
+                    cursor: default;
+                }
+                & [data-slot~='menu-icon'] {
+                    width: 16px;
+                    height: 16px;
+                    font-size: 16px;
+                    justify-content: center;
+                    color: ${t.fg.muted};
+                }
+                & [data-slot~='menu-label'] {
+                    flex: 1 1 auto;
+                }
+                & [data-slot~='menu-hint'] {
+                    color: ${t.fg.faint};
+                    font-size: ${t.fontSize.sm};
+                }
+                /* The active entry: the row surface carries the selection, a stronger wash
+                   than the hover one plus bright ink. After the hover rule, so a selected row
+                   stays visibly selected while highlighted. */
+                &[data-checked] {
+                    background: ${t.hover.strong};
+                    color: ${t.fg.bright};
+                }
+                /* Checkmark mode (context and action menus): every row reserves the leading
+                   mark column so labels align; a checked row fills it with a ✓ and brightens
+                   its ink, leaving the row surface free for the hover wash. */
+                & [data-slot~='menu-mark'] {
+                    width: 14px;
+                    flex: none;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                & [data-slot~='menu-mark'] [data-slot~='menu-icon'] {
+                    width: 14px;
+                    height: 14px;
+                    font-size: 14px;
+                    color: ${t.fg.bright};
+                }
+                &[data-checkmark] {
+                    color: ${t.fg.bright};
+                }
+                /* Badge mode: the row icon sits in a rounded tile and the row grows to fit it.
+                   An icon-less row of the same level keeps an invisible slot, so labels align. */
+                & [data-slot~='menu-badge'] {
+                    width: 24px;
+                    height: 24px;
+                    padding: 3px;
+                    flex: none;
+                    box-sizing: border-box;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: ${t.radius.md};
+                    background: ${t.hover};
+                    border: 1px solid ${t.border};
+                    color: ${t.fg.muted};
+                    transition:
+                        background ${t.dur.fast} ${t.ease},
+                        border-color ${t.dur.fast} ${t.ease},
+                        color ${t.dur.fast} ${t.ease};
+                }
+                & [data-slot~='menu-badge']:empty {
+                    background: transparent;
+                    border-color: transparent;
+                }
+                & [data-slot~='menu-badge'] [data-slot~='menu-icon'] {
+                    color: inherit;
+                }
+                &[data-highlighted] [data-slot~='menu-badge']:not(:empty) {
+                    color: ${t.fg.bright};
+                }
+                /* The selected tile inverts: a bright fill under the surface-colored glyph.
+                   After the hover rule, so a selected row keeps its tile while highlighted. */
+                &[data-checked] [data-slot~='menu-badge']:not(:empty),
+                &[data-checkmark] [data-slot~='menu-badge']:not(:empty) {
+                    background: color-mix(in srgb, ${t.fg.bright} 83%, ${t.surface});
+                    border-color: color-mix(in srgb, ${t.fg.bright} 40%, transparent);
+                    color: ${t.surface};
+                }
+                /* The favorite star: reserved space always (it fades in on row hover instead
+                   of shifting the layout), and a starred row keeps its filled star visible. */
+                & [data-slot~='menu-star'] {
+                    order: 98;
+                    /* Pad the 16px icon slot into a bigger hit target without moving the row's
+                       layout: the box is the icon plus its padding. */
+                    width: 26px;
+                    height: 22px;
+                    margin-block: -3px;
+                    margin-inline: 0 -5px;
+                    padding: 3px 5px;
+                    border-radius: ${t.radius.sm};
+                    opacity: 0;
+                    transition:
+                        opacity ${t.dur.fast} ease,
+                        background ${t.dur.fast} ease;
+                }
+                &[data-highlighted] [data-slot~='menu-star'] {
+                    opacity: 0.55;
+                }
+                & [data-slot~='menu-star']:hover {
+                    opacity: 1;
+                    background: ${t.hover.strong};
+                }
+                & [data-slot~='menu-star'][data-fav] {
+                    opacity: 0.95;
+                    color: ${t.highlight};
+                }
+                /* A submenu trigger row: a chevron at the end, and the row stays highlighted
+                   while its own list is open, so the path you came down remains readable. */
+                & [data-slot~='menu-arrow'] {
+                    order: 99;
+                    margin-inline-start: auto;
+                    width: 12px;
+                    flex: none;
+                    font-size: 11px;
+                    color: ${t.fg.faint};
+                }
+                &[data-state='open'] {
+                    background: ${t.hover};
+                }
+            }
+            [data-slot~='menu-content'][data-badges] > [data-slot~='menu-item'] {
+                padding-block: 5px;
+                padding-inline: 6px 10px;
+            }
+            /* Switch rows (boolean settings in a dropdown): a toggle pill at the row's end,
+               the same control language as the settings dialog's toggles. */
+            [data-slot~='menu-switch'] {
+                order: 99;
+                margin-inline-start: auto;
+                position: relative;
+                flex: none;
+                width: 34px;
+                height: 18px;
+                border-radius: ${menuDef.vars['switch-radius']};
+                background: ${t.surface.overlay};
+                border: 1px solid ${t.border.soft};
+                transition:
+                    background ${t.dur.med} ease,
+                    border-color ${t.dur.med} ease;
+
+                &::after {
+                    content: '';
+                    position: absolute;
+                    top: 2px;
+                    inset-inline-start: 2px;
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    background: ${t.fg.muted};
+                    transition:
+                        transform ${t.dur.med} ease,
+                        background ${t.dur.med} ease;
+                }
+                &[data-on] {
+                    background: var(${t.accent.bright.name}, ${t.accent});
+                    border-color: var(${t.accent.bright.name}, ${t.accent});
+                }
+                &[data-on]::after {
+                    transform: translateX(16px);
+                    background: ${t.bg};
+                }
+            }
+            [data-slot~='menu-separator'] {
+                height: 1px;
+                margin: 4px 6px;
+                background: ${t.border};
+            }
+        }
+    `,
+);
+
+/** An icon in a menu row, carrying the row icon part. */
+function menuIcon(id: string, doc: Document): HTMLElement {
+    const el = iconEl(id, doc);
+    el.dataset.slot = menuDef.slot('icon');
+    return el;
+}
 
 const TEXT = {
     addFavorite: msg('ui.menu.addFavorite', 'Add to favorites'),
     removeFavorite: msg('ui.menu.removeFavorite', 'Remove from favorites'),
 };
+
+export type MenuProps = MenuOptions;
 
 export interface MenuOptions extends MenuControllerOptions {
     /** Element that opens the menu on click (gets the machine's trigger props). */
@@ -77,7 +391,7 @@ class Surface {
     readonly list: HTMLElement;
     readonly handle: HandleOf<typeof zagMenu.machine>;
     private readonly positioner: HTMLElement;
-    private readonly ctrl: ReturnType<typeof menuController>;
+    private readonly ctrl: MenuController;
     private readonly mid: string;
     private readonly doc: Document;
     private readonly host: HTMLElement;
@@ -111,6 +425,7 @@ class Surface {
         this.positioner.className = 'vela-ui-layer';
         this.list = doc.createElement('ul');
         this.list.className = 'vela-menu';
+        this.list.dataset.slot = menuDef.slot('content');
         if (opts.minWidth) this.list.style.minWidth = opts.minWidth;
         this.positioner.appendChild(this.list);
         this.host.appendChild(this.positioner);
@@ -240,12 +555,14 @@ class Surface {
             if (item.separatorBefore) {
                 const sep = doc.createElement('li');
                 sep.className = 'vela-menu-sep';
+                sep.dataset.slot = menuDef.slot('separator');
                 sep.setAttribute('role', 'separator');
                 this.list.appendChild(sep);
             }
             const branch = item.submenu !== undefined && item.submenu.length > 0;
             const li = doc.createElement('li');
             li.className = 'vela-menu-item';
+            li.dataset.slot = menuDef.slot('item');
             li.dataset.veiId = item.id;
             if (item.toggle) {
                 // Switch row: the pill carries the state.
@@ -258,8 +575,9 @@ class Surface {
                 // for hover.
                 const mark = doc.createElement('span');
                 mark.className = 'vela-menu-mark';
+                mark.dataset.slot = menuDef.slot('mark');
                 if (!branch && !item.toggle && item.checked) {
-                    mark.appendChild(iconEl('check', doc));
+                    mark.appendChild(menuIcon('check', doc));
                     li.dataset.checkmark = '1';
                 }
                 li.appendChild(mark);
@@ -271,28 +589,35 @@ class Surface {
             if (badged) {
                 const badge = doc.createElement('span');
                 badge.className = 'vela-menu-badge';
-                if (item.icon) badge.appendChild(iconEl(item.icon, doc));
+                badge.dataset.slot = menuDef.slot('badge');
+                if (item.icon) badge.appendChild(menuIcon(item.icon, doc));
                 li.appendChild(badge);
             } else if (item.icon) {
-                li.appendChild(iconEl(item.icon, doc));
+                li.appendChild(menuIcon(item.icon, doc));
             } else if (iconic) {
-                li.appendChild(iconEl('', doc));
+                li.appendChild(menuIcon('', doc));
             }
             const label = doc.createElement('span');
             label.className = 'vela-menu-label';
+            label.dataset.slot = menuDef.slot('label');
             label.textContent = item.label;
             li.appendChild(label);
             if (item.hint) {
                 const hint = doc.createElement('span');
                 hint.className = 'vela-menu-hint';
+                hint.dataset.slot = menuDef.slot('hint');
                 hint.textContent = item.hint;
                 li.appendChild(hint);
             }
             if (item.favorite !== undefined && this.onFavorite) {
                 const on = item.favorite;
-                const star = iconEl(on ? 'star-filled' : 'star', doc);
+                const star = menuIcon(on ? 'star-filled' : 'star', doc);
                 star.classList.add('vela-menu-star');
-                if (on) star.classList.add('vela-fav');
+                addSlot(star, menuDef.slot('star'));
+                if (on) {
+                    star.classList.add('vela-fav');
+                    star.dataset.fav = '';
+                }
                 star.removeAttribute('aria-hidden'); // iconEl hides decorative icons; this one is a control
                 star.setAttribute('role', 'button');
                 star.setAttribute('aria-label', textOf(this.i18n, on ? TEXT.removeFavorite : TEXT.addFavorite));
@@ -312,13 +637,16 @@ class Surface {
             if (item.toggle) {
                 const sw = doc.createElement('span');
                 sw.className = 'vela-menu-switch' + (item.checked ? ' on' : '');
+                sw.dataset.slot = menuDef.slot('switch');
+                if (item.checked) sw.dataset.on = '';
                 sw.setAttribute('aria-hidden', 'true');
                 li.appendChild(sw);
             }
             if (branch) {
                 li.dataset.branch = '1';
-                const arrow = iconEl('chevron-right', doc);
+                const arrow = menuIcon('chevron-right', doc);
                 arrow.classList.add('vela-menu-arrow');
+                addSlot(arrow, menuDef.slot('arrow'));
                 li.appendChild(arrow);
                 const sub = new Surface(doc, {
                     host: this.host,
@@ -345,7 +673,7 @@ export class Menu {
     constructor(opts: MenuOptions) {
         const anchor = opts.trigger ?? opts.host ?? document.body;
         const doc = anchor.ownerDocument;
-        injectStyles(MENU_STYLE_ID, MENU_CSS, doc);
+        injectStyles(doc);
         const host = floatingLayerHost(opts.host ?? anchor, doc.body);
         this.root = new Surface(doc, {
             host,
@@ -391,4 +719,8 @@ export class Menu {
     destroy(): void {
         this.root.destroy();
     }
+}
+
+export function createMenu(props: MenuProps): Menu {
+    return new Menu(props);
 }

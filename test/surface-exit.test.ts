@@ -14,8 +14,8 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 
 import { holdForExit, SURFACE_EXIT_CAP_MS } from '../src/ui/surface-exit';
 import { Popover } from '../src/ui/components/popover';
-import { Menu } from '../src/ui/components/menu/view';
-import { Dialog } from '../src/ui/components/dialog/view';
+import { Menu } from '../src/ui/components/menu';
+import { Dialog } from '../src/ui/components/dialog';
 import { SidePanel } from '../src/widget/side-panel';
 import { PanelDock } from '../src/widget/panel-dock';
 import type { WidgetContext } from '../src/widget/contributions';

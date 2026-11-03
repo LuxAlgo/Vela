@@ -51,14 +51,14 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
-- **The UI kit's styles give way to yours.** Switches, text fields, text areas, number
-  inputs, selects, glyph selects, color fields, date pickers, popovers, field rows and
-  tooltips keep their styles in the `vela.ui` cascade layer, so a page's own CSS overrides
-  them without `!important` or a more specific selector, and every part carries a
-  `data-slot` to style it by. Each component also has a `create…` function
-  (`createSwitch`, `createSelect`, `createPopover`, …) next to its class, which keeps
-  working. Their hover and focus fades follow the kit's motion tokens, and their layout
-  mirrors in right-to-left text.
+- **The UI kit's styles give way to yours.** Every component of `@luxalgo/vela/ui`, from
+  dialogs, drawers, menus and tooltips to selects, number inputs and color fields, keeps
+  its styles in the `vela.ui` cascade layer, so a page's own CSS overrides them without
+  `!important` or a more specific selector, and every part carries a `data-slot` to style
+  it by. Each component also has a `create…` function (`createDialog`, `createMenu`,
+  `createSelect`, …) next to its class, which keeps working, and dialogs take a `variant`
+  (`settings`, `form`) for the two settings cards. Hover and focus fades follow the kit's
+  motion tokens, and layouts mirror in right-to-left text.
 
 ## [0.9.3]
 

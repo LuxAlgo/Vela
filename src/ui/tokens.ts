@@ -25,6 +25,8 @@ ${STATIC_DECLS}
     user-select: none;
     -webkit-user-select: none;
 }
+/* Unlayered, as the chrome's own controls rely on it; a kit component never declares a
+   box-sizing of its own, which this reset would override. */
 .vela-ui *, .vela-ui-layer * { box-sizing: border-box; }
 /* Text ENTRY is the one exception: selection is part of editing. */
 .vela-ui :is(input, textarea), .vela-ui-layer :is(input, textarea) { user-select: text; -webkit-user-select: text; }

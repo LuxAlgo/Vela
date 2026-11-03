@@ -145,7 +145,8 @@ export class IndicatorInputsDialog {
             align: 'center',
             draggable: !this.host.mobile(),
             flush: true,
-            className: 'vela-dialog--form vela-ind-dialog',
+            variant: 'form',
+            className: 'vela-ind-dialog',
             closeOnEscape: false,
             footer: (foot) => {
                 foot.append(

@@ -14,7 +14,7 @@ export default {
         // the typed tokens check them instead.
         'declaration-property-value-no-unknown': null,
         // `${t.font}` already ends in a generic family.
-        'font-family-no-missing-generic-family-keyword': [true, { ignoreFontFamilies: ['/^POSTCSS_LIT_\\d+$/'] }],
+        'font-family-no-missing-generic-family-keyword': [true, { ignoreFontFamilies: ['/^POSTCSS_LIT_\\d+( POSTCSS_LIT_\\d+)*$/'] }],
 
         // Colors come from tokens.
         'color-no-hex': true,
@@ -34,7 +34,9 @@ export default {
 
         // Logical directions, so right-to-left layouts mirror.
         'property-disallowed-list': ['/^(margin|padding|border)-(left|right)/', 'left', 'right', 'float', 'clear'],
-        'declaration-property-value-disallowed-list': { 'text-align': ['left', 'right'], outline: ['none', '0'] },
+        // The kit's border-box reset is unlayered (the chrome relies on it), so a layered
+        // `box-sizing: content-box` would never apply: size the full box instead.
+        'declaration-property-value-disallowed-list': { 'text-align': ['left', 'right'], outline: ['none', '0'], 'box-sizing': ['content-box'] },
 
         // Durations come from tokens (and follow reduced motion); container queries, not
         // viewport ones (a chart is rarely the size of the viewport).

@@ -10,8 +10,8 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
     disconnect() {}
 };
 
-import { Dialog } from '../src/ui/components/dialog/view';
-import { Drawer } from '../src/ui/components/drawer/view';
+import { Dialog } from '../src/ui/components/dialog';
+import { Drawer } from '../src/ui/components/drawer';
 
 beforeAll(() => {
     Element.prototype.animate ??= (() => ({ cancel() {}, finish() {}, addEventListener() {} })) as unknown as Element['animate'];

@@ -25,6 +25,11 @@ describe('flattenTemplates', () => {
         expect(out.startsWith('export const a = css`')).toBe(true);
     });
 
+    it('carries an interpolated custom property name through var()', () => {
+        const out = flattenTemplates("css`[data-slot='x'] { background: var(${t.accent.bright.name}, ${t.accent}); }`", 'x.ts');
+        expect(out).toContain('background:var(${t.accent.bright.name},${t.accent})');
+    });
+
     it('refuses what it cannot carry through a template literal', () => {
         expect(() => flattenTemplates('css`a { color: ${{ a: 1 }.a}; }`', 'x.ts')).toThrow(/braces/);
         expect(() => flattenTemplates("css`a::before { content: '\\\\201C'; }`", 'x.ts')).toThrow(/backslash/);
