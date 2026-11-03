@@ -98,6 +98,16 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The drawing toolbar runs the shell's full height once a layout region is in use.** A
+  shell with a full-height column panel, a right-edge element or a docked strip lays out as
+  a grid, and the drawing toolbar now has its own column there: from under the topbar to the
+  foot of the shell, beside the strips, the bottom bar and the strips under it, as the right
+  edge runs from top to foot. Docking any strip switches a shell with a drawing toolbar to
+  the grid. A covering strip and a maximized column panel cover the toolbar too. A shell
+  using no region keeps its plain column.
+- **Vela's own chrome CSS sits in `@layer vela.chrome`**, above the UI kit's components and
+  below Pro's and a theme's restyles, so CSS a host writes without a layer overrides it
+  without `!important` or specificity races. The public `injectStyles` stays unlayered.
 - **The UI kit states the browsers it supports**: Chrome and Edge 111, Firefox 113, Safari
   16.2, the first with `color-mix()`, which its tints (destructive buttons, badges, the
   selected tab) and parts of the chart's chrome already used. On older browsers those tints
