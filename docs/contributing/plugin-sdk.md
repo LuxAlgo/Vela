@@ -901,6 +901,24 @@ registerWidgetAction({
 - Which entries show, and where, is the host's call (its `sidebar` composition). A plugin that
   wants its entry somewhere specific documents the id for hosts to place.
 
+### A plugin that needs the sidebar — `registerShellDefaults`
+
+The sidebar is a shell option, which a plugin cannot set on a host's behalf. It registers a
+**default** instead, which every shell built afterwards uses where its host gave no value:
+
+```ts
+import { registerShellDefaults } from '@luxalgo/vela/plugin';
+
+registerShellDefaults({ sidebar: true }); // or a composition: { top: [...], bottom: [...] }
+```
+
+- The host's own `sidebar` always wins, `false` included: a host can keep the sidebar off.
+- Shells built before the call are untouched. The disposer it returns removes exactly the
+  values it set; `unregisterShellDefaults(...keys)` drops them by key, and `shellDefaults()`
+  reads them.
+- It is the shell's counterpart of `registerRendererDefaults`, which gives every chart
+  built afterwards a default renderer feature.
+
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 
 Vela™ bundles no engine — you install one (`@luxalgo/vela-pinets` for Pine Script) or write

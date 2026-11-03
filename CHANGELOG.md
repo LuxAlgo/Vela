@@ -6,6 +6,11 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Plugins can give shell options a default.** `registerShellDefaults({ sidebar })` gives
+  every shell built afterwards the right-edge sidebar (or a composition of it) where its host
+  said nothing about it; the host's own value, `false` included, always wins, and shells
+  already built are untouched. It returns a disposer; `unregisterShellDefaults` and
+  `shellDefaults` complete it, as for `registerRendererDefaults`.
 - **A toolbar on the shell's right edge.** `sidebar: true` gives the shell a toolbar on its
   fourth side, beside the topbar, the charts and the bottom bar. It takes over the
   side-panel toggles from the topbar and hosts the entries plugins register with

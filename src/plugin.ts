@@ -87,6 +87,7 @@ export {
 } from './chart-types/registry';
 export type { BarTransform } from './core/price-styles/BarTransform';
 export { registerRendererDefaults, unregisterRendererDefaults, rendererDefaults } from './core/renderer-defaults';
+export { registerShellDefaults, unregisterShellDefaults, shellDefaults, type ShellDefaults } from './widget/shell-defaults';
 export {
     registerNativeIndicator,
     unregisterNativeIndicator,

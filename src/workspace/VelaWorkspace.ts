@@ -41,6 +41,7 @@ import { legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, s
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { Sidebar, sidebarActions, sidebarControl } from '../widget/sidebar';
+import { shellDefaults } from '../widget/shell-defaults';
 import { MobileBar } from '../widget/mobile-bar';
 import { TimeframeDrawer } from '../widget/timeframe-drawer';
 import { DrawingsDrawer } from '../widget/drawings-drawer';
@@ -699,10 +700,11 @@ export class VelaWorkspace {
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
         // The sidebar exists before the dock: the dock publishes the built-in panels' toggles
-        // as it docks them.
-        if (opts.sidebar) {
+        // as it docks them. A host's own value wins over a plugin's default.
+        const sidebar = opts.sidebar !== undefined ? opts.sidebar : shellDefaults().sidebar;
+        if (sidebar) {
             this.sidebar = new Sidebar({
-                composition: opts.sidebar === true ? undefined : opts.sidebar,
+                composition: sidebar === true ? undefined : sidebar,
                 host: this.root,
                 i18n: this.localeState,
                 context: () => this.context(),
