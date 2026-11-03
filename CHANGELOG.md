@@ -54,6 +54,11 @@ All notable changes to Vela, newest first.
   and alerts menus now hang centered below the button that opened them, instead of starting
   at its left edge and running off to the right. Near the window's edges they still stay
   fully on screen.
+- **A drawing's settings open beside its toolbar.** The settings panel now opens right next
+  to the drawing's toolbar, where its gear is, instead of at the far edge of the chart. It
+  takes the side of the toolbar away from the drawing when there is room, so the drawing
+  stays in view as you edit it, and it stays inside the chart, scrolling when the chart is
+  short.
 
 ## [0.9.3]
 
