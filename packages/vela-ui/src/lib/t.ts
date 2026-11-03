@@ -47,6 +47,8 @@ export const t = {
     selected: group(null, { bg: 'selected-bg', fg: 'selected-fg' }),
     up: tok('up'),
     down: tok('down'),
+    profit: tok('profit'),
+    loss: tok('loss'),
     danger: tok('danger'),
     shadow: group('shadow', { dialog: 'shadow-dialog' }),
     backdrop: tok('backdrop'),

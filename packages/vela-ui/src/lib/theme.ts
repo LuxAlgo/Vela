@@ -10,13 +10,18 @@ import type { calloutBubbleDef } from '../components/callout-bubble';
 import type { colorPickerDef } from '../components/color-picker';
 import type { datePickerDef } from '../components/date-picker';
 import type { dialogDef } from '../components/dialog';
+import type { donutDef } from '../components/donut';
 import type { drawerDef } from '../components/drawer';
+import type { emptyStateDef } from '../components/empty-state';
 import type { fieldDef } from '../components/field';
 import type { glyphSelectDef } from '../components/glyph-select';
+import type { kbdDef } from '../components/kbd';
 import type { menuDef } from '../components/menu';
 import type { numberInputDef } from '../components/number-input';
 import type { popoverDef } from '../components/popover';
 import type { selectDef } from '../components/select';
+import type { sparklineDef } from '../components/sparkline';
+import type { statDef } from '../components/stat';
 import type { switchDef } from '../components/switch';
 import type { tabsDef } from '../components/tabs';
 import type { textAreaDef } from '../components/text-area';
@@ -105,6 +110,8 @@ export const TOKEN_NAMES = [
     'fg-on-fill',
     'up',
     'down',
+    'profit',
+    'loss',
     'danger',
     'shadow',
     'shadow-dialog',
@@ -122,13 +129,18 @@ export interface ComponentDefs {
     'color-picker': typeof colorPickerDef;
     'date-picker': typeof datePickerDef;
     dialog: typeof dialogDef;
+    donut: typeof donutDef;
     drawer: typeof drawerDef;
+    'empty-state': typeof emptyStateDef;
     field: typeof fieldDef;
     'glyph-select': typeof glyphSelectDef;
+    kbd: typeof kbdDef;
     menu: typeof menuDef;
     'number-input': typeof numberInputDef;
     popover: typeof popoverDef;
     select: typeof selectDef;
+    sparkline: typeof sparklineDef;
+    stat: typeof statDef;
     switch: typeof switchDef;
     tabs: typeof tabsDef;
     'text-area': typeof textAreaDef;

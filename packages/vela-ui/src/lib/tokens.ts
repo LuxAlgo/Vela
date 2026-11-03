@@ -98,6 +98,9 @@ export function themeTokens(t: ChartTheme): Record<string, string> {
         '--vela-fg-on-fill': '#ffffff',
         '--vela-up': t.upColor,
         '--vela-down': t.downColor,
+        // Gains and losses (P&L, win rates): the candles' inks unless a theme parts them.
+        '--vela-profit': t.upColor,
+        '--vela-loss': t.downColor,
         '--vela-danger': t.downColor,
         '--vela-shadow': '0 8px 30px rgba(0,0,0,0.5)',
         '--vela-shadow-dialog': '0 20px 60px rgba(0,0,0,0.5)',
