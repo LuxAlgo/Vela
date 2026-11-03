@@ -276,7 +276,8 @@ describe('the drawing settings panel', () => {
         const cells = s.$$('.vela-dsp-lv-c');
         expect(cells.length).toBe((s.live() as FibRetracement).levels.length);
         expect(cells.filter((c) => !c.hasAttribute('data-off')).length).toBe(7);
-        expect(getComputedStyle(s.$('.vela-dsp-lv')!).gridTemplateColumns).toContain('repeat(2');
+        // jsdom does not apply rules inside `@layer`, so read the rule the panel declares.
+        expect(document.getElementById('vela-dsp-styles')?.textContent).toMatch(/\.vela-dsp-lv\s*\{[^}]*grid-template-columns:\s*repeat\(2/);
         s.popup.destroy();
     });
 

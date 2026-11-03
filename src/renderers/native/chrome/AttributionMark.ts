@@ -9,6 +9,7 @@ import { textOf } from '../../../core/i18n/text';
 import type { Translator } from '../../../core/i18n/types';
 import { isDarkColor } from '../../../core/color';
 import { VELA_LETTERS_SVG, VELA_MARK_SVG } from './vela-logos';
+import { chromeLayer } from '../../../ui/chromeStyles';
 
 /** Where the mark links — the canonical project page. */
 export const ATTRIBUTION_URL = 'https://velacharts.dev/?utm_source=vela&utm_medium=attribution';
@@ -77,7 +78,7 @@ function ensureStyles(doc: Document): void {
         s.id = STYLE_ID;
         doc.head.appendChild(s);
     }
-    s.textContent = CSS;
+    s.textContent = chromeLayer(CSS);
 }
 
 /**

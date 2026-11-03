@@ -11,7 +11,7 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { announceSurface } from '@luxalgo/vela-ui/surface-events';
 import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
@@ -143,7 +143,7 @@ export function layoutGridLabel(cols: number, rows: number, i18n?: Translator | 
 /** Build the bare 4×4 canvas (16 squares, row-major). Interaction wiring stays with the
  *  caller — the desktop popover adds hover previews, the mobile drawer taps to apply. */
 export function layoutGridCanvas(doc: Document, i18n?: Translator | null): { el: HTMLElement; squares: HTMLButtonElement[] } {
-    injectStyles(STYLE_ID, CSS, doc);
+    injectChromeStyles(STYLE_ID, CSS, doc);
     const el = doc.createElement('div');
     el.className = 'vela-lp-grid';
     const squares: HTMLButtonElement[] = [];
@@ -220,7 +220,7 @@ export class LayoutPicker {
     constructor(opts: LayoutPickerOptions) {
         this.opts = opts;
         this.doc = opts.host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, this.doc);
+        injectChromeStyles(STYLE_ID, CSS, this.doc);
         const doc = this.doc;
 
         this.layer = doc.createElement('div');

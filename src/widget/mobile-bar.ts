@@ -8,7 +8,7 @@ import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { timeframeLabel } from './timeframe';
 import { mobilePlacement, widgetActions, type WidgetContext } from './contributions';
@@ -126,7 +126,7 @@ export class MobileBar {
     constructor(host: HTMLElement, opts: MobileBarOptions) {
         this.opts = opts;
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.el = doc.createElement('div');
         this.el.className = 'vela-mobilebar';
 

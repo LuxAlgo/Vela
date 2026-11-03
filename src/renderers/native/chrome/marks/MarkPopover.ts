@@ -12,7 +12,7 @@ import type { VelaTheme } from '../../../../core/options';
 import type { MarkContent, MarkContentSource, MarkPanelItem } from '../../../../core/marks/types';
 import { Popover } from '@luxalgo/vela-ui/popover';
 import { CALLOUT_CSS, CALLOUT_STYLE_ID } from '@luxalgo/vela-ui/callout-bubble';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../../../../ui/chromeStyles';
 import { sanitizeHtml } from '../../../../ui/sanitize-html';
 import type { MarkCluster } from './layout';
 
@@ -85,8 +85,8 @@ export class MarkPopover {
 
     constructor(private readonly deps: MarkPopoverDeps) {
         const doc = deps.plot.ownerDocument;
-        injectStyles(CALLOUT_STYLE_ID, CALLOUT_CSS, doc);
-        injectStyles(MARKS_STYLE_ID, MARKS_CSS, doc);
+        injectChromeStyles(CALLOUT_STYLE_ID, CALLOUT_CSS, doc);
+        injectChromeStyles(MARKS_STYLE_ID, MARKS_CSS, doc);
         this.anchor = doc.createElement('div');
         this.anchor.className = 'vela-marks-anchor';
         Object.assign(this.anchor.style, { position: 'absolute', pointerEvents: 'none', left: '0', top: '0', width: '0', height: '0' });

@@ -9,7 +9,7 @@ import type { DataWindowReadout } from '../core/ports/IChartRenderer';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { Translator } from '../core/i18n/types';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { SidePanel } from './side-panel';
 
 const TEXT = {
@@ -119,7 +119,7 @@ export class DataWindow extends SidePanel {
 
     constructor(host: HTMLElement, i18n?: Translator) {
         super(host, TEXT.title, 'vela-dw', i18n ? { i18n } : {});
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
     }
 
     override toggle(open = !this.open, instant = false): void {

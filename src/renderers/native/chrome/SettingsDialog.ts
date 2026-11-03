@@ -47,6 +47,7 @@ import {
 import type { MarkGroup } from '../../../core/marks/types';
 import { markGroupRows } from '../../../core/marks/visibility';
 import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
+import { chromeLayer } from '../../../ui/chromeStyles';
 
 const TEXT = {
     sections: msg('chart.settings.sections', 'Sections'),
@@ -201,7 +202,7 @@ function ensureControlStyles(): void {
     const st = existing ?? document.createElement('style');
     st.id = SD_STYLE_ID;
     st.dataset.rev = SD_STYLE_REV;
-    st.textContent = `
+    st.textContent = chromeLayer(`
 ${overlayScrollbarCss('.vela-sd-pane')}
 /* Tab rail / footer button / header close: base styles live HERE, not inline on the
    elements — inline declarations always beat stylesheet :hover rules, which is exactly
@@ -280,7 +281,7 @@ ${overlayScrollbarCss('.vela-sd-pane')}
    alignment device; on mobile the trigger hugs its value instead (the grid's control
    column is max-content), capped so a long option still ellipsizes before the label. */
 .vela-sd-mobile .vela-select-trigger .vela-select-label{white-space:nowrap !important;}
-.vela-sd-mobile .vela-select:not([data-fill]){width:auto;min-width:100px;max-width:min(220px,55vw);}`;
+.vela-sd-mobile .vela-select:not([data-fill]){width:auto;min-width:100px;max-width:min(220px,55vw);}`);
     if (!existing) document.head.appendChild(st);
 }
 

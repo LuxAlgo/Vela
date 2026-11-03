@@ -32,6 +32,7 @@ import { formatTimeStamp, valueDecimals } from '../chrome/ticks';
 import { buildPositionSection, buildProfileSection } from './DrawingSettingsSections';
 import type { PopupAnchor, SettingsActions, SettingsPatch } from './DrawingSettingsPopup';
 import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
+import { chromeLayer } from '../../../ui/chromeStyles';
 
 const TEXT = {
     settings: msg('drawing.settings.settings', 'Settings'),
@@ -167,7 +168,7 @@ function ensureStyles(): void {
     const s = existing ?? document.createElement('style');
     s.id = STYLE_ID;
     s.dataset.rev = STYLE_REV;
-    s.textContent = `
+    s.textContent = chromeLayer(`
 .vela-dsp-pass { pointer-events: none !important; }
 .vela-dialog.vela-dsp { pointer-events: auto; width: 360px; min-width: 0; max-width: calc(100% - 24px); max-height: calc(100% - 24px); font-size: 13px; }
 .vela-dsp .vela-dialog-header { padding: 8px 8px 8px 16px; gap: 6px; }
@@ -235,7 +236,7 @@ function ensureStyles(): void {
 .vela-dsp-msep { height: 1px; background: var(--vela-border); margin: 4px 0; }
 .vela-dsp-mname { display: flex; gap: 6px; padding: 4px; }
 .vela-dsp-mname > input { flex: 1; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 6px; border: 1px solid var(--vela-border-strong); background: transparent; color: inherit; font: inherit; outline: none; }
-.vela-dsp-mname > input:focus { border-color: var(--vela-selected-bg); }`;
+.vela-dsp-mname > input:focus { border-color: var(--vela-selected-bg); }`);
     if (!existing) document.head.appendChild(s);
 }
 

@@ -9,6 +9,7 @@ import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
 import { msg } from '../../../core/i18n/message';
 import { textOf, upperCase } from '../../../core/i18n/text';
 import type { MessageLike, Translator } from '../../../core/i18n/types';
+import { chromeLayer } from '../../../ui/chromeStyles';
 
 const TEXT = {
     cursor: msg('drawing.toolbar.cursor', 'Cursor'),
@@ -772,7 +773,7 @@ function ensureStyles(): void {
         s.id = STYLE_ID;
         document.head.appendChild(s);
     }
-    s.textContent = `
+    s.textContent = chromeLayer(`
 .vela-dtb-hit{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:var(--vela-radius-md);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dtb-hit--arrow{width:11px;height:22px;}
 .vela-dtb-btn{position:relative;width:100%;height:30px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;background:transparent;border:none;padding:0;transition:color var(--vela-dur-fast) ease;}
@@ -814,7 +815,7 @@ function ensureStyles(): void {
 .vela-dtb-flyout::-webkit-scrollbar-button{display:none;width:0;height:0;}
 .vela-dtb-flyout::-webkit-scrollbar-track,.vela-dtb-flyout::-webkit-scrollbar-track-piece,.vela-dtb-flyout::-webkit-scrollbar-corner{background:transparent;}
 .vela-dtb-flyout::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:var(--vela-radius-sm);}
-.vela-dtb-flyout::-webkit-scrollbar-thumb:hover{background:var(--vela-fg-muted);}`;
+.vela-dtb-flyout::-webkit-scrollbar-thumb:hover{background:var(--vela-fg-muted);}`);
 }
 
 const CURSOR_ICON = icon('cursor');

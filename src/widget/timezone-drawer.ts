@@ -6,7 +6,7 @@ import { textOf } from '../core/i18n/text';
 import type { Translator } from '../core/i18n/types';
 import { Drawer } from '@luxalgo/vela-ui/drawer';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { timezoneMenuRows } from './timezones';
 
 const TEXT = {
@@ -45,7 +45,7 @@ export class TimezoneDrawer {
     private readonly drawer: Drawer;
 
     constructor(private readonly opts: TimezoneDrawerOptions) {
-        injectStyles(STYLE_ID, CSS, opts.host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, opts.host.ownerDocument);
         this.drawer = new Drawer({ host: opts.host, title: textOf(opts.i18n, TEXT.title), onOpenChange: opts.onOpenChange });
     }
 

@@ -6,7 +6,7 @@ import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
 import { Drawer } from '@luxalgo/vela-ui/drawer';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { rangeLabel, type RangePreset } from './bottombar';
 import { timeframeLabel } from './timeframe';
 
@@ -91,7 +91,7 @@ export class TimeframeDrawer {
 
     constructor(private readonly opts: TimeframeDrawerOptions) {
         const doc = opts.host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.drawer = new Drawer({ host: opts.host, onOpenChange: opts.onOpenChange });
 
         const rangeHeading = doc.createElement('div');

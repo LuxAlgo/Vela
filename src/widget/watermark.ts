@@ -3,7 +3,7 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { Translator } from '../core/i18n/types';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 import { timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
@@ -94,7 +94,7 @@ export class Watermark {
         timeframe: string,
         private readonly i18n: () => Translator | null | undefined = () => null,
     ) {
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
         this.el = host.ownerDocument.createElement('div');
         this.el.className = 'vela-watermark';
         // Opt into the renderer's PNG export, beneath the canvases — on screen the mark

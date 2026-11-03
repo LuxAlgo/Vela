@@ -5,7 +5,7 @@ import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { parseTimeframe } from './timeframe';
 
 const STYLE_ID = 'vela-widget-tfquick';
@@ -58,7 +58,7 @@ export class TimeframeQuick {
     constructor(opts: TimeframeQuickOptions) {
         this.i18n = opts.i18n ?? null;
         const doc = (opts.host ?? document.body).ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.input = doc.createElement('input');
         this.input.className = 'vela-tq-input';
         this.input.setAttribute('spellcheck', 'false');

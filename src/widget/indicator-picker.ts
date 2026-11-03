@@ -4,7 +4,7 @@ import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 
 export interface IndicatorRow {
@@ -136,7 +136,7 @@ export class IndicatorPicker {
     constructor(opts: IndicatorPickerOptions) {
         this.opts = opts;
         const doc = (opts.host ?? document.body).ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.search = doc.createElement('input');
         this.search.className = 'vela-ip-search';
         this.search.placeholder = this.t(TEXT.search);

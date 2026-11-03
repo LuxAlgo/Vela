@@ -3,7 +3,7 @@
 // (plugin-registered bindings appear automatically).
 import type { KeymapManager } from '../ui/keymap';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { msg } from '../core/i18n/message';
 import { englishTranslator } from '../core/i18n/translator';
 import type { MessageLike, Translator } from '../core/i18n/types';
@@ -55,7 +55,7 @@ export class ShortcutsHelp {
         this.keymap = keymap;
         this.i18n = i18n ?? englishTranslator;
         const doc = (host ?? document.body).ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.list = doc.createElement('div');
         this.dialog = new Dialog({
             title: this.i18n().t(TEXT.title),

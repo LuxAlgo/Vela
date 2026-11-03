@@ -8,7 +8,7 @@ import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { LayoutPicker, type LayoutPickerShape } from './layout-picker';
 import { iconEl, iconMarkup, registerIcon } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { chartType } from '../chart-types/registry';
 import { topbarActionOverride, widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition, type TopbarComposition } from './topbar-composition';
@@ -312,7 +312,7 @@ export class Topbar {
         this.comp = resolveTopbarComposition(opts.composition);
         const vis = (id: string): boolean => topbarHas(this.comp, id);
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
 
         this.el = doc.createElement('div');
         this.el.className = 'vela-widget-topbar';

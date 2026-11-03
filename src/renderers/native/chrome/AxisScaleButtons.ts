@@ -4,6 +4,7 @@ import type { MessageLike, Translator } from '../../../core/i18n/types';
 import type { VelaTheme } from '../../../core/options';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
 import { AXIS_MASTER_W } from './axisLayout';
+import { chromeLayer } from '../../../ui/chromeStyles';
 
 /** A pane as seen by the axis scale buttons (its pixel band + current scale state). */
 export interface AxisScaleView {
@@ -57,11 +58,11 @@ function ensureStyles(): void {
     if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
     const st = document.createElement('style');
     st.id = STYLE_ID;
-    st.textContent = `
+    st.textContent = chromeLayer(`
 .vela-axis-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:var(--vela-radius-sm);background:transparent;cursor:pointer;font:600 10px/1 -apple-system,Segoe UI,sans-serif;color:var(--vela-fg-muted);}
 .vela-axis-btn:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
 .vela-axis-on,.vela-axis-on:hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
-`;
+`);
     document.head.appendChild(st);
 }
 

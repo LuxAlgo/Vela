@@ -1,16 +1,8 @@
 // Component CSS: written in `css` templates (editors highlight them, stylelint checks them
 // through the postcss-lit syntax) and injected once per document or shadow root.
-import { injectStyles } from './styles';
+import { injectLayerOrder, injectStyles } from './styles';
 
-/** The kit's cascade layers, lowest first. Declared before any layered sheet, so a host's
- *  own unlayered CSS beats every one of them without `!important`. */
-export const LAYER_ORDER = '@layer vela.theme, vela.ui, vela.chrome, vela.pro, vela.custom;';
-
-/** Declare the layer order in a root, before any sheet that uses a layer: a layer's rank is
- *  its first appearance in the document. */
-export function injectLayerOrder(root: Document | ShadowRoot = document): void {
-    injectStyles('vela-layers', LAYER_ORDER, root);
-}
+export { injectLayerOrder, LAYER_ORDER } from './styles';
 
 // The texts the tag produced: CSS written in code. A theme loaded from data (a saved JSON, a
 // shared file) holds strings no code wrote, so its CSS is told apart and left out by default.

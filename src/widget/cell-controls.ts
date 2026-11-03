@@ -8,7 +8,7 @@ import { icon } from '../core/icons';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike } from '../core/i18n/types';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { Glider, ZOOM_IN, ZOOM_OUT } from './glide';
 import type { Vela } from '../Vela';
 
@@ -121,7 +121,7 @@ export class CellControls {
         private readonly host: HTMLElement,
         private readonly deps: CellControlsDeps,
     ) {
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
         this.glider = new Glider(deps.chart);
         this.root = host.ownerDocument.createElement('div');
         Object.assign(this.root.style, {

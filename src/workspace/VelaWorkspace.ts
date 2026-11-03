@@ -15,7 +15,7 @@ import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
-import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
+import { ensureUIHost, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { Menu } from '@luxalgo/vela-ui/menu';
 import type { Vela } from '../Vela';
@@ -80,6 +80,7 @@ import {
 } from './layouts';
 import { SplitterLayer, evenTracks } from './splitters';
 import { compositeLayoutScreenshot, tilesFromCellRects, triggerPngDownload, type LayoutShotTile } from './screenshot';
+import { injectChromeStyles } from '../ui/chromeStyles';
 
 /**
  * The workspace options: the widget's chart vocabulary + the shared shell surface + the
@@ -566,7 +567,7 @@ export class VelaWorkspace {
         const bootActive = boot?.activeCellId ?? null;
 
         const doc = hostEl.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.root = doc.createElement('div');
         this.root.className = 'vela-workspace';
         ensureUIHost(this.root, resolveTheme(opts.theme));

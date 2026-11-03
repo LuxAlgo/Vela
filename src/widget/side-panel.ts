@@ -14,7 +14,7 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 import { announceSurface } from '@luxalgo/vela-ui/surface-events';
 import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
@@ -260,7 +260,7 @@ export class SidePanel {
         const doc = host.ownerDocument;
         this.i18n = opts.i18n ?? null;
         this.title = title;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         // A FIXED panel is its own bound — the resize bounds would otherwise silently rewrite a
         // declared width a host set from code (or restored) outside the resizable defaults.
         this.minWidth = opts.resizable ? (opts.minWidth ?? DEFAULT_PANEL_MIN_WIDTH) : 1;

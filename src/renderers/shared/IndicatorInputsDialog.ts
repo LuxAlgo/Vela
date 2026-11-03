@@ -16,6 +16,7 @@ import { DatePicker, normalizeDateInput } from '@luxalgo/vela-ui/date-picker';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '@luxalgo/vela-ui/field';
 import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '@luxalgo/vela-ui/styles';
 import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
+import { chromeLayer } from '../../ui/chromeStyles';
 
 /** Emitted when the user edits an input in the in-chart settings dialog. */
 export interface InputsUIChange {
@@ -902,7 +903,7 @@ export function ensureDialogStyles(): void {
     const s = existing ?? document.createElement('style');
     s.id = DIALOG_STYLE_ID;
     s.dataset.rev = DIALOG_STYLE_REV;
-    s.textContent = `
+    s.textContent = chromeLayer(`
 .vela-ind-combo input{${FIELD_FOCUS_CSS}}
 .vela-ind-combo input:hover{border-color:var(--vela-fg-muted);}
 .vela-ind-combo input:focus{${FIELD_FOCUS_RING}}
@@ -917,7 +918,7 @@ ${overlayScrollbarCss('.vela-dialog.vela-ind-dialog *', 9)}
 .vela-ind-ctl:hover{background-color:var(--vela-hover-strong);}
 .vela-ind-close:hover{color:var(--vela-danger) !important;background-color:var(--vela-hover-strong);}
 .vela-ind-fold{transition:border-color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
-.vela-ind-fold:hover{border-color:var(--vela-border-strong);opacity:0.9;}`;
+.vela-ind-fold:hover{border-color:var(--vela-border-strong);opacity:0.9;}`);
     if (!existing) document.head.appendChild(s);
 }
 

@@ -3,7 +3,7 @@
 // `bar` event; hover values from the renderer crosshair seam (RendererControl.onCrosshairMove).
 import type { Vela } from '../Vela';
 import type { OHLCV } from '../core/model/ohlcv';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
 import { Menu } from '@luxalgo/vela-ui/menu';
@@ -345,7 +345,7 @@ export class Statusline {
         private readonly iconFor?: (symbol: string) => string | undefined,
     ) {
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         host.classList.add('vela-has-statusline'); // scopes the price-legend shift to THIS host
         this.el = doc.createElement('div');
         this.el.className = 'vela-statusline';

@@ -19,6 +19,23 @@ export const FIELD_FOCUS_CSS =
 export const FIELD_FOCUS_RING =
     'border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);';
 
+/** The kit's cascade layers, lowest first. Declared before any layered sheet, so a host's
+ *  own unlayered CSS beats every one of them without `!important`. */
+export const LAYER_ORDER = '@layer vela.theme, vela.ui, vela.chrome, vela.pro, vela.custom;';
+
+/**
+ * Declare the layer order in a root, ahead of every Vela sheet already there: a layer's rank
+ * is its first appearance. It goes before the first `vela…` sheet rather than first in the
+ * head, so layers a host declared earlier (a framework's base styles) stay below Vela's.
+ */
+export function injectLayerOrder(root: Document | ShadowRoot = document): void {
+    const sheet = injectStyles('vela-layers', LAYER_ORDER, root);
+    const parent = sheet?.parentNode;
+    if (!sheet || !parent) return;
+    const first = Array.from(parent.children).find((el) => el.tagName === 'STYLE' && el.id.startsWith('vela'));
+    if (first && first !== sheet) parent.insertBefore(sheet, first);
+}
+
 /** Inject a stylesheet once per root (document or shadow root). Idempotent by id; returns
  *  the sheet's element. */
 export function injectStyles(id: string, css: string, root: Document | ShadowRoot = document): HTMLStyleElement | null {

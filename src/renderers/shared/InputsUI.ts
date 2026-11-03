@@ -15,6 +15,7 @@ import {
     ensureDialogStyles,
     type InputsUIChange,
 } from './IndicatorInputsDialog';
+import { chromeLayer } from '../../ui/chromeStyles';
 export type { InputsUIChange } from './IndicatorInputsDialog';
 export {
     nameOf,
@@ -1114,7 +1115,7 @@ export class InputsUI {
         if (typeof document === 'undefined' || document.getElementById('vela-ind-status-kf')) return;
         const style = document.createElement('style');
         style.id = 'vela-ind-status-kf';
-        style.textContent = STATUS_KEYFRAMES;
+        style.textContent = chromeLayer(STATUS_KEYFRAMES);
         document.head.appendChild(style);
     }
 

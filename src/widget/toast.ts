@@ -1,6 +1,6 @@
 // Bottom-center status toast — the reference's small pill over the chart (loading /
 // info / error states, auto-hide). One instance per widget.
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 
 const STYLE_ID = 'vela-widget-toast';
 const CSS = `
@@ -36,7 +36,7 @@ export class Toast {
     private timer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(host: HTMLElement) {
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
         this.el = host.ownerDocument.createElement('div');
         this.el.className = 'vela-toast';
         host.appendChild(this.el);

@@ -7,7 +7,7 @@
 // the docked toolbar.
 import type { Vela } from '../Vela';
 import { iconEl, iconMarkup } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { getDrawingType, type SnapMode } from '../core/drawings';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
@@ -94,7 +94,7 @@ export class DrawingPill {
 
     constructor(host: HTMLElement) {
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.el = doc.createElement('div');
         this.el.className = 'vela-drawpill';
         this.el.hidden = true;

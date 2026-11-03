@@ -10,7 +10,7 @@ import { eventTimeText, textOf } from '../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
 import { Drawer } from '@luxalgo/vela-ui/drawer';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { layoutGridCanvas, layoutGridLabel, paintLayoutGrid } from './layout-picker';
 
 const TEXT = {
@@ -157,7 +157,7 @@ export class MoreDrawer {
     private view: MoreView = 'main';
 
     constructor(private readonly opts: MoreDrawerOptions) {
-        injectStyles(STYLE_ID, CSS, opts.host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, opts.host.ownerDocument);
         this.drawer = new Drawer({ host: opts.host, onOpenChange: opts.onOpenChange });
     }
 

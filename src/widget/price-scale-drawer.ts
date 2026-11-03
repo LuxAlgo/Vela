@@ -5,7 +5,7 @@ import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import { Drawer } from '@luxalgo/vela-ui/drawer';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import {
     invertWrite,
     paneScaleAt,
@@ -64,7 +64,7 @@ export class PriceScaleDrawer {
     private pane: PaneScaleInfo | null = null;
 
     constructor(private readonly opts: PriceScaleDrawerOptions) {
-        injectStyles(STYLE_ID, CSS, opts.host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, opts.host.ownerDocument);
         this.drawer = new Drawer({ host: opts.host, title: textOf(opts.chart()?.i18n, TEXT.title), onOpenChange: opts.onOpenChange });
     }
 

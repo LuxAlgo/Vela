@@ -7,7 +7,7 @@ import { textOf } from '../core/i18n/text';
 import type { MessageDescriptor, Translator } from '../core/i18n/types';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
 import { createTabs, type TabsHandle } from '@luxalgo/vela-ui/tabs';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 import { tickerIconEl, baseOf } from './symbol-icon';
 import { symbolRanking } from './contributions';
@@ -304,7 +304,7 @@ export class SymbolPicker {
 
     constructor(private readonly opts: SymbolPickerOptions) {
         const doc = (opts.host ?? document.body).ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
 
         this.input = doc.createElement('input');
         this.input.className = 'vela-sp-input';

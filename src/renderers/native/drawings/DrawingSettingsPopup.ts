@@ -27,6 +27,7 @@ import { TextArea } from '@luxalgo/vela-ui/text-area';
 import { buildColorPicker } from '@luxalgo/vela-ui/color-picker';
 import { Popover, closeOpenPopovers } from '@luxalgo/vela-ui/popover';
 import { DrawingSettingsPanel, type DrawingPanelEnv } from './DrawingSettingsPanel';
+import { chromeLayer } from '../../../ui/chromeStyles';
 
 const TEXT = {
     icon: msg('drawing.bar.icon', 'Icon'),
@@ -159,7 +160,7 @@ function ensureStyles(): void {
     const s = existing ?? document.createElement('style');
     s.id = STYLE_ID;
     s.dataset.rev = STYLE_REV;
-    s.textContent = `
+    s.textContent = chromeLayer(`
 .vela-dpop-btn{background:transparent;color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
 .vela-dpop-btn:hover{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
 .vela-dpop-btn[data-active='1']{background:var(--vela-active);color:var(--vela-fg-bright);}
@@ -170,7 +171,7 @@ function ensureStyles(): void {
 .vela-dpop-item[data-active='1']{background:var(--vela-active);}
 /* A finger needs a wider grab zone than a cursor — grow the move handle on touch-first
    devices (the glyph stays centered; only the hit target widens). */
-@media (pointer: coarse){.vela-dpop-grip{width:${BTN + 14}px !important;}}`;
+@media (pointer: coarse){.vela-dpop-grip{width:${BTN + 14}px !important;}}`);
     if (!existing) document.head.appendChild(s);
 }
 

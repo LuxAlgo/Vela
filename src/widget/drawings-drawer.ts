@@ -7,7 +7,7 @@
 import { Drawer } from '@luxalgo/vela-ui/drawer';
 import { createTabs, tabsDef, type TabsHandle } from '@luxalgo/vela-ui/tabs';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import type { ToolbarDefinition, ToolDefinition } from '../core/drawings/toolbar';
 import type { DrawingTypeKey } from '../core/drawings/Drawing';
 import { msg } from '../core/i18n/message';
@@ -130,7 +130,7 @@ export class DrawingsDrawer {
 
     constructor(private readonly opts: DrawingsDrawerOptions) {
         const doc = opts.host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.drawer = new Drawer({
             host: opts.host,
             title: this.t(TEXT.title),

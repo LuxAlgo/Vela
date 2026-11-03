@@ -15,7 +15,7 @@ import type { Translator } from '../core/i18n/types';
 import type { Vela } from '../Vela';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { SerializedDrawing } from '../core/drawings/Drawing';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
 import { tickerIconEl } from './symbol-icon';
@@ -444,7 +444,7 @@ export class ObjectTree extends SidePanel {
         i18n?: Translator,
     ) {
         super(host, TEXT.objectTree, 'vela-ot', i18n ? { i18n } : {});
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
 
         this.body.addEventListener('contextmenu', (e) => this.onContextMenu(e));
         this.body.addEventListener('pointerdown', (e) => this.onPointerDown(e));

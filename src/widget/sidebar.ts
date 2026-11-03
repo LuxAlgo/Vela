@@ -5,7 +5,7 @@
 // only: on the mobile layout the panels keep their menu rows and the actions join them.
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
@@ -118,7 +118,7 @@ export class Sidebar implements PanelChrome {
 
     constructor(private readonly opts: SidebarOptions) {
         const doc = opts.host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.el = doc.createElement('nav');
         this.el.className = 'vela-sidebar';
         this.topEl = doc.createElement('div');

@@ -11,7 +11,7 @@ import { SecondClock, type WallClock } from '../core/util/wall-clock';
 import { Menu } from '@luxalgo/vela-ui/menu';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { timezoneMenuRows, tzButtonLabel, resolveTimezone } from './timezones';
 
 export interface RangePreset {
@@ -188,7 +188,7 @@ export class Bottombar {
         this.timezone = opts.timezone;
         this.exchangeTimezone = opts.exchangeTimezone;
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
 
         this.el = doc.createElement('div');
         this.el.className = 'vela-widget-bottombar';
