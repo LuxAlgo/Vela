@@ -17,15 +17,16 @@ All notable changes to Vela, newest first.
   default and desktop only: on the mobile layout the panels keep their menu rows and the
   sidebar's entries join them.
 - **Buttons, tabs, toggle groups and badges in the UI kit.** `@luxalgo/vela/ui` now has
-  `Button` (default, outline, secondary, ghost, destructive and link, in four heights and
-  their square icon sizes, with icons on either side and toggle states), `Tabs` (an
-  island, an underlined strip, and the filled, soft and vertical rail looks, with keyboard
-  navigation, tabs that can hide, and the full tabs semantics), `ToggleGroup` (one choice
-  among a few options, or several toggled on their own) and `Badge` (status labels and
-  counts). Variant, size and part names follow shadcn's. Tabs and toggle groups run Zag
+  `createButton` (default, outline, secondary, ghost, destructive and link, in four
+  heights and their square icon sizes, with icons on either side and toggle states),
+  `createTabs` (an island, an underlined strip, and the filled, soft and vertical rail
+  looks, with keyboard navigation, tabs that can hide, and the full tabs semantics),
+  `ToggleGroup` (one choice among a few options, or several toggled on their own) and
+  `Badge` (status labels and counts). Variant, size, part and prop names follow shadcn's,
+  and every part carries a `data-slot` to style it by. Tabs and toggle groups run Zag
   state machines, which own their keyboard behavior and accessibility, so another view
-  layer can run the same machines and behave the same; buttons and badges hand out their
-  attributes from a plain controller.
+  layer can run the same machines and behave the same. Buttons and tabs keep their styles
+  in the `vela.ui` cascade layer, so a page's own CSS overrides them without `!important`.
 - **The indicator settings, the symbol picker and the drawings drawer use them.** Their
   tabs and the settings dialogs' buttons look as before. The indicator settings tabs now
   answer the arrow keys, announce themselves as tabs with their panels, and brighten on

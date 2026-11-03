@@ -174,29 +174,56 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
 The primitive's **root is one element**. Chart-settings rows use `display:contents`, so a
 fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
-## Headless primitives
+## Primitives
 
-`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives.
+`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives. Button and
+Tabs are written in the one-file shape the rest of the kit is moving to:
 
-- **`Tabs` and `ToggleGroup` run Zag machines** (`@zag-js/tabs`, `@zag-js/toggle-group`):
-  their controllers map Vela's options to the machine (`{ machine, props, connect }`, the
-  overlay pattern above), and the machine owns roving focus, the keyboard and the ARIA.
-  A React view runs the same machine and props through Zag's React adapter. Zag applies
-  events on a microtask, so the views mirror the value for synchronous reads and keep
-  `setValue` silent by swallowing the machine's report of a host write.
-- **`Button` and `Badge` have no behavior to run**: their controllers return the root's
+- **One file per component** (`src/ui/components/button.ts`, `tabs.ts`) holds the
+  component's declaration (`defineComponent({ name, parts, settings })`), its variants
+  (`variants({ variant: [...], size: [...] })`, whose names type its props), its CSS, and a
+  `create<Name>(props)` function returning a handle (`{ el, set…, destroy }`). Elements are
+  built with `h()`, and every part takes its `data-slot` from the declaration
+  (`buttonDef.slot('icon')` is `button-icon`). The helpers live in `src/ui/lib/`.
+- **CSS** is a `css` template inside `@layer vela.ui`, nested under the part's
+  `[data-slot]` and keyed on state attributes (`data-selected`, `data-disabled`,
+  `aria-expanded`). Values come from the tokens through `t` (`${t.radius.md}` prints
+  `var(--vela-radius-md)`, and a wrong name fails the typecheck) or from the component's
+  settings (`${tabsDef.vars['track-radius']}` prints `var(--vela-tabs-track-radius, 8px)`,
+  which a host's CSS can set). The sheet is injected when the first instance is created.
+  The layer sits below unlayered CSS, so a page's own rule wins without `!important`; a
+  root that can be `hidden` takes its `display` under `:where(:not([hidden]))` instead of
+  a `[hidden] { display: none !important }` override.
+- **`npm run lint`** checks these templates with stylelint and the postcss-lit syntax:
+  `vela/layer`, `vela/slot-scope`, `vela/token-values` and `vela/no-raw-token-var`
+  (`scripts/stylelint-plugin-vela.mjs`), plus no hex or named colors, no class or id
+  selectors, logical directions only, and durations from the tokens. A template the parser
+  cannot read fails the run instead of going unchecked.
+- **The build flattens the nesting** (`scripts/flatten-css.mjs`, with Lightning CSS) for
+  the browsers that brought `@layer`: Chrome and Edge 99, Firefox 97, Safari 15.4. The
+  playground and the tests run the nested source.
+
+Behavior:
+
+- **`Tabs` and `ToggleGroup` run Zag machines** (`@zag-js/tabs`, `@zag-js/toggle-group`),
+  which own roving focus, the keyboard and the ARIA; a React view runs the same machines
+  through Zag's React adapter. Zag applies events on a microtask, so the components mirror
+  the value for synchronous reads and keep `setValue` silent by swallowing the machine's
+  report of a host write.
+- **`Button` and `Badge` have no behavior to run.** Badge's controller returns the root's
   attributes as a plain record (`rootProps()`), which the vanilla view writes with
-  `applyProps` and a React view spreads on its own element.
+  `applyProps`.
 
-Every part carries a `data-slot` naming it (`button`, `tabs-list`, `tabs-trigger`,
-`tabs-content`, `toggle-group`, `toggle-group-item`, `badge`), next to Zag's own
-`data-scope` / `data-part` and state attributes (`data-selected`, `data-state`).
+Every part carries a `data-slot` naming it (`button`, `button-icon`, `tabs-list`,
+`tabs-trigger`, `tabs-content`, `toggle-group`, `toggle-group-item`, `badge`), next to
+Zag's own `data-scope` / `data-part` and state attributes (`data-selected`, `data-state`).
 
-Variant, size and part names follow shadcn's (`data-slot="tabs-trigger"`,
-`variant: 'outline'`, `size: 'icon-sm'`), so a host built on shadcn reads them without a
-glossary. Change callbacks stay `onChange`, like the rest of the kit.
+Variant, size, part and prop names follow shadcn's (`data-slot="tabs-trigger"`,
+`variant: 'outline'`, `size: 'icon-sm'`, `defaultValue`, `onValueChange`), so a host built
+on shadcn reads them without a glossary. The components not yet in the one-file shape keep
+`value` and `onChange`.
 
-- **`Button`** — `variant`: `default` (filled with the selection color: OK, Apply),
+- **`createButton`** — `variant`: `default` (filled with the selection color: OK, Apply),
   `outline` (bordered: the dialogs' Cancel), `secondary` (a sunken fill), `ghost` (no
   border or fill until hovered), `destructive` (tinted with `--vela-danger`), `link`.
   `size`: `xs` 26px, `sm` 30px (panels), `default` 34px (dialog footers), `lg` 40px
@@ -204,13 +231,14 @@ glossary. Change callbacks stay `onChange`, like the rest of the kit.
   only `icon` (`label` names them). `icon` sits before the text and `iconEnd` after it
   (`data-icon="inline-start"` / `"inline-end"`); `pressed` makes a toggle (`aria-pressed`);
   a button that opens a menu keeps its hover look while `aria-expanded="true"`.
-- **`Tabs`** — WAI-ARIA tabs: one tab stop on the selected tab, arrow keys along the
-  `orientation` (mirrored for `dir: 'rtl'`), Home and End, disabled and hidden tabs
-  skipped. `activationMode: 'automatic'` selects as focus moves; `'manual'` waits for
-  Enter or Space. `panels: true` links each tab to a panel the caller renders
-  (`panelProps(id)`); a strip that filters one view leaves it off. `setHidden(id, true)`
-  takes a tab out of the strip, and hiding the selected one selects the first available
-  (notified). Variants: `default` (a tinted track, the island), `line` (the indicator
+- **`createTabs`** — WAI-ARIA tabs over `items: { value, label }[]`: one tab stop on the
+  selected tab, arrow keys along the `orientation` (mirrored for `dir: 'rtl'`), Home and
+  End, disabled and hidden tabs skipped. `activationMode: 'automatic'` selects as focus
+  moves; `'manual'` waits for Enter or Space. `panel(value, el)` makes `el` a tab's panel
+  (linked, and hidden while another tab is selected); a strip that filters one view
+  attaches none. `setHidden(value, true)` takes a tab out of the strip, and hiding the
+  selected one selects the first available (notified); `trigger(value)` returns a tab's
+  element. Variants: `default` (a tinted track, the island), `line` (the indicator
   dialog's underlined strip), `filled` (the symbol picker's strip), `soft` (the drawings
   drawer's strip), `nav` (a vertical settings rail). Only an inactive tab reacts to hover.
   `className` adds the host's layout of the strip.

@@ -6,7 +6,7 @@ import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageDescriptor, Translator } from '../core/i18n/types';
 import { Dialog } from '../ui/components/dialog';
-import { Tabs } from '../ui/components/tabs';
+import { createTabs, type TabsHandle } from '../ui/components/tabs';
 import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { tickerIconEl, baseOf } from './symbol-icon';
@@ -290,7 +290,7 @@ export class SymbolPicker {
     private highlighted = 0;
     private seed = '';
     private activeTab: SymbolTab = 'all';
-    private tabs!: Tabs;
+    private tabs!: TabsHandle;
     private visible = PAGE;
     /** The last filter pass returned fewer raw rows than asked — the pool is drained
      *  (checked BEFORE folding: folding shortens pages without meaning exhaustion). */
@@ -313,12 +313,12 @@ export class SymbolPicker {
         searchRow.className = 'vela-sp-searchrow';
         searchRow.append(iconEl('search', doc), this.input);
         // The asset-class strip filters the one result list: tabs without panels.
-        this.tabs = new Tabs({
+        this.tabs = createTabs({
             variant: 'filled',
             className: 'vela-sp-tabs',
-            items: TABS.map((tab) => ({ id: tab.id, label: textOf(opts.i18n, tab.label) })),
-            value: this.activeTab,
-            onChange: (id) => {
+            items: TABS.map((tab) => ({ value: tab.id, label: textOf(opts.i18n, tab.label) })),
+            defaultValue: this.activeTab,
+            onValueChange: (id) => {
                 this.activeTab = id as SymbolTab;
                 this.refresh();
             },
@@ -511,7 +511,7 @@ export class SymbolPicker {
         const i18n = this.opts.i18n;
         this.dialog.titleEl.textContent = textOf(i18n, TEXT.title);
         this.input.placeholder = textOf(i18n, TEXT.search);
-        this.tabs.setItems(TABS.map((tab) => ({ id: tab.id, label: textOf(i18n, tab.label) })));
+        this.tabs.setItems(TABS.map((tab) => ({ value: tab.id, label: textOf(i18n, tab.label) })));
     }
 
     private computeRows(): SymbolDescriptor[] {

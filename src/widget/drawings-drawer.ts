@@ -5,7 +5,7 @@
 // the docked bar paints (`ToolbarDefinition`), so custom `options.drawings` sets and
 // plugin-registered types appear here automatically.
 import { Drawer } from '../ui/components/drawer';
-import { Tabs } from '../ui/components/tabs';
+import { createTabs, tabsDef, type TabsHandle } from '../ui/components/tabs';
 import { iconEl } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import type { ToolbarDefinition, ToolDefinition } from '../core/drawings/toolbar';
@@ -120,7 +120,7 @@ export interface DrawingsDrawerOptions {
 export class DrawingsDrawer {
     private readonly drawer: Drawer;
     private readonly input: HTMLInputElement;
-    private readonly tabs: Tabs;
+    private readonly tabs: TabsHandle;
     private readonly list: HTMLElement;
     private definition: ToolbarDefinition = { groups: [] };
     private activeGroup = '';
@@ -148,18 +148,18 @@ export class DrawingsDrawer {
         this.input.addEventListener('input', () => this.renderList());
         search.appendChild(this.input);
 
-        this.tabs = new Tabs({
+        this.tabs = createTabs({
             variant: 'soft',
             className: 'vela-dd-tabs',
             items: [],
-            onChange: (id) => {
+            onValueChange: (id) => {
                 this.activeGroup = id;
                 this.renderList();
             },
         });
         // Picking a tab — the active one included — leaves search mode.
         this.tabs.el.addEventListener('click', (e) => {
-            if (!(e.target instanceof Element) || !e.target.closest('.vela-tab') || !this.input.value) return;
+            if (!(e.target instanceof Element) || !e.target.closest(`[data-slot='${tabsDef.slot('trigger')}']`) || !this.input.value) return;
             this.input.value = '';
             this.renderList();
         });
@@ -204,11 +204,11 @@ export class DrawingsDrawer {
         this.activeGroup = next.id;
         this.renderTabs();
         this.renderList();
-        this.tabs.tab(next.id)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+        this.tabs.trigger(next.id)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
 
     private renderTabs(): void {
-        this.tabs.setItems(this.definition.groups.map((g) => ({ id: g.id, label: this.t(g.label) })));
+        this.tabs.setItems(this.definition.groups.map((g) => ({ value: g.id, label: this.t(g.label) })));
         this.tabs.setValue(this.activeGroup);
     }
 

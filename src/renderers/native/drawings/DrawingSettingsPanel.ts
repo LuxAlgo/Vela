@@ -24,7 +24,7 @@ import {
 } from '../../../core/drawings';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { Dialog } from '../../../ui/components/dialog';
-import { Button } from '../../../ui/components/button';
+import { createButton } from '../../../ui/components/button';
 import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
 import { buildFieldControl, fieldGrid } from '../../../ui/components/field';
 import { TextArea } from '../../../ui/components/text-area';
@@ -1244,7 +1244,7 @@ function separator(): HTMLElement {
 }
 
 function button(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-    return new Button({ text: label, variant: primary ? 'default' : 'outline', size: 'sm', onClick }).el;
+    return createButton({ text: label, variant: primary ? 'default' : 'outline', size: 'sm', onClick }).el;
 }
 
 /** A menu row's text, in the row's text slot. */

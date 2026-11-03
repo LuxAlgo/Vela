@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
-// The kit's primitives: Button and Badge (plain controllers handing out part attributes),
-// Tabs and ToggleGroup (Zag machines behind vanilla views), driven by clicks and the keyboard.
+// The kit's primitives: Button and Badge (plain state handing out part attributes), Tabs and
+// ToggleGroup (Zag machines behind vanilla views), driven by clicks and the keyboard.
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 
 (globalThis as { CSS?: unknown }).CSS ??= { escape: (v: string) => v };
 
 import { applyProps } from '../src/ui/headless';
-import { Button, buttonController } from '../src/ui/components/button';
-import { Tabs, tabsController } from '../src/ui/components/tabs';
+import { buttonVariants, createButton } from '../src/ui/components/button';
+import { createTabs } from '../src/ui/components/tabs';
 import { ToggleGroup } from '../src/ui/components/toggle-group';
 import { Badge } from '../src/ui/components/badge';
 
@@ -25,6 +25,7 @@ const ITEMS = [
     { id: 'b', label: 'B', disabled: true },
     { id: 'c', label: 'C' },
 ];
+const TAB_ITEMS = ITEMS.map(({ id, ...rest }) => ({ value: id, ...rest }));
 const key = (el: Element, k: string): void => void el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
 /** Let the machines process: their events run on microtasks, their focus moves on frames. */
 const settle = async (): Promise<void> => {
@@ -47,22 +48,32 @@ describe('applyProps', () => {
 
 describe('Button', () => {
     it('describes its slot, variant, size, toggle state and accessible name', () => {
-        expect(buttonController().rootProps()).toMatchObject({ type: 'button', 'data-slot': 'button', 'data-variant': 'default', 'data-size': 'default', 'aria-pressed': undefined, 'aria-label': undefined, disabled: false });
-        const icon = buttonController({ variant: 'ghost', size: 'icon-xs', label: 'Close', pressed: false });
-        expect(icon.iconOnly).toBe(true);
-        expect(icon.rootProps()).toMatchObject({ 'data-size': 'icon-xs', 'aria-label': 'Close', 'aria-pressed': 'false' });
+        const b = createButton({ text: 'OK' });
+        expect(b.el.type).toBe('button');
+        expect(b.el.dataset).toMatchObject({ slot: 'button', variant: 'default', size: 'default' });
+        expect(b.el.hasAttribute('aria-pressed')).toBe(false);
+        expect(b.el.hasAttribute('aria-label')).toBe(false);
+        expect(b.el.disabled).toBe(false);
+        const icon = createButton({ variant: 'ghost', size: 'icon-xs', label: 'Close', pressed: false });
+        expect(icon.el.dataset.size).toBe('icon-xs');
+        expect(icon.el.getAttribute('aria-label')).toBe('Close');
+        expect(icon.el.getAttribute('aria-pressed')).toBe('false');
         icon.setPressed(true);
-        expect(icon.rootProps()).toMatchObject({ 'aria-pressed': 'true', 'data-pressed': true });
-        expect(buttonController({ size: 'sm', label: 'Apply' }).rootProps()['aria-label']).toBeUndefined();
+        expect(icon.el.getAttribute('aria-pressed')).toBe('true');
+        expect(icon.el.hasAttribute('data-pressed')).toBe(true);
+        expect(icon.pressed).toBe(true);
+        expect(createButton({ size: 'sm', label: 'Apply' }).el.hasAttribute('aria-label')).toBe(false);
     });
 
     it('renders a clickable button with icons on either side that follows its state', () => {
         const onClick = vi.fn();
-        const b = new Button({ text: 'Defaults', variant: 'outline', icon: 'reset', iconEnd: 'chevron-down', onClick });
+        const b = createButton({ text: 'Defaults', variant: 'outline', icon: 'reset', iconEnd: 'chevron-down', onClick });
         document.body.append(b.el);
         expect(b.el.className).toBe('vela-btn');
         expect(b.el.dataset.variant).toBe('outline');
-        expect([...b.el.querySelectorAll('[data-icon]')].map((i) => i.getAttribute('data-icon'))).toEqual(['inline-start', 'inline-end']);
+        const icons = [...b.el.querySelectorAll('[data-icon]')];
+        expect(icons.map((i) => i.getAttribute('data-icon'))).toEqual(['inline-start', 'inline-end']);
+        expect(icons.every((i) => i.getAttribute('data-slot') === 'button-icon')).toBe(true);
         expect(b.el.textContent).toBe('Defaults');
         b.el.click();
         expect(onClick).toHaveBeenCalledTimes(1);
@@ -71,119 +82,139 @@ describe('Button', () => {
         b.setText('Reset');
         expect(b.el.textContent).toBe('Reset');
 
-        const square = new Button({ icon: 'close', size: 'icon-sm', variant: 'ghost', label: 'Close', iconEnd: 'chevron-down', text: 'ignored' });
+        const square = createButton({ icon: 'close', size: 'icon-sm', variant: 'ghost', label: 'Close', iconEnd: 'chevron-down', text: 'ignored' });
         expect(square.el.getAttribute('aria-label')).toBe('Close');
         expect(square.el.textContent).toBe('');
         expect(square.el.querySelectorAll('[data-icon]').length).toBe(1);
     });
+
+    it('injects its stylesheet, inside the kit layer, once, on first creation', () => {
+        document.head.querySelector('#vela-ui-button')?.remove();
+        createButton({ text: 'A' });
+        createButton({ text: 'B' });
+        const sheets = document.head.querySelectorAll('#vela-ui-button');
+        expect(sheets.length).toBe(1);
+        expect(sheets[0]!.textContent).toContain('@layer vela.ui');
+        expect(sheets[0]!.textContent).toContain('var(--vela-button-radius, var(--vela-radius-md))');
+        const layers = document.head.querySelector('#vela-layers')!;
+        expect(layers.textContent).toBe('@layer vela.theme, vela.ui, vela.chrome, vela.pro, vela.custom;');
+        expect(layers.compareDocumentPosition(sheets[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('resolves variants to their defaults', () => {
+        expect(buttonVariants()).toEqual({ 'data-variant': 'default', 'data-size': 'default' });
+        expect(buttonVariants({ size: 'sm' })).toEqual({ 'data-variant': 'default', 'data-size': 'sm' });
+    });
 });
 
 describe('Tabs (Zag tabs machine)', () => {
-    it('maps the options onto the machine: first available tab, orientation, activation mode', () => {
-        const ctrl = tabsController({ items: [{ id: 'x', label: 'X', disabled: true }, ...ITEMS], orientation: 'vertical', activationMode: 'manual' });
-        expect(ctrl.props).toMatchObject({ defaultValue: 'a', orientation: 'vertical', activationMode: 'manual', loopFocus: true });
-        expect(tabsController({ items: [{ id: 'h', label: 'H', hidden: true }, { id: 'v', label: 'V' }] }).props.defaultValue).toBe('v');
+    it('starts on the first available tab, and follows the orientation', async () => {
+        expect(createTabs({ items: [{ value: 'x', label: 'X', disabled: true }, ...TAB_ITEMS] }).value).toBe('a');
+        expect(createTabs({ items: [{ value: 'h', label: 'H', hidden: true }, { value: 'v', label: 'V' }] }).value).toBe('v');
+        const vertical = createTabs({ items: TAB_ITEMS, orientation: 'vertical' });
+        expect(vertical.el.getAttribute('aria-orientation')).toBe('vertical');
     });
 
-    it('renders tabs with one tab stop, slots, and panels linked only when asked', () => {
-        const tabs = new Tabs({ items: ITEMS, value: 'c', variant: 'line', panels: true, className: 'host-strip' });
+    it('renders tabs with one tab stop, slots, and links a panel only once one is attached', () => {
+        const tabs = createTabs({ items: TAB_ITEMS, defaultValue: 'c', variant: 'line', className: 'host-strip' });
         const panel = document.createElement('div');
         document.body.append(tabs.el, panel);
-        tabs.attachPanel('c', panel);
+        expect(tabs.trigger('c')!.hasAttribute('aria-controls')).toBe(false);
+        tabs.panel('c', panel);
         expect(tabs.el.className).toBe('vela-tabs host-strip');
         expect(tabs.el.getAttribute('role')).toBe('tablist');
         expect(tabs.el.dataset.slot).toBe('tabs-list');
-        const c = tabs.tab('c')!;
+        const c = tabs.trigger('c')!;
         expect(c.getAttribute('role')).toBe('tab');
         expect(c.dataset.slot).toBe('tabs-trigger');
         expect(c.getAttribute('aria-selected')).toBe('true');
         expect(c.hasAttribute('data-selected')).toBe(true);
         expect(c.tabIndex).toBe(0);
-        expect(tabs.tab('a')!.tabIndex).toBe(-1);
-        expect(tabs.tab('b')!.disabled).toBe(true);
+        expect(tabs.trigger('a')!.tabIndex).toBe(-1);
+        expect(tabs.trigger('b')!.disabled).toBe(true);
         expect(c.getAttribute('aria-controls')).toBe(panel.id);
         expect(panel.getAttribute('role')).toBe('tabpanel');
         expect(panel.dataset.slot).toBe('tabs-content');
         expect(panel.getAttribute('aria-labelledby')).toBe(c.id);
         expect(panel.hidden).toBe(false);
 
-        const strip = new Tabs({ items: ITEMS });
+        const strip = createTabs({ items: TAB_ITEMS });
         expect(strip.el.dataset.variant).toBe('default');
-        expect(strip.tab('a')!.hasAttribute('aria-controls')).toBe(false);
+        expect(strip.trigger('a')!.hasAttribute('aria-controls')).toBe(false);
     });
 
-    it('selects on click and notifies the change once; setValue is silent', async () => {
-        const onChange = vi.fn();
-        const tabs = new Tabs({ items: ITEMS, onChange });
+    it('selects on click and calls onValueChange once; setValue does not', async () => {
+        const onValueChange = vi.fn();
+        const tabs = createTabs({ items: TAB_ITEMS, onValueChange });
         document.body.append(tabs.el);
-        tabs.tab('c')!.click();
+        tabs.trigger('c')!.click();
         await settle();
-        expect(onChange).toHaveBeenCalledWith('c');
+        expect(onValueChange).toHaveBeenCalledWith('c');
         expect(tabs.value).toBe('c');
-        tabs.tab('b')!.click();
+        tabs.trigger('b')!.click();
         await settle();
         expect(tabs.value).toBe('c'); // disabled
         tabs.setValue('a');
         expect(tabs.value).toBe('a');
         await settle();
-        expect(tabs.tab('a')!.getAttribute('aria-selected')).toBe('true');
-        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(tabs.trigger('a')!.getAttribute('aria-selected')).toBe('true');
+        expect(onValueChange).toHaveBeenCalledTimes(1);
     });
 
     it('the arrow keys move and select (automatic), skipping disabled tabs and wrapping', async () => {
-        const onChange = vi.fn();
-        const tabs = new Tabs({ items: ITEMS, value: 'c', onChange });
+        const onValueChange = vi.fn();
+        const tabs = createTabs({ items: TAB_ITEMS, defaultValue: 'c', onValueChange });
         document.body.append(tabs.el);
-        tabs.tab('c')!.focus();
+        tabs.trigger('c')!.focus();
         await settle();
-        key(tabs.tab('c')!, 'ArrowRight');
+        key(tabs.trigger('c')!, 'ArrowRight');
         await settle();
-        expect(document.activeElement).toBe(tabs.tab('a'));
+        expect(document.activeElement).toBe(tabs.trigger('a'));
         expect(tabs.value).toBe('a');
-        expect(onChange).toHaveBeenLastCalledWith('a');
+        expect(onValueChange).toHaveBeenLastCalledWith('a');
     });
 
     it('manual activation moves focus without selecting', async () => {
-        const tabs = new Tabs({ items: ITEMS, activationMode: 'manual' });
+        const tabs = createTabs({ items: TAB_ITEMS, activationMode: 'manual' });
         document.body.append(tabs.el);
-        tabs.tab('a')!.focus();
+        tabs.trigger('a')!.focus();
         await settle();
-        key(tabs.tab('a')!, 'End');
+        key(tabs.trigger('a')!, 'End');
         await settle();
-        expect(document.activeElement).toBe(tabs.tab('c'));
+        expect(document.activeElement).toBe(tabs.trigger('c'));
         expect(tabs.value).toBe('a');
     });
 
     it('hides a tab: skipped by the keys, and hiding the selected one selects the first available (notified)', async () => {
-        const onChange = vi.fn();
-        const tabs = new Tabs({ items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }], value: 'b', variant: 'line', activationMode: 'manual', onChange });
+        const onValueChange = vi.fn();
+        const tabs = createTabs({ items: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }, { value: 'c', label: 'C' }], defaultValue: 'b', variant: 'line', activationMode: 'manual', onValueChange });
         document.body.append(tabs.el);
         tabs.setHidden('a', true);
-        expect(tabs.tab('a')!.hidden).toBe(true);
-        tabs.tab('c')!.focus();
+        expect(tabs.trigger('a')!.hidden).toBe(true);
+        tabs.trigger('c')!.focus();
         await settle();
-        key(tabs.tab('c')!, 'ArrowRight');
+        key(tabs.trigger('c')!, 'ArrowRight');
         await settle();
-        expect(document.activeElement).toBe(tabs.tab('b')); // wrapped past the hidden tab
+        expect(document.activeElement).toBe(tabs.trigger('b')); // wrapped past the hidden tab
         tabs.setHidden('b', true);
         expect(tabs.value).toBe('c');
         await settle();
-        expect(onChange).toHaveBeenLastCalledWith('c');
-        expect(tabs.tab('c')!.getAttribute('aria-selected')).toBe('true');
+        expect(onValueChange).toHaveBeenLastCalledWith('c');
+        expect(tabs.trigger('c')!.getAttribute('aria-selected')).toBe('true');
         tabs.setHidden('a', false);
-        expect(tabs.tab('a')!.hidden).toBe(false);
+        expect(tabs.trigger('a')!.hidden).toBe(false);
         expect(tabs.value).toBe('c'); // showing a tab never moves the selection
     });
 
     it('keeps the selection across new items, or falls back to the first available one', async () => {
-        const tabs = new Tabs({ items: ITEMS, value: 'c' });
-        tabs.setItems([{ id: 'c', label: 'C!' }, { id: 'd', label: 'D' }]);
+        const tabs = createTabs({ items: TAB_ITEMS, defaultValue: 'c' });
+        tabs.setItems([{ value: 'c', label: 'C!' }, { value: 'd', label: 'D' }]);
         expect(tabs.value).toBe('c');
-        expect(tabs.tab('c')!.textContent).toBe('C!');
-        tabs.setItems([{ id: 'd', label: 'D' }]);
+        expect(tabs.trigger('c')!.textContent).toBe('C!');
+        tabs.setItems([{ value: 'd', label: 'D' }]);
         expect(tabs.value).toBe('d');
         await settle();
-        expect(tabs.tab('d')!.getAttribute('aria-selected')).toBe('true');
+        expect(tabs.trigger('d')!.getAttribute('aria-selected')).toBe('true');
     });
 });
 

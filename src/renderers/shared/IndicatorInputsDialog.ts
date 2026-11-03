@@ -10,8 +10,8 @@ import { attachChromeTooltip, chromeHint } from './chrome-tooltip';
 import { toggleSelectList, type SelectOption } from '../../ui/components/select';
 import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openPopoverTrigger } from '../../ui/components/popover';
 import { Dialog } from '../../ui/components/dialog';
-import { Button } from '../../ui/components/button';
-import { Tabs } from '../../ui/components/tabs';
+import { createButton } from '../../ui/components/button';
+import { createTabs } from '../../ui/components/tabs';
 import { DatePicker, normalizeDateInput } from '../../ui/components/date-picker';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '../../ui/components/field';
 import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '../../ui/styles';
@@ -189,12 +189,11 @@ export class IndicatorInputsDialog {
                 body.style.display = String(i) === id ? 'grid' : 'none';
             });
         };
-        const tabs = new Tabs({
+        const tabs = createTabs({
             variant: 'line',
             className: 'vela-ind-tabs',
-            panels: true,
-            items: tabDefs.map((def, idx) => ({ id: String(idx), label: this.tabLabel(def.name) })),
-            onChange: showBody,
+            items: tabDefs.map((def, idx) => ({ value: String(idx), label: this.tabLabel(def.name) })),
+            onValueChange: showBody,
         });
         for (const [idx, def] of tabDefs.entries()) {
             bodies.push(this.buildTabBody(def.inputs, row, gates));
@@ -206,7 +205,7 @@ export class IndicatorInputsDialog {
         }
         ui.body.appendChild(tabs.el);
         bodies.forEach((b, i) => {
-            tabs.attachPanel(String(i), b);
+            tabs.panel(String(i), b);
             ui.body.appendChild(b);
         });
         showBody(tabs.value ?? '0');
@@ -762,7 +761,7 @@ export class IndicatorInputsDialog {
     }
 
     private dialogButton(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-        return new Button({ text: label, variant: primary ? 'default' : 'outline', onClick }).el;
+        return createButton({ text: label, variant: primary ? 'default' : 'outline', onClick }).el;
     }
 }
 
