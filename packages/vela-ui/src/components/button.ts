@@ -15,7 +15,16 @@ import { variants, type VariantProps } from '../lib/variants';
 export const buttonDef = defineComponent({
     name: 'button',
     parts: ['root', 'icon'],
-    settings: { radius: t.radius.md },
+    settings: {
+        radius: t.radius.md,
+        height: '34px',
+        'height-xs': '26px',
+        'height-sm': '30px',
+        'height-lg': '40px',
+        'font-size': '14px',
+        'font-size-xs': '12px',
+        'font-size-sm': '13px',
+    },
 });
 
 export const buttonVariants = variants({
@@ -59,14 +68,14 @@ const injectStyles = defineStyles(
         @layer vela.ui {
             [data-slot='button'] {
                 cursor: pointer;
-                height: 34px;
+                height: ${buttonDef.vars.height};
                 padding: 0 11px;
                 border-radius: ${buttonDef.vars.radius};
                 border: 1px solid ${t.border.strong};
                 background: transparent;
                 color: ${t.fg};
                 font-weight: 400;
-                font-size: 14px;
+                font-size: ${buttonDef.vars['font-size']};
                 font-family: inherit;
                 transition:
                     background ${t.dur.fast} ease,
@@ -87,35 +96,35 @@ const injectStyles = defineStyles(
                 }
                 &[data-size='sm'],
                 &[data-size='icon-sm'] {
-                    height: 30px;
-                    font-size: 13px;
+                    height: ${buttonDef.vars['height-sm']};
+                    font-size: ${buttonDef.vars['font-size-sm']};
                 }
                 &[data-size='xs'],
                 &[data-size='icon-xs'] {
-                    height: 26px;
+                    height: ${buttonDef.vars['height-xs']};
                     padding: 0 8px;
-                    font-size: 12px;
+                    font-size: ${buttonDef.vars['font-size-xs']};
                     border-radius: ${t.radius.sm};
                 }
                 &[data-size='lg'],
                 &[data-size='icon-lg'] {
-                    height: 40px;
+                    height: ${buttonDef.vars['height-lg']};
                     padding: 0 14px;
                 }
                 &[data-size='icon'] {
-                    width: 34px;
+                    width: ${buttonDef.vars.height};
                     padding: 0;
                 }
                 &[data-size='icon-sm'] {
-                    width: 30px;
+                    width: ${buttonDef.vars['height-sm']};
                     padding: 0;
                 }
                 &[data-size='icon-xs'] {
-                    width: 26px;
+                    width: ${buttonDef.vars['height-xs']};
                     padding: 0;
                 }
                 &[data-size='icon-lg'] {
-                    width: 40px;
+                    width: ${buttonDef.vars['height-lg']};
                     padding: 0;
                 }
                 &:disabled {

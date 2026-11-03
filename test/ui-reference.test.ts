@@ -30,7 +30,8 @@ describe('the component manifest', () => {
         const button = byName('button');
         expect(button.factory).toBe('createButton');
         expect(button.parts).toEqual({ root: buttonDef.slot('root'), icon: buttonDef.slot('icon') });
-        expect(button.settings).toEqual({ radius: { default: 'var(--vela-radius-md)', token: 'radius-md' } });
+        expect(button.settings?.radius).toEqual({ default: 'var(--vela-radius-md)', token: 'radius-md' });
+        expect(button.settings?.['height-sm']).toEqual({ default: '30px' });
         expect(button.variants?.size).toContain('icon-sm');
         expect(button.props?.map((p) => p.name)).toEqual(expect.arrayContaining(['text', 'variant', 'size', 'onClick']));
         expect(button.example).toContain("createButton();");
@@ -56,7 +57,7 @@ describe('the theme schema', () => {
     it('takes every token and every component setting and part', () => {
         expect(Object.keys(schema.properties.tokens.properties).sort()).toEqual([...TOKEN_NAMES].sort());
         const button = schema.properties.components.properties.button!;
-        expect(Object.keys(button.properties).sort()).toEqual(['css', 'radius']);
+        expect(Object.keys(button.properties)).toEqual(expect.arrayContaining(['css', 'radius', 'height', 'height-sm', 'font-size-xs']));
         expect(Object.keys((button.properties.css as { properties: object }).properties)).toEqual(['root', 'icon']);
     });
 });

@@ -50,13 +50,13 @@ describe('a theme file', () => {
     });
 
     it('names each field it gets wrong', () => {
-        const errors = validate(schema, { radius: 'xl', colors: { accent: 'hotpink' }, tokens: { 'surface-raised': '#000' }, components: { button: { height: '40px', css: { icn: 'x' } } }, base: { background: '#000' } }) as string[];
+        const errors = validate(schema, { radius: 'xl', colors: { accent: 'hotpink' }, tokens: { 'surface-raised': '#000' }, components: { button: { gap: '40px', css: { icn: 'x' } } }, base: { background: '#000' } }) as string[];
         expect(errors).toEqual(
             expect.arrayContaining([
                 '/radius: must be one of none, sm, md, lg',
                 '/colors/accent: "hotpink" is not a color (#rrggbb, rgb() or var())',
                 '/tokens/surface-raised: is not a known field',
-                '/components/button/height: is not a known field',
+                '/components/button/gap: is not a known field',
                 '/components/button/css/icn: is not a known field',
             ]),
         );
