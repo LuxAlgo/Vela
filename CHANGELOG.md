@@ -48,6 +48,14 @@ All notable changes to Vela, newest first.
   the rail and the mobile bottom bar uncovered. A shell that uses none of these keeps its
   layout exactly as before.
 
+### Changed
+
+- **A drawing's settings open beside its toolbar.** The settings panel now opens right next
+  to the drawing's toolbar, where its gear is, instead of at the far edge of the chart. It
+  takes the side of the toolbar away from the drawing when there is room, so the drawing
+  stays in view as you edit it, and it stays inside the chart, scrolling when the chart is
+  short.
+
 ## [0.9.3]
 
 ### Added

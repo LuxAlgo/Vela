@@ -259,8 +259,17 @@ export class DrawingSettingsPopup {
         this.hideTip();
         this.closeColorPopover();
         this.closeMenu();
-        this.panel.open(cur.drawing, cur.actions, cur.anchor);
+        this.panel.open(cur.drawing, cur.actions, cur.anchor, this.barBox());
         return true;
+    }
+
+    /** The toolbar's box in host pixels — where the gear that opens the panel sits. */
+    private barBox(): PopupAnchor | null {
+        if (!this.el) return null;
+        const host = this.host.getBoundingClientRect();
+        const r = this.el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) return null;
+        return { x: r.left - host.left, y: r.top - host.top, w: r.width, h: r.height };
     }
 
     /** The drawings changed under the panel (a drag, an undo) — let it re-read them. */
