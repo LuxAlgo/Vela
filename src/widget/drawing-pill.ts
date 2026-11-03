@@ -6,8 +6,8 @@
 // shortcut, API) keeps it truthful. Only shown in the mobile size class — desktop keeps
 // the docked toolbar.
 import type { Vela } from '../Vela';
-import { iconEl, iconMarkup } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { iconEl, iconMarkup } from '@luxalgo/vela-ui/icons';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { getDrawingType, type SnapMode } from '../core/drawings';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';

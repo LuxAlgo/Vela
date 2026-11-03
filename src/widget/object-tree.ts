@@ -15,9 +15,9 @@ import type { Translator } from '../core/i18n/types';
 import type { Vela } from '../Vela';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { SerializedDrawing } from '../core/drawings/Drawing';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
-import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
 import {

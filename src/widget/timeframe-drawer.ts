@@ -5,8 +5,8 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
-import { Drawer } from '../ui/components/drawer';
-import { injectStyles } from '../ui/styles';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { rangeLabel, type RangePreset } from './bottombar';
 import { timeframeLabel } from './timeframe';
 

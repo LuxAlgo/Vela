@@ -7,15 +7,15 @@ import { isDarkColor } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip, chromeHint } from './chrome-tooltip';
-import { toggleSelectList, type SelectOption } from '../../ui/components/select';
-import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openPopoverTrigger } from '../../ui/components/popover';
-import { Dialog } from '../../ui/components/dialog';
-import { createButton } from '../../ui/components/button';
-import { createTabs } from '../../ui/components/tabs';
-import { DatePicker, normalizeDateInput } from '../../ui/components/date-picker';
-import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '../../ui/components/field';
-import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '../../ui/styles';
-import { withKitTranslator } from '../../ui/kit-text';
+import { toggleSelectList, type SelectOption } from '@luxalgo/vela-ui/select';
+import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openPopoverTrigger } from '@luxalgo/vela-ui/popover';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { createButton } from '@luxalgo/vela-ui/button';
+import { createTabs } from '@luxalgo/vela-ui/tabs';
+import { DatePicker, normalizeDateInput } from '@luxalgo/vela-ui/date-picker';
+import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '@luxalgo/vela-ui/field';
+import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '@luxalgo/vela-ui/styles';
+import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
 
 /** Emitted when the user edits an input in the in-chart settings dialog. */
 export interface InputsUIChange {

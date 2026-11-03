@@ -2,7 +2,7 @@
 // The helpers kit components are written with: h(), the css tag, the typed tokens, variants,
 // and the component declaration.
 import { describe, it, expect } from 'vitest';
-import { css, defineComponent, h, t, tokenNames, variants } from '../src/ui/lib';
+import { css, defineComponent, h, t, tokenNames, variants } from '@luxalgo/vela-ui';
 import { STATIC_TOKENS, themeTokens } from '../src/core/tokens';
 import { DARK_THEME } from '../src/core/theme';
 

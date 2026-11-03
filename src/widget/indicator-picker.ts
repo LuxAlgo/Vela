@@ -3,9 +3,9 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
-import { Dialog } from '../ui/components/dialog';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
 
 export interface IndicatorRow {
     /** The name the picker shows, in the shell's language. */

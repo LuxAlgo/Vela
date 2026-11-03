@@ -4,8 +4,8 @@ import type { MessageLike } from '../../../core/i18n/types';
 import type { FrvpStyle, PositionLevelMode } from '../../../core/drawings';
 import { DIRECTION_OPTIONS, FixedRangeVolumeProfile, LINE_STYLE_OPTIONS, PositionTool } from '../../../core/drawings';
 import { contrastColor } from '../../shared/drawing-geometry';
-import { fieldRow, fieldSection, buildFieldControl } from '../../../ui/components/field';
-import type { SelectOption } from '../../../ui/components/select';
+import { fieldRow, fieldSection, buildFieldControl } from '@luxalgo/vela-ui/field';
+import type { SelectOption } from '@luxalgo/vela-ui/select';
 import type { SettingsActions } from './DrawingSettingsPopup';
 
 const TEXT = {

@@ -6,9 +6,9 @@ import * as dialog from '@zag-js/dialog';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { t } from '../lib/t';
-import { announceSurface } from '../surface-events';
-import { holdForExit, type SurfaceExit } from '../surface-exit';
-import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../zag';
+import { announceSurface } from '../lib/surface-events';
+import { holdForExit, type SurfaceExit } from '../lib/surface-exit';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
 export interface DrawerControllerOptions {
     closeOnEscape?: boolean;

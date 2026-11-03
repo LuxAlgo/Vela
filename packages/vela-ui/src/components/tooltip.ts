@@ -6,7 +6,7 @@ import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
-import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../zag';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
 export interface TooltipControllerOptions {
     placement?: tooltip.Placement;

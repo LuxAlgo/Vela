@@ -4,8 +4,8 @@ import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/dr
 import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
-import { announceSurface } from '../../../ui/surface-events';
-import { holdForExit, type SurfaceExit } from '../../../ui/surface-exit';
+import { announceSurface } from '@luxalgo/vela-ui/surface-events';
+import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
 import { msg } from '../../../core/i18n/message';
 import { textOf, upperCase } from '../../../core/i18n/text';
 import type { MessageLike, Translator } from '../../../core/i18n/types';

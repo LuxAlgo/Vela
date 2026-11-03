@@ -12,10 +12,10 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
     disconnect() {}
 };
 
-import { holdForExit, SURFACE_EXIT_CAP_MS } from '../src/ui/surface-exit';
-import { Popover } from '../src/ui/components/popover';
-import { Menu } from '../src/ui/components/menu';
-import { Dialog } from '../src/ui/components/dialog';
+import { holdForExit, SURFACE_EXIT_CAP_MS } from '@luxalgo/vela-ui/surface-exit';
+import { Popover } from '@luxalgo/vela-ui/popover';
+import { Menu } from '@luxalgo/vela-ui/menu';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
 import { SidePanel } from '../src/widget/side-panel';
 import { PanelDock } from '../src/widget/panel-dock';
 import type { WidgetContext } from '../src/widget/contributions';

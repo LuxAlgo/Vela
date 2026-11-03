@@ -1,8 +1,10 @@
 # Adding a UI-kit component
 
-`@luxalgo/vela/ui` is the component kit behind the widget's chrome and the renderer's
-dialogs. Each component is **one file**, `src/ui/components/<name>.ts`, holding its
-declaration, its variants, its CSS and its `create<Name>` function. Overlays (menu, dialog,
+The component kit behind the widget's chrome and the renderer's dialogs is its own package,
+`@luxalgo/vela-ui` (`packages/vela-ui` in this repo), which `@luxalgo/vela/ui` re-exports.
+Each component is **one file**, `packages/vela-ui/src/components/<name>.ts`, published at
+`@luxalgo/vela-ui/<name>`, holding its declaration, its variants, its CSS and its
+`create<Name>` function. Overlays (menu, dialog,
 drawer, tooltip) and composite controls (tabs, toggle group) run a
 [Zag.js](https://zagjs.com) state machine, which owns their keyboard behavior and
 accessibility; form controls keep small vanilla state objects.
@@ -63,7 +65,7 @@ their controller (`switchController`, `tooltipController`) next to the `create�
 function; the class is the instance the function returns. New components start from the
 shape above.
 
-## The helpers (`src/ui/lib/`)
+## The helpers (`packages/vela-ui/src/lib/`)
 
 - **`h(tag, props, ...children)`** builds an element, typed by its tag. `slot` writes the
   `data-slot`, `data` the `data-*` attributes (`true` writes an empty value, `false` and
@@ -157,16 +159,16 @@ without firing `onChange`.
 - Keyboard-facing components integrate with `KeymapManager` scopes: report open/close via
   an `onOpenChange` option so hosts can push/pop the `'dialog'` scope.
 - A component that opens and closes a surface **announces it** with `announceSurface`
-  (`src/ui/surface-events.ts`): open once the surface shows, close while it still shows —
+  (`@luxalgo/vela-ui/surface-events`): open once the surface shows, close while it still shows —
   before a fade-out, `hidden`, or removal — so the event bubbles to the host. Hosts follow
   the chrome through these events instead of watching the DOM.
 - After announcing the close, run the hide or removal through `holdForExit`
-  (`src/ui/surface-exit.ts`) so hosts can animate it out by styling `data-closing` (see
+  (`@luxalgo/vela-ui/surface-exit`) so hosts can animate it out by styling `data-closing` (see
   [Animating closes](../user/workspace.md#animating-closes)). It completes synchronously
   when no exit animation starts; keep the returned handle to `cancel()` it on a reopen and
   `finish()` it on teardown.
-- Renderer chrome that consumes the kit **imports the component file**
-  (`src/ui/components/<name>`), not the `src/ui` barrel — otherwise Zag overlay machines
+- Renderer chrome that consumes the kit **imports the component's subpath**
+  (`@luxalgo/vela-ui/<name>`), not the `src/ui` barrel — otherwise Zag overlay machines
   get pulled into the native-renderer bundle. Hosts and plugins import from
   `@luxalgo/vela/ui`.
 
@@ -304,4 +306,4 @@ Submenus inherit both options.
 
 ## Export it
 
-Add the component's public names to `src/ui/index.ts`: the `create…` function, its props and handle types, and anything a host needs (a descriptor type, a pure helper). The barrel lists names one by one, so a component file's other exports (its declaration, its CSS, internal helpers) stay internal. If plugins should drive it with data descriptors (menu items, actions), keep the descriptor type in the component file — descriptors are the currency the widget's contribution system projects.
+The package publishes every file of `packages/vela-ui/src/components/` at its own subpath (one build entry each). Vela re-exports the kit from `src/ui/index.ts`: add the component's public names there, the `create…` function, its props and handle types, and anything a host needs (a descriptor type, a pure helper). The barrel lists names one by one, so a component file's other exports (its declaration, its CSS, internal helpers) stay internal. If plugins should drive it with data descriptors (menu items, actions), keep the descriptor type in the component file — descriptors are the currency the widget's contribution system projects.

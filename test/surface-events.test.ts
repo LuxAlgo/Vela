@@ -11,10 +11,10 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
     disconnect() {}
 };
 
-import { Menu } from '../src/ui/components/menu';
-import { Popover, eventDismissedPopover } from '../src/ui/components/popover';
-import { Dialog } from '../src/ui/components/dialog';
-import { Drawer } from '../src/ui/components/drawer';
+import { Menu } from '@luxalgo/vela-ui/menu';
+import { Popover, eventDismissedPopover } from '@luxalgo/vela-ui/popover';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
 import { SidePanel } from '../src/widget/side-panel';
 import { LayoutPicker } from '../src/widget/layout-picker';
 import { SURFACE_OPEN_EVENT, SURFACE_CLOSE_EVENT, type SurfaceEventDetail } from '../src/ui';

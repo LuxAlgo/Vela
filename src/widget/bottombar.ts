@@ -8,10 +8,10 @@ import type { MessageLike, Translator } from '../core/i18n/types';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { Unsubscribe } from '../core/util/types';
 import { SecondClock, type WallClock } from '../core/util/wall-clock';
-import { Menu } from '../ui/components/menu';
-import { Tooltip } from '../ui/components/tooltip';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { Menu } from '@luxalgo/vela-ui/menu';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { timezoneMenuRows, tzButtonLabel, resolveTimezone } from './timezones';
 
 export interface RangePreset {

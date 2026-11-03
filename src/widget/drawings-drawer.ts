@@ -4,10 +4,10 @@
 // every group into one filtered list. Data comes from the same DOM-free toolbar model
 // the docked bar paints (`ToolbarDefinition`), so custom `options.drawings` sets and
 // plugin-registered types appear here automatically.
-import { Drawer } from '../ui/components/drawer';
-import { createTabs, tabsDef, type TabsHandle } from '../ui/components/tabs';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { createTabs, tabsDef, type TabsHandle } from '@luxalgo/vela-ui/tabs';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import type { ToolbarDefinition, ToolDefinition } from '../core/drawings/toolbar';
 import type { DrawingTypeKey } from '../core/drawings/Drawing';
 import { msg } from '../core/i18n/message';

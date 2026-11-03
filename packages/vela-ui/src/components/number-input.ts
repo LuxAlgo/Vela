@@ -1,11 +1,11 @@
 // NumberInput: a typed number field with optional steppers that show on hover and repeat
 // while pressed. `blur` commit clamps on commit (the indicator dialog); `live` emits on
 // every keystroke (chart settings). `md` fills its parent; `sm` is a compact field.
-import { msg } from '../../core/i18n/message';
-import { textOf } from '../../core/i18n/text';
-import type { Translator } from '../../core/i18n/types';
-import { iconEl } from '../icons';
-import { kitTranslator } from '../kit-text';
+import { msg } from '../lib/i18n';
+import { textOf } from '../lib/i18n';
+import type { Translator } from '../lib/i18n';
+import { iconEl } from '../lib/icons';
+import { kitTranslator } from '../lib/kit-text';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';

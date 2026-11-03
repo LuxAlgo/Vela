@@ -1,8 +1,8 @@
 // Select: a trigger button and a themed option list on a popover, with an overlay scrollbar
 // for long lists. `md` is the shared 100px kit column and ellipsizes the trigger; `sm` is a
 // compact toolbar select that hugs its widest option. The open list shows full labels.
-import type { VelaTheme } from '../../core/options';
-import { iconEl } from '../icons';
+import type { ChartTheme } from '../lib/tokens';
+import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { addSlot, h } from '../lib/h';
@@ -75,7 +75,7 @@ export const selectDef = defineComponent({
 export const selectVariants = variants({ size: ['md', 'sm'] });
 
 export interface SelectListPopoverOpts {
-    theme?: VelaTheme;
+    theme?: ChartTheme;
     matchWidth?: boolean;
     boundary?: PopoverBoundary;
     boundaryInset?: number;
@@ -90,7 +90,7 @@ export interface SelectListPopoverOpts {
 
 export interface SelectOptions extends SelectControllerOptions {
     id?: string;
-    theme?: VelaTheme;
+    theme?: ChartTheme;
     /** Placement for the open list (dialog-rect clamp, etc.). */
     list?: SelectListPopoverOpts;
 }

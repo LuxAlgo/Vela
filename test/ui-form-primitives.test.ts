@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { clampNumber, NUMBER_CSS, numberInputController, snapToStep } from '../src/ui/components/number-input';
-import { placePopover, viewportRect, insetRect, intersectRects } from '../src/ui/components/popover';
-import { switchController } from '../src/ui/components/switch';
-import { SELECT_CSS, selectController } from '../src/ui/components/select';
-import { TEXT_CSS, textFieldController } from '../src/ui/components/text-field';
+import { clampNumber, NUMBER_CSS, numberInputController, snapToStep } from '@luxalgo/vela-ui/number-input';
+import { placePopover, viewportRect, insetRect, intersectRects } from '@luxalgo/vela-ui/popover';
+import { switchController } from '@luxalgo/vela-ui/switch';
+import { SELECT_CSS, selectController } from '@luxalgo/vela-ui/select';
+import { TEXT_CSS, textFieldController } from '@luxalgo/vela-ui/text-field';
 
 describe('clampNumber', () => {
     it('clamps to min and max', () => {

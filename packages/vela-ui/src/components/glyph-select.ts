@@ -1,7 +1,7 @@
 // GlyphSelect: a trigger showing the current option's glyph, and a list of glyph options on a
 // popover. The settings dialogs' line-width field is one (`widthField`, 1–5 px).
-import type { VelaTheme } from '../../core/options';
-import { iconEl } from '../icons';
+import type { ChartTheme } from '../lib/tokens';
+import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
@@ -70,7 +70,7 @@ export const glyphSelectDef = defineComponent({
 });
 
 export interface GlyphSelectOptions<T extends string | number = string | number> extends GlyphSelectControllerOptions<T> {
-    theme: VelaTheme;
+    theme: ChartTheme;
     title?: string;
     get?: () => T;
 }
@@ -165,7 +165,7 @@ const injectStyles = defineStyles(
 export class GlyphSelect<T extends string | number = string | number> {
     readonly el: HTMLButtonElement;
     private readonly ctrl: GlyphSelectController<T>;
-    private readonly theme: VelaTheme;
+    private readonly theme: ChartTheme;
     private readonly get: () => T;
 
     constructor(opts: GlyphSelectOptions<T>) {
@@ -244,7 +244,7 @@ export function createGlyphSelect<T extends string | number = string | number>(p
 }
 
 /** Settings-dialog line-width field (1–5 px glyphs). */
-export function widthField(theme: VelaTheme, getVal: () => number, onVal: (v: number) => void): HTMLElement {
+export function widthField(theme: ChartTheme, getVal: () => number, onVal: (v: number) => void): HTMLElement {
     return new GlyphSelect<number>({
         theme,
         options: widthFieldOptions(),

@@ -3,14 +3,14 @@
 // outside dismissal and the single-open registry. A component built on it (a select list, a
 // color picker) adds its own part to the shell's slot: `data-slot="popover-content
 // select-content"`, matched with `~=`.
-import type { VelaTheme } from '../../core/options';
+import type { ChartTheme } from '../lib/tokens';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
-import { announceSurface } from '../surface-events';
-import { holdForExit, type SurfaceExit } from '../surface-exit';
-import { ensureUIHost, floatingLayerHost } from '../tokens';
+import { announceSurface } from '../lib/surface-events';
+import { holdForExit, type SurfaceExit } from '../lib/surface-exit';
+import { ensureUIHost, floatingLayerHost } from '../lib/theme';
 
 export type PopoverAlign = 'start' | 'end' | 'center';
 export type PopoverPosition = 'fixed' | 'absolute';
@@ -143,7 +143,7 @@ export interface PopoverOptions extends PopoverControllerOptions {
     content?: Node | ((body: HTMLElement) => void);
     /** Portal target. Defaults to `document.body`. Drawing chrome passes the chart host. */
     host?: HTMLElement;
-    theme?: VelaTheme;
+    theme?: ChartTheme;
     className?: string;
     /** The part a component built on the popover adds to the shell's slot. */
     slot?: string;
@@ -221,7 +221,7 @@ export class Popover {
     private readonly host: HTMLElement;
     private readonly ctrl: PopoverController;
     private readonly boundary: PopoverBoundary;
-    private readonly theme?: VelaTheme;
+    private readonly theme?: ChartTheme;
     /** Hosted under a `.vela-ui` we resolved ourselves — its tokens win over `theme`. */
     private readonly inheritsTokens: boolean;
     private onOutside: ((e: Event) => void) | null = null;

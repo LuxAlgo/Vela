@@ -8,8 +8,8 @@ import { withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip } from './chrome-tooltip';
-import { Menu, type MenuItemDescriptor } from '../../ui/components/menu';
-import { CalloutBubble } from '../../ui/components/callout-bubble';
+import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
 import {
     IndicatorInputsDialog,
     ensureDialogStyles,

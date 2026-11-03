@@ -4,19 +4,19 @@
 // trigger row owning a nested machine and list, registered as this machine's child: Zag
 // drives hover intent, arrow-key traversal and the dismiss chain across levels.
 import * as zagMenu from '@zag-js/menu';
-import { msg } from '../../core/i18n/message';
-import { textOf } from '../../core/i18n/text';
-import type { Translator } from '../../core/i18n/types';
-import { iconEl } from '../icons';
-import { kitTranslator } from '../kit-text';
+import { msg } from '../lib/i18n';
+import { textOf } from '../lib/i18n';
+import type { Translator } from '../lib/i18n';
+import { iconEl } from '../lib/icons';
+import { kitTranslator } from '../lib/kit-text';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { addSlot } from '../lib/h';
 import { t } from '../lib/t';
-import { announceSurface } from '../surface-events';
-import { holdForExit, type SurfaceExit } from '../surface-exit';
-import { floatingLayerHost } from '../tokens';
-import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../zag';
+import { announceSurface } from '../lib/surface-events';
+import { holdForExit, type SurfaceExit } from '../lib/surface-exit';
+import { floatingLayerHost } from '../lib/theme';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
 /** One menu entry. `id` is the selection value reported to `onSelect`. */
 export interface MenuItemDescriptor {

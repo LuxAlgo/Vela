@@ -3,10 +3,10 @@
 // `bar` event; hover values from the renderer crosshair seam (RendererControl.onCrosshairMove).
 import type { Vela } from '../Vela';
 import type { OHLCV } from '../core/model/ohlcv';
-import { injectStyles } from '../ui/styles';
-import { Tooltip } from '../ui/components/tooltip';
-import { CalloutBubble } from '../ui/components/callout-bubble';
-import { Menu } from '../ui/components/menu';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
+import { Menu } from '@luxalgo/vela-ui/menu';
 import { segmentVisibility, statuslineMenuItems, STATUSLINE_LADDER, readoutCells, SHOW_CHART_LABEL, type StatuslinePart, type StatuslineLayout } from './statusline-model';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';

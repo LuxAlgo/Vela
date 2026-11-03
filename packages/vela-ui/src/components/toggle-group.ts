@@ -4,13 +4,13 @@
 // press. The track and the chosen option are tints of the foreground, so both read on a dark
 // and a light theme.
 import * as toggleGroup from '@zag-js/toggle-group';
-import { iconEl } from '../icons';
+import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants, type VariantProps } from '../lib/variants';
-import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../zag';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
 export const toggleGroupDef = defineComponent({
     name: 'toggle-group',

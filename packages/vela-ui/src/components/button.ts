@@ -4,7 +4,7 @@
 // with the danger color, `link` text that underlines on hover. Heights: `xs` 26px, `sm` 30px
 // (panels), `default` 34px (dialog footers), `lg` 40px (touch); the `icon*` sizes are the
 // same heights, square, for an icon alone, which `label` names.
-import { iconEl } from '../icons';
+import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';

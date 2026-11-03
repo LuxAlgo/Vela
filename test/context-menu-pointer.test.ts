@@ -5,14 +5,14 @@
 // by a fake renderer; the real menu and crosshair are proven in the browser.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { CrosshairEvent } from '../src/core/ports/IChartRenderer';
-import type { MenuItemDescriptor } from '../src/ui/components/menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
 import type { Vela } from '../src/Vela';
 import { registerWidgetAction, type ContextMenuPointer, type WidgetContext } from '../src/widget/contributions';
 import { ChartContextMenu } from '../src/widget/context-menu';
 
 const menus = vi.hoisted(() => [] as Array<{ items: readonly MenuItemDescriptor[]; select: (id: string) => void; opened: number }>);
 
-vi.mock('../src/ui/components/menu', () => ({
+vi.mock('@luxalgo/vela-ui/menu', () => ({
     Menu: class {
         private readonly rec: (typeof menus)[number];
         constructor(opts: { onSelect?: (id: string) => void }) {

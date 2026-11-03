@@ -22,7 +22,7 @@ import { applyToolDefaults, captureToolDefaults, deserializeDrawing, getDrawingT
 import type { Unsubscribe } from '../../../core/util/types';
 import { contrastColor, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { withAlpha } from '../core/chartConfig';
-import { blendOver, splitColor } from '../../../ui/components/color-picker';
+import { blendOver, splitColor } from '@luxalgo/vela-ui/color-picker';
 import { DrawingPainter, handleIdsFor, type PaintTargets } from './DrawingPainter';
 import { DrawingInteraction } from './DrawingInteraction';
 import { DrawingSettingsPopup, type PopupAnchor } from './DrawingSettingsPopup';

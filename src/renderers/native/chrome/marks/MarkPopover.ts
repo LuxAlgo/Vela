@@ -10,9 +10,9 @@ import { textOf } from '../../../../core/i18n/text';
 import type { Translator } from '../../../../core/i18n/types';
 import type { VelaTheme } from '../../../../core/options';
 import type { MarkContent, MarkContentSource, MarkPanelItem } from '../../../../core/marks/types';
-import { Popover } from '../../../../ui/components/popover';
-import { CALLOUT_CSS, CALLOUT_STYLE_ID } from '../../../../ui/components/callout-bubble';
-import { injectStyles } from '../../../../ui/styles';
+import { Popover } from '@luxalgo/vela-ui/popover';
+import { CALLOUT_CSS, CALLOUT_STYLE_ID } from '@luxalgo/vela-ui/callout-bubble';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { sanitizeHtml } from '../../../../ui/sanitize-html';
 import type { MarkCluster } from './layout';
 

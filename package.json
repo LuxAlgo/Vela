@@ -91,8 +91,8 @@
   "author": "LuxAlgo",
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
-    "prepare": "tsup",
+    "build": "npm run build -w @luxalgo/vela-ui && tsup",
+    "prepare": "npm run build",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -117,14 +117,9 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
-    "@zag-js/core": "^1.42.0",
-    "@zag-js/dialog": "^1.42.0",
-    "@zag-js/dom-query": "^1.42.0",
-    "@zag-js/menu": "^1.42.0",
-    "@zag-js/tabs": "^1.42.0",
-    "@zag-js/toggle-group": "^1.42.0",
-    "@zag-js/tooltip": "^1.42.0",
-    "@zag-js/types": "^1.42.0",
-    "@zag-js/vanilla": "^1.42.0"
-  }
+    "@luxalgo/vela-ui": "^0.1.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

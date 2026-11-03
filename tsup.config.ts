@@ -27,6 +27,9 @@ export default defineConfig([
             ...localeEntries,
         },
         format: ['esm', 'cjs'],
+        // The kit is a dependency: imported, never bundled (the tsconfig paths that point the
+        // typecheck at its source would otherwise pull it in).
+        external: [/^@luxalgo\/vela-ui(\/|$)/],
         dts: true,
         // No sourcemaps in the published package (the peer norm — the reference
         // charting libs ship none): maps only cost download size, they play no role

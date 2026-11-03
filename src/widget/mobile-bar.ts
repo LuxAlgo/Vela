@@ -7,8 +7,8 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { timeframeLabel } from './timeframe';
 import { mobilePlacement, widgetActions, type WidgetContext } from './contributions';

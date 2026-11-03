@@ -1,6 +1,6 @@
 // Bottom-center status toast — the reference's small pill over the chart (loading /
 // info / error states, auto-hide). One instance per widget.
-import { injectStyles } from '../ui/styles';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 
 const STYLE_ID = 'vela-widget-toast';
 const CSS = `

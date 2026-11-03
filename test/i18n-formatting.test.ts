@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '../src/plugin';
 import { formatAxisValue, formatTimeStamp, paneAxisTicks, timeTicks } from '../src/renderers/native/chrome/ticks';
 import { countdownText } from '../src/renderers/native/chrome/countdown';
-import { datePickerController } from '../src/ui/components/date-picker';
+import { datePickerController } from '@luxalgo/vela-ui/date-picker';
 import type { PctScale } from '../src/renderers/native/core/SceneGraph';
 
 afterEach(() => vi.restoreAllMocks());

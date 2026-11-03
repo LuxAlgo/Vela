@@ -2,7 +2,7 @@
 // contributed rows sort in among them, and the renderer writes a selection implies.
 // Pure functions over plain state, so the menus can be tested without a DOM;
 // `ChartContextMenu` reads the renderer, calls these and shows the result.
-import type { MenuItemDescriptor } from '../ui/components/menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageDescriptor, Translator } from '../core/i18n/types';

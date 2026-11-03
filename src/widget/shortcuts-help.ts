@@ -2,8 +2,8 @@
 // category, with platform-formatted chords. Driven entirely by `KeymapManager.bindings()`
 // (plugin-registered bindings appear automatically).
 import type { KeymapManager } from '../ui/keymap';
-import { Dialog } from '../ui/components/dialog';
-import { injectStyles } from '../ui/styles';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { msg } from '../core/i18n/message';
 import { englishTranslator } from '../core/i18n/translator';
 import type { MessageLike, Translator } from '../core/i18n/types';

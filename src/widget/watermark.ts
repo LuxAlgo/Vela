@@ -3,8 +3,8 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { Translator } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
 import { timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
 

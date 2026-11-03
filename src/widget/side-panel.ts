@@ -14,10 +14,10 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
-import { announceSurface } from '../ui/surface-events';
-import { holdForExit, type SurfaceExit } from '../ui/surface-exit';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { announceSurface } from '@luxalgo/vela-ui/surface-events';
+import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
 
 const STYLE_ID = 'vela-widget-sidepanel';
 

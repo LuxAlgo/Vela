@@ -6,7 +6,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 
 (globalThis as { CSS?: unknown }).CSS ??= { escape: (v: string) => v };
 
-import { Menu, type MenuItemDescriptor } from '../src/ui/components/menu';
+import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
 
 afterEach(() => {
     document.body.replaceChildren();

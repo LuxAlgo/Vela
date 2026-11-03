@@ -1,7 +1,7 @@
 // Style delivery for the UI kit — JS-injected constructed sheets, same idiom as the
 // renderer chrome (id-guarded <style> tags; no bundler CSS pipeline, works in Shadow DOM).
 
-export { withAlpha } from '../core/color';
+export { withAlpha } from './color';
 
 /** Overlay scrollbar used by settings panes, dialog bodies, and similar chrome. */
 export function overlayScrollbarCss(selector: string, width = 8): string {

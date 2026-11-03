@@ -20,17 +20,17 @@ import {
 } from '../../../chart-types/registry';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
-import { closeOpenPopovers } from '../../../ui/components/popover';
-import { closeWidthPopover } from '../../../ui/components/glyph-select';
-import { Dialog } from '../../../ui/components/dialog';
-import { overlayScrollbarCss } from '../../../ui/styles';
+import { closeOpenPopovers } from '@luxalgo/vela-ui/popover';
+import { closeWidthPopover } from '@luxalgo/vela-ui/glyph-select';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { overlayScrollbarCss } from '@luxalgo/vela-ui/styles';
 import {
     fieldGrid,
     fieldRow,
     fieldSection,
     fieldSeparator,
     buildFieldControl,
-} from '../../../ui/components/field';
+} from '@luxalgo/vela-ui/field';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 import { chromeHint } from '../../shared/chrome-tooltip';
 import {
@@ -45,7 +45,7 @@ import {
 } from './settings-visibility';
 import type { MarkGroup } from '../../../core/marks/types';
 import { markGroupRows } from '../../../core/marks/visibility';
-import { withKitTranslator } from '../../../ui/kit-text';
+import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
 
 const TEXT = {
     sections: msg('chart.settings.sections', 'Sections'),

@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import stylelint from 'stylelint';
 
-const FILES = process.argv.length > 2 ? process.argv.slice(2) : ['src/ui/components/*.ts'];
+const FILES = process.argv.length > 2 ? process.argv.slice(2) : ['packages/vela-ui/src/components/*.ts'];
 
 const skipped = [];
 const warn = console.warn;

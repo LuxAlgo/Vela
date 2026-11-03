@@ -5,11 +5,11 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 
 (globalThis as { CSS?: unknown }).CSS ??= { escape: (v: string) => v };
 
-import { applyProps } from '../src/ui/headless';
-import { buttonVariants, createButton } from '../src/ui/components/button';
-import { createTabs } from '../src/ui/components/tabs';
-import { createToggleGroup } from '../src/ui/components/toggle-group';
-import { createBadge } from '../src/ui/components/badge';
+import { applyProps } from '@luxalgo/vela-ui/headless';
+import { buttonVariants, createButton } from '@luxalgo/vela-ui/button';
+import { createTabs } from '@luxalgo/vela-ui/tabs';
+import { createToggleGroup } from '@luxalgo/vela-ui/toggle-group';
+import { createBadge } from '@luxalgo/vela-ui/badge';
 
 // Browsers run queued microtasks between animation-frame callbacks; jsdom runs a frame's
 // callbacks back to back. Zag focuses in one frame callback and reads the focus in the

@@ -36,7 +36,7 @@ describe('flattenTemplates', () => {
     });
 
     it('flattens every shipped component', () => {
-        for (const file of ['src/ui/components/button.ts', 'src/ui/components/tabs.ts']) {
+        for (const file of ['packages/vela-ui/src/components/button.ts', 'packages/vela-ui/src/components/tabs.ts']) {
             const out = flattenFile(file);
             const sheet = /css`([^`]*)`/.exec(out)![1]!;
             expect(sheet.startsWith('@layer vela.ui{')).toBe(true);

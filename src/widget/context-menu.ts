@@ -3,7 +3,7 @@
 // itself is the kit Menu anchored at the pointer.
 import type { Vela } from '../Vela';
 import { textOf } from '../core/i18n/text';
-import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
+import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
 import { widgetActions, type ContextMenuPointer, type WidgetContext } from './contributions';
 import {
     bodyItems,

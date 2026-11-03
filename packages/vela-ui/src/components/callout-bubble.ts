@@ -3,8 +3,8 @@
 // near the bottom edge). Content is data, so contribution seams route it without handing
 // over DOM. The bubble is a single element the caller places and decorates (tooltips stay
 // the caller's: renderer chrome attaches its bare-chart tips, widget chrome the kit's).
-import { iconAt } from '../../core/icons';
-import type { VelaTheme } from '../../core/options';
+import { iconAt } from '../lib/icons';
+import type { ChartTheme } from '../lib/tokens';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { t } from '../lib/t';
@@ -84,7 +84,7 @@ export interface CalloutBubbleOptions extends CalloutBubbleSpec {
     host?: HTMLElement;
     /** Live theme, for a panel deployed OUTSIDE a `.vela-ui` token host (renderer
      *  chrome on a bare chart passes its theme getter; widget chrome may omit it). */
-    theme?: () => VelaTheme;
+    theme?: () => ChartTheme;
     /** Panel clamp — `'viewport'` (default) flips the panel above the bubble when the
      *  bottom screen edge is too close for it to deploy below. */
     boundary?: PopoverBoundary;
@@ -189,7 +189,7 @@ export class CalloutBubble {
     private spec: CalloutBubbleSpec;
     private readonly size: number;
     private readonly host: HTMLElement | undefined;
-    private readonly theme: (() => VelaTheme) | undefined;
+    private readonly theme: (() => ChartTheme) | undefined;
     private readonly boundary: PopoverBoundary | undefined;
     private pop: Popover | null = null;
 

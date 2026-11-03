@@ -3,7 +3,7 @@
 // building many controls at once (a settings dialog) runs the build inside
 // `withKitTranslator`, and each control built there keeps that translator, so a popover
 // it opens later speaks the same language. Anywhere else the kit speaks English.
-import type { Translator } from '../core/i18n/types';
+import type { Translator } from './i18n';
 
 let scoped: Translator | null = null;
 

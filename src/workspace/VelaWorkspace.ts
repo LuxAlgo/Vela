@@ -17,7 +17,7 @@ import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
 import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
-import { Menu } from '../ui/components/menu';
+import { Menu } from '@luxalgo/vela-ui/menu';
 import type { Vela } from '../Vela';
 import { LocaleState, pickLocalization } from '../core/i18n/translator';
 import type { LocaleChangedEvent, LocalizationOptions, MessageArgs, MessageLike, Translator } from '../core/i18n/types';

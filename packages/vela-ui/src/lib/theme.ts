@@ -2,12 +2,12 @@
 // consumes. Two layers:
 //   • STATIC tokens (spacing, radii, z-index, motion, type scale): one shared sheet on
 //     `.vela-ui` hosts — theme-independent.
-//   • THEME tokens (surfaces, text, borders, states): computed from the chart's `VelaTheme`
+//   • THEME tokens (surfaces, text, borders, states): computed from the chart's `ChartTheme`
 //     by `themeTokens` (shared with the renderer's own chrome) and written as inline custom
 //     properties on the host — the chart theme stays the single source of truth.
-import type { VelaTheme } from '../core/options';
-import { STATIC_TOKENS, themeTokens } from '../core/tokens';
-import { injectLayerOrder } from './lib/css';
+import type { ChartTheme } from './tokens';
+import { STATIC_TOKENS, themeTokens } from './tokens';
+import { injectLayerOrder } from './css';
 import { injectStyles } from './styles';
 
 const STATIC_ID = 'vela-ui-tokens';
@@ -44,7 +44,7 @@ ${STATIC_DECLS}
 
 /** Write the theme-derived custom properties onto a host element (the widget root and
  *  every floating layer — menus/tooltips portal outside the root, so layers re-apply). */
-export function applyThemeTokens(el: HTMLElement, t: VelaTheme): void {
+export function applyThemeTokens(el: HTMLElement, t: ChartTheme): void {
     const tokens = themeTokens(t);
     for (const key in tokens) el.style.setProperty(key, tokens[key]!);
 }
@@ -56,7 +56,7 @@ export function applyThemeTokens(el: HTMLElement, t: VelaTheme): void {
  *  `getConfig()` snapshot; a missing/shapeless one falls back to the base app theme.
  *  Floating menus and dropdowns do NOT use this — they mount on {@link floatingLayerHost}
  *  so their surface follows the app theme alone. */
-export function applyPlotOverlayTokens(host: HTMLElement, base: VelaTheme, config: unknown): void {
+export function applyPlotOverlayTokens(host: HTMLElement, base: ChartTheme, config: unknown): void {
     const layout = (config as { layout?: { background?: string; textColor?: string } } | null)?.layout;
     const t = layout?.background && layout.textColor ? { ...base, background: layout.background, textColor: layout.textColor } : base;
     applyThemeTokens(host, t);
@@ -71,7 +71,7 @@ export function floatingLayerHost(from: HTMLElement, fallback?: HTMLElement): HT
 }
 
 /** Mark an element as a kit host: static token sheet + the `.vela-ui` class. */
-export function ensureUIHost(el: HTMLElement, theme?: VelaTheme): void {
+export function ensureUIHost(el: HTMLElement, theme?: ChartTheme): void {
     const root = el.getRootNode() as Document | ShadowRoot;
     if (root instanceof Document || (typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot)) injectLayerOrder(root);
     injectStyles(STATIC_ID, STATIC_CSS, root);

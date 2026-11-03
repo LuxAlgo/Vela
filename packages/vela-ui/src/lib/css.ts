@@ -1,6 +1,6 @@
 // Component CSS: written in `css` templates (editors highlight them, stylelint checks them
 // through the postcss-lit syntax) and injected once per document or shadow root.
-import { injectStyles } from '../styles';
+import { injectStyles } from './styles';
 
 /** The kit's cascade layers, lowest first. Declared before any layered sheet, so a host's
  *  own unlayered CSS beats every one of them without `!important`. */

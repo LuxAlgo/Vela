@@ -4,11 +4,10 @@
 // the week follow the `i18n` translator's locale (English, weeks from Sunday, without one);
 // the calendar is always Gregorian. The picker is content only: its host (a popover, a panel)
 // owns the surface around it.
-import { monthNames, plainInteger, weekdayNames, yearBeforeMonth, yearLabel } from '../../core/format/calendar';
-import { msg } from '../../core/i18n/message';
-import { englishTranslator, formatSettingsOf } from '../../core/i18n/translator';
-import type { Translator } from '../../core/i18n/types';
-import { iconEl } from '../icons';
+import { calendarSettings, monthNames, plainInteger, weekdayNames, yearBeforeMonth, yearLabel } from '../lib/calendar';
+import { msg, textOf } from '../lib/i18n';
+import type { Translator } from '../lib/i18n';
+import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
@@ -103,10 +102,10 @@ export function datePickerController(opts: DatePickerControllerOptions = {}): Da
     let year = selected?.getFullYear() ?? today.getFullYear();
     let month = selected?.getMonth() ?? today.getMonth();
     let panel: DatePickerPanel = 'date';
-    const i18n = opts.i18n ?? englishTranslator();
-    const settings = formatSettingsOf(i18n);
+    const i18n = opts.i18n ?? null;
+    const settings = calendarSettings(i18n);
     // Without a translator the picker keeps its historical Sunday-first grid.
-    const weekStart = opts.i18n ? i18n.weekStart : 0;
+    const weekStart = opts.i18n?.weekStart ?? 0;
     const monthsLong = monthNames(settings, 'long');
     const monthsShort = monthNames(settings, 'short');
     const num = (n: number): string => plainInteger(settings, n);
@@ -140,9 +139,9 @@ export function datePickerController(opts: DatePickerControllerOptions = {}): Da
             };
         },
         navLabels() {
-            if (panel === 'date') return { prev: i18n.t(NAV.prevMonth), next: i18n.t(NAV.nextMonth) };
-            if (panel === 'month') return { prev: i18n.t(NAV.prevYear), next: i18n.t(NAV.nextYear) };
-            return { prev: i18n.t(NAV.prevDecade), next: i18n.t(NAV.nextDecade) };
+            if (panel === 'date') return { prev: textOf(i18n, NAV.prevMonth), next: textOf(i18n, NAV.nextMonth) };
+            if (panel === 'month') return { prev: textOf(i18n, NAV.prevYear), next: textOf(i18n, NAV.nextYear) };
+            return { prev: textOf(i18n, NAV.prevDecade), next: textOf(i18n, NAV.nextDecade) };
         },
         cells() {
             const out: DatePickerCell[] = [];
@@ -400,11 +399,11 @@ export class DatePicker {
         this.prev.append(iconEl('chevron-left', doc));
         this.next = button('vela-date-picker-nav', datePickerDef.slot('nav'));
         this.next.append(iconEl('chevron-right', doc));
-        const i18n = opts.i18n ?? englishTranslator();
+        const i18n = opts.i18n ?? null;
         this.monthBtn = button('vela-date-picker-switch', datePickerDef.slot('switch'));
-        this.monthBtn.setAttribute('aria-label', i18n.t(CHOOSE_MONTH));
+        this.monthBtn.setAttribute('aria-label', textOf(i18n, CHOOSE_MONTH));
         this.yearBtn = button('vela-date-picker-switch', datePickerDef.slot('switch'));
-        this.yearBtn.setAttribute('aria-label', i18n.t(CHOOSE_YEAR));
+        this.yearBtn.setAttribute('aria-label', textOf(i18n, CHOOSE_YEAR));
         const title = h('div', { className: 'vela-date-picker-title', slot: datePickerDef.slot('title') }, this.ctrl.yearFirst ? [this.yearBtn, this.monthBtn] : [this.monthBtn, this.yearBtn]);
         const head = h('div', { className: 'vela-date-picker-head', slot: datePickerDef.slot('head') }, this.prev, title, this.next);
         this.week = h(

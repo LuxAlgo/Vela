@@ -3,14 +3,14 @@
 // creation. `settings` and `form` are the chart settings and the indicator / drawing
 // settings looks. In a shell in the mobile layout every dialog fills the shell.
 import * as dialog from '@zag-js/dialog';
-import { iconEl } from '../icons';
+import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { t } from '../lib/t';
-import { injectStyles as injectSheet } from '../styles';
-import { announceSurface } from '../surface-events';
-import { holdForExit, type SurfaceExit } from '../surface-exit';
-import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../zag';
+import { injectStyles as injectSheet } from '../lib/styles';
+import { announceSurface } from '../lib/surface-events';
+import { holdForExit, type SurfaceExit } from '../lib/surface-exit';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 import { closeOpenPopovers, eventDismissedPopover, isPopoverOpen } from './popover';
 
 export interface DialogControllerOptions {

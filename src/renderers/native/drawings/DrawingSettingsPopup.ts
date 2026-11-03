@@ -22,10 +22,10 @@ import {
 import { icon, svg24, svg24Solid } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { contrastColor } from '../../shared/drawing-geometry';
-import { NumberInput } from '../../../ui/components/number-input';
-import { TextArea } from '../../../ui/components/text-area';
-import { buildColorPicker } from '../../../ui/components/color-picker';
-import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
+import { NumberInput } from '@luxalgo/vela-ui/number-input';
+import { TextArea } from '@luxalgo/vela-ui/text-area';
+import { buildColorPicker } from '@luxalgo/vela-ui/color-picker';
+import { Popover, closeOpenPopovers } from '@luxalgo/vela-ui/popover';
 import { DrawingSettingsPanel, type DrawingPanelEnv } from './DrawingSettingsPanel';
 
 const TEXT = {

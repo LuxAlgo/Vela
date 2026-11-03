@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { VelaTheme } from '../src/core/options';
-import { splitColor, combineColor, buildColorPicker } from '../src/ui/components/color-picker';
+import { splitColor, combineColor, buildColorPicker } from '@luxalgo/vela-ui/color-picker';
 
 // A minimal element stub (this suite runs in the node env — no jsdom). It models just
 // enough of the tree for `buildColorPicker`: parent links so `isConnected` can be

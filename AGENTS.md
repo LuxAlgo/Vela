@@ -177,7 +177,8 @@ descriptors working when multiple charts exist.
   the `closest()` fallback silently portals to `<body>`, outside the theme variables.
 - Any authored `display` on a component's root defeats the `[hidden]` UA rule — give the
   root its `display` under `:where(:not([hidden]))` (kit CSS has no `!important`).
-- Components are one file each (`src/ui/components/<name>.ts`: declaration, variants, CSS
+- Components live in the `@luxalgo/vela-ui` workspace package, one file each
+  (`packages/vela-ui/src/components/<name>.ts`: declaration, variants, CSS
   in `@layer vela.ui`, a `create…` function), documented in
   `docs/contributing/adding-a-ui-component.md`; `npm run lint` checks their CSS.
 

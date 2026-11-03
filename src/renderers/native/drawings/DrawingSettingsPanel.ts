@@ -23,15 +23,15 @@ import {
     timeframeBandOf,
 } from '../../../core/drawings';
 import { applyChromeTokens } from '../../shared/theme-tokens';
-import { Dialog } from '../../../ui/components/dialog';
-import { createButton } from '../../../ui/components/button';
-import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
-import { buildFieldControl, fieldGrid } from '../../../ui/components/field';
-import { TextArea } from '../../../ui/components/text-area';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { createButton } from '@luxalgo/vela-ui/button';
+import { Popover, closeOpenPopovers } from '@luxalgo/vela-ui/popover';
+import { buildFieldControl, fieldGrid } from '@luxalgo/vela-ui/field';
+import { TextArea } from '@luxalgo/vela-ui/text-area';
 import { formatTimeStamp, valueDecimals } from '../chrome/ticks';
 import { buildPositionSection, buildProfileSection } from './DrawingSettingsSections';
 import type { PopupAnchor, SettingsActions, SettingsPatch } from './DrawingSettingsPopup';
-import { withKitTranslator } from '../../../ui/kit-text';
+import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
 
 const TEXT = {
     settings: msg('drawing.settings.settings', 'Settings'),

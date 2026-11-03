@@ -49,8 +49,18 @@ All notable changes to Vela, newest first.
   the rail and the mobile bottom bar uncovered. A shell that uses none of these keeps its
   layout exactly as before.
 
+- **The UI kit is its own package.** `@luxalgo/vela-ui` holds every component of the kit,
+  its design tokens and its icons, with one import path per component
+  (`@luxalgo/vela-ui/button`, `@luxalgo/vela-ui/select`), so a page or a plugin can use the
+  components without the chart and bundle only the ones it imports. Vela depends on it,
+  and `@luxalgo/vela/ui` keeps exporting everything it did.
+
 ### Changed
 
+- **Vela's CommonJS build loads the kit as an ES module.** `@luxalgo/vela-ui` ships as ES
+  modules only, so `require('@luxalgo/vela')` needs a Node version that can load them:
+  20.19 or 22.12 and later. _(Breaking: on an older Node, import Vela as an ES module or
+  upgrade Node.)_
 - **The UI kit's styles give way to yours.** Every component of `@luxalgo/vela/ui`, from
   dialogs, drawers, menus and tooltips to selects, number inputs and color fields, keeps
   its styles in the `vela.ui` cascade layer, so a page's own CSS overrides them without

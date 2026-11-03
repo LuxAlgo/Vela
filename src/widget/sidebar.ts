@@ -3,9 +3,9 @@
 // drives it through {@link PanelChrome}, as it drives the topbar) and the actions plugins
 // register with `target: 'sidebar'`, laid out by the host's `sidebar` composition. Desktop
 // only: on the mobile layout the panels keep their menu rows and the actions join them.
-import { Tooltip } from '../ui/components/tooltip';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';

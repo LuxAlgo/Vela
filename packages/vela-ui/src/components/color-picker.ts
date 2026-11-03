@@ -1,12 +1,12 @@
 // ColorPicker: a swatch grid (grays, then hue × shade), a recents row with a custom "+"
 // chooser, and an opacity slider over a transparency checker; and ColorField, the swatch
 // button that opens it on a popover. Colors travel as `#RRGGBB` / `#RRGGBBAA`.
-import { ACCENT, ACCENT_BRIGHT, BEARISH, BULLISH, NEUTRAL, WARNING } from '../../core/palette';
-import { msg } from '../../core/i18n/message';
-import { textOf } from '../../core/i18n/text';
-import type { Translator } from '../../core/i18n/types';
-import type { VelaTheme } from '../../core/options';
-import { kitTranslator } from '../kit-text';
+import { ACCENT, ACCENT_BRIGHT, BEARISH, BULLISH, NEUTRAL, WARNING } from '../lib/palette';
+import { msg } from '../lib/i18n';
+import { textOf } from '../lib/i18n';
+import type { Translator } from '../lib/i18n';
+import type { ChartTheme } from '../lib/tokens';
+import { kitTranslator } from '../lib/kit-text';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
@@ -228,7 +228,7 @@ const injectStyles = defineStyles(
  * recents row with a custom "+" picker, and an opacity slider over a transparency checker.
  * Emits `#RRGGBB` / `#RRGGBBAA` through `onChange`.
  */
-export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: string) => void, options: ColorPickerOptions = {}): HTMLElement {
+export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v: string) => void, options: ColorPickerOptions = {}): HTMLElement {
     const commit: ColorCommit = options.commit ?? 'live';
     const i18n = options.i18n ?? kitTranslator();
     const parsed = splitColor(color);
@@ -406,7 +406,7 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
 
 export interface ColorFieldOpts {
     shape?: ColorFieldShape;
-    theme: VelaTheme;
+    theme: ChartTheme;
     getVal: () => string;
     onVal: (v: string) => void;
     id?: string;
@@ -422,7 +422,7 @@ export type ColorFieldProps = ColorFieldOpts;
 /** Closed-state swatch shape. `circle` is the settings-dialog preview (a square chip
  *  inset from a matching field border); `square` is the compact drawing-chrome swatch. */
 export function colorField(
-    theme: VelaTheme,
+    theme: ChartTheme,
     getVal: () => string,
     onVal: (v: string) => void,
     opts?: { shape?: ColorFieldShape; id?: string; popover?: ColorFieldOpts['popover']; commit?: ColorCommit },
@@ -435,7 +435,7 @@ export class ColorField {
     private readonly swatch: HTMLElement;
     private readonly getVal: () => string;
     private readonly onVal: (v: string) => void;
-    private readonly theme: VelaTheme;
+    private readonly theme: ChartTheme;
     private readonly popoverOpts: ColorFieldOpts['popover'];
     private readonly commit: ColorCommit | undefined;
     private readonly i18n: Translator | null;

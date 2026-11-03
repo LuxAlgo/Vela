@@ -8,7 +8,7 @@ import { icon } from '../core/icons';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { Glider, ZOOM_IN, ZOOM_OUT } from './glide';
 import type { Vela } from '../Vela';
 

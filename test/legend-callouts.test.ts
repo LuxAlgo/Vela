@@ -12,7 +12,7 @@ import {
     type LegendCalloutSpec,
     type LegendIndicatorInfo,
 } from '../src/widget/contributions';
-import { calloutPanelRows, closesPanel, type CalloutPanelItem } from '../src/ui/components/callout-bubble';
+import { calloutPanelRows, closesPanel, type CalloutPanelItem } from '@luxalgo/vela-ui/callout-bubble';
 import { legendCalloutsDisplay } from '../src/renderers/shared/InputsUI';
 
 describe('legend callout contributions', () => {

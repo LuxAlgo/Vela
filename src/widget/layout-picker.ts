@@ -11,10 +11,10 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
-import { Tooltip } from '../ui/components/tooltip';
-import { announceSurface } from '../ui/surface-events';
-import { holdForExit, type SurfaceExit } from '../ui/surface-exit';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { announceSurface } from '@luxalgo/vela-ui/surface-events';
+import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
 
 const TEXT = {
     layout: msg('widget.layoutPicker.layout', 'Layout'),

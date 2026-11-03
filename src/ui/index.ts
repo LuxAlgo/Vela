@@ -1,19 +1,19 @@
-// vela/ui — the component kit. Each component is one file, `components/<name>.ts`: its
-// declaration (parts and settings), its variants, its CSS in the `vela.ui` cascade layer and
-// a `create<Name>` function; overlays and composite controls run Zag machines. The lists
-// below are the public API: a component file's other exports stay internal.
-export { injectStyles, withAlpha, overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from './styles';
-export { applyThemeTokens, applyPlotOverlayTokens, ensureUIHost } from './tokens';
-export { registerIcon, iconMarkup, iconEl, svg16, svg24 } from './icons';
-export { runMachine, nextUid, normalizeProps, spreadProps, type MachineHandle } from './zag';
-export { SURFACE_OPEN_EVENT, SURFACE_CLOSE_EVENT, type SurfaceKind, type SurfaceEventDetail } from './surface-events';
+// vela/ui — the component kit, re-exported from `@luxalgo/vela-ui` (each component one file,
+// its CSS in the `vela.ui` cascade layer, a `create<Name>` function; overlays and composite
+// controls run Zag machines), next to what stays Vela's own: the keymap. The lists below are
+// the public API: a component file's other exports stay internal.
+export { injectStyles, withAlpha, overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '@luxalgo/vela-ui/styles';
+export { applyThemeTokens, applyPlotOverlayTokens, ensureUIHost } from '@luxalgo/vela-ui/theme';
+export { registerIcon, iconMarkup, iconEl, svg16, svg24 } from '@luxalgo/vela-ui/icons';
+export { runMachine, nextUid, normalizeProps, spreadProps, type MachineHandle } from '@luxalgo/vela-ui/zag';
+export { SURFACE_OPEN_EVENT, SURFACE_CLOSE_EVENT, type SurfaceKind, type SurfaceEventDetail } from '@luxalgo/vela-ui/surface-events';
 export { KeymapManager, type KeyBindingDescriptor, type ResolvedBinding, type KeymapOptions } from './keymap';
-export { applyProps, type PartProps } from './headless';
+export { applyProps, type PartProps } from '@luxalgo/vela-ui/headless';
 
-export { Tooltip, createTooltip, tooltipController, type TooltipOptions, type TooltipProps, type TooltipController, type TooltipControllerOptions, type TooltipApi, type TooltipService } from './components/tooltip';
-export { Menu, createMenu, menuController, type MenuOptions, type MenuProps, type MenuController, type MenuControllerOptions, type MenuItemDescriptor, type MenuApi, type MenuService } from './components/menu';
-export { Dialog, createDialog, dialogController, type DialogOptions, type DialogProps, type DialogVariant, type DialogController, type DialogControllerOptions, type DialogApi, type DialogService } from './components/dialog';
-export { Drawer, createDrawer, drawerController, type DrawerOptions, type DrawerProps, type DrawerController, type DrawerControllerOptions, type DrawerApi, type DrawerService } from './components/drawer';
+export { Tooltip, createTooltip, tooltipController, type TooltipOptions, type TooltipProps, type TooltipController, type TooltipControllerOptions, type TooltipApi, type TooltipService } from '@luxalgo/vela-ui/tooltip';
+export { Menu, createMenu, menuController, type MenuOptions, type MenuProps, type MenuController, type MenuControllerOptions, type MenuItemDescriptor, type MenuApi, type MenuService } from '@luxalgo/vela-ui/menu';
+export { Dialog, createDialog, dialogController, type DialogOptions, type DialogProps, type DialogVariant, type DialogController, type DialogControllerOptions, type DialogApi, type DialogService } from '@luxalgo/vela-ui/dialog';
+export { Drawer, createDrawer, drawerController, type DrawerOptions, type DrawerProps, type DrawerController, type DrawerControllerOptions, type DrawerApi, type DrawerService } from '@luxalgo/vela-ui/drawer';
 export {
     Popover,
     createPopover,
@@ -36,8 +36,8 @@ export {
     type PlaceArgs,
     type PlaceResult,
     type Rect,
-} from './components/popover';
-export { Switch, createSwitch, switchController, type SwitchOptions, type SwitchProps, type SwitchController, type SwitchControllerOptions, type SwitchSize, type SwitchTone } from './components/switch';
+} from '@luxalgo/vela-ui/popover';
+export { Switch, createSwitch, switchController, type SwitchOptions, type SwitchProps, type SwitchController, type SwitchControllerOptions, type SwitchSize, type SwitchTone } from '@luxalgo/vela-ui/switch';
 export {
     Select,
     createSelect,
@@ -53,7 +53,7 @@ export {
     type SelectControllerOptions,
     type SelectOption,
     type SelectSize,
-} from './components/select';
+} from '@luxalgo/vela-ui/select';
 export {
     NumberInput,
     createNumberInput,
@@ -66,8 +66,8 @@ export {
     type NumberInputControllerOptions,
     type NumberSize,
     type NumberCommit,
-} from './components/number-input';
-export { TextField, createTextField, textFieldController, type TextFieldOptions, type TextFieldProps, type TextFieldController, type TextFieldControllerOptions, type TextFieldSize } from './components/text-field';
+} from '@luxalgo/vela-ui/number-input';
+export { TextField, createTextField, textFieldController, type TextFieldOptions, type TextFieldProps, type TextFieldController, type TextFieldControllerOptions, type TextFieldSize } from '@luxalgo/vela-ui/text-field';
 export {
     ColorField,
     createColorField,
@@ -88,7 +88,7 @@ export {
     type ColorPickerController,
     type ColorPickerControllerOptions,
     type ColorFieldShape,
-} from './components/color-picker';
+} from '@luxalgo/vela-ui/color-picker';
 export {
     fieldGrid,
     fieldSection,
@@ -106,8 +106,8 @@ export {
     type FieldControlHandle,
     type FieldGridVariant,
     type FieldLabelSize,
-} from './components/field';
-export { TextArea, createTextArea, textAreaController, type TextAreaOptions, type TextAreaProps, type TextAreaController, type TextAreaControllerOptions, type TextAreaSize } from './components/text-area';
+} from '@luxalgo/vela-ui/field';
+export { TextArea, createTextArea, textAreaController, type TextAreaOptions, type TextAreaProps, type TextAreaController, type TextAreaControllerOptions, type TextAreaSize } from '@luxalgo/vela-ui/text-area';
 export {
     GlyphSelect,
     createGlyphSelect,
@@ -122,7 +122,7 @@ export {
     type GlyphOption,
     type GlyphSelectController,
     type GlyphSelectControllerOptions,
-} from './components/glyph-select';
+} from '@luxalgo/vela-ui/glyph-select';
 export {
     CalloutBubble,
     createCalloutBubble,
@@ -136,7 +136,7 @@ export {
     type CalloutPanel,
     type CalloutPanelItem,
     type CalloutPanelRow,
-} from './components/callout-bubble';
+} from '@luxalgo/vela-ui/callout-bubble';
 export {
     DatePicker,
     createDatePicker,
@@ -149,8 +149,8 @@ export {
     type DatePickerControllerOptions,
     type DatePickerCell,
     type DatePickerPanel,
-} from './components/date-picker';
-export { createButton, type ButtonProps, type ButtonHandle, type ButtonVariant, type ButtonSize } from './components/button';
-export { createTabs, type TabsProps, type TabsHandle, type TabsVariant, type TabItem } from './components/tabs';
-export { createToggleGroup, type ToggleGroupProps, type ToggleGroupHandle, type ToggleGroupItem, type ToggleGroupSingleProps, type ToggleGroupMultipleProps } from './components/toggle-group';
-export { createBadge, type BadgeProps, type BadgeHandle, type BadgeVariant } from './components/badge';
+} from '@luxalgo/vela-ui/date-picker';
+export { createButton, type ButtonProps, type ButtonHandle, type ButtonVariant, type ButtonSize } from '@luxalgo/vela-ui/button';
+export { createTabs, type TabsProps, type TabsHandle, type TabsVariant, type TabItem } from '@luxalgo/vela-ui/tabs';
+export { createToggleGroup, type ToggleGroupProps, type ToggleGroupHandle, type ToggleGroupItem, type ToggleGroupSingleProps, type ToggleGroupMultipleProps } from '@luxalgo/vela-ui/toggle-group';
+export { createBadge, type BadgeProps, type BadgeHandle, type BadgeVariant } from '@luxalgo/vela-ui/badge';

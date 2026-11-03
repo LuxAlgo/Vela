@@ -8,9 +8,9 @@
 import { msg } from '../core/i18n/message';
 import { eventTimeText, textOf } from '../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
-import { Drawer } from '../ui/components/drawer';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { layoutGridCanvas, layoutGridLabel, paintLayoutGrid } from './layout-picker';
 
 const TEXT = {

@@ -9,7 +9,7 @@ import type { DataWindowReadout } from '../core/ports/IChartRenderer';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { Translator } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { SidePanel } from './side-panel';
 
 const TEXT = {

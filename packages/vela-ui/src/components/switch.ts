@@ -1,6 +1,6 @@
 // Switch: a square check toggle, filled with a check mark when on. `bright` fills with the
 // bright foreground (the settings dialogs), `selected` with the selection color.
-import { iconEl } from '../icons';
+import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';

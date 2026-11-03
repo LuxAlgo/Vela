@@ -3,8 +3,8 @@
 // mark), full-width toggles, stacked and inline rows, section headings and separators, and
 // a factory that builds a row's control from a descriptor. Rows use `display: contents`, so
 // their label and control sit on the grid's own tracks.
-import type { VelaTheme } from '../../core/options';
-import { injectStyles as injectSheet } from '../styles';
+import type { ChartTheme } from '../lib/tokens';
+import { injectStyles as injectSheet } from '../lib/styles';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { t } from '../lib/t';
@@ -421,7 +421,7 @@ export type FieldControlDesc =
         options: readonly SelectOption[];
         value: string;
         fill?: boolean;
-        theme?: VelaTheme;
+        theme?: ChartTheme;
         list?: SelectListPopoverOpts;
         title?: string;
         onChange: (v: string) => void;
@@ -437,7 +437,7 @@ export type FieldControlDesc =
     | {
         kind: 'color';
         id?: string;
-        theme: VelaTheme;
+        theme: ChartTheme;
         get: () => string;
         onChange: (v: string) => void;
         popover?: ColorFieldOpts['popover'];
@@ -467,7 +467,7 @@ export type FieldControlDesc =
     }
     | {
         kind: 'width';
-        theme: VelaTheme;
+        theme: ChartTheme;
         get: () => number;
         onChange: (v: number) => void;
         title?: string;

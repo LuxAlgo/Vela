@@ -1,4 +1,4 @@
-// Build step for kit component CSS: each `css` template of src/ui/components/*.ts goes through
+// Build step for kit component CSS: each `css` template of packages/vela-ui/src/components/*.ts goes through
 // Lightning CSS, which flattens the nesting (and minifies) for the oldest browsers the package
 // supports, those that brought `@layer`. The playground and the tests run the nested source.
 import { readFileSync } from 'node:fs';
@@ -42,7 +42,7 @@ export function flattenCss() {
     return {
         name: 'vela-flatten-css',
         setup(build) {
-            build.onLoad({ filter: /[\\/]src[\\/]ui[\\/]components[\\/][^\\/]+\.ts$/ }, async (args) => {
+            build.onLoad({ filter: /[\\/]vela-ui[\\/]src[\\/]components[\\/][^\\/]+\.ts$/ }, async (args) => {
                 const source = await readFile(args.path, 'utf8');
                 if (!source.includes('css`')) return undefined;
                 return { contents: flattenTemplates(source, args.path), loader: 'ts' };

@@ -10,7 +10,7 @@ import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants, type VariantProps } from '../lib/variants';
-import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../zag';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
 export const tabsDef = defineComponent({
     name: 'tabs',

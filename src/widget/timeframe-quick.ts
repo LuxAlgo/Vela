@@ -4,8 +4,8 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
-import { Dialog } from '../ui/components/dialog';
-import { injectStyles } from '../ui/styles';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { injectStyles } from '@luxalgo/vela-ui/styles';
 import { parseTimeframe } from './timeframe';
 
 const STYLE_ID = 'vela-widget-tfquick';

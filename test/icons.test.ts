@@ -3,7 +3,7 @@ import { drawingTypes } from '../src/core/drawings';
 import { icon, iconAt, iconMarkup, registerIcon, svg16, svg24 } from '../src/core/icons';
 import { priceStyleIds } from '../src/renderers/native/core/chartConfig';
 // The kit's façade must see the same registry the core registers into.
-import { iconMarkup as kitMarkup } from '../src/ui/icons';
+import { iconMarkup as kitMarkup } from '@luxalgo/vela-ui/icons';
 
 const root = (svg: string) => /^<svg [^>]*>/.exec(svg)?.[0] ?? '';
 const attr = (svg: string, name: string) => new RegExp(`${name}="([^"]*)"`).exec(root(svg))?.[1];
