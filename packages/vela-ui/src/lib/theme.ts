@@ -5,6 +5,7 @@
 // any token without `!important` (`[data-vela-theme] { --vela-accent: … }` reaches every
 // themed host, chrome inside the chart included), and several themes coexist on one page.
 import type { badgeDef } from '../components/badge';
+import type { barChartDef } from '../components/bar-chart';
 import type { buttonDef } from '../components/button';
 import type { calloutBubbleDef } from '../components/callout-bubble';
 import type { colorPickerDef } from '../components/color-picker';
@@ -18,9 +19,11 @@ import type { fieldDef } from '../components/field';
 import type { glyphSelectDef } from '../components/glyph-select';
 import type { hoverCardDef } from '../components/hover-card';
 import type { kbdDef } from '../components/kbd';
+import type { lineChartDef } from '../components/line-chart';
 import type { menuDef } from '../components/menu';
 import type { numberInputDef } from '../components/number-input';
 import type { popoverDef } from '../components/popover';
+import type { scatterChartDef } from '../components/scatter-chart';
 import type { selectDef } from '../components/select';
 import type { sparklineDef } from '../components/sparkline';
 import type { statDef } from '../components/stat';
@@ -126,6 +129,7 @@ export type TokenName = (typeof TOKEN_NAMES)[number];
  *  components of its own adds them here by declaration merging. */
 export interface ComponentDefs {
     badge: typeof badgeDef;
+    'bar-chart': typeof barChartDef;
     button: typeof buttonDef;
     'callout-bubble': typeof calloutBubbleDef;
     'color-picker': typeof colorPickerDef;
@@ -139,9 +143,11 @@ export interface ComponentDefs {
     'glyph-select': typeof glyphSelectDef;
     'hover-card': typeof hoverCardDef;
     kbd: typeof kbdDef;
+    'line-chart': typeof lineChartDef;
     menu: typeof menuDef;
     'number-input': typeof numberInputDef;
     popover: typeof popoverDef;
+    'scatter-chart': typeof scatterChartDef;
     select: typeof selectDef;
     sparkline: typeof sparklineDef;
     stat: typeof statDef;

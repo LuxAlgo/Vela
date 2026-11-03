@@ -11,7 +11,7 @@ const components = Object.fromEntries(
         .filter((f) => f.endsWith('.ts'))
         .map((f) => [f.slice(0, -3), `src/components/${f}`]),
 );
-const LIB = ['color', 'palette', 'tokens', 'theme', 'icons', 'styles', 'zag', 'headless', 'surface-events', 'surface-exit', 'kit-text', 'i18n', 'calendar'];
+const LIB = ['color', 'palette', 'tokens', 'theme', 'icons', 'styles', 'zag', 'headless', 'surface-events', 'surface-exit', 'kit-text', 'i18n', 'calendar', 'chart'];
 
 export default defineConfig({
     entry: {

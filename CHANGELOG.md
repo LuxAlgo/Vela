@@ -71,6 +71,12 @@ All notable changes to Vela, newest first.
   variants and states. The parts are typed. CSS not written with the `css` tag, like a theme
   loaded from a saved file, is left out unless the host passes `{ allowCss: true }`. The
   gallery's "shadcn look" rebuilds shadcn's buttons and tabs this way, from a theme alone.
+- **Data components in the UI kit.** `@luxalgo/vela-ui` gains a sortable `DataTable` with a
+  sticky header, `Stat` figures toned as a gain or a loss, `Kbd` keycaps, an `EmptyState`, a
+  `HoverCard` (a title, a shortcut, a description and rich content beside a control), a
+  `Sparkline`, a `Donut`, and three SVG charts with hover readouts: `BarChart`, `LineChart`
+  and `ScatterChart`. Their colors come from the theme, including the new `profit` and
+  `loss` tokens, which default to the candles' up and down colors.
 - **The UI kit ships its own reference.** `@luxalgo/vela-ui` carries, versioned with its
   code, a manifest of every component (`@luxalgo/vela-ui/manifest.json`: its import, props,
   variants, parts and their slots, settings, the tokens it reads, an example), the JSON
