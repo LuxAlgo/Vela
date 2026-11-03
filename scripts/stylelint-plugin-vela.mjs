@@ -50,7 +50,8 @@ const layer = createPlugin(layerName, (expected) => (root, result) => {
 });
 
 // vela/slot-scope: a top-level selector starts with one of the component's own parts,
-// `[data-slot='<name>']` or `[data-slot='<name>-<part>']`, as its `defineComponent` declares.
+// `[data-slot='<name>']` or `[data-slot='<name>-<part>']`, as its `defineComponent` declares
+// (or `~=`, for a part on a shell another component owns).
 const slotName = 'vela/slot-scope';
 const slotMessages = ruleMessages(slotName, {
     noDef: () => 'Declare the component with defineComponent({ name, parts }) in the same file',
@@ -70,7 +71,7 @@ const slotScope = createPlugin(slotName, (enabled) => (root, result) => {
     root.walkRules((rule) => {
         if (insideRule(rule) || keyframeStep(rule)) return;
         for (const selector of rule.selectors) {
-            const m = /^\[data-slot='([a-z0-9-]+)'\]/.exec(selector.trim());
+            const m = /^\[data-slot~?='([a-z0-9-]+)'\]/.exec(selector.trim());
             if (!m || !allowed.includes(m[1])) report({ ruleName: slotName, result, node: rule, message: slotMessages.scope(selector.trim(), allowed) });
         }
     });

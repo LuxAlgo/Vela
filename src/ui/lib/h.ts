@@ -42,6 +42,13 @@ export function append(el: Node, children: readonly Child[]): void {
     }
 }
 
+/** Add a part to an element's slot, keeping the ones it has: a shell one component owns and
+ *  another builds on carries both (`data-slot="popover-content select-content"`). */
+export function addSlot(el: Element, slot: string): void {
+    const slots = (el.getAttribute('data-slot') ?? '').split(' ').filter(Boolean);
+    if (!slots.includes(slot)) el.setAttribute('data-slot', [...slots, slot].join(' '));
+}
+
 function setAttr(el: Element, name: string, v: AttrValue): void {
     if (v == null || v === false) el.removeAttribute(name);
     else el.setAttribute(name, v === true ? '' : String(v));

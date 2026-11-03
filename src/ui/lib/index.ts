@@ -1,4 +1,4 @@
-export { h, append, type Child, type ElementProps } from './h';
+export { h, append, addSlot, type Child, type ElementProps } from './h';
 export { css, defineStyles, injectLayerOrder, LAYER_ORDER } from './css';
 export { t, tokenNames, type Token } from './t';
 export { variants, type VariantFn, type VariantProps, type VariantSpec, type VariantValues } from './variants';

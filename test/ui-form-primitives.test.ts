@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { clampNumber, numberInputController, snapToStep } from '../src/ui/components/number-input/controller';
-import { NUMBER_CSS } from '../src/ui/components/number-input/styles';
-import { placePopover, viewportRect, insetRect, intersectRects } from '../src/ui/components/popover/controller';
+import { clampNumber, NUMBER_CSS, numberInputController, snapToStep } from '../src/ui/components/number-input';
+import { placePopover, viewportRect, insetRect, intersectRects } from '../src/ui/components/popover';
 import { switchController } from '../src/ui/components/switch';
-import { selectController } from '../src/ui/components/select/controller';
-import { SELECT_CSS } from '../src/ui/components/select/styles';
+import { SELECT_CSS, selectController } from '../src/ui/components/select';
 import { TEXT_CSS, textFieldController } from '../src/ui/components/text-field';
 
 describe('clampNumber', () => {
@@ -180,12 +178,12 @@ describe('snapToStep', () => {
 
 describe('closed field size', () => {
     it('number, text, and select share a 100px column and ellipsize overflow', () => {
-        expect(NUMBER_CSS).toContain('.vela-num:not([data-fill]) { width: 100px;');
+        expect(NUMBER_CSS).toMatch(/:not\(\[data-fill\]\)\s*\{\s*width:\s*100px;/);
         expect(TEXT_CSS).toMatch(/:not\(\[data-fill\]\)\s*\{\s*width:\s*100px;/);
-        expect(SELECT_CSS).toContain('.vela-select:not([data-fill]) { width: 100px;');
+        expect(SELECT_CSS).toMatch(/:not\(\[data-fill\]\)\s*\{\s*width:\s*100px;/);
         expect(TEXT_CSS).toContain('text-overflow: ellipsis');
         expect(SELECT_CSS).toContain('text-overflow: ellipsis');
-        expect(SELECT_CSS).toContain('.vela-select-list {\n    width: max-content;');
+        expect(SELECT_CSS).toMatch(/select-content'\]\s*\{\s*width:\s*max-content;/);
         expect(SELECT_CSS).toContain('white-space: nowrap');
     });
 });

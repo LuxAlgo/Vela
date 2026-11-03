@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { fieldGridColumns, FIELD_GAP_PX } from '../src/ui/components/field/controller';
+import { fieldGridColumns, FIELD_GAP_PX } from '../src/ui/components/field';
 import { textAreaController } from '../src/ui/components/text-area';
-import { glyphSelectController, widthFieldOptions, WIDTH_FIELD_OPTIONS } from '../src/ui/components/glyph-select/controller';
+import { glyphSelectController, widthFieldOptions, WIDTH_FIELD_OPTIONS } from '../src/ui/components/glyph-select';
 
 describe('fieldGridColumns', () => {
     it('gives leftover space to the inputs control column', () => {

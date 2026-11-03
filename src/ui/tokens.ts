@@ -71,7 +71,7 @@ export function floatingLayerHost(from: HTMLElement, fallback?: HTMLElement): HT
 /** Mark an element as a kit host: static token sheet + the `.vela-ui` class. */
 export function ensureUIHost(el: HTMLElement, theme?: VelaTheme): void {
     const root = el.getRootNode() as Document | ShadowRoot;
-    injectLayerOrder(root);
+    if (root instanceof Document || (typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot)) injectLayerOrder(root);
     injectStyles(STATIC_ID, STATIC_CSS, root);
     el.classList.add('vela-ui');
     if (theme) applyThemeTokens(el, theme);

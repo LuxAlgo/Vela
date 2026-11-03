@@ -1,20 +1,171 @@
-// Field VIEW — labeled row, section heading, and the typed-control factory.
-import type { VelaTheme } from '../../../core/options';
-import { injectStyles } from '../../styles';
-import { Switch } from '../switch';
-import { Select, type SelectListPopoverOpts, type SelectOption } from '../select';
-import { NumberInput } from '../number-input';
-import { TextField } from '../text-field';
-import { TextArea } from '../text-area';
-import { colorField, type ColorFieldOpts } from '../color-picker';
-import { widthField } from '../glyph-select';
-import { fieldGridColumns, type FieldGridVariant, type FieldLabelSize } from './controller';
-import { FIELD_CSS, FIELD_STYLE_ID } from './styles';
+// Field: the label-and-control grid the settings dialogs lay their inputs out on: rows (a
+// label and its control, an optional master toggle that dims the control, an optional info
+// mark), full-width toggles, stacked and inline rows, section headings and separators, and
+// a factory that builds a row's control from a descriptor. Rows use `display: contents`, so
+// their label and control sit on the grid's own tracks.
+import type { VelaTheme } from '../../core/options';
+import { injectStyles as injectSheet } from '../styles';
+import { css, defineStyles } from '../lib/css';
+import { defineComponent } from '../lib/define';
+import { t } from '../lib/t';
+import { colorField, type ColorFieldOpts } from './color-picker';
+import { widthField } from './glyph-select';
+import { NumberInput } from './number-input';
+import { Select, type SelectListPopoverOpts, type SelectOption } from './select';
+import { Switch } from './switch';
+import { TextArea } from './text-area';
+import { TextField } from './text-field';
 
-function ensureFieldStyles(doc: Document = document): void {
-    injectStyles(FIELD_STYLE_ID, FIELD_CSS, doc);
+export type FieldGridVariant = 'settings' | 'inputs';
+export type FieldLabelSize = 'sm' | 'md';
+
+/** Label↔control and between-row rhythm shared by the settings surfaces. */
+export const FIELD_GAP_PX = 16;
+
+/** Grid tracks for a field grid. Settings hugs both columns; inputs give leftover
+ *  space to the control column. Mobile flips the label to a flexible track. */
+export function fieldGridColumns(variant: FieldGridVariant, mobile: boolean): string {
+    if (variant === 'inputs') return mobile ? 'minmax(0,1fr) auto' : 'max-content 1fr';
+    return mobile ? 'minmax(0,1fr) max-content' : 'max-content max-content';
 }
 
+export const fieldDef = defineComponent({
+    name: 'field',
+    parts: ['grid', 'row', 'span', 'label', 'cell', 'bool', 'stacked', 'stacked-head', 'inline', 'inline-item', 'toggle-label', 'section', 'sep'],
+});
+
+type FieldPart = (typeof fieldDef.parts)[number];
+
+const GAP = `${FIELD_GAP_PX}px`;
+
+const injectFieldStyles = defineStyles(
+    'vela-ui-field',
+    css`
+        @layer vela.ui {
+            [data-slot~='field-grid'] {
+                align-items: center;
+                align-content: start;
+                column-gap: ${GAP};
+                row-gap: ${GAP};
+
+                &:where(:not([hidden])) {
+                    display: grid;
+                }
+                &[data-variant='inputs'] {
+                    grid-template-columns: max-content 1fr;
+                }
+                &[data-variant='inputs'][data-mobile] {
+                    grid-template-columns: minmax(0, 1fr) auto;
+                }
+                &[data-variant='settings'] {
+                    grid-template-columns: max-content max-content;
+                    column-gap: 12px;
+                }
+                &[data-variant='settings'][data-mobile] {
+                    grid-template-columns: minmax(0, 1fr) max-content;
+                }
+            }
+            [data-slot~='field-row']:where(:not([hidden])) {
+                display: contents;
+            }
+            [data-slot~='field-span'] {
+                grid-column: 1 / -1;
+            }
+            [data-slot~='field-label'] {
+                opacity: 0.9;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                font-size: 14px;
+
+                &[data-size='sm'] {
+                    font-size: inherit;
+                    opacity: 0.85;
+                }
+            }
+            /* Titles are fully inert: spans, not label[for] — native labels propagate :hover
+               and clicks onto their control, and both belong to the input alone. */
+            [data-slot~='field-cell'] {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                justify-self: start;
+            }
+            [data-slot~='field-bool']:where(:not([hidden])) {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                min-height: 22px;
+            }
+            [data-slot~='field-stacked']:where(:not([hidden])) {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            [data-slot~='field-stacked-head'] {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+            }
+            [data-slot~='field-inline']:where(:not([hidden])) {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 12px;
+            }
+            [data-slot~='field-inline-item'] {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            [data-slot~='field-toggle-label'] {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            [data-slot~='field-section'] {
+                grid-column: 1 / -1;
+                margin: 24px 0 0;
+                padding-bottom: 8px;
+                font-size: ${t.fontSize.sm};
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                color: ${t.fg.muted};
+
+                &[data-variant='inputs'] {
+                    margin: 0;
+                    padding: 20px 0 8px;
+                    font-size: 11px;
+                    font-weight: 600;
+                }
+                &[data-variant='inputs'][data-first] {
+                    padding-top: 4px;
+                }
+            }
+            [data-slot~='field-sep'] {
+                grid-column: 1 / -1;
+                height: 14px;
+            }
+        }
+    `,
+);
+
+/* A row's master toggle dims its controls. The dimmed state must beat every other style on
+   the control, the host's included, so it stays outside the layers and important. */
+const DIM_CSS = '.vela-field-dim { opacity: 0.4 !important; pointer-events: none !important; }';
+
+function injectStyles(doc: Document): void {
+    injectFieldStyles(doc);
+    injectSheet('vela-ui-field-dim', DIM_CSS, doc);
+}
+
+/** Give an element its field parts: the `vela-field-*` classes and the `data-slot` tokens. */
+function cls(el: HTMLElement, ...parts: FieldPart[]): void {
+    el.className = parts.map((p) => `vela-field-${p}`).join(' ');
+    el.setAttribute('data-slot', parts.map((p) => fieldDef.slot(p)).join(' '));
+}
 export interface FieldGridOptions {
     variant?: FieldGridVariant;
     mobile?: boolean;
@@ -22,9 +173,9 @@ export interface FieldGridOptions {
 
 /** Shared label/control grid. Rows with `display:contents` participate in these tracks. */
 export function fieldGrid(opts: FieldGridOptions = {}): HTMLElement {
-    ensureFieldStyles();
+    injectStyles(document);
     const el = document.createElement('div');
-    el.className = 'vela-field-grid';
+    cls(el, 'grid');
     const variant = opts.variant ?? 'inputs';
     el.dataset.variant = variant;
     if (opts.mobile) el.dataset.mobile = '';
@@ -39,9 +190,9 @@ export interface FieldSectionOptions {
 
 /** Uppercase group heading that spans the field grid. */
 export function fieldSection(title: string, opts: FieldSectionOptions = {}): HTMLElement {
-    ensureFieldStyles();
+    injectStyles(document);
     const el = document.createElement('div');
-    el.className = 'vela-field-section';
+    cls(el, 'section');
     if (opts.variant) el.dataset.variant = opts.variant;
     if (opts.first) el.dataset.first = '';
     el.textContent = title;
@@ -50,9 +201,9 @@ export function fieldSection(title: string, opts: FieldSectionOptions = {}): HTM
 
 /** Vertical breathing space between row clusters. */
 export function fieldSeparator(): HTMLElement {
-    ensureFieldStyles();
+    injectStyles(document);
     const el = document.createElement('div');
-    el.className = 'vela-field-sep';
+    cls(el, 'sep');
     return el;
 }
 
@@ -98,7 +249,7 @@ function labelEl(text: string, opts: { id?: string; size?: FieldLabelSize }): HT
     // clicks. Only the input itself is interactive. The a11y association a label would
     // have given lives on the control as `aria-labelledby` instead.
     const el = document.createElement('span');
-    el.className = 'vela-field-label';
+    cls(el, 'label');
     if (opts.size) el.dataset.size = opts.size;
     el.textContent = text;
     const id = opts.id;
@@ -131,15 +282,15 @@ function dimControls(controls: HTMLElement[], on: boolean): void {
 
 /** Label + control slot, optional master toggle, optional ⓘ. Grid-aware. */
 export function fieldRow(opts: FieldRowOptions): HTMLElement {
-    ensureFieldStyles();
+    injectStyles(document);
     const size = opts.labelSize;
 
     if (opts.inline) {
         const wrap = document.createElement('div');
-        wrap.className = 'vela-field-span vela-field-inline';
+        cls(wrap, 'span', 'inline');
         for (const item of opts.inline) {
             const it = document.createElement('div');
-            it.className = 'vela-field-inline-item';
+            cls(it, 'inline-item');
             if (item.toggleFirst) it.style.flexDirection = 'row-reverse';
             if (item.label) {
                 it.appendChild(labelEl(item.label, { id: item.id, size }));
@@ -160,7 +311,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
 
     if (opts.bool) {
         const wrap = document.createElement('div');
-        wrap.className = 'vela-field-span vela-field-bool';
+        cls(wrap, 'span', 'bool');
         const sw = new Switch({
             id: opts.toggle?.id ?? opts.id,
             checked: opts.toggle?.checked ?? false,
@@ -180,9 +331,9 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
 
     if (opts.stacked) {
         const wrap = document.createElement('div');
-        wrap.className = 'vela-field-span vela-field-stacked';
+        cls(wrap, 'span', 'stacked');
         const head = document.createElement('div');
-        head.className = 'vela-field-stacked-head';
+        cls(head, 'stacked-head');
         head.appendChild(labelEl(opts.label, { id: opts.id, size }));
         if (opts.info) head.appendChild(opts.info);
         wrap.appendChild(head);
@@ -192,12 +343,12 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
     }
 
     const wrap = document.createElement('div');
-    wrap.className = 'vela-field-row';
+    cls(wrap, 'row');
     const controls = asList(opts.control);
 
     if (opts.toggle) {
         const left = document.createElement('div');
-        left.className = 'vela-field-toggle-label';
+        cls(left, 'toggle-label');
         const sw = new Switch({
             id: opts.toggle.id ?? opts.id,
             checked: opts.toggle.checked,
@@ -224,7 +375,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
     }
 
     const cell = document.createElement('div');
-    cell.className = 'vela-field-cell';
+    cls(cell, 'cell');
     if (opts.controlWidth != null && controls.length === 1 && !opts.fit) {
         const cw = document.createElement('div');
         cw.style.width = `${opts.controlWidth}px`;

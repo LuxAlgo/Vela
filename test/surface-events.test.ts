@@ -12,7 +12,7 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 };
 
 import { Menu } from '../src/ui/components/menu/view';
-import { Popover, eventDismissedPopover } from '../src/ui/components/popover/view';
+import { Popover, eventDismissedPopover } from '../src/ui/components/popover';
 import { Dialog } from '../src/ui/components/dialog/view';
 import { Drawer } from '../src/ui/components/drawer/view';
 import { SidePanel } from '../src/widget/side-panel';

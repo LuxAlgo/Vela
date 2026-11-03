@@ -1,22 +1,140 @@
-// Popover VIEW — a positioned floating shell. Content is caller-owned; this class
-// owns portal, placement, capture-phase outside-dismiss, and the single-open registry.
-import type { VelaTheme } from '../../../core/options';
-import { injectStyles } from '../../styles';
-import { ensureUIHost, floatingLayerHost } from '../../tokens';
-import { announceSurface } from '../../surface-events';
-import { holdForExit, type SurfaceExit } from '../../surface-exit';
-import {
-    insetRect,
-    intersectRects,
-    placePopover,
-    popoverController,
-    viewportRect,
-    type PopoverAlign,
-    type PopoverControllerOptions,
-    type PopoverPosition,
-    type Rect,
-} from './controller';
-import { POPOVER_CSS, POPOVER_STYLE_ID } from './styles';
+// Popover: a positioned floating shell. Content is the caller's; the shell owns the portal,
+// the placement (below the trigger, flipping above near the clamp edge), the capture-phase
+// outside dismissal and the single-open registry. A component built on it (a select list, a
+// color picker) adds its own part to the shell's slot: `data-slot="popover-content
+// select-content"`, matched with `~=`.
+import type { VelaTheme } from '../../core/options';
+import { css, defineStyles } from '../lib/css';
+import { defineComponent } from '../lib/define';
+import { h } from '../lib/h';
+import { t } from '../lib/t';
+import { announceSurface } from '../surface-events';
+import { holdForExit, type SurfaceExit } from '../surface-exit';
+import { ensureUIHost, floatingLayerHost } from '../tokens';
+
+export type PopoverAlign = 'start' | 'end' | 'center';
+export type PopoverPosition = 'fixed' | 'absolute';
+
+/** Axis-aligned rectangle in viewport coordinates. */
+export interface Rect {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+}
+
+export interface PlaceArgs {
+    trigger: Rect;
+    pop: { width: number; height: number };
+    gap: number;
+    align: PopoverAlign;
+    /** Already-inset clamp rectangle in viewport coordinates. */
+    clamp: Rect;
+    /** Subtracted from left/top when the popover is `position:absolute` inside a host. */
+    originX: number;
+    originY: number;
+}
+
+export interface PlaceResult {
+    left: number;
+    top: number;
+}
+
+/** Inset a rectangle uniformly (positive inset shrinks). */
+export function insetRect(r: Rect, inset: number): Rect {
+    return {
+        left: r.left + inset,
+        top: r.top + inset,
+        right: r.right - inset,
+        bottom: r.bottom - inset,
+        width: r.width - inset * 2,
+        height: r.height - inset * 2,
+    };
+}
+
+/** Viewport rect with a uniform inset (the 6px air ColorField / glyph-select used). */
+export function viewportRect(width: number, height: number, inset: number): Rect {
+    return {
+        left: inset,
+        top: inset,
+        right: width - inset,
+        bottom: height - inset,
+        width: width - inset * 2,
+        height: height - inset * 2,
+    };
+}
+
+/** Intersection of two rects. Empty (non-positive size) if they don't overlap. */
+export function intersectRects(a: Rect, b: Rect): Rect {
+    const left = Math.max(a.left, b.left);
+    const top = Math.max(a.top, b.top);
+    const right = Math.min(a.right, b.right);
+    const bottom = Math.min(a.bottom, b.bottom);
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+/**
+ * Place a popover under `trigger`, flipping above when it would leave `clamp`.
+ * Prefers the side with more room when neither fully fits. `align: 'end'` right-aligns
+ * to the trigger (swatches and width fields sit at the row's right edge); `'center'`
+ * centers it on the trigger (a popup over a small glyph).
+ */
+export function placePopover(a: PlaceArgs): PlaceResult {
+    let left = a.align === 'end' ? a.trigger.right - a.pop.width : a.align === 'center' ? a.trigger.left + a.trigger.width / 2 - a.pop.width / 2 : a.trigger.left;
+    const below = a.trigger.bottom + a.gap;
+    const above = a.trigger.top - a.pop.height - a.gap;
+    const fitsBelow = below + a.pop.height <= a.clamp.bottom;
+    const fitsAbove = above >= a.clamp.top;
+    let top = below;
+    if (!fitsBelow && (fitsAbove || a.trigger.top - a.clamp.top > a.clamp.bottom - a.trigger.bottom)) {
+        top = Math.max(a.clamp.top, above);
+    }
+    if (left + a.pop.width > a.clamp.right) left = a.clamp.right - a.pop.width;
+    if (left < a.clamp.left) left = a.clamp.left;
+    if (top + a.pop.height > a.clamp.bottom) top = a.clamp.bottom - a.pop.height;
+    if (top < a.clamp.top) top = a.clamp.top;
+    return {
+        left: Math.round(left - a.originX),
+        top: Math.round(top - a.originY),
+    };
+}
+
+export interface PopoverControllerOptions {
+    gap?: number;
+    align?: PopoverAlign;
+    matchWidth?: boolean;
+    position?: PopoverPosition;
+    boundaryInset?: number;
+    viewportInset?: number;
+    onClose?: () => void;
+}
+
+export interface PopoverController {
+    gap: number;
+    align: PopoverAlign;
+    matchWidth: boolean;
+    position: PopoverPosition;
+    boundaryInset: number;
+    viewportInset: number;
+    onClose?: () => void;
+}
+
+/** The popover's placement options with their defaults, without DOM. */
+export function popoverController(opts: PopoverControllerOptions = {}): PopoverController {
+    return {
+        gap: opts.gap ?? 4,
+        align: opts.align ?? 'start',
+        matchWidth: opts.matchWidth ?? false,
+        position: opts.position ?? 'fixed',
+        boundaryInset: opts.boundaryInset ?? 0,
+        viewportInset: opts.viewportInset ?? 6,
+        onClose: opts.onClose,
+    };
+}
+
+export const popoverDef = defineComponent({ name: 'popover', parts: ['content'] });
 
 export type PopoverBoundary = 'viewport' | HTMLElement | (() => DOMRect | null);
 
@@ -27,12 +145,37 @@ export interface PopoverOptions extends PopoverControllerOptions {
     host?: HTMLElement;
     theme?: VelaTheme;
     className?: string;
+    /** The part a component built on the popover adds to the shell's slot. */
+    slot?: string;
     zIndex?: string | number;
     /** Clamp rectangle. `'viewport'` (default) or an element (dialog / chart host). */
     boundary?: PopoverBoundary;
     /** Fade the shell in on show and out on hide over this many ms (default 0 — instant). */
     fadeMs?: number;
 }
+
+export type PopoverProps = PopoverOptions;
+
+export const POPOVER_STYLE_ID = 'vela-ui-popover';
+
+export const POPOVER_CSS = css`
+    @layer vela.ui {
+        [data-slot~='popover-content'] {
+            position: fixed;
+            z-index: ${t.z.popover};
+            box-sizing: border-box;
+            /* Never serve as a scroll anchor: the shell is portaled and re-placed between
+               gestures, and anchoring against it jumps the scroller underneath. */
+            overflow-anchor: none;
+
+            &[data-position='absolute'] {
+                position: absolute;
+            }
+        }
+    }
+`;
+
+const injectStyles = defineStyles(POPOVER_STYLE_ID, POPOVER_CSS);
 
 let open: Popover | null = null;
 /** Closed popovers still playing their exit animation. */
@@ -76,7 +219,7 @@ export class Popover {
     readonly el: HTMLElement;
     readonly trigger: HTMLElement;
     private readonly host: HTMLElement;
-    private readonly ctrl: ReturnType<typeof popoverController>;
+    private readonly ctrl: PopoverController;
     private readonly boundary: PopoverBoundary;
     private readonly theme?: VelaTheme;
     /** Hosted under a `.vela-ui` we resolved ourselves — its tokens win over `theme`. */
@@ -93,7 +236,7 @@ export class Popover {
 
     constructor(opts: PopoverOptions) {
         const doc = opts.trigger.ownerDocument;
-        injectStyles(POPOVER_STYLE_ID, POPOVER_CSS, doc);
+        injectStyles(doc);
         this.trigger = opts.trigger;
         // No explicit host: portal to the trigger's `.vela-ui` (app-theme tokens) rather
         // than <body>. Explicit hosts (drawing chrome, mark popups) keep their own tokens.
@@ -104,9 +247,11 @@ export class Popover {
         this.theme = opts.theme;
         this.fadeMs = Math.max(0, opts.fadeMs ?? 0);
 
-        this.el = doc.createElement('div');
-        this.el.className = 'vela-popover vela-ui-layer' + (opts.className ? ` ${opts.className}` : '');
-        this.el.dataset.position = this.ctrl.position;
+        this.el = h('div', {
+            className: 'vela-popover vela-ui-layer' + (opts.className ? ` ${opts.className}` : ''),
+            slot: opts.slot ? `${popoverDef.slot('content')} ${opts.slot}` : popoverDef.slot('content'),
+            data: { position: this.ctrl.position },
+        });
         if (opts.zIndex !== undefined) this.el.style.zIndex = String(opts.zIndex);
         // Clicks inside must not bubble to a dialog's outside-dismiss.
         this.el.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -158,8 +303,8 @@ export class Popover {
         // place() measured the shell (a style flush at opacity 0) — flipping it now runs the transition.
         if (this.fadeMs > 0) this.el.style.opacity = '1';
         const onOutside = (ev: Event): void => {
-            const t = ev.target as Node;
-            if (this.el.contains(t) || this.trigger.contains(t)) return;
+            const target = ev.target as Node;
+            if (this.el.contains(target) || this.trigger.contains(target)) return;
             // Mark the event: it spent itself dismissing this popover, so listeners
             // further down the path (a dialog backdrop) must not ALSO dismiss on it.
             markPopoverDismiss(ev);
@@ -273,4 +418,8 @@ export class Popover {
         this.el.style.left = `${pos.left}px`;
         this.el.style.top = `${pos.top}px`;
     }
+}
+
+export function createPopover(props: PopoverProps): Popover {
+    return new Popover(props);
 }

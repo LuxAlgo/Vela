@@ -1,20 +1,141 @@
-// Color-picker VIEW — swatch grid + recents + opacity slider, plus the field trigger.
-import type { VelaTheme } from '../../../core/options';
-import { ACCENT, BEARISH, BULLISH, NEUTRAL, WARNING } from '../../../core/palette';
-import { injectStyles } from '../../styles';
-import { Popover, closeOpenPopovers, openPopoverTrigger, type PopoverBoundary, type PopoverOptions } from '../popover';
-import {
-    buildPalette,
-    combineColor,
-    splitColor,
-    transparencyChecker,
-    type ColorFieldShape,
-} from './controller';
-import { COLOR_CSS, COLOR_STYLE_ID } from './styles';
-import { msg } from '../../../core/i18n/message';
-import { textOf } from '../../../core/i18n/text';
-import type { Translator } from '../../../core/i18n/types';
-import { kitTranslator } from '../../kit-text';
+// ColorPicker: a swatch grid (grays, then hue × shade), a recents row with a custom "+"
+// chooser, and an opacity slider over a transparency checker; and ColorField, the swatch
+// button that opens it on a popover. Colors travel as `#RRGGBB` / `#RRGGBBAA`.
+import { ACCENT, ACCENT_BRIGHT, BEARISH, BULLISH, NEUTRAL, WARNING } from '../../core/palette';
+import { msg } from '../../core/i18n/message';
+import { textOf } from '../../core/i18n/text';
+import type { Translator } from '../../core/i18n/types';
+import type { VelaTheme } from '../../core/options';
+import { kitTranslator } from '../kit-text';
+import { css, defineStyles } from '../lib/css';
+import { defineComponent } from '../lib/define';
+import { h } from '../lib/h';
+import { t } from '../lib/t';
+import { Popover, closeOpenPopovers, openPopoverTrigger, type PopoverBoundary, type PopoverOptions } from './popover';
+
+/** Split a color into its `#RRGGBB` part + alpha 0..1 (handles `#RGB`, `#RRGGBB(AA)`, `rgba()`). */
+export function splitColor(color: string): { hex6: string; alpha: number } {
+    const s = String(color ?? '').trim();
+    let m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(s);
+    if (m) return { hex6: `#${m[1]!.toLowerCase()}`, alpha: m[2] ? parseInt(m[2], 16) / 255 : 1 };
+    m = /^#([0-9a-f]{3})$/i.exec(s);
+    if (m) {
+        const x = m[1]!.toLowerCase();
+        return { hex6: `#${x[0]}${x[0]}${x[1]}${x[1]}${x[2]}${x[2]}`, alpha: 1 };
+    }
+    const rgba = /^rgba?\(([^)]+)\)/i.exec(s);
+    if (rgba) {
+        const p = rgba[1]!.split(',').map((v) => v.trim());
+        const hx = (n: number): string => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+        const a = p[3] != null ? Math.max(0, Math.min(1, parseFloat(p[3]))) : 1;
+        return { hex6: `#${hx(parseInt(p[0] ?? '0', 10))}${hx(parseInt(p[1] ?? '0', 10))}${hx(parseInt(p[2] ?? '0', 10))}`, alpha: a };
+    }
+    return { hex6: ACCENT_BRIGHT, alpha: 1 };
+}
+
+/** Combine a `#RRGGBB` + alpha into `#RRGGBB` (opaque) or `#RRGGBBAA`. */
+export function combineColor(hex6: string, alpha: number): string {
+    const a = Math.max(0, Math.min(1, alpha));
+    if (a >= 0.999) return hex6;
+    return `${hex6}${Math.round(a * 255)
+        .toString(16)
+        .padStart(2, '0')}`;
+}
+
+/** Composite `fg` over `bg` at `alpha`, returning an opaque `#rrggbb`. */
+export function blendOver(fg: string, bg: string, alpha: number): string {
+    const rgb = (c: string): [number, number, number] => {
+        const n = parseInt(splitColor(c).hex6.slice(1), 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    };
+    const [fr, fgc, fb] = rgb(fg);
+    const [br, bgc, bb] = rgb(bg);
+    const a = Math.max(0, Math.min(1, alpha));
+    const hx = (n: number): string => Math.round(n).toString(16).padStart(2, '0');
+    return `#${hx(fr * a + br * (1 - a))}${hx(fgc * a + bgc * (1 - a))}${hx(fb * a + bb * (1 - a))}`;
+}
+
+/** HSL (h 0-360, s/l 0-100) → `#rrggbb`. */
+export function hslHex(hue: number, s: number, l: number): string {
+    const sn = s / 100;
+    const ln = l / 100;
+    const k = (n: number): number => (n + hue / 30) % 12;
+    const a = sn * Math.min(ln, 1 - ln);
+    const f = (n: number): number => ln - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    const to = (x: number): string => Math.round(x * 255).toString(16).padStart(2, '0');
+    return `#${to(f(0))}${to(f(8))}${to(f(4))}`;
+}
+
+/** A swatch palette: a grayscale row, then hue columns × shade rows. */
+export function buildPalette(): string[][] {
+    const grays = [100, 90, 80, 68, 56, 45, 35, 25, 14, 0].map((l) => hslHex(0, 0, l));
+    const hues = [4, 28, 50, 96, 140, 174, 200, 224, 270, 322];
+    const levels: Array<[number, number]> = [
+        [82, 56],
+        [58, 84],
+        [62, 74],
+        [66, 62],
+        [70, 50],
+        [64, 39],
+        [54, 29],
+    ];
+    return [grays, ...levels.map(([s, l]) => hues.map((hue) => hslHex(hue, s, l)))];
+}
+
+/** The alpha checkerboard laid under translucent colors. Its grays are fixed on purpose:
+ *  it stands for "nothing here", so it must not shift with the theme. */
+export function transparencyChecker(size: number): string {
+    return `repeating-conic-gradient(#9aa0a6 0% 25%, #d3d6da 0% 50%) 0 0 / ${size}px ${size}px`; // palette-exempt: these grays stand for transparency itself
+}
+
+export type ColorFieldShape = 'square' | 'circle';
+
+export interface ColorPickerControllerOptions {
+    color?: string;
+    onChange?: (value: string) => void;
+}
+
+export interface ColorPickerController {
+    hex6: string;
+    alpha: number;
+    combined(): string;
+    setHex(hex: string): void;
+    setAlpha(a: number): void;
+}
+
+/** The picked color as a hex part and an opacity, without DOM. */
+export function colorPickerController(opts: ColorPickerControllerOptions = {}): ColorPickerController {
+    const parsed = splitColor(opts.color ?? ACCENT_BRIGHT);
+    let hex6 = parsed.hex6;
+    let alpha = parsed.alpha;
+    return {
+        get hex6() {
+            return hex6;
+        },
+        get alpha() {
+            return alpha;
+        },
+        combined() {
+            return combineColor(hex6, alpha);
+        },
+        setHex(hex: string) {
+            hex6 = splitColor(hex).hex6;
+        },
+        setAlpha(a: number) {
+            alpha = Math.max(0, Math.min(1, a));
+        },
+    };
+}
+
+export const colorPickerDef = defineComponent({
+    name: 'color-picker',
+    parts: ['root', 'trigger', 'swatch', 'content'],
+    settings: {
+        'swatch-ring': 'inset 0 0 0 1px rgba(0, 0, 0, 0.25)',
+        'circle-swatch-radius': '2px',
+        'content-radius': t.radius.lg,
+    },
+});
 
 const TEXT = {
     opacity: msg('ui.colorPicker.opacity', 'Opacity'),
@@ -50,6 +171,58 @@ export interface ColorPickerOptions {
     i18n?: Translator | null;
 }
 
+const injectStyles = defineStyles(
+    'vela-ui-color',
+    css`
+        @layer vela.ui {
+            [data-slot='color-picker-swatch'] {
+                display: block;
+                width: 100%;
+                height: 100%;
+                border-radius: 0;
+                box-shadow: ${colorPickerDef.vars['swatch-ring']};
+            }
+            [data-slot='color-picker-trigger'] {
+                width: 24px;
+                height: 24px;
+                padding: 2px;
+                border: 1px solid ${t.border};
+                border-radius: 0;
+                background: ${t.surface.sunken};
+                cursor: pointer;
+                flex: none;
+
+                &:where(:not([hidden])) {
+                    display: inline-flex;
+                }
+                &:where([data-shape='circle']) {
+                    width: 26px;
+                    height: 26px;
+                    padding: 3px;
+                    border: 1px solid ${t.border.strong};
+                    border-radius: ${t.radius.sm};
+                    background: transparent;
+                    overflow: hidden;
+                }
+                &:hover {
+                    border-color: ${t.fg.muted};
+                }
+                &:where([data-shape='circle']) [data-slot='color-picker-swatch'] {
+                    border-radius: ${colorPickerDef.vars['circle-swatch-radius']};
+                    box-shadow: none;
+                }
+            }
+            [data-slot~='color-picker-content'] {
+                background: ${t.surface.overlay};
+                border: 1px solid ${t.border};
+                border-radius: ${colorPickerDef.vars['content-radius']};
+                box-shadow: ${t.shadow};
+                padding: 10px;
+            }
+        }
+    `,
+);
+
 /**
  * A self-contained color picker: a swatch grid (grays + hue × shade), a
  * recents row with a custom "+" picker, and an opacity slider over a transparency checker.
@@ -63,6 +236,7 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
     let curAlpha = parsed.alpha;
 
     const root = document.createElement('div');
+    root.dataset.slot = colorPickerDef.slot('root');
     root.style.cssText = 'display:flex;flex-direction:column;gap:9px;width:236px;';
 
     const grid = document.createElement('div');
@@ -243,6 +417,8 @@ export interface ColorFieldOpts {
     i18n?: Translator | null;
 }
 
+export type ColorFieldProps = ColorFieldOpts;
+
 /** Closed-state swatch shape. `circle` is the settings-dialog preview (a square chip
  *  inset from a matching field border); `square` is the compact drawing-chrome swatch. */
 export function colorField(
@@ -265,7 +441,7 @@ export class ColorField {
     private readonly i18n: Translator | null;
 
     constructor(opts: ColorFieldOpts) {
-        injectStyles(COLOR_STYLE_ID, COLOR_CSS, document);
+        injectStyles(document);
         this.theme = opts.theme;
         this.getVal = opts.getVal;
         this.onVal = opts.onVal;
@@ -273,13 +449,18 @@ export class ColorField {
         this.commit = opts.commit;
         this.i18n = opts.i18n ?? kitTranslator();
 
-        const trigger = document.createElement('button');
-        trigger.type = 'button';
-        if (opts.id) trigger.id = opts.id;
-        trigger.className = opts.shape === 'circle' ? 'vela-color-field vela-color-field-circle' : 'vela-color-field';
-        const swatch = document.createElement('span');
-        swatch.className = 'vela-color-field-swatch';
-        trigger.appendChild(swatch);
+        const circle = opts.shape === 'circle';
+        const swatch = h('span', { className: 'vela-color-field-swatch', slot: colorPickerDef.slot('swatch') });
+        const trigger = h(
+            'button',
+            {
+                className: circle ? 'vela-color-field vela-color-field-circle' : 'vela-color-field',
+                slot: colorPickerDef.slot('trigger'),
+                attrs: { type: 'button', id: opts.id },
+                data: { shape: opts.shape ?? 'square' },
+            },
+            swatch,
+        );
         this.el = trigger;
         this.swatch = swatch;
         this.paint();
@@ -295,6 +476,8 @@ export class ColorField {
             this.toggle();
         });
     }
+
+    destroy(): void {}
 
     private paint(): void {
         const v = this.getVal();
@@ -316,6 +499,7 @@ export class ColorField {
             boundary: this.popoverOpts?.boundary as PopoverBoundary | undefined,
             zIndex: this.popoverOpts?.zIndex,
             className: 'vela-color-field-pop',
+            slot: colorPickerDef.slot('content'),
             content: buildColorPicker(
                 this.getVal(),
                 this.theme,
@@ -328,6 +512,10 @@ export class ColorField {
         });
         pop.show();
     }
+}
+
+export function createColorField(props: ColorFieldProps): ColorField {
+    return new ColorField(props);
 }
 
 /** Close any open color (or other kit) popover — dialog teardown. */

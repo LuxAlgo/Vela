@@ -13,6 +13,8 @@ export default {
         // Interpolated values reach it as placeholders it cannot know; vela/token-values and
         // the typed tokens check them instead.
         'declaration-property-value-no-unknown': null,
+        // `${t.font}` already ends in a generic family.
+        'font-family-no-missing-generic-family-keyword': [true, { ignoreFontFamilies: ['/^POSTCSS_LIT_\\d+$/'] }],
 
         // Colors come from tokens.
         'color-no-hex': true,
