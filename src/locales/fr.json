@@ -1974,6 +1974,7 @@
     "ui.menu.removeFavorite": "Retirer des favoris",
     "ui.numberInput.decrease": "Diminuer",
     "ui.numberInput.increase": "Augmenter",
+    "vela.sidebar.label": "Barre latérale",
     "widget.bottombar.chartSettings": "Paramètres du graphique",
     "widget.bottombar.extended": "ETH",
     "widget.bottombar.range.1d": "1D",

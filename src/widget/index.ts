@@ -12,6 +12,17 @@ export {
     type TopbarComposition,
     type ResolvedTopbarComposition,
 } from './topbar-composition';
+export {
+    composeSidebar,
+    SIDEBAR_DEFAULT_TOP,
+    SIDEBAR_DEFAULT_BOTTOM,
+    SIDEBAR_PANELS_SLOT,
+    SIDEBAR_ACTIONS_SLOT,
+    SIDEBAR_SEPARATOR,
+    type SidebarComposition,
+    type SidebarSource,
+    type SidebarLayout,
+} from './sidebar-composition';
 export { Statusline, type StatuslineMenuHooks, type StatuslinePart } from './statusline';
 export { Watermark } from './watermark';
 export { Bottombar, RANGE_PRESETS, type BottombarOptions, type RangePreset } from './bottombar';
@@ -60,6 +71,7 @@ export {
     type SidePanelDescriptor,
     type SidePanelHandle,
     type SidePanelButton,
+    type SidebarControl,
 } from './contributions';
 export { parseTimeframe, timeframeMs, timeframeLabel, type ParsedTimeframe } from './timeframe';
 export { TIMEZONES, normalizeTimezone, tzOffset, tzMenuLabel, tzButtonLabel, type TimezoneEntry } from './timezones';

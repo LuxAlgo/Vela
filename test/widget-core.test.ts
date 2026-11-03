@@ -433,6 +433,24 @@ describe('legend action contributions', () => {
         expect(seen[0]?.source).toBe('v2');
         unregisterLegendAction('src-live');
     });
+
+    it('the row info names the engine language — the gate for an action only one language supports', () => {
+        const seen: LegendIndicatorInfo[] = [];
+        registerLegendAction({ id: 'pine-editor', icon: 'code', tooltip: 'Edit', when: (ind) => ind.language === 'pine', run: (_ctx, ind) => void seen.push(ind) });
+        const chart = {
+            indicators: () => [
+                { id: 'ind-1', title: 'EMA', source: 'plot(close)', language: 'pine' },
+                { id: 'ind-2', title: 'Remote', source: 'pointer', language: 'other' },
+                { id: 'native-1', title: 'Volume', nativeType: 'volume' },
+            ],
+        } as never;
+        const provider = legendActionsProviderFor(chart, () => ({}) as never);
+        expect(provider('ind-2')).toHaveLength(0); // another engine's script
+        expect(provider('native-1')).toHaveLength(0); // a native has no language
+        provider('ind-1')[0]!.run();
+        expect(seen).toEqual([{ id: 'ind-1', title: 'EMA', source: 'plot(close)', language: 'pine' }]);
+        unregisterLegendAction('pine-editor');
+    });
 });
 
 describe('glide math (reference port)', () => {

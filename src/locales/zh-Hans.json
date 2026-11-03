@@ -1974,6 +1974,7 @@
     "ui.menu.removeFavorite": "从收藏中移除",
     "ui.numberInput.decrease": "减少",
     "ui.numberInput.increase": "增加",
+    "vela.sidebar.label": "侧边栏",
     "widget.bottombar.chartSettings": "图表设置",
     "widget.bottombar.extended": "ETH",
     "widget.bottombar.range.1d": "1D",

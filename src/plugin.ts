@@ -153,7 +153,15 @@ export {
     type SidePanelHandle,
     type SidePanelHeader,
     type SidePanelButton,
+    type TopbarItems,
+    type TopbarItemId,
+    type PanelDockView,
+    type DockedPanelInfo,
+    type DockStripOptions,
+    type DockedStrip,
+    type SidebarControl,
 } from './widget/contributions';
+export { composeSidebar, SIDEBAR_DEFAULT_TOP, SIDEBAR_DEFAULT_BOTTOM, type SidebarComposition } from './widget/sidebar-composition';
 // Where the built-in right-click rows sit in the sort `context:*` actions share with them.
 export { CONTEXT_MENU_BUILTIN_ORDER } from './widget/context-menu-model';
 // A plugin panel gets the shell's own column; these bounds are what `resizable` clamps to.

@@ -1978,6 +1978,7 @@ export interface VelaCoreMessageCatalog {
     'ui.menu.removeFavorite': string;
     'ui.numberInput.decrease': string;
     'ui.numberInput.increase': string;
+    'vela.sidebar.label': string;
     'widget.bottombar.chartSettings': string;
     'widget.bottombar.extended': string;
     'widget.bottombar.range.1d': string;

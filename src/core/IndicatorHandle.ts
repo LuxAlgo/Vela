@@ -32,6 +32,11 @@ export interface IndicatorHandle {
     /** The registered type of a NATIVE (core-computed) indicator — `undefined` for a
      *  script indicator. The two are exclusive: a handle has a `source` or a `nativeType`. */
     readonly nativeType?: string;
+    /** The language id of the engine running this script indicator (e.g. `'pine'`): the
+     *  `language` option it was added with, else the chart's `defaultLanguage`. Fixed for
+     *  the indicator's life ({@link updateCode} keeps it); `undefined` for a NATIVE
+     *  indicator. What a host gates language-specific tooling on, synchronously. */
+    readonly language?: string;
     /** Inputs parsed from the Pine source (populated once the script is prepared). */
     readonly inputs: readonly InputSchema[];
     /** Declaration-props schema (a strategy's `initial_capital`, an indicator's

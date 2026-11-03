@@ -94,6 +94,7 @@ What `addIndicator` returns. Usable immediately.
 | `title` | Display title (overridable via the `title` option). |
 | `source` | The script source the indicator currently runs — the one it was added with, until `updateCode` replaces it; `undefined` for a native indicator. |
 | `nativeType` | The registered type of a native indicator (`'volume'`, `'sma'`, …); `undefined` for a script indicator. A handle has one of `source` or `nativeType`, never both. |
+| `language` | The language id of the engine running a script indicator (`'pine'`, …): the `language` option it was added with, else the chart's `defaultLanguage`. Available as soon as `addIndicator` returns, and `updateCode` keeps it. `undefined` for a native indicator. Use it to offer language-specific tools, such as an editor, only on the scripts they support. |
 | `inputs` | The inputs parsed from the script source — each with a `key`, `title`, `type`, `defval`, and optional `min`/`max`/`step`/`options`/`group`/`inline`/`tab`/`tooltip`. Populated once the script is prepared. |
 | `props` | The script's declaration properties (a strategy's `initial_capital`, an indicator's `precision`, …) in the same schema shape as `inputs`. Empty when the engine exposes none. |
 | `visible` | Whether the indicator is currently shown. |

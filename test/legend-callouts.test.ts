@@ -63,7 +63,7 @@ describe('legend callout contributions', () => {
 
         const chart = {
             indicators: () => [
-                { id: 'ind-1', title: 'EMA', source: 'plot(close)' },
+                { id: 'ind-1', title: 'EMA', source: 'plot(close)', language: 'pine' },
                 { id: 'native-1', title: 'Volume' }, // a native: no source
             ],
         } as never;
@@ -82,7 +82,7 @@ describe('legend callout contributions', () => {
         if (button.type !== 'button') throw new Error('expected a button item');
         button.run();
         button.run();
-        expect(seen[0]).toEqual({ id: 'ind-1', title: 'EMA', source: 'plot(close)' });
+        expect(seen[0]).toEqual({ id: 'ind-1', title: 'EMA', source: 'plot(close)', language: 'pine' });
         expect(ctxs).toEqual([{ built: 1 }, { built: 2 }]); // never a cached context
 
         unregisterLegendCallout('status');
