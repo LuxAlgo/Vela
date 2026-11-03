@@ -110,9 +110,9 @@ class is the instance the function returns. New components start from the shape 
   colors, no class or id selectors, no `!important`, no
   `box-sizing: content-box` (the kit's border-box reset is unlayered: size the full box
   instead). A template the parser cannot read fails the run instead of going unchecked.
-- The build flattens the nesting (Lightning CSS) for the browsers that brought `@layer`:
-  Chrome and Edge 99, Firefox 97, Safari 15.4. The tests and the playground run the nested
-  source.
+- The kit supports the browsers that brought `color-mix()`, which its tints use: Chrome and
+  Edge 111, Firefox 113, Safari 16.2. The build flattens the nesting for them (Lightning CSS),
+  as nesting came later; the tests and the playground run the nested source.
 - Three rules stay outside the layer on purpose, each next to a comment saying why: the
   kit's border-box reset, the field rows' dimmed state, and the reset of a dragged dialog's
   offset in the mobile layout.

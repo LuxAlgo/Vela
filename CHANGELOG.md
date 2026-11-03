@@ -90,6 +90,10 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The UI kit states the browsers it supports**: Chrome and Edge 111, Firefox 113, Safari
+  16.2, the first with `color-mix()`, which its tints (destructive buttons, badges, the
+  selected tab) and parts of the chart's chrome already used. On older browsers those tints
+  show no fill.
 - **Theme tokens are a stylesheet rule.** The chart writes its theme once per page in the
   `vela.theme` cascade layer, keyed by a `data-vela-theme` attribute, instead of inline
   styles on every element of its chrome. A page's own CSS now overrides any token without
