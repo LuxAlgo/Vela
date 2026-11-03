@@ -19,6 +19,8 @@
     },
     "./package.json": "./package.json",
     "./themes/*.css": "./dist/themes/*.css",
+    "./manifest.json": "./dist/manifest.json",
+    "./theme.schema.json": "./dist/theme.schema.json",
     "./*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*.js"
@@ -27,11 +29,13 @@
   "files": [
     "dist",
     "src",
+    "docs",
+    "llms.txt",
     "LICENSE",
     "NOTICE"
   ],
   "scripts": {
-    "build": "tsup"
+    "build": "tsup && node scripts/build-reference.mjs"
   },
   "dependencies": {
     "@zag-js/core": "^1.42.0",

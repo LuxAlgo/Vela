@@ -71,6 +71,12 @@ All notable changes to Vela, newest first.
   variants and states. The parts are typed. CSS not written with the `css` tag, like a theme
   loaded from a saved file, is left out unless the host passes `{ allowCss: true }`. The
   gallery's "shadcn look" rebuilds shadcn's buttons and tabs this way, from a theme alone.
+- **The UI kit ships its own reference.** `@luxalgo/vela-ui` carries, versioned with its
+  code, a manifest of every component (`@luxalgo/vela-ui/manifest.json`: its import, props,
+  variants, parts and their slots, settings, the tokens it reads, an example), the JSON
+  Schema of a theme written to a file (`@luxalgo/vela-ui/theme.schema.json`), its guides
+  (theming, what to change and where, writing a component) and an `llms.txt` index for
+  coding agents. All of it is generated from the source, so it cannot drift.
 
 ### Changed
 

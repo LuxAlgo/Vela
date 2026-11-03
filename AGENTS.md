@@ -179,8 +179,10 @@ descriptors working when multiple charts exist.
   root its `display` under `:where(:not([hidden]))` (kit CSS has no `!important`).
 - Components live in the `@luxalgo/vela-ui` workspace package, one file each
   (`packages/vela-ui/src/components/<name>.ts`: declaration, variants, CSS
-  in `@layer vela.ui`, a `create…` function), documented in
-  `docs/contributing/adding-a-ui-component.md`; `npm run lint` checks their CSS.
+  in `@layer vela.ui`, a `create…` function). The package's own `AGENTS.md` and
+  `docs/writing-a-component.md` hold the authoring rules; Vela's side (where each component
+  is used, how Vela exports it) is `docs/contributing/adding-a-ui-component.md`.
+  `npm run lint` checks their CSS.
 
 **Interface text.**
 
