@@ -2,6 +2,7 @@
 // Themes: createTheme builds every token from a few choices, applyTheme writes it once per
 // document in the theme layer, and Vela takes a theme by value or by registered id.
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { css } from '@luxalgo/vela-ui';
 import { applyTheme, checkTheme, createTheme, DARK_CHART, LIGHT_CHART, themeCss, TOKEN_NAMES } from '@luxalgo/vela-ui/theme';
 import { STATIC_TOKENS, themeTokens } from '../src/core/tokens';
 import { DARK_THEME, LIGHT_THEME, registeredThemeIdOf, registeredThemes, registerTheme, resolveTheme } from '../src/core/theme';
@@ -72,6 +73,77 @@ describe('createTheme', () => {
         createTheme({ components: { button: { 'track-radius': '4px' } } });
         // @ts-expect-error -- a component that does not exist
         createTheme({ components: { gauge: { radius: '4px' } } });
+    });
+});
+
+describe('part css', () => {
+    const scope = (id: string, slot: string) => `:where([data-vela-theme="${id}"], [data-vela-theme="${id}"] *):is([data-slot~="${slot}"]):where(:not([hidden]))`;
+
+    it("restyles a component's parts in the custom layer, under the theme, flattened", () => {
+        const theme = createTheme({
+            components: {
+                button: {
+                    radius: '999px',
+                    css: {
+                        root: css`
+                            text-transform: uppercase;
+                            &[data-variant='outline'] { border-width: 2px; }
+                            &:hover:not(:disabled), &[aria-expanded='true'] { transform: translateY(-1px); }
+                            span { color: red; }
+                            @media (prefers-reduced-motion: reduce) { transition: none; }
+                        `,
+                        icon: css`order: 1;`,
+                    },
+                },
+            },
+        });
+        const root = scope(theme.id, 'button');
+        const out = themeCss(theme);
+        expect(out).toContain('--vela-button-radius: 999px;');
+        const custom = out.slice(out.indexOf('@layer vela.custom'));
+        expect(custom).toContain(`${root} { text-transform: uppercase; }`);
+        expect(custom).toContain(`${root}[data-variant='outline'] { border-width: 2px; }`);
+        expect(custom).toContain(`${root}:hover:not(:disabled), ${root}[aria-expanded='true'] { transform: translateY(-1px); }`);
+        expect(custom).toContain(`${root} span { color: red; }`);
+        expect(custom).toContain(`@media (prefers-reduced-motion: reduce) { ${root} { transition: none; } }`);
+        expect(custom).toContain(`${scope(theme.id, 'button-icon')} { order: 1; }`);
+        expect(custom).not.toContain('&');
+        // @ts-expect-error -- a part the button does not declare
+        createTheme({ components: { button: { css: { icn: css`order: 1;` } } } });
+    });
+
+    it('leaves out CSS loaded from data unless the host allows it', () => {
+        const fromData = JSON.parse('{"components":{"button":{"radius":"2px","css":{"root":"text-transform: lowercase;"}}}}');
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const off = createTheme(fromData);
+        expect(off.css).toEqual({});
+        expect(off.components).toEqual({ button: { radius: '2px' } });
+        expect(String(warn.mock.calls[0]![0])).toContain('components.button.css.root was not written with the css tag');
+        warn.mockRestore();
+        const on = createTheme(fromData, { allowCss: true });
+        expect(on.css).toEqual({ button: { root: 'text-transform: lowercase;' } });
+        // A surface recolor rebuilds the theme from its settings and keeps the accepted CSS.
+        const host = document.body.appendChild(document.createElement('div'));
+        const rebased = applyTheme(host, { ...resolveTheme(on), background: '#ffffff', textColor: '#1e293b' });
+        expect(rebased.css).toEqual(on.css);
+    });
+
+    it('leaves out page-wide at-rules, and says so', () => {
+        const text = css`
+            animation: pop 150ms;
+            @keyframes pop { from { opacity: 0; } to { opacity: 1; } }
+        `;
+        const theme = createTheme({ components: { badge: { css: { root: text } } } });
+        expect(themeCss(theme)).not.toContain('@keyframes');
+        expect(themeCss(theme)).toContain('animation: pop 150ms;');
+        expect(checkTheme({ components: { badge: { css: { root: text } } } }).some((p) => p.includes('declares @keyframes'))).toBe(true);
+    });
+
+    it('flags !important and class names', () => {
+        const problems = checkTheme({ components: { tabs: { css: { trigger: css`color: red !important; & .vela-tabs-label { color: blue; }` } } } });
+        expect(problems.some((p) => p.includes('!important'))).toBe(true);
+        expect(problems.some((p) => p.includes('class name'))).toBe(true);
+        expect(checkTheme({ components: { tabs: { css: { trigger: css`transition: opacity .2s; &[data-selected] { font-size: 1.5em; }` } } } })).toEqual([]);
     });
 });
 

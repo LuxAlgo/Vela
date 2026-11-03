@@ -31,6 +31,7 @@ import {
     type MenuItemDescriptor,
 } from '../src/ui';
 import { DARK_THEME, LIGHT_THEME } from '../src/core/theme';
+import { shadcnTheme } from './shadcn-look';
 
 const app = document.getElementById('app')!;
 ensureUIHost(app, DARK_THEME);
@@ -64,9 +65,13 @@ header.append(
         items: [
             { value: 'dark', label: 'Dark' },
             { value: 'light', label: 'Light' },
+            { value: 'shadcn', label: 'shadcn look' },
         ],
         defaultValue: 'dark',
-        onValueChange: (id) => ensureUIHost(app, id === 'light' ? LIGHT_THEME : DARK_THEME),
+        onValueChange: (id) => {
+            app.classList.toggle('shadcn', id === 'shadcn');
+            ensureUIHost(app, id === 'shadcn' ? shadcnTheme : id === 'light' ? LIGHT_THEME : DARK_THEME);
+        },
     }).el,
 );
 app.append(header, el('p', 'lead', 'One file per component: typed variants, Zag machines for behavior, and CSS in the kit layer over the theme tokens; variant and size names follow shadcn. The symbol picker and drawings drawer tabs, the indicator settings tabs, and the indicator and drawing settings footers render through these.'));

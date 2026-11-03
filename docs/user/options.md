@@ -436,6 +436,34 @@ A theme object can carry the same settings under `ui`: `{ ...DARK_THEME, ui: { a
 it cannot derive from, text with too little contrast), and `createTheme` warns about each
 in the console.
 
+When settings are not enough, a component's `css` restyles its parts completely: each part's
+CSS, written with the `css` tag, applies to that part wherever the theme does, after every
+other layer of the kit. `&` is the part, so its variants and states follow it:
+
+```js
+import { createTheme, css } from '@luxalgo/vela/ui';
+
+const theme = createTheme({
+  components: {
+    button: {
+      css: {
+        root: css`
+          text-transform: uppercase;
+          &[data-variant='outline'] { border-width: 2px; }
+        `,
+        icon: css`order: 1;`,
+      },
+    },
+  },
+});
+```
+
+Parts, `data-variant`, `data-size` and the state attributes (`data-selected`,
+`data-disabled`) are the contract; class names are not, and `checkTheme` flags them. CSS that
+was not written with the `css` tag, like a theme loaded from a saved JSON, is left out unless
+you pass `createTheme(input, { allowCss: true })`: CSS from someone else can restyle the page
+to mislead or load remote images.
+
 The theme is written once per page in the `vela.theme` cascade layer, keyed by a
 `data-vela-theme` attribute, so your own CSS overrides any token without `!important`:
 

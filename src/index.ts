@@ -32,7 +32,16 @@ export { lowerTimeframeTicks, barsToTicks } from './core/replayTicks';
 export { registerNativeIndicator, unregisterNativeIndicator, getNativeIndicator, nativeIndicatorTypes, nativeIndicatorDescriptors } from './core/native-indicators';
 export type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor, NativeIndicatorInfo, NativeIndicatorOutput } from './core/native-indicators';
 export { DARK_THEME, LIGHT_THEME, resolveTheme, registerTheme, registeredThemes, type RegisteredTheme } from './core/theme';
-export { createTheme, checkTheme, type UiTheme, type ThemeInput, type ThemeSettings, type ComponentSettings, type TokenName } from '@luxalgo/vela-ui/theme';
+export {
+    createTheme,
+    checkTheme,
+    type UiTheme,
+    type ThemeInput,
+    type ThemeSettings,
+    type CreateThemeOptions,
+    type ComponentSettings,
+    type TokenName,
+} from '@luxalgo/vela-ui/theme';
 export { TypedEventBus } from './core/events/EventBus';
 
 // User drawings (model + registry + persistence; renderer-agnostic)

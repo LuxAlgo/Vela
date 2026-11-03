@@ -64,6 +64,13 @@ All notable changes to Vela, newest first.
   theme gets wrong (unknown tokens, colors it cannot derive from, text with too little
   contrast), and `createTheme` warns about each. A page using the kit without Vela can link
   the built-in themes as plain CSS (`@luxalgo/vela-ui/themes/dark.css`).
+- **Restyle a component completely from the theme.** A component's `css` in the theme
+  restyles its parts (`components.button.css.root`, `components.button.css.icon`), written
+  with the `css` tag, now exported from `@luxalgo/vela/ui` with the typed tokens `t`,
+  wherever the theme applies and after every other layer of the kit, with `&` for the part's
+  variants and states. The parts are typed. CSS not written with the `css` tag, like a theme
+  loaded from a saved file, is left out unless the host passes `{ allowCss: true }`. The
+  gallery's "shadcn look" rebuilds shadcn's buttons and tabs this way, from a theme alone.
 
 ### Changed
 

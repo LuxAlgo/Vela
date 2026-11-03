@@ -24,7 +24,7 @@ import type { textFieldDef } from '../components/text-field';
 import type { toggleGroupDef } from '../components/toggle-group';
 import type { tooltipDef } from '../components/tooltip';
 import { contrastRatio, isDarkColor, mix, parseRgb } from './color';
-import { injectLayerOrder } from './css';
+import { acceptCss, injectLayerOrder, isWrittenCss } from './css';
 import type { ComponentDef } from './define';
 import { BEARISH, BULLISH } from './palette';
 import { injectStyles } from './styles';
@@ -138,10 +138,24 @@ export interface ComponentDefs {
 }
 
 type SettingsOf<D> = D extends ComponentDef<string, string, infer S> ? S : never;
+type PartsOf<D> = D extends ComponentDef<string, infer P, string> ? P : never;
 
 /** Settings by component, then by setting (`{ button: { radius: '2px' } }`), each written
- *  as `--vela-<component>-<setting>`. */
-export type ComponentSettings = { [K in keyof ComponentDefs]?: { [S in SettingsOf<ComponentDefs[K]>]?: string } };
+ *  as `--vela-<component>-<setting>`. `css` restyles the component's parts completely: each
+ *  part's CSS, written with the `css` tag, applies to that part under the theme, after every
+ *  other layer of the kit. */
+export type ComponentSettings = {
+    [K in keyof ComponentDefs]?: { [S in SettingsOf<ComponentDefs[K]>]?: string } & {
+        css?: { [P in PartsOf<ComponentDefs[K]>]?: string };
+    };
+};
+
+export interface CreateThemeOptions {
+    /** Apply part CSS that was not written with the `css` tag (a theme loaded from data).
+     *  Off by default: CSS from someone else can restyle the page to mislead, and load
+     *  remote images that leak what the page shows. */
+    allowCss?: boolean;
+}
 
 /** A theme's settings beyond the chart's colors. */
 export interface ThemeSettings {
@@ -182,6 +196,8 @@ export interface UiTheme {
     readonly tokens: Readonly<Record<string, string>>;
     /** Component settings, by component then setting. */
     readonly components: Readonly<Record<string, Readonly<Record<string, string>>>>;
+    /** Part CSS, by component then part. */
+    readonly css: Readonly<Record<string, Readonly<Record<string, string>>>>;
     /** Its settings beyond the chart's colors: with {@link chart}, they rebuild the theme. */
     readonly settings: Readonly<ThemeSettings>;
 }
@@ -224,7 +240,7 @@ function inkOn(fill: string): string {
     return (contrastRatio(fill, '#ffffff') ?? 21) >= (contrastRatio(fill, '#000000') ?? 0) ? '#ffffff' : '#000000';
 }
 
-function build(input: ThemeInput): UiTheme {
+function build(input: ThemeInput, options: CreateThemeOptions): { theme: UiTheme; dropped: string[] } {
     const chart = chartOf(input);
     const tokens: Record<string, string> = { ...STATIC_TOKENS, ...themeTokens(chart) };
     if (input.radius) {
@@ -239,17 +255,35 @@ function build(input: ThemeInput): UiTheme {
     }
     for (const [name, value] of Object.entries(input.tokens ?? {})) if (value !== undefined) tokens[`--vela-${name}`] = value;
     const components: Record<string, Record<string, string>> = {};
-    for (const [name, values] of Object.entries(input.components ?? {}) as Array<[string, Record<string, string | undefined>]>) {
-        const set = Object.fromEntries(Object.entries(values).filter((e): e is [string, string] => e[1] !== undefined));
+    const partCss: Record<string, Record<string, string>> = {};
+    const dropped: string[] = [];
+    const entries = Object.entries(input.components ?? {}) as Array<[string, Record<string, unknown>]>;
+    for (const [name, values] of entries) {
+        const set: Record<string, string> = {};
+        for (const [key, value] of Object.entries(values)) if (key !== 'css' && typeof value === 'string') set[key] = value;
         if (Object.keys(set).length) components[name] = set;
+        const parts: Record<string, string> = {};
+        for (const [part, text] of Object.entries((values.css ?? {}) as Record<string, unknown>)) {
+            if (typeof text !== 'string') continue;
+            if (options.allowCss) acceptCss(text);
+            if (isWrittenCss(text)) parts[part] = text;
+            else dropped.push(`components.${name}.css.${part}`);
+        }
+        if (Object.keys(parts).length) partCss[name] = parts;
     }
     const settings: ThemeSettings = {};
     if (accent) settings.accent = accent;
     if (input.radius) settings.radius = input.radius;
     if (input.font) settings.font = input.font;
     if (input.tokens) settings.tokens = { ...input.tokens };
-    if (Object.keys(components).length) settings.components = components as ComponentSettings;
-    return { id: themeId(JSON.stringify([tokens, components])), chart, tokens, components, settings };
+    const both = new Set([...Object.keys(components), ...Object.keys(partCss)]);
+    if (both.size) {
+        const merged: Record<string, Record<string, unknown>> = {};
+        for (const name of both) merged[name] = { ...components[name], ...(partCss[name] ? { css: { ...partCss[name] } } : {}) };
+        settings.components = merged as ComponentSettings;
+    }
+    const theme = { id: themeId(JSON.stringify([tokens, components, partCss])), chart, tokens, components, css: partCss, settings };
+    return { theme, dropped };
 }
 
 const isCssVar = (value: string) => value.trim().startsWith('var(');
@@ -272,13 +306,27 @@ function problemsOf(input: ThemeInput, theme: UiTheme): string[] {
         const ratio = contrastRatio(theme.tokens[`--vela-${ink}`] ?? '', theme.tokens[`--vela-${fill}`] ?? '');
         if (ratio !== null && ratio < min) problems.push(`${ink} on ${fill} has a contrast of ${ratio.toFixed(1)}:1 (at least ${min}:1 reads well)`);
     }
+    for (const [name, parts] of Object.entries(theme.css)) {
+        for (const [part, text] of Object.entries(parts)) {
+            const where = `components.${name}.css.${part}`;
+            if (/!important/i.test(text)) problems.push(`${where} uses !important, which the custom layer does not need`);
+            if (/(^|[\s,>+~(&])\.[a-z_-][\w-]*[^{};]*\{/im.test(text)) problems.push(`${where} targets a class name, which is not part of the component's contract (use its parts and data attributes)`);
+            for (const at of text.match(/@[a-z-]+/gi) ?? []) {
+                if (!CONDITIONAL.test(at)) problems.push(`${where} declares ${at}, which is left out (declare it in the page's stylesheet and use it from the part)`);
+            }
+        }
+    }
     return problems;
 }
 
+const droppedProblem = (where: string) => `${where} was not written with the css tag and is left out (pass { allowCss: true } to apply CSS loaded from data)`;
+
 /** What is wrong with a theme's input: unknown tokens, colors the theme cannot derive from,
- *  and text with too little contrast on its background. `createTheme` warns about each. */
-export function checkTheme(input: ThemeInput = {}): string[] {
-    return problemsOf(input, build(input));
+ *  text with too little contrast on its background, and part CSS that is left out or
+ *  reaches past the component's contract. `createTheme` warns about each. */
+export function checkTheme(input: ThemeInput = {}, options: CreateThemeOptions = {}): string[] {
+    const { theme, dropped } = build(input, options);
+    return [...dropped.map(droppedProblem), ...problemsOf(input, theme)];
 }
 
 const warned = new Set<string>();
@@ -292,9 +340,9 @@ function warn(problems: readonly string[]): void {
 }
 
 /** Build a theme. Without overrides, `dark` and `light` give exactly the built-in tokens. */
-export function createTheme(input: ThemeInput = {}): UiTheme {
-    const theme = build(input);
-    warn(problemsOf(input, theme));
+export function createTheme(input: ThemeInput = {}, options: CreateThemeOptions = {}): UiTheme {
+    const { theme, dropped } = build(input, options);
+    warn([...dropped.map(droppedProblem), ...problemsOf(input, theme)]);
     return theme;
 }
 
@@ -312,14 +360,106 @@ function rootOf(host: HTMLElement): Document | ShadowRoot {
     return host.ownerDocument;
 }
 
-/** The theme's rule: every token and component setting, by default on the hosts that
- *  carry its id. */
+/** Splits CSS at its top level into declarations and blocks (`prelude { body }`), skipping
+ *  comments and strings. */
+function topLevel(text: string): { decls: string; blocks: Array<[string, string]> } {
+    const src = text.replace(/\/\*[\s\S]*?\*\//g, '');
+    let decls = '';
+    const blocks: Array<[string, string]> = [];
+    let buf = '';
+    let i = 0;
+    while (i < src.length) {
+        const c = src[i]!;
+        if (c === '"' || c === "'") {
+            const end = src.indexOf(c, i + 1);
+            const stop = end < 0 ? src.length : end + 1;
+            buf += src.slice(i, stop);
+            i = stop;
+            continue;
+        }
+        if (c === ';') {
+            decls += `${buf.trim()}; `;
+            buf = '';
+        } else if (c === '{') {
+            let depth = 1;
+            let j = i + 1;
+            while (j < src.length && depth > 0) {
+                if (src[j] === '{') depth += 1;
+                else if (src[j] === '}') depth -= 1;
+                j += 1;
+            }
+            blocks.push([buf.trim(), src.slice(i + 1, j - 1).trim()]);
+            buf = '';
+            i = j;
+            continue;
+        } else {
+            buf += c;
+        }
+        i += 1;
+    }
+    if (buf.trim()) decls += `${buf.trim()}; `;
+    return { decls: decls.trim(), blocks };
+}
+
+/** Splits a selector list at its top-level commas. */
+function selectorList(prelude: string): string[] {
+    const out: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < prelude.length; i += 1) {
+        const c = prelude[i];
+        if (c === '(' || c === '[') depth += 1;
+        else if (c === ')' || c === ']') depth -= 1;
+        else if (c === ',' && depth === 0) {
+            out.push(prelude.slice(start, i).trim());
+            start = i + 1;
+        }
+    }
+    out.push(prelude.slice(start).trim());
+    return out.filter(Boolean);
+}
+
+/** The at-rules a part's CSS can hold: conditions around its rules. Others (`@keyframes`,
+ *  `@font-face`) declare something page-wide and belong in the host's stylesheet. */
+const CONDITIONAL = /^@(media|supports|container)\b/i;
+
+/** A part's CSS as flat rules on `scope`: its own declarations, its `&` rules (one level of
+ *  nesting, which is all a part needs; a rule without `&` is a descendant), and `@media`,
+ *  `@supports` or `@container` blocks around either. Theme CSS reaches the page without our
+ *  build, and the oldest browsers we support do not nest. */
+function flatPart(scope: string, text: string): string {
+    const { decls, blocks } = topLevel(text);
+    const rules: string[] = decls ? [`${scope} { ${decls} }`] : [];
+    for (const [prelude, body] of blocks) {
+        if (prelude.startsWith('@')) {
+            if (CONDITIONAL.test(prelude)) rules.push(`${prelude} { ${flatPart(scope, body)} }`);
+            continue;
+        }
+        const list = selectorList(prelude).map((s) => (s.includes('&') ? s.split('&').join(scope) : `${scope} ${s}`));
+        const inner = topLevel(body);
+        if (inner.decls) rules.push(`${list.join(', ')} { ${inner.decls} }`);
+    }
+    return rules.join(' ');
+}
+
+/** The theme's rules: every token and component setting, by default on the hosts that carry
+ *  its id; and the part CSS, on those parts inside them, in the last layer. */
 export function themeCss(theme: UiTheme, selector = `[data-vela-theme="${theme.id}"]`): string {
     const decls = Object.entries(theme.tokens).map(([k, v]) => `${k}: ${v};`);
     for (const [component, settings] of Object.entries(theme.components)) {
         for (const [setting, value] of Object.entries(settings)) decls.push(`--vela-${component}-${setting}: ${value};`);
     }
-    return `@layer vela.theme { ${selector} { ${decls.join(' ')} } }`;
+    const out = [`@layer vela.theme { ${selector} { ${decls.join(' ')} } }`];
+    const parts: string[] = [];
+    for (const [component, byPart] of Object.entries(theme.css)) {
+        for (const [part, text] of Object.entries(byPart)) {
+            const slot = part === 'root' ? component : `${component}-${part}`;
+            // A part's `display` must not beat the browser's own `[hidden]` rule.
+            parts.push(flatPart(`:where(${selector}, ${selector} *):is([data-slot~="${slot}"]):where(:not([hidden]))`, text));
+        }
+    }
+    if (parts.length) out.push(`@layer vela.custom { ${parts.join(' ')} }`);
+    return out.join('\n');
 }
 
 const MAX_CACHED = 32;

@@ -13,6 +13,7 @@ export {
     type UiTheme,
     type ThemeInput,
     type ThemeSettings,
+    type CreateThemeOptions,
     type ThemedChart,
     type ComponentDefs,
     type ComponentSettings,
