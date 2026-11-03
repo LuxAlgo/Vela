@@ -77,6 +77,11 @@ All notable changes to Vela, newest first.
   Schema of a theme written to a file (`@luxalgo/vela-ui/theme.schema.json`), its guides
   (theming, what to change and where, writing a component) and an `llms.txt` index for
   coding agents. All of it is generated from the source, so it cannot drift.
+- **A command line for the UI kit.** `npx @luxalgo/vela-ui add <component>` makes the kit a
+  direct dependency and prints the component's import; `--source` copies its source into
+  the project as a component of the project's own, which never styles the kit's, and
+  `diff` shows what changed upstream since. `check` finds a second installed copy of the
+  kit, copies behind the installed version, and mistakes in the project's theme file.
 
 ### Changed
 

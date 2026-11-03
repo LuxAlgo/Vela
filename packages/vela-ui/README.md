@@ -26,6 +26,22 @@ app.append(save.el);
   name, each component's settings, or a component's whole look; a wrong name fails the
   typecheck. See [Theming](docs/theming.md) and [What to change, and where](docs/what-to-change.md).
 
+## Command line
+
+| Command | Result |
+| --- | --- |
+| `npx @luxalgo/vela-ui add button` | makes `@luxalgo/vela-ui` a direct dependency and prints the button's import and an example |
+| `npx @luxalgo/vela-ui add button --source` | copies the button's source into the project (`src/ui` by default) as a component of your own, `app-button` (`--as` names it), which never styles the package's button |
+| `npx @luxalgo/vela-ui diff app-button` | what changed upstream since the copy was made; `--accept` records the copy as up to date |
+| `npx @luxalgo/vela-ui check` | one copy of the package installed, no copy behind it, the theme file valid |
+| `npx @luxalgo/vela-ui list` | the components |
+
+A `vela-ui.json` at the project's root says where copies go and which theme file to check:
+`{ "aliases": { "ui": "#ui" }, "theme": "brand.theme.json" }` (`#ui` is a package.json
+`imports` alias, or write a folder). Copies are recorded in `vela-ui.lock.json`, with their
+upstream version kept under `.vela-ui/`: commit both. The first `add` offers to add a note to
+the project's `AGENTS.md` pointing coding agents at this package's reference.
+
 ## Reference
 
 - `dist/manifest.json` (`@luxalgo/vela-ui/manifest.json`): every component's import, props,

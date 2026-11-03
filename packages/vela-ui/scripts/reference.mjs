@@ -214,6 +214,8 @@ a \`data-slot\`; variants and sizes are \`data-variant\` and \`data-size\`.
 - [What to change, and where](docs/what-to-change.md): one table, a kind of change per row.
 - [Writing a component](docs/writing-a-component.md): the one-file shape and its rules.
 - Plain CSS themes: \`dist/themes/dark.css\`, \`dist/themes/light.css\`.
+- Command line: \`npx @luxalgo/vela-ui add <component>\` prints its import, \`--source\` copies it
+  as a component of the project's own, \`check\` validates the project (see README.md).
 
 ## Components
 

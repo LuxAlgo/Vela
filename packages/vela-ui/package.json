@@ -21,15 +21,21 @@
     "./themes/*.css": "./dist/themes/*.css",
     "./manifest.json": "./dist/manifest.json",
     "./theme.schema.json": "./dist/theme.schema.json",
+    "./cli": "./cli/engine.mjs",
     "./*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*.js"
     }
   },
+  "bin": {
+    "vela-ui": "./cli/index.mjs"
+  },
   "files": [
     "dist",
     "src",
     "docs",
+    "cli",
+    "registry",
     "llms.txt",
     "LICENSE",
     "NOTICE"
