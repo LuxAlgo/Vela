@@ -48,6 +48,13 @@ All notable changes to Vela, newest first.
   the rail and the mobile bottom bar uncovered. A shell that uses none of these keeps its
   layout exactly as before.
 
+### Changed
+
+- **Toolbar menus open centered under their buttons.** The timeframe, chart style, layout
+  and alerts menus now hang centered below the button that opened them, instead of starting
+  at its left edge and running off to the right. Near the window's edges they still stay
+  fully on screen.
+
 ## [0.9.3]
 
 ### Added

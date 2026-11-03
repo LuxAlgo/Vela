@@ -497,6 +497,7 @@ export class Topbar {
             host,
             i18n: opts.i18n ?? null,
             items: this.tfItems(),
+            placement: 'bottom',
             onSelect: (id) => opts.onTimeframe(id),
             onFavorite: (id, on) => opts.onTimeframeFavorite?.(id, on),
             // Timeframe labels are two-or-three characters ("1m", "4h", "1D") — the
@@ -508,6 +509,7 @@ export class Topbar {
             triggerId: 'vela-topbar-style',
             host,
             items: this.styleItems(),
+            placement: 'bottom',
             onSelect: (id) => opts.onPriceStyle(id),
             iconBadges: true,
         });

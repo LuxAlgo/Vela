@@ -2670,13 +2670,14 @@ export class VelaWorkspace {
         this.alertsMenu = new Menu({
             host: this.root,
             items,
+            placement: 'bottom',
             onSelect: (id) => {
                 const alert = this.alerts[Number(id)];
                 if (alert && this.cellsById.has(alert.cellId)) this.setActiveCell(alert.cellId);
             },
         });
         const r = anchor.getBoundingClientRect();
-        this.alertsMenu.openAt(r.left, r.bottom + 4);
+        this.alertsMenu.openAt(r.left + r.width / 2, r.bottom);
     }
 
     /** Mount registered attachments not yet mounted on this workspace (idempotent per id). */

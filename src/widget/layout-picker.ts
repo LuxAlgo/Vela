@@ -438,15 +438,15 @@ export class LayoutPicker {
         }
     }
 
-    /** Anchor under the trigger, clamped to the host's right edge. */
+    /** Center under the trigger, clamped inside the host's edges. */
     private position(): void {
         const hostRect = this.opts.host.getBoundingClientRect();
         const trigRect = this.opts.trigger.getBoundingClientRect();
-        let left = trigRect.left - hostRect.left;
+        const width = this.layer.offsetWidth;
+        let left = trigRect.left + trigRect.width / 2 - width / 2 - hostRect.left;
         // The kit menus' positioning gutter, so every topbar dropdown clears the bar alike.
         const top = trigRect.bottom - hostRect.top + 8;
-        const width = this.layer.offsetWidth;
-        if (left + width > hostRect.width - 8) left = Math.max(8, hostRect.width - 8 - width);
+        left = Math.max(8, Math.min(left, hostRect.width - 8 - width));
         this.layer.style.left = `${left}px`;
         this.layer.style.top = `${top}px`;
     }
