@@ -91,6 +91,10 @@ export interface WidgetActionDescriptor {
     /** Always required, even icon-only: it is the button's aria-label and tooltip, the
      *  mobile drawer row's text, and the context-menu item's label. */
     label: string;
+    /** Topbar only: one short sentence on what the action does, shown under the label in
+     *  its tooltip (`action.<id>` in `TooltipInfo` terms). With one, a text button gets a
+     *  tooltip too; without one it keeps none (its label is already on screen). */
+    description?: string;
     /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
     icon?: string;
     /** Topbar only: render the DESKTOP button icon-only, like the built-in tools — the
@@ -208,6 +212,8 @@ export interface SidePanelDescriptor {
 export interface SidePanelButton {
     id: string;
     title: string;
+    /** Shown under the title in the toggle's tooltip (the shell's own panels carry one). */
+    description?: string;
     icon: string;
 }
 

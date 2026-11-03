@@ -29,12 +29,15 @@ painter *signature* changes.
    `anchorSchema`, `hitTest`, `hitHandle`, `handlePoints`, `bounds`, `priceRange`, `schema`; from a
    base, usually just two to four).
 
-3. **Register it.** Call `registerDrawingType({ type, group, label, icon, defaultStyle, create })`
+3. **Register it.** Call `registerDrawingType({ type, group, label, description, icon, defaultStyle, create })`
    in `core/drawings/registry.ts`. This single call drives **both** the factory (deserialize /
    `add`) **and** the toolbar entry — there is no separate toolbar wiring. `group` buckets the tool
    in the toolbar (the existing groups are lines, channels, pitchforks, shapes, annotations, stamps,
    fibonacci, patterns, measure; a brand-new group also needs a label + position entry in
-   `toolbar.ts`). `icon` is an inline SVG string; `defaultStyle` seeds the tool's first style.
+   `toolbar.ts`). `description` is one short, imperative sentence ending with a period ("Connect
+   two points to mark a trend.") that the toolbar's tooltips show under the label — every
+   built-in tool has one; without it the tool's tooltip shows the label alone and its flyout row
+   gets no tooltip. `icon` is an inline SVG string; `defaultStyle` seeds the tool's first style.
 
 4. **Export the class** from `core/drawings/index.ts` (the barrel the renderer imports from).
 

@@ -3,12 +3,19 @@
 // design tokens inherit; positioning is handled by the machine (floating-ui) regardless.
 import { runMachine, spreadProps, type HandleOf } from '../../zag';
 import { injectStyles } from '../../styles';
+import { tooltipContent, type TooltipInfo } from '../../tooltip-config';
 import { tooltipController, type TooltipControllerOptions } from './controller';
 import { TOOLTIP_CSS, TOOLTIP_STYLE_ID } from './styles';
 import * as zagTooltip from '@zag-js/tooltip';
 
+/**
+ * What a tooltip shows. A string or node is shown as is; a {@link TooltipInfo} is built
+ * through the `configureTooltips` renderer, else the default title + description layout.
+ */
+export type TooltipContent = string | Node | (() => Node) | TooltipInfo;
+
 export interface TooltipOptions extends TooltipControllerOptions {
-    content: string | Node | (() => Node);
+    content: TooltipContent;
     host?: HTMLElement;
 }
 
@@ -48,8 +55,13 @@ export class Tooltip {
         });
     }
 
-    setContent(content: string | Node | (() => Node)): void {
-        this.content.replaceChildren(typeof content === 'function' ? content() : content);
+    setContent(content: TooltipContent): void {
+        let node: string | Node;
+        if (typeof content === 'string') node = content;
+        else if (typeof content === 'function') node = content();
+        else if ('nodeType' in content) node = content;
+        else node = tooltipContent(content, this.content.ownerDocument);
+        this.content.replaceChildren(node);
     }
 
     destroy(): void {

@@ -1,10 +1,11 @@
 import type { VelaTheme } from '../../../core/options';
 import type { DrawingTypeKey, SnapMode } from '../../../core/drawings';
-import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/drawings';
+import type { ToolbarDefinition, ToolDefinition, ToolGroup, ToolSection } from '../../../core/drawings';
 import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
 import { announceSurface } from '../../../ui/surface-events';
+import type { TooltipInfo } from '../../../ui/tooltip-config';
 
 /** Expanded bar width in px — a docked host's left-gutter reservation must match it. */
 export const TOOLBAR_WIDTH = 44;
@@ -39,9 +40,10 @@ export interface DrawingToolbarOptions {
  * cell whose chevron opens an Off/Weak/Strong menu (its icon toggles the last-used strength on/off).
  * Below the magnet, a stay-in-drawing-mode toggle keeps tools armed after each placement.
  * Hover and active tints are CSS-driven (`:hover` + `[data-active]`) so they never lag. Every
- * icon carries a themed tooltip (the chrome default 700ms dwell); a group cell's tip names the
- * tool its icon arms (the last-used one). Pure vanilla DOM on the host (a `pointer-events:auto`
- * island).
+ * icon carries a themed tooltip (the chrome tooltip's dwell, or the `configureTooltips` delay)
+ * with a short description; a group cell's tip names the tool its icon arms (the last-used one),
+ * and a flyout row whose tool has a description gets its own tip beside the flyout. Pure vanilla
+ * DOM on the host (a `pointer-events:auto` island).
  */
 export class DrawingToolbar {
     private readonly root: HTMLDivElement;
@@ -75,9 +77,10 @@ export class DrawingToolbar {
     private collapseBtn: HTMLButtonElement | null = null;
     private collapsed = false;
     private visible = false;
-    private readonly tipText = new WeakMap<HTMLElement, string>(); // per-anchor tooltip text (magnet's changes with mode)
     /** Chrome-tooltip disposers — flushed whenever the cells are recreated (rebuild/destroy). */
     private tipDisposers: Array<() => void> = [];
+    /** The open flyout's row tooltips — flushed when it closes (a tip lives on the host, not the flyout). */
+    private flyoutTips: Array<() => void> = [];
 
     /** Explicit border override from options; `null` follows the live theme's border. */
     private readonly borderOverride: string | null;
@@ -205,7 +208,7 @@ export class DrawingToolbar {
         this.root.replaceChildren();
         this.groupCells.clear();
         this.groupIcons.clear();
-        this.cursorBtn = this.makeButton(CURSOR_ICON, 'Cursor', () => this.onCursorClick());
+        this.cursorBtn = this.makeButton(CURSOR_ICON, 'Cursor', () => TIPS.cursor, () => this.onCursorClick());
         this.root.appendChild(this.cursorBtn);
         if (this.def.groups.length > 0) this.root.appendChild(this.divider());
         for (const g of this.def.groups) {
@@ -215,20 +218,20 @@ export class DrawingToolbar {
         }
         // Measure ruler + eraser + magnet — renderer-local modes, not persistent-drawing tools.
         this.root.appendChild(this.divider());
-        this.measureBtn = this.makeButton(RULER_ICON, 'Measure', () => this.onMeasure());
+        this.measureBtn = this.makeButton(RULER_ICON, 'Measure', () => TIPS.measure, () => this.onMeasure());
         this.root.appendChild(this.measureBtn);
-        this.eraserBtn = this.makeButton(ERASER_ICON, 'Eraser (click/drag to delete)', () => this.onEraser());
+        this.eraserBtn = this.makeButton(ERASER_ICON, 'Eraser (click/drag to delete)', () => TIPS.eraser, () => this.onEraser());
         this.root.appendChild(this.eraserBtn);
         this.root.appendChild(this.makeMagnetCell());
-        this.stayBtn = this.makeButton(STAY_ICON, 'Stay in drawing mode', () => this.toggleStay());
+        this.stayBtn = this.makeButton(STAY_ICON, 'Stay in drawing mode', () => TIPS.stay, () => this.toggleStay());
         this.root.appendChild(this.stayBtn);
         // Drawings-sync toggle — only a multi-chart host provides the callback.
         if (this.onDrawingsSync) {
-            this.syncBtn = this.makeButton(SYNC_ICON, 'Sync drawings on all charts', () => this.toggleDrawingsSync());
+            this.syncBtn = this.makeButton(SYNC_ICON, 'Sync drawings on all charts', () => TIPS.sync, () => this.toggleDrawingsSync());
             this.root.appendChild(this.syncBtn);
         }
         // Collapse/expand toggle — pinned to the bottom; the only child a collapsed strip shows.
-        this.collapseBtn = this.makeButton(COLLAPSE_ICON, 'Collapse toolbar', () => this.toggleCollapsed());
+        this.collapseBtn = this.makeButton(COLLAPSE_ICON, 'Collapse toolbar', () => (this.collapsed ? TIPS.expand : TIPS.collapse), () => this.toggleCollapsed());
         this.collapseBtn.classList.add('vela-dtb-collapse');
         this.root.appendChild(this.collapseBtn);
         this.paintMeasure();
@@ -256,7 +259,6 @@ export class DrawingToolbar {
         const label = this.collapsed ? 'Expand toolbar' : 'Collapse toolbar';
         b.innerHTML = hitHtml(this.collapsed ? EXPAND_ICON : COLLAPSE_ICON, 12);
         b.setAttribute('aria-label', label);
-        this.tipText.set(b, label);
     }
 
     /** A cell: a full-width icon button (arms/toggles the primary action) plus, when
@@ -266,7 +268,7 @@ export class DrawingToolbar {
      *  row. The chevron is its own hover target — revealed on cell hover, tinted only on its own hover. */
     private makeCell(
         label: string,
-        opts: { iconSvg?: string; multi: boolean; onIcon: () => void; onArrow?: () => void },
+        opts: { iconSvg?: string; multi: boolean; onIcon: () => void; onArrow?: () => void; tip: () => TooltipInfo | null },
     ): { cell: HTMLDivElement; icon: HTMLButtonElement; arrow: HTMLButtonElement | null } {
         const cell = document.createElement('div');
         cell.className = 'vela-dtb-cell';
@@ -291,9 +293,7 @@ export class DrawingToolbar {
             });
             cell.appendChild(arrow);
         }
-        this.tipDisposers.push(
-            attachChromeTooltip(cell, { host: this.host, theme: () => this.theme, text: () => this.tipText.get(cell) ?? label, placement: 'right' }),
-        );
+        this.tipDisposers.push(attachChromeTooltip(cell, { host: this.host, theme: () => this.theme, content: opts.tip, placement: 'right' }));
         return { cell, icon, arrow };
     }
 
@@ -303,10 +303,20 @@ export class DrawingToolbar {
             multi,
             onIcon: () => this.onGroupIconClick(g),
             onArrow: multi ? () => this.onArrowClick(g) : undefined,
+            // Names the tool the icon arms (the group's last-used), not the group label.
+            tip: () => {
+                const tool = this.currentTool(g);
+                return tool ? this.toolTip(tool) : null;
+            },
         });
         this.groupCells.set(g.id, cell);
         this.groupIcons.set(g.id, icon);
         return cell;
+    }
+
+    /** A tool's tooltip — group cell and flyout row alike. */
+    private toolTip(tool: ToolDefinition): TooltipInfo {
+        return { id: `drawing.${tool.type}`, title: tool.label, description: tool.description, icon: tool.icon, shortcut: this.shortcuts.get(tool.type) };
     }
 
     private makeMagnetCell(): HTMLElement {
@@ -315,6 +325,7 @@ export class DrawingToolbar {
             multi: true,
             onIcon: () => this.toggleMagnet(),
             onArrow: () => this.onMagnetArrowClick(),
+            tip: () => ({ ...TIPS.magnet, title: `Magnet snap: ${magnetMode(this.magnetMode).label}` }),
         });
         this.magnetCell = cell;
         this.magnetIcon = icon;
@@ -401,8 +412,6 @@ export class DrawingToolbar {
         const cell = this.magnetCell;
         const icon = this.magnetIcon;
         if (!cell || !icon) return;
-        const label = this.magnetMode === 'off' ? 'Off' : this.magnetMode === 'weak' ? 'Weak' : 'Strong';
-        this.tipText.set(cell, `Magnet snap: ${label}`);
         const on = this.magnetMode !== 'off';
         cell.dataset.active = on ? '1' : '';
         icon.style.opacity = on ? '1' : '0.5';
@@ -503,6 +512,7 @@ export class DrawingToolbar {
                         label: tool.label,
                         selected: tool.type === this.active,
                         shortcut: this.shortcuts.get(tool.type),
+                        tip: tool.description ? this.toolTip(tool) : undefined,
                         onSelect: () => this.onArm(tool.type),
                         favorite: {
                             type: tool.type,
@@ -520,16 +530,12 @@ export class DrawingToolbar {
         if (!cell) return;
         const fly = this.beginFlyout(MAGNET_ID, cell);
         fly.appendChild(this.flyoutHeader('Magnet'));
-        const modes: readonly [SnapMode, string][] = [
-            ['off', 'Off'],
-            ['weak', 'Weak'],
-            ['strong', 'Strong'],
-        ];
-        for (const [mode, label] of modes) {
+        for (const { mode, label, description } of MAGNET_MODES) {
             fly.appendChild(
                 this.makeFlyoutItem({
                     label,
                     selected: mode === this.magnetMode,
+                    tip: { id: `drawing-toolbar.magnet.${mode}`, title: label, description },
                     onSelect: () => {
                         this.applyMagnet(mode);
                         this.closeFlyout();
@@ -565,6 +571,8 @@ export class DrawingToolbar {
         selected?: boolean;
         /** Shortcut hint (pre-formatted display string) rendered right-aligned, left of the star. */
         shortcut?: string;
+        /** The row's tooltip, shown beside the flyout — rows without one get none. */
+        tip?: TooltipInfo;
         onSelect: () => void;
         /** Star toggle (tool rows only — mode rows have no favorites). */
         favorite?: { type: DrawingTypeKey; toggle: () => void };
@@ -619,6 +627,12 @@ export class DrawingToolbar {
             e.stopPropagation();
             opts.onSelect();
         });
+        const tip = opts.tip;
+        if (tip && this.flyout) {
+            this.flyoutTips.push(
+                attachChromeTooltip(item, { host: this.host, theme: () => this.theme, content: () => tip, placement: 'right', rightOf: this.flyout }),
+            );
+        }
         return item;
     }
 
@@ -631,6 +645,7 @@ export class DrawingToolbar {
 
     private closeFlyout(): void {
         this.starEls.clear();
+        for (const dispose of this.flyoutTips.splice(0)) dispose();
         const fly = this.flyout;
         if (fly) {
             // Cleared before announcing: a listener that closes the flyout must not re-enter.
@@ -645,15 +660,16 @@ export class DrawingToolbar {
         }
     }
 
+    /** The tool a group cell's icon arms — the group's last-used one. */
+    private currentTool(group: ToolGroup): ToolDefinition | undefined {
+        const type = this.lastUsed.get(group.id) ?? group.tools[0]?.type;
+        return group.tools.find((t) => t.type === type) ?? group.tools[0];
+    }
+
     private paintGroupIcon(group: ToolGroup): void {
         const iconBtn = this.groupIcons.get(group.id);
         if (!iconBtn) return;
-        const type = this.lastUsed.get(group.id) ?? group.tools[0]?.type;
-        const tool = group.tools.find((t) => t.type === type) ?? group.tools[0];
-        iconBtn.innerHTML = hitHtml(tool?.icon ?? '');
-        // The tip names the tool the icon arms (the group's last-used), not the group label.
-        const cell = this.groupCells.get(group.id);
-        if (cell) this.tipText.set(cell, tool?.label ?? group.label);
+        iconBtn.innerHTML = hitHtml(this.currentTool(group)?.icon ?? '');
     }
 
     /** Reconcile active tints from state (armed group / open flyout / cursor / modes). Active is a
@@ -671,16 +687,13 @@ export class DrawingToolbar {
         this.paintStay();
     }
 
-    private makeButton(icon: string, title: string, onClick: () => void): HTMLButtonElement {
+    private makeButton(icon: string, label: string, tip: () => TooltipInfo, onClick: () => void): HTMLButtonElement {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'vela-dtb-btn';
-        btn.setAttribute('aria-label', title); // not `title` — we render our own 2s-dwell tooltip
-        this.tipText.set(btn, title);
+        btn.setAttribute('aria-label', label); // not `title` — we render our own themed tooltip
         if (icon) btn.innerHTML = hitHtml(icon);
-        this.tipDisposers.push(
-            attachChromeTooltip(btn, { host: this.host, theme: () => this.theme, text: () => this.tipText.get(btn) ?? title, placement: 'right' }),
-        );
+        this.tipDisposers.push(attachChromeTooltip(btn, { host: this.host, theme: () => this.theme, content: tip, placement: 'right' }));
         btn.addEventListener('click', onClick);
         return btn;
     }
@@ -765,6 +778,28 @@ const ARROW_ICON = icon('chevron-right');
 const CHECK_ICON = icon('check');
 const STAR_ICON = icon('star');
 const STAR_FILLED_ICON = icon('star-filled');
+
+/** The bar's own controls' tooltips. Titles may differ from the aria-labels, which stay put. */
+const TIPS = {
+    cursor: { id: 'drawing-toolbar.cursor', title: 'Cursor', description: 'Select and move drawings on the chart.', icon: CURSOR_ICON },
+    magnet: { id: 'drawing-toolbar.magnet', title: 'Magnet snap', description: 'Snap drawing points to candle prices.', icon: MAGNET_ICON },
+    measure: { id: 'drawing-toolbar.measure', title: 'Measure', description: 'Measure the distance between points on the chart.', icon: RULER_ICON },
+    eraser: { id: 'drawing-toolbar.eraser', title: 'Eraser', description: 'Click or drag over drawings to remove them.', icon: ERASER_ICON },
+    stay: { id: 'drawing-toolbar.stay', title: 'Stay in drawing mode', description: 'Keep the drawing tool active after each drawing.', icon: STAY_ICON },
+    sync: { id: 'drawing-toolbar.sync', title: 'Sync drawings on all charts', description: 'Copy new drawings to the other linked charts.', icon: SYNC_ICON },
+    collapse: { id: 'drawing-toolbar.collapse', title: 'Collapse toolbar', description: 'Hide the drawing tools to make more room for the chart.', icon: COLLAPSE_ICON },
+    expand: { id: 'drawing-toolbar.collapse', title: 'Expand toolbar', description: "Show the chart's drawing tools.", icon: EXPAND_ICON },
+} satisfies Record<string, TooltipInfo>;
+
+const MAGNET_MODES: readonly { mode: SnapMode; label: string; description: string }[] = [
+    { mode: 'off', label: 'Off', description: 'Place drawing points freely without snapping.' },
+    { mode: 'weak', label: 'Weak', description: 'Snap drawing points when they are near candle prices.' },
+    { mode: 'strong', label: 'Strong', description: 'Keep drawing points snapped to candle prices.' },
+];
+
+function magnetMode(mode: SnapMode): (typeof MAGNET_MODES)[number] {
+    return MAGNET_MODES.find((m) => m.mode === mode) ?? MAGNET_MODES[0]!;
+}
 
 /** Force an inline SVG icon to fill its 18px slot. */
 function sizedIcon(svg: string): string {

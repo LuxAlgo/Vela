@@ -219,6 +219,7 @@ registerWidgetAction({
     id: 'mytool.open',
     target: 'topbar',            // or 'context:body' | 'context:price-axis' | 'context:time-axis'
     label: 'My tool',            // ALWAYS required: aria-label, tooltip, mobile row text
+    description: 'Open my tool beside the chart.', // topbar only: the tooltip's second line
     icon: 'rocket',
     iconOnly: true,              // topbar only: no button text — the native 32px tool look
                                  //  on the right cluster (label becomes aria-label + a kit
@@ -264,6 +265,13 @@ ones stay in the three-dots sheet. `mobile` overrides it per action: a left acti
 and a right action with `mobile: 'bar'` gets a bottom-bar stop. `context:*` actions are appended to the matching
 right-click menu zone. Register at import time — a widget constructed later picks them
 up; after late registrations call `widget.refreshActions()`.
+
+`description` is one short sentence on what the action does. The topbar tooltip shows it
+on a muted line under the label, the same way the built-in buttons describe themselves.
+An icon-only button always has a tooltip; a text button gets one only when it has a
+description, since its label is already on screen. The tooltip reaches a host's
+[`configureTooltips`](../user/workspace.md#tooltips) renderer as a `TooltipInfo` with the id
+`action.<id>`, the label as `title`, the description, and the icon's markup.
 
 `align`/`order` are the action's *suggestion* — the HOST has the last word: the shell's
 `topbar: { left, right }` option (see [Composing the

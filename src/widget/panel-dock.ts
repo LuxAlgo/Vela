@@ -31,6 +31,8 @@ export interface PanelDockDeps {
 export interface BuiltInPanel {
     id: string;
     title: string;
+    /** The toggle tooltip's description line. */
+    description?: string;
     icon: string;
     order: number;
     panel: SidePanel;
@@ -41,6 +43,7 @@ export interface BuiltInPanel {
 interface Entry {
     id: string;
     title: string;
+    description?: string;
     icon: string;
     order: number;
     panel: SidePanel;
@@ -230,7 +233,7 @@ export class PanelDock {
 
     /** Push the current toggle group to the chrome, pressed states included. */
     private publish(): void {
-        const buttons: SidePanelButton[] = this.entries.map((e) => ({ id: e.id, title: e.title, icon: e.icon }));
+        const buttons: SidePanelButton[] = this.entries.map((e) => ({ id: e.id, title: e.title, description: e.description, icon: e.icon }));
         this.deps.chrome.setPanelButtons(buttons, (id) => this.toggle(id));
         for (const entry of this.entries) this.deps.chrome.setPanelActive(entry.id, entry.panel.open);
     }

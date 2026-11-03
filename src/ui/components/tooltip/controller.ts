@@ -2,10 +2,11 @@
 // option mapping. No DOM here; any view layer (vanilla today, React later) consumes it.
 import * as tooltip from '@zag-js/tooltip';
 import { nextUid, normalizeProps } from '../../zag';
+import { tooltipOpenDelay } from '../../tooltip-config';
 
 export interface TooltipControllerOptions {
     placement?: tooltip.Placement;
-    /** ms before opening on hover (default 0 — the reference tooltips are instant). */
+    /** ms before opening on hover. Default: the `configureTooltips` delay, else 0 (instant). */
     openDelay?: number;
     closeDelay?: number;
     /** Keep open while the pointer is over the content (rich tooltips). */
@@ -29,7 +30,7 @@ export function tooltipController(opts: TooltipControllerOptions = {}): TooltipC
         machine: tooltip.machine,
         props: {
             id: nextUid('vela-tooltip'),
-            openDelay: opts.openDelay ?? 0,
+            openDelay: opts.openDelay ?? tooltipOpenDelay(0),
             closeDelay: opts.closeDelay ?? 0,
             interactive: opts.interactive ?? false,
             ids: opts.triggerId ? { trigger: opts.triggerId } : undefined,

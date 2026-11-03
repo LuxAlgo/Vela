@@ -80,8 +80,8 @@ export class AxisScaleButtons {
             pointerEvents: 'auto',
         });
         this.applyTheme();
-        this.autoBtn = this.button('A', 'Auto (fits data to screen)', () => this.deps.onToggleAuto(this.hoverPaneId ?? ''));
-        this.logBtn = this.button('L', 'Logarithmic scale', () => this.deps.onToggleLog(this.hoverPaneId ?? ''));
+        this.autoBtn = this.button('A', 'axis.auto', 'Auto (fits data to screen)', () => this.deps.onToggleAuto(this.hoverPaneId ?? ''));
+        this.logBtn = this.button('L', 'axis.log', 'Logarithmic scale', () => this.deps.onToggleLog(this.hoverPaneId ?? ''));
         this.cluster.append(this.autoBtn, this.logBtn);
         this.plot.appendChild(this.cluster);
         // Track hover on the PLOT so moving the cursor onto the buttons themselves — plot
@@ -90,7 +90,7 @@ export class AxisScaleButtons {
         this.plot.addEventListener('pointerleave', this.onPlotLeave);
     }
 
-    private button(label: string, title: string, onClick: () => void): HTMLButtonElement {
+    private button(label: string, tipId: string, title: string, onClick: () => void): HTMLButtonElement {
         const b = document.createElement('button');
         b.type = 'button';
         b.setAttribute('aria-label', title); // not `title` — native tooltips are banned on renderer chrome
@@ -100,7 +100,7 @@ export class AxisScaleButtons {
         this.tipDisposers.push(attachChromeTooltip(b, {
             host: this.plot,
             theme: () => this.theme,
-            text: () => title,
+            content: () => ({ id: tipId, title }),
             placement: 'above',
         }));
         b.addEventListener('click', (e) => {

@@ -113,6 +113,8 @@ export { clampPanelWidth, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_MIN_WIDTH, DEFAULT_
 export { drawingTypes, getDrawingType, type DrawingTypeMeta } from './core/drawings/registry';
 export type { DrawingTypeKey } from './core/drawings/Drawing';
 export { registerIcon, iconMarkup } from './ui/icons';
+// One hover delay and an optional content hook for every tooltip Vela's chrome creates.
+export { configureTooltips, type TooltipConfig, type TooltipInfo, type TooltipRenderer } from './ui/tooltip-config';
 export type { KeyBindingDescriptor, ResolvedBinding } from './ui/keymap';
 export type { PriceStyle } from './core/options';
 export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';

@@ -1,5 +1,5 @@
 import type { DrawingTypeKey } from './Drawing';
-import { drawingTypes, getDrawingType } from './registry';
+import { drawingTypes, getDrawingType, type DrawingTypeMeta } from './registry';
 
 /**
  * Inert, renderer-neutral toolbar data. The core builds it from the type registry;
@@ -10,6 +10,8 @@ import { drawingTypes, getDrawingType } from './registry';
 export interface ToolDefinition {
     type: DrawingTypeKey;
     label: string;
+    /** The type's {@link DrawingTypeMeta.description}, when it has one. */
+    description?: string;
     /** Inline SVG markup (no DOM). */
     icon: string;
 }
@@ -147,10 +149,17 @@ const TOOLBAR_LAYOUT: readonly ToolbarGroupLayout[] = [
     },
 ];
 
+/** The toolbar's view of a registered type. */
+function toolOf(meta: DrawingTypeMeta): ToolDefinition {
+    const tool: ToolDefinition = { type: meta.type, label: meta.label, icon: meta.icon };
+    if (meta.description) tool.description = meta.description;
+    return tool;
+}
+
 /** Resolve a type key to a {@link ToolDefinition}, or null if unregistered. */
 function toolFor(type: DrawingTypeKey): ToolDefinition | null {
     const meta = getDrawingType(type);
-    return meta ? { type: meta.type, label: meta.label, icon: meta.icon } : null;
+    return meta ? toolOf(meta) : null;
 }
 
 /** Index registered tools by their declared registry group (registration order preserved). */
@@ -158,7 +167,7 @@ function toolsByRegistryGroup(allowed?: ReadonlySet<DrawingTypeKey>): Map<string
     const byGroup = new Map<string, ToolDefinition[]>();
     for (const meta of drawingTypes()) {
         if (allowed && !allowed.has(meta.type)) continue;
-        const tool = { type: meta.type, label: meta.label, icon: meta.icon };
+        const tool = toolOf(meta);
         if (!byGroup.has(meta.group)) byGroup.set(meta.group, []);
         byGroup.get(meta.group)!.push(tool);
     }

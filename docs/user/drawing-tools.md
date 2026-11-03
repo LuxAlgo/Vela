@@ -42,8 +42,11 @@ right, so the bar never overlaps candles, the legend, or the axes).
     finishing a drawing leaves the tool armed so you can keep placing the same tool without
     re-picking it; when off, most tools disarm after one placement (the brush family always stays
     armed either way). Click the cursor button or press Escape to return to select/idle.
-- **Tooltips.** Hovering any control briefly shows a small label beside it; a tool group's
-  tooltip names the tool its icon will arm (the group's last-used one).
+- **Tooltips.** Hovering any control briefly shows its name beside it, with a short
+  description underneath; a tool group's tooltip names and describes the tool its icon will
+  arm (the group's last-used one). In a flyout, hovering a tool's row shows that tool's
+  description to the right of the flyout. A host can change the delay and the content of
+  every tooltip with [`configureTooltips`](./workspace.md#tooltips).
 - **Favorites.** Every tool row in a flyout carries a **star** at its right edge (revealed on row
   hover, gold when set). Starring is a user preference, not document data: the set survives
   symbol/timeframe rebuilds, is persisted by the shell alongside the other UI state (`persist`),

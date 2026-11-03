@@ -5,6 +5,7 @@ import type { Vela } from '../Vela';
 import type { OHLCV } from '../core/model/ohlcv';
 import { injectStyles } from '../ui/styles';
 import { Tooltip } from '../ui/components/tooltip';
+import type { TooltipInfo } from '../ui/tooltip-config';
 import { CalloutBubble } from '../ui/components/callout-bubble';
 import { Menu } from '../ui/components/menu';
 import { segmentVisibility, statuslineMenuItems, STATUSLINE_LADDER, readoutCells, type StatuslinePart, type StatuslineLayout } from './statusline-model';
@@ -186,6 +187,7 @@ const MARKET_LABELS: Record<MarketStatus, string> = {
     holiday: 'Market Holiday',
 };
 const REPLAY_LABEL = 'Replay Mode';
+const marketTip = (title: string): TooltipInfo => ({ id: 'statusline.market', title });
 /**
  * The replay badge: the circle and its glyph (two left-pointing triangles) in ONE drawing —
  * a circle behind an icon element rounds to device pixels separately from it, so the glyph
@@ -394,8 +396,8 @@ export class Statusline {
         doc.fonts?.addEventListener('loadingdone', this.onFontsLoaded);
         // The tooltips portal to the nearest `.vela-ui` ancestor for theme tokens — resolve
         // them AFTER the statusline is in the DOM. The badge's content follows setMarketStatus.
-        this.marketTip = new Tooltip(this.marketEl, { content: MARKET_LABELS.open, placement: 'bottom' });
-        this.eyeTip = new Tooltip(this.eyeEl, { content: 'Show chart', placement: 'bottom' });
+        this.marketTip = new Tooltip(this.marketEl, { content: marketTip(MARKET_LABELS.open), placement: 'bottom' });
+        this.eyeTip = new Tooltip(this.eyeEl, { content: { id: 'statusline.show-chart', title: 'Show chart' }, placement: 'bottom' });
         this.setMarketStatus('open'); // crypto trades continuously (no session model yet)
         this.render();
     }
@@ -518,7 +520,7 @@ export class Statusline {
         this.replayBadge.hidden = !this.replaying;
         if (this.replaying) {
             this.marketEl.dataset.status = 'replay';
-            this.marketTip.setContent(REPLAY_LABEL);
+            this.marketTip.setContent(marketTip(REPLAY_LABEL));
             return;
         }
         const status = this.marketStatus;
@@ -530,7 +532,7 @@ export class Statusline {
             color: ink,
             label: MARKET_LABELS[status],
         });
-        this.marketTip.setContent(MARKET_LABELS[status]);
+        this.marketTip.setContent(marketTip(MARKET_LABELS[status]));
     }
 
     /** Show/hide one part — the settings dialog's Status line tab and the right-click

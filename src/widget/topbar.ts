@@ -2,6 +2,7 @@
 // every chart type registered through the plugin SDK, labels from the registry).
 import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
 import { Tooltip } from '../ui/components/tooltip';
+import type { TooltipInfo } from '../ui/tooltip-config';
 import { LayoutPicker, type LayoutPickerShape } from './layout-picker';
 import { iconEl, iconMarkup, registerIcon } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
@@ -144,6 +145,19 @@ const CSS = `
 .vela-widget-action:hover { background: var(--vela-hover); }
 `;
 
+/** The built-in controls' tooltips. The buttons' aria-labels are separate and stay put. */
+const TIPS = {
+    symbol: { id: 'topbar.symbol', title: 'Symbol search', description: 'Find a market to open on the chart.' },
+    timeframe: { id: 'topbar.timeframe', title: 'Timeframe', description: 'Choose the interval represented by each candle.' },
+    style: { id: 'topbar.style', title: 'Chart style', description: 'Choose how price is drawn on the chart.' },
+    layout: { id: 'topbar.layout', title: 'Layout', description: 'Arrange charts and choose what stays in sync.' },
+    indicators: { id: 'topbar.indicators', title: 'Indicators', description: 'Add indicators to the chart.' },
+    undo: { id: 'topbar.undo', title: 'Undo', description: 'Reverse the last chart edit.' },
+    redo: { id: 'topbar.redo', title: 'Redo', description: 'Restore the last edit you undid.' },
+    screenshot: { id: 'topbar.screenshot', title: 'Download screenshot', description: 'Capture the current chart as an image.' },
+    alerts: { id: 'topbar.alerts', title: 'Alerts', description: 'Review the alerts your indicators raised.' },
+} satisfies Record<string, TooltipInfo>;
+
 const BUILTIN_STYLE_LABELS: Record<string, string> = {
     candles: 'Candles',
     bars: 'Bars',
@@ -222,6 +236,8 @@ export class Topbar {
     private readonly tfCaret: HTMLButtonElement;
     private tfFavs: string[];
     private readonly styleButton: HTMLElement;
+    /** Its info carries the CURRENT style's icon — refreshed on every style change. */
+    private styleTip: Tooltip | null = null;
     private layoutButton: HTMLElement | null = null;
     private layoutPicker: LayoutPicker | null = null;
     private layoutId: string | null = null;
@@ -250,8 +266,8 @@ export class Topbar {
     /** Overrides that LEFT their native slot (default side + a declared `order`) — they
      *  render through the flow cluster like ordinary actions. */
     private readonly flowingOverrides = new Set<string>();
-    /** Tooltips of the CURRENT icon-only action buttons — rebuilt with every
-     *  renderActions pass (contributed buttons are replaceChildren'd away). */
+    /** Tooltips of the CURRENT action buttons — rebuilt with every renderActions pass
+     *  (contributed buttons are replaceChildren'd away). */
     private actionTooltips: Tooltip[] = [];
     /** `iconOnly` misuse warned once per action id (renderActions re-runs freely). */
     private readonly warnedIconless = new Set<string>();
@@ -322,22 +338,22 @@ export class Topbar {
         this.leftActionsHost.className = 'vela-widget-actions-left';
         this.panelsHost = doc.createElement('span');
         this.panelsHost.className = 'vela-widget-panels';
-        const tool = (cls: string, icon: string, tip: string, onClick?: () => void): HTMLButtonElement =>
+        const tool = (cls: string, icon: string, tip: TooltipInfo, onClick?: () => void): HTMLButtonElement =>
             this.toolButton(cls, icon, tip, onClick, this.tooltips);
         // Hidden tools get a DETACHED bare button instead: the state setters
         // (setHistoryState, setAlertCount) stay safe no-ops, and no tooltip machine
         // ever binds to chrome the composition removed.
         // Undo/redo sit beside Indicators (same icon-tool chrome as the right cluster).
         if (vis('undo-redo')) {
-            this.undoBtn = tool('vela-widget-undo', 'undo', 'Undo', opts.onUndoClick);
-            this.redoBtn = tool('vela-widget-redo', 'redo', 'Redo', opts.onRedoClick);
+            this.undoBtn = tool('vela-widget-undo', 'undo', TIPS.undo, opts.onUndoClick);
+            this.redoBtn = tool('vela-widget-redo', 'redo', TIPS.redo, opts.onRedoClick);
         } else {
             this.undoBtn = doc.createElement('button');
             this.redoBtn = doc.createElement('button');
         }
         this.setHistoryState(false, false);
-        const screenshotBtn = vis('screenshot') && !topbarActionOverride('screenshot') ? tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick) : null;
-        this.alertsBtn = vis('alerts') ? tool('vela-widget-alerts', 'bell', 'Alerts') : doc.createElement('button');
+        const screenshotBtn = vis('screenshot') && !topbarActionOverride('screenshot') ? tool('vela-widget-screenshot', 'camera', TIPS.screenshot, opts.onScreenshotClick) : null;
+        this.alertsBtn = vis('alerts') ? tool('vela-widget-alerts', 'bell', TIPS.alerts) : doc.createElement('button');
         this.alertsBtn.style.position = 'relative';
         if (opts.onAlertsClick) this.alertsBtn.addEventListener('click', () => opts.onAlertsClick!(this.alertsBtn));
         this.alertsBadge = doc.createElement('span');
@@ -438,10 +454,13 @@ export class Topbar {
         doc.defaultView?.addEventListener('resize', this.onHairlineSync);
         this.renderActions();
 
-        this.tooltips.push(new Tooltip(this.tfCaret, { content: 'Timeframe', triggerId: 'vela-topbar-tf', host }));
-        this.tooltips.push(new Tooltip(this.styleButton, { content: 'Chart style', triggerId: 'vela-topbar-style', host }));
+        this.tooltips.push(new Tooltip(this.symbolEl, { content: TIPS.symbol, host }));
+        this.tooltips.push(new Tooltip(this.tfCaret, { content: TIPS.timeframe, triggerId: 'vela-topbar-tf', host }));
+        this.styleTip = new Tooltip(this.styleButton, { content: this.styleTipInfo(), triggerId: 'vela-topbar-style', host });
+        this.tooltips.push(this.styleTip);
+        if (indicatorsBtn) this.tooltips.push(new Tooltip(indicatorsBtn, { content: { ...TIPS.indicators, icon: iconMarkup('indicators') ?? undefined }, host }));
         if (this.layoutButton && opts.layout) {
-            this.tooltips.push(new Tooltip(this.layoutButton, { content: 'Layout', triggerId: 'vela-topbar-layout', host }));
+            this.tooltips.push(new Tooltip(this.layoutButton, { content: { ...TIPS.layout, icon: iconMarkup('layout') ?? undefined }, triggerId: 'vela-topbar-layout', host }));
             const layout = opts.layout;
             this.layoutPicker = new LayoutPicker({
                 trigger: this.layoutButton,
@@ -531,6 +550,12 @@ export class Topbar {
         this.priceStyle = style;
         this.renderStyleButton(this.styleButton.ownerDocument);
         this.styleMenu.setItems(this.styleItems());
+        this.styleTip?.setContent(this.styleTipInfo());
+    }
+
+    private styleTipInfo(): TooltipInfo {
+        const icon = priceStyleIcon(this.priceStyle);
+        return { ...TIPS.style, icon: icon ? (iconMarkup(icon) ?? undefined) : undefined };
     }
 
     /** Reflect the current workspace layout (no-op without the layout dropdown). */
@@ -570,8 +595,9 @@ export class Topbar {
         this.actionsHost.replaceChildren();
         this.leftActionsHost.replaceChildren();
         for (const pin of this.pinned.values()) pin.host.replaceChildren();
-        // Icon-only action buttons carry kit tooltips — dispose the previous render's
-        // machines before the buttons they were bound to are discarded.
+        // Action buttons carry kit tooltips (icon-only ones always, text ones with a
+        // description) — dispose the previous render's machines before the buttons they
+        // were bound to are discarded.
         for (const t of this.actionTooltips) t.destroy();
         this.actionTooltips = [];
         const doc = this.actionsHost.ownerDocument;
@@ -598,12 +624,20 @@ export class Topbar {
             // so a slot override is pixel-faithful to the button it replaces.
             b.className = left ? 'vela-widget-action-left' : iconOnly ? 'vela-widget-tool' : 'vela-widget-action';
             if (action.icon) b.appendChild(iconEl(action.icon, doc));
+            const tip: TooltipInfo = {
+                id: `action.${action.id}`,
+                title: action.label,
+                description: action.description,
+                icon: action.icon ? (iconMarkup(action.icon) ?? undefined) : undefined,
+            };
             if (iconOnly) {
                 // The label still speaks — as the accessible name and the hover tooltip.
                 b.setAttribute('aria-label', action.label);
-                this.actionTooltips.push(new Tooltip(b, { content: action.label, triggerId: `vela-action-${action.id}`, host: this.host }));
             } else {
                 b.appendChild(doc.createTextNode(action.label));
+            }
+            if (iconOnly || action.description) {
+                this.actionTooltips.push(new Tooltip(b, { content: tip, triggerId: `vela-action-${action.id}`, host: this.host }));
             }
             b.addEventListener('click', () => {
                 const c = this.opts.getContext?.();
@@ -641,7 +675,8 @@ export class Topbar {
         this.panelBtns.clear();
         this.panelsHost.replaceChildren();
         for (const b of buttons) {
-            const el = this.toolButton(`vela-widget-panel-${b.id}`, b.icon, b.title, () => onClick(b.id), this.panelTooltips);
+            const tip = { id: `topbar.panel.${b.id}`, title: b.title, description: b.description };
+            const el = this.toolButton(`vela-widget-panel-${b.id}`, b.icon, tip, () => onClick(b.id), this.panelTooltips);
             this.panelBtns.set(b.id, el);
             this.panelsHost.appendChild(el);
         }
@@ -666,17 +701,18 @@ export class Topbar {
         this.el.remove();
     }
 
-    /** One icon-only tool button with its kit tooltip, parked in `sink` for disposal. */
-    private toolButton(cls: string, icon: string, tip: string, onClick: (() => void) | undefined, sink: Tooltip[]): HTMLButtonElement {
+    /** One icon-only tool button with its kit tooltip, parked in `sink` for disposal. The
+     *  tip's title is also the button's aria-label. */
+    private toolButton(cls: string, icon: string, tip: TooltipInfo, onClick: (() => void) | undefined, sink: Tooltip[]): HTMLButtonElement {
         const doc = this.el.ownerDocument;
         const b = doc.createElement('button');
         b.className = `vela-widget-tool ${cls}`;
         b.appendChild(iconEl(icon, doc));
-        b.setAttribute('aria-label', tip);
+        b.setAttribute('aria-label', tip.title);
         // Kit tooltip only — a native `title` on top of it double-tooltips. Explicit host: at
         // construction the topbar is NOT in the DOM yet, so the closest('.vela-ui') fallback
         // would portal to <body> — outside the theme vars.
-        sink.push(new Tooltip(b, { content: tip, triggerId: `vela-tool-${cls}`, host: this.host }));
+        sink.push(new Tooltip(b, { content: { ...tip, icon: iconMarkup(icon) ?? undefined }, triggerId: `vela-tool-${cls}`, host: this.host }));
         if (onClick) b.addEventListener('click', onClick);
         return b;
     }

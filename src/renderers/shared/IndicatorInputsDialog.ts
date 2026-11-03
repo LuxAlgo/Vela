@@ -132,7 +132,7 @@ export class IndicatorInputsDialog {
         this.dialogTips.push(attachChromeTooltip(ui.panel.querySelector('.vela-dialog-close') as HTMLElement, {
             host: this.host.container,
             theme: () => this.host.theme(),
-            text: () => 'Close',
+            content: () => ({ id: 'dialog.close', title: 'Close' }),
         }));
 
         const tabDefs = tabInputs(row.inputs);

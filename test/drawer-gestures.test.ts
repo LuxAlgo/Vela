@@ -88,7 +88,7 @@ describe('chrome tooltip arming', () => {
         const dispose = attachChromeTooltip(anchor as unknown as HTMLElement, {
             host: {} as HTMLElement,
             theme: () => ({}) as VelaTheme,
-            text: () => 'Hide indicator legend',
+            content: () => 'Hide indicator legend',
         });
 
         // The stuck-tip bug came from mouseenter, which mobile browsers synthesize after

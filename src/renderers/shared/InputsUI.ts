@@ -265,10 +265,12 @@ export class InputsUI {
         if (this.rows.has(id)) this.openDialog(id);
     }
 
-    /** Attach a themed chrome tooltip to a control, recording its disposer under `id`. */
-    private tip(store: Map<string, Array<() => void>>, id: string, anchor: HTMLElement, text: string | (() => string), wrap = false): void {
+    /** Attach a themed chrome tooltip to a control, recording its disposer under `id`.
+     *  `tipId` is the control's tooltip id (`legend.<control>`, see `TooltipInfo`). */
+    private tip(store: Map<string, Array<() => void>>, id: string, anchor: HTMLElement, tipId: string, title: string | (() => string)): void {
         const list = store.get(id) ?? [];
-        list.push(attachChromeTooltip(anchor, { host: this.container, theme: () => this.theme, text: typeof text === 'function' ? text : () => text, wrap }));
+        const read = typeof title === 'function' ? title : () => title;
+        list.push(attachChromeTooltip(anchor, { host: this.container, theme: () => this.theme, content: () => ({ id: tipId, title: read() }) }));
         store.set(id, list);
     }
 
@@ -339,7 +341,7 @@ export class InputsUI {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.setAttribute('aria-label', action.tooltip);
-            this.tip(this.extrasTips, id, btn, action.tooltip);
+            this.tip(this.extrasTips, id, btn, `legend.action.${action.id}`, action.tooltip);
             btn.innerHTML = iconAt(action.icon, LEGEND_ICON_PX);
             btn.className = 'vela-ind-ctl';
             btn.dataset.legendAction = action.id;
@@ -384,7 +386,7 @@ export class InputsUI {
                 theme: () => this.theme,
             });
             bubble.el.dataset.legendCallout = view.id;
-            this.tip(this.calloutTips, row.id, bubble.el, view.tooltip);
+            this.tip(this.calloutTips, row.id, bubble.el, `legend.callout.${view.id}`, view.tooltip);
             row.callouts.push(bubble);
             row.calloutsEl.appendChild(bubble.el);
         }
@@ -646,7 +648,7 @@ export class InputsUI {
             btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'vela-ind-fold';
-            this.tip(this.rowTips, 'fold', btn, () => (this.overviewAction !== null ? 'Indicators' : this.legendFolded ? 'Show indicator legend' : 'Hide indicator legend'));
+            this.tip(this.rowTips, 'fold', btn, 'legend.fold', () => (this.overviewAction !== null ? 'Indicators' : this.legendFolded ? 'Show indicator legend' : 'Hide indicator legend'));
             btn.addEventListener('click', () => {
                 if (this.overviewAction !== null) {
                     this.overviewAction();
@@ -803,7 +805,7 @@ export class InputsUI {
             const eye = document.createElement('button');
             eye.type = 'button';
             eye.setAttribute('aria-label', 'Hide');
-            this.tip(this.rowTips, id, eye, () => (this.rows.get(id)?.hidden ? 'Show' : 'Hide'));
+            this.tip(this.rowTips, id, eye, 'legend.visibility', () => (this.rows.get(id)?.hidden ? 'Show' : 'Hide'));
             eye.innerHTML = EYE_SVG;
             eye.className = 'vela-ind-ctl';
             eye.style.cssText = LEGEND_CTL_CSS;
@@ -818,7 +820,7 @@ export class InputsUI {
             const gear = document.createElement('button');
             gear.type = 'button';
             gear.setAttribute('aria-label', 'Settings');
-            this.tip(this.rowTips, id, gear, 'Settings');
+            this.tip(this.rowTips, id, gear, 'legend.settings', 'Settings');
             gear.innerHTML = GEAR_SVG;
             gear.className = 'vela-ind-ctl';
             gear.style.cssText = LEGEND_CTL_CSS;
@@ -831,7 +833,7 @@ export class InputsUI {
             const mv = document.createElement('button');
             mv.type = 'button';
             mv.setAttribute('aria-label', 'Move to pane');
-            this.tip(this.rowTips, id, mv, 'Move to pane');
+            this.tip(this.rowTips, id, mv, 'legend.move', 'Move to pane');
             mv.innerHTML = iconAt('move', LEGEND_ICON_PX);
             mv.className = 'vela-ind-ctl';
             mv.style.cssText = LEGEND_CTL_CSS;
@@ -847,7 +849,7 @@ export class InputsUI {
         const close = document.createElement('button');
         close.type = 'button';
         close.setAttribute('aria-label', 'Remove indicator');
-        this.tip(this.rowTips, id, close, 'Remove indicator');
+        this.tip(this.rowTips, id, close, 'legend.remove', 'Remove indicator');
         close.innerHTML = CLOSE_SVG;
         close.className = 'vela-ind-close';
         close.style.cssText = LEGEND_CTL_CSS;

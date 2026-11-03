@@ -532,6 +532,66 @@ lists, color pickers, mark cards, the layout picker), `'dialog'`, `'drawer'` or 
 had focus when a dialog opened — or `null` when there is none (a right-click menu). A surface
 created without an explicit host portals to `<body>`; listen on `document` to catch those too.
 
+### Tooltips
+
+Every control in the chrome has a themed tooltip: the control's name and, for the built-in
+controls, drawing tools and any action that declares one, a short description on a second,
+muted line. `configureTooltips` sets one hover delay for all of them and, optionally, takes
+over what they show:
+
+```ts
+import { configureTooltips, type TooltipInfo } from '@luxalgo/vela/ui'; // also exported by '@luxalgo/vela/plugin'
+
+configureTooltips({
+    openDelay: 300, // ms before ANY Vela tooltip opens
+    render: (info: TooltipInfo) => {
+        if (!info.description) return null; // null keeps Vela's default content
+        const card = document.createElement('div');
+        card.className = 'my-tip';
+        card.innerHTML = `${info.icon ?? ''}<b></b><p></p>`;
+        card.querySelector('b')!.textContent = info.title;
+        card.querySelector('p')!.textContent = info.description;
+        return card;
+    },
+});
+```
+
+- **`openDelay`** applies to every tooltip Vela creates: the topbar, bottom bar and status
+  line, the drawing toolbar and its flyouts, the price scale's A / L buttons, the legend
+  rows, and the ⓘ hints of the settings dialogs. Left unset, each keeps its own default (the
+  shell's bars open instantly, the in-chart chrome after 700 ms, the ⓘ hints after 250 ms).
+  A kit `Tooltip` you construct with an explicit `openDelay` keeps it; one without follows
+  the configured delay.
+- **`render`** receives a `TooltipInfo` — `{ id, title, description?, icon?, shortcut? }`,
+  where `icon` is the control's SVG markup and `shortcut` a display string such as
+  `'Alt+T'` — and returns the node to show inside Vela's tooltip frame. Return a fresh node
+  on every call; `null` or `undefined` keeps the default content for that tooltip. The ⓘ
+  hints are prose rather than a control's name and always show their text as is.
+- **Configure at import time**, before any chart or shell is built, like the other
+  registries: the shell's tooltips read the delay and build their content when they are
+  created. The in-chart tooltips read the configuration each time they open. Each call
+  merges into the current configuration — an omitted field keeps its value, and `null`
+  restores the default.
+
+`id` names the control with a stable dotted path, so a renderer can single out the
+controls it cares about:
+
+| Surface | Ids |
+| --- | --- |
+| Topbar | `topbar.symbol`, `topbar.timeframe`, `topbar.style`, `topbar.layout`, `topbar.indicators`, `topbar.undo`, `topbar.redo`, `topbar.screenshot`, `topbar.alerts`, `topbar.panel.<panelId>` |
+| Contributed actions | `action.<actionId>` |
+| Bottom bar | `bottombar.timezone`, `bottombar.settings` |
+| Status line | `statusline.market`, `statusline.show-chart` |
+| Drawing tools | `drawing.<typeKey>` — a toolbar group cell (the tool it arms) and the tool's flyout row |
+| Drawing toolbar | `drawing-toolbar.cursor`, `.magnet`, `.measure`, `.eraser`, `.stay`, `.sync`, `.collapse`; magnet rows `drawing-toolbar.magnet.off` / `.weak` / `.strong` |
+| Price scale | `axis.auto`, `axis.log` |
+| Legend | `legend.fold`, `legend.visibility`, `legend.settings`, `legend.move`, `legend.remove`, `legend.action.<actionId>`, `legend.callout.<calloutId>` |
+| Dialogs | `dialog.close` |
+
+Your own kit tooltips can use the same pipeline: give `new Tooltip(el, { content })` a
+`TooltipInfo` instead of a string and it renders through your `render` hook, falling back to
+the title-and-description layout. Tooltips built with a string or a node show it as is.
+
 ## Composing the topbar
 
 The `topbar` option DESCRIBES the bar: `{ left, right }` lists of the **visible**

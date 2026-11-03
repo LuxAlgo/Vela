@@ -6,6 +6,7 @@
 // the widget chrome: they look foreign and cannot be themed.
 import type { VelaTheme } from '../../core/options';
 import { iconAt } from '../../core/icons';
+import { tooltipContent, tooltipOpenDelay, type TooltipInfo } from '../../ui/tooltip-config';
 import { applyChromeTokens } from './theme-tokens';
 
 export interface ChromeTooltipOptions {
@@ -13,13 +14,19 @@ export interface ChromeTooltipOptions {
     host: HTMLElement;
     /** Live theme — read at OPEN time, so a theme switch never shows a stale tip. */
     theme: () => VelaTheme;
-    /** Tip text — read at OPEN time (dynamic labels: Hide/Show). Empty ⇒ no tip. */
-    text: () => string;
-    /** Hover delay before the tip opens. Default 700 ms. */
+    /** What the tip shows — read at OPEN time (dynamic labels: Hide/Show). A control's
+     *  {@link TooltipInfo} goes through the `configureTooltips` renderer, else the default
+     *  title + description; a string (prose, e.g. an input's docs) is shown as is.
+     *  Null, an empty string or an empty title ⇒ no tip. */
+    content: () => TooltipInfo | string | null;
+    /** Hover delay before the tip opens. Default 700 ms; a `configureTooltips` delay wins. */
     delayMs?: number;
     /** `below` the anchor (legend rows), to its `right` (a vertical toolbar), or `above`
      *  (controls sitting on the bottom edge). Default below. */
     placement?: 'below' | 'right' | 'above';
+    /** With `placement: 'right'`: the element whose right edge the tip clears (default the
+     *  anchor) — a flyout row's tip sits beside the whole flyout, not over its padding. */
+    rightOf?: HTMLElement;
     /** Allow wrapping (long texts, e.g. an input's docs). Default false — one line. */
     wrap?: boolean;
 }
@@ -43,11 +50,11 @@ export function attachChromeTooltip(anchor: HTMLElement, opts: ChromeTooltipOpti
     };
 
     const show = (): void => {
-        const text = opts.text();
-        if (!text) return;
+        const content = opts.content();
+        if (!content || (typeof content !== 'string' && !content.title)) return;
         const doc = anchor.ownerDocument;
         tip = doc.createElement('div');
-        tip.textContent = text;
+        tip.append(typeof content === 'string' ? content : tooltipContent(content, doc, true));
         // The tooltip layer token (60) keeps tips above the in-chart dialogs (40) — the
         // settings dialog's own control tips used to open BEHIND its card at a fixed 25.
         tip.style.cssText =
@@ -62,8 +69,12 @@ export function attachChromeTooltip(anchor: HTMLElement, opts: ChromeTooltipOpti
         const a = anchor.getBoundingClientRect();
         const h = opts.host.getBoundingClientRect();
         if (opts.placement === 'right') {
-            tip.style.left = `${a.right - h.left + 8}px`;
-            tip.style.top = `${a.top - h.top + (a.height - tip.offsetHeight) / 2}px`;
+            const edge = opts.rightOf?.getBoundingClientRect().right ?? a.right;
+            tip.style.left = `${edge - h.left + 8}px`;
+            // Clamped inside the host: a two-line tip beside a control near the bottom edge
+            // would otherwise be clipped.
+            const top = a.top - h.top + (a.height - tip.offsetHeight) / 2;
+            tip.style.top = `${Math.max(0, Math.min(top, h.height - tip.offsetHeight))}px`;
         } else {
             // Left-aligned, clamped so it never spills out of the host. `above` is for
             // anchors sitting on the bottom edge (the A/L scale buttons).
@@ -82,7 +93,7 @@ export function attachChromeTooltip(anchor: HTMLElement, opts: ChromeTooltipOpti
     const arm = (e: PointerEvent): void => {
         if (e.pointerType !== 'mouse') return;
         clear();
-        timer = window.setTimeout(show, opts.delayMs ?? 700);
+        timer = window.setTimeout(show, tooltipOpenDelay(opts.delayMs ?? 700));
     };
 
     anchor.addEventListener('pointerenter', arm);
@@ -109,7 +120,7 @@ export interface ChromeHintOptions {
 /**
  * The ⓘ hint badge every in-chart dialog puts after a label: a round chip with the `info`
  * icon and a wrapped chrome tooltip that opens quickly (a hint is asked for, not stumbled
- * on). The glyph is an SVG, so it is centered in the badge regardless of the font. Styled
+ * on — unless the host configured one delay for every tooltip). The glyph is an SVG, so it is centered in the badge regardless of the font. Styled
  * inline (renderer chrome carries no stylesheet); the hover state is the tip's own
  * pointer listeners. Returns the element and a disposer for the tooltip.
  */
@@ -130,6 +141,6 @@ export function chromeHint(text: string, opts: ChromeHintOptions): { el: HTMLEle
     };
     el.addEventListener('pointerenter', () => hover(true));
     el.addEventListener('pointerleave', () => hover(false));
-    const dispose = attachChromeTooltip(el, { host: opts.host, theme: opts.theme, text: () => text, wrap: true, delayMs: 250 });
+    const dispose = attachChromeTooltip(el, { host: opts.host, theme: opts.theme, content: () => text, wrap: true, delayMs: 250 });
     return { el, dispose };
 }

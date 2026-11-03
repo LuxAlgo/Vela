@@ -6,7 +6,7 @@ import type { Unsubscribe } from '../core/util/types';
 import { SecondClock, type WallClock } from '../core/util/wall-clock';
 import { Menu } from '../ui/components/menu';
 import { Tooltip } from '../ui/components/tooltip';
-import { iconEl } from '../ui/icons';
+import { iconEl, iconMarkup } from '../ui/icons';
 import { injectStyles } from '../ui/styles';
 import { timezoneMenuRows, tzButtonLabel, resolveTimezone } from './timezones';
 
@@ -137,6 +137,7 @@ export class Bottombar {
     private readonly tzLabelEl: HTMLElement;
     private readonly tzButton: HTMLElement;
     private readonly tzMenu: Menu;
+    private readonly tzTip: Tooltip;
     private readonly settingsTip: Tooltip | null = null;
     private readonly rangeButtons = new Map<string, HTMLButtonElement>();
     private readonly sessionButtons = new Map<'regular' | 'extended', HTMLButtonElement>();
@@ -201,10 +202,19 @@ export class Bottombar {
         settingsBtn.appendChild(iconEl('gear', doc));
         settingsBtn.setAttribute('aria-label', 'Chart settings');
         if (opts.onSettingsClick) settingsBtn.addEventListener('click', opts.onSettingsClick);
-        this.settingsTip = new Tooltip(settingsBtn, { content: 'Chart settings', triggerId: 'vela-bb-settings', host });
+        this.settingsTip = new Tooltip(settingsBtn, {
+            content: { id: 'bottombar.settings', title: 'Chart settings', description: "Adjust the chart's appearance and behavior.", icon: iconMarkup('gear') ?? undefined },
+            triggerId: 'vela-bb-settings',
+            host,
+        });
         this.el.append(spacer, this.tzButton, session, settingsBtn);
         host.appendChild(this.el);
 
+        this.tzTip = new Tooltip(this.tzButton, {
+            content: { id: 'bottombar.timezone', title: 'Time zone', description: 'Choose the time zone shown along the chart.' },
+            triggerId: 'vela-bb-tz',
+            host,
+        });
         this.tzMenu = new Menu({
             trigger: this.tzButton,
             triggerId: 'vela-bb-tz',
@@ -267,6 +277,7 @@ export class Bottombar {
     destroy(): void {
         this.unsubClock();
         this.tzMenu.destroy();
+        this.tzTip.destroy();
         this.settingsTip?.destroy();
         this.el.remove();
     }

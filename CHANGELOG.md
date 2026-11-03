@@ -4,6 +4,26 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **One tooltip delay and your own tooltip content, everywhere in Vela.**
+  `configureTooltips({ openDelay, render })` sets a single hover delay for every tooltip
+  Vela shows: the topbar, bottom bar and status line, the drawing toolbar and its flyouts,
+  the price scale buttons, the legend and the settings hints. Its `render` hook can draw
+  each tooltip's content yourself from what the control describes: a stable id, its name,
+  a short description, its icon and its shortcut. Return nothing to keep Vela's default for
+  that tooltip. Widget actions and drawing types accept a `description` that their tooltips
+  show under the name. A UI kit `Tooltip` you build yourself can take the same structured
+  content, and then goes through the same hook.
+
+### Changed
+
+- **Tooltips now say what each control does.** Vela's built-in tooltips add a short,
+  muted line under the control's name: on the topbar and bottom bar, on every drawing
+  tool, and on the drawing toolbar's own buttons. In a drawing flyout, hovering a tool
+  shows its description beside the flyout. The symbol button, the Indicators button and
+  the time zone picker now have tooltips too.
+
 ### Fixed
 
 - **A flat price pane no longer freezes the tab.** When every bar in a pane sits on the
