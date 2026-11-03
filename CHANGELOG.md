@@ -82,6 +82,11 @@ All notable changes to Vela, newest first.
   the project as a component of the project's own, which never styles the kit's, and
   `diff` shows what changed upstream since. `check` finds a second installed copy of the
   kit, copies behind the installed version, and mistakes in the project's theme file.
+- **The kit's CSS rules, for your CSS.** `@luxalgo/vela-ui/stylelint` is the stylelint config
+  the kit's own components are checked with (tokens through `t`, no raw colors, logical
+  directions, parts rather than class names); a project extends it for the components it
+  writes with the `css` tag. The gallery also gains a theme editor that re-themes every
+  component live and writes the matching `createTheme` call.
 
 ### Changed
 

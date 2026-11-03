@@ -8,7 +8,9 @@ behavior and accessibility; form controls keep small vanilla state objects.
 
 ## One file per component
 
-A component file reads top to bottom:
+Start one with `npm run new-component -- gauge` at the repo root: it writes the file in the
+shape below, adds its declaration to the theme, and writes its test. A component file reads
+top to bottom:
 
 ```ts
 // Gauge: … what it is and how it behaves, for the reader of the file.
@@ -102,8 +104,10 @@ class is the instance the function returns. New components start from the shape 
 - Values come from `t` or the component's settings; durations from `t.dur`; directions are
   logical (`padding-inline`, `inset-inline-end`, `text-align: start`).
 - `npm run lint` (at the repo root) checks every template with stylelint and the postcss-lit
-  syntax: the `vela/layer`, `vela/slot-scope`, `vela/token-values` and `vela/no-raw-token-var`
-  rules, no hex or named colors, no class or id selectors, no `!important`, no
+  syntax, through the package's shared config (`@luxalgo/vela-ui/stylelint`, which Vela's
+  chrome, Pro and a host's own components extend with their own layer): the `vela/layer`,
+  `vela/slot-scope`, `vela/token-values` and `vela/no-raw-token-var` rules, no hex or named
+  colors, no class or id selectors, no `!important`, no
   `box-sizing: content-box` (the kit's border-box reset is unlayered: size the full box
   instead). A template the parser cannot read fails the run instead of going unchecked.
 - The build flattens the nesting (Lightning CSS) for the browsers that brought `@layer`:

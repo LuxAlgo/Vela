@@ -32,6 +32,7 @@ import {
 } from '../src/ui';
 import { DARK_THEME, LIGHT_THEME } from '../src/core/theme';
 import { shadcnTheme } from './shadcn-look';
+import { themeEditor } from './theme-editor';
 
 const app = document.getElementById('app')!;
 ensureUIHost(app, DARK_THEME);
@@ -222,6 +223,10 @@ new Tooltip(tooltipBtn, { content: 'Tooltip text', openDelay: 0, host: app });
 dialogBtn.addEventListener('click', () => dialog.show());
 drawerBtn.addEventListener('click', () => drawer.show());
 popoverBtn.addEventListener('click', () => popover.toggle());
+
+// The theme editor: re-themes the gallery live and writes the createTheme call.
+const editor = section('Theme editor', 'A brand color, a radius scale and a font re-theme every component above; copy the call into a project.');
+editor.append(themeEditor((theme) => ensureUIHost(app, theme)));
 
 (window as unknown as { gallery: unknown }).gallery = {
     open(name: string): void {

@@ -1,6 +1,5 @@
-// Stylelint rules for kit component CSS (the `css` templates of src/ui/components/*.ts,
-// parsed by postcss-lit, which turns each `${…}` into a POSTCSS_LIT_<n> placeholder and keeps
-// the expression's text).
+// Stylelint rules for CSS written with the kit's `css` tag (parsed by postcss-lit, which turns
+// each `${…}` into a POSTCSS_LIT_<n> placeholder and keeps the expression's text).
 import stylelint from 'stylelint';
 
 const {

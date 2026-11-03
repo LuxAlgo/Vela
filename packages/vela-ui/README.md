@@ -51,5 +51,9 @@ the project's `AGENTS.md` pointing coding agents at this package's reference.
   written to a file.
 - `llms.txt`: a short index of the above, for coding agents.
 - [Writing a component](docs/writing-a-component.md): the one-file shape and its rules.
+- `@luxalgo/vela-ui/stylelint`: the shared stylelint config for CSS written with the `css`
+  tag (tokens through `t`, no raw colors, logical directions, parts not classes). Extend it
+  and name your layer: `{ extends: ['@luxalgo/vela-ui/stylelint'], rules: { 'vela/layer':
+  'vela.custom' } }`. It needs `stylelint`, `postcss-lit` and `stylelint-config-recommended`.
 
 ES modules only. Licensed under Apache-2.0.

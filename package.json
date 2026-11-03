@@ -101,7 +101,8 @@
     "playground": "vite",
     "i18n:extract": "node scripts/i18n-extract.mjs",
     "i18n:check": "node scripts/i18n-extract.mjs --check",
-    "lint:css": "node scripts/lint-css.mjs"
+    "lint:css": "node scripts/lint-css.mjs",
+    "new-component": "node packages/vela-ui/scripts/new-component.mjs"
   },
   "devDependencies": {
     "eslint": "^9.0.0",

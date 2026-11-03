@@ -90,7 +90,8 @@ const theme = createTheme({
   in the page's stylesheet; the part uses them by name.
 - **Written against the public contract**: the parts, `data-variant`, `data-size`, and the
   state attributes (`data-state`, `data-selected`, `data-disabled`). Class names are not part
-  of it; `checkTheme` flags them, and `!important`.
+  of it; `checkTheme` flags them, and `!important`. The shared stylelint config
+  (`@luxalgo/vela-ui/stylelint`) checks CSS written with the `css` tag in a project too.
 - **Off for themes loaded from data.** CSS that was not written with the `css` tag (a saved
   JSON, a shared file, a generated theme) is left out unless the host passes
   `createTheme(input, { allowCss: true })`. CSS from someone else can restyle the page to
