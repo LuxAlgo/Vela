@@ -28,6 +28,9 @@ const insideRule = (node) => {
     return false;
 };
 
+/** A `from` / `to` / percentage step of an `@keyframes` block, not a selector. */
+const keyframeStep = (rule) => rule.parent?.type === 'atrule' && /keyframes$/i.test(rule.parent.name);
+
 // vela/layer: every rule sits inside `@layer <name>`, and no other layer opens a block.
 const layerName = 'vela/layer';
 const layerMessages = ruleMessages(layerName, {
@@ -65,7 +68,7 @@ const slotScope = createPlugin(slotName, (enabled) => (root, result) => {
     const parts = [...def[2].matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]);
     const allowed = parts.map((p) => (p === 'root' ? name : `${name}-${p}`));
     root.walkRules((rule) => {
-        if (insideRule(rule)) return;
+        if (insideRule(rule) || keyframeStep(rule)) return;
         for (const selector of rule.selectors) {
             const m = /^\[data-slot='([a-z0-9-]+)'\]/.exec(selector.trim());
             if (!m || !allowed.includes(m[1])) report({ ruleName: slotName, result, node: rule, message: slotMessages.scope(selector.trim(), allowed) });
@@ -80,7 +83,8 @@ const tokenMessages = ruleMessages(tokenName, {
     literal: (prop, value) => `"${prop}: ${value}": use a token (\${t.…}) or a component setting (\${…Def.vars.…})`,
 });
 const TOKEN_PROPS = /^(z-index|font-family|box-shadow|border-radius|border-(top|bottom|start|end)-(left|right|start|end)-radius)$/;
-const KEYWORDS = new Set(['0', 'none', 'inherit', 'initial', 'unset', 'revert', 'auto']);
+// Pills and circles are shapes, not theme choices.
+const KEYWORDS = new Set(['0', 'none', 'inherit', 'initial', 'unset', 'revert', 'auto', '999px', '50%']);
 const tokenValues = createPlugin(tokenName, (enabled) => (root, result) => {
     if (!validateOptions(result, tokenName, { actual: enabled, possible: [true] })) return;
     root.walkDecls((decl) => {

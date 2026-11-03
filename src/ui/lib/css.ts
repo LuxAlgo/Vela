@@ -6,6 +6,12 @@ import { injectStyles } from '../styles';
  *  own unlayered CSS beats every one of them without `!important`. */
 export const LAYER_ORDER = '@layer vela.theme, vela.ui, vela.chrome, vela.pro, vela.custom;';
 
+/** Declare the layer order in a root, before any sheet that uses a layer: a layer's rank is
+ *  its first appearance in the document. */
+export function injectLayerOrder(root: Document | ShadowRoot = document): void {
+    injectStyles('vela-layers', LAYER_ORDER, root);
+}
+
 /** Joins a template into its CSS text. Interpolations are tokens (`t.*`) and component
  *  settings, which print as `var(--vela-…)`. */
 export function css(strings: TemplateStringsArray, ...values: unknown[]): string {
@@ -21,7 +27,7 @@ export function defineStyles(id: string, text: string): (root?: Document | Shado
     const injected = new WeakMap<Document | ShadowRoot, Element>();
     return (root = document) => {
         if (injected.get(root)?.isConnected) return;
-        injectStyles('vela-layers', LAYER_ORDER, root);
+        injectLayerOrder(root);
         injectStyles(id, text, root);
         const sheet = root.getElementById?.(id) ?? (root instanceof Document ? null : root.querySelector(`#${CSS.escape(id)}`));
         if (sheet) injected.set(root, sheet);

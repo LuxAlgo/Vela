@@ -21,12 +21,12 @@ All notable changes to Vela, newest first.
   heights and their square icon sizes, with icons on either side and toggle states),
   `createTabs` (an island, an underlined strip, and the filled, soft and vertical rail
   looks, with keyboard navigation, tabs that can hide, and the full tabs semantics),
-  `ToggleGroup` (one choice among a few options, or several toggled on their own) and
-  `Badge` (status labels and counts). Variant, size, part and prop names follow shadcn's,
-  and every part carries a `data-slot` to style it by. Tabs and toggle groups run Zag
-  state machines, which own their keyboard behavior and accessibility, so another view
-  layer can run the same machines and behave the same. Buttons and tabs keep their styles
-  in the `vela.ui` cascade layer, so a page's own CSS overrides them without `!important`.
+  `createToggleGroup` (one choice among a few options, or several toggled on their own)
+  and `createBadge` (status labels and counts). Variant, size, part and prop names follow
+  shadcn's, and every part carries a `data-slot` to style it by. Tabs and toggle groups
+  run Zag state machines, which own their keyboard behavior and accessibility, so another
+  view layer can run the same machines and behave the same. Their styles sit in the
+  `vela.ui` cascade layer, so a page's own CSS overrides them without `!important`.
 - **The indicator settings, the symbol picker and the drawings drawer use them.** Their
   tabs and the settings dialogs' buttons look as before. The indicator settings tabs now
   answer the arrow keys, announce themselves as tabs with their panels, and brighten on
@@ -48,6 +48,15 @@ All notable changes to Vela, newest first.
   a docked strip over the whole chart column and back (`cover`), leaving full-height panels,
   the rail and the mobile bottom bar uncovered. A shell that uses none of these keeps its
   layout exactly as before.
+
+### Changed
+
+- **The UI kit's styles give way to yours.** Switches, text fields, text areas and
+  tooltips keep their styles in the `vela.ui` cascade layer, so a page's own CSS overrides
+  them without `!important` or a more specific selector, and every part carries a
+  `data-slot` to style it by. Each also has a `create…` function (`createSwitch`,
+  `createTextField`, `createTextArea`, `createTooltip`) next to its class, which keeps
+  working. Their hover and focus fades follow the kit's motion tokens.
 
 ## [0.9.3]
 

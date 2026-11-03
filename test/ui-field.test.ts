@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fieldGridColumns, FIELD_GAP_PX } from '../src/ui/components/field/controller';
-import { textAreaController } from '../src/ui/components/text-area/controller';
+import { textAreaController } from '../src/ui/components/text-area';
 import { glyphSelectController, widthFieldOptions, WIDTH_FIELD_OPTIONS } from '../src/ui/components/glyph-select/controller';
 
 describe('fieldGridColumns', () => {

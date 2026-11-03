@@ -7,6 +7,7 @@
 //     properties on the host — the chart theme stays the single source of truth.
 import type { VelaTheme } from '../core/options';
 import { STATIC_TOKENS, themeTokens } from '../core/tokens';
+import { injectLayerOrder } from './lib/css';
 import { injectStyles } from './styles';
 
 const STATIC_ID = 'vela-ui-tokens';
@@ -33,8 +34,10 @@ ${STATIC_DECLS}
    chart on a wide desktop still gets the rule when it is in the phone layout.
    Scoped to the kit root so a host page's own [data-layout] is never touched. */
 .vela-ui[data-layout='mobile'] :is(input, textarea, select) { font-size: 16px; }
-.vela-icon { display: inline-flex; align-items: center; flex: none; }
-.vela-icon svg { display: block; }
+@layer vela.ui {
+    .vela-icon { display: inline-flex; align-items: center; flex: none; }
+    .vela-icon svg { display: block; }
+}
 `;
 
 /** Write the theme-derived custom properties onto a host element (the widget root and
@@ -67,7 +70,9 @@ export function floatingLayerHost(from: HTMLElement, fallback?: HTMLElement): HT
 
 /** Mark an element as a kit host: static token sheet + the `.vela-ui` class. */
 export function ensureUIHost(el: HTMLElement, theme?: VelaTheme): void {
-    injectStyles(STATIC_ID, STATIC_CSS, el.getRootNode() as Document | ShadowRoot);
+    const root = el.getRootNode() as Document | ShadowRoot;
+    injectLayerOrder(root);
+    injectStyles(STATIC_ID, STATIC_CSS, root);
     el.classList.add('vela-ui');
     if (theme) applyThemeTokens(el, theme);
 }

@@ -1,6 +1,35 @@
-// Playground gallery of the UI kit's primitives (Button, Tabs, ToggleGroup, Badge), on the
-// theme tokens, dark and light.
-import { ensureUIHost, createButton, createTabs, ToggleGroup, Badge, type ButtonVariant, type ButtonSize, type BadgeVariant } from '../src/ui';
+// Playground gallery of the UI kit: every component, on the theme tokens, dark and light.
+// `window.gallery.open(name)` opens an overlay for the browser probes.
+import {
+    ensureUIHost,
+    createButton,
+    createTabs,
+    createToggleGroup,
+    createBadge,
+    Switch,
+    TextField,
+    TextArea,
+    NumberInput,
+    Select,
+    colorField,
+    widthField,
+    DatePicker,
+    CalloutBubble,
+    fieldGrid,
+    fieldSection,
+    fieldRow,
+    fieldSeparator,
+    buildFieldControl,
+    Dialog,
+    Drawer,
+    Menu,
+    Popover,
+    Tooltip,
+    type ButtonVariant,
+    type ButtonSize,
+    type BadgeVariant,
+    type MenuItemDescriptor,
+} from '../src/ui';
 import { DARK_THEME, LIGHT_THEME } from '../src/core/theme';
 
 const app = document.getElementById('app')!;
@@ -29,15 +58,15 @@ const title = (s: string): string => s[0]!.toUpperCase() + s.slice(1);
 const header = el('header');
 header.append(
     el('h1', undefined, 'UI primitives'),
-    new ToggleGroup({
+    createToggleGroup({
         size: 'sm',
         label: 'Theme',
         items: [
-            { id: 'dark', label: 'Dark' },
-            { id: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+            { value: 'light', label: 'Light' },
         ],
-        value: 'dark',
-        onChange: (id) => ensureUIHost(app, id === 'light' ? LIGHT_THEME : DARK_THEME),
+        defaultValue: 'dark',
+        onValueChange: (id) => ensureUIHost(app, id === 'light' ? LIGHT_THEME : DARK_THEME),
     }).el,
 );
 app.append(header, el('p', 'lead', 'One file per component: typed variants, Zag machines for behavior, and CSS in the kit layer over the theme tokens; variant and size names follow shadcn. The symbol picker and drawings drawer tabs, the indicator settings tabs, and the indicator and drawing settings footers render through these.'));
@@ -99,16 +128,106 @@ row(tabs, 'nav (vertical)', navDemo);
 
 // ToggleGroup.
 const groups = section('ToggleGroup', 'single: one choice among a few options (a segmented control), arrow keys choose. multiple: each option toggles on its own.');
-row(groups, 'single', new ToggleGroup({ label: 'Order type', items: [{ id: 'market', label: 'Market' }, { id: 'limit', label: 'Limit' }, { id: 'stop', label: 'Stop' }] }).el);
-row(groups, 'single sm', new ToggleGroup({ size: 'sm', label: 'Filter', items: [{ id: 'all', label: 'All' }, { id: 'gainers', label: 'Gainers' }, { id: 'losers', label: 'Losers' }] }).el);
+row(groups, 'single', createToggleGroup({ label: 'Order type', items: [{ value: 'market', label: 'Market' }, { value: 'limit', label: 'Limit' }, { value: 'stop', label: 'Stop' }] }).el);
+row(groups, 'single sm', createToggleGroup({ size: 'sm', label: 'Filter', items: [{ value: 'all', label: 'All' }, { value: 'gainers', label: 'Gainers' }, { value: 'losers', label: 'Losers' }] }).el);
 const fillWrap = el('div', 'w-320');
-fillWrap.append(new ToggleGroup({ fill: true, label: 'Side', items: [{ id: 'long', label: 'Long' }, { id: 'short', label: 'Short' }] }).el);
+fillWrap.append(createToggleGroup({ fill: true, label: 'Side', items: [{ value: 'long', label: 'Long' }, { value: 'short', label: 'Short' }] }).el);
 row(groups, 'fill', fillWrap);
-row(groups, 'icons', new ToggleGroup({ size: 'sm', iconOnly: true, label: 'View mode', items: [{ id: 'table', label: 'Table', icon: 'burger' }, { id: 'time', label: 'Timeline', icon: 'clock' }] }).el);
-row(groups, 'multiple', new ToggleGroup({ type: 'multiple', size: 'sm', label: 'Sessions', value: ['regular'], items: [{ id: 'pre', label: 'Pre-market' }, { id: 'regular', label: 'Regular' }, { id: 'post', label: 'After hours' }] }).el);
+row(groups, 'icons', createToggleGroup({ size: 'sm', iconOnly: true, label: 'View mode', items: [{ value: 'table', label: 'Table', icon: 'burger' }, { value: 'time', label: 'Timeline', icon: 'clock' }] }).el);
+row(groups, 'multiple', createToggleGroup({ type: 'multiple', size: 'sm', label: 'Sessions', defaultValue: ['regular'], items: [{ value: 'pre', label: 'Pre-market' }, { value: 'regular', label: 'Regular' }, { value: 'post', label: 'After hours' }] }).el);
 
 // Badges.
 const badges = section('Badge', 'Short status labels and counts.');
 const badgeVariants: BadgeVariant[] = ['default', 'secondary', 'outline', 'destructive', 'up', 'down'];
-row(badges, 'labels', ...badgeVariants.map((variant) => new Badge({ text: title(variant), variant }).el));
-row(badges, 'counts', new Badge({ text: '3', count: true, variant: 'secondary' }).el, new Badge({ text: '12', count: true }).el, new Badge({ text: '9+', count: true, variant: 'destructive' }).el);
+row(badges, 'labels', ...badgeVariants.map((variant) => createBadge({ text: title(variant), variant }).el));
+row(badges, 'counts', createBadge({ text: '3', count: true, variant: 'secondary' }).el, createBadge({ text: '12', count: true }).el, createBadge({ text: '9+', count: true, variant: 'destructive' }).el);
+
+// Form controls.
+const noop = (): void => {};
+const forms = section('Form controls', 'The settings dialogs build their rows from these.');
+row(forms, 'switch', new Switch({ checked: true }).el, new Switch({ checked: false }).el, new Switch({ checked: true, size: 'sm' }).el, new Switch({ checked: true, tone: 'selected' }).el, new Switch({ checked: true, disabled: true }).el);
+row(forms, 'text field', new TextField({ value: 'BTCUSDT', size: 'md' }).el, new TextField({ value: 'Compact', size: 'sm' }).el, new TextField({ value: 'Disabled', disabled: true }).el);
+row(forms, 'text area', new TextArea({ value: 'A note on the chart,\nover two lines.', rows: 3 }).el);
+row(forms, 'number', new NumberInput({ value: 14, min: 1, max: 100, steppers: true, size: 'md' }).el, new NumberInput({ value: 2.5, step: 0.5, size: 'sm' }).el, new NumberInput({ value: 7, disabled: true }).el);
+const options = [
+    { value: 'close', label: 'Close' },
+    { value: 'open', label: 'Open' },
+    { value: 'hl2', label: '(H + L) / 2' },
+];
+const select = new Select({ options, value: 'close', size: 'md', onChange: noop });
+row(forms, 'select', select.el, new Select({ options, value: 'open', size: 'sm' }).el, new Select({ options, value: 'hl2', disabled: true }).el);
+let color = '#2962ff';
+let width = 2;
+const color1 = colorField(DARK_THEME, () => color, (v) => (color = v), { shape: 'circle' });
+const width1 = widthField(DARK_THEME, () => width, (v) => (width = v));
+row(forms, 'color, width', color1, colorField(DARK_THEME, () => '#26a69a80', noop), width1);
+
+// Field rows.
+const fields = section('Field rows', 'The grid the indicator and chart settings lay their inputs out on.');
+const grid = fieldGrid({ variant: 'inputs' });
+grid.append(
+    fieldSection('Inputs', { variant: 'inputs', first: true }),
+    fieldRow({ label: 'Length', control: buildFieldControl({ kind: 'number', value: 20, onChange: noop }).el }),
+    fieldRow({ label: 'Source', control: buildFieldControl({ kind: 'select', options, value: 'close', onChange: noop }).el }),
+    fieldRow({ label: 'Show labels', toggle: { checked: true, onChange: noop } }),
+    fieldSeparator(),
+    fieldSection('Style', { variant: 'inputs' }),
+    fieldRow({ label: 'Line', control: buildFieldControl({ kind: 'color', theme: DARK_THEME, get: () => '#f23645', onChange: noop }).el }),
+    fieldRow({ label: 'Note', control: buildFieldControl({ kind: 'text', value: 'Session high', onChange: noop }).el }),
+);
+const gridWrap = el('div', 'w-320');
+gridWrap.append(grid);
+fields.append(gridWrap);
+
+// Date picker and callout bubble.
+const misc = section('Date picker, callout', 'The time input calendar, and the bubble the legend and statusline deploy.');
+const callout = new CalloutBubble({ icon: 'clock', background: '#f7525f', color: '#ffffff', label: 'Market closed', host: app, panel: { title: 'Market closed', items: [{ type: 'text', text: 'Trading resumes at the next session open.' }, { type: 'button', label: 'Got it', primary: true, close: true, run: noop }] } });
+row(misc, 'date picker', new DatePicker({ value: '2026-11-03', today: new Date('2026-11-03T12:00:00Z') }).el);
+row(misc, 'callout', callout.el);
+
+// Overlays.
+const overlays = section('Overlays', 'Dialog, drawer, menus, popover and tooltip, each opened from its button.');
+const trigger = (text: string): HTMLButtonElement => createButton({ text, variant: 'outline', size: 'sm' }).el;
+const dialogBtn = trigger('Dialog');
+const drawerBtn = trigger('Drawer');
+const menuBtn = trigger('Menu');
+const actionsBtn = trigger('Action menu');
+const popoverBtn = trigger('Popover');
+const tooltipBtn = trigger('Tooltip');
+row(overlays, 'open', dialogBtn, drawerBtn, menuBtn, actionsBtn, popoverBtn, tooltipBtn);
+const dialog = new Dialog({
+    title: 'Dialog',
+    host: app,
+    content: (body) => body.append(el('p', 'note', 'A dialog body, with the footer buttons below.')),
+    footer: (f) => f.append(createButton({ text: 'Cancel', variant: 'outline' }).el, createButton({ text: 'OK' }).el),
+});
+const drawer = new Drawer({ title: 'Drawer', host: app, content: (body) => body.append(el('p', 'note', 'A bottom sheet on phones.')) });
+const items: MenuItemDescriptor[] = [
+    { id: 'candles', label: 'Candles', icon: 'search', checked: true },
+    { id: 'bars', label: 'Bars', icon: 'clock' },
+    { id: 'line', label: 'Line', icon: 'style-line', hint: 'Alt+L' },
+    { id: 'more', label: 'More', separatorBefore: true, submenu: [{ id: 'area', label: 'Area' }, { id: 'baseline', label: 'Baseline' }] },
+    { id: 'off', label: 'Disabled', disabled: true },
+];
+const menu = new Menu({ trigger: menuBtn, host: app, items });
+const actions = new Menu({ trigger: actionsBtn, host: app, checkmarks: true, iconBadges: true, items: [{ id: 'lock', label: 'Lock', icon: 'lock', checked: true, toggle: true }, { id: 'copy', label: 'Copy', icon: 'camera', hint: 'Ctrl+C' }, { id: 'remove', label: 'Remove', icon: 'trash', separatorBefore: true }] });
+const popoverBody = el('div', 'note', 'Popover content.');
+const popover = new Popover({ trigger: popoverBtn, host: app, content: popoverBody });
+new Tooltip(tooltipBtn, { content: 'Tooltip text', openDelay: 0, host: app });
+dialogBtn.addEventListener('click', () => dialog.show());
+drawerBtn.addEventListener('click', () => drawer.show());
+popoverBtn.addEventListener('click', () => popover.toggle());
+
+(window as unknown as { gallery: unknown }).gallery = {
+    open(name: string): void {
+        if (name === 'dialog') dialog.show();
+        else if (name === 'drawer') drawer.show();
+        else if (name === 'menu') menu.open();
+        else if (name === 'actions') actions.open();
+        else if (name === 'popover') popover.show();
+        else if (name === 'select') select.toggle();
+        else if (name === 'color') color1.click();
+        else if (name === 'width') width1.click();
+        else if (name === 'callout') callout.el.click();
+    },
+};

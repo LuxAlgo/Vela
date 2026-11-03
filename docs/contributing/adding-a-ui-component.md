@@ -176,10 +176,11 @@ fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
 ## Primitives
 
-`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives. Button and
-Tabs are written in the one-file shape the rest of the kit is moving to:
+`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives. They, the
+switch, the text field, the text area and the tooltip are written in the one-file shape the
+rest of the kit is moving to:
 
-- **One file per component** (`src/ui/components/button.ts`, `tabs.ts`) holds the
+- **One file per component** (`src/ui/components/button.ts`, `tabs.ts`, …) holds the
   component's declaration (`defineComponent({ name, parts, settings })`), its variants
   (`variants({ variant: [...], size: [...] })`, whose names type its props), its CSS, and a
   `create<Name>(props)` function returning a handle (`{ el, set…, destroy }`). Elements are
@@ -210,18 +211,21 @@ Behavior:
   through Zag's React adapter. Zag applies events on a microtask, so the components mirror
   the value for synchronous reads and keep `setValue` silent by swallowing the machine's
   report of a host write.
-- **`Button` and `Badge` have no behavior to run.** Badge's controller returns the root's
-  attributes as a plain record (`rootProps()`), which the vanilla view writes with
-  `applyProps`.
+- **`Button` and `Badge` have no behavior to run**: their files build the element and
+  write its attributes.
+- **Released components keep their classes** (`new Switch(…)`, `new Tooltip(trigger, …)`)
+  and controllers next to the new `create…` functions; the classes are the instances those
+  functions return.
 
 Every part carries a `data-slot` naming it (`button`, `button-icon`, `tabs-list`,
-`tabs-trigger`, `tabs-content`, `toggle-group`, `toggle-group-item`, `badge`), next to
-Zag's own `data-scope` / `data-part` and state attributes (`data-selected`, `data-state`).
+`tabs-trigger`, `tabs-content`, `toggle-group`, `toggle-group-item`, `badge`, `switch`,
+`text-field-input`, `tooltip-content`, …), next to Zag's own `data-scope` / `data-part`
+and state attributes (`data-selected`, `data-state`).
 
 Variant, size, part and prop names follow shadcn's (`data-slot="tabs-trigger"`,
 `variant: 'outline'`, `size: 'icon-sm'`, `defaultValue`, `onValueChange`), so a host built
-on shadcn reads them without a glossary. The components not yet in the one-file shape keep
-`value` and `onChange`.
+on shadcn reads them without a glossary. Released components keep their option names
+(`value`, `onChange`).
 
 - **`createButton`** — `variant`: `default` (filled with the selection color: OK, Apply),
   `outline` (bordered: the dialogs' Cancel), `secondary` (a sunken fill), `ghost` (no
@@ -242,12 +246,13 @@ on shadcn reads them without a glossary. The components not yet in the one-file 
   dialog's underlined strip), `filled` (the symbol picker's strip), `soft` (the drawings
   drawer's strip), `nav` (a vertical settings rail). Only an inactive tab reacts to hover.
   `className` adds the host's layout of the strip.
-- **`ToggleGroup`** — a few options side by side on a tinted track. `type: 'single'`
-  (default) is a radio group where one option is always chosen (a segmented control);
-  `type: 'multiple'` toggles each option on its own (`aria-pressed`). The arrow keys move
-  focus; Space and Enter press. `size` `default` 32px or `sm` 28px, `fill` to share
-  the parent's width, `iconOnly` with each label as its option's accessible name.
-- **`Badge`** — a short status label or a round `count`: `default`, `secondary`,
+- **`createToggleGroup`** — a few options (`items: { value, label, icon? }[]`) side by side
+  on a tinted track. `type: 'single'` (default) is a radio group where one option is
+  always chosen (a segmented control); `type: 'multiple'` toggles each option on its own
+  (`aria-pressed`). The arrow keys move focus; Space and Enter press. `size` `default`
+  32px or `sm` 28px, `fill` to share the parent's width, `iconOnly` with each label as its
+  option's accessible name.
+- **`createBadge`** — a short status label or a round `count`: `default`, `secondary`,
   `outline`, `destructive`, and the market colors `up` and `down`.
 
 `setValue` / `setPressed` / `setItems` never notify; a user's click or key does, once, and

@@ -8,8 +8,8 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { applyProps } from '../src/ui/headless';
 import { buttonVariants, createButton } from '../src/ui/components/button';
 import { createTabs } from '../src/ui/components/tabs';
-import { ToggleGroup } from '../src/ui/components/toggle-group';
-import { Badge } from '../src/ui/components/badge';
+import { createToggleGroup } from '../src/ui/components/toggle-group';
+import { createBadge } from '../src/ui/components/badge';
 
 // Browsers run queued microtasks between animation-frame callbacks; jsdom runs a frame's
 // callbacks back to back. Zag focuses in one frame callback and reads the focus in the
@@ -221,7 +221,7 @@ describe('Tabs (Zag tabs machine)', () => {
 describe('ToggleGroup (Zag toggle-group machine)', () => {
     it('single: a radio group where one option always stays chosen', async () => {
         const onChange = vi.fn();
-        const view = new ToggleGroup({ items: ITEMS, value: 'a', label: 'Order type', size: 'sm', fill: true, onChange });
+        const view = createToggleGroup({ items: TAB_ITEMS, defaultValue: 'a', label: 'Order type', size: 'sm', fill: true, onValueChange: onChange });
         document.body.append(view.el);
         expect(view.el.getAttribute('role')).toBe('radiogroup');
         expect(view.el.getAttribute('aria-label')).toBe('Order type');
@@ -251,7 +251,7 @@ describe('ToggleGroup (Zag toggle-group machine)', () => {
 
     it('multiple: each option toggles on its own, and the arrow keys only move focus', async () => {
         const onChange = vi.fn();
-        const view = new ToggleGroup({ type: 'multiple', items: [{ id: 'b', label: 'Bold' }, { id: 'i', label: 'Italic' }, { id: 'u', label: 'Underline' }], value: ['i'], onChange });
+        const view = createToggleGroup({ type: 'multiple', items: [{ value: 'b', label: 'Bold' }, { value: 'i', label: 'Italic' }, { value: 'u', label: 'Underline' }], defaultValue: ['i'], onValueChange: onChange });
         document.body.append(view.el);
         expect(view.el.getAttribute('role')).toBe('group');
         const [bold, italic] = [...view.el.querySelectorAll<HTMLButtonElement>('.vela-toggle-group-item')];
@@ -273,7 +273,7 @@ describe('ToggleGroup (Zag toggle-group machine)', () => {
     });
 
     it('names icon-only options by their label', () => {
-        const view = new ToggleGroup({ items: [{ id: 'list', label: 'Table', icon: 'burger' }], iconOnly: true });
+        const view = createToggleGroup({ items: [{ value: 'list', label: 'Table', icon: 'burger' }], iconOnly: true });
         const option = view.el.querySelector('.vela-toggle-group-item')!;
         expect(option.getAttribute('aria-label')).toBe('Table');
         expect(option.textContent).toBe('');
@@ -282,12 +282,12 @@ describe('ToggleGroup (Zag toggle-group machine)', () => {
 
 describe('Badge', () => {
     it('carries its slot, variant and shape', () => {
-        const b = new Badge({ text: 'Paper', variant: 'secondary' });
+        const b = createBadge({ text: 'Paper', variant: 'secondary' });
         expect(b.el.dataset.slot).toBe('badge');
         expect(b.el.dataset.variant).toBe('secondary');
         b.setVariant('down');
         expect(b.el.dataset.variant).toBe('down');
-        expect(new Badge({ text: 'Live' }).el.dataset.variant).toBe('default');
-        expect(new Badge({ text: '3', count: true }).el.hasAttribute('data-count')).toBe(true);
+        expect(createBadge({ text: 'Live' }).el.dataset.variant).toBe('default');
+        expect(createBadge({ text: '3', count: true }).el.hasAttribute('data-count')).toBe(true);
     });
 });
