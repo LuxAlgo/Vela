@@ -48,6 +48,15 @@ All notable changes to Vela, newest first.
   the rail and the mobile bottom bar uncovered. A shell that uses none of these keeps its
   layout exactly as before.
 
+### Changed
+
+- **The object tree's group button starts a group with nothing selected.** It used to stay
+  dim until you picked drawings in the panel. With nothing picked it now adds an empty
+  "Group N" at the top of the main chart, with its name ready to edit and a "Drag drawings
+  here" hint; drag drawings onto it to fill it. With drawings picked it groups them, as
+  before. An empty group waits for its first drawing, then behaves like any other group and
+  goes away once its last drawing leaves.
+
 ## [0.9.3]
 
 ### Added
