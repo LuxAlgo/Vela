@@ -218,6 +218,7 @@ const CSS = `
 /* Grouped listings (futures roots): the chevron unfolds members inline, indented. */
 .vela-sp-expander {
     all: unset;
+    box-sizing: border-box;
     flex: none;
     display: inline-flex;
     align-items: center;

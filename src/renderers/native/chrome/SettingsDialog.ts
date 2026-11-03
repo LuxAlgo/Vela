@@ -2,7 +2,8 @@ import { msg, withValues } from '../../../core/i18n/message';
 import { sourceText, textOf } from '../../../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../../../core/i18n/types';
 import { priceStyleMessage } from '../../../chart-types/labels';
-import type { VelaTheme, ThemeName } from '../../../core/options';
+import type { VelaTheme, ThemeId } from '../../../core/options';
+import { registeredThemes } from '../../../core/theme';
 import type { ChartConfig } from '../core/chartConfig';
 import {
     chartType,
@@ -300,7 +301,7 @@ export class SettingsDialog {
     /** The Canvas → Theme row: current app theme + where a pick is raised. The row is a
      *  host callback, NOT a config patch — the app theme stays out of the persisted
      *  `ChartConfig`, so exported templates never carry it. */
-    private themeControl: { current: ThemeName; onSelect: (name: ThemeName) => void } | null = null;
+    private themeControl: { current: ThemeId; onSelect: (id: ThemeId) => void } | null = null;
     /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
     private tabs: Array<{ title: string; show: () => void }> = [];
     private hintTips: Array<() => void> = []; // ⓘ tooltip disposers of the open build (see hint)
@@ -340,7 +341,7 @@ export class SettingsDialog {
     }
 
     /** Configure the Canvas → Theme row (see {@link themeControl}); null hides the row. */
-    setThemeControl(current: ThemeName, onSelect: (name: ThemeName) => void): void {
+    setThemeControl(current: ThemeId, onSelect: (id: ThemeId) => void): void {
         this.themeControl = { current, onSelect };
     }
 
@@ -759,7 +760,8 @@ export class SettingsDialog {
         if (this.themeControl) {
             const tc = this.themeControl;
             body.append(sid(this.sectionTitle(TEXT.theme), 'canvas.theme'));
-            body.append(sid(this.selectRowLabeled(TEXT_THEME.colorTheme, tc.current, [['dark', TEXT_THEME.dark], ['light', TEXT_THEME.light]] as const, (v) => tc.onSelect(v === 'dark' ? 'dark' : 'light')), 'canvas.theme'));
+            const choices: Array<readonly [string, MessageLike]> = [['dark', TEXT_THEME.dark], ['light', TEXT_THEME.light], ...registeredThemes().map((t) => [t.id, t.label] as const)];
+            body.append(sid(this.selectRowLabeled(TEXT_THEME.colorTheme, tc.current, choices, (v) => tc.onSelect(v)), 'canvas.theme'));
         }
 
         // ══ EVENTS — timeline-mark group visibility, a tab of its own (present only while marks name groups) ══

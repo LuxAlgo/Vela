@@ -40,6 +40,7 @@ const CSS = `
 }
 .vela-tfd-chip {
     all: unset;
+    box-sizing: border-box;
     min-height: 40px;
     padding: 0 14px;
     display: inline-flex;

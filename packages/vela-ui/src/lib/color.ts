@@ -70,3 +70,20 @@ export function isDarkColor(color: string): boolean {
     if (!c) return true;
     return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b < 128;
 }
+
+function luminance({ r, g, b }: Rgb): number {
+    const lin = (v: number) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** The WCAG contrast ratio of two colors, from 1 to 21; null when either cannot be parsed. */
+export function contrastRatio(a: string, b: string): number | null {
+    const x = parseRgb(a);
+    const y = parseRgb(b);
+    if (!x || !y) return null;
+    const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p) as [number, number];
+    return (hi + 0.05) / (lo + 0.05);
+}

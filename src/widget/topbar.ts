@@ -33,6 +33,7 @@ const CSS = `
 }
 .vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -66,6 +67,7 @@ const CSS = `
 .vela-widget-tf[data-current='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
 .vela-widget-tf-caret {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -123,6 +125,7 @@ const CSS = `
 .vela-widget-panels { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
 .vela-widget-tool {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -138,6 +141,7 @@ const CSS = `
 .vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-widget-action {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     gap: 6px;

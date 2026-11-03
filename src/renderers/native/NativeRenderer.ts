@@ -33,7 +33,7 @@ import type { Pane } from '../../core/model/scene';
 import type { IndicatorModel, PaneAxisBand } from '../../core/model/indicator';
 import type { ScenePatch } from '../../core/model/patch';
 import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
-import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName, IntroAnimation, IntroStyle, PriceAxisTicksFn } from '../../core/options';
+import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeId, IntroAnimation, IntroStyle, PriceAxisTicksFn } from '../../core/options';
 import {
     resolveEaseMs,
     resolveLiveBarEaseMs,
@@ -96,7 +96,7 @@ import { rasterizeOverlay } from '../shared/dom-raster';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { settingsIdCatalog } from './chrome/settings-visibility';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
-import { DARK_THEME, LIGHT_THEME } from '../../core/theme';
+import { DARK_THEME, LIGHT_THEME, registeredThemeIdOf } from '../../core/theme';
 import { isDarkColor } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { BEARISH, BULLISH } from '../../core/palette';
@@ -190,6 +190,9 @@ export class NativeRenderer implements IChartRenderer {
     // Owned by the app theme alone (mount/setTheme) — config-level background/text edits
     // (settings dialog, persisted configs) recolor the plot AND the axis scales (see
     // axisSurface), but never the toolbar/dialog chrome.
+    /** The app theme as given, before the config's candle colors: what the settings
+     *  dialog's theme choice identifies. */
+    private appTheme: VelaTheme = DARK_THEME;
     private surfaceBackground = DARK_THEME.background;
     private surfaceTextColor = DARK_THEME.textColor;
     private wrapper!: HTMLDivElement; // outer root: holds the left toolbar gutter + the plot sub-container
@@ -396,7 +399,7 @@ export class NativeRenderer implements IChartRenderer {
     private readonly chartTypeSettingsCbs = new Set<(typeId: string, values: Record<string, unknown>) => void>();
     private readonly configChangedCbs = new Set<() => void>();
     /** The settings dialog's Canvas → Theme row raises the pick here; the host applies it. */
-    private readonly themeSelectCbs = new Set<(theme: ThemeName) => void>();
+    private readonly themeSelectCbs = new Set<(theme: ThemeId) => void>();
     /** First-run config snapshot — what "Reset defaults" restores. */
     private factoryConfig: ChartConfig | null = null;
     private hostSettingsSections: HostSettingsSection[] = [];
@@ -1134,7 +1137,8 @@ export class NativeRenderer implements IChartRenderer {
      *  independently); a pick is raised to the host (`onThemeSelect`), which owns the
      *  canonical theme. */
     private syncThemeControl(): void {
-        this.settingsDialog?.setThemeControl(isDarkColor(this.surfaceBackground) ? 'dark' : 'light', (name) => {
+        const current = registeredThemeIdOf(this.appTheme) ?? (isDarkColor(this.surfaceBackground) ? 'dark' : 'light');
+        this.settingsDialog?.setThemeControl(current, (name) => {
             for (const cb of this.themeSelectCbs) cb(name);
         });
     }
@@ -1454,6 +1458,7 @@ export class NativeRenderer implements IChartRenderer {
         this.mountContainer = container;
         this.publishGutters();
         this.theme = this.deriveTheme(theme);
+        this.appTheme = theme;
         // provisional chrome surface (refined by the first applyConfig)
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
@@ -1846,6 +1851,7 @@ export class NativeRenderer implements IChartRenderer {
 
     setTheme(theme: VelaTheme): void {
         this.theme = this.deriveTheme(theme);
+        this.appTheme = theme;
         // a full app-theme swap re-bases the chrome surface
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
@@ -2520,7 +2526,7 @@ export class NativeRenderer implements IChartRenderer {
         return () => this.configChangedCbs.delete(cb);
     }
 
-    onThemeSelect(cb: (theme: ThemeName) => void): Unsubscribe {
+    onThemeSelect(cb: (theme: ThemeId) => void): Unsubscribe {
         this.themeSelectCbs.add(cb);
         return () => this.themeSelectCbs.delete(cb);
     }

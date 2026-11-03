@@ -53,6 +53,7 @@ const CSS = `
 .vela-drawpill-tool svg { width: 22px; height: 22px; }
 .vela-drawpill-btn {
     all: unset;
+    box-sizing: border-box;
     width: 36px;
     height: 36px;
     display: inline-flex;

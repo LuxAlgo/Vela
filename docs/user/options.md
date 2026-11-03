@@ -54,7 +54,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | Option | Type | Default | Notes |
 |---|---|---|---|
 | `live` | boolean | `false` | `true` adds a forming candle + live ticks on top of history. |
-| `theme` | `'dark' \| 'light'` or a theme object | `dark` | Pass an object to fully customize colors/fonts. |
+| `theme` | `'dark' \| 'light'`, a registered theme's id, a theme object, or a `createTheme` result | `dark` | Pass an object to fully customize colors/fonts; see *Themes from a few choices*. |
 | `renderer` | renderer **class** | native | A renderer class to instantiate; omit for the built-in native renderer (default). The multi-renderer port (`IChartRenderer`) stays open — pass any class implementing it. |
 | `defaultLanguage` | string | first registered engine* | Scripting language used when `addIndicator` doesn't name one. Falls back to the first engine registered at construction, then to `'pine'`. |
 | `currentPriceLine` | boolean | `true` | Dashed line + axis label at the latest price. |
@@ -405,6 +405,43 @@ keeps the app theme: when that background lands in the other luminance class (a 
 plot on the dark theme), the derived inks — text, grid, axis border — re-base
 automatically so legends and axis labels stay readable, while any explicitly chosen
 text color wins.
+
+#### Themes from a few choices
+
+`createTheme` builds a whole theme, the chart's colors and every UI token, from a few
+choices. Everything is optional; `createTheme()` is the dark theme:
+
+```js
+import { createTheme, registerTheme } from '@luxalgo/vela';
+
+const brand = createTheme({
+  base: 'dark',              // or 'light', or a theme object like midnight above
+  accent: '#7c3aed',         // brand color; the ink on it is derived
+  radius: 'sm',              // none | sm | md | lg: scales every radius
+  font: 'Inter, sans-serif',
+  tokens: { 'surface-elev': '#1b1c22' },          // any token, by name
+  components: { button: { radius: '2px' } },      // a component's own settings
+});
+chart.setTheme(brand);
+
+// From colors alone: light or dark is read from the background, grid and border derive.
+const paper = createTheme({ colors: { background: '#fdf6e3', accent: '#268bd2' } });
+
+// Offered by id, next to Dark and Light in chart settings → Canvas → Theme.
+registerTheme({ id: 'paper', label: 'Paper', theme: paper });
+```
+
+A theme object can carry the same settings under `ui`: `{ ...DARK_THEME, ui: { accent:
+'#7c3aed' } }`. `checkTheme(input)` lists what a theme gets wrong (unknown tokens, colors
+it cannot derive from, text with too little contrast), and `createTheme` warns about each
+in the console.
+
+The theme is written once per page in the `vela.theme` cascade layer, keyed by a
+`data-vela-theme` attribute, so your own CSS overrides any token without `!important`:
+
+```css
+[data-vela-theme] { --vela-accent: #7c3aed; }
+```
 
 ### Capability-gated options
 

@@ -54,8 +54,26 @@ All notable changes to Vela, newest first.
   (`@luxalgo/vela-ui/button`, `@luxalgo/vela-ui/select`), so a page or a plugin can use the
   components without the chart and bundle only the ones it imports. Vela depends on it,
   and `@luxalgo/vela/ui` keeps exporting everything it did.
+- **Themes beyond dark and light.** `createTheme` builds a whole theme from a few choices:
+  a brand color (its readable ink derived), a radius scale, a font, any token by name, and
+  the settings each component declares (`components: { button: { radius: '2px' } }`,
+  checked by the typecheck). It also builds one from colors alone, reading light or dark
+  from the background. Pass it as `theme` or to `setTheme`, or add settings to a chart theme
+  of your own (`{ ...DARK_THEME, ui: { accent: '#7c3aed' } }`). `registerTheme` offers a
+  theme by id, next to Dark and Light in the chart settings. `checkTheme` lists what a
+  theme gets wrong (unknown tokens, colors it cannot derive from, text with too little
+  contrast), and `createTheme` warns about each. A page using the kit without Vela can link
+  the built-in themes as plain CSS (`@luxalgo/vela-ui/themes/dark.css`).
 
 ### Changed
+
+- **Theme tokens are a stylesheet rule.** The chart writes its theme once per page in the
+  `vela.theme` cascade layer, keyed by a `data-vela-theme` attribute, instead of inline
+  styles on every element of its chrome. A page's own CSS now overrides any token without
+  `!important` (`[data-vela-theme] { --vela-accent: … }`), and several themes still
+  coexist on one page. `applyThemeTokens` is deprecated in favor of `applyTheme`, which
+  also takes a theme from `createTheme`. Code that read a token from an element's inline
+  style reads it with `getComputedStyle` instead.
 
 - **Vela's CommonJS build loads the kit as an ES module.** `@luxalgo/vela-ui` ships as ES
   modules only, so `require('@luxalgo/vela')` needs a Node version that can load them:

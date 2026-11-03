@@ -62,6 +62,7 @@ const CSS = `
 }
 .vela-bb-range {
     all: unset;
+    box-sizing: border-box;
     height: 24px;
     display: inline-flex;
     align-items: center;
@@ -76,6 +77,7 @@ const CSS = `
 .vela-bb-clock { font-variant-numeric: tabular-nums; color: var(--vela-fg-bright); font-weight: 600; }
 .vela-bb-tz {
     all: unset;
+    box-sizing: border-box;
     height: 26px;
     display: inline-flex;
     align-items: center;
@@ -90,6 +92,7 @@ const CSS = `
 .vela-bb-session { display: inline-flex; border: 1px solid var(--vela-border-strong); border-radius: 4px; overflow: hidden; margin-left: 6px; }
 .vela-bb-session-btn {
     all: unset;
+    box-sizing: border-box;
     height: 24px;
     display: inline-flex;
     align-items: center;
@@ -105,6 +108,7 @@ const CSS = `
 .vela-bb-session-btn.is-active:disabled { opacity: 0.8; }
 .vela-bb-settings {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;

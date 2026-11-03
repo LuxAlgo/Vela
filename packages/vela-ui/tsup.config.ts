@@ -1,4 +1,5 @@
-import { readdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { defineConfig } from 'tsup';
 import { flattenCss } from '../../scripts/flatten-css.mjs';
 
@@ -24,4 +25,15 @@ export default defineConfig({
     clean: true,
     treeshake: true,
     esbuildPlugins: [flattenCss()],
+    // The built-in themes as plain CSS, for a page that uses the kit without Vela: written
+    // from the built theme module, so they cannot drift from `createTheme`.
+    async onSuccess() {
+        const { createTheme, themeCss } = await import(pathToFileURL('dist/theme.js').href);
+        const { LAYER_ORDER } = await import(pathToFileURL('dist/index.js').href);
+        mkdirSync('dist/themes', { recursive: true });
+        for (const base of ['dark', 'light']) {
+            const head = `/* @luxalgo/vela-ui: the built-in ${base} theme, every token on the page root. */\n`;
+            writeFileSync(`dist/themes/${base}.css`, `${head}${LAYER_ORDER}\n${themeCss(createTheme({ base }), ':root')}\n`);
+        }
+    },
 });

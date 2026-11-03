@@ -19,13 +19,16 @@ export const FIELD_FOCUS_CSS =
 export const FIELD_FOCUS_RING =
     'border-color:var(--vela-focus);box-shadow:0 0 0 3px var(--vela-focus-soft);';
 
-/** Inject a stylesheet once per root (document or shadow root). Idempotent by id. */
-export function injectStyles(id: string, css: string, root: Document | ShadowRoot = document): void {
-    if (typeof document === 'undefined') return;
+/** Inject a stylesheet once per root (document or shadow root). Idempotent by id; returns
+ *  the sheet's element. */
+export function injectStyles(id: string, css: string, root: Document | ShadowRoot = document): HTMLStyleElement | null {
+    if (typeof document === 'undefined') return null;
     const host = root instanceof Document ? root.head : root;
-    if (root.getElementById?.(id) ?? host.querySelector(`#${CSS.escape(id)}`)) return;
+    const existing = typeof root.getElementById === 'function' ? root.getElementById(id) : host.querySelector(`#${CSS.escape(id)}`);
+    if (existing) return existing as HTMLStyleElement;
     const s = document.createElement('style');
     s.id = id;
     s.textContent = css;
     host.appendChild(s);
+    return s;
 }

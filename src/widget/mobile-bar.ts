@@ -30,6 +30,7 @@ const CSS = `
 [data-layout='mobile'] .vela-widget-bottombar { display: none; }
 .vela-mb-item {
     all: unset;
+    box-sizing: border-box;
     flex: 1 1 0;
     min-width: 0;
     min-height: 44px;

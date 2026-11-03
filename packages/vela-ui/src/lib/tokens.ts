@@ -1,7 +1,7 @@
-// The design tokens, as PURE DATA (no DOM) so every layer can share one vocabulary: the UI
-// kit writes them onto its hosts, and a chart's own chrome writes them onto its container.
-// The chart's theme stays the single source of truth — there is no second UI palette to
-// drift from it.
+// The design tokens, as PURE DATA (no DOM) so every layer can share one vocabulary:
+// `createTheme` builds a theme from them and `applyTheme` writes it for the kit's hosts and
+// a chart's own chrome alike. The chart's theme stays the single source of truth — there is
+// no second UI palette to drift from it.
 //
 // STATIC tokens (spacing, radii, z-index, motion, type scale) are theme-independent;
 // THEME tokens are computed per chart theme.

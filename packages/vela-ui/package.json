@@ -18,6 +18,7 @@
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json",
+    "./themes/*.css": "./dist/themes/*.css",
     "./*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*.js"

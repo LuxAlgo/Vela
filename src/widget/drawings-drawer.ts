@@ -44,6 +44,8 @@ const CSS = `
 }
 .vela-dd-search input {
     all: unset;
+    user-select: text;
+    -webkit-user-select: text;
     flex: 1 1 auto;
     min-width: 0;
     font-size: 14px;
@@ -89,6 +91,7 @@ const CSS = `
 .vela-dd-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-dd-star {
     all: unset;
+    box-sizing: border-box;
     flex: none;
     width: 40px;
     height: 40px;

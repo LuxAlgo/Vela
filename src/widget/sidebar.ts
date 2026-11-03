@@ -44,6 +44,7 @@ const CSS = `
 .vela-sidebar-sep { width: 20px; height: 1px; background: var(--vela-border); }
 .vela-sidebar-btn {
     all: unset;
+    box-sizing: border-box;
     position: relative;
     display: inline-flex;
     align-items: center;

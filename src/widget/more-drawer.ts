@@ -35,6 +35,7 @@ const CSS = `
 }
 .vela-md-action {
     all: unset;
+    box-sizing: border-box;
     flex: 1 1 0;
     min-height: 48px;
     display: inline-flex;

@@ -67,6 +67,7 @@ const CSS = `
 .vela-panel-header-slot { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; }
 .vela-panel-close {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;
@@ -82,6 +83,7 @@ const CSS = `
 /* The pin: same footprint as the close button it sits beside; filled + bright once pinned. */
 .vela-panel-pin {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;
@@ -97,6 +99,7 @@ const CSS = `
 .vela-panel-pin[data-on='1'] { color: var(--vela-fg-bright); }
 .vela-panel-max {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;

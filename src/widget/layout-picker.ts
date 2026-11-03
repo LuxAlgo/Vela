@@ -95,12 +95,12 @@ const CSS = `
     border-color: var(--vela-selected-bg);
 }
 .vela-lp-presets { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-.vela-lp-preset { all: unset; padding: 5px 8px; border-radius: 4px; cursor: pointer; color: var(--vela-fg-muted); font-size: 12px; white-space: nowrap; transition: transform 120ms var(--vela-ease); }
+.vela-lp-preset { all: unset; box-sizing: border-box; padding: 5px 8px; border-radius: 4px; cursor: pointer; color: var(--vela-fg-muted); font-size: 12px; white-space: nowrap; transition: transform 120ms var(--vela-ease); }
 .vela-lp-preset:hover { background: var(--vela-hover); }
 .vela-lp-preset:active { transform: scale(0.98); }
 .vela-lp-preset[data-checked='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
 .vela-lp-sync { display: flex; flex-direction: column; gap: 4px; min-width: 118px; }
-.vela-lp-sync-row { all: unset; display: flex; align-items: center; gap: 14px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+.vela-lp-sync-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
 .vela-lp-sync-row:hover { background: var(--vela-hover); }
 .vela-lp-sync-row .vela-lp-label { flex: 1 1 auto; }
 /* Toggle pill — same control language as the menu's switch rows, monochrome ON state. */

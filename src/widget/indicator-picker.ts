@@ -102,6 +102,7 @@ const CSS = `
 }
 .vela-ip-trash {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     color: var(--vela-fg-muted);
     padding: 2px 4px;

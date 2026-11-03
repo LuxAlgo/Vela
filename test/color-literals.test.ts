@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 // The color sources of truth. Everything else must import from them rather than restate a hex.
 const SANCTIONED = [
     'packages/vela-ui/src/lib/palette.ts', // the semantic palette
-    'src/core/theme.ts', // the swappable chart themes
+    'packages/vela-ui/src/lib/theme.ts', // the built-in themes
     'packages/vela-ui/src/lib/tokens.ts', // the --vela-* token derivation
     'src/core/drawings/levelPalette.ts', // the fib/gann level convention
 ];

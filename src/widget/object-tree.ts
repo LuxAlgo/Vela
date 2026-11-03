@@ -176,6 +176,7 @@ const CSS = `
 .vela-ot-acts { display: flex; align-items: center; gap: 0; flex: none; }
 .vela-ot-btn {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     flex: none;
     width: 20px;

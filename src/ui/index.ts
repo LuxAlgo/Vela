@@ -3,7 +3,19 @@
 // controls run Zag machines), next to what stays Vela's own: the keymap. The lists below are
 // the public API: a component file's other exports stay internal.
 export { injectStyles, withAlpha, overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '@luxalgo/vela-ui/styles';
-export { applyThemeTokens, applyPlotOverlayTokens, ensureUIHost } from '@luxalgo/vela-ui/theme';
+export {
+    applyThemeTokens,
+    applyPlotOverlayTokens,
+    ensureUIHost,
+    createTheme,
+    applyTheme,
+    checkTheme,
+    type UiTheme,
+    type ThemeInput,
+    type ThemeSettings,
+    type ComponentSettings,
+    type TokenName,
+} from '@luxalgo/vela-ui/theme';
 export { registerIcon, iconMarkup, iconEl, svg16, svg24 } from '@luxalgo/vela-ui/icons';
 export { runMachine, nextUid, normalizeProps, spreadProps, type MachineHandle } from '@luxalgo/vela-ui/zag';
 export { SURFACE_OPEN_EVENT, SURFACE_CLOSE_EVENT, type SurfaceKind, type SurfaceEventDetail } from '@luxalgo/vela-ui/surface-events';

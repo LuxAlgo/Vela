@@ -5,6 +5,7 @@ import type { InputValue } from './model/inputs';
 import type { IChartRenderer } from './ports/IChartRenderer';
 import type { DrawingsOption } from './drawings/toolbar';
 import type { LocalizationOptions } from './i18n/types';
+import type { ThemeSettings, UiTheme } from '@luxalgo/vela-ui/theme';
 
 /** A registered data-provider name (any string; matched case-insensitively). */
 export type ProviderName = string;
@@ -88,9 +89,15 @@ export interface VelaTheme {
     upColor: string;
     downColor: string;
     fontFamily: string;
+    /** The UI's settings beyond these colors: brand color, radius scale, font, any token,
+     *  component settings. The chrome builds its tokens from the colors and these. */
+    ui?: ThemeSettings;
 }
 
 export type ThemeName = 'dark' | 'light';
+
+/** A built-in theme's name, or the id of one added with `registerTheme`. */
+export type ThemeId = ThemeName | (string & {});
 
 /** A renderer **class** — Vela instantiates it with the resolved display options.
  *  Built-in default: `NativeRenderer`.
@@ -103,7 +110,9 @@ export type RendererConstructor = new (opts?: RendererDisplayOptions) => IChartR
 export interface VelaOptions extends MarketConfig, LocalizationOptions {
     /** false = static history; true = history + live forming candle. */
     live?: boolean;
-    theme?: ThemeName | VelaTheme;
+    /** A built-in or registered theme by id, the chart's seven colors and font (with `ui`
+     *  settings), or a whole theme from `createTheme`. */
+    theme?: ThemeId | VelaTheme | UiTheme;
     height?: number | string;
     /** Rendering backend as a renderer **class** that Vela instantiates (with the
      *  resolved display options). Omit for the built-in native renderer (default); for
