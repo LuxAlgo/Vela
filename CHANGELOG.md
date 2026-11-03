@@ -50,6 +50,11 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **A drawing's settings open beside its toolbar.** The settings panel now opens right next
+  to the drawing's toolbar, where its gear is, instead of at the far edge of the chart. It
+  takes the side of the toolbar away from the drawing when there is room, so the drawing
+  stays in view as you edit it, and it stays inside the chart, scrolling when the chart is
+  short.
 - **The object tree's group button starts a group with nothing selected.** It used to stay
   dim until you picked drawings in the panel. With nothing picked it now adds an empty
   "Group N" at the top of the main chart, with its name ready to edit and a "Drag drawings
