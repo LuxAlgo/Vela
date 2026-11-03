@@ -27,6 +27,8 @@ export interface ToggleGroupItem {
     label: string;
     icon?: string;
     disabled?: boolean;
+    /** Fill the option with a market color while it is on (buy and sell). */
+    tone?: 'up' | 'down';
 }
 
 interface ToggleGroupCommonProps extends VariantProps<typeof toggleGroupVariants> {
@@ -105,6 +107,14 @@ export const TOGGLE_GROUP_CSS = css`
             &[data-state='on'] {
                 background: color-mix(in srgb, ${t.fg.bright} 12%, transparent);
                 color: ${t.fg.bright};
+            }
+            &[data-state='on'][data-tone='up'] {
+                background: ${t.up};
+                color: ${t.fg.onFill};
+            }
+            &[data-state='on'][data-tone='down'] {
+                background: ${t.down};
+                color: ${t.fg.onFill};
             }
             &[data-disabled] {
                 cursor: default;
@@ -256,7 +266,7 @@ class ToggleGroupImpl implements ToggleGroupHandle {
                 const iconOnly = this.iconOnly && icon !== null;
                 const b = h(
                     'button',
-                    { className: 'vela-toggle-group-item', slot: toggleGroupDef.slot('item'), data: { 'icon-only': iconOnly }, attrs: { 'aria-label': iconOnly ? item.label : null } },
+                    { className: 'vela-toggle-group-item', slot: toggleGroupDef.slot('item'), data: { 'icon-only': iconOnly, tone: item.tone ?? null }, attrs: { 'aria-label': iconOnly ? item.label : null } },
                     icon,
                     iconOnly ? null : item.label,
                 );

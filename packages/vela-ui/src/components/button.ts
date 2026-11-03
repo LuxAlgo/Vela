@@ -1,7 +1,8 @@
 // Button: a <button> with optional icons before and after its text. `default` is filled with
 // the selection color (OK, Apply), `outline` bordered (the dialogs' Cancel), `secondary` a
 // sunken fill, `ghost` bare until hovered (toolbar and header icons), `destructive` tinted
-// with the danger color, `link` text that underlines on hover. Heights: `xs` 26px, `sm` 30px
+// with the danger color, `link` text that underlines on hover, `up` and `down` filled with the
+// market's colors (buy and sell). Heights: `xs` 26px, `sm` 30px
 // (panels), `default` 34px (dialog footers), `lg` 40px (touch); the `icon*` sizes are the
 // same heights, square, for an icon alone, which `label` names.
 import { iconEl } from '../lib/icons';
@@ -18,7 +19,7 @@ export const buttonDef = defineComponent({
 });
 
 export const buttonVariants = variants({
-    variant: ['default', 'outline', 'secondary', 'ghost', 'destructive', 'link'],
+    variant: ['default', 'outline', 'secondary', 'ghost', 'destructive', 'link', 'up', 'down'],
     size: ['default', 'xs', 'sm', 'lg', 'icon', 'icon-xs', 'icon-sm', 'icon-lg'],
 });
 
@@ -181,6 +182,22 @@ const injectStyles = defineStyles(
                     background: transparent;
                     color: ${t.accent};
                     text-decoration: underline;
+                }
+                &[data-variant='up'],
+                &[data-variant='up']:not(:disabled):hover {
+                    border-color: transparent;
+                    background: ${t.up};
+                    color: ${t.fg.onFill};
+                }
+                &[data-variant='down'],
+                &[data-variant='down']:not(:disabled):hover {
+                    border-color: transparent;
+                    background: ${t.down};
+                    color: ${t.fg.onFill};
+                }
+                &[data-variant='up']:not(:disabled):hover,
+                &[data-variant='down']:not(:disabled):hover {
+                    opacity: 0.88;
                 }
                 &[data-pressed] {
                     background: ${t.active};

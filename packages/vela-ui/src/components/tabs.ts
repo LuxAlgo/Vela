@@ -8,14 +8,15 @@ import * as tabs from '@zag-js/tabs';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
+import { iconEl } from '../lib/icons';
 import { t } from '../lib/t';
 import { variants, type VariantProps } from '../lib/variants';
 import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
 export const tabsDef = defineComponent({
     name: 'tabs',
-    parts: ['list', 'trigger', 'content'],
-    settings: { 'track-radius': '8px', 'trigger-radius': t.radius.md, 'filled-radius': '5px', 'soft-radius': '8px' },
+    parts: ['list', 'trigger', 'icon', 'count', 'content'],
+    settings: { 'track-radius': '8px', 'trigger-radius': t.radius.md, 'filled-radius': '5px', 'soft-radius': '8px', 'count-radius': '8px' },
 });
 
 export const tabsVariants = variants({ variant: ['default', 'line', 'filled', 'soft', 'nav'] });
@@ -28,6 +29,10 @@ export interface TabItem {
     disabled?: boolean;
     /** Out of the strip for now (its content does not apply); the arrow keys skip it. */
     hidden?: boolean;
+    /** Icon id from the kit's registry, before the label. */
+    icon?: string;
+    /** A count after the label (open orders, trades); null shows none. */
+    count?: number | null;
 }
 
 export interface TabsProps extends VariantProps<typeof tabsVariants> {
@@ -58,6 +63,8 @@ export interface TabsHandle {
     /** Hide or show a tab. Hiding the selected tab selects the first available one (and
      *  calls `onValueChange`). */
     setHidden(value: string, hidden: boolean): void;
+    /** A tab's count (null: none). */
+    setCount(value: string, count: number | null): void;
     /** The trigger of a tab (null: unknown value). */
     trigger(value: string): HTMLButtonElement | null;
     /** Make `el` the panel of tab `value`: it gets the tabpanel role, its link to the trigger,
@@ -69,10 +76,33 @@ export interface TabsHandle {
 /** A tab a user can reach: neither disabled nor hidden. */
 export const tabAvailable = (item: TabItem): boolean => !item.disabled && !item.hidden;
 
+const countEl = (count: number | null | undefined): HTMLElement | null => (count == null ? null : h('span', { slot: tabsDef.slot('count'), text: String(count) }));
+
 const injectStyles = defineStyles(
     'vela-ui-tabs',
     css`
         @layer vela.ui {
+            [data-slot='tabs-icon'] {
+                margin-inline-end: 6px;
+            }
+            [data-slot='tabs-count'] {
+                min-width: 16px;
+                height: 16px;
+                margin-inline-start: 6px;
+                padding: 0 5px;
+                border-radius: ${tabsDef.vars['count-radius']};
+                background: ${t.hover};
+                color: ${t.fg.muted};
+                font-size: 10px;
+                font-weight: 600;
+                font-variant-numeric: tabular-nums;
+
+                &:where(:not([hidden])) {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+            }
             [data-slot='tabs-list'] {
                 display: flex;
 
@@ -293,6 +323,15 @@ class TabsImpl implements TabsHandle {
         this.machine.flush();
     }
 
+    setCount(value: string, count: number | null): void {
+        const b = this.triggers.get(value);
+        if (!b) return;
+        this.items = this.items.map((i) => (i.value === value ? { ...i, count } : i));
+        b.querySelector(`[data-slot="${tabsDef.slot('count')}"]`)?.remove();
+        const el = countEl(count);
+        if (el) b.appendChild(el);
+    }
+
     trigger(value: string): HTMLButtonElement | null {
         return this.triggers.get(value) ?? null;
     }
@@ -316,7 +355,12 @@ class TabsImpl implements TabsHandle {
         const className = this.triggerClassName ? `vela-tab ${this.triggerClassName}` : 'vela-tab';
         this.el.replaceChildren(
             ...this.items.map((item) => {
-                const b = h('button', { className, slot: tabsDef.slot('trigger'), data: { variant: this.variant }, text: item.label });
+                let icon: HTMLElement | null = null;
+                if (item.icon) {
+                    icon = iconEl(item.icon, document);
+                    icon.dataset.slot = tabsDef.slot('icon');
+                }
+                const b = h('button', { className, slot: tabsDef.slot('trigger'), data: { variant: this.variant } }, icon, item.label, countEl(item.count));
                 this.triggers.set(item.value, b);
                 return b;
             }),
