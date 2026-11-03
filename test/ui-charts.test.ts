@@ -31,6 +31,32 @@ describe('axis math', () => {
         expect(axis.ticks[axis.ticks.length - 1]).toBe(axis.max);
     });
 
+    it('keeps every tick inside the plot, none above the top bound', () => {
+        // Between -12k and +21k the axis rounds to -20k..30k; its ticks once stepped again on
+        // the rounded span and reached 40k above the plot.
+        const axis = valueAxis(-12_000, 21_000, 4);
+        expect([axis.min, axis.max, axis.step]).toEqual([-20_000, 30_000, 10_000]);
+        expect(axis.ticks).toEqual([-20_000, -10_000, 0, 10_000, 20_000, 30_000]);
+    });
+
+    it('labels zero and steps evenly on all-negative, all-positive and flat data', () => {
+        for (const [lo, hi] of [
+            [-25_000, 8_000],
+            [-4_400, 0],
+            [0, 17.3],
+            [-0.3, 0.7],
+            [0, 0],
+        ] as const) {
+            const { min, max, step, ticks } = valueAxis(lo, hi, 4);
+            expect(min).toBeLessThanOrEqual(lo);
+            expect(max).toBeGreaterThanOrEqual(hi);
+            expect(ticks[0]).toBe(min);
+            expect(ticks[ticks.length - 1]).toBeCloseTo(max, 10);
+            expect(ticks).toContain(0);
+            for (let i = 1; i < ticks.length; i += 1) expect(ticks[i]! - ticks[i - 1]!).toBeCloseTo(step, 10);
+        }
+    });
+
     it('writes compact numbers', () => {
         expect(compactNumber(1234)).toBe('1.2k');
         expect(compactNumber(-3_400_000)).toBe('-3.4M');
