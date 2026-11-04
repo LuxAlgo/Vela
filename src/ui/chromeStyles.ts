@@ -3,13 +3,14 @@
 // restyles, and under any CSS a host writes without a layer.
 import { injectLayerOrder, injectStyles } from '@luxalgo/vela-ui/styles';
 
-/** `css` inside the chrome's layer. */
+/** `css` inside the chrome's layer, for CSS that does not write its own. */
 export function chromeLayer(css: string): string {
     return `@layer vela.chrome {\n${css}\n}`;
 }
 
-/** Inject a chrome stylesheet once per root, inside the chrome's layer. */
+/** Inject a chrome stylesheet once per root. The CSS writes its layer itself
+ *  (`css\`@layer vela.chrome { … }\``), so stylelint sees it. */
 export function injectChromeStyles(id: string, css: string, root: Document | ShadowRoot = document): HTMLStyleElement | null {
     injectLayerOrder(root);
-    return injectStyles(id, chromeLayer(css), root);
+    return injectStyles(id, css, root);
 }

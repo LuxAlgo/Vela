@@ -23,6 +23,7 @@
     "./theme.schema.json": "./dist/theme.schema.json",
     "./cli": "./cli/engine.mjs",
     "./stylelint": "./stylelint/index.mjs",
+        "./stylelint/lint": "./stylelint/lint.mjs",
     "./*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*.js"

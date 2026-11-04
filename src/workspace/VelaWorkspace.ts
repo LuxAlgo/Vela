@@ -82,6 +82,8 @@ import {
 import { SplitterLayer, evenTracks } from './splitters';
 import { compositeLayoutScreenshot, tilesFromCellRects, triggerPngDownload, type LayoutShotTile } from './screenshot';
 import { injectChromeStyles } from '../ui/chromeStyles';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 /**
  * The workspace options: the widget's chart vocabulary + the shared shell surface + the
@@ -173,8 +175,9 @@ const TIME_AXIS_H = 22; // px the renderer reserves for a time axis (mirrors Nat
 const ALERT_CAP = 50;
 
 const STYLE_ID = 'vela-workspace';
-const CSS = `
-.vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--vela-bg); }
+const CSS = css`@layer vela.chrome {
+
+.vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: ${t.bg}; }
 .vela-ws-main { position: relative; display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-ws-toolbar { position: relative; flex: none; }
 .vela-ws-strips { position: relative; flex: none; display: flex; flex-direction: column; min-width: 0; }
@@ -207,8 +210,8 @@ const CSS = `
    region lets the pointer through while it holds no open panel. */
 [data-layout='mobile'][data-vela-regions] > .vela-ws-column { grid-area: 1 / 1 / 6 / -1; z-index: 25; pointer-events: none; }
 [data-layout='mobile'][data-vela-regions] > .vela-ws-column > .vela-panel { pointer-events: auto; }
-.vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
-.vela-cell { background: var(--vela-bg); position: relative; }
+.vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: ${t.border.soft}; }
+.vela-cell { background: ${t.bg}; position: relative; }
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
    outline on the cell is painted under them) — inert to the pointer. Scoped to
    multi-cell grids ([data-multi]): a single-cell layout always has an active cell,
@@ -217,16 +220,16 @@ const CSS = `
     content: '';
     position: absolute;
     inset: 0;
-    border: 2px solid var(--vela-fg-bright);
+    border: 2px solid ${t.fg.bright};
     pointer-events: none;
     z-index: 10;
 }
 /* Splitter hover mirrors the in-chart pane separator hover (CrosshairRenderer):
    a soft band over the whole grab target + a solid 2px line on the seam center. */
-.vela-ws-splitter:hover { background: var(--vela-separator-hover-band); }
-.vela-ws-splitter:hover::after { content: ''; position: absolute; background: var(--vela-separator-hover-line); }
-.vela-ws-splitter[data-axis='cols']:hover::after { left: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
-.vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); left: 0; height: 2px; width: 100%; }
+.vela-ws-splitter:hover { background: ${t.separatorHover.band}; }
+.vela-ws-splitter:hover::after { content: ''; position: absolute; background: ${t.separatorHover.line}; }
+.vela-ws-splitter[data-axis='cols']:hover::after { inset-inline-start: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
+.vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); inset-inline-start: 0; height: 2px; width: 100%; }
 /* Mobile: the docked drawing-toolbar column would eat a phone-width grid — the shell's
    drawings drawer + on-chart pill replace it (same policy as the widget's in-chart bar). */
 [data-layout='mobile'] .vela-ws-toolbar { display: none; }
@@ -240,12 +243,13 @@ const CSS = `
     content: '';
     position: absolute;
     inset: 0;
-    border: 2px dashed var(--vela-fg-bright);
-    background: var(--vela-separator-hover-band);
+    border: 2px dashed ${t.fg.bright};
+    background: ${t.separatorHover.band};
     pointer-events: none;
     z-index: 11;
 }
-`;
+
+}`;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
 registerIcon('layout', svg16('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/>'));

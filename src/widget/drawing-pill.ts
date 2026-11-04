@@ -12,6 +12,8 @@ import { getDrawingType, type SnapMode } from '../core/drawings';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike } from '../core/i18n/types';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     magnet: msg('widget.drawingPill.magnet', 'Magnet snap'),
@@ -21,11 +23,12 @@ const TEXT = {
 };
 
 const STYLE_ID = 'vela-widget-drawing-pill';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-drawpill { display: none; }
 [data-layout='mobile'] .vela-drawpill {
     position: absolute;
-    left: 50%;
+    inset-inline-start: 50%;
     bottom: 10px;
     transform: translateX(-50%);
     z-index: 7;
@@ -33,11 +36,11 @@ const CSS = `
     align-items: center;
     gap: 2px;
     padding: 4px;
-    border: 1px solid var(--vela-border-strong);
+    border: 1px solid ${t.border.strong};
     border-radius: 999px;
-    background: var(--vela-surface);
-    box-shadow: var(--vela-shadow-dialog);
-    color: var(--vela-fg);
+    background: ${t.surface};
+    box-shadow: ${t.shadow.dialog};
+    color: ${t.fg};
 }
 [data-layout='mobile'] .vela-drawpill[hidden] { display: none !important; }
 .vela-drawpill-tool {
@@ -47,8 +50,8 @@ const CSS = `
     width: 36px;
     height: 36px;
     border-radius: 999px;
-    background: var(--vela-hover);
-    color: var(--vela-accent);
+    background: ${t.hover};
+    color: ${t.accent};
 }
 .vela-drawpill-tool svg { width: 22px; height: 22px; }
 .vela-drawpill-btn {
@@ -60,28 +63,29 @@ const CSS = `
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     position: relative;
 }
-.vela-drawpill-btn:active { background: var(--vela-hover); }
-.vela-drawpill-btn[data-on='1'] { color: var(--vela-accent); background: var(--vela-hover); }
+.vela-drawpill-btn:active { background: ${t.hover}; }
+.vela-drawpill-btn[data-on='1'] { color: ${t.accent}; background: ${t.hover}; }
 .vela-drawpill-btn .vela-icon { font-size: 17px; width: 17px; height: 17px; }
 .vela-drawpill-badge {
     position: absolute;
     top: 5px;
-    right: 5px;
+    inset-inline-end: 5px;
     display: none;
     align-items: flex-end;
     gap: 1px;
-    color: var(--vela-accent);
+    color: ${t.accent};
 }
 .vela-drawpill-badge[data-strength] { display: inline-flex; }
 .vela-drawpill-badge > i { display: block; width: 2px; height: 4px; border-radius: 1px; background: currentColor; }
 .vela-drawpill-badge > i + i { height: 7px; opacity: 0.3; }
 .vela-drawpill-badge[data-strength='strong'] > i + i { opacity: 1; }
-`;
+
+}`;
 
 export class DrawingPill {
     private readonly el: HTMLElement;

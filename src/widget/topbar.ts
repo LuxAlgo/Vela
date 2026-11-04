@@ -15,20 +15,23 @@ import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedT
 import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
 import { favoriteTimeframeChips, timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 // The component owns its stylesheet (id-guarded, injected at construction) so EVERY
 // host that mounts a Topbar — the widget, a multi-chart workspace — gets the same look.
 const STYLE_ID = 'vela-topbar';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-widget-topbar [data-topbar-hidden] { display: none !important; }
 .vela-widget-topbar {
     display: flex;
     align-items: center;
-    gap: var(--vela-space-1);
-    padding: var(--vela-space-1) var(--vela-space-2);
-    border-bottom: 1px solid var(--vela-border-soft);
-    color: var(--vela-fg);
-    font-size: var(--vela-font-size-md);
+    gap: ${t.space[1]};
+    padding: ${t.space[1]} ${t.space[2]};
+    border-bottom: 1px solid ${t.border.soft};
+    color: ${t.fg};
+    font-size: ${t.fontSize.md};
     flex: none;
 }
 .vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
@@ -41,13 +44,13 @@ const CSS = `
     padding: 0 9px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
 }
 .vela-widget-symbol {
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     font-size: 15px;
     font-weight: 600;
     letter-spacing: 0.3px;
@@ -55,16 +58,16 @@ const CSS = `
     gap: 7px;
 }
 .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
 }
-.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* Timeframe cluster: duration-sorted favorite chips, highlight in place, caret
    opening the full dropdown. With no favorites the caret is the merged trigger
    (label + chevron). An unstarred current value sits as an extra chip by the caret. */
 .vela-widget-tf-group { display: inline-flex; align-items: center; gap: 2px; }
 .vela-widget-tf-chips { display: inline-flex; align-items: center; gap: 2px; }
 .vela-widget-tf-chips:empty { display: none; }
-.vela-widget-tf[data-current='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
+.vela-widget-tf[data-current='1'] { background: ${t.hover.strong}; color: ${t.fg.bright}; }
 .vela-widget-tf-caret {
     all: unset;
     box-sizing: border-box;
@@ -75,9 +78,9 @@ const CSS = `
     height: 30px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
-.vela-widget-tf-caret:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tf-caret:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* The merged trigger is a plain button (hover feedback only) — the highlight
    background marks the CURRENT chip among favorites, and a lone trigger with a
    permanent highlight would read as stuck-pressed. */
@@ -85,7 +88,7 @@ const CSS = `
     width: auto;
     padding: 0 6px 0 9px;
     gap: 4px;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
@@ -95,17 +98,17 @@ const CSS = `
 /* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
    fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
    up looking like different thicknesses depending on subpixel placement. */
-.vela-sep { height: 22px; margin: 0 2px; flex: none; background: var(--vela-border-strong); }
+.vela-sep { height: 22px; margin: 0 2px; flex: none; background: ${t.border.strong}; }
 .vela-alerts-badge {
     position: absolute;
     top: 2px;
-    right: 2px;
+    inset-inline-end: 2px;
     min-width: 13px;
     height: 13px;
     padding: 0 3px;
     border-radius: 7px;
-    background: var(--vela-accent);
-    color: var(--vela-fg-on-fill);
+    background: ${t.accent};
+    color: ${t.fg.onFill};
     font-size: 9px;
     font-weight: 700;
     display: inline-flex;
@@ -114,15 +117,15 @@ const CSS = `
 }
 /* The right side of the bar — whatever the composition puts there rides this one
    auto-margin push (the flow-actions host used to carry it; composition can omit it). */
-.vela-topbar-right { margin-left: auto; display: inline-flex; align-items: center; gap: var(--vela-space-1); }
-.vela-widget-actions { display: inline-flex; gap: var(--vela-space-1); }
+.vela-topbar-right { margin-inline-start: auto; display: inline-flex; align-items: center; gap: ${t.space[1]}; }
+.vela-widget-actions { display: inline-flex; gap: ${t.space[1]}; }
 /* Left-aligned contributed actions — the primary-chrome cluster after the dropdowns. */
-.vela-widget-actions-left { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
+.vela-widget-actions-left { display: inline-flex; align-items: center; gap: ${t.space[1]}; }
 /* One PINNED contributed action's slot (a composition entry naming the action's id). */
 .vela-widget-action-pin { display: inline-flex; align-items: center; }
 /* The side-panel toggles, one per docked panel — a group so the dock can rebuild them
    without disturbing the tools around it. */
-.vela-widget-panels { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
+.vela-widget-panels { display: inline-flex; align-items: center; gap: ${t.space[1]}; }
 .vela-widget-tool {
     all: unset;
     box-sizing: border-box;
@@ -133,12 +136,12 @@ const CSS = `
     height: 30px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 14px;
 }
-.vela-widget-tool:hover:not(:disabled) { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tool:hover:not(:disabled) { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-widget-tool:disabled { opacity: 0.35; cursor: default; }
-.vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tool[data-active='1'] { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-widget-action {
     all: unset;
     box-sizing: border-box;
@@ -146,12 +149,13 @@ const CSS = `
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    border-radius: var(--vela-radius-sm);
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg);
+    color: ${t.fg};
 }
-.vela-widget-action:hover { background: var(--vela-hover); }
-`;
+.vela-widget-action:hover { background: ${t.hover}; }
+
+}`;
 
 /** A price style's name, in `i18n`'s language (English without one). */
 export function priceStyleLabel(id: string, i18n?: Translator | null): string {

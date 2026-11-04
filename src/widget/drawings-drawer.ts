@@ -13,6 +13,8 @@ import type { DrawingTypeKey } from '../core/drawings/Drawing';
 import { msg } from '../core/i18n/message';
 import { sourceText, textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     title: msg('widget.drawingsDrawer.title', 'Drawings'),
@@ -22,13 +24,14 @@ const TEXT = {
 };
 
 const STYLE_ID = 'vela-widget-drawings-drawer';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 /* Search + tabs stay pinned while the tool list scrolls underneath. */
 .vela-dd-sticky {
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--vela-surface);
+    background: ${t.surface};
     padding-top: 2px;
 }
 .vela-dd-search {
@@ -37,10 +40,10 @@ const CSS = `
     gap: 8px;
     padding: 8px 12px;
     margin: 0 2px 8px;
-    border: 1px solid var(--vela-border);
+    border: 1px solid ${t.border};
     border-radius: 8px;
-    color: var(--vela-fg-muted);
-    background: var(--vela-surface);
+    color: ${t.fg.muted};
+    background: ${t.surface};
 }
 .vela-dd-search input {
     all: unset;
@@ -49,7 +52,7 @@ const CSS = `
     flex: 1 1 auto;
     min-width: 0;
     font-size: 14px;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
 }
 .vela-dd-tabs {
     display: flex;
@@ -60,8 +63,8 @@ const CSS = `
        (the drawer body is pan-y so everywhere ELSE a sideways move swipes the tabs). */
     touch-action: pan-x;
     padding: 0 2px 8px;
-    border-bottom: 1px solid var(--vela-border);
-    background: var(--vela-surface);
+    border-bottom: 1px solid ${t.border};
+    background: ${t.surface};
 }
 .vela-dd-tabs::-webkit-scrollbar { display: none; }
 .vela-dd-list { padding: 6px 0 4px; }
@@ -71,7 +74,7 @@ const CSS = `
     font-weight: 600;
     letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
 .vela-dd-row {
     display: flex;
@@ -83,12 +86,12 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-dd-row:active { background: var(--vela-hover); }
-.vela-dd-row[data-active='1'] { background: var(--vela-hover); }
-.vela-dd-row[data-active='1'] .vela-dd-label { color: var(--vela-accent); }
-.vela-dd-glyph { flex: none; width: 24px; height: 24px; color: var(--vela-fg); }
+.vela-dd-row:active { background: ${t.hover}; }
+.vela-dd-row[data-active='1'] { background: ${t.hover}; }
+.vela-dd-row[data-active='1'] .vela-dd-label { color: ${t.accent}; }
+.vela-dd-glyph { flex: none; width: 24px; height: 24px; color: ${t.fg}; }
 .vela-dd-glyph svg { width: 24px; height: 24px; }
-.vela-dd-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-dd-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-dd-star {
     all: unset;
     box-sizing: border-box;
@@ -99,13 +102,14 @@ const CSS = `
     align-items: center;
     justify-content: center;
     border-radius: 8px;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-dd-star[data-on='1'] { color: var(--vela-highlight); }
-.vela-dd-empty { padding: 18px 2px; color: var(--vela-fg-muted); font-size: 13px; }
-`;
+.vela-dd-star[data-on='1'] { color: ${t.highlight}; }
+.vela-dd-empty { padding: 18px 2px; color: ${t.fg.muted}; font-size: 13px; }
+
+}`;
 
 export interface DrawingsDrawerOptions {
     host: HTMLElement;

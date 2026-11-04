@@ -55,5 +55,12 @@ the project's `AGENTS.md` pointing coding agents at this package's reference.
   tag (tokens through `t`, no raw colors, logical directions, parts not classes). Extend it
   and name your layer: `{ extends: ['@luxalgo/vela-ui/stylelint'], rules: { 'vela/layer':
   'vela.custom' } }`. It needs `stylelint`, `postcss-lit` and `stylelint-config-recommended`.
+  CSS outside the kit takes the tag and the tokens from `@luxalgo/vela-ui/css` and
+  `@luxalgo/vela-ui/t`.
+- `@luxalgo/vela-ui/stylelint/lint`: `lintCss({ files, baseline?, update? })` runs that config
+  and fails when postcss-lit skips a template (it would pass while checking nothing). With a
+  `baseline` file, CSS written before the rules keeps its known violations, counted per file
+  and rule: the run fails when a count grows, and when one shrinks until `update: true`
+  rewrites the file, so the baseline only tightens.
 
 ES modules only. Licensed under Apache-2.0.

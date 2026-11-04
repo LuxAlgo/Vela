@@ -13,6 +13,8 @@ import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 import { injectChromeStyles } from '../ui/chromeStyles';
 import { timezoneMenuRows, tzButtonLabel, resolveTimezone } from './timezones';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 export interface RangePreset {
     /** Button label. */
@@ -48,15 +50,16 @@ export const RANGE_PRESETS: readonly RangePreset[] = [
 ];
 
 const STYLE_ID = 'vela-widget-bottombar';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-widget-bottombar {
     display: flex;
     align-items: center;
     gap: 2px;
     height: 38px;
     padding: 0 8px;
-    border-top: 1px solid var(--vela-border);
-    color: var(--vela-fg-muted);
+    border-top: 1px solid ${t.border};
+    color: ${t.fg.muted};
     font-size: 12px;
     flex: none;
 }
@@ -71,10 +74,10 @@ const CSS = `
     font-weight: 600;
     cursor: pointer;
 }
-.vela-bb-range:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-bb-range[data-active='1'] { color: var(--vela-fg-bright); background: var(--vela-hover); }
+.vela-bb-range:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-bb-range[data-active='1'] { color: ${t.fg.bright}; background: ${t.hover}; }
 .vela-bb-spacer { flex: 1 1 auto; }
-.vela-bb-clock { font-variant-numeric: tabular-nums; color: var(--vela-fg-bright); font-weight: 600; }
+.vela-bb-clock { font-variant-numeric: tabular-nums; color: ${t.fg.bright}; font-weight: 600; }
 .vela-bb-tz {
     all: unset;
     box-sizing: border-box;
@@ -85,11 +88,11 @@ const CSS = `
     padding: 0 8px;
     border-radius: 4px;
     font-weight: 600;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     cursor: pointer;
 }
-.vela-bb-tz:hover { background: var(--vela-hover); }
-.vela-bb-session { display: inline-flex; border: 1px solid var(--vela-border-strong); border-radius: 4px; overflow: hidden; margin-left: 6px; }
+.vela-bb-tz:hover { background: ${t.hover}; }
+.vela-bb-session { display: inline-flex; border: 1px solid ${t.border.strong}; border-radius: 4px; overflow: hidden; margin-inline-start: 6px; }
 .vela-bb-session-btn {
     all: unset;
     box-sizing: border-box;
@@ -97,14 +100,14 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     padding: 0 8px;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
 }
 .vela-bb-session-btn:disabled { cursor: not-allowed; opacity: 0.55; }
-.vela-bb-session-btn:not(:disabled):hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-bb-session-btn.is-active { color: var(--vela-fg); background: var(--vela-surface-elev); }
+.vela-bb-session-btn:not(:disabled):hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-bb-session-btn.is-active { color: ${t.fg}; background: ${t.surface.elev}; }
 .vela-bb-session-btn.is-active:disabled { opacity: 0.8; }
 .vela-bb-settings {
     all: unset;
@@ -114,14 +117,15 @@ const CSS = `
     justify-content: center;
     width: 28px;
     height: 26px;
-    margin-left: 6px;
+    margin-inline-start: 6px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 14px;
 }
-.vela-bb-settings:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-`;
+.vela-bb-settings:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+
+}`;
 
 export interface BottombarOptions {
     /** The stored display-timezone choice — an IANA zone or the exchange rule. */

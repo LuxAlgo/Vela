@@ -15,7 +15,8 @@ import {
     ensureDialogStyles,
     type InputsUIChange,
 } from './IndicatorInputsDialog';
-import { chromeLayer } from '../../ui/chromeStyles';
+import { css } from '@luxalgo/vela-ui/css';
+
 export type { InputsUIChange } from './IndicatorInputsDialog';
 export {
     nameOf,
@@ -112,8 +113,9 @@ interface LegendRow {
 
 /** Keyframes for the legend-row live pulse, injected once into the document (the load
  *  dots animate through the Web Animations API and need no stylesheet). */
-const STATUS_KEYFRAMES =
-    '@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}';
+const STATUS_KEYFRAMES = css`@layer vela.chrome {
+@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}
+}`;
 
 /** Legend glyph size — the row's own font belongs to the indicator title beside them. */
 const LEGEND_ICON_PX = 16;
@@ -1115,7 +1117,7 @@ export class InputsUI {
         if (typeof document === 'undefined' || document.getElementById('vela-ind-status-kf')) return;
         const style = document.createElement('style');
         style.id = 'vela-ind-status-kf';
-        style.textContent = chromeLayer(STATUS_KEYFRAMES);
+        style.textContent = STATUS_KEYFRAMES;
         document.head.appendChild(style);
     }
 

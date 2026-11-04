@@ -103,6 +103,16 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Vela's chrome CSS is linted.** Every chrome stylesheet is a `css` template that writes
+  its `@layer vela.chrome`, reads the tokens through `t` and uses logical properties
+  (`inset-inline-start`, `margin-inline-end`…, the same in left-to-right layouts), and
+  `npm run lint` checks it with the kit's stylelint config (`.vela-*` classes allowed). The
+  violations it carried before the rules sit in `stylelint-baseline.json`, which may only
+  shrink (`npm run lint:css -- --update-baseline` after fixing some).
+- **`@luxalgo/vela-ui/css`, `@luxalgo/vela-ui/t` and `@luxalgo/vela-ui/stylelint/lint`.** The
+  `css` tag and the tokens have their own entries, for CSS written outside the kit; `lintCss`
+  runs the shared stylelint config, fails on a template postcss-lit skipped, and holds older
+  CSS to a baseline that only tightens.
 - **The color picker's opacity is a slider, on Zag's slider machine.** The knob has the
   slider role, the translated "Opacity" name and its value as text ("45%"); with the focus
   on it, the arrow keys step the opacity by 1%, Page Up/Down by 10%, Home/End to the ends.

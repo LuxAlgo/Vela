@@ -12,28 +12,32 @@ import type { VelaTheme } from '../../../../core/options';
 import type { MarkContent, MarkContentSource, MarkPanelItem } from '../../../../core/marks/types';
 import { Popover } from '@luxalgo/vela-ui/popover';
 import { CALLOUT_CSS, CALLOUT_STYLE_ID } from '@luxalgo/vela-ui/callout-bubble';
-import { injectChromeStyles } from '../../../../ui/chromeStyles';
+import { chromeLayer, injectChromeStyles } from '../../../../ui/chromeStyles';
 import { sanitizeHtml } from '../../../../ui/sanitize-html';
 import type { MarkCluster } from './layout';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const MARKS_STYLE_ID = 'vela-marks-popover';
-const MARKS_CSS = `
+const MARKS_CSS = css`@layer vela.chrome {
+
 .vela-marks-panel { padding: 0; gap: 0; min-width: 220px; max-width: 320px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
 .vela-marks-section { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
-.vela-marks-section + .vela-marks-section { border-top: 1px solid var(--vela-border); }
+.vela-marks-section + .vela-marks-section { border-top: 1px solid ${t.border}; }
 .vela-marks-field { display: flex; justify-content: space-between; gap: 16px; line-height: 1.45; }
-.vela-marks-field-label { color: var(--vela-fg-muted); }
-.vela-marks-field-value { color: var(--vela-fg-bright); text-align: right; font-variant-numeric: tabular-nums; }
-.vela-marks-html { color: var(--vela-fg); line-height: 1.45; overflow-wrap: anywhere; }
+.vela-marks-field-label { color: ${t.fg.muted}; }
+.vela-marks-field-value { color: ${t.fg.bright}; text-align: end; font-variant-numeric: tabular-nums; }
+.vela-marks-html { color: ${t.fg}; line-height: 1.45; overflow-wrap: anywhere; }
 .vela-marks-html p { margin: 0 0 6px; }
 .vela-marks-html p:last-child { margin-bottom: 0; }
-.vela-marks-html a { color: var(--vela-accent); }
+.vela-marks-html a { color: ${t.accent}; }
 .vela-marks-html img { max-width: 100%; height: auto; }
 .vela-marks-html table { border-collapse: collapse; }
-.vela-marks-html td, .vela-marks-html th { padding: 2px 6px; border: 1px solid var(--vela-border); }
+.vela-marks-html td, .vela-marks-html th { padding: 2px 6px; border: 1px solid ${t.border}; }
 .vela-marks-html pre, .vela-marks-html code { font-family: var(--vela-font-mono, monospace); font-size: 0.92em; }
-.vela-marks-loading, .vela-marks-error { color: var(--vela-fg-muted); font-style: italic; }
-`;
+.vela-marks-loading, .vela-marks-error { color: ${t.fg.muted}; font-style: italic; }
+
+}`;
 
 export interface MarkPopoverDeps {
     /** The positioned plot element — the anchor lives in it. */
@@ -85,7 +89,7 @@ export class MarkPopover {
 
     constructor(private readonly deps: MarkPopoverDeps) {
         const doc = deps.plot.ownerDocument;
-        injectChromeStyles(CALLOUT_STYLE_ID, CALLOUT_CSS, doc);
+        injectChromeStyles(CALLOUT_STYLE_ID, chromeLayer(CALLOUT_CSS), doc);
         injectChromeStyles(MARKS_STYLE_ID, MARKS_CSS, doc);
         this.anchor = doc.createElement('div');
         this.anchor.className = 'vela-marks-anchor';

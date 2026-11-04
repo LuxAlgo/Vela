@@ -15,6 +15,8 @@ import { injectChromeStyles } from '../ui/chromeStyles';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { announceSurface } from '@luxalgo/vela-ui/surface-events';
 import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     layout: msg('widget.layoutPicker.layout', 'Layout'),
@@ -26,19 +28,20 @@ const TEXT = {
 const STYLE_ID = 'vela-widget-layout-picker-v15';
 // One monochrome selection language across the panel: lit cells and sync ON
 // switches both speak --vela-selected-*.
-const CSS = `
-.vela-lp-layer { position: absolute; z-index: var(--vela-z-menu); }
+const CSS = css`@layer vela.chrome {
+
+.vela-lp-layer { position: absolute; z-index: ${t.z.menu}; }
 .vela-lp {
-    background: var(--vela-surface);
-    color: var(--vela-fg);
-    border: 1px solid var(--vela-border-strong);
+    background: ${t.surface};
+    color: ${t.fg};
+    border: 1px solid ${t.border.strong};
     border-radius: 8px;
-    box-shadow: var(--vela-shadow);
+    box-shadow: ${t.shadow};
     padding: 10px 12px 10px;
     font-size: 13px;
     user-select: none;
     transform-origin: top;
-    animation: vela-lp-in var(--vela-dur-fast) var(--vela-ease);
+    animation: vela-lp-in ${t.dur.fast} ${t.ease};
 }
 @keyframes vela-lp-in {
     from { opacity: 0; transform: translateY(-4px) scale(0.98); }
@@ -53,7 +56,7 @@ const CSS = `
     font-weight: 600;
     letter-spacing: 1.2px;
     text-transform: uppercase;
-    color: var(--vela-fg-faint);
+    color: ${t.fg.faint};
     margin-bottom: 10px;
 }
 /* "?" help badge: hover it for the canvas explainer. */
@@ -64,17 +67,17 @@ const CSS = `
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    border: 1px solid var(--vela-border-strong);
-    color: var(--vela-fg-muted);
+    border: 1px solid ${t.border.strong};
+    color: ${t.fg.muted};
     font-size: 9px;
     font-weight: 600;
     letter-spacing: 0;
     cursor: default;
-    transition: color var(--vela-dur-fast) var(--vela-ease), border-color var(--vela-dur-fast) var(--vela-ease);
+    transition: color ${t.dur.fast} ${t.ease}, border-color ${t.dur.fast} ${t.ease};
 }
-.vela-lp-badge:hover { color: var(--vela-fg-bright); border-color: var(--vela-fg-muted); }
+.vela-lp-badge:hover { color: ${t.fg.bright}; border-color: ${t.fg.muted}; }
 .vela-lp-tip { display: flex; flex-direction: column; gap: 4px; max-width: 230px; white-space: normal; }
-.vela-lp-vsep { width: 1px; flex: none; align-self: stretch; background: var(--vela-border-faint); }
+.vela-lp-vsep { width: 1px; flex: none; align-self: stretch; background: ${t.border.faint}; }
 .vela-lp-layout { width: 132px; display: flex; flex-direction: column; align-items: center; }
 .vela-lp-layout > .vela-lp-heading,
 .vela-lp-layout > .vela-lp-presets { align-self: stretch; }
@@ -83,25 +86,25 @@ const CSS = `
     all: unset;
     box-sizing: border-box;
     border-radius: 4px;
-    background: var(--vela-hover);
-    border: 1px solid var(--vela-border-faint);
+    background: ${t.hover};
+    border: 1px solid ${t.border.faint};
     cursor: pointer;
-    transition: background var(--vela-dur-fast) var(--vela-ease), border-color var(--vela-dur-fast) var(--vela-ease);
+    transition: background ${t.dur.fast} ${t.ease}, border-color ${t.dur.fast} ${t.ease};
 }
-.vela-lp-sq:hover { background: var(--vela-hover-strong); border-color: var(--vela-border-strong); }
+.vela-lp-sq:hover { background: ${t.hover.strong}; border-color: ${t.border.strong}; }
 /* Selected/previewed squares — the shared monochrome selection chip. */
 .vela-lp-sq[data-on='1'] {
-    background: var(--vela-selected-bg);
-    border-color: var(--vela-selected-bg);
+    background: ${t.selected.bg};
+    border-color: ${t.selected.bg};
 }
 .vela-lp-presets { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-.vela-lp-preset { all: unset; box-sizing: border-box; padding: 5px 8px; border-radius: 4px; cursor: pointer; color: var(--vela-fg-muted); font-size: 12px; white-space: nowrap; transition: transform 120ms var(--vela-ease); }
-.vela-lp-preset:hover { background: var(--vela-hover); }
+.vela-lp-preset { all: unset; box-sizing: border-box; padding: 5px 8px; border-radius: 4px; cursor: pointer; color: ${t.fg.muted}; font-size: 12px; white-space: nowrap; transition: transform 120ms ${t.ease}; }
+.vela-lp-preset:hover { background: ${t.hover}; }
 .vela-lp-preset:active { transform: scale(0.98); }
-.vela-lp-preset[data-checked='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
+.vela-lp-preset[data-checked='1'] { background: ${t.hover.strong}; color: ${t.fg.bright}; }
 .vela-lp-sync { display: flex; flex-direction: column; gap: 4px; min-width: 118px; }
 .vela-lp-sync-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
-.vela-lp-sync-row:hover { background: var(--vela-hover); }
+.vela-lp-sync-row:hover { background: ${t.hover}; }
 .vela-lp-sync-row .vela-lp-label { flex: 1 1 auto; }
 /* Toggle pill — same control language as the menu's switch rows, monochrome ON state. */
 .vela-lp-switch {
@@ -110,24 +113,25 @@ const CSS = `
     width: 34px;
     height: 18px;
     border-radius: 9px;
-    background: var(--vela-hover);
-    border: 1px solid var(--vela-border-soft);
+    background: ${t.hover};
+    border: 1px solid ${t.border.soft};
     transition: background 0.16s ease, border-color 0.16s ease;
 }
 .vela-lp-switch::after {
     content: '';
     position: absolute;
     top: 2px;
-    left: 2px;
+    inset-inline-start: 2px;
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: var(--vela-fg-muted);
+    background: ${t.fg.muted};
     transition: transform 0.16s ease, background 0.16s ease;
 }
-.vela-lp-switch.on { background: var(--vela-selected-bg); border-color: var(--vela-selected-bg); }
-.vela-lp-switch.on::after { transform: translateX(16px); background: var(--vela-selected-fg); }
-`;
+.vela-lp-switch.on { background: ${t.selected.bg}; border-color: ${t.selected.bg}; }
+.vela-lp-switch.on::after { transform: translateX(16px); background: ${t.selected.fg}; }
+
+}`;
 
 /** The picker canvas is a fixed 4×4 — 16 cells, the workspace pool capacity. */
 const GRID = 4;

@@ -16,7 +16,9 @@ import { DatePicker, normalizeDateInput } from '@luxalgo/vela-ui/date-picker';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '@luxalgo/vela-ui/field';
 import { overlayScrollbarCss, FIELD_FOCUS_CSS, FIELD_FOCUS_RING } from '@luxalgo/vela-ui/styles';
 import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
-import { chromeLayer } from '../../ui/chromeStyles';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
+
 
 /** Emitted when the user edits an input in the in-chart settings dialog. */
 export interface InputsUIChange {
@@ -903,22 +905,24 @@ export function ensureDialogStyles(): void {
     const s = existing ?? document.createElement('style');
     s.id = DIALOG_STYLE_ID;
     s.dataset.rev = DIALOG_STYLE_REV;
-    s.textContent = chromeLayer(`
+    s.textContent = css`@layer vela.chrome {
+
 .vela-ind-combo input{${FIELD_FOCUS_CSS}}
-.vela-ind-combo input:hover{border-color:var(--vela-fg-muted);}
+.vela-ind-combo input:hover{border-color:${t.fg.muted};}
 .vela-ind-combo input:focus{${FIELD_FOCUS_RING}}
-.vela-ind-combo-chevron{position:absolute;right:0;top:0;bottom:0;width:26px;border:none;background:transparent;color:inherit;opacity:0.55;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+.vela-ind-combo-chevron{position:absolute;inset-inline-end:0;top:0;bottom:0;width:26px;border:none;background:transparent;color:inherit;opacity:0.55;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .vela-ind-combo-chevron:hover{opacity:0.9;}
-.vela-ind-cal{background:var(--vela-bg);color:var(--vela-fg);border:none;border-radius:6px;box-shadow:var(--vela-shadow);font:14px var(--vela-font);padding:10px 12px;user-select:none;}
+.vela-ind-cal{background:${t.bg};color:${t.fg};border:none;border-radius:6px;box-shadow:${t.shadow};font:14px ${t.font};padding:10px 12px;user-select:none;}
 ${overlayScrollbarCss('.vela-dialog.vela-ind-dialog *', 9)}
 .vela-ind-tabs{padding:0 20px;flex:0 0 auto;}
 .vela-ind-tabs>.vela-tab:only-child{cursor:default;}
-.vela-ind-ctl,.vela-ind-close{background-color:transparent;color:inherit;transition:color var(--vela-dur-fast) ease,background-color var(--vela-dur-fast) ease;}
+.vela-ind-ctl,.vela-ind-close{background-color:transparent;color:inherit;transition:color ${t.dur.fast} ease,background-color ${t.dur.fast} ease;}
 .vela-ind-ctl svg,.vela-ind-close svg{width:${LEGEND_ICON_PX}px;height:${LEGEND_ICON_PX}px;display:block;flex:none;stroke-width:1;}
-.vela-ind-ctl:hover{background-color:var(--vela-hover-strong);}
-.vela-ind-close:hover{color:var(--vela-danger) !important;background-color:var(--vela-hover-strong);}
-.vela-ind-fold{transition:border-color var(--vela-dur-fast) ease,opacity var(--vela-dur-fast) ease;}
-.vela-ind-fold:hover{border-color:var(--vela-border-strong);opacity:0.9;}`);
+.vela-ind-ctl:hover{background-color:${t.hover.strong};}
+.vela-ind-close:hover{color:${t.danger} !important;background-color:${t.hover.strong};}
+.vela-ind-fold{transition:border-color ${t.dur.fast} ease,opacity ${t.dur.fast} ease;}
+.vela-ind-fold:hover{border-color:${t.border.strong};opacity:0.9;}
+}`;
     if (!existing) document.head.appendChild(s);
 }
 

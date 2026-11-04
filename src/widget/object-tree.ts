@@ -50,6 +50,8 @@ import {
     type TreeSnapshot,
 } from './object-tree-model';
 import { SidePanel } from './side-panel';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     objectTree: msg('widget.objectTree.objectTree', 'Object tree'),
@@ -105,7 +107,8 @@ const TEXT = {
 export const OBJECT_TREE_TITLE = TEXT.objectTree;
 
 const STYLE_ID = 'vela-widget-objtree';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 /* One pane's block. The transparent border reserves the drop-target outline. */
 .vela-ot-pane {
     border: 1px solid transparent;
@@ -119,13 +122,13 @@ const CSS = `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
-.vela-ot-panesep { height: 1px; background: var(--vela-border); margin: 6px 8px; }
+.vela-ot-panesep { height: 1px; background: ${t.border}; margin: 6px 8px; }
 
 .vela-ot-row {
     display: flex;
@@ -135,8 +138,8 @@ const CSS = `
     border-radius: 6px;
     cursor: default;
 }
-.vela-ot-row:hover { background: var(--vela-hover); }
-.vela-ot-row > .vela-icon { color: var(--vela-fg-muted); width: 14px; height: 14px; font-size: 14px; justify-content: center; flex: none; }
+.vela-ot-row:hover { background: ${t.hover}; }
+.vela-ot-row > .vela-icon { color: ${t.fg.muted}; width: 14px; height: 14px; font-size: 14px; justify-content: center; flex: none; }
 /* Drawing glyphs come from the type registry at toolbar scale — bring them down to row size. */
 .vela-ot-row > .vela-icon svg { width: 14px; height: 14px; }
 .vela-ot-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -144,9 +147,9 @@ const CSS = `
 .vela-ot-row[data-hidden] > .vela-icon { opacity: 0.45; }
 /* Two different states, and both can be true at once: "picked" is what the panel has selected
    (the group/duplicate candidates), "selected" mirrors what the CHART has selected. */
-.vela-ot-row[data-picked] { background: var(--vela-active); }
-.vela-ot-row[data-picked] .vela-ot-name { color: var(--vela-fg-bright); }
-.vela-ot-row[data-selected] { box-shadow: inset 2px 0 0 var(--vela-accent); }
+.vela-ot-row[data-picked] { background: ${t.active}; }
+.vela-ot-row[data-picked] .vela-ot-name { color: ${t.fg.bright}; }
+.vela-ot-row[data-selected] { box-shadow: inset 2px 0 0 ${t.accent}; }
 .vela-ot-avatar {
     width: 14px;
     height: 14px;
@@ -155,7 +158,7 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--vela-fg-on-fill);
+    color: ${t.fg.onFill};
     font-size: 10px;
     font-weight: 700;
 }
@@ -166,8 +169,8 @@ const CSS = `
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--vela-fg-muted);
-    background: var(--vela-hover);
+    color: ${t.fg.muted};
+    background: ${t.hover};
     border-radius: 3px;
     padding: 1px 4px;
 }
@@ -185,7 +188,7 @@ const CSS = `
     align-items: center;
     justify-content: center;
     border-radius: 3px;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 12px;
     visibility: hidden;
 }
@@ -193,10 +196,10 @@ const CSS = `
 .vela-ot-panehead:hover .vela-ot-btn { visibility: visible; }
 /* An engaged action stays out: hidden and locked are states, and a state the user can only
    see by hovering is a state they will not find. */
-.vela-ot-row .vela-ot-btn[data-engaged] { visibility: visible; color: var(--vela-fg); }
-.vela-ot-btn:hover:not(:disabled) { background: var(--vela-active); color: var(--vela-fg-bright); }
+.vela-ot-row .vela-ot-btn[data-engaged] { visibility: visible; color: ${t.fg}; }
+.vela-ot-btn:hover:not(:disabled) { background: ${t.active}; color: ${t.fg.bright}; }
 .vela-ot-btn:disabled { opacity: 0.35; cursor: default; }
-.vela-ot-empty { padding: 20px 10px; text-align: center; color: var(--vela-fg-muted); font-size: 12px; }
+.vela-ot-empty { padding: 20px 10px; text-align: center; color: ${t.fg.muted}; font-size: 12px; }
 
 /* ── drawing groups ── */
 /* One top-level entry in a pane's drawing list: a lone drawing, or a whole group block. No
@@ -208,15 +211,15 @@ const CSS = `
 .vela-ot-unit:has(+ .vela-ot-unit > .vela-ot-row[data-picked]) > .vela-ot-row[data-picked] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .vela-ot-row[data-row-kind='group'] > .vela-icon { width: 12px; font-size: 11px; }
 /* A member sits indented under its group's header. */
-.vela-ot-subrow { padding-left: 26px; }
+.vela-ot-subrow { padding-inline-start: 26px; }
 .vela-ot-rename {
     flex: 1;
     min-width: 0;
     padding: 1px 4px;
-    border: 1px solid var(--vela-accent);
-    border-radius: var(--vela-radius-sm);
-    background: var(--vela-surface-elev);
-    color: var(--vela-fg-bright);
+    border: 1px solid ${t.accent};
+    border-radius: ${t.radius.sm};
+    background: ${t.surface.elev};
+    color: ${t.fg.bright};
     font: inherit;
 }
 /* The selection bar. Always there — the actions it holds are the panel's, not a row's, so they
@@ -231,10 +234,10 @@ const CSS = `
     gap: 2px;
     margin: -8px -8px 6px;
     padding: 6px 8px;
-    border-bottom: 1px solid var(--vela-border);
-    background: var(--vela-bg);
+    border-bottom: 1px solid ${t.border};
+    background: ${t.bg};
 }
-.vela-ot-selcount { flex: 1; min-width: 0; color: var(--vela-fg-muted); font-size: 11px; }
+.vela-ot-selcount { flex: 1; min-width: 0; color: ${t.fg.muted}; font-size: 11px; }
 .vela-ot-selbar .vela-ot-btn { visibility: visible; width: 24px; height: 22px; }
 .vela-ot-selbar .vela-ot-btn[data-icon='group'] .vela-icon { width: 16px; height: 16px; font-size: 16px; }
 
@@ -252,23 +255,23 @@ const CSS = `
 .vela-ot-gap::before {
     content: '';
     position: absolute;
-    left: 0;
-    right: 0;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
     top: 50%;
     height: 1px;
-    background: var(--vela-border);
+    background: ${t.border};
     transform: translateY(-50%);
 }
-.vela-ot-gap[data-drop] { height: 4px; background: var(--vela-fg-bright); }
+.vela-ot-gap[data-drop] { height: 4px; background: ${t.fg.bright}; }
 .vela-ot-gap[data-drop]::before { display: none; }
 /* A whole container accepts the drop: merging into a pane, or a pane with no drawings yet.
    The pane block's transparent border reserves the room for this outline; a group unit has no
    border to color, so it draws the same line as an inset outline (no layout footprint). */
-.vela-ot [data-drop='target'] { border-color: var(--vela-fg-bright); background: var(--vela-hover); }
-.vela-ot-unit[data-drop='target'] { outline: 1px solid var(--vela-fg-bright); outline-offset: -1px; }
+.vela-ot [data-drop='target'] { border-color: ${t.fg.bright}; background: ${t.hover}; }
+.vela-ot-unit[data-drop='target'] { outline: 1px solid ${t.fg.bright}; outline-offset: -1px; }
 /* Where a reorder would insert. */
-.vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 var(--vela-fg-bright); }
-.vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 var(--vela-fg-bright); }
+.vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 ${t.fg.bright}; }
+.vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 ${t.fg.bright}; }
 
 .vela-ot-ghost {
     position: fixed;
@@ -276,17 +279,18 @@ const CSS = `
     pointer-events: none;
     max-width: 220px;
     padding: 3px 10px;
-    border: 1px solid var(--vela-fg-bright);
-    border-radius: var(--vela-radius-sm);
-    background: var(--vela-surface-overlay);
-    color: var(--vela-fg);
-    box-shadow: var(--vela-shadow);
+    border: 1px solid ${t.fg.bright};
+    border-radius: ${t.radius.sm};
+    background: ${t.surface.overlay};
+    color: ${t.fg};
+    box-shadow: ${t.shadow};
     font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-`;
+
+}`;
 
 const REFRESH_EVENTS = [
     'indicator:added',

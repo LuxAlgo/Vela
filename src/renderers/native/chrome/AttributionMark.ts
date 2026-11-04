@@ -9,13 +9,15 @@ import { textOf } from '../../../core/i18n/text';
 import type { Translator } from '../../../core/i18n/types';
 import { isDarkColor } from '../../../core/color';
 import { VELA_LETTERS_SVG, VELA_MARK_SVG } from './vela-logos';
-import { chromeLayer } from '../../../ui/chromeStyles';
+import { css } from '@luxalgo/vela-ui/css';
+
 
 /** Where the mark links — the canonical project page. */
 export const ATTRIBUTION_URL = 'https://velacharts.dev/?utm_source=vela&utm_medium=attribution';
 
 const STYLE_ID = 'vela-attribution-styles';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-attribution {
     text-decoration: none;
     display: flex;
@@ -69,7 +71,8 @@ const CSS = `
 [data-layout='mobile'] .vela-attribution .vela-attr-wordmark svg { height: 20px; }
 [data-vela-layout='mobile'] .vela-attribution:hover .vela-attr-wordmark,
 [data-layout='mobile'] .vela-attribution:hover .vela-attr-wordmark { transform: translateX(0); }
-`;
+
+}`;
 
 function ensureStyles(doc: Document): void {
     let s = doc.getElementById(STYLE_ID) as HTMLStyleElement | null;
@@ -78,7 +81,7 @@ function ensureStyles(doc: Document): void {
         s.id = STYLE_ID;
         doc.head.appendChild(s);
     }
-    s.textContent = chromeLayer(CSS);
+    s.textContent = CSS;
 }
 
 /**

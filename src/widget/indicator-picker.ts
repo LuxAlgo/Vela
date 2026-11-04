@@ -6,6 +6,8 @@ import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
 import { injectChromeStyles } from '../ui/chromeStyles';
 import { iconEl } from '@luxalgo/vela-ui/icons';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 export interface IndicatorRow {
     /** The name the picker shows, in the shell's language. */
@@ -39,62 +41,63 @@ const TEXT = {
 const GENERAL = 'General';
 
 const STYLE_ID = 'vela-widget-indpicker';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-ip-searchrow {
     display: flex;
     align-items: center;
     gap: 8px;
     height: 40px;
     padding: 0 12px;
-    margin-bottom: var(--vela-space-2);
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
+    margin-bottom: ${t.space[2]};
+    background: ${t.surface.elev};
+    border: 1px solid ${t.border};
     border-radius: 8px;
 }
-.vela-ip-searchrow:focus-within { border-color: var(--vela-border-strong); }
-.vela-ip-searchrow .vela-icon { color: var(--vela-fg-muted); }
-.vela-ip-search { flex: 1; background: transparent; color: var(--vela-fg); border: none; font-size: 14px; outline: none; }
+.vela-ip-searchrow:focus-within { border-color: ${t.border.strong}; }
+.vela-ip-searchrow .vela-icon { color: ${t.fg.muted}; }
+.vela-ip-search { flex: 1; background: transparent; color: ${t.fg}; border: none; font-size: 14px; outline: none; }
 .vela-ip-list { max-height: 50vh; overflow: auto; min-width: 380px; }
 /* Mobile (fullscreen dialog): no width floor — 380px would overflow a phone —
    and no height cap; the fullscreen body owns the scrolling. */
 [data-layout='mobile'] .vela-ip-list { min-width: 0; max-height: none; }
 .vela-ip-list::-webkit-scrollbar { width: 8px; }
-.vela-ip-list::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+.vela-ip-list::-webkit-scrollbar-thumb { background: ${t.scroll}; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
 .vela-ip-group {
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     padding: 10px 4px 4px;
-    border-bottom: 1px solid var(--vela-border);
+    border-bottom: 1px solid ${t.border};
     margin-bottom: 2px;
 }
 .vela-ip-oncard {
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
+    background: ${t.surface.elev};
+    border: 1px solid ${t.border};
     border-radius: 8px;
     padding: 6px 8px;
-    margin-bottom: var(--vela-space-2);
+    margin-bottom: ${t.space[2]};
 }
 .vela-ip-oncard .vela-ip-group { border-bottom: none; padding-top: 2px; }
 .vela-ip-row {
     display: flex;
     align-items: center;
-    gap: var(--vela-space-2);
+    gap: ${t.space[2]};
     padding: 7px 6px;
-    border-radius: var(--vela-radius-sm);
+    border-radius: ${t.radius.sm};
     cursor: pointer;
 }
-.vela-ip-row:hover { background: var(--vela-hover); }
-.vela-ip-name { flex: 1; font-weight: 600; color: var(--vela-fg-bright); font-size: 13px; }
+.vela-ip-row:hover { background: ${t.hover}; }
+.vela-ip-name { flex: 1; font-weight: 600; color: ${t.fg.bright}; font-size: 13px; }
 .vela-ip-badge {
     flex: none;
     padding: 1px 7px;
-    border-radius: var(--vela-radius-sm);
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
-    color: var(--vela-accent);
+    border-radius: ${t.radius.sm};
+    background: ${t.surface.elev};
+    border: 1px solid ${t.border};
+    color: ${t.accent};
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -104,14 +107,15 @@ const CSS = `
     all: unset;
     box-sizing: border-box;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     padding: 2px 4px;
-    border-radius: var(--vela-radius-sm);
-    font-size: var(--vela-font-size-md);
+    border-radius: ${t.radius.sm};
+    font-size: ${t.fontSize.md};
 }
-.vela-ip-trash:hover { color: var(--vela-down); background: var(--vela-hover); }
-.vela-ip-empty { padding: var(--vela-space-3); color: var(--vela-fg-muted); text-align: center; }
-`;
+.vela-ip-trash:hover { color: ${t.down}; background: ${t.hover}; }
+.vela-ip-empty { padding: ${t.space[3]}; color: ${t.fg.muted}; text-align: center; }
+
+}`;
 
 export interface IndicatorPickerOptions {
     /** The manifest library — clicking a row ADDS an instance (repeatable). */

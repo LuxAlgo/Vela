@@ -7,6 +7,8 @@ import { injectChromeStyles } from '../ui/chromeStyles';
 import { msg } from '../core/i18n/message';
 import { englishTranslator } from '../core/i18n/translator';
 import type { MessageLike, Translator } from '../core/i18n/types';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     title: msg('widget.shortcuts.title', 'Keyboard shortcuts'),
@@ -21,27 +23,29 @@ const TEXT = {
 };
 
 const STYLE_ID = 'vela-widget-shortcuts';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-sh-cat {
-    color: var(--vela-fg-muted);
-    font-size: var(--vela-font-size-sm);
+    color: ${t.fg.muted};
+    font-size: ${t.fontSize.sm};
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    padding: var(--vela-space-2) 0 var(--vela-space-1);
+    padding: ${t.space[2]} 0 ${t.space[1]};
 }
-.vela-sh-row { display: flex; align-items: center; gap: var(--vela-space-3); padding: 3px 0; }
+.vela-sh-row { display: flex; align-items: center; gap: ${t.space[3]}; padding: 3px 0; }
 .vela-sh-label { flex: 1; }
 .vela-sh-keys { display: flex; gap: 4px; }
 .vela-sh-key {
-    background: var(--vela-surface-overlay);
-    border: 1px solid var(--vela-border-soft);
-    border-radius: var(--vela-radius-sm);
+    background: ${t.surface.overlay};
+    border: 1px solid ${t.border.soft};
+    border-radius: ${t.radius.sm};
     padding: 1px 7px;
-    font-size: var(--vela-font-size-sm);
+    font-size: ${t.fontSize.sm};
     font-variant-numeric: tabular-nums;
 }
-.vela-sh-static { color: var(--vela-fg-muted); font-size: var(--vela-font-size-sm); margin-top: var(--vela-space-2); }
-`;
+.vela-sh-static { color: ${t.fg.muted}; font-size: ${t.fontSize.sm}; margin-top: ${t.space[2]}; }
+
+}`;
 
 export class ShortcutsHelp {
     private readonly dialog: Dialog;

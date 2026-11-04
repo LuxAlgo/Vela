@@ -12,6 +12,8 @@ import type { MessageLike, Translator } from '../core/i18n/types';
 import type { PanelChrome } from './panel-dock';
 import { widgetActions, type SidebarControl, type SidePanelButton, type WidgetActionDescriptor, type WidgetContext } from './contributions';
 import { composeSidebar, type SidebarComposition } from './sidebar-composition';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     sidebar: msg('vela.sidebar.label', 'Sidebar'),
@@ -20,7 +22,8 @@ const TEXT = {
 export const SIDEBAR_WIDTH_PX = 44;
 
 const STYLE_ID = 'vela-sidebar';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-sidebar {
     order: 1;
     width: ${SIDEBAR_WIDTH_PX}px;
@@ -29,9 +32,9 @@ const CSS = `
     flex-direction: column;
     justify-content: space-between;
     gap: 12px;
-    padding: var(--vela-space-1) 0;
-    border-left: 1px solid var(--vela-border-soft);
-    color: var(--vela-fg-muted);
+    padding: ${t.space[1]} 0;
+    border-inline-start: 1px solid ${t.border.soft};
+    color: ${t.fg.muted};
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: none;
@@ -41,7 +44,7 @@ const CSS = `
 [data-layout='mobile'] .vela-sidebar { display: none; }
 .vela-sidebar-section, .vela-sidebar-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .vela-sidebar-section { gap: 6px; }
-.vela-sidebar-sep { width: 20px; height: 1px; background: var(--vela-border); }
+.vela-sidebar-sep { width: 20px; height: 1px; background: ${t.border}; }
 .vela-sidebar-btn {
     all: unset;
     box-sizing: border-box;
@@ -53,23 +56,23 @@ const CSS = `
     height: 30px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 14px;
 }
-.vela-sidebar-btn:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-sidebar-btn[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-sidebar-btn:focus-visible { outline: 2px solid var(--vela-focus); outline-offset: -2px; }
+.vela-sidebar-btn:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-sidebar-btn[data-active='1'] { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-sidebar-btn:focus-visible { outline: 2px solid ${t.focus}; outline-offset: -2px; }
 .vela-sidebar-badge {
     position: absolute;
     top: 1px;
-    right: 1px;
+    inset-inline-end: 1px;
     min-width: 13px;
     height: 13px;
     padding: 0 3px;
     box-sizing: border-box;
     border-radius: 7px;
-    background: var(--vela-accent);
-    color: var(--vela-fg-on-fill);
+    background: ${t.accent};
+    color: ${t.fg.onFill};
     font-size: 9px;
     font-weight: 700;
     display: inline-flex;
@@ -77,7 +80,8 @@ const CSS = `
     justify-content: center;
     pointer-events: none;
 }
-`;
+
+}`;
 
 export interface SidebarOptions {
     /** The host's layout of the entries (default: panels on top, the inspection panels and

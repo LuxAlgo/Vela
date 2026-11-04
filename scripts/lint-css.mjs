@@ -1,24 +1,15 @@
-// Lints the kit's component CSS. postcss-lit skips a template it cannot parse with only a
-// console warning, and skips one under a disable comment silently: both would leave the
-// template unchecked, so both fail the run.
+// Lints the CSS written with the kit's `css` tag: the kit's components, which must be clean,
+// and Vela's chrome, held to a baseline of what it carried before the rules
+// (stylelint-baseline.json, which may only shrink). `--update-baseline` rewrites it.
+import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import stylelint from 'stylelint';
+import { lintCss } from '../packages/vela-ui/stylelint/lint.mjs';
 
-const FILES = process.argv.length > 2 ? process.argv.slice(2) : ['packages/vela-ui/src/components/*.ts'];
+const update = process.argv.includes('--update-baseline');
+const tracked = execSync('git ls-files src', { encoding: 'utf8' })
+    .split('\n')
+    .filter((f) => f.endsWith('.ts') && readFileSync(f, 'utf8').includes('css`'));
 
-const skipped = [];
-const warn = console.warn;
-console.warn = (...args) => {
-    if (String(args[0]).includes('[postcss-lit]')) skipped.push(args.slice(1).join(' '));
-    else warn(...args);
-};
-const { results, report: output } = await stylelint.lint({ files: FILES, formatter: 'string' });
-console.warn = warn;
-
-for (const r of results) if (readFileSync(r.source, 'utf8').includes('postcss-lit-disable')) skipped.push(`${r.source} turns a template's checks off.`);
-
-if (output.trim()) console.log(output);
-for (const s of skipped) console.error(`stylelint: a css template was not checked. ${s}`);
-const errored = results.some((r) => r.errored) || skipped.length > 0;
-if (!errored) console.log(`stylelint: ${results.length} component files clean.`);
-process.exit(errored ? 1 : 0);
+const kit = await lintCss({ files: ['packages/vela-ui/src/components/*.ts'] });
+const chrome = await lintCss({ files: tracked, baseline: 'stylelint-baseline.json', update, updateHint: 'npm run lint:css -- --update-baseline' });
+process.exit(kit && chrome ? 0 : 1);

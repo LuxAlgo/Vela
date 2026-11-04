@@ -18,9 +18,12 @@ import {
     type ScaleChoice,
 } from './context-menu-model';
 import type { Vela } from '../Vela';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-price-scale-drawer';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-psd-list { padding: 2px 0 4px; }
 .vela-psd-row {
     display: flex;
@@ -32,19 +35,20 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-psd-row:active { background: var(--vela-hover); }
-.vela-psd-row[data-sep='1'] { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--vela-border); border-radius: 0 0 8px 8px; }
-.vela-psd-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-psd-row .vela-icon { flex: none; color: var(--vela-fg-bright); }
+.vela-psd-row:active { background: ${t.hover}; }
+.vela-psd-row[data-sep='1'] { margin-top: 6px; padding-top: 6px; border-top: 1px solid ${t.border}; border-radius: 0 0 8px 8px; }
+.vela-psd-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-psd-row .vela-icon { flex: none; color: ${t.fg.bright}; }
 .vela-psd-section {
     padding: 12px 2px 4px;
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
-`;
+
+}`;
 
 const TEXT = {
     title: msg('widget.priceScaleDrawer.title', 'Price scale'),
