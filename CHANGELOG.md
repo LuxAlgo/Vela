@@ -15,7 +15,9 @@ All notable changes to Vela, newest first.
   its design tokens and its icons, with one import path per component
   (`@luxalgo/vela-ui/button`, `@luxalgo/vela-ui/select`), so a page or a plugin can use the
   components without the chart and bundle only the ones it imports. Vela depends on it,
-  and `@luxalgo/vela/ui` keeps exporting everything it did. A page that loads two copies of
+  and `@luxalgo/vela/ui` keeps exporting what it did, renamed components under their old
+  names until the next release; the upgrading guide in the docs lists what to change, and
+  the few breaking changes below say what to do instead. A page that loads two copies of
   the kit (a host whose dependencies resolve to two versions) still works as one: the copies
   share the icons, the CSS written with `css`, element ids, the language of the kit's words
   and the open popover.
@@ -88,6 +90,27 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The button, badge, tabs and toggle group are `create…` functions.** `createButton`,
+  `createBadge`, `createTabs` and `createToggleGroup` return a handle with the element and
+  its methods, like every other component, and tab and toggle items carry `value`, as every
+  other control does. `@luxalgo/vela/ui` keeps `Button`, `Badge`, `Tabs`, `ToggleGroup`,
+  `buttonController` and `badgeController` as deprecated wrappers for one release; `Tabs` and
+  `ToggleGroup` still take items with `id`. _(Breaking: `tabsController` and
+  `toggleGroupController` are gone, so build the control with `createTabs` or
+  `createToggleGroup`; code that types items as `TabItem` or `ToggleGroupItem` names their key
+  `value` instead of `id`.)_
+- **One scrollbar across the chart and its panels.** Every scroller inside the chart, its
+  dialogs, menus and panels, and the kit's components shows the same thin scrollbar: a
+  rounded thumb, no track, no arrows. The `scroll` token colors it, now the chart's border
+  color by default, and the new `scroll-size` token sets its width (5px). `overlayScrollbarCss`
+  draws the same bar for a scroller outside the chart. A page that sets `scrollbar-width` or
+  `scrollbar-color` on every element turns Chromium's native bar back on inside the chart;
+  leave Vela out of that rule.
+- **Rows plugins add to an axis menu show no icon.** The price and time axis menus are lists
+  of checkmarked settings, so a row a plugin adds there shows without its icon and lines up
+  with them; the chart's body menu keeps them.
+- **The sidebar's icons are the drawing toolbar's size**, 18px instead of 14px, so the two
+  rails read as one set.
 - **The kit's menu is `DropdownMenu`** (`@luxalgo/vela-ui/dropdown-menu`,
   `createDropdownMenu`, `dropdownMenuController`, data-slots `dropdown-menu-content`,
   `dropdown-menu-item` and the rest, settings `--vela-dropdown-menu-*`, theme
@@ -155,13 +178,15 @@ All notable changes to Vela, newest first.
   are unchanged and still report at once: on blur or Enter (clamped), on every keystroke in
   `live` mode, and an empty field means `emptyValue` in placeholder mode. Values show as plain
   numbers (no grouping). A stepper pressed with a mouse now leaves the focus in the field; a
-  touch leaves it where it was.
+  touch leaves it where it was. _(Breaking: the element is no longer `type="number"`, so read
+  the value from the field's `value` and `onChange`, not from `valueAsNumber`.)_
 - **The switch runs on Zag's switch machine.** Its root (`Switch.el`) is now a `<label>`
   holding a hidden checkbox, the control that takes focus and carries the `id` given, so a
   host's own `<label for>` still reaches it. The root carries its state as `data-state`
   (`checked`, `unchecked`) and `data-disabled`, and shows the kit's focus ring on keyboard
   focus only. It looks the same at rest and on hover; `onChange` still reports the user's
-  toggles at once, and `setChecked` still reports nothing.
+  toggles at once, and `setChecked` still reports nothing. _(Breaking: `Switch.el` is the
+  label, no longer a `<button>`; set `disabled` through the options and read `checked`.)_
 - **The drawing toolbar runs the shell's full height once a layout region is in use.** A
   shell with a full-height column panel, a right-edge element or a docked strip lays out as
   a grid, and the drawing toolbar now has its own column there: from under the topbar to the
@@ -181,9 +206,8 @@ All notable changes to Vela, newest first.
   styles on every element of its chrome. A page's own CSS now overrides any token without
   `!important` (`[data-vela-theme] { --vela-accent: … }`), and several themes still
   coexist on one page. `applyThemeTokens` is deprecated in favor of `applyTheme`, which
-  also takes a theme from `createTheme`. Code that read a token from an element's inline
-  style reads it with `getComputedStyle` instead.
-
+  also takes a theme from `createTheme`. _(Breaking: code that read a token from an
+  element's inline style reads it with `getComputedStyle` instead.)_
 - **Vela's CommonJS build loads the kit as an ES module.** `@luxalgo/vela-ui` ships as ES
   modules only, so `require('@luxalgo/vela')` needs a Node version that can load them:
   20.19 or 22.12 and later. _(Breaking: on an older Node, import Vela as an ES module or
@@ -195,10 +219,16 @@ All notable changes to Vela, newest first.
   it by. Each component also has a `create…` function (`createDialog`, `createDropdownMenu`,
   `createSelect`, …) next to its class, which keeps working, and dialogs take a `variant`
   (`settings`, `form`) for the two settings cards. Hover and focus fades follow the kit's
-  motion tokens, and layouts mirror in right-to-left text.
+  motion tokens, and layouts mirror in right-to-left text. _(Breaking: a global rule your
+  page writes outside any layer, such as a reset of every `button` or `input`, now reaches
+  the kit's controls too; scope it away from Vela or move it into a layer of its own.)_
 
 ### Fixed
 
+- **Submenus open beside their menu.** A submenu (the price scale's Labels and Levels) covered
+  the edge of the menu it opened from, and more of it when it opened to the left near the
+  screen's edge; it now opens just past that edge, on whichever side has room, with its first
+  row level with the row that opened it.
 - **Menus stay inside a small chart.** A menu (the chart's right-click menu, the price
   scale's) opened in a chart shorter than the menu no longer runs past the chart's edge and
   scrolls the page or panel around it: it fits the room on the side it opens on and scrolls

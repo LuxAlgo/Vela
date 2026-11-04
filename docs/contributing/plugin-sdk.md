@@ -406,7 +406,9 @@ two removals | Settings…; price axis: Auto and Invert | the four scale modes |
 Levels | More settings…; time axis: Time zone | More settings…), and each run of
 consecutive contributed rows. An `order` that falls inside a built-in group
 splits it around your row. The built-in body rows carry icons; give yours an `icon` so it
-reads the same (an iconless row keeps its label aligned with the others).
+reads the same (an iconless row keeps its label aligned with the others). The axis menus
+carry none: a row added there shows without its `icon`, its label in line with the
+checkmarked rows.
 
 ## Widget attachments — `registerWidgetAttachment`
 

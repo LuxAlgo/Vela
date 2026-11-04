@@ -51,9 +51,11 @@ touching the rest.
   watermark, bottom bar (ranges, clock, timezone), object tree, keyboard-first UX
   (type a letter or `0` for symbol search, a digit 1–9 for timeframe entry, `?` for the shortcuts
   panel), named cells, sync groups, and one persisted state document.
-- **`@luxalgo/vela/ui`**: the component kit the app is built on. Design tokens, overlay
-  chrome ([Zag.js](https://zagjs.com) menu/dialog/drawer/tooltip), form primitives, and
-  the `KeymapManager`.
+- **`@luxalgo/vela/ui`**: the component kit the app is built on, re-exported from its own
+  package, [`@luxalgo/vela-ui`](packages/vela-ui/README.md), which works without the chart:
+  design tokens and one typed theme config, overlay chrome ([Zag.js](https://zagjs.com)
+  menus, dialogs, drawers, tooltips), form primitives and data components. Next to it, the
+  `KeymapManager`. Upgrading from 0.9? See [Upgrading](docs/user/upgrading.md).
 - **`@luxalgo/vela/plugin`**: the extension SDK. Chart types, renderer layers, native
   indicators.
 - **`@luxalgo/vela/providers/*`**: data providers (Binance, Coinbase, Hyperliquid),

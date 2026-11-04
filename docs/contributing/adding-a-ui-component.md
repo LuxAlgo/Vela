@@ -82,7 +82,10 @@ fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
 ## Primitives
 
-`Button`, `Tabs`, `ToggleGroup` and `Badge` are the kit's layout primitives.
+`createButton`, `createTabs`, `createToggleGroup` and `createBadge` are the kit's layout
+primitives. `@luxalgo/vela/ui` also keeps the classes they had in 0.9 (`new Button(…)`,
+`new Tabs({ items: [{ id, label }] })`, `ToggleGroup`, `Badge`, and the `buttonController`
+and `badgeController` helpers) as deprecated wrappers over them for one release.
 
 Behavior:
 
@@ -155,7 +158,16 @@ panel's chips; the callout bubble's buttons.
   column on all its rows so labels align; a level without icons keeps its natural left
   edge. With both options, the ✓ column leads and the badge follows.
 
-Submenus inherit both options.
+Submenus inherit both options, and open beside their row, past the edge of the list they
+came from (on whichever side has room), never over it.
+
+`ContextMenu` opens the same rows where the user asks for them: a right-click on its target,
+a long press on a touch screen (`longPress: false` where a long press already means
+something, as on the chart, whose long press is the crosshair), or the keyboard's
+context-menu key. `items` may be a function of the opening event. The chart, status line,
+legend and object tree menus use it. In the chart's menus, rows plugins add take the menu's
+look: icons in the body menu, none in the axis menus (see the
+[plugin SDK](plugin-sdk.md#right-click-menu-actions)).
 
 ## Export it
 

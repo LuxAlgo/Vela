@@ -69,6 +69,29 @@ Released components keep their class (`new Checkbox(…)`, `new Tooltip(trigger,
 controller (`checkboxController`, `tooltipController`) next to the `create…` function; the
 class is the instance the function returns. New components start from the shape above.
 
+## Changing a component
+
+A component's public contract is what hosts and themes build on: its props and its handle's
+methods, its part names (the `data-slot` values), its variant and size values, the state
+attributes its CSS keys on, and its settings. Inside the file, everything else is free to
+change.
+
+- **Keep the contract.** A change to how a component looks or behaves keeps those names. Add
+  a prop, a variant or a setting freely; give a new setting a default that keeps today's look,
+  so a theme that sets nothing renders as before.
+- **Rename in two steps.** A renamed prop, part, variant or component keeps its old name
+  working for one release: the component accepts both (and says which is deprecated in the
+  prop's comment), and Vela's `src/ui/renamed.ts` keeps the old export names on
+  `@luxalgo/vela/ui`. The changelog names the old and the new, and the release after removes
+  the old one.
+- **Prove it.** The component's test covers the change; `npm run lint` checks its CSS; the
+  gallery (`npm run playground`, then `/primitives.html`) shows every component in every
+  variant, beside the theme editor, so compare it before and after. The build regenerates the
+  manifest, the theme's JSON Schema and `llms.txt` from the file, so they follow on their
+  own.
+- **Write it down.** A change users notice gets an entry in Vela's `CHANGELOG.md`, and a
+  breaking one says what to do instead.
+
 ## The helpers (`src/lib/`)
 
 - **`h(tag, props, ...children)`** builds an element, typed by its tag. `slot` writes the
