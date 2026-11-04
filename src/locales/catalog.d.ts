@@ -2079,9 +2079,9 @@ export interface VelaCoreMessageCatalog {
     'widget.objectTree.expandPane': string;
     'widget.objectTree.group': string;
     'widget.objectTree.groupDrawings': string;
+    'widget.objectTree.groupDropHint': string;
     'widget.objectTree.groupMembers': string;
     'widget.objectTree.groupPick': string;
-    'widget.objectTree.groupSelected': string;
     'widget.objectTree.hide': string;
     'widget.objectTree.hideAll': string;
     'widget.objectTree.indicatorSettings': string;

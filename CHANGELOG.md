@@ -59,6 +59,12 @@ All notable changes to Vela, newest first.
   takes the side of the toolbar away from the drawing when there is room, so the drawing
   stays in view as you edit it, and it stays inside the chart, scrolling when the chart is
   short.
+- **The object tree's group button starts a group with nothing selected.** It used to stay
+  dim until you picked drawings in the panel. With nothing picked it now adds an empty
+  "Group N" at the top of the main chart, with its name ready to edit and a "Drag drawings
+  here" hint; drag drawings onto it to fill it. With drawings picked it groups them, as
+  before. An empty group waits for its first drawing, then behaves like any other group and
+  goes away once its last drawing leaves.
 
 ## [0.9.3]
 
