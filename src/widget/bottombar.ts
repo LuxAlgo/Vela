@@ -8,7 +8,7 @@ import type { MessageLike, Translator } from '../core/i18n/types';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { Unsubscribe } from '../core/util/types';
 import { SecondClock, type WallClock } from '../core/util/wall-clock';
-import { Menu } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 import { injectChromeStyles } from '../ui/chromeStyles';
@@ -176,7 +176,7 @@ export class Bottombar {
     private readonly clockEl: HTMLElement;
     private readonly tzLabelEl: HTMLElement;
     private readonly tzButton: HTMLElement;
-    private readonly tzMenu: Menu;
+    private readonly tzMenu: DropdownMenu;
     private readonly settingsTip: Tooltip | null = null;
     private readonly rangeButtons = new Map<string, HTMLButtonElement>();
     private readonly sessionButtons = new Map<'regular' | 'extended', HTMLButtonElement>();
@@ -249,7 +249,7 @@ export class Bottombar {
         this.el.append(spacer, this.tzButton, session, settingsBtn);
         host.appendChild(this.el);
 
-        this.tzMenu = new Menu({
+        this.tzMenu = new DropdownMenu({
             trigger: this.tzButton,
             triggerId: 'vela-bb-tz',
             host,

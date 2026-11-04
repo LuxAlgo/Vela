@@ -4,7 +4,7 @@ import { priceStyleMessage } from '../chart-types/labels';
 import { textOf } from '../core/i18n/text';
 import { msg } from '../core/i18n/message';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
-import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { LayoutPicker, type LayoutPickerShape } from './layout-picker';
 import { iconEl, iconMarkup, registerIcon } from '@luxalgo/vela-ui/icons';
@@ -252,8 +252,8 @@ export class Topbar {
     private layoutButton: HTMLElement | null = null;
     private layoutPicker: LayoutPicker | null = null;
     private layoutId: string | null = null;
-    private readonly tfMenu: Menu;
-    private readonly styleMenu: Menu;
+    private readonly tfMenu: DropdownMenu;
+    private readonly styleMenu: DropdownMenu;
     private readonly tooltips: Tooltip[] = [];
     private readonly actionsHost: HTMLElement;
     /** Left-aligned contributed actions (`align: 'left'`) — right after the dropdowns. */
@@ -499,7 +499,7 @@ export class Topbar {
                 onToggleSync: (id) => layout.onToggleSync(id),
             });
         }
-        this.tfMenu = new Menu({
+        this.tfMenu = new DropdownMenu({
             trigger: this.tfCaret,
             triggerId: 'vela-topbar-tf',
             host,
@@ -511,7 +511,7 @@ export class Topbar {
             // stylesheet's default min-width would leave the list mostly empty.
             minWidth: '84px',
         });
-        this.styleMenu = new Menu({
+        this.styleMenu = new DropdownMenu({
             trigger: this.styleButton,
             triggerId: 'vela-topbar-style',
             host,

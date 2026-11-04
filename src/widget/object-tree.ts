@@ -17,7 +17,7 @@ import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { SerializedDrawing } from '../core/drawings/Drawing';
 import { injectChromeStyles } from '../ui/chromeStyles';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
 import {
@@ -435,7 +435,7 @@ export class ObjectTree extends SidePanel {
     }
     /** The last render's model, kept so a right-click reads the same state the rows show. */
     private pass: Pass | null = null;
-    private menu: Menu | null = null;
+    private menu: DropdownMenu | null = null;
     private menuActions = new Map<string, () => void>();
     private drag: DragSession | null = null;
 
@@ -1338,9 +1338,9 @@ export class ObjectTree extends SidePanel {
     }
 
     /** The menu, built on first use — by then the panel is mounted, so the theme host resolves. */
-    private ensureMenu(): Menu {
+    private ensureMenu(): DropdownMenu {
         if (!this.menu) {
-            this.menu = new Menu({ host: this.uiHost(), items: [], onSelect: (id) => this.menuActions.get(id)?.() });
+            this.menu = new DropdownMenu({ host: this.uiHost(), items: [], onSelect: (id) => this.menuActions.get(id)?.() });
         }
         return this.menu;
     }

@@ -22,7 +22,7 @@ import {
     buildFieldControl,
     Dialog,
     Drawer,
-    Menu,
+    DropdownMenu,
     Popover,
     Tooltip,
     type ButtonVariant,
@@ -216,8 +216,8 @@ const items: MenuItemDescriptor[] = [
     { id: 'more', label: 'More', separatorBefore: true, submenu: [{ id: 'area', label: 'Area' }, { id: 'baseline', label: 'Baseline' }] },
     { id: 'off', label: 'Disabled', disabled: true },
 ];
-const menu = new Menu({ trigger: menuBtn, host: app, items });
-const actions = new Menu({ trigger: actionsBtn, host: app, checkmarks: true, iconBadges: true, items: [{ id: 'lock', label: 'Lock', icon: 'lock', checked: true, toggle: true }, { id: 'copy', label: 'Copy', icon: 'camera', hint: 'Ctrl+C' }, { id: 'remove', label: 'Remove', icon: 'trash', separatorBefore: true }] });
+const menu = new DropdownMenu({ trigger: menuBtn, host: app, items });
+const actions = new DropdownMenu({ trigger: actionsBtn, host: app, checkmarks: true, iconBadges: true, items: [{ id: 'lock', label: 'Lock', icon: 'lock', checked: true, toggle: true }, { id: 'copy', label: 'Copy', icon: 'camera', hint: 'Ctrl+C' }, { id: 'remove', label: 'Remove', icon: 'trash', separatorBefore: true }] });
 const popoverBody = el('div', 'note', 'Popover content.');
 const popover = new Popover({ trigger: popoverBtn, host: app, content: popoverBody });
 new Tooltip(tooltipBtn, { content: 'Tooltip text', openDelay: 0, host: app });
@@ -232,7 +232,7 @@ const sides = (['top', 'right', 'bottom', 'left'] as const).map((side) => {
     return btn;
 });
 const menuRightBtn = trigger('Menu right');
-new Menu({ trigger: menuRightBtn, host: app, items, side: 'right', align: 'start', sideOffset: 6 });
+new DropdownMenu({ trigger: menuRightBtn, host: app, items, side: 'right', align: 'start', sideOffset: 6 });
 const tipLeftBtn = trigger('Tooltip left');
 new Tooltip(tipLeftBtn, { content: 'On the left', openDelay: 0, host: app, side: 'left' });
 row(overlays, 'sides', ...sides, menuRightBtn, tipLeftBtn);

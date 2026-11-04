@@ -6,7 +6,7 @@ import type { OHLCV } from '../core/model/ohlcv';
 import { injectChromeStyles } from '../ui/chromeStyles';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
-import { Menu } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
 import { segmentVisibility, statuslineMenuItems, STATUSLINE_LADDER, readoutCells, SHOW_CHART_LABEL, type StatuslinePart, type StatuslineLayout } from './statusline-model';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
@@ -304,7 +304,7 @@ export class Statusline {
     /** The chart replays past bars — the badge shows the replay mode (see {@link setReplaying}). */
     private replaying = false;
     /** The right-click action menu — present once a host wires it via {@link attachMenu}. */
-    private menu: Menu | null = null;
+    private menu: DropdownMenu | null = null;
     private menuHooks: StatuslineMenuHooks | null = null;
     /** Mirror of the renderer's `candleVisible` — see {@link setChartHidden}. */
     private chartHidden = false;
@@ -597,7 +597,7 @@ export class Statusline {
     attachMenu(hooks: StatuslineMenuHooks): void {
         this.menuHooks = hooks;
         if (this.menu) return;
-        this.menu = new Menu({
+        this.menu = new DropdownMenu({
             host: this.host,
             items: [],
             side: 'bottom', align: 'start',

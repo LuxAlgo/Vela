@@ -1,7 +1,7 @@
 // Status line MODEL — the segment visibility the parts config implies, plus the item
 // descriptors for the status line's right-click menu. Pure functions over plain state,
 // so both can be tested without a DOM; `Statusline` projects them onto its elements.
-import type { MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageDescriptor, Translator } from '../core/i18n/types';

@@ -3,7 +3,7 @@
 // itself is the kit Menu anchored at the pointer.
 import type { Vela } from '../Vela';
 import { textOf } from '../core/i18n/text';
-import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { widgetActions, type ContextMenuPointer, type WidgetContext } from './contributions';
 import {
     bodyItems,
@@ -41,7 +41,7 @@ export interface ContextMenuCallbacks {
 }
 
 export class ChartContextMenu {
-    private readonly menu: Menu;
+    private readonly menu: DropdownMenu;
     private readonly host: HTMLElement;
     private chart: Vela | null = null;
     private offCrosshair: (() => void) | null = null;
@@ -66,7 +66,7 @@ export class ChartContextMenu {
 
     constructor(host: HTMLElement, private readonly cbs: ContextMenuCallbacks) {
         this.host = host;
-        this.menu = new Menu({
+        this.menu = new DropdownMenu({
             host,
             items: [],
             side: 'bottom', align: 'start',

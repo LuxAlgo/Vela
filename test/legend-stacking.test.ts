@@ -4,14 +4,14 @@
 // lead with its one-step restacking entries. jsdom has no layout; the menus' look and
 // the reorders they cause are proven in the browser.
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import type { MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { InputsUI, type LegendStackApi } from '../src/renderers/shared/InputsUI';
 import { DARK_THEME } from '../src/core/theme';
 
 const menus = vi.hoisted(() => [] as Array<{ items: readonly MenuItemDescriptor[]; select: (id: string) => void }>);
 
-vi.mock('@luxalgo/vela-ui/menu', () => ({
-    Menu: class {
+vi.mock('@luxalgo/vela-ui/dropdown-menu', () => ({
+    DropdownMenu: class {
         private readonly rec: (typeof menus)[number];
         constructor(opts: { items: readonly MenuItemDescriptor[]; onSelect?: (id: string) => void }) {
             this.rec = { items: opts.items, select: (id) => opts.onSelect?.(id) };

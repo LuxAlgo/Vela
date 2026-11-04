@@ -8,7 +8,7 @@ import { withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip } from './chrome-tooltip';
-import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
 import {
     IndicatorInputsDialog,
@@ -226,7 +226,7 @@ export class InputsUI {
     /** Same, for the contributed callouts only (rebuilt independently by setLegendCallouts). */
     private readonly calloutTips = new Map<string, Array<() => void>>();
     /** Open "Move to" menu (kept so it can be torn down). */
-    private moveMenu: Menu | null = null;
+    private moveMenu: DropdownMenu | null = null;
     private moveTargets: MoveTarget[] = [];
     private moveMenuId: string | null = null;
     /** Collapsed panes → the master indicator id to keep visible (others hidden in the strip). */
@@ -242,7 +242,7 @@ export class InputsUI {
      *  context-menu choice ({@link LegendRow.showValues}) overrides it per indicator. */
     private valuesVisible = true;
     /** Open legend-row context menu (kept so it can be torn down). */
-    private rowMenu: Menu | null = null;
+    private rowMenu: DropdownMenu | null = null;
     private rowMenuId: string | null = null;
     /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
      *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
@@ -598,7 +598,7 @@ export class InputsUI {
         if (moves[0] && stack.length > 0) moves[0].separatorBefore = true;
         const descriptors = [...stack, ...moves];
         if (!this.moveMenu) {
-            this.moveMenu = new Menu({
+            this.moveMenu = new DropdownMenu({
                 host: this.container,
                 items: descriptors,
                 side: 'bottom', align: 'start',
@@ -641,7 +641,7 @@ export class InputsUI {
             },
         ];
         if (!this.rowMenu) {
-            this.rowMenu = new Menu({
+            this.rowMenu = new DropdownMenu({
                 host: this.container,
                 items,
                 side: 'bottom', align: 'start',

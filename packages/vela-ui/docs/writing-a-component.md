@@ -151,7 +151,7 @@ the one method that does) lets a host refresh rewrite the displayed value withou
   element under the default scope wipe each other's listeners.
 - **Zag trigger props overwrite the element's DOM `id`.** To compose several machines on one
   trigger, share the id through the machines' `ids` prop (see the `triggerId` option on
-  Tooltip and Menu).
+  Tooltip and DropdownMenu).
 - **Dialog-like machines expect conditional rendering**: their props carry no `hidden`;
   toggle visibility from `api.open` in your render (tooltip and menu props do carry it).
 - **Never hard-code colors.** The tokens derive from the theme (`src/lib/tokens.ts`), and the

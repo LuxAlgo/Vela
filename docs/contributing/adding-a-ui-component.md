@@ -30,7 +30,7 @@ This page covers what is Vela's: where each component is used, and how Vela expo
 (`@luxalgo/vela/ui`). They are the shared controls behind the indicator dialog,
 chart settings, and the drawing settings dialog. The drawing toolbar's compact
 icon chrome (glyph dropdowns, color underline) stays purpose-built. Overlays
-(`Dialog`, `Menu`, `Tooltip`) and the behavior of the checkbox, the number field, the
+(`Dialog`, `DropdownMenu`, `Tooltip`) and the behavior of the checkbox, the number field, the
 select's list and the color picker's opacity run on Zag machines.
 
 - **`Popover`** — portal + placement (any `side` of the trigger, flipping to the opposite
@@ -144,7 +144,7 @@ panel's chips; the callout bubble's buttons.
 
 ## Menu rows
 
-`Menu` projects `MenuItemDescriptor` rows. Two opt-in options change how a row reads:
+`DropdownMenu` (formerly `Menu`, kept as a deprecated alias) projects `MenuItemDescriptor` rows. Two opt-in options change how a row reads:
 
 - **`checkmarks`** — a checked row shows a leading ✓ instead of the selected-row
   background wash. Pointer-anchored action menus (the chart's right-click menu) use it.

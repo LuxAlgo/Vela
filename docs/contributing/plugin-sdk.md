@@ -280,7 +280,7 @@ registerWidgetAction({
         //   undo/redo re-add under the same id
         // ctx.addNativeIndicator(type) — same, for native (core-computed) indicators
         // ctx.stateChanged() — persistable third-party state changed (debounced save)
-        // ctx.host  — mount host for kit components (Dialog/Menu/Tooltip)
+        // ctx.host  — mount host for kit components (Dialog/DropdownMenu/Tooltip)
         // ctx.toast(message, kind?) — the widget's feedback pill
         // ctx.pointer (context:* only) — where the right-click landed: { price, time, paneKind, paneId }
     },
@@ -347,7 +347,7 @@ Two rules keep actions portable:
   market and active-cell switch. Read them at the point of use; copying one into a
   variable at mount freezes it (an attachment once named screenshot files after the
   mount-time symbol that way).
-- **Kit components get `ctx.host`.** Mounting a `Dialog`/`Menu`/`Tooltip` without an
+- **Kit components get `ctx.host`.** Mounting a `Dialog`/`DropdownMenu`/`Tooltip` without an
   explicit host portals it to `<body>`, outside the theme's CSS variables (invisible
   backgrounds). Pass `host: ctx.host`.
 

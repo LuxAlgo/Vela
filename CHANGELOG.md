@@ -103,6 +103,13 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The kit's menu is `DropdownMenu`** (`@luxalgo/vela-ui/dropdown-menu`,
+  `createDropdownMenu`, `dropdownMenuController`, data-slots `dropdown-menu-content`,
+  `dropdown-menu-item` and the rest, settings `--vela-dropdown-menu-*`, theme
+  `components['dropdown-menu']`). Its rows keep the `MenuItemDescriptor` type, the format
+  plugins contribute to every menu. `@luxalgo/vela/ui` keeps `Menu`, `createMenu`,
+  `menuController` and their types as deprecated aliases for one release. With
+  `align: 'center'` a dropdown menu opens centered on its button, on whichever `side`.
 - **Three kit components take shadcn's names.** The square check box was called `Switch`;
   it is `Checkbox` (`@luxalgo/vela-ui/checkbox`, `createCheckbox`, data-slots `checkbox` and
   `checkbox-icon`, settings `--vela-checkbox-*`, theme `components.checkbox`). The one-line
@@ -199,7 +206,7 @@ All notable changes to Vela, newest first.
   dialogs, drawers, menus and tooltips to selects, number inputs and color fields, keeps
   its styles in the `vela.ui` cascade layer, so a page's own CSS overrides them without
   `!important` or a more specific selector, and every part carries a `data-slot` to style
-  it by. Each component also has a `create…` function (`createDialog`, `createMenu`,
+  it by. Each component also has a `create…` function (`createDialog`, `createDropdownMenu`,
   `createSelect`, …) next to its class, which keeps working, and dialogs take a `variant`
   (`settings`, `form`) for the two settings cards. Hover and focus fades follow the kit's
   motion tokens, and layouts mirror in right-to-left text.

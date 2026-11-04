@@ -6,7 +6,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 
 (globalThis as { CSS?: unknown }).CSS ??= { escape: (v: string) => v };
 
-import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 
 afterEach(() => {
     document.body.replaceChildren();
@@ -33,7 +33,7 @@ const MIXED: MenuItemDescriptor[] = [
 describe('Menu iconBadges', () => {
     it('wraps each icon in a badge and reserves an empty badge on icon-less rows', () => {
         const h = host();
-        const menu = new Menu({ host: h, items: MIXED, iconBadges: true });
+        const menu = new DropdownMenu({ host: h, items: MIXED, iconBadges: true });
         const list = h.querySelector('.vela-menu')!;
         expect(list.getAttribute('data-badges')).toBe('1');
         expect(rows(list)).toEqual([
@@ -49,7 +49,7 @@ describe('Menu iconBadges', () => {
 
     it('keeps the natural left edge on a level with no icon', () => {
         const h = host();
-        const menu = new Menu({ host: h, items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], iconBadges: true });
+        const menu = new DropdownMenu({ host: h, items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], iconBadges: true });
         const list = h.querySelector('.vela-menu')!;
         expect(list.hasAttribute('data-badges')).toBe(false);
         expect(list.querySelector('.vela-menu-badge')).toBeNull();
@@ -59,7 +59,7 @@ describe('Menu iconBadges', () => {
 
     it('leaves menus that do not opt in with bare icons', () => {
         const h = host();
-        const menu = new Menu({ host: h, items: MIXED });
+        const menu = new DropdownMenu({ host: h, items: MIXED });
         const list = h.querySelector('.vela-menu')!;
         expect(list.hasAttribute('data-badges')).toBe(false);
         expect(list.querySelector('.vela-menu-badge')).toBeNull();
@@ -71,7 +71,7 @@ describe('Menu iconBadges', () => {
 
     it('re-decides the column when the items change', () => {
         const h = host();
-        const menu = new Menu({ host: h, items: MIXED, iconBadges: true });
+        const menu = new DropdownMenu({ host: h, items: MIXED, iconBadges: true });
         const list = h.querySelector('.vela-menu')!;
         menu.setItems([{ id: 'a', label: 'A' }]);
         expect(list.hasAttribute('data-badges')).toBe(false);
@@ -84,7 +84,7 @@ describe('Menu iconBadges', () => {
 
     it('coexists with checkmarks: the mark column leads, the badge follows', () => {
         const h = host();
-        const menu = new Menu({
+        const menu = new DropdownMenu({
             host: h,
             checkmarks: true,
             iconBadges: true,
@@ -110,7 +110,7 @@ describe('Menu iconBadges', () => {
 
     it('applies per level: a submenu inherits the mode and decides its own column', () => {
         const h = host();
-        const menu = new Menu({
+        const menu = new DropdownMenu({
             host: h,
             iconBadges: true,
             items: [

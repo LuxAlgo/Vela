@@ -17,7 +17,7 @@ import {
     type PaneScaleInfo,
     type PriceAxisState,
 } from '../src/widget/context-menu-model';
-import type { MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { TIMEZONES } from '../src/widget/timezones';
 
 function pane(id: string, kind: 'price' | 'study', top: number, height: number, extra: Partial<PaneScaleInfo> = {}): PaneScaleInfo {

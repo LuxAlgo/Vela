@@ -17,7 +17,7 @@ import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
 import { ensureUIHost, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
-import { Menu } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
 import type { Vela } from '../Vela';
 import { LocaleState, pickLocalization } from '../core/i18n/translator';
 import type { LocaleChangedEvent, LocalizationOptions, MessageArgs, MessageLike, Translator } from '../core/i18n/types';
@@ -471,7 +471,7 @@ export class VelaWorkspace {
     private alerts: Array<{ cellId: string; source: string; title: string; message: string; time: number }> = [];
     /** Bell retention — `alertCap` option, default {@link ALERT_CAP}. */
     private readonly alertCap: number;
-    private alertsMenu: Menu | null = null;
+    private alertsMenu: DropdownMenu | null = null;
     /** Built-in topbar items a plugin hid at runtime (`ctx.topbar`). */
     private readonly topbarHidden = new Set<string>();
     private readonly topbarItems: TopbarItems = {
@@ -2703,7 +2703,7 @@ export class VelaWorkspace {
                   label: sliceGraphemes(this.t(TEXT.alertRow, { source: a.source, time: eventTimeText(a.time, this.localeState), title: a.title, message: a.message }), ALERT_ROW_MAX),
               }))
             : [{ id: 'none', label: this.t(TEXT.noAlerts), disabled: true }];
-        this.alertsMenu = new Menu({
+        this.alertsMenu = new DropdownMenu({
             host: this.root,
             items,
             onSelect: (id) => {

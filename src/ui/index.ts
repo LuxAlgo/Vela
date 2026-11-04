@@ -24,10 +24,63 @@ export { SURFACE_OPEN_EVENT, SURFACE_CLOSE_EVENT, type SurfaceKind, type Surface
 export { KeymapManager, type KeyBindingDescriptor, type ResolvedBinding, type KeymapOptions } from './keymap';
 export { applyProps, type PartProps } from '@luxalgo/vela-ui/headless';
 
-export { Tooltip, createTooltip, tooltipController, type TooltipOptions, type TooltipProps, type TooltipController, type TooltipControllerOptions, type TooltipApi, type TooltipService } from '@luxalgo/vela-ui/tooltip';
-export { Menu, createMenu, menuController, type MenuOptions, type MenuProps, type MenuController, type MenuControllerOptions, type MenuItemDescriptor, type MenuApi, type MenuService } from '@luxalgo/vela-ui/menu';
-export { Dialog, createDialog, dialogController, type DialogOptions, type DialogProps, type DialogVariant, type DialogController, type DialogControllerOptions, type DialogApi, type DialogService } from '@luxalgo/vela-ui/dialog';
-export { Drawer, createDrawer, drawerController, type DrawerOptions, type DrawerProps, type DrawerController, type DrawerControllerOptions, type DrawerApi, type DrawerService } from '@luxalgo/vela-ui/drawer';
+export {
+    Tooltip,
+    createTooltip,
+    tooltipController,
+    type TooltipOptions,
+    type TooltipProps,
+    type TooltipController,
+    type TooltipControllerOptions,
+    type TooltipApi,
+    type TooltipService,
+} from '@luxalgo/vela-ui/tooltip';
+export {
+    DropdownMenu,
+    createDropdownMenu,
+    dropdownMenuController,
+    type DropdownMenuOptions,
+    type DropdownMenuProps,
+    type DropdownMenuController,
+    type DropdownMenuControllerOptions,
+    type MenuItemDescriptor,
+    type DropdownMenuApi,
+    type DropdownMenuService,
+} from '@luxalgo/vela-ui/dropdown-menu';
+export {
+    Menu,
+    createMenu,
+    menuController,
+    type MenuOptions,
+    type MenuProps,
+    type MenuController,
+    type MenuControllerOptions,
+    type MenuService,
+    type MenuApi,
+} from './renamed';
+export {
+    Dialog,
+    createDialog,
+    dialogController,
+    type DialogOptions,
+    type DialogProps,
+    type DialogVariant,
+    type DialogController,
+    type DialogControllerOptions,
+    type DialogApi,
+    type DialogService,
+} from '@luxalgo/vela-ui/dialog';
+export {
+    Drawer,
+    createDrawer,
+    drawerController,
+    type DrawerOptions,
+    type DrawerProps,
+    type DrawerController,
+    type DrawerControllerOptions,
+    type DrawerApi,
+    type DrawerService,
+} from '@luxalgo/vela-ui/drawer';
 export {
     Popover,
     createPopover,
@@ -51,8 +104,27 @@ export {
     type PlaceResult,
     type Rect,
 } from '@luxalgo/vela-ui/popover';
-export { Checkbox, createCheckbox, checkboxController, type CheckboxOptions, type CheckboxProps, type CheckboxController, type CheckboxControllerOptions, type CheckboxSize, type CheckboxTone } from '@luxalgo/vela-ui/checkbox';
-export { Input, createInput, inputController, type InputOptions, type InputProps, type InputController, type InputControllerOptions, type InputSize } from '@luxalgo/vela-ui/input';
+export {
+    Checkbox,
+    createCheckbox,
+    checkboxController,
+    type CheckboxOptions,
+    type CheckboxProps,
+    type CheckboxController,
+    type CheckboxControllerOptions,
+    type CheckboxSize,
+    type CheckboxTone,
+} from '@luxalgo/vela-ui/checkbox';
+export {
+    Input,
+    createInput,
+    inputController,
+    type InputOptions,
+    type InputProps,
+    type InputController,
+    type InputControllerOptions,
+    type InputSize,
+} from '@luxalgo/vela-ui/input';
 export { createEmpty, type EmptyProps, type EmptyHandle } from '@luxalgo/vela-ui/empty';
 export {
     Switch,
@@ -142,7 +214,16 @@ export {
     type FieldGridVariant,
     type FieldLabelSize,
 } from '@luxalgo/vela-ui/field';
-export { TextArea, createTextArea, textAreaController, type TextAreaOptions, type TextAreaProps, type TextAreaController, type TextAreaControllerOptions, type TextAreaSize } from '@luxalgo/vela-ui/text-area';
+export {
+    TextArea,
+    createTextArea,
+    textAreaController,
+    type TextAreaOptions,
+    type TextAreaProps,
+    type TextAreaController,
+    type TextAreaControllerOptions,
+    type TextAreaSize,
+} from '@luxalgo/vela-ui/text-area';
 export {
     GlyphSelect,
     createGlyphSelect,
@@ -187,5 +268,12 @@ export {
 } from '@luxalgo/vela-ui/date-picker';
 export { createButton, type ButtonProps, type ButtonHandle, type ButtonVariant, type ButtonSize } from '@luxalgo/vela-ui/button';
 export { createTabs, type TabsProps, type TabsHandle, type TabsVariant, type TabItem } from '@luxalgo/vela-ui/tabs';
-export { createToggleGroup, type ToggleGroupProps, type ToggleGroupHandle, type ToggleGroupItem, type ToggleGroupSingleProps, type ToggleGroupMultipleProps } from '@luxalgo/vela-ui/toggle-group';
+export {
+    createToggleGroup,
+    type ToggleGroupProps,
+    type ToggleGroupHandle,
+    type ToggleGroupItem,
+    type ToggleGroupSingleProps,
+    type ToggleGroupMultipleProps,
+} from '@luxalgo/vela-ui/toggle-group';
 export { createBadge, type BadgeProps, type BadgeHandle, type BadgeVariant } from '@luxalgo/vela-ui/badge';

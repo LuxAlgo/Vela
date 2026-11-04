@@ -14,7 +14,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 
 import { holdForExit, SURFACE_EXIT_CAP_MS } from '@luxalgo/vela-ui/surface-exit';
 import { Popover } from '@luxalgo/vela-ui/popover';
-import { Menu } from '@luxalgo/vela-ui/menu';
+import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
 import { SidePanel } from '../src/widget/side-panel';
 import { PanelDock } from '../src/widget/panel-dock';
@@ -337,7 +337,7 @@ describe('surfaces with exit CSS', () => {
 
     it('menu: the closed list stays shown until its exit ends', async () => {
         const h = host();
-        const menu = new Menu({ host: h, trigger: button(h), items: [{ id: 'a', label: 'A' }] });
+        const menu = new DropdownMenu({ host: h, trigger: button(h), items: [{ id: 'a', label: 'A' }] });
         menu.open();
         await settled();
         const list = h.querySelector<HTMLElement>('.vela-menu')!;

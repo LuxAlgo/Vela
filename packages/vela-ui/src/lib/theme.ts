@@ -20,7 +20,7 @@ import type { glyphSelectDef } from '../components/glyph-select';
 import type { hoverCardDef } from '../components/hover-card';
 import type { kbdDef } from '../components/kbd';
 import type { lineChartDef } from '../components/line-chart';
-import type { menuDef } from '../components/menu';
+import type { dropdownMenuDef } from '../components/dropdown-menu';
 import type { numberInputDef } from '../components/number-input';
 import type { popoverDef } from '../components/popover';
 import type { scatterChartDef } from '../components/scatter-chart';
@@ -144,7 +144,7 @@ export interface ComponentDefs {
     'hover-card': typeof hoverCardDef;
     kbd: typeof kbdDef;
     'line-chart': typeof lineChartDef;
-    menu: typeof menuDef;
+    'dropdown-menu': typeof dropdownMenuDef;
     'number-input': typeof numberInputDef;
     popover: typeof popoverDef;
     'scatter-chart': typeof scatterChartDef;
