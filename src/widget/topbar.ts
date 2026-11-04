@@ -42,7 +42,7 @@ const CSS = css`@layer vela.chrome {
     gap: 6px;
     height: 30px;
     padding: 0 9px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
     color: ${t.fg.muted};
     font-size: 13px;
@@ -76,7 +76,7 @@ const CSS = css`@layer vela.chrome {
     justify-content: center;
     width: 18px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
     color: ${t.fg.muted};
 }
@@ -134,7 +134,7 @@ const CSS = css`@layer vela.chrome {
     justify-content: center;
     width: 32px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
     color: ${t.fg.muted};
     font-size: 14px;

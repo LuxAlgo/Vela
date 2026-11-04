@@ -54,7 +54,7 @@ const CSS = css`@layer vela.chrome {
     align-items: center;
     gap: 12px;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
 }
 .vela-dw-row:hover { background: ${t.hover}; }
 .vela-dw-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: ${t.fg.bright}; }

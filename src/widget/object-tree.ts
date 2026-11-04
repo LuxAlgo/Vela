@@ -112,7 +112,7 @@ const CSS = css`@layer vela.chrome {
 /* One pane's block. The transparent border reserves the drop-target outline. */
 .vela-ot-pane {
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: ${t.radius.md};
     margin: 2px 0;
 }
 .vela-ot-panehead { display: flex; align-items: center; gap: 2px; padding: 5px 6px; }
@@ -135,7 +135,7 @@ const CSS = css`@layer vela.chrome {
     align-items: center;
     gap: 9px;
     padding: 6px 6px;
-    border-radius: 6px;
+    border-radius: ${t.radius.md};
     cursor: default;
 }
 .vela-ot-row:hover { background: ${t.hover}; }
@@ -205,7 +205,7 @@ const CSS = css`@layer vela.chrome {
 /* One top-level entry in a pane's drawing list: a lone drawing, or a whole group block. No
    border of its own — units stack flush, so consecutive highlighted rows read as one block; the
    drop-into-group outline is drawn inside the box instead (see the drag-and-drop rules). */
-.vela-ot-unit { border-radius: 6px; }
+.vela-ot-unit { border-radius: ${t.radius.md}; }
 /* Adjacent picked rows merge into one contiguous highlight: the shared edge loses its rounding. */
 .vela-ot-unit:has(> .vela-ot-row[data-picked]) + .vela-ot-unit > .vela-ot-row[data-picked] { border-top-left-radius: 0; border-top-right-radius: 0; }
 .vela-ot-unit:has(+ .vela-ot-unit > .vela-ot-row[data-picked]) > .vela-ot-row[data-picked] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }

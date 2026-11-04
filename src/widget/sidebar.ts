@@ -54,7 +54,7 @@ const CSS = css`@layer vela.chrome {
     justify-content: center;
     width: 32px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
     color: ${t.fg.muted};
     font-size: 14px;

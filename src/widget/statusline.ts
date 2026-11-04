@@ -51,7 +51,7 @@ const CSS = css`@layer vela.chrome {
      * extends 7px further left, so both columns' chips share the same left edge. */
     pointer-events: auto;
     background: color-mix(in srgb, ${t.bg} 60%, transparent);
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     padding: 2px 7px;
     margin-inline-start: -7px;
 }

@@ -41,7 +41,7 @@ const CSS = css`@layer vela.chrome {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    border-radius: 6px;
+    border-radius: ${t.radius.md};
     cursor: pointer;
     color: ${t.fg.bright};
     font-size: 13px;

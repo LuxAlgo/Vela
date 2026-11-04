@@ -174,7 +174,7 @@ const CSS = css`@layer vela.chrome {
 .vela-sp-list::-webkit-scrollbar { width: 8px; }
 .vela-sp-list::-webkit-scrollbar-thumb {
     background: ${t.scroll};
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     border: 2px solid transparent;
     background-clip: padding-box;
 }
@@ -205,7 +205,7 @@ const CSS = css`@layer vela.chrome {
 .vela-sp-badge {
     flex: none;
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     background: ${t.surface.elev};
     border: 1px solid ${t.border};
     color: ${t.fg.muted};

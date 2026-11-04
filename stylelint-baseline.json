@@ -25,7 +25,7 @@
         "declaration-no-important": 1,
         "declaration-property-value-disallowed-list": 1,
         "no-descending-specificity": 4,
-        "vela/token-values": 8
+        "vela/token-values": 2
     },
     "src/renderers/native/drawings/DrawingSettingsPopup.ts": {
         "declaration-no-important": 1
@@ -37,16 +37,13 @@
         "unit-disallowed-list": 3
     },
     "src/renderers/shared/IndicatorInputsDialog.ts": {
-        "declaration-no-important": 1,
-        "vela/token-values": 1
+        "declaration-no-important": 1
     },
     "src/widget/bottombar.ts": {
-        "selector-class-pattern": 2,
-        "vela/token-values": 4
+        "selector-class-pattern": 2
     },
     "src/widget/data-window.ts": {
-        "no-descending-specificity": 1,
-        "vela/token-values": 1
+        "no-descending-specificity": 1
     },
     "src/widget/drawing-pill.ts": {
         "declaration-no-important": 1,
@@ -58,18 +55,17 @@
     },
     "src/widget/indicator-picker.ts": {
         "declaration-property-value-disallowed-list": 1,
-        "vela/token-values": 3
+        "vela/token-values": 2
     },
     "src/widget/layout-picker.ts": {
         "no-descending-specificity": 1,
         "selector-class-pattern": 2,
-        "unit-disallowed-list": 5,
-        "vela/token-values": 5
+        "unit-disallowed-list": 4,
+        "vela/token-values": 3
     },
     "src/widget/mobile-bar.ts": {
         "declaration-no-important": 1,
-        "no-duplicate-selectors": 1,
-        "vela/token-values": 1
+        "no-duplicate-selectors": 1
     },
     "src/widget/more-drawer.ts": {
         "vela/token-values": 2
@@ -78,7 +74,7 @@
         "no-descending-specificity": 2,
         "selector-max-compound-selectors": 2,
         "selector-max-specificity": 3,
-        "vela/token-values": 11
+        "vela/token-values": 8
     },
     "src/widget/price-scale-drawer.ts": {
         "vela/token-values": 2
@@ -88,10 +84,10 @@
         "declaration-no-important": 1,
         "no-descending-specificity": 2,
         "vela/no-raw-token-var": 1,
-        "vela/token-values": 8
+        "vela/token-values": 4
     },
     "src/widget/sidebar.ts": {
-        "vela/token-values": 2
+        "vela/token-values": 1
     },
     "src/widget/statusline.ts": {
         "custom-property-pattern": 3,
@@ -99,13 +95,13 @@
         "no-descending-specificity": 1,
         "selector-no-invalid": 2,
         "vela/no-raw-token-var": 2,
-        "vela/token-values": 4
+        "vela/token-values": 3
     },
     "src/widget/symbol-picker.ts": {
         "color-no-hex": 2,
         "declaration-property-value-disallowed-list": 1,
         "no-descending-specificity": 1,
-        "vela/token-values": 5
+        "vela/token-values": 3
     },
     "src/widget/timeframe-drawer.ts": {
         "no-descending-specificity": 2,
@@ -124,7 +120,7 @@
     "src/widget/topbar.ts": {
         "declaration-no-important": 1,
         "no-descending-specificity": 2,
-        "vela/token-values": 4
+        "vela/token-values": 1
     },
     "src/widget/watermark.ts": {
         "custom-property-pattern": 4,

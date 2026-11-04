@@ -62,7 +62,7 @@ const CSS = css`@layer vela.chrome {
    and no height cap; the fullscreen body owns the scrolling. */
 [data-layout='mobile'] .vela-ip-list { min-width: 0; max-height: none; }
 .vela-ip-list::-webkit-scrollbar { width: 8px; }
-.vela-ip-list::-webkit-scrollbar-thumb { background: ${t.scroll}; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+.vela-ip-list::-webkit-scrollbar-thumb { background: ${t.scroll}; border-radius: ${t.radius.sm}; border: 2px solid transparent; background-clip: padding-box; }
 .vela-ip-group {
     color: ${t.fg.muted};
     font-size: 10px;

@@ -70,7 +70,7 @@ const CSS = css`@layer vela.chrome {
     display: inline-flex;
     align-items: center;
     padding: 0 9px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     font-weight: 600;
     cursor: pointer;
 }
@@ -86,13 +86,13 @@ const CSS = css`@layer vela.chrome {
     align-items: center;
     gap: 8px;
     padding: 0 8px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     font-weight: 600;
     color: ${t.fg.bright};
     cursor: pointer;
 }
 .vela-bb-tz:hover { background: ${t.hover}; }
-.vela-bb-session { display: inline-flex; border: 1px solid ${t.border.strong}; border-radius: 4px; overflow: hidden; margin-inline-start: 6px; }
+.vela-bb-session { display: inline-flex; border: 1px solid ${t.border.strong}; border-radius: ${t.radius.sm}; overflow: hidden; margin-inline-start: 6px; }
 .vela-bb-session-btn {
     all: unset;
     box-sizing: border-box;
@@ -118,7 +118,7 @@ const CSS = css`@layer vela.chrome {
     width: 28px;
     height: 26px;
     margin-inline-start: 6px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
     color: ${t.fg.muted};
     font-size: 14px;

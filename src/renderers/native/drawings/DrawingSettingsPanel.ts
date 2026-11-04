@@ -197,7 +197,7 @@ function ensureStyles(): void {
 .vela-dsp-fold[data-open] .vela-dsp-chev { transform: rotate(90deg); }
 .vela-dsp-fold-b { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 8px; }
 .vela-dsp-fold:not([data-open]) .vela-dsp-fold-b { display: none; }
-.vela-dsp-seg { display: inline-flex; flex: none; border: 1px solid ${t.border.strong}; border-radius: 6px; overflow: hidden; }
+.vela-dsp-seg { display: inline-flex; flex: none; border: 1px solid ${t.border.strong}; border-radius: ${t.radius.md}; overflow: hidden; }
 .vela-dsp-seg[data-full] { display: flex; flex: 1; }
 .vela-dsp-seg > button { all: unset; box-sizing: border-box; cursor: pointer; height: 28px; min-width: 32px; padding: 0 8px; display: flex; align-items: center; justify-content: center; color: ${t.fg.muted}; white-space: nowrap; }
 .vela-dsp-seg[data-full] > button { flex: 1 1 0; min-width: 0; }
@@ -216,7 +216,7 @@ function ensureStyles(): void {
 .vela-dsp-pt-t { color: ${t.fg.muted}; font-size: 12px; text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vela-dsp-tf[hidden], .vela-dsp-note[hidden] { display: none; }
 .vela-dsp-tf { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
-.vela-dsp-tf > button { all: unset; box-sizing: border-box; cursor: pointer; position: relative; height: 28px; border-radius: 6px; border: 1px solid ${t.border.strong}; color: ${t.fg.muted}; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+.vela-dsp-tf > button { all: unset; box-sizing: border-box; cursor: pointer; position: relative; height: 28px; border-radius: ${t.radius.md}; border: 1px solid ${t.border.strong}; color: ${t.fg.muted}; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
 .vela-dsp-tf > button:hover { color: ${t.fg.bright}; border-color: ${t.fg.muted}; }
 .vela-dsp-tf > button[aria-pressed='true'] { background: ${t.active}; border-color: transparent; color: ${t.fg.bright}; }
 .vela-dsp-tf > button[data-here]::after { content: ''; position: absolute; top: 3px; inset-inline-end: 3px; width: 5px; height: 5px; border-radius: 50%; background: ${t.selected.bg}; }
@@ -226,7 +226,7 @@ function ensureStyles(): void {
 .vela-dsp-lv-c .vela-num:not([data-fill])[data-compact] { width: 76px; }
 .vela-dsp-lv-c .vela-num input { height: 28px; }
 .vela-dsp-lv-c[data-off] .vela-num input { color: ${t.fg.muted}; }
-.vela-dsp-style { all: unset; box-sizing: border-box; cursor: pointer; flex: none; height: 28px; max-width: 150px; padding: 0 6px 0 10px; border-radius: 6px; border: 1px solid ${t.border.strong}; display: inline-flex; align-items: center; gap: 4px; color: ${t.fg}; font-size: 12px; }
+.vela-dsp-style { all: unset; box-sizing: border-box; cursor: pointer; flex: none; height: 28px; max-width: 150px; padding: 0 6px 0 10px; border-radius: ${t.radius.md}; border: 1px solid ${t.border.strong}; display: inline-flex; align-items: center; gap: 4px; color: ${t.fg}; font-size: 12px; }
 .vela-dsp-style > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-dsp-style:hover, .vela-dsp-style[aria-expanded='true'] { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-dsp-menu { min-width: 220px; max-height: 320px; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 1px; }
@@ -235,12 +235,12 @@ function ensureStyles(): void {
 .vela-dsp-mi:hover, .vela-dsp-mi:focus-visible { background: ${t.hover.strong}; }
 .vela-dsp-mi[data-current] { color: ${t.fg.bright}; font-weight: 600; }
 .vela-dsp-mi > .vela-dsp-mi-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-dsp-mi-dot { flex: none; width: 14px; height: 14px; border-radius: 4px; border: 1px solid ${t.border.strong}; }
-.vela-dsp-mi-x { all: unset; cursor: pointer; flex: none; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: ${t.fg.muted}; }
+.vela-dsp-mi-dot { flex: none; width: 14px; height: 14px; border-radius: ${t.radius.sm}; border: 1px solid ${t.border.strong}; }
+.vela-dsp-mi-x { all: unset; cursor: pointer; flex: none; width: 24px; height: 24px; border-radius: ${t.radius.sm}; display: flex; align-items: center; justify-content: center; color: ${t.fg.muted}; }
 .vela-dsp-mi-x:hover { background: ${t.hover}; color: ${t.danger}; }
 .vela-dsp-msep { height: 1px; background: ${t.border}; margin: 4px 0; }
 .vela-dsp-mname { display: flex; gap: 6px; padding: 4px; }
-.vela-dsp-mname > input { flex: 1; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 6px; border: 1px solid ${t.border.strong}; background: transparent; color: inherit; font: inherit; outline: none; }
+.vela-dsp-mname > input { flex: 1; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: ${t.radius.md}; border: 1px solid ${t.border.strong}; background: transparent; color: inherit; font: inherit; outline: none; }
 .vela-dsp-mname > input:focus { border-color: ${t.selected.bg}; }
 }`;
     if (!existing) document.head.appendChild(s);

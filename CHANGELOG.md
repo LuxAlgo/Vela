@@ -100,7 +100,8 @@ All notable changes to Vela, newest first.
   (`inset-inline-start`, `margin-inline-end`…, the same in left-to-right layouts), and
   `npm run lint` checks it with the kit's stylelint config (`.vela-*` classes allowed). The
   violations it carried before the rules sit in `stylelint-baseline.json`, which may only
-  shrink (`npm run lint:css -- --update-baseline` after fixing some).
+  shrink (`npm run lint:css -- --update-baseline` after fixing some). The chrome's radii now
+  come from the radius tokens, so a theme that sets them reshapes the chrome too.
 - **`@luxalgo/vela-ui/css`, `@luxalgo/vela-ui/t` and `@luxalgo/vela-ui/stylelint/lint`.** The
   `css` tag and the tokens have their own entries, for CSS written outside the kit; `lintCss`
   runs the shared stylelint config, fails on a template postcss-lit skipped, and holds older

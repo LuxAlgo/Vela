@@ -85,7 +85,7 @@ const CSS = css`@layer vela.chrome {
 .vela-lp-sq {
     all: unset;
     box-sizing: border-box;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     background: ${t.hover};
     border: 1px solid ${t.border.faint};
     cursor: pointer;
@@ -98,7 +98,7 @@ const CSS = css`@layer vela.chrome {
     border-color: ${t.selected.bg};
 }
 .vela-lp-presets { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-.vela-lp-preset { all: unset; box-sizing: border-box; padding: 5px 8px; border-radius: 4px; cursor: pointer; color: ${t.fg.muted}; font-size: 12px; white-space: nowrap; transition: transform 120ms ${t.ease}; }
+.vela-lp-preset { all: unset; box-sizing: border-box; padding: 5px 8px; border-radius: ${t.radius.sm}; cursor: pointer; color: ${t.fg.muted}; font-size: 12px; white-space: nowrap; transition: transform ${t.dur.fast} ${t.ease}; }
 .vela-lp-preset:hover { background: ${t.hover}; }
 .vela-lp-preset:active { transform: scale(0.98); }
 .vela-lp-preset[data-checked='1'] { background: ${t.hover.strong}; color: ${t.fg.bright}; }
