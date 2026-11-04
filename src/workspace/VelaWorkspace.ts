@@ -2754,7 +2754,7 @@ export class VelaWorkspace {
         // reachable). Ctrl+Z/Y below are editing primitives and stay regardless of the
         // 'undo-redo' buttons.
         this.registerScreenshotKey();
-        this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: TEXT.resetView, category: TEXT.categoryChart, run: () => this.active.chart.setVisibleRangePreset('ALL') });
+        this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: TEXT.resetView, category: TEXT.categoryChart, run: () => this.active.resetView() });
         this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: TEXT.toggleLog, category: TEXT.categoryChart, run: () => this.active.chart.renderer.set('logScale', !this.active.chart.renderer.get('logScale')) });
         this.keymap.register({
             id: 'chart.toggle-percent',

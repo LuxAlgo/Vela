@@ -353,4 +353,62 @@ describe('the drawing settings panel', () => {
         expect(popup.openPanel()).toBe(false);
         popup.destroy();
     });
+
+    describe('where the panel opens', () => {
+        /** A 1000 × 600 chart with the toolbar's box at `bar` and the panel measuring 360 × 360. */
+        function laidOut(bar: { x: number; y: number }) {
+            const restore: Array<() => void> = [];
+            const stub = (proto: object, key: string, get: (el: HTMLElement) => number): void => {
+                const prev = Object.getOwnPropertyDescriptor(proto, key);
+                Object.defineProperty(proto, key, { configurable: true, get() { return get(this as HTMLElement); } });
+                restore.push(() => (prev ? Object.defineProperty(proto, key, prev) : delete (proto as Record<string, unknown>)[key]));
+            };
+            const isHost = (el: HTMLElement): boolean => el.dataset.host != null;
+            stub(HTMLElement.prototype, 'clientWidth', (el) => (isHost(el) ? 1000 : 0));
+            stub(HTMLElement.prototype, 'clientHeight', (el) => (isHost(el) ? 600 : 0));
+            stub(HTMLElement.prototype, 'offsetWidth', (el) => (el.classList.contains('vela-dsp') ? 360 : 0));
+            stub(HTMLElement.prototype, 'offsetHeight', (el) => (el.classList.contains('vela-dsp') ? 360 : 0));
+            const rect = Element.prototype.getBoundingClientRect;
+            Element.prototype.getBoundingClientRect = function (this: Element) {
+                if (this.classList.contains('vela-dpop')) return { left: bar.x, top: bar.y, width: 330, height: 40, right: bar.x + 330, bottom: bar.y + 40, x: bar.x, y: bar.y } as DOMRect;
+                return rect.call(this);
+            };
+            restore.push(() => (Element.prototype.getBoundingClientRect = rect));
+            return () => restore.forEach((fn) => fn());
+        }
+
+        async function openAt(bar: { x: number; y: number }, drawing: { x: number; y: number; w: number; h: number }) {
+            const undo = laidOut(bar);
+            try {
+                const host = document.createElement('div');
+                host.dataset.host = '';
+                document.body.append(host);
+                const popup = new DrawingSettingsPopup(host, DARK_THEME, { chartBarMs: () => 5 * 60_000, timeZone: () => 'UTC' });
+                popup.open([make('trendline')], drawing, chart(make('trendline')).actions);
+                host.querySelector<HTMLButtonElement>('.vela-dpop [data-tip="Settings"]')!.click();
+                await settled();
+                const panel = host.querySelector<HTMLElement>('.vela-dsp')!;
+                const at = { left: panel.style.left, top: panel.style.top, bottom: panel.style.bottom };
+                popup.destroy();
+                return at;
+            } finally {
+                undo();
+            }
+        }
+
+        it("opens right under the drawing's toolbar when the toolbar sits at the top of the chart", async () => {
+            const at = await openAt({ x: 40, y: 20 }, { x: 200, y: 120, w: 400, h: 80 });
+            expect(at).toEqual({ left: '40px', top: '68px', bottom: '' });
+        });
+
+        it('opens above the toolbar, clear of the drawing, when the toolbar sits above a drawing low on the chart', async () => {
+            const at = await openAt({ x: 300, y: 420 }, { x: 300, y: 480, w: 300, h: 80 });
+            expect(at).toEqual({ left: '300px', top: '', bottom: '188px' });
+        });
+
+        it('stays inside the chart when the toolbar is near its right edge', async () => {
+            const at = await openAt({ x: 900, y: 20 }, { x: 800, y: 120, w: 150, h: 80 });
+            expect(at.left).toBe('636px');
+        });
+    });
 });

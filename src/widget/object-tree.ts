@@ -57,7 +57,6 @@ const TEXT = {
     objectTree: msg('widget.objectTree.objectTree', 'Object tree'),
     price: msg('widget.objectTree.price', 'Price'),
     emptyHint: msg('widget.objectTree.emptyHint', 'Add an indicator or a drawing to populate the tree'),
-    groupSelected: msg('widget.objectTree.groupSelected', 'Group the selected drawings'),
     groupDrawings: msg('widget.objectTree.groupDrawings', '{count, plural, one {Group this drawing} other {Group these drawings}}'),
     alreadyInAGroup: msg('widget.objectTree.alreadyInAGroup', 'Already in a group'),
     duplicateSelected: msg('widget.objectTree.duplicateSelected', 'Duplicate the selected drawings'),
@@ -99,6 +98,7 @@ const TEXT = {
     selected: msg('widget.objectTree.selected', '{count, plural, one {# selected} other {# selected}}'),
     groupMembers: msg('widget.objectTree.groupMembers', '{count, plural, one {# drawing — drag to move it} other {# drawings — drag to move them together}}'),
     groupPick: msg('widget.objectTree.groupPick', 'Group selection ({count})'),
+    groupDropHint: msg('widget.objectTree.groupDropHint', 'Drag drawings here'),
     removeFromGroup: msg('widget.objectTree.removeFromGroup', 'Remove from {group}'),
     scaleTag: msg('widget.objectTree.scaleTag', 'scale'),
 };
@@ -212,6 +212,16 @@ const CSS = css`@layer vela.chrome {
 .vela-ot-row[data-row-kind='group'] > .vela-icon { width: 12px; font-size: 11px; }
 /* A member sits indented under its group's header. */
 .vela-ot-subrow { padding-inline-start: 26px; }
+/* An empty group's only content: where its first drawing goes. */
+.vela-ot-grouphint {
+    margin-block: 2px 4px;
+    margin-inline: 26px 6px;
+    padding: 4px 8px;
+    border: 1px dashed ${t.border};
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
+    font-size: 11px;
+}
 .vela-ot-rename {
     flex: 1;
     min-width: 0;
@@ -569,8 +579,9 @@ export class ObjectTree extends SidePanel {
         }
     }
 
-    /** What the panel itself can do to the selected drawings: bundle them into a group, or
-     *  duplicate all of them. Always in place, dim until there is a selection to act on. */
+    /** What the panel itself can do: bundle the selected drawings into a group (with nothing
+     *  selected, start an empty one to drag drawings into), or duplicate all of them. Always in
+     *  place; duplicate stays dim until there is a selection to act on. */
     private selectionBar(pass: Pass): HTMLElement {
         const doc = this.el.ownerDocument;
         const bar = doc.createElement('div');
@@ -580,9 +591,9 @@ export class ObjectTree extends SidePanel {
         bar.appendChild(
             this.btn({
                 icon: 'group',
-                title: ids.length === 0 ? this.t(TEXT.groupSelected) : groupable ? this.t(TEXT.groupDrawings, { count: ids.length }) : this.t(TEXT.alreadyInAGroup),
-                disabled: !groupable,
-                run: () => this.makeGroup(ids),
+                title: ids.length === 0 ? this.t(TEXT.newGroup) : groupable ? this.t(TEXT.groupDrawings, { count: ids.length }) : this.t(TEXT.alreadyInAGroup),
+                disabled: !pass.chart.drawings.supported || (ids.length > 0 && !groupable),
+                run: () => (ids.length === 0 ? this.makeEmptyGroup() : this.makeGroup(ids)),
             }),
         );
         bar.appendChild(
@@ -652,6 +663,12 @@ export class ObjectTree extends SidePanel {
             wrap.appendChild(this.groupRow(pass, pane, unit.group));
             if (!this.collapsed.has(unit.group.id)) {
                 for (const m of unit.members) wrap.appendChild(this.drawRow(pass, m, true));
+                if (unit.members.length === 0) {
+                    const hint = doc.createElement('div');
+                    hint.className = 'vela-ot-grouphint';
+                    hint.textContent = this.t(TEXT.groupDropHint);
+                    wrap.appendChild(hint);
+                }
             }
         }
         return wrap;
@@ -760,7 +777,8 @@ export class ObjectTree extends SidePanel {
         const members = pass.chart.drawings.all().filter((d) => g.ids.includes(d.id));
         const { allHidden, allLocked } = groupState(members);
         const ids = [...g.ids];
-        const el = this.row(iconEl(folded ? 'chevron-right' : 'chevron-down', doc), g.name, !allHidden, [
+        // An empty group has nothing to lock or hide — only itself to remove.
+        const actions: RowAction[] = g.ids.length === 0 ? [{ icon: 'trash', title: this.t(TEXT.remove), run: () => this.removeGroup(pass, g.id, false) }] : [
             {
                 icon: allLocked ? 'lock' : 'unlock',
                 title: allLocked ? this.t(TEXT.unlockAll) : this.t(TEXT.lockAll),
@@ -774,11 +792,12 @@ export class ObjectTree extends SidePanel {
                 run: () => this.setMembers(pass, ids, { visible: allHidden }),
             },
             { icon: 'trash', title: this.t(TEXT.removeAll), run: () => this.removeGroup(pass, g.id, true) },
-        ]);
+        ];
+        const el = this.row(iconEl(folded ? 'chevron-right' : 'chevron-down', doc), g.name, !allHidden, actions);
         el.dataset.rowKind = 'group';
         el.dataset.id = g.id;
         el.dataset.pane = pane.id;
-        el.title = this.t(TEXT.groupMembers, { count: members.length });
+        el.title = g.ids.length === 0 ? this.t(TEXT.groupDropHint) : this.t(TEXT.groupMembers, { count: members.length });
         if (this.renaming === g.id) {
             // A row being renamed is a text field, not a handle: dragging it would leave the
             // rename open with the tree frozen behind it.
@@ -804,7 +823,8 @@ export class ObjectTree extends SidePanel {
             // Clicking away keeps what was typed, the way a rename in a file list does.
             input.addEventListener('blur', () => this.commitRename(g.id, input.value));
         } else {
-            el.dataset.drag = '1';
+            // An empty group has no drawings to carry, so there is nothing to drag.
+            if (g.ids.length > 0) el.dataset.drag = '1';
             el.addEventListener('click', () => {
                 if (folded) this.collapsed.delete(g.id);
                 else this.collapsed.add(g.id);
@@ -946,6 +966,17 @@ export class ObjectTree extends SidePanel {
         this.groupSeq += 1;
         this.groups = [...this.groups, { id: `grp-${this.groupSeq}`, name: nextGroupName(this.groups, this.i18n), ids: [...ids] }];
         this.picked.clear();
+        this.render();
+    }
+
+    /** Start an empty group at the top of the main chart, named and ready to rename, for
+     *  drawings to be dragged into. */
+    private makeEmptyGroup(): void {
+        this.groupSeq += 1;
+        const id = `grp-${this.groupSeq}`;
+        this.groups = [...this.groups, { id, name: nextGroupName(this.groups, this.i18n), ids: [], pane: PRICE_PANE_ID }];
+        this.picked.clear();
+        this.renaming = id;
         this.render();
     }
 
@@ -1512,14 +1543,17 @@ export class ObjectTree extends SidePanel {
     }
 
     private groupMenu(b: MenuBuilder, pass: Pass, g: DrawGroup): MenuItemDescriptor[] {
+        const rename = b.entry(this.t(TEXT.rename), 'pen', () => {
+            this.renaming = g.id;
+            this.render();
+        });
+        // Until a drawing joins there is nothing to show, lock, select or restack.
+        if (g.ids.length === 0) return [rename, b.entry(this.t(TEXT.remove), 'trash', () => this.removeGroup(pass, g.id, false), true)];
         const ids = [...g.ids];
         const members = pass.chart.drawings.all().filter((d) => g.ids.includes(d.id));
         const { allHidden, allLocked } = groupState(members);
         const items = [
-            b.entry(this.t(TEXT.rename), 'pen', () => {
-                this.renaming = g.id;
-                this.render();
-            }),
+            rename,
             b.entry(allHidden ? this.t(TEXT.showAll) : this.t(TEXT.hideAll), allHidden ? 'eye' : 'eye-off', () => this.setMembers(pass, ids, { visible: allHidden }), true),
             b.entry(allLocked ? this.t(TEXT.unlockAll) : this.t(TEXT.lockAll), allLocked ? 'unlock' : 'lock', () => this.setMembers(pass, ids, { locked: !allLocked })),
             b.entry(this.t(TEXT.selectAll), 'group', () => {

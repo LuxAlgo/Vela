@@ -22,6 +22,9 @@ export interface DrawGroup {
     id: string;
     name: string;
     ids: string[];
+    /** The pane an EMPTY group sits in. A group made before it holds anything has no member to
+     *  take a pane from; once drawings join, theirs is where it shows. Absent: the main chart. */
+    pane?: string;
 }
 
 /** The candles. */
@@ -285,10 +288,19 @@ export function nextGroupName(groups: readonly DrawGroup[], i18n?: Translator | 
     return nameOf(groups.length + 1);
 }
 
-/** Rebuild a group list with only the members that pass `keep`. A group left with nobody in
- *  it disappears rather than lingering as an empty row. */
+/** Whether a group survives a membership change. One the change emptied disappears rather
+ *  than lingering as an empty row; one that was empty all along is a fresh group still waiting
+ *  for its first drawing, and stays. */
+function survives(before: DrawGroup, after: DrawGroup): boolean {
+    return after.ids.length > 0 || before.ids.length === 0;
+}
+
+/** Rebuild a group list with only the members that pass `keep`. */
 function withMembers(groups: readonly DrawGroup[], keep: (id: string) => boolean): DrawGroup[] {
-    return groups.map((g) => ({ ...g, ids: g.ids.filter(keep) })).filter((g) => g.ids.length > 0);
+    return groups.flatMap((g) => {
+        const next = { ...g, ids: g.ids.filter(keep) };
+        return survives(g, next) ? [next] : [];
+    });
 }
 
 /** Drop members that no longer exist, and the groups left empty by that. */
@@ -306,11 +318,21 @@ export function removeFromGroups(groups: readonly DrawGroup[], ids: readonly str
  *  exclusive, so a drawing can never show up under two groups at once. */
 export function assignToGroup(groups: readonly DrawGroup[], groupId: string, ids: readonly string[]): DrawGroup[] {
     const moving = new Set(ids);
-    const next = groups.map((g) => {
+    return groups.flatMap((g) => {
         const kept = g.ids.filter((id) => !moving.has(id));
-        return { ...g, ids: g.id === groupId ? [...kept, ...ids] : kept };
+        const next = { ...g, ids: g.id === groupId ? [...kept, ...ids] : kept };
+        return survives(g, next) ? [next] : [];
     });
-    return next.filter((g) => g.ids.length > 0);
+}
+
+/** The groups still waiting for their first drawing that sit in this pane. Like an orphaned
+ *  drawing, one whose pane is gone folds into the main chart. */
+export function emptyGroupsIn(groups: readonly DrawGroup[], paneId: string, paneIds: ReadonlySet<string>): DrawGroup[] {
+    return groups.filter((g) => {
+        if (g.ids.length > 0) return false;
+        const at = g.pane ?? PRICE_PANE_ID;
+        return paneId === PRICE_PANE_ID ? at === PRICE_PANE_ID || !paneIds.has(at) : at === paneId;
+    });
 }
 
 /**
@@ -336,10 +358,11 @@ export function drawingUnits(paneDraws: readonly SerializedDrawing[], groups: re
 }
 
 /** A unit's z key: its front-most member's. That is the slot a group surfaces at, so a
- *  bundle whose members straddle a series still reads as one block. */
+ *  bundle whose members straddle a series still reads as one block. An empty group has no
+ *  member to go by and leads the pane, where a new group is easiest to find. */
 function unitZ(u: DrawUnit): number {
     if (u.kind === 'draw') return u.drawing.zIndex;
-    return u.members[0]?.zIndex ?? 0;
+    return u.members[0]?.zIndex ?? Infinity;
 }
 
 /**
@@ -391,7 +414,10 @@ export function buildTree(snap: TreeSnapshot): TreePane[] {
         order: pane.order,
         collapsed: pane.collapsed,
         maximized: pane.maximized,
-        items: paneItems(snap, pane, drawingUnits(paneDrawings(snap.drawings, pane.id, paneIds), snap.groups)),
+        items: paneItems(snap, pane, [
+            ...emptyGroupsIn(snap.groups, pane.id, paneIds).map((group): DrawUnit => ({ kind: 'group', group, members: [] })),
+            ...drawingUnits(paneDrawings(snap.drawings, pane.id, paneIds), snap.groups),
+        ]),
     }));
 }
 

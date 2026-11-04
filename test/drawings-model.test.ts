@@ -113,7 +113,9 @@ describe('drawings/Ray Box TextLabel', () => {
         expect(b.style.fillColor).toBeTruthy(); // default fill
         expect(b.hitTest(25, 75, proj, 5)).toBe(true); // inside the filled rect
         expect(b.priceRange()).toEqual({ min: 0, max: 50 });
-        expect(b.handlePoints(proj)).toEqual([[0, 100], [50, 50]]);
+        const handles = b.handlePoints(proj);
+        expect(handles).toHaveLength(8); // four corners + four edge midpoints
+        expect(handles.slice(0, 2)).toEqual([[0, 100], [50, 50]]); // the anchor corners come first
     });
     it('TextLabel starts empty (typed inline) with an approximate hit box', () => {
         const t = createDrawing('text', { paneId: 'price', anchors: [{ time: 10, price: 50 }] })!;
