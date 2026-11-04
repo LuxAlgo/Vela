@@ -69,7 +69,7 @@ export class ChartContextMenu {
         this.menu = new Menu({
             host,
             items: [],
-            placement: 'bottom-start',
+            side: 'bottom', align: 'start',
             // Pointer-anchored action menu: checked state reads as a leading ✓, not a
             // washed row (which would read as hover in a menu with no trigger button).
             checkmarks: true,

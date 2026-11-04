@@ -161,7 +161,7 @@ const options = [
     { value: 'open', label: 'Open' },
     { value: 'hl2', label: '(H + L) / 2' },
 ];
-const select = new Select({ options, value: 'close', size: 'md', onChange: noop });
+const select = new Select({ options, value: 'close', size: 'md', onValueChange: noop });
 row(forms, 'select', select.el, new Select({ options, value: 'open', size: 'sm' }).el, new Select({ options, value: 'hl2', disabled: true }).el);
 let color = '#2962ff';
 let width = 2;
@@ -224,6 +224,18 @@ new Tooltip(tooltipBtn, { content: 'Tooltip text', openDelay: 0, host: app });
 dialogBtn.addEventListener('click', () => dialog.show());
 drawerBtn.addEventListener('click', () => drawer.show());
 popoverBtn.addEventListener('click', () => popover.toggle());
+// Every floating part takes the same placement props: the side, the alignment along it, the offsets.
+const sides = (['top', 'right', 'bottom', 'left'] as const).map((side) => {
+    const btn = trigger(`Popover ${side}`);
+    const pop = new Popover({ trigger: btn, host: app, side, align: 'center', sideOffset: 8, content: el('div', 'note', `Opens on the ${side}.`) });
+    btn.addEventListener('click', () => pop.toggle());
+    return btn;
+});
+const menuRightBtn = trigger('Menu right');
+new Menu({ trigger: menuRightBtn, host: app, items, side: 'right', align: 'start', sideOffset: 6 });
+const tipLeftBtn = trigger('Tooltip left');
+new Tooltip(tipLeftBtn, { content: 'On the left', openDelay: 0, host: app, side: 'left' });
+row(overlays, 'sides', ...sides, menuRightBtn, tipLeftBtn);
 
 // Data components.
 const dataSection = section('Data', 'Stats, keycaps, an empty state, a table, a sparkline, a donut, the charts and a hover card.');

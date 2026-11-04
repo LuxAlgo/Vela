@@ -10,7 +10,7 @@ import { t } from '../lib/t';
 import { variants } from '../lib/variants';
 import { nextUid, normalizeProps, runMachine, spreadProps } from '../lib/zag';
 import * as zagListbox from '@zag-js/listbox';
-import { Popover, closeOpenPopovers, openPopoverTrigger, type PopoverBoundary, type PopoverOptions } from './popover';
+import { Popover, closeOpenPopovers, openPopoverTrigger, type PlacementProps, type PopoverBoundary, type PopoverOptions } from './popover';
 
 export type SelectSize = 'sm' | 'md';
 
@@ -22,10 +22,18 @@ export interface SelectOption {
 export interface SelectControllerOptions {
     options: readonly SelectOption[];
     value?: string;
+    /** The value it starts with when `value` is not given. */
+    defaultValue?: string;
+    /** Shown while no option is picked: the value stays `''` until the user picks one. Without
+     *  it, the first option is picked to start with. */
+    placeholder?: string;
     size?: SelectSize;
     /** Stretch the trigger to its parent. Off: the shared 100px kit column (ellipsis). */
     fill?: boolean;
     disabled?: boolean;
+    /** Called when the user picks an option. */
+    onValueChange?: (value: string, label: string) => void;
+    /** @deprecated Use `onValueChange`. */
     onChange?: (value: string, label: string) => void;
 }
 
@@ -43,7 +51,7 @@ export interface SelectController {
 /** The select's options and current value, without DOM. */
 export function selectController(opts: SelectControllerOptions): SelectController {
     const options = opts.options;
-    let value = opts.value ?? options[0]?.value ?? '';
+    let value = opts.value ?? opts.defaultValue ?? (opts.placeholder !== undefined ? '' : (options[0]?.value ?? ''));
     const size = opts.size ?? 'md';
     return {
         options,
@@ -62,6 +70,7 @@ export function selectController(opts: SelectControllerOptions): SelectControlle
         pick(v: string) {
             value = v;
             const label = options.find((o) => o.value === v)?.label ?? v;
+            opts.onValueChange?.(v, label);
             opts.onChange?.(v, label);
             return { value: v, label };
         },
@@ -70,19 +79,22 @@ export function selectController(opts: SelectControllerOptions): SelectControlle
 
 export const selectDef = defineComponent({
     name: 'select',
-    parts: ['root', 'trigger', 'value', 'icon', 'sizer', 'content', 'viewport', 'item', 'rail', 'thumb'],
+    parts: ['root', 'trigger', 'value', 'icon', 'sizer', 'native', 'content', 'viewport', 'item', 'rail', 'thumb'],
     settings: { radius: t.radius.md, 'content-radius': t.radius.md, 'thumb-radius': '2px', 'focus-ring': `0 0 0 3px ${t.focus.soft}` },
 });
 
 export const selectVariants = variants({ size: ['md', 'sm'] });
 
-export interface SelectListPopoverOpts {
+/** Where the list opens and how (shadcn's placement props, defaults below and start-aligned,
+ *  4px away, as wide as the trigger at least). */
+export interface SelectListPopoverOpts extends PlacementProps {
     theme?: ChartTheme;
     matchWidth?: boolean;
+    /** @deprecated Use `collisionBoundary`. */
     boundary?: PopoverBoundary;
     boundaryInset?: number;
+    /** @deprecated Use `sideOffset`. */
     gap?: number;
-    align?: PopoverOptions['align'];
     host?: HTMLElement;
     position?: PopoverOptions['position'];
     zIndex?: string | number;
@@ -93,10 +105,15 @@ export interface SelectListPopoverOpts {
     onClose?: () => void;
 }
 
-export interface SelectOptions extends SelectControllerOptions {
+export interface SelectOptions extends SelectControllerOptions, PlacementProps {
     id?: string;
+    /** Submitted with its form under this name: a hidden native select carries the value. */
+    name?: string;
+    /** A form does not submit while no option is picked (with `placeholder`). */
+    required?: boolean;
     theme?: ChartTheme;
-    /** Placement for the open list (dialog-rect clamp, etc.). */
+    /** The open list's other options (its host, layer, width). Its placement props are the
+     *  select's own; set here, they give way to those. */
     list?: SelectListPopoverOpts;
 }
 
@@ -226,6 +243,22 @@ export const SELECT_CSS = css`
         /* The highlighted option shows where the keyboard is; the list itself draws no ring. */
         [data-slot='select-viewport']:focus {
             outline: 2px solid transparent;
+        }
+        [data-slot='select-value'][data-placeholder] {
+            color: ${t.fg.muted};
+        }
+        /* Seen by forms and their validation, never by the user. */
+        [data-slot='select-native'] {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            margin: -1px;
+            padding: 0;
+            border: 0;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+            pointer-events: none;
         }
         [data-slot='select'] {
             position: relative;
@@ -416,10 +449,14 @@ export function openSelectList(
         trigger,
         theme: opts.theme,
         matchWidth: opts.matchWidth ?? true,
-        boundary: opts.boundary,
+        collisionBoundary: opts.collisionBoundary ?? opts.boundary,
         boundaryInset: opts.boundaryInset,
-        gap: opts.gap ?? 4,
+        side: opts.side,
+        sideOffset: opts.sideOffset ?? opts.gap ?? 4,
         align: opts.align ?? 'start',
+        alignOffset: opts.alignOffset,
+        avoidCollisions: opts.avoidCollisions,
+        collisionPadding: opts.collisionPadding,
         host: opts.host,
         position: opts.position,
         zIndex: opts.zIndex,
@@ -453,18 +490,28 @@ export class Select {
     private readonly labelEl: HTMLElement;
     private readonly ctrl: SelectController;
     private readonly listOpts: SelectListPopoverOpts;
+    private readonly placeholder: string | undefined;
+    private readonly native: HTMLSelectElement | null;
     private list: Popover | null = null;
 
     constructor(opts: SelectOptions) {
         const doc = opts.list?.host?.ownerDocument ?? document;
         injectStyles(doc);
         this.ctrl = selectController(opts);
-        this.listOpts = { ...opts.list, theme: opts.theme ?? opts.list?.theme, size: this.ctrl.size };
+        const placed = Object.fromEntries(
+            (['side', 'align', 'sideOffset', 'alignOffset', 'avoidCollisions', 'collisionPadding', 'collisionBoundary'] as const).filter((k) => opts[k] !== undefined).map((k) => [k, opts[k]]),
+        ) as PlacementProps;
+        this.listOpts = { ...opts.list, ...placed, theme: opts.theme ?? opts.list?.theme, size: this.ctrl.size };
 
-        const label = h('span', { className: 'vela-select-label', slot: selectDef.slot('value'), text: this.ctrl.labelOf(this.ctrl.value) });
+        this.placeholder = opts.placeholder;
+        const label = h('span', { className: 'vela-select-label', slot: selectDef.slot('value') });
         const btn = h(
             'button',
-            { className: 'vela-select-trigger', slot: selectDef.slot('trigger'), attrs: { type: 'button', id: opts.id, 'aria-haspopup': 'listbox', 'aria-expanded': 'false' } },
+            {
+                className: 'vela-select-trigger',
+                slot: selectDef.slot('trigger'),
+                attrs: { type: 'button', id: opts.id, 'aria-haspopup': 'listbox', 'aria-expanded': 'false', 'aria-required': opts.required ? 'true' : undefined },
+            },
             label,
             h('span', { className: 'vela-select-chevron', slot: selectDef.slot('icon') }, iconEl('chevron-down', doc)),
         );
@@ -479,7 +526,20 @@ export class Select {
                       this.ctrl.options.map((o) => h('span', { text: o.label })),
                   )
                 : null;
-        this.el = h('div', { className: 'vela-select', slot: selectDef.slot('root'), attrs: selectVariants({ size: this.ctrl.size }), data: { fill: this.ctrl.fill } }, btn, sizer);
+        this.native =
+            opts.name !== undefined
+                ? h(
+                      'select',
+                      { slot: selectDef.slot('native'), attrs: { name: opts.name, 'aria-hidden': 'true', tabindex: -1 } },
+                      opts.placeholder !== undefined ? h('option', { attrs: { value: '' } }) : null,
+                      this.ctrl.options.map((o) => h('option', { attrs: { value: o.value }, text: o.label })),
+                  )
+                : null;
+        if (this.native) {
+            this.native.required = opts.required === true;
+            this.native.disabled = this.ctrl.disabled;
+        }
+        this.el = h('div', { className: 'vela-select', slot: selectDef.slot('root'), attrs: selectVariants({ size: this.ctrl.size }), data: { fill: this.ctrl.fill } }, btn, sizer, this.native);
 
         // Suppress the default mousedown focus: when this press outside-dismisses an open
         // popover, Chrome's focus action can scroll the dialog body under the pointer.
@@ -500,6 +560,7 @@ export class Select {
 
         this.trigger = btn;
         this.labelEl = label;
+        this.paint();
     }
 
     get value(): string {
@@ -508,7 +569,16 @@ export class Select {
 
     setValue(v: string): void {
         this.ctrl.setValue(v);
-        this.labelEl.textContent = this.ctrl.labelOf(v);
+        this.paint();
+    }
+
+    /** The trigger shows the picked option's label, or the placeholder while none is picked. */
+    private paint(): void {
+        const v = this.ctrl.value;
+        const empty = this.placeholder !== undefined && !this.ctrl.options.some((o) => o.value === v);
+        this.labelEl.textContent = empty ? (this.placeholder ?? '') : this.ctrl.labelOf(v);
+        this.labelEl.toggleAttribute('data-placeholder', empty);
+        if (this.native) this.native.value = empty ? '' : v;
     }
 
     toggle(): void {
@@ -516,9 +586,9 @@ export class Select {
             this.trigger,
             this.ctrl.options,
             this.ctrl.value,
-            (value, label) => {
+            (value) => {
                 this.ctrl.pick(value);
-                this.labelEl.textContent = label;
+                this.paint();
                 this.list = null;
             },
             {

@@ -10,6 +10,8 @@ export type TextAreaSize = 'sm' | 'md';
 
 export interface TextAreaControllerOptions {
     value?: string;
+    /** The text it starts with when `value` is not given. */
+    defaultValue?: string;
     size?: TextAreaSize;
     rows?: number;
     disabled?: boolean;
@@ -27,7 +29,7 @@ export interface TextAreaController {
 
 /** The text area's last committed string, without DOM. */
 export function textAreaController(opts: TextAreaControllerOptions = {}): TextAreaController {
-    let value = opts.value ?? '';
+    let value = opts.value ?? opts.defaultValue ?? '';
     return {
         get value() {
             return value;
@@ -56,6 +58,9 @@ export const textAreaDef = defineComponent({
 export const textAreaVariants = variants({ size: ['md', 'sm'] });
 
 export interface TextAreaOptions extends TextAreaControllerOptions {
+    /** Submitted with its form under this name. */
+    name?: string;
+    required?: boolean;
     id?: string;
     placeholder?: string;
     /** Grow with content up to `maxLines`, then scroll. */
@@ -139,7 +144,8 @@ export class TextArea {
         this.autoGrow = opts.autoGrow === true;
         this.maxLines = opts.maxLines ?? 4;
 
-        const ta = h('textarea', { className: 'vela-textarea-field', slot: textAreaDef.slot('input'), attrs: { id: opts.id, placeholder: opts.placeholder } });
+        const ta = h('textarea', { className: 'vela-textarea-field', slot: textAreaDef.slot('input'), attrs: { id: opts.id, placeholder: opts.placeholder, name: opts.name } });
+        ta.required = opts.required === true;
         ta.rows = this.ctrl.rows;
         ta.value = this.ctrl.value;
         ta.disabled = this.ctrl.disabled;

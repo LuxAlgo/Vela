@@ -12,7 +12,7 @@ import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { nextUid, normalizeProps, runMachine, spreadProps } from '../lib/zag';
-import { Popover, closeOpenPopovers, openPopoverTrigger, type PopoverBoundary, type PopoverOptions } from './popover';
+import { Popover, closeOpenPopovers, openPopoverTrigger, type PlacementProps, type PopoverBoundary, type PopoverOptions } from './popover';
 import * as zagSlider from '@zag-js/slider';
 
 /** Split a color into its `#RRGGBB` part + alpha 0..1 (handles `#RGB`, `#RRGGBB(AA)`, `rgba()`). */
@@ -441,12 +441,16 @@ export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v:
     return root;
 }
 
-export interface ColorFieldOpts {
+/** Where the picker opens beside the swatch (shadcn's placement props; default below and
+ *  end-aligned, 6px away). */
+export interface ColorFieldOpts extends PlacementProps {
     shape?: ColorFieldShape;
     theme: ChartTheme;
     getVal: () => string;
     onVal: (v: string) => void;
     id?: string;
+    /** The picker's host, layer and positioning strategy. `gap`, `align` and `boundary` here
+     *  are deprecated: the field's placement props replace them. */
     popover?: Pick<PopoverOptions, 'host' | 'position' | 'boundary' | 'zIndex' | 'gap' | 'align'>;
     /** Opacity-drag commit policy of the popover picker (default `'live'`) — see {@link ColorCommit}. */
     commit?: ColorCommit;
@@ -462,9 +466,9 @@ export function colorField(
     theme: ChartTheme,
     getVal: () => string,
     onVal: (v: string) => void,
-    opts?: { shape?: ColorFieldShape; id?: string; popover?: ColorFieldOpts['popover']; commit?: ColorCommit },
+    opts?: { shape?: ColorFieldShape; id?: string; popover?: ColorFieldOpts['popover']; commit?: ColorCommit } & PlacementProps,
 ): HTMLElement {
-    return new ColorField({ theme, getVal, onVal, shape: opts?.shape, id: opts?.id, popover: opts?.popover, commit: opts?.commit }).el;
+    return new ColorField({ ...opts, theme, getVal, onVal }).el;
 }
 
 export class ColorField {
@@ -474,6 +478,7 @@ export class ColorField {
     private readonly onVal: (v: string) => void;
     private readonly theme: ChartTheme;
     private readonly popoverOpts: ColorFieldOpts['popover'];
+    private readonly placement: PlacementProps;
     private readonly commit: ColorCommit | undefined;
     private readonly i18n: Translator | null;
 
@@ -483,6 +488,7 @@ export class ColorField {
         this.getVal = opts.getVal;
         this.onVal = opts.onVal;
         this.popoverOpts = opts.popover;
+        this.placement = opts;
         this.commit = opts.commit;
         this.i18n = opts.i18n ?? kitTranslator();
 
@@ -529,11 +535,15 @@ export class ColorField {
         const pop = new Popover({
             trigger: this.el,
             theme: this.theme,
-            align: this.popoverOpts?.align ?? 'end',
-            gap: this.popoverOpts?.gap ?? 6,
+            side: this.placement.side,
+            align: this.placement.align ?? this.popoverOpts?.align ?? 'end',
+            sideOffset: this.placement.sideOffset ?? this.popoverOpts?.gap ?? 6,
+            alignOffset: this.placement.alignOffset,
+            avoidCollisions: this.placement.avoidCollisions,
+            collisionPadding: this.placement.collisionPadding,
             host: this.popoverOpts?.host,
             position: this.popoverOpts?.position,
-            boundary: this.popoverOpts?.boundary as PopoverBoundary | undefined,
+            collisionBoundary: this.placement.collisionBoundary ?? (this.popoverOpts?.boundary as PopoverBoundary | undefined),
             zIndex: this.popoverOpts?.zIndex,
             className: 'vela-color-field-pop',
             slot: colorPickerDef.slot('content'),

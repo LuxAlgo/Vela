@@ -6,7 +6,7 @@ import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
-import { Popover, closeOpenPopovers, openPopoverTrigger } from './popover';
+import { Popover, closeOpenPopovers, openPopoverTrigger, type PlacementProps } from './popover';
 
 export interface GlyphOption<T extends string | number = string | number> {
     value: T;
@@ -69,7 +69,9 @@ export const glyphSelectDef = defineComponent({
     settings: { radius: t.radius.md, 'content-radius': t.radius.md, 'focus-ring': `0 0 0 3px ${t.focus.soft}` },
 });
 
-export interface GlyphSelectOptions<T extends string | number = string | number> extends GlyphSelectControllerOptions<T> {
+/** Where the list opens beside the field (shadcn's placement props; default below and
+ *  end-aligned, 6px away). */
+export interface GlyphSelectOptions<T extends string | number = string | number> extends GlyphSelectControllerOptions<T>, PlacementProps {
     theme: ChartTheme;
     title?: string;
     get?: () => T;
@@ -167,9 +169,11 @@ export class GlyphSelect<T extends string | number = string | number> {
     private readonly ctrl: GlyphSelectController<T>;
     private readonly theme: ChartTheme;
     private readonly get: () => T;
+    private readonly placement: PlacementProps;
 
     constructor(opts: GlyphSelectOptions<T>) {
         injectStyles(document);
+        this.placement = opts;
         this.ctrl = glyphSelectController(opts);
         this.theme = opts.theme;
         this.get = opts.get ?? (() => this.ctrl.value);
@@ -216,8 +220,13 @@ export class GlyphSelect<T extends string | number = string | number> {
         const pop = new Popover({
             trigger: this.el,
             theme: this.theme,
-            align: 'end',
-            gap: 6,
+            side: this.placement.side,
+            align: this.placement.align ?? 'end',
+            sideOffset: this.placement.sideOffset ?? 6,
+            alignOffset: this.placement.alignOffset,
+            avoidCollisions: this.placement.avoidCollisions,
+            collisionPadding: this.placement.collisionPadding,
+            collisionBoundary: this.placement.collisionBoundary,
             className: 'vela-glyph-select-pop',
             slot: glyphSelectDef.slot('content'),
             content: (el) => {

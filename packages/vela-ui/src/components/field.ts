@@ -317,7 +317,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
             checked: opts.toggle?.checked ?? false,
             size: 'md',
             tone: 'bright',
-            onChange: (v) => opts.toggle?.onChange(v),
+            onCheckedChange: (v) => opts.toggle?.onChange(v),
         });
         wrap.append(sw.el, labelEl(opts.label, { id: opts.toggle?.id ?? opts.id, size }));
         if (opts.info) wrap.appendChild(opts.info);
@@ -354,7 +354,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
             checked: opts.toggle.checked,
             size: 'md',
             tone: 'bright',
-            onChange: (v) => {
+            onCheckedChange: (v) => {
                 opts.toggle!.onChange(v);
                 if (controls.length > 0) dimControls(controls, v);
             },
@@ -509,7 +509,7 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
             fill: desc.fill,
             theme: desc.theme,
             list: desc.list,
-            onChange: desc.onChange,
+            onValueChange: desc.onChange,
         });
         if (desc.title) sel.el.title = desc.title;
         if (desc.sync) {
@@ -524,7 +524,7 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
             checked: desc.checked,
             size: 'md',
             tone: 'bright',
-            onChange: desc.onChange,
+            onCheckedChange: desc.onChange,
         });
         if (desc.sync) {
             const sync = desc.sync;

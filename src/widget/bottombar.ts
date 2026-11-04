@@ -253,7 +253,7 @@ export class Bottombar {
             trigger: this.tzButton,
             triggerId: 'vela-bb-tz',
             host,
-            placement: 'top-end',
+            side: 'top', align: 'end',
             items: this.tzItems(),
             onSelect: (zone) => {
                 this.setTimezone(zone, this.exchangeTimezone);

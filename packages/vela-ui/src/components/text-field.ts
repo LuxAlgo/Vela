@@ -10,6 +10,8 @@ export type TextFieldSize = 'sm' | 'md';
 
 export interface TextFieldControllerOptions {
     value?: string;
+    /** The text it starts with when `value` is not given. */
+    defaultValue?: string;
     size?: TextFieldSize;
     fill?: boolean;
     disabled?: boolean;
@@ -28,7 +30,7 @@ export interface TextFieldController {
 
 /** The field's last committed string, without DOM. */
 export function textFieldController(opts: TextFieldControllerOptions = {}): TextFieldController {
-    let value = opts.value ?? '';
+    let value = opts.value ?? opts.defaultValue ?? '';
     const size = opts.size ?? 'md';
     return {
         get value() {
@@ -58,6 +60,10 @@ export const textFieldDef = defineComponent({
 export const textFieldVariants = variants({ size: ['md', 'sm'] });
 
 export interface TextFieldOptions extends TextFieldControllerOptions {
+    placeholder?: string;
+    /** Submitted with its form under this name. */
+    name?: string;
+    required?: boolean;
     id?: string;
 }
 
@@ -96,6 +102,10 @@ export const TEXT_CSS = css`
                     border-color: ${t.focus};
                     box-shadow: ${textFieldDef.vars['focus-ring']};
                 }
+                &::placeholder {
+                    color: currentColor;
+                    opacity: 0.4;
+                }
             }
             [data-slot='text-field'] {
                 min-width: 0;
@@ -133,7 +143,8 @@ export class TextField {
         injectStyles(document);
         this.ctrl = textFieldController(opts);
         // `size = 1` drops the UA's ~20ch minimum, so a 100px (or filling) wrapper holds.
-        const ti = h('input', { className: 'vela-text-field', slot: textFieldDef.slot('input'), attrs: { type: 'text', size: 1, id: opts.id } });
+        const ti = h('input', { className: 'vela-text-field', slot: textFieldDef.slot('input'), attrs: { type: 'text', size: 1, id: opts.id, placeholder: opts.placeholder, name: opts.name } });
+        ti.required = opts.required === true;
         ti.value = this.ctrl.value;
         ti.disabled = this.ctrl.disabled;
         ti.addEventListener('blur', () => {

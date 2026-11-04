@@ -254,7 +254,7 @@ export class LayoutPicker {
         layoutCol.appendChild(layoutHeading);
         this.infoTip = new Tooltip(badge, {
             host: opts.host,
-            placement: 'bottom',
+            side: 'bottom',
             content: () => this.tipNode(),
         });
 

@@ -7,8 +7,10 @@ import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
+import { splitPlacement, zagPositioning, type PlacementProps } from '../lib/placement';
 
-export interface TooltipControllerOptions {
+export interface TooltipControllerOptions extends PlacementProps {
+    /** @deprecated Use `side` and `align`. */
     placement?: tooltip.Placement;
     /** ms before opening on hover (default 0 — the reference tooltips are instant). */
     openDelay?: number;
@@ -39,7 +41,7 @@ export function tooltipController(opts: TooltipControllerOptions = {}): TooltipC
             closeDelay: opts.closeDelay ?? 0,
             interactive: opts.interactive ?? false,
             ids: opts.triggerId ? { trigger: opts.triggerId } : undefined,
-            positioning: { placement: opts.placement ?? 'top' },
+            positioning: zagPositioning(opts, opts.placement ? splitPlacement(opts.placement) : { side: 'top', align: 'center' }),
         } satisfies Partial<tooltip.Props>,
         connect: (service: TooltipService): TooltipApi => tooltip.connect(service, normalizeProps),
     };

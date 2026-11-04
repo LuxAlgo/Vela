@@ -103,6 +103,25 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The kit's primitives take shadcn's props.**
+  - Every floating part (the popover and what opens on it: the select list, the color and
+    glyph pickers, the callout panel; the menu, the tooltip, the hover card) takes `side`,
+    `align`, `sideOffset`, `alignOffset`, `avoidCollisions`, `collisionPadding` and
+    `collisionBoundary`. A popover can now open on any side of its trigger, and flips to the
+    opposite side when its own lacks room; its content carries `data-side` and `data-align`.
+    Defaults are unchanged. A select takes them at its top level (`list` keeps its other
+    options), and the placement math (`placePopover`) and types live in the kit's root.
+  - Form controls: the switch takes `defaultChecked`, `onCheckedChange`, `name` and
+    `required`; the select takes `defaultValue`, `onValueChange`, `placeholder` (shown,
+    dimmed, until a pick), `name` and `required` (a hidden native select carries the value
+    to forms and their validation); the text field and text area take `defaultValue`,
+    `placeholder`, `name` and `required`; the number field takes `name` and `required`.
+  - The drawer takes a `direction` (`'bottom'` by default; `'top'`, `'right'`, `'left'`),
+    sliding in from that edge, with a pull toward it dismissing; a side drawer's right is the
+    inline end, mirrored in right-to-left layouts.
+  - Deprecated, kept for one release: the popover's and select list's `gap` and `boundary`,
+    the menu's and tooltip's `placement`, the hover card's `delay`, the switch's and the
+    select's `onChange`. Vela's own code uses the new names.
 - **Vela's chrome CSS is linted.** Every chrome stylesheet is a `css` template that writes
   its `@layer vela.chrome`, reads the tokens through `t` and uses logical properties
   (`inset-inline-start`, `margin-inline-end`…, the same in left-to-right layouts), and

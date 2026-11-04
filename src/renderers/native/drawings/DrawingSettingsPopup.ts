@@ -733,10 +733,10 @@ export class DrawingSettingsPopup {
             host: this.host,
             theme: t,
             position: 'absolute',
-            boundary: this.host,
+            collisionBoundary: this.host,
             boundaryInset: 4,
             viewportInset: 0,
-            gap: 6,
+            sideOffset: 6,
             align: opts.align ?? 'start',
             zIndex: opts.zIndex,
             onClose: () => {

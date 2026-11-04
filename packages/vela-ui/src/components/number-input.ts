@@ -140,6 +140,9 @@ export interface NumberInputOptions extends NumberInputControllerOptions {
     /** Chart-settings placeholder mode: empty field means `emptyValue` (the default). */
     placeholder?: string;
     emptyValue?: number;
+    /** Submitted with its form under this name. */
+    name?: string;
+    required?: boolean;
     compact?: boolean;
     /** Stretch to the parent. Defaults to on for `md`, off for `sm`. Chart settings
      *  passes `false` so the field stays a 100px kit column instead of filling the pane. */
@@ -363,6 +366,8 @@ export class NumberInput {
                 clampValueOnBlur: clamp,
                 allowOverflow: !clamp,
                 disabled: this.ctrl.disabled,
+                ...(opts.name !== undefined ? { name: opts.name } : {}),
+                ...(opts.required !== undefined ? { required: opts.required } : {}),
                 // Plain numbers, as the field has always shown them: no grouping, every decimal.
                 locale: 'en-US',
                 formatOptions: { useGrouping: false, maximumFractionDigits: 20 },

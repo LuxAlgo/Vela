@@ -73,6 +73,6 @@ export function dataGallery(row: (label: string, ...children: HTMLElement[]) => 
     scatter.setData(TRADES.map((r) => ({ x: r.bars, y: r.pnl, color: r.pnl >= 0 ? t.profit.var : t.loss.var })), [{ x: 0, y: 40 }, { x: 32, y: 160 }]);
 
     const trigger = createButton({ text: 'Hover me', variant: 'outline', size: 'sm' }).el;
-    attachHoverCard(trigger, () => ({ title: 'Long position', icon: 'bell', shortcut: 'Alt+L', description: 'Draws a long trade with its target and stop.', hint: 'Shift-click to keep the tool' }), { host, delay: 150 });
+    attachHoverCard(trigger, () => ({ title: 'Long position', icon: 'bell', shortcut: 'Alt+L', description: 'Draws a long trade with its target and stop.', hint: 'Shift-click to keep the tool' }), { host, openDelay: 150 });
     row('hover-card', trigger);
 }

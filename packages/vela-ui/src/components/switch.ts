@@ -16,9 +16,14 @@ export type SwitchTone = 'bright' | 'selected';
 
 export interface SwitchControllerOptions {
     checked?: boolean;
+    /** The state it starts in when `checked` is not given. */
+    defaultChecked?: boolean;
     disabled?: boolean;
     size?: SwitchSize;
     tone?: SwitchTone;
+    /** Called when the user toggles it. */
+    onCheckedChange?: (checked: boolean) => void;
+    /** @deprecated Use `onCheckedChange`. */
     onChange?: (checked: boolean) => void;
 }
 
@@ -33,7 +38,7 @@ export interface SwitchController {
 
 /** The switch's state without DOM: checked, and the option mapping. */
 export function switchController(opts: SwitchControllerOptions = {}): SwitchController {
-    let checked = opts.checked ?? false;
+    let checked = opts.checked ?? opts.defaultChecked ?? false;
     const disabled = opts.disabled ?? false;
     return {
         get checked() {
@@ -48,6 +53,7 @@ export function switchController(opts: SwitchControllerOptions = {}): SwitchCont
         toggle() {
             if (disabled) return checked;
             checked = !checked;
+            opts.onCheckedChange?.(checked);
             opts.onChange?.(checked);
             return checked;
         },
@@ -64,6 +70,10 @@ export const switchVariants = variants({ size: ['md', 'sm'], tone: ['bright', 's
 
 export interface SwitchOptions extends SwitchControllerOptions {
     id?: string;
+    /** Submitted with its form under this name (`on` when checked). */
+    name?: string;
+    /** A form does not submit while it is off. */
+    required?: boolean;
 }
 
 export type SwitchProps = SwitchOptions;
@@ -154,7 +164,7 @@ export class Switch {
     constructor(opts: SwitchOptions = {}) {
         injectStyles(document);
         this.mid = nextUid('vela-switch');
-        this.current = opts.checked ?? false;
+        this.current = opts.checked ?? opts.defaultChecked ?? false;
         const icon = iconEl('check', document);
         icon.dataset.slot = switchDef.slot('icon');
         this.input = h('input', {});
@@ -167,6 +177,8 @@ export class Switch {
                 ...(opts.id ? { ids: { hiddenInput: opts.id } } : {}),
                 defaultChecked: this.current,
                 disabled: opts.disabled ?? false,
+                ...(opts.name !== undefined ? { name: opts.name } : {}),
+                ...(opts.required !== undefined ? { required: opts.required } : {}),
             },
             (service) => this.render(service),
         );
@@ -174,6 +186,7 @@ export class Switch {
         // as callers expect; `setChecked` never reaches here.
         this.input.addEventListener('change', () => {
             this.current = this.input.checked;
+            opts.onCheckedChange?.(this.current);
             opts.onChange?.(this.current);
         });
         // A press must not focus by scrolling: when it outside-dismisses an open popover,

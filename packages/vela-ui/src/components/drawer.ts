@@ -49,7 +49,7 @@ export function drawerController(opts: DrawerControllerOptions = {}): DrawerCont
 export const drawerDef = defineComponent({
     name: 'drawer',
     parts: ['backdrop', 'positioner', 'content', 'grab', 'title', 'body'],
-    settings: { radius: '14px 14px 0 0', 'grab-radius': '2px' },
+    settings: { radius: '14px 14px 0 0', 'edge-radius': '14px', 'side-width': 'min(75%, 360px)', 'grab-radius': '2px' },
 });
 
 const injectStyles = defineStyles(
@@ -99,6 +99,58 @@ const injectStyles = defineStyles(
                 &[data-state='open'] {
                     animation: vela-drawer-in ${t.dur.med} ${t.ease};
                 }
+                &[data-direction='top'] {
+                    border: 1px solid ${t.border.strong};
+                    border-top: none;
+                    border-radius: 0;
+                    border-end-start-radius: ${drawerDef.vars['edge-radius']};
+                    border-end-end-radius: ${drawerDef.vars['edge-radius']};
+                }
+                &[data-direction='left'],
+                &[data-direction='right'] {
+                    border: 1px solid ${t.border.strong};
+                    border-radius: 0;
+                    width: ${drawerDef.vars['side-width']};
+                    max-height: none;
+                    height: 100%;
+                }
+                &[data-direction='right'] {
+                    border-inline-end: none;
+                    border-start-start-radius: ${drawerDef.vars['edge-radius']};
+                    border-end-start-radius: ${drawerDef.vars['edge-radius']};
+                }
+                &[data-direction='left'] {
+                    border-inline-start: none;
+                    border-start-end-radius: ${drawerDef.vars['edge-radius']};
+                    border-end-end-radius: ${drawerDef.vars['edge-radius']};
+                }
+                &[data-direction='top'][data-state='open'] {
+                    animation-name: vela-drawer-in-top;
+                }
+                &[data-direction='right'][data-state='open'] {
+                    animation-name: vela-drawer-in-right;
+                }
+                &[data-direction='left'][data-state='open'] {
+                    animation-name: vela-drawer-in-left;
+                }
+                /* A side drawer's right is the inline end: it mirrors in right-to-left layouts. */
+                &[data-direction='right'][data-state='open']:dir(rtl) {
+                    animation-name: vela-drawer-in-left;
+                }
+                &[data-direction='left'][data-state='open']:dir(rtl) {
+                    animation-name: vela-drawer-in-right;
+                }
+            }
+            [data-slot='drawer-positioner'][data-direction='top'] {
+                align-items: flex-start;
+            }
+            [data-slot='drawer-positioner'][data-direction='right'] {
+                align-items: stretch;
+                justify-content: flex-end;
+            }
+            [data-slot='drawer-positioner'][data-direction='left'] {
+                align-items: stretch;
+                justify-content: flex-start;
             }
             @keyframes vela-drawer-in {
                 from {
@@ -106,6 +158,30 @@ const injectStyles = defineStyles(
                 }
                 to {
                     transform: translateY(0);
+                }
+            }
+            @keyframes vela-drawer-in-top {
+                from {
+                    transform: translateY(-100%);
+                }
+                to {
+                    transform: translateY(0);
+                }
+            }
+            @keyframes vela-drawer-in-right {
+                from {
+                    transform: translateX(100%);
+                }
+                to {
+                    transform: translateX(0);
+                }
+            }
+            @keyframes vela-drawer-in-left {
+                from {
+                    transform: translateX(-100%);
+                }
+                to {
+                    transform: translateX(0);
                 }
             }
             /* The grab zone owns its touches (drag-to-dismiss), so the browser must not scroll it. */
@@ -126,6 +202,14 @@ const injectStyles = defineStyles(
                     border-radius: ${drawerDef.vars['grab-radius']};
                     background: ${t.border.strong};
                 }
+            }
+            /* A top sheet's handle sits on its inner (lower) edge; a side drawer drags anywhere. */
+            [data-slot='drawer-content'][data-direction='top'] [data-slot='drawer-grab'] {
+                order: 1;
+                padding: 6px 0 10px;
+            }
+            [data-slot='drawer-content']:is([data-direction='left'], [data-direction='right']) [data-slot='drawer-grab'] {
+                display: none;
             }
             [data-slot='drawer-title'] {
                 flex: none;
@@ -178,7 +262,12 @@ const HSWIPE_MIN_PX = 48;
 
 export type DrawerProps = DrawerOptions;
 
+export type DrawerDirection = 'top' | 'right' | 'bottom' | 'left';
+
 export interface DrawerOptions extends DrawerControllerOptions {
+    /** The edge it slides in from (default `'bottom'`, a bottom sheet). A drag toward that
+     *  edge dismisses it. */
+    direction?: DrawerDirection;
     title?: string;
     content?: Node | ((body: HTMLElement) => void);
     host?: HTMLElement;
@@ -191,23 +280,41 @@ export interface DrawerOptions extends DrawerControllerOptions {
 /** What the active pointer gesture has committed to (decided once past the slop). */
 type GestureMode = 'idle' | 'pending' | 'drag' | 'hswipe' | 'scroll';
 
-/**
- * Classify a pointer gesture over the sheet — PURE. `'pending'` until the movement
- * clears the slop; then a decidedly vertical downward pull becomes the dismiss `'drag'`
- * (only while every scroller under the finger is at rest — a scrolled list keeps native
- * scrolling), a decidedly horizontal move becomes an `'hswipe'` (when the sheet has a
- * swipe handler and the finger is not on a strip that scrolls sideways itself), and
- * everything else stays native `'scroll'`.
- */
-export function classifyGesture(dx: number, dy: number, ctx: { canSwipe: boolean; scrolled: boolean; hScrollable: boolean }): 'pending' | 'drag' | 'hswipe' | 'scroll' {
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < SLOP_PX) return 'pending';
-    if (Math.abs(dy) > Math.abs(dx)) return dy > 0 && !ctx.scrolled ? 'drag' : 'scroll';
-    return ctx.canSwipe && !ctx.hScrollable ? 'hswipe' : 'scroll';
+/** How far a move goes toward the drawer's edge (its dismiss direction), and across it. A
+ *  side drawer's `right` is the inline end, so `mirrored` (right to left) flips it. */
+export function dismissAxis(dx: number, dy: number, direction: DrawerDirection, mirrored = false): { toward: number; across: number } {
+    if (direction === 'bottom') return { toward: dy, across: dx };
+    if (direction === 'top') return { toward: -dy, across: dx };
+    const x = mirrored ? -dx : dx;
+    return { toward: direction === 'right' ? x : -x, across: dy };
 }
 
-/** Whether releasing a dismiss drag at `dy` px closes the sheet — PURE. */
-export function dragDismisses(dy: number, panelHeightPx: number): boolean {
-    return dy >= Math.min(DISMISS_PX, panelHeightPx * DISMISS_FRACTION);
+/**
+ * Classify a pointer gesture over the sheet — PURE. `'pending'` until the movement
+ * clears the slop; then a decided pull toward the drawer's edge (down for a bottom sheet)
+ * becomes the dismiss `'drag'` (only while every scroller under the finger is at rest — a
+ * scrolled list keeps native scrolling), a decidedly horizontal move on a top or bottom
+ * sheet becomes an `'hswipe'` (when the sheet has a swipe handler and the finger is not on a
+ * strip that scrolls sideways itself), and everything else stays native `'scroll'`.
+ */
+export function classifyGesture(
+    dx: number,
+    dy: number,
+    ctx: { canSwipe: boolean; scrolled: boolean; hScrollable: boolean },
+    direction: DrawerDirection = 'bottom',
+    mirrored = false,
+): 'pending' | 'drag' | 'hswipe' | 'scroll' {
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < SLOP_PX) return 'pending';
+    const { toward, across } = dismissAxis(dx, dy, direction, mirrored);
+    if (Math.abs(toward) > Math.abs(across)) return toward > 0 && !ctx.scrolled ? 'drag' : 'scroll';
+    const vertical = direction === 'top' || direction === 'bottom';
+    return vertical && ctx.canSwipe && !ctx.hScrollable ? 'hswipe' : 'scroll';
+}
+
+/** Whether releasing a dismiss drag `d` px toward the edge closes the sheet, given the
+ *  sheet's size along that axis — PURE. */
+export function dragDismisses(d: number, panelSizePx: number): boolean {
+    return d >= Math.min(DISMISS_PX, panelSizePx * DISMISS_FRACTION);
 }
 
 /** The direction a released horizontal swipe fires, or null when it was too short
@@ -226,6 +333,7 @@ export class Drawer {
     private readonly titleEl: HTMLElement;
     private readonly handle: HandleOf<typeof dialog.machine>;
     private readonly ctrl: DrawerController;
+    private readonly direction: DrawerDirection;
 
     constructor(opts: DrawerOptions = {}) {
         const doc = (opts.host ?? document.body).ownerDocument;
@@ -260,6 +368,11 @@ export class Drawer {
         if (opts.content instanceof Node) this.body.appendChild(opts.content);
         else if (typeof opts.content === 'function') opts.content(this.body);
 
+        this.direction = opts.direction ?? 'bottom';
+        if (this.direction !== 'bottom') {
+            this.positioner.dataset.direction = this.direction;
+            this.panel.dataset.direction = this.direction;
+        }
         this.panel.append(grab, this.titleEl, this.body);
         this.positioner.appendChild(this.panel);
         host.append(this.backdrop, this.positioner);
@@ -305,6 +418,20 @@ export class Drawer {
         return false;
     }
 
+    /** Any element between `from` and the panel that a pull toward this drawer's edge would
+     *  scroll instead: scrolled down (bottom sheet), not at its end (top sheet), or scrolling
+     *  sideways (side drawers). */
+    private scrollsTowardEdge(from: EventTarget | null): boolean {
+        if (this.direction === 'bottom') return this.scrolledAncestor(from);
+        if (this.direction !== 'top') return this.hScrollableAncestor(from);
+        let el = from instanceof Element ? from : null;
+        while (el && el !== this.panel) {
+            if (el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
+            el = el.parentElement;
+        }
+        return false;
+    }
+
     /** Any element between `from` and the panel that scrolls horizontally on its own
      *  (the tab strip, chip rows) — a sideways move there is ITS scroll, not a swipe. */
     private hScrollableAncestor(from: EventTarget | null): boolean {
@@ -329,11 +456,16 @@ export class Drawer {
         let startY = 0;
         let dx = 0;
         let dy = 0;
+        let d = 0;
+        let mirrored = false;
         let mode: GestureMode = 'idle';
+        const dir = this.direction;
+        const vertical = dir === 'top' || dir === 'bottom';
 
         const beginDrag = (e: PointerEvent): void => {
             mode = 'drag';
             // Rebase so the sheet tracks from the commit point instead of jumping by the slop.
+            startX = e.clientX;
             startY = e.clientY;
             this.panel.style.transition = 'none';
             try {
@@ -349,6 +481,8 @@ export class Drawer {
             startY = e.clientY;
             dx = 0;
             dy = 0;
+            d = 0;
+            mirrored = !vertical && getComputedStyle(this.panel).direction === 'rtl';
             // The handle is a dedicated dismiss affordance (touch-action:none) — no slop.
             if (grab.contains(e.target as Node)) beginDrag(e);
             else mode = 'pending';
@@ -359,18 +493,25 @@ export class Drawer {
             dx = e.clientX - startX;
             dy = e.clientY - startY;
             if (mode === 'pending') {
-                const intent = classifyGesture(dx, dy, {
-                    canSwipe: !!onSwipe,
-                    scrolled: this.scrolledAncestor(e.target),
-                    hScrollable: this.hScrollableAncestor(e.target),
-                });
+                const intent = classifyGesture(
+                    dx,
+                    dy,
+                    {
+                        canSwipe: !!onSwipe,
+                        scrolled: this.scrollsTowardEdge(e.target),
+                        hScrollable: this.hScrollableAncestor(e.target),
+                    },
+                    dir,
+                    mirrored,
+                );
                 if (intent === 'pending') return;
                 if (intent === 'drag') beginDrag(e);
                 else mode = intent;
             }
             if (mode === 'drag') {
-                dy = Math.max(0, e.clientY - startY);
-                this.panel.style.transform = dy > 0 ? `translateY(${dy}px)` : '';
+                d = Math.max(0, dismissAxis(e.clientX - startX, e.clientY - startY, dir, mirrored).toward);
+                const shift = dir === 'bottom' ? d : dir === 'top' ? -d : (dir === 'right') !== mirrored ? d : -d;
+                this.panel.style.transform = d > 0 ? (vertical ? `translateY(${shift}px)` : `translateX(${shift}px)`) : '';
             }
         });
 
@@ -388,9 +529,8 @@ export class Drawer {
                 if (mode !== 'pending') return;
                 const t = e.touches[0];
                 if (!t) return;
-                const mdx = t.clientX - startX;
-                const mdy = t.clientY - startY;
-                if (mdy > Math.abs(mdx) && !this.scrolledAncestor(e.target)) e.preventDefault();
+                const { toward, across } = dismissAxis(t.clientX - startX, t.clientY - startY, dir, mirrored);
+                if (toward > Math.abs(across) && !this.scrollsTowardEdge(e.target)) e.preventDefault();
             },
             { passive: false },
         );
@@ -402,7 +542,8 @@ export class Drawer {
             if (finished === 'drag') {
                 this.panel.style.transition = '';
                 this.panel.style.transform = '';
-                if (dragDismisses(dy, this.panel.getBoundingClientRect().height)) this.hide();
+                const box = this.panel.getBoundingClientRect();
+                if (dragDismisses(d, vertical ? box.height : box.width)) this.hide();
             } else if (finished === 'hswipe') {
                 const dir = swipeDirection(dx, dy);
                 if (dir) onSwipe?.(dir);

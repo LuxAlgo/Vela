@@ -17,6 +17,7 @@ import { announceSurface } from '../lib/surface-events';
 import { holdForExit, type SurfaceExit } from '../lib/surface-exit';
 import { floatingLayerHost } from '../lib/theme';
 import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
+import { splitPlacement, zagPositioning, type PlacementProps } from '../lib/placement';
 
 /** One menu entry. `id` is the selection value reported to `onSelect`. */
 export interface MenuItemDescriptor {
@@ -48,9 +49,10 @@ export interface MenuItemDescriptor {
     submenu?: readonly MenuItemDescriptor[];
 }
 
-export interface MenuControllerOptions {
+export interface MenuControllerOptions extends PlacementProps {
     items: readonly MenuItemDescriptor[];
     onSelect?: (id: string) => void;
+    /** @deprecated Use `side` and `align`. */
     placement?: zagMenu.Props['positioning'] extends infer P | undefined ? (P extends { placement?: infer PL } ? PL : never) : never;
     onOpenChange?: (open: boolean) => void;
     /** Pin the floating list to this rect (viewport coords). Used to keep an open
@@ -83,7 +85,7 @@ export function menuController(opts: MenuControllerOptions): MenuController {
             id: opts.id ?? nextUid('vela-menu'),
             ids: opts.triggerId ? { trigger: opts.triggerId } : undefined,
             positioning: {
-                placement: opts.placement ?? 'bottom-start',
+                ...zagPositioning(opts, opts.placement ? splitPlacement(opts.placement) : { side: 'bottom', align: 'start' }),
                 ...(opts.getAnchorRect ? { getAnchorRect: () => opts.getAnchorRect!() } : {}),
             },
             onSelect: (d: zagMenu.SelectionDetails) => opts.onSelect?.(d.value),
@@ -365,9 +367,12 @@ export interface MenuOptions extends MenuControllerOptions {
     i18n?: Translator | null;
 }
 
+/** Where a menu level opens: the shadcn props, or the deprecated `placement`. */
+type MenuPlacement = PlacementProps & Pick<MenuControllerOptions, 'placement'>;
+
 interface SurfaceOptions {
     host: HTMLElement;
-    placement: MenuControllerOptions['placement'];
+    placement: MenuPlacement;
     onSelect: (id: string) => void;
     onOpenChange?: (open: boolean) => void;
     trigger?: HTMLElement;
@@ -435,7 +440,7 @@ class Surface {
         this.ctrl = menuController({
             items: [],
             id: opts.id,
-            placement: opts.placement,
+            ...opts.placement,
             onSelect: (id) => this.onSelect(id),
             getAnchorRect: () => this.pinnedAnchor,
             onOpenChange: (open) => {
@@ -650,7 +655,7 @@ class Surface {
                 li.appendChild(arrow);
                 const sub = new Surface(doc, {
                     host: this.host,
-                    placement: 'right-start',
+                    placement: { placement: 'right-start' },
                     opener: li,
                     onSelect: this.onSelect,
                     onFavorite: this.onFavorite,
@@ -677,7 +682,16 @@ export class Menu {
         const host = floatingLayerHost(opts.host ?? anchor, doc.body);
         this.root = new Surface(doc, {
             host,
-            placement: opts.placement,
+            placement: {
+                placement: opts.placement,
+                side: opts.side,
+                align: opts.align,
+                sideOffset: opts.sideOffset,
+                alignOffset: opts.alignOffset,
+                avoidCollisions: opts.avoidCollisions,
+                collisionPadding: opts.collisionPadding,
+                collisionBoundary: opts.collisionBoundary,
+            },
             onSelect: (id) => opts.onSelect?.(id),
             onOpenChange: opts.onOpenChange,
             trigger: opts.trigger,

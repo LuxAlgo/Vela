@@ -415,8 +415,8 @@ export class Statusline {
         doc.fonts?.addEventListener('loadingdone', this.onFontsLoaded);
         // The tooltips portal to the nearest `.vela-ui` ancestor for theme tokens — resolve
         // them AFTER the statusline is in the DOM. The badge's content follows setMarketStatus.
-        this.marketTip = new Tooltip(this.marketEl, { content: this.t(MARKET_LABELS.open), placement: 'bottom' });
-        this.eyeTip = new Tooltip(this.eyeEl, { content: this.t(SHOW_CHART_LABEL), placement: 'bottom' });
+        this.marketTip = new Tooltip(this.marketEl, { content: this.t(MARKET_LABELS.open), side: 'bottom' });
+        this.eyeTip = new Tooltip(this.eyeEl, { content: this.t(SHOW_CHART_LABEL), side: 'bottom' });
         this.setMarketStatus('open'); // crypto trades continuously (no session model yet)
         this.render();
     }
@@ -600,7 +600,7 @@ export class Statusline {
         this.menu = new Menu({
             host: this.host,
             items: [],
-            placement: 'bottom-start',
+            side: 'bottom', align: 'start',
             // Pointer-anchored action menu — checked state reads as a leading ✓ (the
             // same shape as the chart's own context menu).
             checkmarks: true,

@@ -601,7 +601,7 @@ export class InputsUI {
             this.moveMenu = new Menu({
                 host: this.container,
                 items: descriptors,
-                placement: 'bottom-start',
+                side: 'bottom', align: 'start',
                 onSelect: (itemId) => {
                     const rowId = this.moveMenuId;
                     if (!rowId || this.runStackItem(itemId, rowId)) return;
@@ -644,7 +644,7 @@ export class InputsUI {
             this.rowMenu = new Menu({
                 host: this.container,
                 items,
-                placement: 'bottom-start',
+                side: 'bottom', align: 'start',
                 // Right-click action menu — checked state reads as a leading ✓ (see the kit Menu).
                 checkmarks: true,
                 onSelect: (itemId) => {

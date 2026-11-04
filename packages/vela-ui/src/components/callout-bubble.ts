@@ -8,7 +8,7 @@ import type { ChartTheme } from '../lib/tokens';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { t } from '../lib/t';
-import { Popover, type PopoverBoundary } from './popover';
+import { Popover, type PlacementProps, type PopoverBoundary } from './popover';
 
 /** One block of a deployed callout panel — plain text, or a button running a caller action. */
 export type CalloutPanelItem =
@@ -76,7 +76,9 @@ export const calloutBubbleDef = defineComponent({
     settings: { 'panel-radius': t.radius.md, 'button-radius': '5px' },
 });
 
-export interface CalloutBubbleOptions extends CalloutBubbleSpec {
+/** The panel opens where the placement props say (default below and start-aligned, 6px away,
+ *  flipping above near the bottom edge). */
+export interface CalloutBubbleOptions extends CalloutBubbleSpec, PlacementProps {
     /** Bubble diameter in px (default 16; the icon renders 4px smaller). */
     size?: number;
     /** Where the deployed panel portals (default: the document body). Pass the chart
@@ -85,8 +87,7 @@ export interface CalloutBubbleOptions extends CalloutBubbleSpec {
     /** Live theme, for a panel deployed OUTSIDE a `.vela-ui` token host (renderer
      *  chrome on a bare chart passes its theme getter; widget chrome may omit it). */
     theme?: () => ChartTheme;
-    /** Panel clamp — `'viewport'` (default) flips the panel above the bubble when the
-     *  bottom screen edge is too close for it to deploy below. */
+    /** @deprecated Use `collisionBoundary`. */
     boundary?: PopoverBoundary;
 }
 
@@ -190,7 +191,7 @@ export class CalloutBubble {
     private readonly size: number;
     private readonly host: HTMLElement | undefined;
     private readonly theme: (() => ChartTheme) | undefined;
-    private readonly boundary: PopoverBoundary | undefined;
+    private readonly placement: PlacementProps;
     private pop: Popover | null = null;
 
     constructor(opts: CalloutBubbleOptions) {
@@ -200,7 +201,7 @@ export class CalloutBubble {
         this.size = opts.size ?? 16;
         this.host = opts.host;
         this.theme = opts.theme;
-        this.boundary = opts.boundary;
+        this.placement = { ...opts, collisionBoundary: opts.collisionBoundary ?? opts.boundary };
         const doc = (opts.host ?? document.body).ownerDocument;
         injectStyles(doc);
         this.el = doc.createElement('span');
@@ -277,11 +278,16 @@ export class CalloutBubble {
         this.pop?.destroy();
         this.pop = new Popover({
             trigger: this.el,
-            gap: 6,
+            side: this.placement.side,
+            align: this.placement.align,
+            sideOffset: this.placement.sideOffset ?? 6,
+            alignOffset: this.placement.alignOffset,
+            avoidCollisions: this.placement.avoidCollisions,
+            collisionPadding: this.placement.collisionPadding,
             content: (body) => this.buildPanel(body, panel),
             ...(this.host ? { host: this.host } : {}),
             ...(this.theme ? { theme: this.theme() } : {}),
-            ...(this.boundary ? { boundary: this.boundary } : {}),
+            ...(this.placement.collisionBoundary ? { collisionBoundary: this.placement.collisionBoundary } : {}),
         });
         this.pop.show();
     }

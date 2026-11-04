@@ -31,7 +31,7 @@ describe('placePopover', () => {
             originX: 0,
             originY: 0,
         });
-        expect(pos).toEqual({ left: 100, top: 138 });
+        expect(pos).toEqual({ left: 100, top: 138, side: 'bottom' });
     });
 
     it('right-aligns when align is end', () => {
@@ -85,7 +85,7 @@ describe('placePopover', () => {
             originX: 40,
             originY: 20,
         });
-        expect(pos).toEqual({ left: 60, top: 118 });
+        expect(pos).toEqual({ left: 60, top: 118, side: 'bottom' });
     });
 });
 

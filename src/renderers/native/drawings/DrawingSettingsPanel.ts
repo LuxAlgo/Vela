@@ -941,10 +941,10 @@ export class DrawingSettingsPanel {
             host: this.host,
             theme: t,
             position: 'absolute',
-            boundary: this.host,
+            collisionBoundary: this.host,
             boundaryInset: 4,
             viewportInset: 0,
-            gap: 6,
+            sideOffset: 6,
             align: 'end',
             zIndex: 6000,
             onClose: () => {

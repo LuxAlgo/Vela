@@ -113,7 +113,7 @@ export class MarkPopover {
             trigger: this.anchor,
             host: this.deps.host(),
             theme: this.deps.theme(),
-            gap: 8,
+            sideOffset: 8,
             align: 'center', // centered on the glyph
             fadeMs: 120, // a short, discreet fade in and out
             className: 'vela-marks-pop',

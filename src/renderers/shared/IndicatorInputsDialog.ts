@@ -687,13 +687,13 @@ export class IndicatorInputsDialog {
     }
 
     /** Placement shared by the indicator dialog's dropdowns and the time combobox. */
-    private listPopover(): { theme: VelaTheme; matchWidth: boolean; boundary: HTMLElement | 'viewport'; boundaryInset: number; gap: number } {
+    private listPopover(): { theme: VelaTheme; matchWidth: boolean; collisionBoundary: HTMLElement | 'viewport'; boundaryInset: number; sideOffset: number } {
         return {
             theme: this.host.theme(),
             matchWidth: true,
-            boundary: this.dialog ?? 'viewport',
+            collisionBoundary: this.dialog ?? 'viewport',
             boundaryInset: 8,
-            gap: 4,
+            sideOffset: 4,
         };
     }
 
@@ -703,9 +703,9 @@ export class IndicatorInputsDialog {
             trigger: anchor,
             theme: this.host.theme(),
             className: 'vela-ind-cal',
-            boundary: this.dialog ?? 'viewport',
+            collisionBoundary: this.dialog ?? 'viewport',
             boundaryInset: 8,
-            gap: 4,
+            sideOffset: 4,
             onClose: () => {
                 this.calendarPop = null;
                 this.calendarAnchor = null;

@@ -261,7 +261,7 @@ export class Sidebar implements PanelChrome {
         }
         this.paintActive(b, e.active);
         b.addEventListener('click', () => e.run());
-        this.tooltips.push(new Tooltip(b, { content: e.title, placement: 'left', triggerId: `vela-sidebar-${e.id}`, host: this.opts.host }));
+        this.tooltips.push(new Tooltip(b, { content: e.title, side: 'left', triggerId: `vela-sidebar-${e.id}`, host: this.opts.host }));
         this.buttons.set(e.id, b);
         return b;
     }

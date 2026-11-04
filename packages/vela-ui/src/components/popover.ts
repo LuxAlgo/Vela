@@ -1,5 +1,5 @@
 // Popover: a positioned floating shell. Content is the caller's; the shell owns the portal,
-// the placement (below the trigger, flipping above near the clamp edge), the capture-phase
+// the placement (on a side of the trigger, flipping to the other near the clamp edge), the capture-phase
 // outside dismissal and the single-open registry. A component built on it (a select list, a
 // color picker) adds its own part to the shell's slot: `data-slot="popover-content
 // select-content"`, matched with `~=`.
@@ -11,109 +11,34 @@ import { t } from '../lib/t';
 import { announceSurface } from '../lib/surface-events';
 import { holdForExit, type SurfaceExit } from '../lib/surface-exit';
 import { ensureUIHost, floatingLayerHost } from '../lib/theme';
+import { insetRect, intersectRects, placePopover, viewportRect, type Align, type CollisionBoundary, type PlacementProps, type Rect, type Side } from '../lib/placement';
 
-export type PopoverAlign = 'start' | 'end' | 'center';
+export type { Align, CollisionBoundary, PlacementProps, Side } from '../lib/placement';
+export type PopoverAlign = Align;
+export type PopoverSide = Side;
 export type PopoverPosition = 'fixed' | 'absolute';
 
-/** Axis-aligned rectangle in viewport coordinates. */
-export interface Rect {
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-    width: number;
-    height: number;
-}
+export { insetRect, intersectRects, placePopover, viewportRect, type PlaceArgs, type PlaceResult, type Rect } from '../lib/placement';
 
-export interface PlaceArgs {
-    trigger: Rect;
-    pop: { width: number; height: number };
-    gap: number;
-    align: PopoverAlign;
-    /** Already-inset clamp rectangle in viewport coordinates. */
-    clamp: Rect;
-    /** Subtracted from left/top when the popover is `position:absolute` inside a host. */
-    originX: number;
-    originY: number;
-}
-
-export interface PlaceResult {
-    left: number;
-    top: number;
-}
-
-/** Inset a rectangle uniformly (positive inset shrinks). */
-export function insetRect(r: Rect, inset: number): Rect {
-    return {
-        left: r.left + inset,
-        top: r.top + inset,
-        right: r.right - inset,
-        bottom: r.bottom - inset,
-        width: r.width - inset * 2,
-        height: r.height - inset * 2,
-    };
-}
-
-/** Viewport rect with a uniform inset (the 6px air ColorField / glyph-select used). */
-export function viewportRect(width: number, height: number, inset: number): Rect {
-    return {
-        left: inset,
-        top: inset,
-        right: width - inset,
-        bottom: height - inset,
-        width: width - inset * 2,
-        height: height - inset * 2,
-    };
-}
-
-/** Intersection of two rects. Empty (non-positive size) if they don't overlap. */
-export function intersectRects(a: Rect, b: Rect): Rect {
-    const left = Math.max(a.left, b.left);
-    const top = Math.max(a.top, b.top);
-    const right = Math.min(a.right, b.right);
-    const bottom = Math.min(a.bottom, b.bottom);
-    return { left, top, right, bottom, width: right - left, height: bottom - top };
-}
-
-/**
- * Place a popover under `trigger`, flipping above when it would leave `clamp`.
- * Prefers the side with more room when neither fully fits. `align: 'end'` right-aligns
- * to the trigger (swatches and width fields sit at the row's right edge); `'center'`
- * centers it on the trigger (a popup over a small glyph).
- */
-export function placePopover(a: PlaceArgs): PlaceResult {
-    let left = a.align === 'end' ? a.trigger.right - a.pop.width : a.align === 'center' ? a.trigger.left + a.trigger.width / 2 - a.pop.width / 2 : a.trigger.left;
-    const below = a.trigger.bottom + a.gap;
-    const above = a.trigger.top - a.pop.height - a.gap;
-    const fitsBelow = below + a.pop.height <= a.clamp.bottom;
-    const fitsAbove = above >= a.clamp.top;
-    let top = below;
-    if (!fitsBelow && (fitsAbove || a.trigger.top - a.clamp.top > a.clamp.bottom - a.trigger.bottom)) {
-        top = Math.max(a.clamp.top, above);
-    }
-    if (left + a.pop.width > a.clamp.right) left = a.clamp.right - a.pop.width;
-    if (left < a.clamp.left) left = a.clamp.left;
-    if (top + a.pop.height > a.clamp.bottom) top = a.clamp.bottom - a.pop.height;
-    if (top < a.clamp.top) top = a.clamp.top;
-    return {
-        left: Math.round(left - a.originX),
-        top: Math.round(top - a.originY),
-    };
-}
-
-export interface PopoverControllerOptions {
+export interface PopoverControllerOptions extends Omit<PlacementProps, 'collisionBoundary'> {
+    /** @deprecated Use `sideOffset`. */
     gap?: number;
-    align?: PopoverAlign;
     matchWidth?: boolean;
     position?: PopoverPosition;
+    /** Room kept inside `collisionBoundary` (default 0; `collisionPadding` sets it too). */
     boundaryInset?: number;
+    /** Room kept from the viewport's edges (default 6; `collisionPadding` sets it too). */
     viewportInset?: number;
     onClose?: () => void;
 }
 
 export interface PopoverController {
+    side: PopoverSide;
+    /** The distance from the trigger (`sideOffset`). */
     gap: number;
     align: PopoverAlign;
+    alignOffset: number;
+    avoidCollisions: boolean;
     matchWidth: boolean;
     position: PopoverPosition;
     boundaryInset: number;
@@ -124,19 +49,22 @@ export interface PopoverController {
 /** The popover's placement options with their defaults, without DOM. */
 export function popoverController(opts: PopoverControllerOptions = {}): PopoverController {
     return {
-        gap: opts.gap ?? 4,
+        side: opts.side ?? 'bottom',
+        gap: opts.sideOffset ?? opts.gap ?? 4,
         align: opts.align ?? 'start',
+        alignOffset: opts.alignOffset ?? 0,
+        avoidCollisions: opts.avoidCollisions ?? true,
         matchWidth: opts.matchWidth ?? false,
         position: opts.position ?? 'fixed',
-        boundaryInset: opts.boundaryInset ?? 0,
-        viewportInset: opts.viewportInset ?? 6,
+        boundaryInset: opts.collisionPadding ?? opts.boundaryInset ?? 0,
+        viewportInset: opts.collisionPadding ?? opts.viewportInset ?? 6,
         onClose: opts.onClose,
     };
 }
 
 export const popoverDef = defineComponent({ name: 'popover', parts: ['content'] });
 
-export type PopoverBoundary = 'viewport' | HTMLElement | (() => DOMRect | null);
+export type PopoverBoundary = CollisionBoundary;
 
 export interface PopoverOptions extends PopoverControllerOptions {
     trigger: HTMLElement;
@@ -148,7 +76,10 @@ export interface PopoverOptions extends PopoverControllerOptions {
     /** The part a component built on the popover adds to the shell's slot. */
     slot?: string;
     zIndex?: string | number;
-    /** Clamp rectangle. `'viewport'` (default) or an element (dialog / chart host). */
+    /** The area it stays inside: `'viewport'` (default), an element (dialog, chart host) or a
+     *  rectangle read at each placement. */
+    collisionBoundary?: PopoverBoundary;
+    /** @deprecated Use `collisionBoundary`. */
     boundary?: PopoverBoundary;
     /** Fade the shell in on show and out on hide over this many ms (default 0 — instant). */
     fadeMs?: number;
@@ -243,7 +174,7 @@ export class Popover {
         this.host = opts.host ?? floatingLayerHost(opts.trigger, doc.body);
         this.inheritsTokens = !opts.host && this.host !== doc.body;
         this.ctrl = popoverController(opts);
-        this.boundary = opts.boundary ?? 'viewport';
+        this.boundary = opts.collisionBoundary ?? opts.boundary ?? 'viewport';
         this.theme = opts.theme;
         this.fadeMs = Math.max(0, opts.fadeMs ?? 0);
 
@@ -411,12 +342,17 @@ export class Popover {
             pop: { width: this.el.offsetWidth, height: this.el.offsetHeight },
             gap: this.ctrl.gap,
             align: this.ctrl.align,
+            side: this.ctrl.side,
+            alignOffset: this.ctrl.alignOffset,
+            avoidCollisions: this.ctrl.avoidCollisions,
             clamp: this.clampRect(),
             originX: origin.left,
             originY: origin.top,
         });
         this.el.style.left = `${pos.left}px`;
         this.el.style.top = `${pos.top}px`;
+        this.el.dataset.side = pos.side;
+        this.el.dataset.align = this.ctrl.align;
     }
 }
 

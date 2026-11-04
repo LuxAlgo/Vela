@@ -7,6 +7,7 @@ import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { iconEl } from '../lib/icons';
 import { t } from '../lib/t';
+import { intersectRects, placePopover, viewportRect, type PlacementProps, type Side } from '../lib/placement';
 import { shortcutKeys } from './kbd';
 
 export const hoverCardDef = defineComponent({
@@ -30,11 +31,15 @@ export interface HoverCardContent {
     wide?: boolean;
 }
 
-export type HoverCardSide = 'left' | 'right' | 'top' | 'bottom';
+export type HoverCardSide = Side;
+
+/** Where the card opens beside its trigger: on the right, centered, 8px away by default. */
+export type HoverCardPlacement = PlacementProps;
 
 export interface HoverCardHandle {
     readonly el: HTMLElement;
-    /** Place the card beside `anchor` on its side, kept inside the viewport. */
+    /** Place the card beside `anchor`, kept inside its collision area. `gap` overrides the
+     *  placement's `sideOffset`. */
     place(anchor: DOMRect, gap?: number): void;
     destroy(): void;
 }
@@ -129,7 +134,9 @@ const injectStyles = defineStyles(
     `,
 );
 
-export function createHoverCard(content: HoverCardContent, side: HoverCardSide = 'right'): HoverCardHandle {
+export function createHoverCard(content: HoverCardContent, placement: HoverCardSide | HoverCardPlacement = 'right'): HoverCardHandle {
+    const p: HoverCardPlacement = typeof placement === 'string' ? { side: placement } : placement;
+    const side = p.side ?? 'right';
     injectStyles(document);
     let icon: HTMLElement | null = null;
     if (content.icon) {
@@ -148,28 +155,34 @@ export function createHoverCard(content: HoverCardContent, side: HoverCardSide =
     );
     return {
         el,
-        place(anchor, gap = 8) {
-            const w = el.offsetWidth;
-            const ht = el.offsetHeight;
-            let x: number;
-            let y: number;
-            if (side === 'left' || side === 'right') {
-                x = side === 'left' ? anchor.left - gap - w : anchor.right + gap;
-                y = anchor.top + anchor.height / 2 - ht / 2;
-            } else {
-                x = anchor.left + anchor.width / 2 - w / 2;
-                y = side === 'top' ? anchor.top - gap - ht : anchor.bottom + gap;
-            }
-            el.style.left = `${Math.round(Math.max(6, Math.min(window.innerWidth - w - 6, x)))}px`;
-            el.style.top = `${Math.round(Math.max(6, Math.min(window.innerHeight - ht - 6, y)))}px`;
+        place(anchor, gap) {
+            const view = viewportRect(window.innerWidth, window.innerHeight, p.collisionPadding ?? 6);
+            const b = p.collisionBoundary;
+            const bound = !b || b === 'viewport' ? null : typeof b === 'function' ? b() : b.getBoundingClientRect();
+            const pos = placePopover({
+                trigger: anchor,
+                pop: { width: el.offsetWidth, height: el.offsetHeight },
+                gap: gap ?? p.sideOffset ?? 8,
+                align: p.align ?? 'center',
+                side,
+                alignOffset: p.alignOffset,
+                avoidCollisions: p.avoidCollisions,
+                clamp: bound ? intersectRects(view, bound) : view,
+                originX: 0,
+                originY: 0,
+            });
+            el.style.left = `${pos.left}px`;
+            el.style.top = `${pos.top}px`;
+            el.dataset.side = pos.side;
         },
         destroy: () => el.remove(),
     };
 }
 
-export interface AttachHoverCardOptions {
-    side?: HoverCardSide;
+export interface AttachHoverCardOptions extends HoverCardPlacement {
     /** ms the pointer rests before the card opens (default 300). */
+    openDelay?: number;
+    /** @deprecated Use `openDelay`. */
     delay?: number;
     /** Where the card mounts: the themed shell root, so the card takes its theme. */
     host: HTMLElement;
@@ -189,13 +202,13 @@ export function attachHoverCard(trigger: HTMLElement, content: () => HoverCardCo
     const show = (): void => {
         const c = content();
         if (!c || !trigger.isConnected) return;
-        card = createHoverCard(c, opts.side ?? 'right');
+        card = createHoverCard(c, opts);
         opts.host.appendChild(card.el);
         card.place(trigger.getBoundingClientRect());
     };
     const enter = (): void => {
         hide();
-        timer = setTimeout(show, opts.delay ?? 300);
+        timer = setTimeout(show, opts.openDelay ?? opts.delay ?? 300);
     };
     trigger.addEventListener('pointerenter', enter);
     trigger.addEventListener('pointerleave', hide);
