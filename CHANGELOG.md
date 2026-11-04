@@ -204,6 +204,12 @@ All notable changes to Vela, newest first.
   (`settings`, `form`) for the two settings cards. Hover and focus fades follow the kit's
   motion tokens, and layouts mirror in right-to-left text.
 
+### Fixed
+
+- **A plain dialog's footer is laid out.** A `Dialog` with a `footer` and no `variant` put
+  its buttons against the dialog's bottom and left edges; they now sit at the end, padded
+  like the body above them. The `settings` and `form` variants are unchanged.
+
 ## [0.9.3]
 
 ### Added

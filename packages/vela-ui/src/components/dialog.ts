@@ -224,6 +224,14 @@ const injectStyles = defineStyles(
                 &[data-state='open'] {
                     animation: vela-dialog-in ${t.dur.med} ${t.ease};
                 }
+                /* A plain dialog's footer: its buttons at the end, padded like the body above it.
+                   The settings and form variants lay theirs out themselves. */
+                &[data-variant='default'] [data-slot='dialog-footer'] {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: ${t.space[2]};
+                    padding: 0 ${t.space[4]} ${t.space[4]};
+                }
                 &[data-variant='settings'] {
                     width: fit-content;
                     min-width: min(560px, 94vw);
