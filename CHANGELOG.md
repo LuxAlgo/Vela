@@ -66,6 +66,15 @@ All notable changes to Vela, newest first.
   before. An empty group waits for its first drawing, then behaves like any other group and
   goes away once its last drawing leaves.
 
+### Fixed
+
+- **Resetting the chart view keeps your margins.** "Reset chart view" in the chart menu
+  placed the newest bar against the price axis and ignored the right margin set in the
+  chart settings. It now leaves that margin past the newest bar, as scrolling to the latest
+  bar does. So do the range buttons in the bottom bar and `setVisibleRangePreset`. The
+  Alt+R key now resets the view as the menu row does, so a price scale you dragged fits the
+  data again, with the top and bottom margins.
+
 ## [0.9.3]
 
 ### Added

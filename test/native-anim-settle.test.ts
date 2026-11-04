@@ -53,13 +53,13 @@ function ticksToSettle(r: AnyRenderer, maxFrames = 300): number {
 
 describe('animTick settles when a resize strands its targets outside the clamp', () => {
     it('zoom ease: a targetBarSpacing below the reachable minimum snaps to the bound', () => {
-        const { r } = setup(100, 800); // minBs = 800/(100+6) ≈ 7.55
+        const { r } = setup(100, 800); // minBs = 800/(100+10) ≈ 7.27 — all bars + the default 10-bar right margin
         r.coords.setViewport({ barSpacing: 10, rightOffset: 5 });
         r.targetBarSpacing = 2; // stranded below minBs — as after a widening resize
         expect(ticksToSettle(r)).toBeLessThan(10);
         // Settled ON the clamp bound, target re-aligned so the loop stays down.
         const vp = r.coords.getViewport();
-        expect(vp.barSpacing).toBeCloseTo(800 / 106, 3);
+        expect(vp.barSpacing).toBeCloseTo(800 / 110, 3);
         expect(r.targetBarSpacing).toBeCloseTo(vp.barSpacing, 6);
     });
 
