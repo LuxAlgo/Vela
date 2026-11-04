@@ -53,7 +53,8 @@ export default {
         'unit-disallowed-list': ['ms', 's'],
         'media-feature-name-disallowed-list': ['width', 'min-width', 'max-width'],
 
-        // A component's private custom properties start with an underscore.
-        'custom-property-pattern': '^_[a-z][a-z0-9-]*$',
+        // A component's private custom properties start with an underscore. The others are
+        // what Zag's positioning measures onto a floating part, there to be read.
+        'custom-property-pattern': '^(_[a-z][a-z0-9-]*|(available|reference)-(width|height)|transform-origin)$',
     },
 };

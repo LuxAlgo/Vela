@@ -116,7 +116,10 @@ const injectStyles = defineStyles(
                 box-shadow: ${t.shadow};
                 padding: 6px;
                 min-width: 180px;
-                max-height: 60vh;
+                /* Never past the room its clipping container leaves on the side it opened on
+                   (Zag measures it onto the positioner): a menu in a short chart scrolls inside
+                   itself instead of overflowing the chart and scrolling the page around it. */
+                max-height: min(60vh, var(--available-height, 60vh));
                 overflow-y: auto;
                 font-size: 13px;
                 z-index: ${t.z.menu};

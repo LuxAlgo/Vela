@@ -191,6 +191,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Menus stay inside a small chart.** A menu (the chart's right-click menu, the price
+  scale's) opened in a chart shorter than the menu no longer runs past the chart's edge and
+  scrolls the page or panel around it: it fits the room on the side it opens on and scrolls
+  inside itself.
 - **A plain dialog's footer is laid out.** A `Dialog` with a `footer` and no `variant` put
   its buttons against the dialog's bottom and left edges; they now sit at the end, padded
   like the body above them. The `settings` and `form` variants are unchanged.
