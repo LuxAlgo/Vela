@@ -9,6 +9,7 @@ import type { ChartTheme } from '../lib/tokens';
 import { kitTranslator } from '../lib/kit-text';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { disposeWithin, ownTeardown } from '../lib/dispose';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { nextUid, normalizeProps, runMachine, spreadProps } from '../lib/zag';
@@ -409,6 +410,7 @@ export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v:
             spreadProps(knob, own(api.getThumbProps({ index: 0 })), sliderId);
         },
     );
+    ownTeardown(root, () => slider.stop());
     // The press belongs to the picker: an open popover or dialog must not read it as its own.
     track.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
@@ -481,6 +483,7 @@ export class ColorField {
     private readonly placement: PlacementProps;
     private readonly commit: ColorCommit | undefined;
     private readonly i18n: Translator | null;
+    private readonly release: () => void;
 
     constructor(opts: ColorFieldOpts) {
         injectStyles(document);
@@ -518,9 +521,14 @@ export class ColorField {
             e.stopPropagation();
             this.toggle();
         });
+        this.release = ownTeardown(trigger, () => {
+            if (openPopoverTrigger() === trigger) closeOpenPopovers();
+        });
     }
 
-    destroy(): void {}
+    destroy(): void {
+        this.release();
+    }
 
     private paint(): void {
         const v = this.getVal();
@@ -532,6 +540,15 @@ export class ColorField {
             closeOpenPopovers();
             return;
         }
+        const content = buildColorPicker(
+            this.getVal(),
+            this.theme,
+            (val) => {
+                this.onVal(val);
+                this.paint();
+            },
+            { commit: this.commit, i18n: this.i18n },
+        );
         const pop = new Popover({
             trigger: this.el,
             theme: this.theme,
@@ -547,15 +564,9 @@ export class ColorField {
             zIndex: this.popoverOpts?.zIndex,
             className: 'vela-color-field-pop',
             slot: colorPickerDef.slot('content'),
-            content: buildColorPicker(
-                this.getVal(),
-                this.theme,
-                (val) => {
-                    this.onVal(val);
-                    this.paint();
-                },
-                { commit: this.commit, i18n: this.i18n },
-            ),
+            content,
+            // A fresh popover per open: closing discards it.
+            onClose: () => disposeWithin(content),
         });
         pop.show();
     }

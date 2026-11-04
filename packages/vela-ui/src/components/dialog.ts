@@ -6,6 +6,7 @@ import * as dialog from '@zag-js/dialog';
 import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { disposeWithin } from '../lib/dispose';
 import { t } from '../lib/t';
 import { injectStyles as injectSheet } from '../lib/styles';
 import { announceSurface } from '../lib/surface-events';
@@ -562,6 +563,7 @@ export class Dialog {
             this.announce(false);
         }
         this.restoreOpener();
+        disposeWithin(this.panel);
         if (!this.exit) this.detach();
     }
 }

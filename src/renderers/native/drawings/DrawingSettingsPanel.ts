@@ -33,6 +33,7 @@ import { buildPositionSection, buildProfileSection } from './DrawingSettingsSect
 import type { PopupAnchor, SettingsActions, SettingsPatch } from './DrawingSettingsPopup';
 import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
 import { css } from '@luxalgo/vela-ui/css';
+import { disposeWithin } from '@luxalgo/vela-ui/dispose';
 import { t } from '@luxalgo/vela-ui/t';
 
 
@@ -340,7 +341,9 @@ export class DrawingSettingsPanel {
             rebuild: () => {
                 const top = scroll.scrollTop;
                 watchers = [];
-                scroll.replaceChildren(...this.sections(build));
+                const next = this.sections(build);
+                disposeWithin(scroll);
+                scroll.replaceChildren(...next);
                 scroll.scrollTop = top;
                 styleBtn.refresh();
             },
@@ -621,6 +624,7 @@ export class DrawingSettingsPanel {
         };
         const fill = (): void => {
             last = key();
+            disposeWithin(grid);
             grid.replaceChildren();
             const free = b.live() instanceof FibLevels; // horizontal levels may sit at or beyond either anchor
             (b.live().editableLevels() ?? []).forEach((lv, i) => {

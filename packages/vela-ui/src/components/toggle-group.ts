@@ -7,6 +7,7 @@ import * as toggleGroup from '@zag-js/toggle-group';
 import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { ownTeardown } from '../lib/dispose';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants, type VariantProps } from '../lib/variants';
@@ -168,6 +169,7 @@ class ToggleGroupImpl implements ToggleGroupHandle {
     readonly el: HTMLElement;
     private readonly machine: HandleOf<typeof toggleGroup.machine>;
     private readonly mid: string;
+    private readonly release: () => void;
     private readonly iconOnly: boolean;
     private readonly label: string | undefined;
     private items: ToggleGroupItem[];
@@ -225,6 +227,7 @@ class ToggleGroupImpl implements ToggleGroupHandle {
             },
             (service) => this.render(service),
         );
+        this.release = ownTeardown(this.el, () => this.machine.stop());
     }
 
     get values(): readonly string[] {
@@ -249,7 +252,7 @@ class ToggleGroupImpl implements ToggleGroupHandle {
     }
 
     destroy(): void {
-        this.machine.stop();
+        this.release();
     }
 
     private api(): toggleGroup.Api {

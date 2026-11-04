@@ -4,6 +4,7 @@
 import * as tooltip from '@zag-js/tooltip';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { ownTeardown } from '../lib/dispose';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
@@ -109,6 +110,7 @@ export class Tooltip {
     private readonly content: HTMLElement;
     private readonly handle: HandleOf<typeof tooltip.machine>;
     private readonly trigger: HTMLElement;
+    private readonly release: () => void;
 
     constructor(trigger: HTMLElement, opts: TooltipOptions) {
         this.trigger = trigger;
@@ -130,6 +132,14 @@ export class Tooltip {
             spreadProps(this.positioner, api.getPositionerProps(), mid);
             spreadProps(this.content, api.getContentProps(), mid);
         });
+        // On the trigger: discarding the trigger's subtree takes the tooltip, and the layer it
+        // mounted elsewhere, with it.
+        this.release = ownTeardown(trigger, () => {
+            this.handle.stop();
+            this.positioner.remove();
+            // Zag leaves aria-describedby etc. on the trigger; harmless, but drop the hook.
+            this.trigger.removeAttribute('data-scope');
+        });
     }
 
     setContent(content: string | Node | (() => Node)): void {
@@ -137,10 +147,7 @@ export class Tooltip {
     }
 
     destroy(): void {
-        this.handle.stop();
-        this.positioner.remove();
-        // Zag leaves aria-describedby etc. on the trigger; harmless, but drop the hook.
-        this.trigger.removeAttribute('data-scope');
+        this.release();
     }
 }
 

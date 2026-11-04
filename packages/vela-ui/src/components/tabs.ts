@@ -7,6 +7,7 @@
 import * as tabs from '@zag-js/tabs';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { ownTeardown } from '../lib/dispose';
 import { h } from '../lib/h';
 import { iconEl } from '../lib/icons';
 import { t } from '../lib/t';
@@ -242,6 +243,7 @@ class TabsImpl implements TabsHandle {
     readonly el: HTMLElement;
     private readonly machine: HandleOf<typeof tabs.machine>;
     private readonly mid: string;
+    private readonly release: () => void;
     private readonly variant: TabsVariant;
     private readonly triggerClassName: string | undefined;
     private items: TabItem[];
@@ -287,6 +289,7 @@ class TabsImpl implements TabsHandle {
             },
             (service) => this.render(service),
         );
+        this.release = ownTeardown(this.el, () => this.machine.stop());
     }
 
     get value(): string | null {
@@ -343,7 +346,7 @@ class TabsImpl implements TabsHandle {
     }
 
     destroy(): void {
-        this.machine.stop();
+        this.release();
     }
 
     private api(): tabs.Api {

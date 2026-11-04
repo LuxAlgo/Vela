@@ -4,6 +4,7 @@
 // `vela/react` reuses the SAME machines through Zag's React adapter and swaps only the view.
 import { VanillaMachine, normalizeProps, spreadProps } from '@zag-js/vanilla';
 import type { Machine, MachineSchema, Service } from '@zag-js/core';
+import { pageUid } from './page';
 
 export { normalizeProps, spreadProps };
 
@@ -39,8 +40,7 @@ export function runMachine<T extends MachineSchema>(
     };
 }
 
-let uid = 0;
 /** Unique ids for machine instances (Zag keys its DOM lookups on them). */
 export function nextUid(prefix: string): string {
-    return `${prefix}-${++uid}`;
+    return pageUid(prefix);
 }

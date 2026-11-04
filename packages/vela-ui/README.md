@@ -18,7 +18,10 @@ app.append(save.el);
 
 - **One import path per component** (`@luxalgo/vela-ui/<name>`), so a bundle holds only the
   components it imports. Every component is `create<Name>(props)`, returning a handle with
-  `el` and `destroy()`.
+  `el` and `destroy()`. When you discard a whole subtree, `disposeWithin(root)`
+  (`@luxalgo/vela-ui/dispose`) releases every control in it, handles kept or not: controls
+  that run a state machine must be released, not only removed, or their page-wide listeners
+  stay behind. A destroyed dialog, drawer or popover releases its content itself.
 - **Styles give way to yours.** Component CSS sits in the `vela.ui` cascade layer, so a
   page's own CSS overrides it without `!important`. Every part carries a `data-slot`;
   variants and sizes are `data-variant` and `data-size`.

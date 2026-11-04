@@ -11,6 +11,7 @@ import { iconEl } from '../lib/icons';
 import { kitTranslator } from '../lib/kit-text';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { ownTeardown } from '../lib/dispose';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants } from '../lib/variants';
@@ -292,6 +293,7 @@ export class NumberInput {
     private readonly i18n: Translator | null;
     private readonly machine: HandleOf<typeof zagNumber.machine>;
     private readonly mid: string;
+    private readonly release: () => void;
     /** The user is typing a value the field commits on blur: the machine's reports of it
      *  are not commits. */
     private typing = false;
@@ -383,6 +385,7 @@ export class NumberInput {
             },
             (service) => this.render(service),
         );
+        this.release = ownTeardown(this.el, () => this.machine.stop());
     }
 
     get value(): number {
@@ -395,7 +398,7 @@ export class NumberInput {
     }
 
     destroy(): void {
-        this.machine.stop();
+        this.release();
     }
 
     /** Show `n` in the field: through the machine, so its next render keeps it. */

@@ -139,11 +139,24 @@ this.handle = runMachine(ctrl.machine, ctrl.props, (service) => {
     spreadProps(trigger, api.getTriggerProps(), mid);
     // …spread the other parts onto their elements
 });
+this.release = ownTeardown(trigger, () => this.handle.stop());
+
+destroy(): void {
+    this.release();
+}
 ```
 
-Form controls skip Zag: a small state object (getters, `set*` / `sync` that do not emit, and
-the one method that does) lets a host refresh rewrite the displayed value without firing
-`onChange`.
+Tie the machine's teardown to the element with `ownTeardown`, and have `destroy()` call the
+release: a host that discards a subtree with `disposeWithin` reaches controls whose handles it
+never kept, and the release runs once whichever comes first. A component whose content holds
+other controls (a dialog's panel, a popover's content) calls `disposeWithin` on it when it is
+destroyed.
+
+Form controls keep the value they show in a small state of their own (getters, `set*` /
+`sync` that do not emit, and the one method that does), so a host refresh rewrites the
+displayed value without firing `onChange`. The text fields are plain inputs; the checkbox, the
+switch, the number field and the select's list run Zag machines underneath, which that state
+drives (`setChecked`, `setValue`) without reporting.
 
 ## Rules (learned the hard way)
 
@@ -161,6 +174,12 @@ the one method that does) lets a host refresh rewrite the displayed value withou
   stroke 1.2 for UI chrome, 24×24 at stroke 1.8 for drawing tools, always `currentColor`.
 - **No imports from Vela.** The kit is used without the chart; what it needs lives in
   `src/lib/`.
+- **A machine must be stopped, not only removed.** Some machines register page-wide
+  listeners (the switch's focus-visible tracking is one) that keep running, and keep their
+  memory, after the element is gone. See `ownTeardown` above.
+- **State other copies of the kit must see goes through `pageState`** (`src/lib/page.ts`),
+  not a module variable: a page can load the kit twice, and a registry, an id counter or an
+  "open popover" kept per copy splits in two. Caches each copy can rebuild stay local.
 - Floating layers mount into the nearest `.vela-ui` host, which carries the theme; use the
   `vela-ui-layer` class on portaled positioners. Popovers call `ensureUIHost` on show, so a
   list portaled to the body still has the theme. A component built before its trigger is in

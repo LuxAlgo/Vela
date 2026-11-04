@@ -5,6 +5,7 @@
 import * as dialog from '@zag-js/dialog';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { disposeWithin } from '../lib/dispose';
 import { t } from '../lib/t';
 import { announceSurface } from '../lib/surface-events';
 import { holdForExit, type SurfaceExit } from '../lib/surface-exit';
@@ -635,6 +636,7 @@ export class Drawer {
             this.announce(false);
         }
         this.restoreOpener();
+        disposeWithin(this.panel);
         if (!this.exit) this.detach();
     }
 }

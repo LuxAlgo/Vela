@@ -5,6 +5,7 @@ import * as zagSwitch from '@zag-js/switch';
 import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { ownTeardown } from '../lib/dispose';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants } from '../lib/variants';
@@ -158,6 +159,7 @@ export class Checkbox {
     private readonly input: HTMLInputElement;
     private readonly machine: HandleOf<typeof zagSwitch.machine>;
     private readonly mid: string;
+    private readonly release: () => void;
     /** The state as the switch's users see it, at once: the machine settles a beat later. */
     private current: boolean;
 
@@ -182,6 +184,7 @@ export class Checkbox {
             },
             (service) => this.render(service),
         );
+        this.release = ownTeardown(this.el, () => this.machine.stop());
         // Only the user's toggles change the checkbox with an event, and they report at once,
         // as callers expect; `setChecked` never reaches here.
         this.input.addEventListener('change', () => {
@@ -209,7 +212,7 @@ export class Checkbox {
     }
 
     destroy(): void {
-        this.machine.stop();
+        this.release();
     }
 
     private api(): zagSwitch.Api {

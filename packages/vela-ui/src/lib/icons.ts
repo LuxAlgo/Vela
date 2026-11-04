@@ -2,6 +2,9 @@
 // the kit, a chart's own chrome and its widget all draw from one set instead of each keeping
 // its own inline copies. `iconEl` at the end is the DOM helper.
 //
+// The registry is page-wide (see `page.ts`): an icon registered through one copy of the kit
+// draws through every other.
+//
 // TWO TIERS, one apparent weight:
 //   tier A — 16×16 grid, stroke 1.2 ({@link svg16}): UI chrome (menus, panels, top bar).
 //   tier B — 24×24 grid, stroke 1.8 ({@link svg24}): drawing tools and the toolbars around
@@ -10,7 +13,9 @@
 // same rendered size read equally heavy. Every icon strokes `currentColor` and inherits its
 // size from the slot (`1em`), so callers style icons by color and font-size alone.
 
-const registry = new Map<string, string>();
+import { pageState } from './page';
+
+const registry = pageState('icons@1', () => new Map<string, string>());
 
 /** Register (or replace) an icon's raw `<svg>` markup under an id. */
 export function registerIcon(id: string, svg: string): void {

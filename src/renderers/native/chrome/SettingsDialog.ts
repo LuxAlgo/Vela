@@ -48,6 +48,7 @@ import type { MarkGroup } from '../../../core/marks/types';
 import { markGroupRows } from '../../../core/marks/visibility';
 import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
 import { css } from '@luxalgo/vela-ui/css';
+import { disposeWithin } from '@luxalgo/vela-ui/dispose';
 import { t } from '@luxalgo/vela-ui/t';
 
 
@@ -495,6 +496,7 @@ export class SettingsDialog {
         for (const dispose of this.hintTips) dispose();
         this.hintTips = [];
         this.config = config;
+        disposeWithin(ui.body);
         ui.body.replaceChildren();
         this.layoutPanes(withKitTranslator(this.i18n?.(), () => this.buildContent(ui, config, this.activeSection ?? undefined, this.mobileLayout)));
     }
@@ -815,11 +817,14 @@ export class SettingsDialog {
                     skipTab = child.dataset.sdId !== undefined && settingsIdHidden(child.dataset.sdId, this.hiddenSettings);
                 }
                 if (skipTab || (child.dataset.sdId !== undefined && settingsIdHidden(child.dataset.sdId, this.hiddenSettings))) {
+                    disposeWithin(child);
                     child.remove();
                     continue;
                 }
                 for (const el of [...child.querySelectorAll('[data-sd-id]')] as HTMLElement[]) {
-                    if (settingsIdHidden(el.dataset.sdId!, this.hiddenSettings)) el.remove();
+                    if (!settingsIdHidden(el.dataset.sdId!, this.hiddenSettings)) continue;
+                    disposeWithin(el);
+                    el.remove();
                 }
             }
         }

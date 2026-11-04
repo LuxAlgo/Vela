@@ -6,6 +6,7 @@
 import * as zagSwitch from '@zag-js/switch';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { ownTeardown } from '../lib/dispose';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants } from '../lib/variants';
@@ -117,6 +118,7 @@ export class Switch {
     private readonly input: HTMLInputElement;
     private readonly machine: HandleOf<typeof zagSwitch.machine>;
     private readonly mid: string;
+    private readonly release: () => void;
     private readonly control: HTMLElement;
     private readonly thumb: HTMLElement;
     /** The state as the switch's users see it, at once: the machine settles a beat later. */
@@ -146,6 +148,7 @@ export class Switch {
             }),
             (service) => this.render(service, opts.label),
         );
+        this.release = ownTeardown(this.el, () => this.machine.stop());
         this.input.addEventListener('change', () => {
             const asked = this.input.checked;
             if (controlled) this.api().setChecked(this.current);
@@ -177,7 +180,7 @@ export class Switch {
     }
 
     destroy(): void {
-        this.machine.stop();
+        this.release();
     }
 
     private api(): zagSwitch.Api {

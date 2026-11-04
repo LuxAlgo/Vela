@@ -20,6 +20,7 @@ export {
 } from '@luxalgo/vela-ui/theme';
 export { registerIcon, iconMarkup, iconEl, svg16, svg24 } from '@luxalgo/vela-ui/icons';
 export { runMachine, nextUid, normalizeProps, spreadProps, type MachineHandle } from '@luxalgo/vela-ui/zag';
+export { disposeWithin, ownTeardown } from '@luxalgo/vela-ui/dispose';
 export { SURFACE_OPEN_EVENT, SURFACE_CLOSE_EVENT, type SurfaceKind, type SurfaceEventDetail } from '@luxalgo/vela-ui/surface-events';
 export { KeymapManager, type KeyBindingDescriptor, type ResolvedBinding, type KeymapOptions } from './keymap';
 export { applyProps, type PartProps } from '@luxalgo/vela-ui/headless';

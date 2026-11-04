@@ -5,6 +5,7 @@ import type { ChartTheme } from '../lib/tokens';
 import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { ownTeardown } from '../lib/dispose';
 import { addSlot, h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants } from '../lib/variants';
@@ -492,6 +493,7 @@ export class Select {
     private readonly listOpts: SelectListPopoverOpts;
     private readonly placeholder: string | undefined;
     private readonly native: HTMLSelectElement | null;
+    private readonly release: () => void;
     private list: Popover | null = null;
 
     constructor(opts: SelectOptions) {
@@ -561,6 +563,10 @@ export class Select {
         this.trigger = btn;
         this.labelEl = label;
         this.paint();
+        this.release = ownTeardown(this.el, () => {
+            this.list?.hide();
+            this.list = null;
+        });
     }
 
     get value(): string {
@@ -605,8 +611,7 @@ export class Select {
     }
 
     destroy(): void {
-        this.list?.hide();
-        this.list = null;
+        this.release();
     }
 }
 

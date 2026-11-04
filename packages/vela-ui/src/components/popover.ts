@@ -6,7 +6,9 @@
 import type { ChartTheme } from '../lib/tokens';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { disposeWithin } from '../lib/dispose';
 import { h } from '../lib/h';
+import { pageState } from '../lib/page';
 import { t } from '../lib/t';
 import { announceSurface } from '../lib/surface-events';
 import { holdForExit, type SurfaceExit } from '../lib/surface-exit';
@@ -108,21 +110,22 @@ export const POPOVER_CSS = css`
 
 const injectStyles = defineStyles(POPOVER_STYLE_ID, POPOVER_CSS);
 
-let open: Popover | null = null;
+/** The one popover showing, page-wide: a popover from another copy of the kit counts too. */
+const showing = pageState('open-popover@1', () => ({ popover: null as { readonly trigger: HTMLElement; hide(): void } | null }));
 /** Closed popovers still playing their exit animation. */
 const leaving = new Set<Popover>();
 
 /** Close whichever kit popover is showing (dialog teardown, a second trigger). */
 export function closeOpenPopovers(): void {
-    open?.hide();
+    showing.popover?.hide();
 }
 
 export function isPopoverOpen(): boolean {
-    return open !== null;
+    return showing.popover !== null;
 }
 
 export function openPopoverTrigger(): HTMLElement | null {
-    return open?.trigger ?? null;
+    return showing.popover?.trigger ?? null;
 }
 
 /** Flag stamped on a pointer event whose only job was dismissing an open popover. */
@@ -207,7 +210,8 @@ export class Popover {
             this.place();
             return;
         }
-        if (open && open !== this) open.hide();
+        const previous = showing.popover;
+        if (previous && previous !== this) previous.hide();
         if (this.leaveTimer !== null) {
             clearTimeout(this.leaveTimer);
             this.leaveTimer = null;
@@ -229,7 +233,7 @@ export class Popover {
         }
         this.host.appendChild(this.el);
         this.shown = true;
-        open = this;
+        showing.popover = this;
         this.place();
         // place() measured the shell (a style flush at opacity 0) — flipping it now runs the transition.
         if (this.fadeMs > 0) this.el.style.opacity = '1';
@@ -297,7 +301,7 @@ export class Popover {
             });
             if (this.exit) leaving.add(this);
         }
-        if (open === this) open = null;
+        if (showing.popover === this) showing.popover = null;
         this.ctrl.onClose?.();
     }
 
@@ -307,9 +311,12 @@ export class Popover {
         else this.show();
     }
 
+    /** Hide for good and release the kit controls in the content. A popover built per open
+     *  is discarded on close instead: its owner releases the content through `onClose`. */
     destroy(): void {
         this.hide();
         this.exit?.finish();
+        disposeWithin(this.el);
     }
 
     reposition(): void {

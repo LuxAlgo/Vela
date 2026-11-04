@@ -4,6 +4,7 @@
 import { css, defineStyles } from '../lib/css';
 import { chartFrame, escapeXml, niceStep, showTip } from '../lib/chart';
 import { defineComponent } from '../lib/define';
+import { pageUid } from '../lib/page';
 import { t } from '../lib/t';
 
 export const lineChartDef = defineComponent({
@@ -105,13 +106,11 @@ const injectStyles = defineStyles(
     `,
 );
 
-let uid = 0;
-
 export function createLineChart(props: LineChartProps = {}): LineChartHandle {
     injectStyles(document);
     let points: readonly LinePoint[] = [];
     let axes = !!props.axes;
-    const id = `vela-line-chart-${(uid += 1)}`;
+    const id = pageUid('vela-line-chart');
     const font = props.axisFont ?? 10;
     const slot = (part: (typeof lineChartDef.parts)[number]) => `data-slot="${lineChartDef.slot(part)}"`;
     const axisRight = (): number => (axes ? Math.round(56 + (font - 10) * 3) : 0);

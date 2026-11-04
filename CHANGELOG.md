@@ -15,7 +15,18 @@ All notable changes to Vela, newest first.
   its design tokens and its icons, with one import path per component
   (`@luxalgo/vela-ui/button`, `@luxalgo/vela-ui/select`), so a page or a plugin can use the
   components without the chart and bundle only the ones it imports. Vela depends on it,
-  and `@luxalgo/vela/ui` keeps exporting everything it did.
+  and `@luxalgo/vela/ui` keeps exporting everything it did. A page that loads two copies of
+  the kit (a host whose dependencies resolve to two versions) still works as one: the copies
+  share the icons, the CSS written with `css`, element ids, the language of the kit's words
+  and the open popover.
+- **Release kit controls with the subtree they live in.** Controls that run a state machine
+  (checkbox, switch, number field, select, tabs, toggle group, tooltip, the color picker's
+  opacity) tie their teardown to their element. `disposeWithin(root)` releases every control
+  in a subtree you discard, whether or not you kept the handles, and a destroyed `Dialog`,
+  `Drawer` or `Popover` does it for its content; `buildFieldControl` also returns `destroy`.
+  The chart, indicator and drawing settings release their controls on every close and
+  rebuild, so opening them again and again no longer grows the page's memory or slows its
+  keyboard and pointer handling.
 - **Themes beyond dark and light.** `createTheme` builds a whole theme from a few choices:
   a brand color (its readable ink derived), a radius scale, a font, any token by name, and
   the settings each component declares (`components: { button: { radius: '2px' } }`,

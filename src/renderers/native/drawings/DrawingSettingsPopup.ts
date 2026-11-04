@@ -28,6 +28,7 @@ import { buildColorPicker } from '@luxalgo/vela-ui/color-picker';
 import { Popover, closeOpenPopovers } from '@luxalgo/vela-ui/popover';
 import { DrawingSettingsPanel, type DrawingPanelEnv } from './DrawingSettingsPanel';
 import { css } from '@luxalgo/vela-ui/css';
+import { disposeWithin } from '@luxalgo/vela-ui/dispose';
 import { t } from '@luxalgo/vela-ui/t';
 
 
@@ -509,6 +510,7 @@ export class DrawingSettingsPopup {
         this.closeMenu();
         this.hideTip();
         if (!keepPanel) this.panel.close();
+        disposeWithin(this.el);
         this.el?.remove();
         this.el = null;
         this.textPanel = null;
@@ -549,6 +551,7 @@ export class DrawingSettingsPopup {
      *  under it, plus color and size when those aren't already on the bar. */
     private toggleTextPanel(drawing: Drawing, actions: SettingsActions, withColorAndSize: boolean): void {
         if (this.textPanel) {
+            disposeWithin(this.textPanel);
             this.textPanel.remove();
             this.textPanel = null;
             this.reposition();
@@ -751,6 +754,8 @@ export class DrawingSettingsPopup {
             onClose: () => {
                 if (this.menuPop === pop) { this.menuPop = null; this.menuOwner = null; }
                 if (this.colorPop === pop) { this.colorPop = null; this.colorOwner = null; }
+                // A fresh popover per open: closing discards it.
+                disposeWithin(pop.el);
                 opts.onClose?.();
             },
         });

@@ -7,8 +7,9 @@ import type { ChartTheme } from '../lib/tokens';
 import { injectStyles as injectSheet } from '../lib/styles';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { disposeWithin } from '../lib/dispose';
 import { t } from '../lib/t';
-import { colorField, type ColorFieldOpts } from './color-picker';
+import { ColorField, type ColorFieldOpts } from './color-picker';
 import { widthField } from './glyph-select';
 import { NumberInput } from './number-input';
 import { Select, type SelectListPopoverOpts, type SelectOption } from './select';
@@ -393,6 +394,8 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
 export interface FieldControlHandle {
     el: HTMLElement;
     setValue?: (v: unknown) => void;
+    /** Release the control. Discarding a subtree with {@link disposeWithin} does it too. */
+    destroy(): void;
 }
 
 export type FieldControlDesc =
@@ -498,7 +501,7 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
             const sync = desc.sync;
             ni.el.addEventListener('vela-sync', () => { ni.setValue(sync()); });
         }
-        return { el: ni.el, setValue: (v) => ni.setValue(Number(v)) };
+        return { el: ni.el, setValue: (v) => ni.setValue(Number(v)), destroy: () => ni.destroy() };
     }
     if (desc.kind === 'select') {
         const sel = new Select({
@@ -516,7 +519,7 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
             const sync = desc.sync;
             sel.el.addEventListener('vela-sync', () => { sel.setValue(sync()); });
         }
-        return { el: sel.el, setValue: (v) => sel.setValue(String(v)) };
+        return { el: sel.el, setValue: (v) => sel.setValue(String(v)), destroy: () => sel.destroy() };
     }
     if (desc.kind === 'switch') {
         const sw = new Checkbox({
@@ -530,17 +533,20 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
             const sync = desc.sync;
             sw.el.addEventListener('vela-sync', () => { sw.setChecked(sync()); });
         }
-        return { el: sw.el, setValue: (v) => sw.setChecked(Boolean(v)) };
+        return { el: sw.el, setValue: (v) => sw.setChecked(Boolean(v)), destroy: () => sw.destroy() };
     }
     if (desc.kind === 'color') {
-        const el = colorField(desc.theme, desc.get, desc.onChange, {
+        const field = new ColorField({
+            theme: desc.theme,
+            getVal: desc.get,
+            onVal: desc.onChange,
             shape: 'circle',
             id: desc.id,
             popover: desc.popover,
             commit: desc.commit,
         });
-        if (desc.title) el.title = desc.title;
-        return { el };
+        if (desc.title) field.el.title = desc.title;
+        return { el: field.el, destroy: () => field.destroy() };
     }
     if (desc.kind === 'text') {
         const tf = new Input({
@@ -555,7 +561,7 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
             const sync = desc.sync;
             tf.el.addEventListener('vela-sync', () => { tf.setValue(sync()); });
         }
-        return { el: tf.el, setValue: (v) => tf.setValue(String(v)) };
+        return { el: tf.el, setValue: (v) => tf.setValue(String(v)), destroy: () => tf.destroy() };
     }
     if (desc.kind === 'textarea') {
         const ta = new TextArea({
@@ -571,9 +577,9 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
             const sync = desc.sync;
             ta.el.addEventListener('vela-sync', () => { ta.setValue(sync()); });
         }
-        return { el: ta.el, setValue: (v) => ta.setValue(String(v)) };
+        return { el: ta.el, setValue: (v) => ta.setValue(String(v)), destroy: () => ta.destroy() };
     }
     const el = widthField(desc.theme, desc.get, desc.onChange);
     if (desc.title) el.title = desc.title;
-    return { el };
+    return { el, destroy: () => disposeWithin(el) };
 }
