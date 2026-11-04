@@ -53,6 +53,9 @@ const injectStyles = defineStyles(
                 --_w: ${switchDef.vars.width};
                 --_h: ${switchDef.vars.height};
                 --_thumb: ${switchDef.vars['thumb-size']};
+                /* Holds the hidden native input, which is absolutely positioned: anchored
+                   anywhere higher, it escapes a scrolling pane and stretches the page. */
+                position: relative;
                 flex: 0 0 auto;
                 align-items: center;
                 cursor: pointer;

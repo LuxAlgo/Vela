@@ -84,6 +84,9 @@ const injectStyles = defineStyles(
     css`
         @layer vela.ui {
             [data-slot='checkbox'] {
+                /* Holds the hidden native input, which is absolutely positioned: anchored
+                   anywhere higher, it escapes a scrolling pane and stretches the page. */
+                position: relative;
                 width: 20px;
                 height: 20px;
                 flex: 0 0 auto;
