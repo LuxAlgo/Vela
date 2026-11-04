@@ -103,6 +103,12 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The color picker's opacity is a slider, on Zag's slider machine.** The knob has the
+  slider role, the translated "Opacity" name and its value as text ("45%"); with the focus
+  on it, the arrow keys step the opacity by 1%, Page Up/Down by 10%, Home/End to the ends.
+  `commit: 'live'` still commits every move and `commit: 'release'` once per drag or key, and
+  a typed percentage commits once. The swatches carry their color as a name and the current
+  one is `aria-pressed`. The picker looks the same.
 - **The select's list is a listbox, on Zag's listbox machine.** Every list built by
   `fillSelectList` (the select, `openSelectList`, `toggleSelectList`) carries the listbox and
   option roles; while it has the focus, the arrow keys and Home/End move the highlight, Enter

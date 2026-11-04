@@ -1,78 +1,25 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach } from 'vitest';
 import type { VelaTheme } from '../src/core/options';
 import { splitColor, combineColor, buildColorPicker } from '@luxalgo/vela-ui/color-picker';
 
-// A minimal element stub (this suite runs in the node env — no jsdom). It models just
-// enough of the tree for `buildColorPicker`: parent links so `isConnected` can be
-// answered, child mutation, and per-element listeners.
-interface FakeEl {
-    tag: string;
-    type: string;
-    value: string;
-    textContent: string;
-    style: { cssText: string } & Record<string, string>;
-    dataset: Record<string, string>;
-    children: FakeEl[];
-    parentNode: FakeEl | null;
-    attached: boolean;
-    readonly isConnected: boolean;
-    addEventListener: (t: string, fn: (e: unknown) => void) => void;
-    dispatchEvent: (e: { type: string; stopPropagation?: () => void }) => boolean;
-    appendChild: (c: FakeEl) => FakeEl;
-    append: (...cs: FakeEl[]) => void;
-    replaceChildren: (...cs: FakeEl[]) => void;
-}
+const theme = { textColor: '#fff', fontFamily: 'sans-serif' } as unknown as VelaTheme;
+// The slider machine reports a beat after the event.
+const settle = () => new Promise((r) => setTimeout(r, 0));
 
-function fakeEl(tag: string): FakeEl {
-    const listeners = new Map<string, Array<(e: unknown) => void>>();
-    const el: FakeEl = {
-        tag,
-        type: '',
-        value: '',
-        textContent: '',
-        style: { cssText: '' },
-        dataset: {},
-        children: [],
-        parentNode: null,
-        attached: false,
-        get isConnected(): boolean {
-            let n: FakeEl | null = el;
-            while (n.parentNode) n = n.parentNode;
-            return n.attached;
-        },
-        addEventListener: (t, fn) => { const a = listeners.get(t) ?? []; a.push(fn); listeners.set(t, a); },
-        dispatchEvent: (e) => { for (const fn of listeners.get(e.type) ?? []) fn(e); return true; },
-        appendChild: (c) => { c.parentNode?.children.splice(c.parentNode.children.indexOf(c), 1); c.parentNode = el; el.children.push(c); return c; },
-        append: (...cs) => { for (const c of cs) el.appendChild(c); },
-        replaceChildren: (...cs) => { for (const c of el.children) c.parentNode = null; el.children = []; el.append(...cs); },
-    };
-    return el;
-}
+afterEach(() => document.body.replaceChildren());
 
 describe('color picker custom "+" input', () => {
-    const theme = { textColor: '#fff', fontFamily: 'sans-serif' } as unknown as VelaTheme;
-    let savedDocument: unknown;
-
-    beforeEach(() => {
-        savedDocument = (globalThis as { document?: unknown }).document;
-        (globalThis as { document: unknown }).document = { createElement: (tag: string) => fakeEl(tag) };
-    });
-    afterEach(() => {
-        (globalThis as { document?: unknown }).document = savedDocument;
-    });
-
-    function mount(): { input: FakeEl; recentSwatches: FakeEl; picked: string[] } {
+    function mount(): { root: HTMLElement; input: HTMLInputElement; recentSwatches: HTMLElement; picked: string[] } {
         const picked: string[] = [];
-        const body = fakeEl('body');
-        body.attached = true;
-        const root = buildColorPicker('#089981', theme, (v) => picked.push(v)) as unknown as FakeEl;
-        body.appendChild(root);
+        const root = buildColorPicker('#089981', theme, (v) => picked.push(v));
+        document.body.append(root);
         // root → [grid, recentRow, …]; recentRow → [swatches wrapper, "+" label → [input]].
-        const recentRow = root.children[1]!;
-        const recentSwatches = recentRow.children[0]!;
-        const input = recentRow.children[1]!.children[0]!;
+        const recentRow = root.children[1] as HTMLElement;
+        const recentSwatches = recentRow.children[0] as HTMLElement;
+        const input = recentRow.children[1]!.children[0] as HTMLInputElement;
         expect(input.type).toBe('color');
-        return { input, recentSwatches, picked };
+        return { root, input, recentSwatches, picked };
     }
 
     it('keeps the same native color input in the DOM while the chooser streams values', () => {
@@ -96,106 +43,128 @@ describe('color picker custom "+" input', () => {
         input.dispatchEvent(new Event('change'));
         expect(input.isConnected).toBe(true);
         expect(recentSwatches.children.length).toBe(recentsBefore + 1);
-        expect(recentSwatches.children[0]!.style.cssText).toContain('background:#cc2222');
+        expect(recentSwatches.children[0]!.getAttribute('aria-label')).toBe('#cc2222');
     });
 
     it('syncs the native input to a swatch pick so the chooser opens on the current color', () => {
         const { input, recentSwatches } = mount();
         // Second recent: not the color the picker was opened with.
-        const swatch = recentSwatches.children[1]!;
-        const expected = /background:(#[0-9a-f]{6})/.exec(swatch.style.cssText)![1]!;
+        const swatch = recentSwatches.children[1] as HTMLElement;
+        const expected = swatch.getAttribute('aria-label')!;
         expect(input.value).not.toBe(expected);
-        swatch.dispatchEvent({ type: 'click', stopPropagation: () => {} });
+        swatch.click();
         expect(input.value).toBe(expected);
+    });
+
+    it('names every swatch by its color and marks the current one pressed', () => {
+        const { root } = mount();
+        const swatches = [...root.children[0]!.children] as HTMLElement[];
+        expect(swatches.every((s) => /^#[0-9a-f]{6}$/i.test(s.getAttribute('aria-label') ?? ''))).toBe(true);
+        const [a, b] = [swatches[3]!, swatches[17]!];
+        a.click();
+        expect(swatches.filter((s) => s.getAttribute('aria-pressed') === 'true')).toEqual([a]);
+        b.click();
+        expect(swatches.filter((s) => s.getAttribute('aria-pressed') === 'true')).toEqual([b]);
     });
 });
 
 describe('color picker opacity slider', () => {
-    const theme = { textColor: '#fff', fontFamily: 'sans-serif' } as unknown as VelaTheme;
-    let savedDocument: unknown;
-
-    beforeEach(() => {
-        savedDocument = (globalThis as { document?: unknown }).document;
-        (globalThis as { document: unknown }).document = { createElement: (tag: string) => fakeEl(tag) };
-    });
-    afterEach(() => {
-        (globalThis as { document?: unknown }).document = savedDocument;
-    });
-
-    type Track = FakeEl & { getBoundingClientRect(): { left: number; width: number }; setPointerCapture(id: number): void; captured: number[] };
-
-    function mount(commit?: 'live' | 'release'): { track: Track; pct: FakeEl; emitted: string[] } {
+    function mount(commit?: 'live' | 'release'): { track: HTMLElement; knob: HTMLElement; pct: HTMLInputElement; emitted: string[] } {
         const emitted: string[] = [];
-        const root = buildColorPicker('#089981', theme, (v) => emitted.push(v), commit ? { commit } : {}) as unknown as FakeEl;
+        const root = buildColorPicker('#089981', theme, (v) => emitted.push(v), commit ? { commit } : {});
+        document.body.append(root);
         // root → [grid, recentRow, opacity label, opacity row]; opacity row → [track, "%" box].
-        const opRow = root.children[3]!;
-        const track = opRow.children[0]! as Track;
-        track.captured = [];
-        track.getBoundingClientRect = () => ({ left: 100, width: 200 });
-        track.setPointerCapture = (id) => track.captured.push(id);
-        return { track, pct: opRow.children[1]!, emitted };
+        const opRow = root.children[3] as HTMLElement;
+        const track = opRow.children[0] as HTMLElement;
+        track.getBoundingClientRect = () => ({ left: 100, width: 200, top: 0, height: 13, right: 300, bottom: 13, x: 100, y: 0, toJSON: () => ({}) });
+        return { track, knob: track.children[0] as HTMLElement, pct: opRow.children[1] as HTMLInputElement, emitted };
     }
-    const pointer = (type: string, clientX: number): { type: string; clientX: number; pointerId: number; stopPropagation(): void } => ({
-        type,
-        clientX,
-        pointerId: 1,
-        stopPropagation: () => {},
-    });
+    const down = (track: HTMLElement, clientX: number): boolean => track.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse', clientX, clientY: 6 }));
+    // A mouse move with no button held reads as a release.
+    const move = (clientX: number): boolean => document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse', buttons: 1, clientX, clientY: 6 }));
+    const up = (type: 'pointerup' | 'pointercancel', clientX: number): boolean => document.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: 'mouse', clientX, clientY: 6 }));
 
-    it("defaults to 'live': every move commits, so a cheap consumer previews the drag on the chart", () => {
+    it("defaults to 'live': every move commits, so a cheap consumer previews the drag on the chart", async () => {
         const { track, pct, emitted } = mount();
-        track.dispatchEvent(pointer('pointerdown', 120)); // 10 %
-        track.dispatchEvent(pointer('pointermove', 200)); // 50 %
-        track.dispatchEvent(pointer('pointermove', 260)); // 80 %
+        down(track, 120); // 10 %
+        await settle();
+        move(200); // 50 %
+        await settle();
+        move(260); // 80 %
+        await settle();
         expect(pct.value).toBe('80%');
         expect(emitted).toEqual([combineColor('#089981', 0.1), combineColor('#089981', 0.5), combineColor('#089981', 0.8)]);
-        // Release adds nothing: the last move already committed the final value.
-        track.dispatchEvent(pointer('pointerup', 260));
+        // Release adds nothing: the last move already committed.
+        up('pointerup', 260);
+        await settle();
         expect(emitted).toHaveLength(3);
     });
 
-    it("'release': previews the opacity while dragging and commits ONCE on release", () => {
+    it("'release': previews the opacity while dragging and commits ONCE on release", async () => {
         const { track, pct, emitted } = mount('release');
-
-        track.dispatchEvent(pointer('pointerdown', 120)); // 10 %
-        track.dispatchEvent(pointer('pointermove', 160)); // 30 %
-        track.dispatchEvent(pointer('pointermove', 200)); // 50 %
-        track.dispatchEvent(pointer('pointermove', 260)); // 80 %
-        // The readout follows the pointer; nothing has been committed yet — a commit
-        // re-executes the script over its whole history, and a drag fires a move per frame.
+        down(track, 120); // 10 %
+        await settle();
+        move(160); // 30 %
+        await settle();
+        move(200); // 50 %
+        await settle();
+        move(260); // 80 %
+        await settle();
+        // The readout previews the drag; nothing is committed yet.
         expect(pct.value).toBe('80%');
         expect(emitted).toEqual([]);
-
-        track.dispatchEvent(pointer('pointerup', 260));
+        up('pointerup', 260);
+        await settle();
         expect(emitted).toEqual([combineColor('#089981', 0.8)]);
-
-        // Moves after release are not a drag.
-        track.dispatchEvent(pointer('pointermove', 300));
+        // A stray move after release changes nothing.
+        move(300);
+        await settle();
         expect(pct.value).toBe('80%');
         expect(emitted).toHaveLength(1);
     });
 
-    it('a plain click on the track commits once at the clicked opacity, under either policy', () => {
+    it('a plain click on the track commits once at the clicked opacity, under either policy', async () => {
         for (const commit of ['live', 'release'] as const) {
             const { track, emitted } = mount(commit);
-            track.dispatchEvent(pointer('pointerdown', 150)); // 25 %
-            track.dispatchEvent(pointer('pointerup', 150));
+            down(track, 150); // 25 %
+            await settle();
+            up('pointerup', 150);
+            await settle();
             expect(emitted).toEqual([combineColor('#089981', 0.25)]);
         }
     });
 
-    it('the percentage readout is a text input that sets the opacity when a value is typed', () => {
+    it('the knob is a labelled slider the keyboard steps, one commit per key under either policy', async () => {
         for (const commit of ['live', 'release'] as const) {
-            const { pct, emitted } = mount(commit);
-            expect(pct.tag).toBe('input');
+            const { knob, emitted } = mount(commit);
+            expect(knob.getAttribute('role')).toBe('slider');
+            expect(knob.getAttribute('aria-label')).toBe('Opacity');
+            expect(knob.getAttribute('aria-valuetext')).toBe('100%');
+            knob.focus();
+            await settle();
+            knob.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+            await settle();
+            expect(emitted).toEqual([combineColor('#089981', 0.99)]);
+            expect(knob.getAttribute('aria-valuetext')).toBe('99%');
+        }
+    });
+
+    it('the percentage readout is a text input that sets the opacity when a value is typed', async () => {
+        for (const commit of ['live', 'release'] as const) {
+            const { knob, pct, emitted } = mount(commit);
+            expect(pct.tagName).toBe('INPUT');
             expect(pct.value).toBe('100%');
             pct.value = '35';
-            pct.dispatchEvent({ type: 'change' });
+            pct.dispatchEvent(new Event('change'));
             expect(emitted).toEqual([combineColor('#089981', 0.35)]);
             expect(pct.value).toBe('35%');
+            await settle();
+            // The slider follows the typed value without committing it again.
+            expect(knob.getAttribute('aria-valuetext')).toBe('35%');
+            expect(emitted).toHaveLength(1);
             // "%" suffix accepted; out-of-range values clamp.
             pct.value = '250%';
-            pct.dispatchEvent({ type: 'change' });
+            pct.dispatchEvent(new Event('change'));
             expect(emitted).toHaveLength(2);
             expect(emitted[1]).toBe('#089981');
             expect(pct.value).toBe('100%');
@@ -205,30 +174,33 @@ describe('color picker opacity slider', () => {
     it('typed garbage or an unchanged value restores the readout without committing', () => {
         const { pct, emitted } = mount();
         pct.value = 'abc';
-        pct.dispatchEvent({ type: 'change' });
+        pct.dispatchEvent(new Event('change'));
         expect(pct.value).toBe('100%');
         pct.value = '100';
-        pct.dispatchEvent({ type: 'change' });
+        pct.dispatchEvent(new Event('change'));
         expect(emitted).toEqual([]);
     });
 
     it('Enter commits the typed value and keeps the keystroke away from outer shortcuts', () => {
         const { pct, emitted } = mount();
-        let stopped = 0;
-        let blurred = 0;
-        (pct as unknown as { blur(): void }).blur = () => { blurred++; };
+        let outer = 0;
+        document.body.addEventListener('keydown', () => outer++);
+        pct.focus();
         pct.value = '20';
-        pct.dispatchEvent({ type: 'keydown', key: 'Enter', preventDefault: () => {}, stopPropagation: () => { stopped++; } } as never);
+        pct.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         expect(emitted).toEqual([combineColor('#089981', 0.2)]);
-        expect(stopped).toBe(1);
-        expect(blurred).toBe(1);
+        expect(outer).toBe(0);
+        expect(document.activeElement).not.toBe(pct);
     });
 
-    it("'release': a cancelled drag still commits where the pointer was", () => {
+    it("'release': a cancelled drag still commits where the pointer was", async () => {
         const { track, emitted } = mount('release');
-        track.dispatchEvent(pointer('pointerdown', 120));
-        track.dispatchEvent(pointer('pointermove', 200)); // 50 %
-        track.dispatchEvent(pointer('pointercancel', 200));
+        down(track, 120);
+        await settle();
+        move(200); // 50 %
+        await settle();
+        up('pointercancel', 200);
+        await settle();
         expect(emitted).toEqual([combineColor('#089981', 0.5)]);
     });
 });

@@ -11,7 +11,9 @@ import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
+import { nextUid, normalizeProps, runMachine, spreadProps } from '../lib/zag';
 import { Popover, closeOpenPopovers, openPopoverTrigger, type PopoverBoundary, type PopoverOptions } from './popover';
+import * as zagSlider from '@zag-js/slider';
 
 /** Split a color into its `#RRGGBB` part + alpha 0..1 (handles `#RGB`, `#RRGGBB(AA)`, `rgba()`). */
 export function splitColor(color: string): { hex6: string; alpha: number } {
@@ -247,6 +249,7 @@ export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v:
             const sw = document.createElement('button');
             sw.type = 'button';
             sw.dataset.c = c;
+            sw.setAttribute('aria-label', c);
             sw.style.cssText = `width:100%;aspect-ratio:1;border-radius:4px;border:none;cursor:pointer;background:${c};padding:0;`;
             sw.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -259,6 +262,7 @@ export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v:
     const paintSelection = (): void => {
         for (const sw of swatches) {
             const on = (sw.dataset.c ?? '').toLowerCase() === curHex.toLowerCase();
+            sw.setAttribute('aria-pressed', String(on));
             sw.style.outline = on ? `2px solid ${theme.textColor}` : 'none';
             sw.style.outlineOffset = '2px';
             sw.style.zIndex = on ? '1' : '';
@@ -289,6 +293,7 @@ export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v:
         for (const c of recents) {
             const sw = document.createElement('button');
             sw.type = 'button';
+            sw.setAttribute('aria-label', c);
             sw.style.cssText = `width:17px;height:17px;border-radius:var(--vela-radius-sm);border:1px solid var(--vela-border);cursor:pointer;background:${c};padding:0;`;
             sw.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -334,6 +339,7 @@ export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v:
                 curAlpha = next;
                 paintOpacity();
                 emit();
+                zagSlider.connect(slider.service, normalizeProps).setValue([next]);
                 return;
             }
         }
@@ -355,31 +361,62 @@ export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v:
             pctBox.blur();
         }
     });
-    // The drag always previews (knob, readout, gradient); whether each move also COMMITS is
-    // the `commit` option — see {@link ColorCommit}.
-    let dragging = false;
-    const onDrag = (clientX: number): void => {
-        const r = track.getBoundingClientRect();
-        curAlpha = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-        paintOpacity();
-        if (commit === 'live') emit();
-    };
-    const endDrag = (): void => {
-        if (!dragging) return;
-        dragging = false;
-        if (commit === 'release') emit();
-    };
+    // The opacity is Zag's slider machine: the track is its control, the knob its thumb (the
+    // slider role, the arrow keys, Page Up/Down, Home/End). A move always previews (knob,
+    // readout, gradient); whether each move also COMMITS is the `commit` option — see
+    // {@link ColorCommit}. The knob and the track keep their own paint: the machine's inline
+    // styles are left out.
+    const pct = (a: number): number => Math.round(a * 100);
+    const sliderId = nextUid('vela-color-opacity');
+    // A press or a key on the slider is pending its end; the opacity typed in the readout
+    // (synced into the machine) is not, it has committed already.
+    let pressed = false;
+    const slider = runMachine(
+        zagSlider.machine,
+        {
+            id: sliderId,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            defaultValue: [curAlpha],
+            thumbAlignment: 'center',
+            'aria-label': [textOf(i18n, TEXT.opacity)],
+            getAriaValueText: ({ value }) => `${pct(value)}%`,
+            onValueChange: ({ value: [a] }) => {
+                if (a === undefined || pct(a) === pct(curAlpha)) return;
+                curAlpha = a;
+                paintOpacity();
+                if (commit === 'live') emit();
+            },
+            onValueChangeEnd: ({ value: [a] }) => {
+                if (commit !== 'release' || !pressed) return;
+                pressed = false;
+                if (a !== undefined && pct(a) !== pct(curAlpha)) {
+                    curAlpha = a;
+                    paintOpacity();
+                }
+                emit();
+            },
+        },
+        (service) => {
+            const api = zagSlider.connect(service, normalizeProps);
+            const own = <T extends object>(props: T): T => {
+                const { style: _style, ...rest } = props as T & { style?: unknown };
+                return rest as T;
+            };
+            spreadProps(opRow, own(api.getRootProps()), sliderId);
+            spreadProps(track, own(api.getControlProps()), sliderId);
+            spreadProps(knob, own(api.getThumbProps({ index: 0 })), sliderId);
+        },
+    );
+    // The press belongs to the picker: an open popover or dialog must not read it as its own.
     track.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
-        dragging = true;
-        track.setPointerCapture(e.pointerId);
-        onDrag(e.clientX);
+        pressed = true;
     });
-    track.addEventListener('pointermove', (e) => {
-        if (dragging) onDrag(e.clientX);
+    knob.addEventListener('keydown', () => {
+        pressed = true;
     });
-    track.addEventListener('pointerup', endDrag);
-    track.addEventListener('pointercancel', endDrag);
 
     function emit(): void {
         onChange(combineColor(curHex, curAlpha));

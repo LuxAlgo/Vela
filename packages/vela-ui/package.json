@@ -68,6 +68,7 @@
     "@zag-js/listbox": "^1.42.0",
     "@zag-js/menu": "^1.42.0",
     "@zag-js/number-input": "^1.42.0",
+    "@zag-js/slider": "^1.42.0",
     "@zag-js/switch": "^1.42.0",
     "@zag-js/tabs": "^1.42.0",
     "@zag-js/toggle-group": "^1.42.0",
