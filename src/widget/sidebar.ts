@@ -3,7 +3,6 @@
 // drives it through {@link PanelChrome}, as it drives the topbar) and the actions plugins
 // register with `target: 'sidebar'`, laid out by the host's `sidebar` composition. Desktop
 // only: on the mobile layout the panels keep their menu rows and the actions join them.
-import { Menu, type MenuItemDescriptor } from '@luxalgo/vela-ui/menu';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 import { injectChromeStyles } from '../ui/chromeStyles';
@@ -16,10 +15,7 @@ import { composeSidebar, type SidebarComposition } from './sidebar-composition';
 
 const TEXT = {
     sidebar: msg('vela.sidebar.label', 'Sidebar'),
-    showAll: msg('vela.sidebar.showAll', 'Show all'),
 } as const;
-
-const SHOW_ALL = 'vela-sidebar.show-all';
 
 export const SIDEBAR_WIDTH_PX = 44;
 
@@ -93,8 +89,6 @@ export interface SidebarOptions {
     i18n?: Translator;
     /** The live widget context, handed to the actions. */
     context(): WidgetContext;
-    /** The user hid or gave back an entry from the sidebar's menu (save the layout). */
-    onCustomize?(): void;
 }
 
 interface Entry {
@@ -117,11 +111,6 @@ export class Sidebar implements PanelChrome {
     private readonly badges = new Map<string, string>();
     /** Entries a plugin hid at runtime (`ctx.sidebar.setVisible`). */
     private readonly hidden = new Set<string>();
-    /** Entries the user hid from the sidebar's menu, saved with the layout. */
-    private readonly userHidden = new Set<string>();
-    /** What the composition places, before the user's choices: what the menu lists. */
-    private placed: Entry[] = [];
-    private menu: Menu | null = null;
     private readonly buttons = new Map<string, HTMLButtonElement>();
     private tooltips: Tooltip[] = [];
     /** The shell finished building: the actions (which read the context) may show. */
@@ -139,20 +128,7 @@ export class Sidebar implements PanelChrome {
         this.bottomEl.className = 'vela-sidebar-section';
         this.bottomEl.dataset.section = 'bottom';
         this.el.append(this.topEl, this.bottomEl);
-        this.el.addEventListener('contextmenu', (e) => this.openCustomize(e));
         this.relocalize();
-    }
-
-    /** The entries the user hid, for the saved layout. */
-    hiddenByUser(): string[] {
-        return [...this.userHidden];
-    }
-
-    /** Restore the entries the user hid (a saved layout). */
-    setHiddenByUser(ids: readonly string[]): void {
-        this.userHidden.clear();
-        for (const id of ids) this.userHidden.add(id);
-        this.render();
     }
 
     setPanelButtons(buttons: readonly SidePanelButton[], onClick: (id: string) => void): void {
@@ -202,14 +178,12 @@ export class Sidebar implements PanelChrome {
             ...this.panels.map((p, i) => ({ id: p.id, kind: 'panel' as const, order: i, title: p.title, icon: p.icon, active: this.open.has(p.id), run: () => this.onPanel(p.id) })),
             ...(this.live ? this.actions(this.opts.context()) : []),
         ];
-        const placed = composeSidebar(
+        const layout = composeSidebar(
             entries.filter((e) => !this.hidden.has(e.id)),
             this.opts.composition,
         );
-        this.placed = [...placed.top, ...placed.bottom].flat();
-        const shown = (groups: Entry[][]): Entry[][] => groups.map((g) => g.filter((e) => !this.userHidden.has(e.id))).filter((g) => g.length > 0);
-        this.topEl.replaceChildren(...this.groups(shown(placed.top)));
-        this.bottomEl.replaceChildren(...this.groups(shown(placed.bottom)));
+        this.topEl.replaceChildren(...this.groups(layout.top));
+        this.bottomEl.replaceChildren(...this.groups(layout.bottom));
     }
 
     relocalize(): void {
@@ -220,29 +194,7 @@ export class Sidebar implements PanelChrome {
     destroy(): void {
         for (const t of this.tooltips) t.destroy();
         this.tooltips = [];
-        this.menu?.destroy();
         this.el.remove();
-    }
-
-    /** The right-click menu: every entry the composition places, ticked while it shows. */
-    private openCustomize(e: MouseEvent): void {
-        if (this.opts.composition?.customizable === false || this.placed.length === 0) return;
-        e.preventDefault();
-        const items: MenuItemDescriptor[] = this.placed.map((en) => ({ id: en.id, label: en.title, icon: en.icon, checked: !this.userHidden.has(en.id) }));
-        if (this.userHidden.size > 0) items.push({ id: SHOW_ALL, label: this.t(TEXT.showAll), separatorBefore: true });
-        this.menu?.destroy();
-        this.menu = new Menu({
-            items,
-            host: this.opts.host,
-            checkmarks: true,
-            onSelect: (id) => {
-                if (id === SHOW_ALL) this.userHidden.clear();
-                else if (!this.userHidden.delete(id)) this.userHidden.add(id);
-                this.render();
-                this.opts.onCustomize?.();
-            },
-        });
-        this.menu.openAt(e.clientX, e.clientY);
     }
 
     private actions(ctx: WidgetContext): Entry[] {

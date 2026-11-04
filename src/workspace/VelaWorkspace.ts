@@ -708,9 +708,7 @@ export class VelaWorkspace {
                 host: this.root,
                 i18n: this.localeState,
                 context: () => this.context(),
-                onCustomize: () => this.markStateDirty(),
             });
-            if (boot?.sidebarHidden) this.sidebar.setHiddenByUser(boot.sidebarHidden);
             this.region('edge').appendChild(this.sidebar.el);
             this.root.setAttribute('data-vela-sidebar', '');
         }
@@ -1249,8 +1247,6 @@ export class VelaWorkspace {
         if (this.activeId) state.activeCellId = this.activeId;
         if (this.favs.length > 0) state.favorites = [...this.favs];
         if (this.tfFavs.length > 0) state.timeframeFavorites = [...this.tfFavs];
-        const sidebarHidden = this.sidebar?.hiddenByUser() ?? [];
-        if (sidebarHidden.length > 0) state.sidebarHidden = sidebarHidden;
         const tools = this.drawingToolsState();
         if (tools) state.drawingTools = tools;
         if (this.trackSizes.size > 0) state.trackSizes = Object.fromEntries([...this.trackSizes].map(([k, v]) => [k, { ...v }]));
@@ -1296,7 +1292,6 @@ export class VelaWorkspace {
             this.tfFavs = [...st.timeframeFavorites];
             this.topbar.setTimeframeFavorites(this.tfFavs);
         }
-        this.sidebar?.setHiddenByUser(st.sidebarHidden ?? []);
         // Absent in documents written before the dock existed — those leave the column closed.
         this.dock.applyState(st.panels);
         for (const kind of SYNC_KINDS) this.applySyncSetting(kind, st.sync?.[kind]);

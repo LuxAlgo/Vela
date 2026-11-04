@@ -14,9 +14,6 @@
 export interface SidebarComposition {
     top?: readonly string[];
     bottom?: readonly string[];
-    /** Let the user hide and give back entries from the sidebar's right-click menu, saved
-     *  with the layout (default true). */
-    customizable?: boolean;
 }
 
 export const SIDEBAR_PANELS_SLOT = 'panels';
