@@ -121,11 +121,13 @@ export class Switch {
     private readonly thumb: HTMLElement;
     /** The state as the switch's users see it, at once: the machine settles a beat later. */
     private current: boolean;
+    private disabled: boolean;
 
     constructor(opts: SwitchProps = {}) {
         injectStyles(document);
         this.mid = nextUid('vela-switch');
         this.current = opts.checked ?? opts.defaultChecked ?? false;
+        this.disabled = opts.disabled ?? false;
         const controlled = opts.checked !== undefined;
         this.input = h('input', {});
         this.thumb = h('span', { slot: switchDef.slot('thumb') });
@@ -133,15 +135,15 @@ export class Switch {
         this.el = h('label', { className: 'vela-toggle-switch', slot: switchDef.slot('root'), attrs: switchVariants({ size: opts.size ?? 'default', variant: opts.variant ?? 'default' }) }, this.input, this.control);
         this.machine = runMachine(
             zagSwitch.machine,
-            {
+            () => ({
                 id: this.mid,
                 ...(opts.id ? { ids: { hiddenInput: opts.id } } : {}),
                 defaultChecked: this.current,
-                disabled: opts.disabled ?? false,
+                disabled: this.disabled,
                 ...(opts.name !== undefined ? { name: opts.name } : {}),
                 ...(opts.value !== undefined ? { value: opts.value } : {}),
                 ...(opts.required !== undefined ? { required: opts.required } : {}),
-            },
+            }),
             (service) => this.render(service, opts.label),
         );
         this.input.addEventListener('change', () => {
@@ -152,7 +154,7 @@ export class Switch {
         });
         // A press must not focus by scrolling (it may outside-dismiss an open popover).
         this.el.addEventListener('pointerdown', (e) => {
-            if (opts.disabled) return;
+            if (this.disabled) return;
             e.preventDefault();
             this.input.focus({ preventScroll: true });
         });
@@ -166,6 +168,12 @@ export class Switch {
         if (v === this.current) return;
         this.current = v;
         this.api().setChecked(v);
+    }
+
+    setDisabled(disabled: boolean): void {
+        if (disabled === this.disabled) return;
+        this.disabled = disabled;
+        this.machine.flush();
     }
 
     destroy(): void {

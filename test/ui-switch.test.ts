@@ -68,4 +68,23 @@ describe('the switch', () => {
         expect(sw.checked).toBe(false);
         expect(sw.el.hasAttribute('data-disabled')).toBe(true);
     });
+
+    it('is disabled and enabled again through setDisabled', async () => {
+        const onCheckedChange = vi.fn();
+        const sw = createSwitch({ onCheckedChange });
+        document.body.append(sw.el);
+        await settle();
+        sw.setDisabled(true);
+        await settle();
+        expect(sw.el.hasAttribute('data-disabled')).toBe(true);
+        sw.el.querySelector('input')!.click();
+        await settle();
+        expect(sw.checked).toBe(false);
+        sw.setDisabled(false);
+        await settle();
+        expect(sw.el.hasAttribute('data-disabled')).toBe(false);
+        sw.el.querySelector('input')!.click();
+        await settle();
+        expect(sw.checked).toBe(true);
+    });
 });
