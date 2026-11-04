@@ -107,6 +107,7 @@ export type {
     AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,
+    VisibleRangeOptions,
     DataWindowReadout,
     DataWindowGroup,
     DataWindowRow,

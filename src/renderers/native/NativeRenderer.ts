@@ -8,6 +8,7 @@ import type {
     AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,
+    VisibleRangeOptions,
     IndicatorStatus,
     LegendActionView,
     LegendCalloutView,
@@ -2588,12 +2589,14 @@ export class NativeRenderer implements IChartRenderer {
         return { from: this.coords.logicalToTime(from), to: this.coords.logicalToTime(to) };
     }
 
-    setVisibleRange(range: VisibleRange): void {
+    setVisibleRange(range: VisibleRange, opts?: VisibleRangeOptions): void {
         const fromL = this.coords.timeToLogical(range.from);
         const toL = this.coords.timeToLogical(range.to);
         const span = Math.max(1e-6, toL - fromL);
-        const barSpacing = clampBarSpacing(this.coords.width / (span * this.coords.spacingScale));
-        const rightOffset = toL - (this.coords.barCount - 1);
+        // A preset frame leaves the right margin's whitespace past `to`, sharing the width with the range.
+        const margin = opts?.rightMargin ? this.scene.style.margins.right : 0;
+        const barSpacing = clampBarSpacing(this.coords.width / ((span + margin) * this.coords.spacingScale));
+        const rightOffset = toL - (this.coords.barCount - 1) + margin;
         this.applyViewport({ barSpacing, rightOffset });
     }
 
@@ -2677,7 +2680,10 @@ export class NativeRenderer implements IChartRenderer {
         const scale = this.coords.spacingScale;
         // bar spacing: max keeps ≥ minVisible bars on screen; min keeps all bars + a margin within the width.
         const maxBs = Math.min(MAX_BAR_SPACING, W / (minVisible * scale));
-        const minBs = Math.max(MIN_BAR_SPACING, Math.min(maxBs, W / ((n + ZOOM_OUT_MARGIN_BARS) * scale)));
+        // The breathing room is at least the configured right margin, so every bar AND that
+        // margin fit at full zoom-out (a framed 'ALL' preset keeps its oldest bars on screen).
+        const room = Math.max(ZOOM_OUT_MARGIN_BARS, this.scene.style.margins.right);
+        const minBs = Math.max(MIN_BAR_SPACING, Math.min(maxBs, W / ((n + room) * scale)));
         const bs = Math.max(minBs, Math.min(maxBs, barSpacing));
         // right offset: the ONLY pan limit is keeping ≥ minVisible candles on screen. Panning left
         // can push the data far left (lots of right whitespace) until just minVisible remain; panning
