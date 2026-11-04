@@ -1,6 +1,9 @@
 // NumberInput: a typed number field with optional steppers that show on hover and repeat
 // while pressed. `blur` commit clamps on commit (the indicator dialog); `live` emits on
-// every keystroke (chart settings). `md` fills its parent; `sm` is a compact field.
+// every keystroke (chart settings). `md` fills its parent; `sm` is a compact field. The
+// spinbutton (ARIA, arrow keys, the steppers' repeat) is Zag's number-input machine; the
+// commit rules stay the field's own.
+import * as zagNumber from '@zag-js/number-input';
 import { msg } from '../lib/i18n';
 import { textOf } from '../lib/i18n';
 import type { Translator } from '../lib/i18n';
@@ -11,6 +14,7 @@ import { defineComponent } from '../lib/define';
 import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants } from '../lib/variants';
+import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
 export type NumberSize = 'sm' | 'md';
 export type NumberCommit = 'blur' | 'live';
@@ -148,6 +152,9 @@ export type NumberInputProps = NumberInputOptions;
 
 export const NUMBER_STYLE_ID = 'vela-ui-number-3';
 
+/** How the field shows a number: no grouping, every decimal (what the machine formats too). */
+const PLAIN = new Intl.NumberFormat('en-US', { useGrouping: false, maximumFractionDigits: 20 });
+
 export const NUMBER_CSS = css`
     @layer vela.ui {
         [data-slot='number-input-input'] {
@@ -277,10 +284,14 @@ export class NumberInput {
     readonly el: HTMLElement;
     readonly input: HTMLInputElement;
     private readonly ctrl: NumberInputController;
-    private last: string;
     private readonly placeholderMode: boolean;
     private readonly emptyValue: number;
     private readonly i18n: Translator | null;
+    private readonly machine: HandleOf<typeof zagNumber.machine>;
+    private readonly mid: string;
+    /** The user is typing a value the field commits on blur: the machine's reports of it
+     *  are not commits. */
+    private typing = false;
 
     constructor(opts: NumberInputOptions) {
         injectStyles(document);
@@ -288,49 +299,31 @@ export class NumberInput {
         this.ctrl = numberInputController(opts);
         this.placeholderMode = opts.placeholder !== undefined;
         this.emptyValue = opts.emptyValue ?? opts.value;
-        this.last = String(opts.value);
+        this.mid = nextUid('vela-number-input');
 
-        const ni = h('input', {
-            slot: numberInputDef.slot('input'),
-            attrs: {
-                type: 'number',
-                id: opts.id,
-                title: opts.title,
-                min: opts.min !== undefined ? String(opts.min) : undefined,
-                max: opts.max !== undefined ? String(opts.max) : undefined,
-                step: String(this.ctrl.step),
-            },
-        });
-        ni.disabled = this.ctrl.disabled;
-        if (this.placeholderMode) {
-            ni.placeholder = opts.placeholder ?? '';
-            ni.value = opts.value !== this.emptyValue ? String(opts.value) : '';
-        } else {
-            ni.value = String(opts.value);
-        }
+        const ni = h('input', { slot: numberInputDef.slot('input'), attrs: { title: opts.title } });
+        if (this.placeholderMode) ni.placeholder = opts.placeholder ?? '';
+        this.input = ni;
 
+        // The field's own rules commit at once, reading what the field holds; they listen
+        // before the machine does, so its handlers see the committed value.
         const commitRaw = (raw: number): void => {
+            this.typing = false;
             const n = this.ctrl.apply(raw);
-            if (n === null) {
-                ni.value = this.placeholderMode && this.ctrl.value === this.emptyValue ? '' : this.last;
-                return;
-            }
-            this.last = String(n);
-            if (this.placeholderMode && n === this.emptyValue) ni.value = '';
-            else ni.value = String(n);
+            this.show(n === null ? this.ctrl.value : n);
         };
-
+        ni.addEventListener('input', () => {
+            if (this.ctrl.commit === 'live' && !this.placeholderMode) {
+                const v = Number(ni.value);
+                if (ni.value.trim() !== '' && Number.isFinite(v)) this.ctrl.apply(v);
+            } else this.typing = true;
+        });
         if (this.placeholderMode) {
             ni.addEventListener('change', () => {
                 const raw = ni.value.trim() === '' ? this.emptyValue : Number(ni.value);
                 commitRaw(Number.isFinite(raw) ? raw : this.emptyValue);
             });
-        } else if (this.ctrl.commit === 'live') {
-            ni.addEventListener('input', () => {
-                const v = Number(ni.value);
-                if (Number.isFinite(v)) this.ctrl.apply(v);
-            });
-        } else {
+        } else if (this.ctrl.commit !== 'live') {
             ni.addEventListener('blur', () => commitRaw(Number(ni.value)));
             ni.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
@@ -339,14 +332,12 @@ export class NumberInput {
                 }
             });
         }
+        // An arrow key steps the value: what the user typed so far is no longer pending.
+        ni.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'PageUp' || e.key === 'PageDown') this.typing = false;
+        });
 
-        const steppers = this.ctrl.steppers
-            ? this.buildSteppers(document, (dir) => {
-                  const cur = Number(ni.value);
-                  const base = Number.isFinite(cur) ? cur : this.ctrl.value;
-                  commitRaw(snapToStep(base + dir * this.ctrl.step, base, this.ctrl.step));
-              })
-            : null;
+        const steppers = this.ctrl.steppers ? this.buildSteppers(document) : null;
         this.el = h(
             'div',
             {
@@ -358,7 +349,35 @@ export class NumberInput {
             ni,
             steppers,
         );
-        this.input = ni;
+
+        const clamp = this.ctrl.clamp;
+        this.machine = runMachine(
+            zagNumber.machine,
+            {
+                id: this.mid,
+                ...(opts.id ? { ids: { input: opts.id } } : {}),
+                defaultValue: this.placeholderMode && opts.value === this.emptyValue ? '' : String(opts.value),
+                step: this.ctrl.step,
+                ...(clamp && this.ctrl.min !== undefined ? { min: this.ctrl.min } : {}),
+                ...(clamp && this.ctrl.max !== undefined ? { max: this.ctrl.max } : {}),
+                clampValueOnBlur: clamp,
+                allowOverflow: !clamp,
+                disabled: this.ctrl.disabled,
+                // Plain numbers, as the field has always shown them: no grouping, every decimal.
+                locale: 'en-US',
+                formatOptions: { useGrouping: false, maximumFractionDigits: 20 },
+                // A press on a stepper keeps the focus where it is, and repeats while held.
+                focusInputOnChange: false,
+                spinOnPress: true,
+                translations: { incrementLabel: textOf(this.i18n, TEXT.increase), decrementLabel: textOf(this.i18n, TEXT.decrease) },
+                // The steppers' and the arrow keys' steps arrive here, a beat after the press.
+                onValueChange: ({ valueAsNumber }) => {
+                    if (this.typing || !Number.isFinite(valueAsNumber) || valueAsNumber === this.ctrl.value) return;
+                    commitRaw(valueAsNumber);
+                },
+            },
+            (service) => this.render(service),
+        );
     }
 
     get value(): number {
@@ -366,40 +385,48 @@ export class NumberInput {
     }
 
     setValue(v: number): void {
-        const n = this.ctrl.sync(v);
-        this.last = String(n);
-        if (this.placeholderMode && n === this.emptyValue) this.input.value = '';
-        else this.input.value = String(n);
+        this.typing = false;
+        this.show(this.ctrl.sync(v));
     }
 
-    destroy(): void {}
+    destroy(): void {
+        this.machine.stop();
+    }
 
-    private buildSteppers(doc: Document, applyDir: (dir: 1 | -1) => void): HTMLElement {
-        const mk = (dir: 1 | -1, icon: string, label: string): HTMLButtonElement => {
-            const b = h('button', { slot: numberInputDef.slot('step'), attrs: { type: 'button', tabindex: -1, 'aria-label': label } }, iconEl(icon, doc));
-            let timer = 0;
-            const apply = (): void => applyDir(dir);
-            const stop = (): void => {
-                if (timer) {
-                    window.clearTimeout(timer);
-                    timer = 0;
-                }
-            };
-            b.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                apply();
-                timer = window.setTimeout(function tick() {
-                    apply();
-                    timer = window.setTimeout(tick, 60);
-                }, 400);
-            });
-            b.addEventListener('pointerup', stop);
-            b.addEventListener('pointerleave', stop);
-            b.addEventListener('pointercancel', stop);
+    /** Show `n` in the field: through the machine, so its next render keeps it. */
+    private show(n: number): void {
+        const api = zagNumber.connect(this.machine.service, normalizeProps);
+        if (this.placeholderMode && n === this.emptyValue) {
+            if (!api.empty) api.clearValue();
+            this.input.value = '';
+        } else {
+            if (api.valueAsNumber !== n) api.setValue(n);
+            this.input.value = PLAIN.format(n);
+        }
+    }
+
+    private render(service: zagNumber.Service): void {
+        const api = zagNumber.connect(service, normalizeProps);
+        spreadProps(this.el, api.getRootProps(), this.mid);
+        spreadProps(this.input, api.getInputProps(), this.mid);
+        if (this.up) spreadProps(this.up, api.getIncrementTriggerProps(), this.mid);
+        if (this.down) spreadProps(this.down, api.getDecrementTriggerProps(), this.mid);
+    }
+
+    private up: HTMLButtonElement | null = null;
+    private down: HTMLButtonElement | null = null;
+
+    private buildSteppers(doc: Document): HTMLElement {
+        const mk = (icon: string): HTMLButtonElement => {
+            const b = h('button', { slot: numberInputDef.slot('step'), attrs: { type: 'button', tabindex: -1 } }, iconEl(icon, doc));
+            // The press belongs to the field: an open popover or dialog must not read it as a
+            // press outside.
+            b.addEventListener('pointerdown', (e) => e.stopPropagation());
             return b;
         };
-        return h('div', { className: 'vela-num-step', slot: numberInputDef.slot('steps') }, mk(1, 'chevron-up', textOf(this.i18n, TEXT.increase)), mk(-1, 'chevron-down', textOf(this.i18n, TEXT.decrease)));
+        this.up = mk('chevron-up');
+        this.down = mk('chevron-down');
+        return h('div', { className: 'vela-num-step', slot: numberInputDef.slot('steps') }, this.up, this.down);
     }
 }
 

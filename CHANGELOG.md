@@ -103,6 +103,13 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The number field runs on Zag's number-input machine.** The field is now a text input
+  with `inputmode="decimal"` and the spinbutton role, carrying `aria-valuenow` and its bounds;
+  the arrow keys and Page Up/Down step it, and the steppers repeat while held. Its commit rules
+  are unchanged and still report at once: on blur or Enter (clamped), on every keystroke in
+  `live` mode, and an empty field means `emptyValue` in placeholder mode. Values show as plain
+  numbers (no grouping). A stepper pressed with a mouse now leaves the focus in the field; a
+  touch leaves it where it was.
 - **The switch runs on Zag's switch machine.** Its root (`Switch.el`) is now a `<label>`
   holding a hidden checkbox, the control that takes focus and carries the `id` given, so a
   host's own `<label for>` still reaches it. The root carries its state as `data-state`
