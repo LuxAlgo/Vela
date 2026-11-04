@@ -4,7 +4,7 @@ import { t } from '@luxalgo/vela-ui';
 import { createBarChart } from '@luxalgo/vela-ui/bar-chart';
 import { createDataTable } from '@luxalgo/vela-ui/data-table';
 import { createDonut } from '@luxalgo/vela-ui/donut';
-import { createEmptyState } from '@luxalgo/vela-ui/empty-state';
+import { createEmpty } from '@luxalgo/vela-ui/empty';
 import { attachHoverCard } from '@luxalgo/vela-ui/hover-card';
 import { shortcutKeys } from '@luxalgo/vela-ui/kbd';
 import { createLineChart } from '@luxalgo/vela-ui/line-chart';
@@ -40,7 +40,7 @@ export function dataGallery(row: (label: string, ...children: HTMLElement[]) => 
     const net = TRADES.reduce((a, r) => a + r.pnl, 0);
     row('stat', createStat({ label: 'Net P&L', value: net.toFixed(2), tone: toneOf(net), sub: `${TRADES.length} trades` }).el, createStat({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el, createStat({ label: 'Open orders' }).el);
     row('kbd', ...shortcutKeys('Ctrl+Shift+K'));
-    row('empty-state', box('320px', 'auto', createEmptyState({ icon: 'bell', title: 'No alerts yet', description: 'Create one from the chart or the alerts panel.', action: createButton({ text: 'New alert', variant: 'outline', size: 'sm' }).el }).el));
+    row('empty', box('320px', 'auto', createEmpty({ icon: 'bell', title: 'No alerts yet', description: 'Create one from the chart or the alerts panel.', action: createButton({ text: 'New alert', variant: 'outline', size: 'sm' }).el }).el));
 
     const table = createDataTable<Trade>({
         columns: [

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { clampNumber, NUMBER_CSS, numberInputController, snapToStep } from '@luxalgo/vela-ui/number-input';
 import { placePopover, viewportRect, insetRect, intersectRects } from '@luxalgo/vela-ui/popover';
-import { switchController } from '@luxalgo/vela-ui/switch';
+import { checkboxController } from '@luxalgo/vela-ui/checkbox';
 import { SELECT_CSS, selectController } from '@luxalgo/vela-ui/select';
-import { TEXT_CSS, textFieldController } from '@luxalgo/vela-ui/text-field';
+import { TEXT_CSS, inputController } from '@luxalgo/vela-ui/input';
 
 describe('clampNumber', () => {
     it('clamps to min and max', () => {
@@ -99,10 +99,10 @@ describe('rect helpers', () => {
     });
 });
 
-describe('switchController', () => {
+describe('checkboxController', () => {
     it('toggle emits; setChecked does not (vela-sync)', () => {
         const seen: boolean[] = [];
-        const c = switchController({ checked: false, onChange: (v) => seen.push(v) });
+        const c = checkboxController({ checked: false, onChange: (v) => seen.push(v) });
         c.setChecked(true);
         expect(c.checked).toBe(true);
         expect(seen).toEqual([]);
@@ -111,7 +111,7 @@ describe('switchController', () => {
     });
 
     it('does not toggle when disabled', () => {
-        const c = switchController({ checked: false, disabled: true, onChange: () => { throw new Error('emitted'); } });
+        const c = checkboxController({ checked: false, disabled: true, onChange: () => { throw new Error('emitted'); } });
         expect(c.toggle()).toBe(false);
     });
 });
@@ -188,10 +188,10 @@ describe('closed field size', () => {
     });
 });
 
-describe('textFieldController', () => {
+describe('inputController', () => {
     it('commit emits on change; sync does not', () => {
         const seen: string[] = [];
-        const c = textFieldController({ value: 'a', onChange: (v) => seen.push(v) });
+        const c = inputController({ value: 'a', onChange: (v) => seen.push(v) });
         expect(c.commit('a')).toBeNull();
         expect(c.commit('b')).toBe('b');
         expect(seen).toEqual(['b']);

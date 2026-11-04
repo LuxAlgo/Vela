@@ -24,20 +24,23 @@ This page covers what is Vela's: where each component is used, and how Vela expo
 
 ## Form primitives
 
-`Switch`, `Select`, `NumberInput`, `TextField`, `TextArea`, `ColorField` /
+`Checkbox`, `Select`, `NumberInput`, `Input`, `TextArea`, `ColorField` /
 `buildColorPicker`, `Popover`, `DatePicker`, the field layer (`fieldRow` / `fieldSection` /
 `buildFieldControl`), and `GlyphSelect` / `widthField` are public
 (`@luxalgo/vela/ui`). They are the shared controls behind the indicator dialog,
 chart settings, and the drawing settings dialog. The drawing toolbar's compact
-icon chrome (glyph dropdowns, color underline) stays purpose-built. Overlay
-chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
+icon chrome (glyph dropdowns, color underline) stays purpose-built. Overlays
+(`Dialog`, `Menu`, `Tooltip`) and the behavior of the checkbox, the number field, the
+select's list and the color picker's opacity run on Zag machines.
 
-- **`Popover`** — portal + placement (below, flip above, `align` start/end, optional
-  `matchWidth`) + clamp boundary (viewport, an element, or a rect getter) + capture-phase
+- **`Popover`** — portal + placement (any `side` of the trigger, flipping to the opposite
+  one near the edge; `align`, `sideOffset`, `alignOffset`; optional `matchWidth`) + a
+  `collisionBoundary` (viewport, an element, or a rect getter) + capture-phase
   outside-dismiss + a process-wide single-open registry (`closeOpenPopovers`).
-- **`Switch`** — square check-toggle. `size: 'md'` is 20px with `--vela-fg-bright` on-fill
-  (settings dialogs); `size: 'sm'` is 18px with `--vela-selected-bg` (compact chrome).
-  `role="switch"`. `setChecked` does not emit.
+- **`Checkbox`** (formerly `Switch`, kept as a deprecated alias) — square check box.
+  `size: 'md'` is 20px with `--vela-fg-bright` on-fill (settings dialogs); `size: 'sm'` is
+  18px with `--vela-selected-bg` (compact chrome). A native checkbox underneath, so forms
+  and assistive tech see a checkbox. `setChecked` does not emit.
 - **`Select`** — trigger + portaled themed list (not the OS popup) with a hand-rolled
   overlay scrollbar. `md` is 34px/14px and fills its parent unless `fill: false`
   (the shared 100px settings column: a long current label ellipsizes, the open list
@@ -47,7 +50,7 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
   400ms then 60ms); `commit: 'live'` emits per keystroke. Chart settings uses live
   commit with steppers on, at the same 34×100px field as the indicator dialog.
   `sync` / `setValue` do not emit.
-- **`TextField`** — blur/Enter commit; `fill: false` is the same 100px column with
+- **`Input`** (formerly `TextField`, kept as a deprecated alias) — blur/Enter commit; `fill: false` is the same 100px column with
   ellipsized overflow. `setValue` does not emit.
 - **`TextArea`** — blur commit, optional `autoGrow` / `maxLines`. Used by indicator
   `text_area` inputs and the drawing bar's label editor.
@@ -92,8 +95,8 @@ Behavior:
   write its attributes.
 
 Every part carries a `data-slot` naming it (`button`, `button-icon`, `tabs-list`,
-`tabs-trigger`, `tabs-content`, `toggle-group`, `toggle-group-item`, `badge`, `switch`,
-`text-field-input`, `tooltip-content`, …), next to Zag's own `data-scope` / `data-part`
+`tabs-trigger`, `tabs-content`, `toggle-group`, `toggle-group-item`, `badge`, `checkbox`,
+`input-control`, `tooltip-content`, …), next to Zag's own `data-scope` / `data-part`
 and state attributes (`data-selected`, `data-state`).
 
 Variant, size, part and prop names follow shadcn's (`data-slot="tabs-trigger"`,

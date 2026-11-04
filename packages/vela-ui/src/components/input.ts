@@ -1,4 +1,4 @@
-// TextField: a one-line text input that commits on blur or Enter. `md` fills its parent and
+// Input: a one-line text input that commits on blur or Enter. `md` fills its parent and
 // matches the settings dialogs' inputs; `sm` is a compact 100px field.
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
@@ -6,21 +6,21 @@ import { h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants } from '../lib/variants';
 
-export type TextFieldSize = 'sm' | 'md';
+export type InputSize = 'sm' | 'md';
 
-export interface TextFieldControllerOptions {
+export interface InputControllerOptions {
     value?: string;
     /** The text it starts with when `value` is not given. */
     defaultValue?: string;
-    size?: TextFieldSize;
+    size?: InputSize;
     fill?: boolean;
     disabled?: boolean;
     onChange?: (value: string) => void;
 }
 
-export interface TextFieldController {
+export interface InputController {
     value: string;
-    size: TextFieldSize;
+    size: InputSize;
     fill: boolean;
     disabled: boolean;
     commit(next: string): string | null;
@@ -29,7 +29,7 @@ export interface TextFieldController {
 }
 
 /** The field's last committed string, without DOM. */
-export function textFieldController(opts: TextFieldControllerOptions = {}): TextFieldController {
+export function inputController(opts: InputControllerOptions = {}): InputController {
     let value = opts.value ?? opts.defaultValue ?? '';
     const size = opts.size ?? 'md';
     return {
@@ -51,15 +51,15 @@ export function textFieldController(opts: TextFieldControllerOptions = {}): Text
     };
 }
 
-export const textFieldDef = defineComponent({
-    name: 'text-field',
-    parts: ['root', 'input'],
+export const inputDef = defineComponent({
+    name: 'input',
+    parts: ['root', 'control'],
     settings: { radius: t.radius.md, 'focus-ring': `0 0 0 3px ${t.focus.soft}` },
 });
 
-export const textFieldVariants = variants({ size: ['md', 'sm'] });
+export const inputVariants = variants({ size: ['md', 'sm'] });
 
-export interface TextFieldOptions extends TextFieldControllerOptions {
+export interface InputOptions extends InputControllerOptions {
     placeholder?: string;
     /** Submitted with its form under this name. */
     name?: string;
@@ -67,20 +67,20 @@ export interface TextFieldOptions extends TextFieldControllerOptions {
     id?: string;
 }
 
-export type TextFieldProps = TextFieldOptions;
+export type InputProps = InputOptions;
 
 export const TEXT_STYLE_ID = 'vela-ui-text-2';
 
 export const TEXT_CSS = css`
         @layer vela.ui {
-            [data-slot='text-field-input'] {
+            [data-slot='input-control'] {
                 width: 100%;
                 min-width: 0;
                 box-sizing: border-box;
                 height: 34px;
                 background: transparent;
                 border: 1px solid ${t.border.strong};
-                border-radius: ${textFieldDef.vars.radius};
+                border-radius: ${inputDef.vars.radius};
                 color: ${t.fg.bright};
                 padding: 0 8px;
                 font-size: 14px;
@@ -100,14 +100,14 @@ export const TEXT_CSS = css`
                 }
                 &:focus {
                     border-color: ${t.focus};
-                    box-shadow: ${textFieldDef.vars['focus-ring']};
+                    box-shadow: ${inputDef.vars['focus-ring']};
                 }
                 &::placeholder {
                     color: currentColor;
                     opacity: 0.4;
                 }
             }
-            [data-slot='text-field'] {
+            [data-slot='input'] {
                 min-width: 0;
 
                 &:where(:not([hidden])) {
@@ -121,7 +121,7 @@ export const TEXT_CSS = css`
                     flex: none;
                     justify-self: start;
                 }
-                &[data-size='sm'] [data-slot='text-field-input'] {
+                &[data-size='sm'] [data-slot='input-control'] {
                     height: 28px;
                     background: ${t.surface.elev};
                     border-radius: ${t.radius.sm};
@@ -134,16 +134,16 @@ export const TEXT_CSS = css`
 
 const injectStyles = defineStyles(TEXT_STYLE_ID, TEXT_CSS);
 
-export class TextField {
+export class Input {
     readonly el: HTMLElement;
     readonly input: HTMLInputElement;
-    private readonly ctrl: TextFieldController;
+    private readonly ctrl: InputController;
 
-    constructor(opts: TextFieldOptions = {}) {
+    constructor(opts: InputOptions = {}) {
         injectStyles(document);
-        this.ctrl = textFieldController(opts);
+        this.ctrl = inputController(opts);
         // `size = 1` drops the UA's ~20ch minimum, so a 100px (or filling) wrapper holds.
-        const ti = h('input', { className: 'vela-text-field', slot: textFieldDef.slot('input'), attrs: { type: 'text', size: 1, id: opts.id, placeholder: opts.placeholder, name: opts.name } });
+        const ti = h('input', { className: 'vela-text-field', slot: inputDef.slot('control'), attrs: { type: 'text', size: 1, id: opts.id, placeholder: opts.placeholder, name: opts.name } });
         ti.required = opts.required === true;
         ti.value = this.ctrl.value;
         ti.disabled = this.ctrl.disabled;
@@ -156,7 +156,7 @@ export class TextField {
                 ti.blur();
             }
         });
-        this.el = h('div', { className: 'vela-text', slot: textFieldDef.slot('root'), attrs: textFieldVariants({ size: this.ctrl.size }), data: { fill: this.ctrl.fill } }, ti);
+        this.el = h('div', { className: 'vela-text', slot: inputDef.slot('root'), attrs: inputVariants({ size: this.ctrl.size }), data: { fill: this.ctrl.fill } }, ti);
         this.input = ti;
     }
 
@@ -172,6 +172,6 @@ export class TextField {
     destroy(): void {}
 }
 
-export function createTextField(props: TextFieldProps = {}): TextField {
-    return new TextField(props);
+export function createInput(props: InputProps = {}): Input {
+    return new Input(props);
 }

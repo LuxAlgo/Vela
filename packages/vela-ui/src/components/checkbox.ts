@@ -1,4 +1,4 @@
-// Switch: a square check toggle, filled with a check mark when on. `bright` fills with the
+// Checkbox: a square check toggle, filled with a check mark when on. `bright` fills with the
 // bright foreground (the settings dialogs), `selected` with the selection color. Behavior,
 // keyboard and ARIA come from Zag's switch machine: a label holding a hidden checkbox.
 import * as zagSwitch from '@zag-js/switch';
@@ -10,34 +10,34 @@ import { t } from '../lib/t';
 import { variants } from '../lib/variants';
 import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from '../lib/zag';
 
-export type SwitchSize = 'sm' | 'md';
+export type CheckboxSize = 'sm' | 'md';
 /** `bright` = settings-dialog fill (`--vela-fg-bright`); `selected` = `--vela-selected-bg`. */
-export type SwitchTone = 'bright' | 'selected';
+export type CheckboxTone = 'bright' | 'selected';
 
-export interface SwitchControllerOptions {
+export interface CheckboxControllerOptions {
     checked?: boolean;
     /** The state it starts in when `checked` is not given. */
     defaultChecked?: boolean;
     disabled?: boolean;
-    size?: SwitchSize;
-    tone?: SwitchTone;
+    size?: CheckboxSize;
+    tone?: CheckboxTone;
     /** Called when the user toggles it. */
     onCheckedChange?: (checked: boolean) => void;
     /** @deprecated Use `onCheckedChange`. */
     onChange?: (checked: boolean) => void;
 }
 
-export interface SwitchController {
+export interface CheckboxController {
     checked: boolean;
     disabled: boolean;
-    size: SwitchSize;
-    tone: SwitchTone;
+    size: CheckboxSize;
+    tone: CheckboxTone;
     setChecked(v: boolean): void;
     toggle(): boolean;
 }
 
 /** The switch's state without DOM: checked, and the option mapping. */
-export function switchController(opts: SwitchControllerOptions = {}): SwitchController {
+export function checkboxController(opts: CheckboxControllerOptions = {}): CheckboxController {
     let checked = opts.checked ?? opts.defaultChecked ?? false;
     const disabled = opts.disabled ?? false;
     return {
@@ -60,15 +60,15 @@ export function switchController(opts: SwitchControllerOptions = {}): SwitchCont
     };
 }
 
-export const switchDef = defineComponent({
-    name: 'switch',
+export const checkboxDef = defineComponent({
+    name: 'checkbox',
     parts: ['root', 'icon'],
     settings: { radius: '5px' },
 });
 
-export const switchVariants = variants({ size: ['md', 'sm'], tone: ['bright', 'selected'] });
+export const checkboxVariants = variants({ size: ['md', 'sm'], tone: ['bright', 'selected'] });
 
-export interface SwitchOptions extends SwitchControllerOptions {
+export interface CheckboxOptions extends CheckboxControllerOptions {
     id?: string;
     /** Submitted with its form under this name (`on` when checked). */
     name?: string;
@@ -76,13 +76,13 @@ export interface SwitchOptions extends SwitchControllerOptions {
     required?: boolean;
 }
 
-export type SwitchProps = SwitchOptions;
+export type CheckboxProps = CheckboxOptions;
 
 const injectStyles = defineStyles(
     'vela-ui-switch',
     css`
         @layer vela.ui {
-            [data-slot='switch'] {
+            [data-slot='checkbox'] {
                 width: 20px;
                 height: 20px;
                 flex: 0 0 auto;
@@ -90,7 +90,7 @@ const injectStyles = defineStyles(
                 justify-content: center;
                 padding: 0;
                 border: 1px solid ${t.border};
-                border-radius: ${switchDef.vars.radius};
+                border-radius: ${checkboxDef.vars.radius};
                 background: transparent;
                 color: transparent;
                 cursor: pointer;
@@ -103,13 +103,13 @@ const injectStyles = defineStyles(
                 &:where(:not([hidden])) {
                     display: inline-flex;
                 }
-                & [data-slot='switch-icon'],
+                & [data-slot='checkbox-icon'],
                 & svg {
                     display: block;
                     width: 12px;
                     height: 12px;
                 }
-                &[data-size='sm'] [data-slot='switch-icon'],
+                &[data-size='sm'] [data-slot='checkbox-icon'],
                 &[data-size='sm'] svg {
                     width: 11px;
                     height: 11px;
@@ -153,7 +153,7 @@ const injectStyles = defineStyles(
     `,
 );
 
-export class Switch {
+export class Checkbox {
     readonly el: HTMLLabelElement;
     private readonly input: HTMLInputElement;
     private readonly machine: HandleOf<typeof zagSwitch.machine>;
@@ -161,14 +161,14 @@ export class Switch {
     /** The state as the switch's users see it, at once: the machine settles a beat later. */
     private current: boolean;
 
-    constructor(opts: SwitchOptions = {}) {
+    constructor(opts: CheckboxOptions = {}) {
         injectStyles(document);
-        this.mid = nextUid('vela-switch');
+        this.mid = nextUid('vela-checkbox');
         this.current = opts.checked ?? opts.defaultChecked ?? false;
         const icon = iconEl('check', document);
-        icon.dataset.slot = switchDef.slot('icon');
+        icon.dataset.slot = checkboxDef.slot('icon');
         this.input = h('input', {});
-        this.el = h('label', { className: 'vela-switch', slot: switchDef.slot('root'), attrs: switchVariants({ size: opts.size ?? 'md', tone: opts.tone ?? 'bright' }) }, this.input, icon);
+        this.el = h('label', { className: 'vela-switch', slot: checkboxDef.slot('root'), attrs: checkboxVariants({ size: opts.size ?? 'md', tone: opts.tone ?? 'bright' }) }, this.input, icon);
         this.machine = runMachine(
             zagSwitch.machine,
             {
@@ -223,6 +223,6 @@ export class Switch {
     }
 }
 
-export function createSwitch(props: SwitchProps = {}): Switch {
-    return new Switch(props);
+export function createCheckbox(props: CheckboxProps = {}): Checkbox {
+    return new Checkbox(props);
 }

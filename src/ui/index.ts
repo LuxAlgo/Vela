@@ -51,7 +51,28 @@ export {
     type PlaceResult,
     type Rect,
 } from '@luxalgo/vela-ui/popover';
-export { Switch, createSwitch, switchController, type SwitchOptions, type SwitchProps, type SwitchController, type SwitchControllerOptions, type SwitchSize, type SwitchTone } from '@luxalgo/vela-ui/switch';
+export { Checkbox, createCheckbox, checkboxController, type CheckboxOptions, type CheckboxProps, type CheckboxController, type CheckboxControllerOptions, type CheckboxSize, type CheckboxTone } from '@luxalgo/vela-ui/checkbox';
+export { Input, createInput, inputController, type InputOptions, type InputProps, type InputController, type InputControllerOptions, type InputSize } from '@luxalgo/vela-ui/input';
+export { createEmpty, type EmptyProps, type EmptyHandle } from '@luxalgo/vela-ui/empty';
+export {
+    Switch,
+    createSwitch,
+    switchController,
+    TextField,
+    createTextField,
+    textFieldController,
+    type SwitchOptions,
+    type SwitchProps,
+    type SwitchController,
+    type SwitchControllerOptions,
+    type SwitchSize,
+    type SwitchTone,
+    type TextFieldOptions,
+    type TextFieldProps,
+    type TextFieldController,
+    type TextFieldControllerOptions,
+    type TextFieldSize,
+} from './renamed';
 export {
     Select,
     createSelect,
@@ -81,7 +102,7 @@ export {
     type NumberSize,
     type NumberCommit,
 } from '@luxalgo/vela-ui/number-input';
-export { TextField, createTextField, textFieldController, type TextFieldOptions, type TextFieldProps, type TextFieldController, type TextFieldControllerOptions, type TextFieldSize } from '@luxalgo/vela-ui/text-field';
+
 export {
     ColorField,
     createColorField,

@@ -65,8 +65,8 @@ build fails while one is missing. The manifest (`dist/manifest.json`), the theme
 Schema and `llms.txt` are generated from the file at build time, so there is nothing else to
 list.
 
-Released components keep their class (`new Switch(…)`, `new Tooltip(trigger, …)`) and their
-controller (`switchController`, `tooltipController`) next to the `create…` function; the
+Released components keep their class (`new Checkbox(…)`, `new Tooltip(trigger, …)`) and their
+controller (`checkboxController`, `tooltipController`) next to the `create…` function; the
 class is the instance the function returns. New components start from the shape above.
 
 ## The helpers (`src/lib/`)

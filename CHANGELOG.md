@@ -103,6 +103,15 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Three kit components take shadcn's names.** The square check box was called `Switch`;
+  it is `Checkbox` (`@luxalgo/vela-ui/checkbox`, `createCheckbox`, data-slots `checkbox` and
+  `checkbox-icon`, settings `--vela-checkbox-*`, theme `components.checkbox`). The one-line
+  text field is `Input` (`@luxalgo/vela-ui/input`, `createInput`, data-slots `input` and
+  `input-control`, theme `components.input`). The empty state is `Empty`
+  (`@luxalgo/vela-ui/empty`, `createEmpty`, data-slots `empty`, `empty-icon`,
+  `empty-title`, `empty-description`, theme `components.empty`). `@luxalgo/vela/ui` keeps
+  `Switch`, `createSwitch`, `switchController`, `TextField`, `createTextField`,
+  `textFieldController` and their types as deprecated aliases for one release.
 - **The kit's primitives take shadcn's props.**
   - Every floating part (the popover and what opens on it: the select list, the color and
     glyph pickers, the callout panel; the menu, the tooltip, the hover card) takes `side`,

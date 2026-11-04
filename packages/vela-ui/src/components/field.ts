@@ -12,9 +12,9 @@ import { colorField, type ColorFieldOpts } from './color-picker';
 import { widthField } from './glyph-select';
 import { NumberInput } from './number-input';
 import { Select, type SelectListPopoverOpts, type SelectOption } from './select';
-import { Switch } from './switch';
+import { Checkbox } from './checkbox';
 import { TextArea } from './text-area';
-import { TextField } from './text-field';
+import { Input } from './input';
 
 export type FieldGridVariant = 'settings' | 'inputs';
 export type FieldLabelSize = 'sm' | 'md';
@@ -312,7 +312,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
     if (opts.bool) {
         const wrap = document.createElement('div');
         cls(wrap, 'span', 'bool');
-        const sw = new Switch({
+        const sw = new Checkbox({
             id: opts.toggle?.id ?? opts.id,
             checked: opts.toggle?.checked ?? false,
             size: 'md',
@@ -349,7 +349,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
     if (opts.toggle) {
         const left = document.createElement('div');
         cls(left, 'toggle-label');
-        const sw = new Switch({
+        const sw = new Checkbox({
             id: opts.toggle.id ?? opts.id,
             checked: opts.toggle.checked,
             size: 'md',
@@ -519,7 +519,7 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
         return { el: sel.el, setValue: (v) => sel.setValue(String(v)) };
     }
     if (desc.kind === 'switch') {
-        const sw = new Switch({
+        const sw = new Checkbox({
             id: desc.id,
             checked: desc.checked,
             size: 'md',
@@ -543,7 +543,7 @@ export function buildFieldControl(desc: FieldControlDesc): FieldControlHandle {
         return { el };
     }
     if (desc.kind === 'text') {
-        const tf = new TextField({
+        const tf = new Input({
             id: desc.id,
             value: desc.value,
             size: 'md',

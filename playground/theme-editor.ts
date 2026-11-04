@@ -1,6 +1,6 @@
 // The gallery's theme editor: a few choices that re-theme the page live, and the createTheme
 // call that makes the same theme, to copy into a project.
-import { createButton, createTextField, createToggleGroup, colorField, createTheme, type ThemeInput } from '../src/ui';
+import { createButton, createInput, createToggleGroup, colorField, createTheme, type ThemeInput } from '../src/ui';
 import { DARK_THEME } from '../src/core/theme';
 
 const RADII = ['none', 'sm', 'md', 'lg'] as const;
@@ -81,7 +81,7 @@ export function themeEditor(apply: (theme: ReturnType<typeof createTheme>) => vo
         ),
         field(
             'font',
-            createTextField({
+            createInput({
                 size: 'sm',
                 fill: false,
                 value: input.font,

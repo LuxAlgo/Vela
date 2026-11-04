@@ -2,9 +2,9 @@
 // The form controls take shadcn's props: a starting value, the change callback by its shadcn
 // name, a placeholder, and the name and required that let a form submit and validate them.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSwitch } from '../packages/vela-ui/src/components/switch';
+import { createCheckbox } from '../packages/vela-ui/src/components/checkbox';
 import { createSelect } from '../packages/vela-ui/src/components/select';
-import { createTextField } from '../packages/vela-ui/src/components/text-field';
+import { createInput } from '../packages/vela-ui/src/components/input';
 import { createTextArea } from '../packages/vela-ui/src/components/text-area';
 import { createNumberInput } from '../packages/vela-ui/src/components/number-input';
 
@@ -18,10 +18,10 @@ const OPTIONS = [
 afterEach(() => document.body.replaceChildren());
 
 describe('the form controls', () => {
-    it('switch: starts from defaultChecked, reports through onCheckedChange, submits under its name', async () => {
+    it('checkbox: starts from defaultChecked, reports through onCheckedChange, submits under its name', async () => {
         const onCheckedChange = vi.fn();
         const form = document.createElement('form');
-        const sw = createSwitch({ defaultChecked: true, onCheckedChange, name: 'alerts', required: true });
+        const sw = createCheckbox({ defaultChecked: true, onCheckedChange, name: 'alerts', required: true });
         form.append(sw.el);
         document.body.append(form);
         await settle();
@@ -63,8 +63,8 @@ describe('the form controls', () => {
         expect(createSelect({ options: OPTIONS, defaultValue: 'b' }).value).toBe('b');
     });
 
-    it('text field and text area: defaultValue, placeholder, name and required', () => {
-        const tf = createTextField({ defaultValue: 'BTC', placeholder: 'Symbol', name: 'symbol', required: true });
+    it('input and text area: defaultValue, placeholder, name and required', () => {
+        const tf = createInput({ defaultValue: 'BTC', placeholder: 'Symbol', name: 'symbol', required: true });
         expect(tf.input.value).toBe('BTC');
         expect(tf.input.placeholder).toBe('Symbol');
         expect(tf.input.name).toBe('symbol');

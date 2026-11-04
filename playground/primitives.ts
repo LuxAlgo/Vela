@@ -6,8 +6,8 @@ import {
     createTabs,
     createToggleGroup,
     createBadge,
-    Switch,
-    TextField,
+    Checkbox,
+    Input,
     TextArea,
     NumberInput,
     Select,
@@ -152,8 +152,8 @@ row(badges, 'counts', createBadge({ text: '3', count: true, variant: 'secondary'
 // Form controls.
 const noop = (): void => {};
 const forms = section('Form controls', 'The settings dialogs build their rows from these.');
-row(forms, 'switch', new Switch({ checked: true }).el, new Switch({ checked: false }).el, new Switch({ checked: true, size: 'sm' }).el, new Switch({ checked: true, tone: 'selected' }).el, new Switch({ checked: true, disabled: true }).el);
-row(forms, 'text field', new TextField({ value: 'BTCUSDT', size: 'md' }).el, new TextField({ value: 'Compact', size: 'sm' }).el, new TextField({ value: 'Disabled', disabled: true }).el);
+row(forms, 'checkbox', new Checkbox({ checked: true }).el, new Checkbox({ checked: false }).el, new Checkbox({ checked: true, size: 'sm' }).el, new Checkbox({ checked: true, tone: 'selected' }).el, new Checkbox({ checked: true, disabled: true }).el);
+row(forms, 'input', new Input({ value: 'BTCUSDT', size: 'md' }).el, new Input({ value: 'Compact', size: 'sm' }).el, new Input({ value: 'Disabled', disabled: true }).el);
 row(forms, 'text area', new TextArea({ value: 'A note on the chart,\nover two lines.', rows: 3 }).el);
 row(forms, 'number', new NumberInput({ value: 14, min: 1, max: 100, steppers: true, size: 'md' }).el, new NumberInput({ value: 2.5, step: 0.5, size: 'sm' }).el, new NumberInput({ value: 7, disabled: true }).el);
 const options = [
