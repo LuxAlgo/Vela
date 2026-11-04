@@ -52,6 +52,15 @@ All notable changes to Vela, newest first.
   the project as a component of the project's own, which never styles the kit's, and
   `diff` shows what changed upstream since. `check` finds a second installed copy of the
   kit, copies behind the installed version, and mistakes in the project's theme file.
+- **A switch and an input group in the UI kit.** `@luxalgo/vela-ui/switch` is a sliding
+  on/off toggle with shadcn's props (`checked`, `defaultChecked`, `onCheckedChange`, `name`,
+  `value`, `required`), a compact `sm` size and a `destructive` variant whose track turns red
+  while on; given `checked` it is controlled and moves only through `setChecked`.
+  `@luxalgo/vela/ui` keeps `Switch` as the deprecated name of `Checkbox` for this release and
+  offers the new switch under that name once the alias is gone. `@luxalgo/vela-ui/input-group`
+  is an input with addons inside its border (an icon, a short text or a button, at its start
+  or end, or in a row above or below) that reports every keystroke (`onValueChange`). `Input`
+  takes a `type` (`search`, `email`, `password`, `url`, `tel`).
 - **The kit's CSS rules, for your CSS.** `@luxalgo/vela-ui/stylelint` is the stylelint config
   the kit's own components are checked with (tokens through `t`, no raw colors, logical
   directions, parts rather than class names); a project extends it for the components it

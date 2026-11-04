@@ -30,6 +30,8 @@ import {
     type BadgeVariant,
     type MenuItemDescriptor,
 } from '../src/ui';
+import { createSwitch } from '../packages/vela-ui/src/components/switch';
+import { createInputGroup } from '../packages/vela-ui/src/components/input-group';
 import { DARK_THEME, LIGHT_THEME } from '../src/core/theme';
 import { shadcnTheme } from './shadcn-look';
 import { themeEditor } from './theme-editor';
@@ -154,6 +156,22 @@ const noop = (): void => {};
 const forms = section('Form controls', 'The settings dialogs build their rows from these.');
 row(forms, 'checkbox', new Checkbox({ checked: true }).el, new Checkbox({ checked: false }).el, new Checkbox({ checked: true, size: 'sm' }).el, new Checkbox({ checked: true, tone: 'selected' }).el, new Checkbox({ checked: true, disabled: true }).el);
 row(forms, 'input', new Input({ value: 'BTCUSDT', size: 'md' }).el, new Input({ value: 'Compact', size: 'sm' }).el, new Input({ value: 'Disabled', disabled: true }).el);
+row(
+    forms,
+    'switch',
+    createSwitch({ defaultChecked: true, label: 'On' }).el,
+    createSwitch({ label: 'Off' }).el,
+    createSwitch({ defaultChecked: true, size: 'sm', label: 'Small' }).el,
+    createSwitch({ defaultChecked: true, variant: 'destructive', label: 'Kill switch' }).el,
+    createSwitch({ disabled: true, label: 'Disabled' }).el,
+);
+row(
+    forms,
+    'input group',
+    createInputGroup({ type: 'search', placeholder: 'Search symbol or name', label: 'Search', addons: [{ icon: 'search' }] }).el,
+    createInputGroup({ value: '2.5', label: 'Amount', addons: [{ align: 'inline-end', text: 'USD' }] }).el,
+    createInputGroup({ size: 'sm', placeholder: 'Filter', label: 'Filter', addons: [{ icon: 'search' }, { align: 'inline-end', button: { label: 'Clear', icon: 'close', onClick: noop } }] }).el,
+);
 row(forms, 'text area', new TextArea({ value: 'A note on the chart,\nover two lines.', rows: 3 }).el);
 row(forms, 'number', new NumberInput({ value: 14, min: 1, max: 100, steppers: true, size: 'md' }).el, new NumberInput({ value: 2.5, step: 0.5, size: 'sm' }).el, new NumberInput({ value: 7, disabled: true }).el);
 const options = [

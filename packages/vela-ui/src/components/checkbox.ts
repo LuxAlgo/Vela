@@ -79,7 +79,7 @@ export interface CheckboxOptions extends CheckboxControllerOptions {
 export type CheckboxProps = CheckboxOptions;
 
 const injectStyles = defineStyles(
-    'vela-ui-switch',
+    'vela-ui-checkbox',
     css`
         @layer vela.ui {
             [data-slot='checkbox'] {

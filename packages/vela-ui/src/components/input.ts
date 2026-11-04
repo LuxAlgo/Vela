@@ -59,7 +59,11 @@ export const inputDef = defineComponent({
 
 export const inputVariants = variants({ size: ['md', 'sm'] });
 
+export type InputType = 'text' | 'search' | 'email' | 'password' | 'url' | 'tel';
+
 export interface InputOptions extends InputControllerOptions {
+    /** The kind of text it takes (default `text`). */
+    type?: InputType;
     placeholder?: string;
     /** Submitted with its form under this name. */
     name?: string;
@@ -143,7 +147,7 @@ export class Input {
         injectStyles(document);
         this.ctrl = inputController(opts);
         // `size = 1` drops the UA's ~20ch minimum, so a 100px (or filling) wrapper holds.
-        const ti = h('input', { className: 'vela-text-field', slot: inputDef.slot('control'), attrs: { type: 'text', size: 1, id: opts.id, placeholder: opts.placeholder, name: opts.name } });
+        const ti = h('input', { className: 'vela-text-field', slot: inputDef.slot('control'), attrs: { type: opts.type ?? 'text', size: 1, id: opts.id, placeholder: opts.placeholder, name: opts.name } });
         ti.required = opts.required === true;
         ti.value = this.ctrl.value;
         ti.disabled = this.ctrl.disabled;

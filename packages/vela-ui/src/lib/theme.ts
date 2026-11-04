@@ -31,6 +31,8 @@ import type { checkboxDef } from '../components/checkbox';
 import type { tabsDef } from '../components/tabs';
 import type { textAreaDef } from '../components/text-area';
 import type { inputDef } from '../components/input';
+import type { inputGroupDef } from '../components/input-group';
+import type { switchDef } from '../components/switch';
 import type { toggleGroupDef } from '../components/toggle-group';
 import type { tooltipDef } from '../components/tooltip';
 import { contrastRatio, isDarkColor, mix, parseRgb } from './color';
@@ -155,6 +157,8 @@ export interface ComponentDefs {
     tabs: typeof tabsDef;
     'text-area': typeof textAreaDef;
     input: typeof inputDef;
+    'input-group': typeof inputGroupDef;
+    switch: typeof switchDef;
     'toggle-group': typeof toggleGroupDef;
     tooltip: typeof tooltipDef;
 }
