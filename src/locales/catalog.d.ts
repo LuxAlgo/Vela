@@ -1978,6 +1978,7 @@ export interface VelaCoreMessageCatalog {
     'ui.menu.removeFavorite': string;
     'ui.numberInput.decrease': string;
     'ui.numberInput.increase': string;
+    'vela.sidebar.label': string;
     'widget.bottombar.chartSettings': string;
     'widget.bottombar.extended': string;
     'widget.bottombar.range.1d': string;
@@ -2078,9 +2079,9 @@ export interface VelaCoreMessageCatalog {
     'widget.objectTree.expandPane': string;
     'widget.objectTree.group': string;
     'widget.objectTree.groupDrawings': string;
+    'widget.objectTree.groupDropHint': string;
     'widget.objectTree.groupMembers': string;
     'widget.objectTree.groupPick': string;
-    'widget.objectTree.groupSelected': string;
     'widget.objectTree.hide': string;
     'widget.objectTree.hideAll': string;
     'widget.objectTree.indicatorSettings': string;

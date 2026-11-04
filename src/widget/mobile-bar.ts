@@ -44,6 +44,7 @@ const CSS = `
     font-weight: 600;
     -webkit-tap-highlight-color: transparent;
 }
+.vela-mb-item[hidden] { display: none; }
 .vela-mb-item[hidden] { display: none !important; }
 .vela-mb-item:active { background: var(--vela-hover); }
 .vela-mb-item .vela-icon { font-size: 18px; width: 18px; height: 18px; }
@@ -109,6 +110,8 @@ export class MobileBar {
     private readonly maxEl: HTMLButtonElement | null;
     /** Left-aligned contributed actions — filled by {@link renderActions}. */
     private readonly actionsHost: HTMLElement;
+    /** The indicators stop (null when the shell has no indicator surface). */
+    private readonly indicatorsEl: HTMLButtonElement | null;
     private readonly opts: MobileBarOptions;
     /** Each fixed stop's accessible name, re-read by {@link relocalize}. */
     private readonly labels: Array<{ el: HTMLElement; label: MessageLike }> = [];
@@ -143,6 +146,7 @@ export class MobileBar {
         this.tfEl.textContent = timeframeLabel(opts.timeframe, opts.i18n);
         const onIndicators = opts.onIndicatorsClick;
         const indicators = onIndicators ? item('vela-mb-indicators', TEXT.indicators, onIndicators, 'indicators') : null;
+        this.indicatorsEl = indicators;
         this.actionsHost = doc.createElement('span');
         this.actionsHost.className = 'vela-mb-actions';
         const onDrawings = opts.onDrawingsClick;
@@ -171,6 +175,7 @@ export class MobileBar {
         for (const action of widgetActions('topbar', ctx).filter((a) => mobilePlacement(a) === 'bar' && !builtin.has(a.id))) {
             const b = doc.createElement('button');
             b.className = 'vela-mb-item';
+            b.dataset.actionId = action.id;
             const label = textOf(ctx.i18n ?? this.opts.i18n, action.label);
             b.setAttribute('aria-label', label);
             if (action.icon) b.appendChild(iconEl(action.icon, doc));
@@ -181,6 +186,11 @@ export class MobileBar {
             });
             this.actionsHost.appendChild(b);
         }
+    }
+
+    /** Show or hide the indicators stop (the topbar's `'indicators'` item hidden at runtime). */
+    setIndicatorsVisible(visible: boolean): void {
+        if (this.indicatorsEl) this.indicatorsEl.hidden = !visible;
     }
 
     setSymbol(symbol: string): void {

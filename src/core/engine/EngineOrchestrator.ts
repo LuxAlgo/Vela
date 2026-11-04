@@ -2242,10 +2242,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         this.renderer.setVisibleRange({ from: r.from + delta, to: r.to + delta });
     }
 
-    /** Frame a named preset (e.g. `'1M'`, `'YTD'`, `'ALL'`) over the loaded bars. */
+    /** Frame a named preset (e.g. `'1M'`, `'YTD'`, `'ALL'`) over the loaded bars. Every
+     *  preset ends on the newest bar, so the frame keeps the configured right margin past it
+     *  (as scroll-to-latest and the first fit do) — "Reset chart view" frames `'ALL'`. */
     setVisibleRangePreset(preset: VisibleRangePreset): void {
         const range = presetToRange(preset, this.bars);
-        if (range) this.renderer.setVisibleRange(range);
+        if (range) this.renderer.setVisibleRange(range, { rightMargin: true });
     }
 
     destroy(): void {

@@ -44,6 +44,46 @@ describe('mobile placement', () => {
         expect(stops).toEqual(['On bar']);
     });
 
+    it('a bar stop names its action, and re-rendering asks `when` again', () => {
+        let mobile = false;
+        registerWidgetAction({ id: 't.bar', target: 'topbar', label: 'Phone only', align: 'left', when: () => mobile, run: () => {} });
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        const bar = new MobileBar(host, {
+            symbol: 'BINANCE:BTCUSDT',
+            timeframe: '60',
+            onSymbolClick: () => {},
+            onTimeframeClick: () => {},
+            onMoreClick: () => {},
+            onSettingsClick: () => {},
+            getContext: () => ({}) as WidgetContext,
+        });
+        expect(host.querySelector('[data-action-id="t.bar"]')).toBeNull();
+        mobile = true;
+        bar.renderActions();
+        expect(host.querySelector('.vela-mb-actions [data-action-id="t.bar"]')?.getAttribute('aria-label')).toBe('Phone only');
+    });
+
+    it('the indicators stop hides and comes back', () => {
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        const bar = new MobileBar(host, {
+            symbol: 'BINANCE:BTCUSDT',
+            timeframe: '60',
+            onSymbolClick: () => {},
+            onTimeframeClick: () => {},
+            onIndicatorsClick: () => {},
+            onMoreClick: () => {},
+            onSettingsClick: () => {},
+            getContext: () => ({}) as WidgetContext,
+        });
+        const stop = host.querySelector<HTMLElement>('.vela-mb-indicators')!;
+        bar.setIndicatorsVisible(false);
+        expect(stop.hidden).toBe(true);
+        bar.setIndicatorsVisible(true);
+        expect(stop.hidden).toBe(false);
+    });
+
     it('the menu lists primary actions right after Layout, the others at the end', () => {
         const host = document.createElement('div');
         document.body.appendChild(host);

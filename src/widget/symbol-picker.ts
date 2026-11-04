@@ -6,6 +6,7 @@ import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageDescriptor, Translator } from '../core/i18n/types';
 import { Dialog } from '../ui/components/dialog';
+import { Tabs } from '../ui/components/tabs';
 import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { tickerIconEl, baseOf } from './symbol-icon';
@@ -159,19 +160,8 @@ const CSS = `
    dialog body carries it, flush or not, so the list adds none of its own. */
 [data-layout='mobile'] .vela-sp-tabs { overflow-x: auto; scrollbar-width: none; gap: 6px; }
 [data-layout='mobile'] .vela-sp-tabs::-webkit-scrollbar { display: none; }
-[data-layout='mobile'] .vela-sp-tab { flex: none; padding: 7px 10px; }
+[data-layout='mobile'] .vela-sp-tabs > .vela-tab { flex: none; padding: 7px 10px; }
 [data-layout='mobile'] .vela-sp-list { flex: 1 1 auto; max-height: none; margin-bottom: 0; }
-.vela-sp-tab {
-    all: unset;
-    padding: 3px 10px;
-    border-radius: 5px;
-    cursor: pointer;
-    color: var(--vela-fg-muted);
-    font-size: 13px;
-    font-weight: 600;
-}
-.vela-sp-tab:hover { color: var(--vela-fg); }
-.vela-sp-tab[data-active] { background: var(--vela-selected-bg); color: var(--vela-selected-fg); }
 .vela-sp-list {
     min-height: 0;
     margin: var(--vela-space-2) var(--vela-space-4) var(--vela-space-4);
@@ -300,8 +290,7 @@ export class SymbolPicker {
     private highlighted = 0;
     private seed = '';
     private activeTab: SymbolTab = 'all';
-    private readonly tabButtons: Array<{ el: HTMLButtonElement; label: MessageDescriptor }> = [];
-    private tabs!: HTMLElement;
+    private tabs!: Tabs;
     private visible = PAGE;
     /** The last filter pass returned fewer raw rows than asked — the pool is drained
      *  (checked BEFORE folding: folding shortens pages without meaning exhaustion). */
@@ -323,26 +312,20 @@ export class SymbolPicker {
         const searchRow = doc.createElement('div');
         searchRow.className = 'vela-sp-searchrow';
         searchRow.append(iconEl('search', doc), this.input);
-        this.tabs = doc.createElement('div');
-        this.tabs.className = 'vela-sp-tabs';
+        // The asset-class strip filters the one result list: tabs without panels.
+        this.tabs = new Tabs({
+            variant: 'filled',
+            className: 'vela-sp-tabs',
+            items: TABS.map((tab) => ({ id: tab.id, label: textOf(opts.i18n, tab.label) })),
+            value: this.activeTab,
+            onChange: (id) => {
+                this.activeTab = id as SymbolTab;
+                this.refresh();
+            },
+        });
         const head = doc.createElement('div');
         head.className = 'vela-sp-head';
-        for (const tab of TABS) {
-            const b = doc.createElement('button');
-            b.className = 'vela-sp-tab';
-            b.dataset.tab = tab.id;
-            b.textContent = textOf(opts.i18n, tab.label);
-            this.tabButtons.push({ el: b, label: tab.label });
-            if (tab.id === this.activeTab) b.dataset.active = '1';
-            b.addEventListener('click', () => {
-                this.activeTab = tab.id;
-                for (const c of this.tabs.children) delete (c as HTMLElement).dataset.active;
-                b.dataset.active = '1';
-                this.refresh();
-            });
-            this.tabs.appendChild(b);
-        }
-        head.append(searchRow, this.tabs);
+        head.append(searchRow, this.tabs.el);
         this.list = doc.createElement('div');
         this.list.className = 'vela-sp-list';
         // Infinite scroll: nearing the bottom grows the page and APPENDS the new rows —
@@ -528,7 +511,7 @@ export class SymbolPicker {
         const i18n = this.opts.i18n;
         this.dialog.titleEl.textContent = textOf(i18n, TEXT.title);
         this.input.placeholder = textOf(i18n, TEXT.search);
-        for (const { el, label } of this.tabButtons) el.textContent = textOf(i18n, label);
+        this.tabs.setItems(TABS.map((tab) => ({ id: tab.id, label: textOf(i18n, tab.label) })));
     }
 
     private computeRows(): SymbolDescriptor[] {

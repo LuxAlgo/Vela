@@ -2,6 +2,79 @@
 
 All notable changes to Vela, newest first.
 
+## [0.9.4]
+
+### Added
+
+- **Resize a rectangle from any side.** A selected rectangle now has eight handles: one on
+  each corner and one in the middle of each side. Drag a corner to resize the box in both
+  directions, or a side handle to move just that side, so you can stretch a zone to a new
+  high or extend it in time without touching its other edges.
+- **A toolbar on the shell's right edge.** `sidebar: true` gives the shell a toolbar on its
+  fourth side, beside the topbar, the charts and the bottom bar. It takes over the
+  side-panel toggles from the topbar and hosts the entries plugins register with
+  `registerWidgetAction({ target: 'sidebar' })`, which can show a pressed state (`active`)
+  and a badge (`ctx.sidebar.setBadge`). Plugins can hide and give back its entries at
+  runtime (`ctx.sidebar.setVisible`), as they do the topbar's, and anchor their own popovers
+  to their buttons, which carry `data-action-id` like the topbar's. Hosts lay its upper and
+  lower sections out with `{ top, bottom }`, as they compose the topbar. It is off by
+  default and desktop only: on the mobile layout the panels keep their menu rows and the
+  sidebar's entries join them.
+- **Buttons, tabs, toggle groups and badges in the UI kit.** `@luxalgo/vela/ui` now has
+  `Button` (default, outline, secondary, ghost, destructive and link, in four heights and
+  their square icon sizes, with icons on either side and toggle states), `Tabs` (an
+  island, an underlined strip, and the filled, soft and vertical rail looks, with keyboard
+  navigation, tabs that can hide, and the full tabs semantics), `ToggleGroup` (one choice
+  among a few options, or several toggled on their own) and `Badge` (status labels and
+  counts). Variant, size and part names follow shadcn's. Tabs and toggle groups run Zag
+  state machines, which own their keyboard behavior and accessibility, so another view
+  layer can run the same machines and behave the same; buttons and badges hand out their
+  attributes from a plain controller.
+- **The indicator settings, the symbol picker and the drawings drawer use them.** Their
+  tabs and the settings dialogs' buttons look as before. The indicator settings tabs now
+  answer the arrow keys, announce themselves as tabs with their panels, and brighten on
+  hover as they were meant to.
+- **Plugins can shape the shell's chrome without touching its markup.** A plugin can hide
+  the shell's own topbar items at runtime (`ctx.topbar.setVisible('alerts', false)`), which
+  also removes their row in the mobile menu, their bottom-bar stop and their keyboard
+  shortcut, and gives them back the same way. It can read the side-panel dock (which panels
+  it holds, which one is open or maximized) and follow its changes (`ctx.panels`). A side
+  panel can draw its own header (`registerSidePanel({ header: 'none' })`) and close itself
+  from it. On the mobile layout, a contributed bottom-bar button whose condition depends on
+  the layout now appears or leaves when the shell switches layouts, and contributed buttons
+  carry their action's id for styling.
+- **Plugins can lay out full-height panels, a rail and covering strips.** A side panel can
+  take the full height of the shell beside the topbar, the charts and the bottom bar
+  (`registerSidePanel({ placement: 'column' })`), which all narrow to make room. A plugin
+  can dock an element at the shell's outer right edge for a rail (`ctx.dockEdge`), dock a
+  strip under the bottom bar (`ctx.dockStrip(el, { position: 'below-bottombar' })`), and lay
+  a docked strip over the whole chart column and back (`cover`), leaving full-height panels,
+  the rail and the mobile bottom bar uncovered. A shell that uses none of these keeps its
+  layout exactly as before.
+
+### Changed
+
+- **A drawing's settings open beside its toolbar.** The settings panel now opens right next
+  to the drawing's toolbar, where its gear is, instead of at the far edge of the chart. It
+  takes the side of the toolbar away from the drawing when there is room, so the drawing
+  stays in view as you edit it, and it stays inside the chart, scrolling when the chart is
+  short.
+- **The object tree's group button starts a group with nothing selected.** It used to stay
+  dim until you picked drawings in the panel. With nothing picked it now adds an empty
+  "Group N" at the top of the main chart, with its name ready to edit and a "Drag drawings
+  here" hint; drag drawings onto it to fill it. With drawings picked it groups them, as
+  before. An empty group waits for its first drawing, then behaves like any other group and
+  goes away once its last drawing leaves.
+
+### Fixed
+
+- **Resetting the chart view keeps your margins.** "Reset chart view" in the chart menu
+  placed the newest bar against the price axis and ignored the right margin set in the
+  chart settings. It now leaves that margin past the newest bar, as scrolling to the latest
+  bar does. So do the range buttons in the bottom bar and `setVisibleRangePreset`. The
+  Alt+R key now resets the view as the menu row does, so a price scale you dragged fits the
+  data again, with the top and bottom margins.
+
 ## [0.9.3]
 
 ### Added

@@ -9,6 +9,7 @@ import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorManifest, IndicatorLoader } from './indicators';
 import type { VelaStorage } from './persist';
 import type { TopbarComposition } from './topbar-composition';
+import type { SidebarComposition } from './sidebar-composition';
 
 /** What a shell (widget or workspace) accepts BEYOND the chart options themselves. */
 export interface VelaShellOptions {
@@ -47,6 +48,16 @@ export interface VelaShellOptions {
      *  for `'screenshot'`); Ctrl+Z / Ctrl+Y stay — they belong to editing, not to the
      *  `'undo-redo'` buttons. */
     topbar?: TopbarComposition;
+    /** A toolbar along the shell's right edge, beside the topbar, the charts and the bottom
+     *  bar (default off). It takes over the side-panel toggles from the topbar and hosts
+     *  the actions plugins register with `target: 'sidebar'`. `true` uses the default
+     *  layout; `{ top, bottom }` lists the entries per section, top to bottom — panel
+     *  ids (`'objects'`, `'dataWindow'`, a `registerSidePanel` id), sidebar action ids,
+     *  the `'panels'` and `'actions'` flow slots, and `'|'` for a separator. An
+     *  undeclared section keeps its default (`top: ['panels']`, `bottom: ['objects',
+     *  'dataWindow', '|', 'actions']`). Desktop only: on the mobile layout the panels
+     *  keep their rows in the three-dots menu and the sidebar actions join them. */
+    sidebar?: boolean | SidebarComposition;
     /** The built-in indicator picker's entry points — the topbar button, the mobile-bar
      *  item, and the `/` shortcut. `false` removes them. The `indicators` manifest
      *  still resolves and auto-adds.

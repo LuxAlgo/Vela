@@ -49,6 +49,7 @@ const CSS = `
     box-sizing: border-box;
     background: var(--vela-bg);
 }
+.vela-panel-header[hidden] { display: none; }
 .vela-panel-header {
     display: flex;
     align-items: center;
@@ -190,6 +191,8 @@ export interface SidePanelOptions {
     /** A header button that MAXIMIZES the panel over every chart of the shell, and restores
      *  it. For panels that are sometimes the main work surface (an editor). */
     maximizable?: boolean;
+    /** `'none'`: no header row — the panel's content draws its own. Default `'default'`. */
+    header?: 'default' | 'none';
     /** The shell's translator (title, header buttons). Absent: English. */
     i18n?: Translator;
 }
@@ -222,6 +225,9 @@ export class SidePanel {
     /** Notified when the USER pins or unpins a floating panel (`overlay` is the NEW placement) —
      *  never on a programmatic {@link setOverlay}, for the same reason as widths. */
     onPlacementChange: ((overlay: boolean) => void) | null = null;
+    /** Notified whenever the panel maximizes or restores, by any path (its header button,
+     *  code, or a close restoring it). */
+    onMaximizedChange: ((maximized: boolean) => void) | null = null;
     protected readonly body: HTMLElement;
     private readonly heading: HTMLElement;
     private title: MessageLike;
@@ -299,6 +305,7 @@ export class SidePanel {
             this.refreshMaxButton();
         }
         header.append(this.heading, this.slot, ...(this.pin ? [this.pin] : []), ...(this.maxButton ? [this.maxButton] : []), close);
+        if (opts.header === 'none') header.hidden = true;
         this.body = doc.createElement('div');
         this.body.className = 'vela-panel-body';
         this.el.append(header, this.body);
@@ -364,6 +371,7 @@ export class SidePanel {
         if (maximized) this.el.dataset.maximized = '1';
         else delete this.el.dataset.maximized;
         this.refreshMaxButton();
+        this.onMaximizedChange?.(maximized);
     }
 
     private refreshMaxButton(): void {

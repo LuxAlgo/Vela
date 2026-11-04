@@ -258,7 +258,7 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 
 | Tool | Type key | What it does |
 |---|---|---|
-| Rectangle | `box` | An axis-aligned filled box. |
+| Rectangle | `box` | An axis-aligned filled box. Drag a corner handle to resize both sides, or the handle in the middle of a side to move that side alone. |
 | Arrow | `arrow` | A straight arrow between two points. |
 | Ellipse | `ellipse` | A data-space ellipse in a bounding box. |
 | Triangle | `triangle` | A three-point filled triangle. |

@@ -261,8 +261,17 @@ registerWidgetAction({
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
         // ctx.setSymbol / setTimeframe / setPriceStyle / openSymbolSearch(query?)
         // ctx.togglePanel(id, open?) — open/close a docked side panel (dock stays exclusive)
-        // ctx.dockStrip(el) — dock an element as a full-width strip between the charts and
-        //   the bottom bar (the charts shrink); returns the undock
+        // ctx.panels — the dock as data: list() (built-ins flagged), openId(),
+        //   isMaximized(id), onDidChange(cb) (see Side panels)
+        // ctx.topbar — the built-in topbar items: isVisible(id), setVisible(id, visible)
+        //   (see Hiding built-in topbar items)
+        // ctx.sidebar — the right-edge toolbar: enabled, setBadge(id, value), refresh(),
+        //   isVisible(id), setVisible(id, visible) (see The sidebar)
+        // ctx.dockStrip(el, { position? }) — dock an element as a full-width strip above
+        //   (default) or under the bottom bar (the charts shrink); returns the undock, which
+        //   also carries cover(on) (see Layout regions)
+        // ctx.dockEdge(el, 'right') — dock an element at the shell's outer right edge, full
+        //   height (a rail); returns the undock
         // ctx.replay (workspace) — bar replay across every cell on one clock; drive it
         //   rather than one cell's chart.replay so every chart replays together
         // ctx.addIndicator({ name, script, id?, language? }) — add a script indicator
@@ -286,7 +295,11 @@ On the mobile chrome the split carries over: left-aligned actions get their own
 icon-only stop in the bottom bar (the built-in indicators slot), while right-aligned
 ones stay in the three-dots sheet. `mobile` overrides it per action: a left action with
 `mobile: 'menu'` becomes a three-dots row with the primary rows (right after Layout),
-and a right action with `mobile: 'bar'` gets a bottom-bar stop. `context:*` actions become
+and a right action with `mobile: 'bar'` gets a bottom-bar stop. The bottom bar asks `when`
+again whenever the shell switches between its desktop and mobile layouts, so a gate that
+reads the layout (`ctx.host.closest('[data-layout]')`) shows a phone-only stop as soon as
+the shell turns mobile. Every contributed button and stop carries its action's id as
+`data-action-id`. `context:*` actions become
 rows of the matching right-click menu zone (see [Right-click menu
 actions](#right-click-menu-actions)). Register at import time — a widget constructed later
 picks them up; after late registrations call `widget.refreshActions()`.
@@ -297,6 +310,31 @@ topbar](../user/workspace.md#composing-the-topbar)) can pin an action id at an e
 position (overriding both), or omit the `'actions'` flow slot entirely, in which case
 unpinned actions don't render on that side. Publish your action ids (a stable exported
 constant) so hosts can compose with them.
+
+### Hiding built-in topbar items
+
+A plugin that hosts one of the shell's own controls elsewhere (its own alerts surface, a
+rail of panel toggles) hides the built-in at runtime through `ctx.topbar`:
+
+```ts
+registerWidgetAttachment({
+    id: 'mytool.alerts',
+    mount: (ctx) => {
+        ctx.topbar.setVisible('alerts', false);   // the bell, its mobile menu row
+        return () => ctx.topbar.setVisible('alerts', true);
+    },
+});
+```
+
+The ids are the built-in composition ids: `'symbol'`, `'timeframes'`, `'style'`,
+`'layout'`, `'indicators'`, `'undo-redo'`, `'alerts'`, `'panels'` and `'screenshot'`.
+Runtime visibility narrows the host's `topbar` composition and follows its rule: hiding an
+item removes its other entry points with it — its row in the mobile three-dots menu, its
+bottom-bar stop, its keyboard chord (`mod+alt+S` for `'screenshot'`). Hiding `'panels'`
+also removes the panel rows from the mobile menu, so a plugin that moves the panel toggles
+elsewhere on the desktop keeps them reachable on a phone by hiding `'panels'` only on the
+desktop layout. `ctx.topbar.isVisible(id)` reads the result. It never shows an item the
+composition left out, and it is not saved with the layout: apply it again when you mount.
 
 Two rules keep actions portable:
 
@@ -723,6 +761,8 @@ registerSidePanel({
     maxWidth: 560,
     overlay: false,              // true floats the panel OVER the chart (with a pin to dock it)
     maximizable: false,          // true adds a Maximize/Restore button to the header
+    header: 'default',           // 'none': no header row — the panel draws its own
+    placement: 'chart',          // 'column': full height beside the topbar, charts and bottom bar
     mount: (ctx, body, header) => {
         const list = document.createElement('div');
         body.appendChild(list);                       // `body` is the panel's scrolling area
@@ -742,6 +782,17 @@ registerSidePanel({
   name); `header.setTitle` rewrites the title text (an empty string hides it, letting the
   slot own the row). The close button and the row itself stay the shell's, and the topbar
   toggle keeps the DECLARED `title` as its tooltip.
+- **Or draw your own header.** With `header: 'none'` the shell renders no header row: the
+  panel lays out its own at the top of `body` and wires its close control to
+  `header.close()` (and its maximize control, if any, to `header.setMaximized`). On the
+  mobile layout the panel covers the chart and the header's close is the way out, so a
+  headless panel must offer one.
+- **Read the dock through `ctx.panels`.** `list()` reports every docked panel in dock order,
+  the built-ins included (`builtIn: true`), with its title in the shell's language;
+  `openId()` names the open one (or null); `isMaximized(id)` says whether it covers the
+  charts; `onDidChange(cb)` fires after a panel opens, closes, maximizes or restores, and
+  after panels are added or removed, and returns the unsubscribe. `ctx.togglePanel` acts on
+  the same dock.
 
 - **Width is a per-panel choice.** Omit `resizable` for a fixed column; with it, the drag is
   clamped to `[minWidth, maxWidth]` (defaults 200/640) and the width the user settles on is
@@ -770,6 +821,85 @@ registerSidePanel({
   (replaced) descriptor is rebuilt, and an open one stays open.
 - A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
   than taking the shell down.
+
+## Layout regions
+
+The shell lays out a **chart column** (the topbar, the chart row, the docked strips and the
+bottom bar), and plugins can add to it in three places without reaching into its markup:
+
+```ts
+// A full-height panel beside the whole chart column, not only beside the charts.
+registerSidePanel({ id: 'mytool.watch', title: 'Watchlist', icon: 'list', placement: 'column', mount });
+
+registerWidgetAttachment({
+    id: 'mytool.chrome',
+    mount: (ctx) => {
+        const offRail = ctx.dockEdge(myRail, 'right');                         // outer right edge, full height
+        const dock = ctx.dockStrip(myDock, { position: 'below-bottombar' });   // under the bottom bar
+        maximizeButton.onclick = () => dock.cover(!covered);                    // over the chart column
+        return () => { offRail(); dock(); };
+    },
+});
+```
+
+- **`placement: 'column'`** puts a side panel at the shell's right, full height: the topbar,
+  the charts, the strips and the bottom bar narrow to make room. It shares the dock with the
+  other panels (still one open at a time). On the mobile layout it covers the chart area
+  above the bottom bar, like any panel; maximized, it covers the chart column too.
+- **`ctx.dockEdge(el, 'right')`** docks an element outside everything else on the right,
+  full height — the place for a rail of toggles. Edge elements keep their own width and
+  stack in docking order.
+- **`ctx.dockStrip(el, { position: 'below-bottombar' })`** docks a strip under the bottom bar
+  instead of above it. The undock `dockStrip` returns also carries **`cover(on)`**:
+  `cover(true)` lays the strip over the whole chart column — topbar, charts, strips and
+  bottom bar — at that size whatever height the strip set itself, but not over a column
+  panel, an edge element or the mobile layout's bottom bar; `cover(false)` puts it back in
+  its spot.
+
+A shell that uses none of these keeps its plain column layout; the first one in use switches
+the shell to a grid with these regions for the rest of its life.
+
+## The sidebar
+
+A host can give the shell a toolbar along its right edge (`sidebar: true`, see
+[the workspace guide](../user/workspace.md#the-sidebar)). It holds the side-panel toggles,
+and a plugin adds its own entries as widget actions with `target: 'sidebar'`:
+
+```ts
+registerWidgetAction({
+    id: 'mytool.alerts.toggle',
+    target: 'sidebar',
+    label: msg('mytool.alerts', 'Price alerts'),  // the button's accessible name and tooltip
+    icon: 'bell',
+    order: 10,                                     // within the 'actions' flow slot
+    active: (ctx) => alertsOpen,                   // pressed look, read on every redraw
+    run: (ctx) => {
+        toggleAlerts();
+        ctx.sidebar.setBadge('mytool.alerts.toggle', unread());
+    },
+});
+```
+
+- A press redraws the sidebar. When the state behind `active` or `when` changes on its own,
+  call **`ctx.sidebar.refresh()`**.
+- **`ctx.sidebar.setBadge(id, value)`** puts a small count on an entry, a sidebar action or a
+  panel (`null`, `0` or `''` clear it; above 99 shows `99+`).
+- **`ctx.sidebar.setVisible(id, visible)`** hides an entry, a panel toggle or a sidebar
+  action, and gives it back; **`ctx.sidebar.isVisible(id)`** tells whether it shows. Like
+  `ctx.topbar.setVisible`, it never adds an entry the host's composition left out, a hidden
+  action leaves the mobile three-dots menu too, and it is not saved with the layout.
+- **Anchor your own UI to your button.** Sidebar buttons carry the same hooks as the topbar's
+  and the mobile bar's: `data-action-id` on an action's button, `data-panel-id` on a panel
+  toggle. A `run` that opens a popover or a menu anchors it to
+  `ctx.host.querySelector('[data-action-id="mytool.alerts.toggle"]')`.
+- **`ctx.sidebar.enabled`** tells whether the shell has a sidebar; with none, `setBadge`,
+  `refresh` and `setVisible` do nothing and `isVisible` is false, so a plugin can call them
+  unconditionally.
+- An action registered after the shell is built shows on the next `refreshActions()`, like
+  topbar actions.
+- On the mobile layout the sidebar is hidden and its actions are rows in the three-dots menu.
+- Which entries show, and where, is the host's call (its `sidebar` composition). A plugin that
+  wants its entry somewhere specific documents the id for hosts to place.
 
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 

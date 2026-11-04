@@ -20,6 +20,7 @@ import { parseSymbol } from '../data/ProviderRegistry';
 // host that mounts a Topbar — the widget, a multi-chart workspace — gets the same look.
 const STYLE_ID = 'vela-topbar';
 const CSS = `
+.vela-widget-topbar [data-topbar-hidden] { display: none !important; }
 .vela-widget-topbar {
     display: flex;
     align-items: center;
@@ -262,6 +263,8 @@ export class Topbar {
     private alertsBadge!: HTMLElement;
     /** The resolved composition (defaults applied) — what renders, where, in order. */
     private readonly comp: ResolvedTopbarComposition;
+    /** Each rendered built-in item's elements (its trailing hairline included), for runtime hiding. */
+    private readonly itemEls = new Map<string, HTMLElement[]>();
     /** Pinned contributed-action slots, by action id (composition entries that name one,
      *  plus built-in slots taken over by an override). */
     private readonly pinned = new Map<string, { host: HTMLElement; left: boolean }>();
@@ -445,13 +448,16 @@ export class Topbar {
                     return pinSlot(id, left);
             }
         };
+        const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
         const sideEls = (list: readonly string[], left: boolean): HTMLElement[] => {
             const out: HTMLElement[] = [];
             for (const [i, id] of list.entries()) {
                 const els = elementsFor(id, left);
                 if (els.length === 0) continue;
-                out.push(...els);
-                if (primaries.has(id) && i < list.length - 1) out.push(sep());
+                const item = [...els];
+                if (primaries.has(id) && i < list.length - 1) item.push(sep());
+                out.push(...item);
+                if (builtin.has(id) && id !== 'actions') this.itemEls.set(id, item);
             }
             return out;
         };
@@ -636,6 +642,7 @@ export class Topbar {
             // icon-only ones on the right take the native 32px TOOL chrome outright,
             // so a slot override is pixel-faithful to the button it replaces.
             b.className = left ? 'vela-widget-action-left' : iconOnly ? 'vela-widget-tool' : 'vela-widget-action';
+            b.dataset.actionId = action.id;
             if (action.icon) b.appendChild(iconEl(action.icon, doc));
             const label = textOf(ctx?.i18n ?? this.i18n, action.label);
             if (iconOnly) {
@@ -657,6 +664,15 @@ export class Topbar {
 
     setIndicatorCount(_n: number): void {
         // Count badge intentionally hidden — kept as a no-op so hosts can keep calling it.
+    }
+
+    /** Hide or show a rendered built-in item (and its trailing hairline). An item the
+     *  composition left out has nothing to show; the call is a no-op for it. */
+    setItemVisible(id: string, visible: boolean): void {
+        for (const el of this.itemEls.get(id) ?? []) {
+            if (visible) delete el.dataset.topbarHidden;
+            else el.dataset.topbarHidden = '1';
+        }
     }
 
     /** Enable/disable the undo and redo tools from the host's unified history. */

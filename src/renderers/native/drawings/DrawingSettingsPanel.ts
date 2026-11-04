@@ -24,6 +24,7 @@ import {
 } from '../../../core/drawings';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { Dialog } from '../../../ui/components/dialog';
+import { Button } from '../../../ui/components/button';
 import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
 import { buildFieldControl, fieldGrid } from '../../../ui/components/field';
 import { TextArea } from '../../../ui/components/text-area';
@@ -131,6 +132,8 @@ const LINE_LABEL_TYPES = new Set(['trendline', 'ray', 'extendedline', 'infoline'
  *  position (its own section edits entry, stop and target). */
 const NO_POINTS = new Set(['freehand', 'highlighter', 'vline', 'position']);
 const MAX_POINTS = 8;
+/** The least height (px) the panel takes beside the toolbar; with less it sits over it. */
+const MIN_ROOM = 200;
 /** Paths the rich sections own, kept out of the generic rows. */
 const POSITION_PATHS = new Set(['riskPercent', 'accountBalance', 'quantity', 'direction', 'entryPrice', 'stopPrice', 'targetPrice', 'showText', 'showHeader', 'showLossSize', 'showTargetLabel', 'showStopLabel', 'showPrices']);
 const LEVEL_PATHS = new Set(['showRatios']);
@@ -172,7 +175,6 @@ function ensureStyles(): void {
 .vela-dsp .vela-dialog-header { padding: 8px 8px 8px 16px; gap: 6px; }
 .vela-dsp .vela-dialog-title { font-size: 15px; line-height: 22px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-dsp .vela-dialog-footer { padding: 10px 12px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--vela-border); }
-.vela-dsp .vela-dialog-btn { height: 30px; font-size: 13px; }
 .vela-dsp-scroll { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
 .vela-dsp-block { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .vela-dsp-block + .vela-dsp-block, .vela-dsp-fold { border-top: 1px solid var(--vela-border); }
@@ -300,12 +302,13 @@ export class DrawingSettingsPanel {
         withKitTranslator(this.env.i18n?.(), () => this.refresh?.());
     }
 
-    open(drawing: Drawing, actions: SettingsActions, anchor: PopupAnchor | null): void {
+    /** `anchor` is the drawing's box; `toolbar`, the quick toolbar's, which the panel opens beside. */
+    open(drawing: Drawing, actions: SettingsActions, anchor: PopupAnchor | null, toolbar: PopupAnchor | null = null): void {
         // Kit controls built here (steppers, color pickers) speak the chart's language too.
-        withKitTranslator(this.env.i18n?.(), () => this.build(drawing, actions, anchor));
+        withKitTranslator(this.env.i18n?.(), () => this.build(drawing, actions, anchor, toolbar));
     }
 
-    private build(drawing: Drawing, actions: SettingsActions, anchor: PopupAnchor | null): void {
+    private build(drawing: Drawing, actions: SettingsActions, anchor: PopupAnchor | null, toolbar: PopupAnchor | null): void {
         this.close();
         ensureStyles();
         const first = actions.resolve() ?? drawing;
@@ -362,7 +365,7 @@ export class DrawingSettingsPanel {
         applyChromeTokens(ui.panel, this.theme);
         ui.backdrop.classList.add('vela-dsp-pass');
         ui.positioner.classList.add('vela-dsp-pass');
-        // Open on the side of the chart away from the drawing, so the drawing stays in view.
+        // Without the toolbar to hang off: the side of the chart away from the drawing.
         const hostW = this.host.clientWidth;
         const leftHalf = anchor != null && hostW > 0 && anchor.x + anchor.w / 2 < hostW / 2;
         ui.positioner.style.justifyContent = leftHalf ? 'flex-end' : 'flex-start';
@@ -389,6 +392,44 @@ export class DrawingSettingsPanel {
         };
         build.rebuild();
         ui.show();
+        if (toolbar) this.placeBeside(ui, toolbar, anchor);
+    }
+
+    /** Hang the panel off the quick toolbar, like a menu from its gear: on the toolbar's side away
+     *  from the drawing when it fits there, else the side with more room (it scrolls inside), its
+     *  left edge in line with the toolbar's. Opening folds grow it away from the toolbar. On the
+     *  mobile layout the panel fills the shell instead. */
+    private placeBeside(ui: Dialog, bar: PopupAnchor, drawing: PopupAnchor | null): void {
+        if (ui.positioner.closest('[data-layout="mobile"]')) return;
+        const W = this.host.clientWidth;
+        const H = this.host.clientHeight;
+        if (W === 0 || H === 0) return;
+        const p = ui.panel;
+        const gap = 8;
+        const edge = 12;
+        ui.positioner.style.padding = '0';
+        p.style.position = 'absolute';
+        p.style.margin = '0';
+        // The dialog shows itself a tick after `show()`; lay its layer out now to measure the panel.
+        const shown = ui.positioner.style.display;
+        ui.positioner.style.display = '';
+        const w = p.offsetWidth;
+        const h = p.offsetHeight;
+        ui.positioner.style.display = shown;
+
+        const room = { above: bar.y - gap - edge, below: H - (bar.y + bar.h) - gap - edge };
+        const awayAbove = drawing != null && drawing.y + drawing.h / 2 > bar.y + bar.h / 2;
+        const order: Array<'above' | 'below'> = awayAbove ? ['above', 'below'] : ['below', 'above'];
+        const side = order.find((s) => room[s] >= h) ?? (room.above > room.below ? 'above' : 'below');
+        p.style.left = `${Math.max(4, Math.min(bar.x, W - w - 4))}px`; // the toolbar's own side margin
+        if (room[side] < MIN_ROOM) {
+            // Too little room either side (a short chart): over the toolbar, kept in view.
+            p.style.top = `${Math.max(edge, Math.min(bar.y, H - h - edge))}px`;
+            return;
+        }
+        p.style.maxHeight = `${room[side]}px`;
+        if (side === 'below') p.style.top = `${bar.y + bar.h + gap}px`;
+        else p.style.bottom = `${H - bar.y + gap}px`;
     }
 
     close(): void {
@@ -1244,12 +1285,7 @@ function separator(): HTMLElement {
 }
 
 function button(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.className = primary ? 'vela-dialog-btn vela-dialog-btn-primary' : 'vela-dialog-btn';
-    b.addEventListener('click', onClick);
-    return b;
+    return new Button({ text: label, variant: primary ? 'default' : 'outline', size: 'sm', onClick }).el;
 }
 
 /** A menu row's text, in the row's text slot. */

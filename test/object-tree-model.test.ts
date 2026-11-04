@@ -10,6 +10,7 @@ import {
     drawingLabel,
     drawingMeta,
     drawingUnits,
+    emptyGroupsIn,
     groupOf,
     groupState,
     groupTokenIndex,
@@ -173,6 +174,22 @@ describe('buildTree — the unified stack', () => {
         expect(tree[0]!.items[1]).toMatchObject({ kind: 'unit', unit: { kind: 'group' } });
     });
 
+    it('a group started empty leads the main chart, in front of every drawing and series', () => {
+        const p = pane('price', 'price', 0, [{ id: 'a' }]);
+        const drawings = [draw('d1', 'price', 9)];
+        const groups: DrawGroup[] = [{ id: 'g1', name: 'Group 1', ids: [], pane: 'price' }];
+        for (const interleave of [true, false]) {
+            const tree = buildTree(snap({ panes: [p], zOrder: [{ id: 'a', z: 20 }], drawings, groups, interleave }));
+            expect(tree[0]!.items[0]).toMatchObject({ kind: 'unit', unit: { kind: 'group', group: { id: 'g1' }, members: [] } });
+            // It holds no drawings, so the stack itself is unchanged.
+            expect(names(tree[0]!)).toEqual(interleave ? ['a', 'd1', 'price'] : ['d1', 'a', 'price']);
+        }
+    });
+
+    it('a chart holding only an empty group is not an empty tree', () => {
+        expect(treeIsEmpty(buildTree(snap({ groups: [{ id: 'g1', name: 'Group 1', ids: [] }] })))).toBe(false);
+    });
+
     it('is empty only when nothing but the candles is on the chart', () => {
         expect(treeIsEmpty(buildTree(snap()))).toBe(true);
         expect(treeIsEmpty(buildTree(snap({ panes: [pane('price', 'price', 0, [{ id: 'sma' }])] })))).toBe(false);
@@ -333,6 +350,18 @@ describe('drawingUnits', () => {
         expect(units[1]).toMatchObject({ kind: 'draw', drawing: expect.objectContaining({ id: 'd2' }) });
     });
 
+    it('an empty group shows in its own panel, or in the main chart once that panel is gone', () => {
+        const groups: DrawGroup[] = [
+            { id: 'here', name: 'A', ids: [], pane: 'p2' },
+            { id: 'gone', name: 'B', ids: [], pane: 'p9' },
+            { id: 'main', name: 'C', ids: [] },
+            { id: 'full', name: 'D', ids: ['d1'], pane: 'p2' },
+        ];
+        const paneIds = new Set(['price', 'p2']);
+        expect(emptyGroupsIn(groups, 'p2', paneIds).map((g) => g.id)).toEqual(['here']);
+        expect(emptyGroupsIn(groups, 'price', paneIds).map((g) => g.id)).toEqual(['gone', 'main']);
+    });
+
     it('groupOf finds a drawing\'s bundle, or nothing', () => {
         const groups: DrawGroup[] = [{ id: 'g1', name: 'G', ids: ['d1'] }];
         expect(groupOf(groups, 'd1')?.id).toBe('g1');
@@ -384,6 +413,19 @@ describe('group state and membership', () => {
             { id: 'g2', name: 'Group 2', ids: ['d3'] },
         ]);
         expect(removeFromGroups(groups, ['d3'])).toEqual([{ id: 'g1', name: 'Group 1', ids: ['d1', 'd2'] }]);
+    });
+
+    it('a group started empty waits for its first drawing, then dissolves like any other once emptied', () => {
+        const fresh = g('g1', 'Group 1', []);
+        // Pruning and unrelated moves leave it alone while it waits.
+        expect(pruneGroups([fresh], new Set(['d1']))).toEqual([fresh]);
+        expect(removeFromGroups([fresh, g('g2', 'Group 2', ['d1', 'd2'])], ['d1'])).toEqual([fresh, g('g2', 'Group 2', ['d2'])]);
+        const joined = assignToGroup([fresh], 'g1', ['d1']);
+        expect(joined).toEqual([g('g1', 'Group 1', ['d1'])]);
+        // Its last drawing leaving takes it away, as it would any group.
+        expect(removeFromGroups(joined, ['d1'])).toEqual([]);
+        expect(pruneGroups(joined, new Set())).toEqual([]);
+        expect(assignToGroup([...joined, g('g2', 'Group 2', ['d2'])], 'g2', ['d1'])).toEqual([g('g2', 'Group 2', ['d2', 'd1'])]);
     });
 
     it('joining a group is exclusive — the drawing leaves the one it was in', () => {

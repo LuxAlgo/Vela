@@ -217,6 +217,12 @@ export interface VisibleRange {
     to: Millis;
 }
 
+/** How {@link IChartRenderer.setVisibleRange} frames a range. */
+export interface VisibleRangeOptions {
+    /** Keep the configured right margin (whitespace past `range.to`) inside the frame. */
+    rightMargin?: boolean;
+}
+
 /** A user-initiated pane action reported by the renderer (hover buttons / double-clicks). */
 export type PaneAction =
     | { type: 'move'; paneId: string; dir: 'up' | 'down' }
@@ -458,7 +464,13 @@ export interface IChartRenderer {
     getDataWindowReadout?(): DataWindowReadout;
 
     getVisibleRange(): VisibleRange | null;
-    setVisibleRange(range: VisibleRange): void;
+    /**
+     * Frame `range` across the plot width. With `opts.rightMargin`, the renderer also
+     * leaves its configured right margin (whitespace past `range.to`, in bars) inside the
+     * frame — how a named preset frames the newest bars, so a preset (and "Reset chart
+     * view") never drops that margin. A renderer without a right margin ignores the option.
+     */
+    setVisibleRange(range: VisibleRange, opts?: VisibleRangeOptions): void;
     /**
      * Pan by a fraction of the visible width at constant zoom (positive ⇒ toward the
      * latest bars), behaving exactly like a pointer drag: same pan limits (including the
