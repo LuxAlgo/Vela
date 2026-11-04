@@ -62,9 +62,9 @@ export interface ButtonHandle {
     destroy(): void;
 }
 
-const injectStyles = defineStyles(
-    'vela-ui-button',
-    css`
+export const BUTTON_STYLE_ID = 'vela-ui-button';
+
+export const BUTTON_CSS = css`
         @layer vela.ui {
             [data-slot='button'] {
                 cursor: pointer;
@@ -214,8 +214,9 @@ const injectStyles = defineStyles(
                 }
             }
         }
-    `,
-);
+    `;
+
+const injectStyles = defineStyles(BUTTON_STYLE_ID, BUTTON_CSS);
 
 class ButtonImpl implements ButtonHandle {
     readonly el: HTMLButtonElement;

@@ -268,14 +268,37 @@ export {
     type DatePickerCell,
     type DatePickerPanel,
 } from '@luxalgo/vela-ui/date-picker';
-export { createButton, type ButtonProps, type ButtonHandle, type ButtonVariant, type ButtonSize } from '@luxalgo/vela-ui/button';
-export { createTabs, type TabsProps, type TabsHandle, type TabsVariant, type TabItem } from '@luxalgo/vela-ui/tabs';
+export { createButton, BUTTON_CSS, BUTTON_STYLE_ID, type ButtonProps, type ButtonHandle, type ButtonVariant, type ButtonSize } from '@luxalgo/vela-ui/button';
+export { createTabs, TABS_CSS, TABS_STYLE_ID, type TabsProps, type TabsHandle, type TabsVariant, type TabItem } from '@luxalgo/vela-ui/tabs';
 export {
     createToggleGroup,
+    TOGGLE_GROUP_CSS,
+    TOGGLE_GROUP_STYLE_ID,
     type ToggleGroupProps,
     type ToggleGroupHandle,
     type ToggleGroupItem,
     type ToggleGroupSingleProps,
     type ToggleGroupMultipleProps,
 } from '@luxalgo/vela-ui/toggle-group';
-export { createBadge, type BadgeProps, type BadgeHandle, type BadgeVariant } from '@luxalgo/vela-ui/badge';
+export { createBadge, BADGE_CSS, BADGE_STYLE_ID, type BadgeProps, type BadgeHandle, type BadgeVariant } from '@luxalgo/vela-ui/badge';
+export {
+    Button,
+    buttonController,
+    Badge,
+    badgeController,
+    Tabs,
+    tabAvailable,
+    ToggleGroup,
+    type ButtonOptions,
+    type ButtonController,
+    type ButtonControllerOptions,
+    type BadgeOptions,
+    type BadgeController,
+    type BadgeControllerOptions,
+    type TabsOptions,
+    type TabsControllerOptions,
+    type ToggleGroupOptions,
+    type ToggleGroupControllerOptions,
+    type ToggleGroupSingleOptions,
+    type ToggleGroupMultipleOptions,
+} from './renamed';

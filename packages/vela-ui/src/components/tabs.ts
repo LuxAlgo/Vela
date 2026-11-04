@@ -79,9 +79,9 @@ export const tabAvailable = (item: TabItem): boolean => !item.disabled && !item.
 
 const countEl = (count: number | null | undefined): HTMLElement | null => (count == null ? null : h('span', { slot: tabsDef.slot('count'), text: String(count) }));
 
-const injectStyles = defineStyles(
-    'vela-ui-tabs',
-    css`
+export const TABS_STYLE_ID = 'vela-ui-tabs';
+
+export const TABS_CSS = css`
         @layer vela.ui {
             [data-slot='tabs-icon'] {
                 margin-inline-end: 6px;
@@ -236,8 +236,9 @@ const injectStyles = defineStyles(
                 }
             }
         }
-    `,
-);
+    `;
+
+const injectStyles = defineStyles(TABS_STYLE_ID, TABS_CSS);
 
 class TabsImpl implements TabsHandle {
     readonly el: HTMLElement;
