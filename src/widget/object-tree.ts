@@ -17,7 +17,8 @@ import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { SerializedDrawing } from '../core/drawings/Drawing';
 import { injectChromeStyles } from '../ui/chromeStyles';
 import { iconEl } from '@luxalgo/vela-ui/icons';
-import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
 import {
@@ -445,7 +446,7 @@ export class ObjectTree extends SidePanel {
     }
     /** The last render's model, kept so a right-click reads the same state the rows show. */
     private pass: Pass | null = null;
-    private menu: DropdownMenu | null = null;
+    private readonly menu: ContextMenu;
     private menuActions = new Map<string, () => void>();
     private drag: DragSession | null = null;
 
@@ -460,7 +461,8 @@ export class ObjectTree extends SidePanel {
         super(host, TEXT.objectTree, 'vela-ot', i18n ? { i18n } : {});
         injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
 
-        this.body.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+        // A side panel: a long press opens a row's menu on touch screens.
+        this.menu = new ContextMenu({ target: this.body, items: (e) => this.menuItemsAt(e), onSelect: (id) => this.menuActions.get(id)?.() });
         this.body.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     }
 
@@ -504,8 +506,7 @@ export class ObjectTree extends SidePanel {
     override destroy(): void {
         this.detach();
         this.endDrag(false); // a drag in flight has nothing left to drop onto
-        this.menu?.destroy();
-        this.menu = null;
+        this.menu.destroy();
         super.destroy();
     }
 
@@ -1324,19 +1325,16 @@ export class ObjectTree extends SidePanel {
     // Right-clicking a row opens the same actions its buttons expose, plus the ones with no
     // room on a row: re-paning an indicator, and reordering what draws in front.
 
-    private onContextMenu(e: MouseEvent): void {
+    private menuItemsAt(e: MouseEvent | PointerEvent): MenuItemDescriptor[] | null {
         const pass = this.pass;
-        if (!pass) return;
+        if (!pass) return null;
         const rowEl = (e.target as HTMLElement).closest<HTMLElement>('.vela-ot-row');
-        if (!rowEl) return;
+        if (!rowEl) return null;
         e.preventDefault();
         const b = new MenuBuilder();
         const items = this.itemsForRow(b, pass, rowEl);
-        if (items.length === 0) return;
         this.menuActions = b.actions;
-        const menu = this.ensureMenu();
-        menu.setItems(items);
-        menu.openAt(e.clientX, e.clientY);
+        return items;
     }
 
     private itemsForRow(b: MenuBuilder, pass: Pass, rowEl: HTMLElement): MenuItemDescriptor[] {
@@ -1366,14 +1364,6 @@ export class ObjectTree extends SidePanel {
      *  theme's custom properties don't resolve and the surface renders unstyled. */
     private uiHost(): HTMLElement {
         return (this.el.closest('.vela-ui') as HTMLElement | null) ?? this.el;
-    }
-
-    /** The menu, built on first use — by then the panel is mounted, so the theme host resolves. */
-    private ensureMenu(): DropdownMenu {
-        if (!this.menu) {
-            this.menu = new DropdownMenu({ host: this.uiHost(), items: [], onSelect: (id) => this.menuActions.get(id)?.() });
-        }
-        return this.menu;
     }
 
     private findIndicatorRow(pass: Pass, id: string): IndicatorRow | undefined {

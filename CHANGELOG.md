@@ -19,6 +19,14 @@ All notable changes to Vela, newest first.
   the kit (a host whose dependencies resolve to two versions) still works as one: the copies
   share the icons, the CSS written with `css`, element ids, the language of the kit's words
   and the open popover.
+- **A context menu in the UI kit.** `createContextMenu({ target, items, onSelect })`
+  (`@luxalgo/vela-ui/context-menu`, also on `@luxalgo/vela/ui`) opens the dropdown menu's list
+  where it is asked for: a right-click on the target, a long press on a touch screen
+  (`longPress: false` turns it off where a long press already means something), or the
+  keyboard's context-menu key. `items` may be a function of the opening event, so the rows can
+  depend on the spot; a right-click an inner menu already answered is left to it. The chart,
+  status line, legend and object tree menus use it, and the object tree's opens on a long
+  press too.
 - **Release kit controls with the subtree they live in.** Controls that run a state machine
   (checkbox, switch, number field, select, tabs, toggle group, tooltip, the color picker's
   opacity) tie their teardown to their element. `disposeWithin(root)` releases every control

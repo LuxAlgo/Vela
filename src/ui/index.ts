@@ -48,6 +48,7 @@ export {
     type DropdownMenuApi,
     type DropdownMenuService,
 } from '@luxalgo/vela-ui/dropdown-menu';
+export { ContextMenu, createContextMenu, type ContextMenuProps, type ContextMenuItems } from '@luxalgo/vela-ui/context-menu';
 export {
     Menu,
     createMenu,

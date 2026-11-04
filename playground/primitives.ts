@@ -23,6 +23,7 @@ import {
     Dialog,
     Drawer,
     DropdownMenu,
+    createContextMenu,
     Popover,
     Tooltip,
     type ButtonVariant,
@@ -235,7 +236,8 @@ const items: MenuItemDescriptor[] = [
     { id: 'off', label: 'Disabled', disabled: true },
 ];
 const menu = new DropdownMenu({ trigger: menuBtn, host: app, items });
-const actions = new DropdownMenu({ trigger: actionsBtn, host: app, checkmarks: true, iconBadges: true, items: [{ id: 'lock', label: 'Lock', icon: 'lock', checked: true, toggle: true }, { id: 'copy', label: 'Copy', icon: 'camera', hint: 'Ctrl+C' }, { id: 'remove', label: 'Remove', icon: 'trash', separatorBefore: true }] });
+const actionItems: MenuItemDescriptor[] = [{ id: 'lock', label: 'Lock', icon: 'lock', checked: true, toggle: true }, { id: 'copy', label: 'Copy', icon: 'camera', hint: 'Ctrl+C' }, { id: 'remove', label: 'Remove', icon: 'trash', separatorBefore: true }];
+const actions = new DropdownMenu({ trigger: actionsBtn, host: app, checkmarks: true, iconBadges: true, items: actionItems });
 const popoverBody = el('div', 'note', 'Popover content.');
 const popover = new Popover({ trigger: popoverBtn, host: app, content: popoverBody });
 new Tooltip(tooltipBtn, { content: 'Tooltip text', openDelay: 0, host: app });
@@ -254,6 +256,12 @@ new DropdownMenu({ trigger: menuRightBtn, host: app, items, side: 'right', align
 const tipLeftBtn = trigger('Tooltip left');
 new Tooltip(tipLeftBtn, { content: 'On the left', openDelay: 0, host: app, side: 'left' });
 row(overlays, 'sides', ...sides, menuRightBtn, tipLeftBtn);
+// A context menu opens where it is asked for: a right-click, a long press, the context-menu key.
+const contextArea = el('div', 'note', 'Right-click here, or long-press on a touch screen');
+contextArea.tabIndex = 0;
+contextArea.style.cssText = 'padding: 18px 24px; border: 1px dashed var(--vela-border-strong); border-radius: var(--vela-radius-md);';
+createContextMenu({ target: contextArea, host: app, iconBadges: true, items: actionItems });
+row(overlays, 'context', contextArea);
 
 // Data components.
 const dataSection = section('Data', 'Stats, keycaps, an empty state, a table, a sparkline, a donut, the charts and a hover card.');

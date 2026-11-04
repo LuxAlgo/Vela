@@ -6,7 +6,8 @@ import type { OHLCV } from '../core/model/ohlcv';
 import { injectChromeStyles } from '../ui/chromeStyles';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
-import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
 import { segmentVisibility, statuslineMenuItems, STATUSLINE_LADDER, readoutCells, SHOW_CHART_LABEL, type StatuslinePart, type StatuslineLayout } from './statusline-model';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
@@ -304,7 +305,7 @@ export class Statusline {
     /** The chart replays past bars — the badge shows the replay mode (see {@link setReplaying}). */
     private replaying = false;
     /** The right-click action menu — present once a host wires it via {@link attachMenu}. */
-    private menu: DropdownMenu | null = null;
+    private menu: ContextMenu | null = null;
     private menuHooks: StatuslineMenuHooks | null = null;
     /** Mirror of the renderer's `candleVisible` — see {@link setChartHidden}. */
     private chartHidden = false;
@@ -597,27 +598,23 @@ export class Statusline {
     attachMenu(hooks: StatuslineMenuHooks): void {
         this.menuHooks = hooks;
         if (this.menu) return;
-        this.menu = new DropdownMenu({
+        this.menu = new ContextMenu({
+            target: this.el,
             host: this.host,
-            items: [],
-            side: 'bottom', align: 'start',
-            // Pointer-anchored action menu — checked state reads as a leading ✓ (the
-            // same shape as the chart's own context menu).
-            checkmarks: true,
+            items: this.menuItemsAt,
+            // The status line sits over the chart, where a long press is the touch crosshair.
+            longPress: false,
             onSelect: (id) => this.runMenuItem(id),
         });
-        this.el.addEventListener('contextmenu', this.onContextMenu);
     }
 
-    private readonly onContextMenu = (e: MouseEvent): void => {
-        if (!this.menu || !this.menuHooks) return;
+    private readonly menuItemsAt = (e: MouseEvent | PointerEvent): readonly MenuItemDescriptor[] | null => {
+        if (!this.menuHooks) return null;
         // This right-click is the status line's — keep the chart's own context menu closed.
-        e.preventDefault();
         e.stopPropagation();
         const chartVisible = this.menuHooks.chartVisible();
         this.setChartHidden(!chartVisible); // opportunistic re-sync with the live renderer
-        this.menu.setItems(statuslineMenuItems(this.parts, chartVisible, this.i18n));
-        this.menu.openAt(e.clientX, e.clientY);
+        return statuslineMenuItems(this.parts, chartVisible, this.i18n);
     };
 
     private runMenuItem(id: string): void {
@@ -671,7 +668,6 @@ export class Statusline {
         this.fitRO?.disconnect();
         this.fitRO = null;
         this.el.ownerDocument.fonts?.removeEventListener('loadingdone', this.onFontsLoaded);
-        this.el.removeEventListener('contextmenu', this.onContextMenu);
         this.menu?.destroy();
         this.menu = null;
         this.marketTip.destroy();

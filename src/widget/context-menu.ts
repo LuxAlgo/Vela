@@ -1,9 +1,10 @@
 // Chart context menu — right-click on the chart area. Items depend on the zone
 // (price axis / time axis / chart body) and current renderer feature states; the menu
-// itself is the kit Menu anchored at the pointer.
+// itself is the kit ContextMenu, opened at the pointer.
 import type { Vela } from '../Vela';
 import { textOf } from '../core/i18n/text';
-import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
 import { widgetActions, type ContextMenuPointer, type WidgetContext } from './contributions';
 import {
     bodyItems,
@@ -41,7 +42,7 @@ export interface ContextMenuCallbacks {
 }
 
 export class ChartContextMenu {
-    private readonly menu: DropdownMenu;
+    private readonly menu: ContextMenu;
     private readonly host: HTMLElement;
     private chart: Vela | null = null;
     private offCrosshair: (() => void) | null = null;
@@ -54,29 +55,26 @@ export class ChartContextMenu {
     private lastZone: Zone = 'body';
     /** The pane whose scale the open price-axis menu targets (null ⇒ the main scale). */
     private lastPane: PaneScaleInfo | null = null;
-    private readonly onContextMenu = (e: MouseEvent): void => {
+    /** The rows for this right-click, read from where it landed. */
+    private readonly itemsAt = (e: MouseEvent | PointerEvent): readonly MenuItemDescriptor[] | null => {
         e.preventDefault();
-        if (!this.chart) return;
+        if (!this.chart) return null;
         this.pointer = this.crosshair;
         this.lastZone = this.zoneOf(e);
         this.lastPane = this.lastZone === 'price-axis' ? this.paneAt(e) : null;
-        this.menu.setItems(this.itemsFor(this.lastZone));
-        this.menu.openAt(e.clientX, e.clientY);
+        return this.itemsFor(this.lastZone);
     };
 
     constructor(host: HTMLElement, private readonly cbs: ContextMenuCallbacks) {
         this.host = host;
-        this.menu = new DropdownMenu({
-            host,
-            items: [],
-            side: 'bottom', align: 'start',
-            // Pointer-anchored action menu: checked state reads as a leading ✓, not a
-            // washed row (which would read as hover in a menu with no trigger button).
-            checkmarks: true,
+        this.menu = new ContextMenu({
+            target: host,
+            items: this.itemsAt,
+            // A long press on the chart is its touch crosshair.
+            longPress: false,
             iconBadges: true,
             onSelect: (id) => this.run(id),
         });
-        host.addEventListener('contextmenu', this.onContextMenu);
     }
 
     /** (Re)bind to a chart instance — called after every widget rebuild. */
@@ -92,7 +90,6 @@ export class ChartContextMenu {
     destroy(): void {
         this.offCrosshair?.();
         this.offCrosshair = null;
-        this.host.removeEventListener('contextmenu', this.onContextMenu);
         this.menu.destroy();
     }
 
