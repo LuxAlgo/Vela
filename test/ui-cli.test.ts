@@ -1,12 +1,14 @@
-// The vela-ui CLI's engine: a copy gets its own component name, diffs read as diffs, and a
-// theme file is checked against the shipped schema.
+// The vela-ui CLI's engine: a copy gets its own component name, diffs read as diffs, a theme
+// file is checked against the shipped schema, and one install counts as one copy.
 import { describe, expect, it } from 'vitest';
 import { t } from '@luxalgo/vela-ui';
 import { TOKEN_NAMES } from '@luxalgo/vela-ui/theme';
 // @ts-expect-error -- the CLI, plain JavaScript
-import { diffLines, renameComponent, validate } from '../packages/vela-ui/cli/engine.mjs';
+import { diffLines, installedCopies, renameComponent, validate } from '../packages/vela-ui/cli/engine.mjs';
 // @ts-expect-error -- a build script, plain JavaScript
 import { componentReference, PACKAGE_ROOT, themeSchema, tokenAccessors } from '../packages/vela-ui/scripts/reference.mjs';
+// @ts-expect-error -- a test helper, plain JavaScript
+import { withProject } from './support/kit-installs.mjs';
 
 describe('a source copy', () => {
     const source = [
@@ -61,5 +63,23 @@ describe('a theme file', () => {
             ]),
         );
         expect(errors.some((e) => e.startsWith('/base'))).toBe(true);
+    });
+});
+
+describe('the installed copies', () => {
+    const versions = (cwd: string): string[] => installedCopies(cwd).map((c: { version: string }) => c.version);
+
+    it('count a pnpm install once: the link at the top and the store folder it points to', () => {
+        const store = 'node_modules/.pnpm/@luxalgo+vela-ui@0.1.0/node_modules/@luxalgo/vela-ui';
+        withProject({ copies: { [store]: '0.1.0' }, links: { 'node_modules/@luxalgo/vela-ui': store } }, (cwd: string) => {
+            expect(versions(cwd)).toEqual(['0.1.0']);
+        });
+    });
+
+    it('count two installed versions as two copies', () => {
+        const copies = { 'node_modules/@luxalgo/vela-ui': '0.1.0', 'node_modules/some-plugin/node_modules/@luxalgo/vela-ui': '0.2.0' };
+        withProject({ copies }, (cwd: string) => {
+            expect(versions(cwd).sort()).toEqual(['0.1.0', '0.2.0']);
+        });
     });
 });

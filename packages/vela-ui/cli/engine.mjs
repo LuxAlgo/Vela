@@ -1,7 +1,7 @@
 // The vela-ui CLI's engine, exported (`@luxalgo/vela-ui/cli`) so another CLI can reuse it: the
 // catalog (the manifest and registry this package ships), dependency checks, source copies
 // with their lock and base files, upstream diffs, and the project check.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
 export const PACKAGE = '@luxalgo/vela-ui';
@@ -195,8 +195,12 @@ export function installedCopies(cwd) {
         }
     };
     visit(join(cwd, 'node_modules'), 0);
+    // A link and the folder it points to are one copy (pnpm links each package from its store).
     const seen = new Set();
-    return found.filter((c) => !seen.has(c.path) && seen.add(c.path));
+    return found.filter((c) => {
+        const real = realpathSync(c.path);
+        return !seen.has(real) && seen.add(real);
+    });
 }
 
 const compareVersions = (x, y) => {
