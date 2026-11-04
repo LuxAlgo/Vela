@@ -128,8 +128,6 @@ const CSS = css`@layer vela.chrome {
 .vela-panel[data-maximized] .vela-panel-resizer,
 .vela-panel[data-maximized] .vela-panel-pin { display: none; }
 .vela-panel-body { flex: 1; overflow: auto; padding: 8px; }
-.vela-panel-body::-webkit-scrollbar { width: 8px; }
-.vela-panel-body::-webkit-scrollbar-thumb { background: ${t.scroll}; border-radius: ${t.radius.sm}; border: 2px solid transparent; background-clip: padding-box; }
 /* Straddles the panel's inner border so the whole seam is grabbable; it paints only under the
    pointer — a permanently visible bar would read as a second border. */
 .vela-panel-resizer {

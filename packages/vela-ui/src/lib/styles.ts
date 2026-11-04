@@ -3,12 +3,14 @@
 
 export { withAlpha } from './color';
 
-/** Overlay scrollbar used by settings panes, dialog bodies, and similar chrome. */
-export function overlayScrollbarCss(selector: string, width = 8): string {
+/** The kit's scrollbar on `selector`, for a scroller outside a kit host (inside one, every
+ *  scroller already has it). `width` overrides the `--vela-scroll-size` token, in px. */
+export function overlayScrollbarCss(selector: string, width?: number): string {
+    const size = width === undefined ? 'var(--vela-scroll-size, 5px)' : `${width}px`;
     return (
-        `${selector}::-webkit-scrollbar{width:${width}px;height:${width}px;}` +
-        `${selector}::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}` +
-        `${selector}::-webkit-scrollbar-track{background:transparent;}` +
+        `${selector}::-webkit-scrollbar{width:${size};height:${size};}` +
+        `${selector}::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:${size};}` +
+        `${selector}::-webkit-scrollbar-track,${selector}::-webkit-scrollbar-corner{background:transparent;}` +
         `${selector}::-webkit-scrollbar-button{display:none;width:0;height:0;}`
     );
 }

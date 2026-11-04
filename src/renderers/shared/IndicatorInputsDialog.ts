@@ -913,7 +913,7 @@ export function ensureDialogStyles(): void {
 .vela-ind-combo-chevron{position:absolute;inset-inline-end:0;top:0;bottom:0;width:26px;border:none;background:transparent;color:inherit;opacity:0.55;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .vela-ind-combo-chevron:hover{opacity:0.9;}
 .vela-ind-cal{background:${t.bg};color:${t.fg};border:none;border-radius:${t.radius.md};box-shadow:${t.shadow};font:14px ${t.font};padding:10px 12px;user-select:none;}
-${overlayScrollbarCss('.vela-dialog.vela-ind-dialog *', 9)}
+${overlayScrollbarCss('.vela-dialog.vela-ind-dialog *')}
 .vela-ind-tabs{padding:0 20px;flex:0 0 auto;}
 .vela-ind-tabs>.vela-tab:only-child{cursor:default;}
 .vela-ind-ctl,.vela-ind-close{background-color:transparent;color:inherit;transition:color ${t.dur.fast} ease,background-color ${t.dur.fast} ease;}

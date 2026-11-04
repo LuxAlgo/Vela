@@ -87,6 +87,7 @@ export const TOKEN_NAMES = [
     'font-size-sm',
     'font-size-md',
     'font-size-lg',
+    'scroll-size',
     'font',
     'bg',
     'fg',
@@ -549,6 +550,18 @@ const STATIC_CSS = `
 @layer vela.theme {
 :where(.vela-ui, .vela-ui-layer) {
 ${STATIC_DECLS}
+}
+/* One scrollbar on every kit surface: thin, a rounded thumb, no track and no arrows, sized and
+   colored by the scroll tokens. Chromium and Safari draw it from the ::-webkit-scrollbar parts,
+   and setting scrollbar-width or scrollbar-color on an element switches them back to the native
+   bar, so those two are for the browsers without the parts. */
+:where(.vela-ui, .vela-ui-layer, .vela-ui *, .vela-ui-layer *)::-webkit-scrollbar { width: var(--vela-scroll-size); height: var(--vela-scroll-size); }
+:where(.vela-ui, .vela-ui-layer, .vela-ui *, .vela-ui-layer *)::-webkit-scrollbar-track { background: transparent; }
+:where(.vela-ui, .vela-ui-layer, .vela-ui *, .vela-ui-layer *)::-webkit-scrollbar-corner { background: transparent; }
+:where(.vela-ui, .vela-ui-layer, .vela-ui *, .vela-ui-layer *)::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: var(--vela-scroll-size); }
+:where(.vela-ui, .vela-ui-layer, .vela-ui *, .vela-ui-layer *)::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+@supports not selector(::-webkit-scrollbar) {
+    :where(.vela-ui, .vela-ui-layer, .vela-ui *, .vela-ui-layer *) { scrollbar-width: thin; scrollbar-color: var(--vela-scroll) transparent; }
 }
 }
 .vela-ui, .vela-ui-layer {

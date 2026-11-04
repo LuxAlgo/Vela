@@ -57,7 +57,8 @@ const CSS = css`@layer vela.chrome {
     border-radius: ${t.radius.sm};
     cursor: pointer;
     color: ${t.fg.muted};
-    font-size: 14px;
+    /* Icons draw at 1em: the drawing toolbar's 18px, so both rails read as one set. */
+    font-size: 18px;
 }
 .vela-sidebar-btn:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-sidebar-btn[data-active='1'] { background: ${t.hover}; color: ${t.fg.bright}; }

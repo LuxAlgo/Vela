@@ -41,6 +41,7 @@ export const STATIC_TOKENS: Record<string, string> = {
     '--vela-font-size-sm': '11px',
     '--vela-font-size-md': '12px',
     '--vela-font-size-lg': '14px',
+    '--vela-scroll-size': '5px',
 };
 
 /** Compute every theme token as a `--vela-*` → value map for one theme. */
@@ -85,7 +86,8 @@ export function themeTokens(t: ChartTheme): Record<string, string> {
         // (the workspace grid) and canvas-drawn ones read as one family.
         '--vela-separator-hover-band': withAlpha(t.textColor, 0.1),
         '--vela-separator-hover-line': withAlpha(t.textColor, 0.55),
-        '--vela-scroll': withAlpha(t.textColor, 0.3),
+        // A scrollbar thumb is a border-weight line: present, never louder than the content.
+        '--vela-scroll': t.borderColor,
         '--vela-accent': ACCENT,
         '--vela-accent-bright': ACCENT_BRIGHT,
         '--vela-highlight': HIGHLIGHT,

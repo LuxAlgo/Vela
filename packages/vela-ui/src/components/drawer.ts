@@ -238,16 +238,6 @@ const injectStyles = defineStyles(
                    inside the body opt back in with their own touch-action: pan-x. */
                 touch-action: pan-y;
                 padding: 0 ${t.space[3]} calc(${t.space[3]} + env(safe-area-inset-bottom, 0px));
-
-                &::-webkit-scrollbar {
-                    width: 8px;
-                }
-                &::-webkit-scrollbar-thumb {
-                    background: ${t.scroll};
-                    border-radius: ${t.radius.sm};
-                    border: 2px solid transparent;
-                    background-clip: padding-box;
-                }
             }
         }
     `,

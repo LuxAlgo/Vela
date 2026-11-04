@@ -122,15 +122,18 @@ export class ChartContextMenu {
         }) as WidgetContext;
     }
 
-    private contributed(zone: Zone): ContributedRow[] {
+    private contributed(zone: Zone, iconic: boolean): ContributedRow[] {
         return widgetActions(`context:${zone}`, this.context()).map((a) => ({
-            item: { id: `action:${a.id}`, label: textOf(this.chart?.i18n, a.label), icon: a.icon },
+            item: { id: `action:${a.id}`, label: textOf(this.chart?.i18n, a.label), ...(iconic && a.icon ? { icon: a.icon } : {}) },
             order: a.order,
         }));
     }
 
     private itemsFor(zone: Zone): MenuItemDescriptor[] {
-        return composeMenu(zone, this.builtinItems(zone), this.contributed(zone));
+        const builtins = this.builtinItems(zone);
+        // A contributed row takes its zone's look: one icon in an icon-free menu (the axis
+        // menus, all checkmarks) would push every label right of an empty icon column.
+        return composeMenu(zone, builtins, this.contributed(zone, builtins.some((i) => i.icon)));
     }
 
     private builtinItems(zone: Zone): MenuItemDescriptor[] {

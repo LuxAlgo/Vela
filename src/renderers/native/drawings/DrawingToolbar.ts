@@ -810,15 +810,6 @@ function ensureStyles(): void {
 .vela-dtb-item:hover .vela-dtb-star{opacity:.55;}
 .vela-dtb-star:hover{opacity:1 !important;background:${t.hover.strong};}
 .vela-dtb-star.vela-fav{opacity:.95;color:${t.highlight};}
-/* Thin thumb-only scrollbar. Avoid scrollbar-width in Chromium — it disables ::-webkit-scrollbar. */
-@supports not selector(::-webkit-scrollbar){
-.vela-dtb-flyout{scrollbar-width:thin;scrollbar-color:${t.scroll} transparent;}
-}
-.vela-dtb-flyout::-webkit-scrollbar{width:4px;}
-.vela-dtb-flyout::-webkit-scrollbar-button{display:none;width:0;height:0;}
-.vela-dtb-flyout::-webkit-scrollbar-track,.vela-dtb-flyout::-webkit-scrollbar-track-piece,.vela-dtb-flyout::-webkit-scrollbar-corner{background:transparent;}
-.vela-dtb-flyout::-webkit-scrollbar-thumb{background:${t.scroll};border-radius:${t.radius.sm};}
-.vela-dtb-flyout::-webkit-scrollbar-thumb:hover{background:${t.fg.muted};}
 }`;
 }
 

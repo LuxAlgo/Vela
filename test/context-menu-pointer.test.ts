@@ -185,4 +185,20 @@ describe('ChartContextMenu — the pointer on the action context', () => {
         expect(items[1]!.separatorBefore).toBe(true);
         expect(menus[0]!.opened).toBe(1);
     });
+
+    it('shows a contributed row with its icon in the body menu and without it on the axis menus', () => {
+        const { host, fake } = setup();
+        disposers.push(
+            registerWidgetAction({ id: 'test.alert', target: 'context:price-axis', label: 'Add alert', icon: 'alert', order: -90, run: () => undefined }),
+        );
+        fake.move({ time: 1, price: 2, paneKind: 'price' });
+        host.fire('contextmenu', { clientX: 795, clientY: 200 });
+        const axisRow = menus[0]!.items.find((i) => i.id === 'action:test.alert');
+        expect(axisRow).toBeDefined();
+        expect(axisRow!.icon).toBeUndefined();
+        expect(menus[0]!.items.every((i) => !i.icon)).toBe(true);
+
+        host.fire('contextmenu', { clientX: 300, clientY: 200 });
+        expect(menus[0]!.items.find((i) => i.id === 'action:test.copy-price')).toMatchObject({ icon: 'clone' });
+    });
 });

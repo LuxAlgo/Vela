@@ -41,7 +41,7 @@ export const t = {
     active: tok('active'),
     focus: group('focus', { soft: 'focus-soft' }),
     separatorHover: group(null, { band: 'separator-hover-band', line: 'separator-hover-line' }),
-    scroll: tok('scroll'),
+    scroll: group('scroll', { size: 'scroll-size' }),
     accent: group('accent', { bright: 'accent-bright' }),
     highlight: tok('highlight'),
     selected: group(null, { bg: 'selected-bg', fg: 'selected-fg' }),

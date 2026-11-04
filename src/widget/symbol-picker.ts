@@ -171,13 +171,6 @@ const CSS = css`@layer vela.chrome {
     max-height: 46vh;
     overflow: auto;
 }
-.vela-sp-list::-webkit-scrollbar { width: 8px; }
-.vela-sp-list::-webkit-scrollbar-thumb {
-    background: ${t.scroll};
-    border-radius: ${t.radius.sm};
-    border: 2px solid transparent;
-    background-clip: padding-box;
-}
 .vela-sp-row {
     display: flex;
     align-items: center;

@@ -53,8 +53,6 @@ const injectStyles = defineStyles(
                 height: 100%;
                 min-height: 0;
                 overflow: auto;
-                scrollbar-width: thin;
-                scrollbar-color: ${t.scroll} transparent;
             }
             [data-slot='data-table-table'] {
                 width: 100%;

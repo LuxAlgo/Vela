@@ -182,24 +182,6 @@ const injectStyles = defineStyles(
                     display: flex;
                     flex-direction: column;
                 }
-                &::-webkit-scrollbar {
-                    width: 8px;
-                    height: 8px;
-                }
-                &::-webkit-scrollbar-thumb {
-                    background: ${t.scroll};
-                    border-radius: ${t.radius.sm};
-                    border: 2px solid transparent;
-                    background-clip: padding-box;
-                }
-                &::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                &::-webkit-scrollbar-button {
-                    display: none;
-                    width: 0;
-                    height: 0;
-                }
                 &:is([data-layout='mobile'] *) {
                     padding-bottom: calc(${t.space[4]} + env(safe-area-inset-bottom, 0px));
                 }
@@ -274,26 +256,6 @@ const injectStyles = defineStyles(
                     flex: 1 1 auto;
                     border: none;
                     border-radius: 0;
-                }
-                /* Scrollers nested in a dialog (a flush body's grid, a tab pane) get the same
-                   thin overlay bars; a dialog's own sheet can restyle them. */
-                & *::-webkit-scrollbar {
-                    width: 8px;
-                    height: 8px;
-                }
-                & *::-webkit-scrollbar-thumb {
-                    background: ${t.scroll};
-                    border-radius: ${t.radius.sm};
-                    border: 2px solid transparent;
-                    background-clip: padding-box;
-                }
-                & *::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                & *::-webkit-scrollbar-button {
-                    display: none;
-                    width: 0;
-                    height: 0;
                 }
             }
             @keyframes vela-dialog-in {

@@ -61,8 +61,6 @@ const CSS = css`@layer vela.chrome {
 /* Mobile (fullscreen dialog): no width floor — 380px would overflow a phone —
    and no height cap; the fullscreen body owns the scrolling. */
 [data-layout='mobile'] .vela-ip-list { min-width: 0; max-height: none; }
-.vela-ip-list::-webkit-scrollbar { width: 8px; }
-.vela-ip-list::-webkit-scrollbar-thumb { background: ${t.scroll}; border-radius: ${t.radius.sm}; border: 2px solid transparent; background-clip: padding-box; }
 .vela-ip-group {
     color: ${t.fg.muted};
     font-size: 10px;

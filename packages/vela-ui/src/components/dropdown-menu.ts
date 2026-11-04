@@ -388,7 +388,14 @@ interface SurfaceOptions {
     checkmarks?: boolean;
     iconBadges?: boolean;
     i18n: Translator | null;
+    /** A branch's level, opened beside its row. */
+    submenu?: boolean;
 }
+
+/** How far a row sits inside its list: the list's padding (6px) plus its border (1px). */
+const ROW_INSET_PX = 7;
+/** The space between a submenu and the list it opened from. */
+const SUBMENU_GAP_PX = 4;
 
 /**
  * One menu level: a Zag machine plus the floating list it projects onto. The root menu is a
@@ -457,6 +464,17 @@ class Surface {
             },
             triggerId: opts.triggerId,
         });
+        if (opts.submenu) {
+            // Zag lays a submenu against its row, which sits inside the parent list: push it out
+            // past the list's edge (on whichever side it opens) so it never covers the parent,
+            // and up by the same inset so its first row lines up with the row it opened from.
+            // Zag sets a submenu's gutter itself; an explicit offset outranks it.
+            this.ctrl.props.positioning = {
+                ...this.ctrl.props.positioning,
+                offset: { mainAxis: ROW_INSET_PX + SUBMENU_GAP_PX },
+                shift: -ROW_INSET_PX,
+            };
+        }
         this.mid = String(this.ctrl.props.id);
         if (opts.triggerId && trigger) trigger.id = opts.triggerId;
         this.handle = runMachine(this.ctrl.machine, this.ctrl.props, (service) => {
@@ -659,6 +677,7 @@ class Surface {
                 const sub = new Surface(doc, {
                     host: this.host,
                     placement: { placement: 'right-start' },
+                    submenu: true,
                     opener: li,
                     onSelect: this.onSelect,
                     onFavorite: this.onFavorite,
