@@ -8,6 +8,8 @@ import { defineComponent } from '../lib/define';
 import { addSlot, h } from '../lib/h';
 import { t } from '../lib/t';
 import { variants } from '../lib/variants';
+import { nextUid, normalizeProps, runMachine, spreadProps } from '../lib/zag';
+import * as zagListbox from '@zag-js/listbox';
 import { Popover, closeOpenPopovers, openPopoverTrigger, type PopoverBoundary, type PopoverOptions } from './popover';
 
 export type SelectSize = 'sm' | 'md';
@@ -85,6 +87,9 @@ export interface SelectListPopoverOpts {
     position?: PopoverOptions['position'];
     zIndex?: string | number;
     size?: SelectSize;
+    /** Move the focus into the open list, for the arrow keys and typeahead (and back to the
+     *  trigger when it closes). Off by default: a trigger the user types in keeps the focus. */
+    focusList?: boolean;
     onClose?: () => void;
 }
 
@@ -205,16 +210,22 @@ export const SELECT_CSS = css`
             font: inherit;
             font-weight: 400;
 
-            &:hover {
+            &:hover,
+            &[data-highlighted] {
                 background: ${t.hover};
             }
             &[data-checked] {
                 background: ${t.hover.strong};
                 color: ${t.fg.bright};
             }
-            &[data-checked]:hover {
+            &[data-checked]:hover,
+            &[data-checked][data-highlighted] {
                 background: ${t.hover.strong};
             }
+        }
+        /* The highlighted option shows where the keyboard is; the list itself draws no ring. */
+        [data-slot='select-viewport']:focus {
+            outline: 2px solid transparent;
         }
         [data-slot='select'] {
             position: relative;
@@ -302,31 +313,62 @@ function syncThumb(list: HTMLElement, thumb: HTMLElement): void {
     thumb.style.transform = `translateY(${Math.round(top)}px`;
 }
 
-/** Fill `menu` with option buttons. Call {@link decorateSelectScroll} after the menu is on screen. */
-export function fillSelectList(menu: HTMLElement, options: readonly SelectOption[], current: string, onPick: (value: string, label: string) => void): void {
+/** Fill `menu` with the options, a listbox (Zag's listbox machine: the arrow keys, Home/End,
+ *  Enter and typeahead while it has the focus). A click picks at once; one pick per fill.
+ *  Call {@link decorateSelectScroll} after the menu is on screen; call the returned function
+ *  when the menu goes away. */
+export function fillSelectList(menu: HTMLElement, options: readonly SelectOption[], current: string, onPick: (value: string, label: string) => void): () => void {
     injectStyles(menu.ownerDocument);
     addSlot(menu, selectDef.slot('content'));
-    menu.replaceChildren(
-        h(
-            'div',
-            { className: 'vela-select-items', slot: selectDef.slot('viewport') },
-            options.map((p) =>
-                h('button', {
-                    className: 'vela-select-item',
-                    slot: selectDef.slot('item'),
-                    attrs: { type: 'button' },
-                    data: { checked: p.value === current ? '1' : null },
-                    text: p.label,
-                    on: {
-                        click: (e) => {
-                            e.stopPropagation();
-                            onPick(p.value, p.label);
-                        },
-                    },
-                }),
-            ),
-        ),
+    let picked = false;
+    const choose = (value: string): void => {
+        const option = options.find((o) => o.value === value);
+        if (picked || !option) return;
+        picked = true;
+        onPick(option.value, option.label);
+    };
+    const items = options.map((p) =>
+        h('button', {
+            className: 'vela-select-item',
+            slot: selectDef.slot('item'),
+            attrs: { type: 'button', tabindex: -1 },
+            data: { checked: p.value === current ? '1' : null },
+            text: p.label,
+            on: {
+                click: (e) => {
+                    e.stopPropagation();
+                    choose(p.value);
+                },
+            },
+        }),
     );
+    const viewport = h('div', { className: 'vela-select-items', slot: selectDef.slot('viewport') }, items);
+    menu.replaceChildren(viewport);
+    const mid = nextUid('vela-select-list');
+    const known = options.some((o) => o.value === current);
+    const machine = runMachine(
+        zagListbox.machine,
+        {
+            id: mid,
+            collection: zagListbox.collection({ items: options, itemToValue: (o) => o.value, itemToString: (o) => o.label }),
+            selectionMode: 'single',
+            defaultValue: known ? [current] : [],
+            defaultHighlightedValue: known ? current : null,
+            // The keyboard's pick (Enter) arrives here, a beat after the key.
+            onSelect: ({ value }) => choose(value),
+        },
+        (service) => {
+            const api = zagListbox.connect(service, normalizeProps);
+            spreadProps(viewport, api.getContentProps(), mid);
+            options.forEach((item, i) => spreadProps(items[i]!, api.getItemProps({ item, highlightOnHover: true }), mid));
+        },
+    );
+    // After the machine's own handler: the picking key ends here, so it can't also press the
+    // trigger the focus returns to.
+    viewport.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+    });
+    return () => machine.stop();
 }
 
 /** Overlay scrollbar + scroll-into-view — needs a laid-out list (after the popover is shown). */
@@ -369,6 +411,7 @@ export function openSelectList(
 ): Popover {
     injectStyles(trigger.ownerDocument);
     closeOpenPopovers();
+    let dispose: (() => void) | null = null;
     const pop = new Popover({
         trigger,
         theme: opts.theme,
@@ -382,10 +425,16 @@ export function openSelectList(
         zIndex: opts.zIndex,
         className: 'vela-select-list',
         slot: selectDef.slot('content'),
-        onClose: opts.onClose,
+        onClose: () => {
+            dispose?.();
+            dispose = null;
+            const active = trigger.ownerDocument.activeElement;
+            if (opts.focusList && (!active || active === trigger.ownerDocument.body || pop.el.contains(active))) trigger.focus({ preventScroll: true });
+            opts.onClose?.();
+        },
         content: (el) => {
             if (opts.size) el.dataset.size = opts.size;
-            fillSelectList(el, options, current, (value, label) => {
+            dispose = fillSelectList(el, options, current, (value, label) => {
                 pop.hide();
                 onPick(value, label);
             });
@@ -394,6 +443,7 @@ export function openSelectList(
     pop.show();
     decorateSelectScroll(pop.el);
     pop.reposition();
+    if (opts.focusList) pop.el.querySelector<HTMLElement>(`[data-slot='${selectDef.slot('viewport')}']`)?.focus({ preventScroll: true });
     return pop;
 }
 
@@ -414,7 +464,7 @@ export class Select {
         const label = h('span', { className: 'vela-select-label', slot: selectDef.slot('value'), text: this.ctrl.labelOf(this.ctrl.value) });
         const btn = h(
             'button',
-            { className: 'vela-select-trigger', slot: selectDef.slot('trigger'), attrs: { type: 'button', id: opts.id } },
+            { className: 'vela-select-trigger', slot: selectDef.slot('trigger'), attrs: { type: 'button', id: opts.id, 'aria-haspopup': 'listbox', 'aria-expanded': 'false' } },
             label,
             h('span', { className: 'vela-select-chevron', slot: selectDef.slot('icon') }, iconEl('chevron-down', doc)),
         );
@@ -440,6 +490,12 @@ export class Select {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.toggle();
+        });
+        btn.addEventListener('keydown', (e) => {
+            if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !this.list) {
+                e.preventDefault();
+                this.toggle();
+            }
         });
 
         this.trigger = btn;
@@ -467,12 +523,15 @@ export class Select {
             },
             {
                 ...this.listOpts,
+                focusList: true,
                 onClose: () => {
                     this.list = null;
+                    this.trigger.setAttribute('aria-expanded', 'false');
                     this.listOpts.onClose?.();
                 },
             },
         );
+        this.trigger.setAttribute('aria-expanded', String(this.list !== null));
     }
 
     destroy(): void {

@@ -65,6 +65,7 @@
     "@zag-js/core": "^1.42.0",
     "@zag-js/dialog": "^1.42.0",
     "@zag-js/dom-query": "^1.42.0",
+    "@zag-js/listbox": "^1.42.0",
     "@zag-js/menu": "^1.42.0",
     "@zag-js/number-input": "^1.42.0",
     "@zag-js/switch": "^1.42.0",

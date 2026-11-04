@@ -103,6 +103,15 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **The select's list is a listbox, on Zag's listbox machine.** Every list built by
+  `fillSelectList` (the select, `openSelectList`, `toggleSelectList`) carries the listbox and
+  option roles; while it has the focus, the arrow keys and Home/End move the highlight, Enter
+  picks, and typing jumps to an option. The select's trigger announces the list
+  (`aria-haspopup`, `aria-expanded`), opens it with ArrowDown/ArrowUp too, moves the focus into
+  it and gets it back when the list closes. Other callers opt in with `focusList: true` (off
+  by default, so a trigger the user types in keeps the focus). A click still picks at once,
+  the current option included. `fillSelectList` now returns the function that releases the
+  list.
 - **The number field runs on Zag's number-input machine.** The field is now a text input
   with `inputmode="decimal"` and the spinbutton role, carrying `aria-valuenow` and its bounds;
   the arrow keys and Page Up/Down step it, and the steppers repeat while held. Its commit rules
