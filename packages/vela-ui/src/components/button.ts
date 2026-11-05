@@ -90,10 +90,18 @@ export const BUTTON_CSS = css`
                     justify-content: center;
                     gap: 6px;
                 }
-                /* Icons draw at 1em: one size for every button size but the smallest. */
+                /* Icons draw at 1em: one size for every button size but the smallest. The slot
+                   is sized too, so an icon registered without width and height fills it. */
                 & > [data-icon] {
                     font-size: 16px;
+                    width: 1em;
+                    height: 1em;
                     flex: none;
+
+                    & > svg {
+                        width: 100%;
+                        height: 100%;
+                    }
                 }
                 &[data-size='xs'] > [data-icon],
                 &[data-size='icon-xs'] > [data-icon] {
