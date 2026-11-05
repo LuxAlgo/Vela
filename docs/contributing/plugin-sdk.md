@@ -679,7 +679,7 @@ registerLegendAction({
 });
 ```
 
-- `ind` is a {@link LegendIndicatorInfo}: `{ id, title, source?, language? }` — `source`
+- `ind` is a `LegendIndicatorInfo`: `{ id, title, source?, language? }` — `source`
   is the script the indicator runs NOW (the same as `handle.source`, read at click time,
   so an in-place `updateCode` shows through); `language` is the language id of the
   engine running it (the same as `handle.language`: the indicator's `language` option,
@@ -731,7 +731,7 @@ registerLegendCallout({
   `refreshActions()` and the bubbles re-dress.
 - Panel content is **data, never DOM**: ordered `text` and `button` items (consecutive
   buttons share one row). A button's `run` receives a fresh `WidgetContext` plus the
-  row's {@link LegendIndicatorInfo}; buttons close the panel after `run` unless
+  row's `LegendIndicatorInfo`; buttons close the panel after `run` unless
   `close: false`.
 - The bubble itself is the kit's `CalloutBubble` (`@luxalgo/vela/ui`) — reusable in
   host chrome; the widget's own market-status badge is the same component.
@@ -815,8 +815,11 @@ registerSidePanel({
   main work surface (an editor).
 - **The dock is exclusive.** Opening a panel closes the one showing — the chart keeps its
   width, and only one column is ever docked. `onOpen` is where a lazy panel renders.
-- **`onChart` is the rebind hook**, not a one-shot: the widget hands over a new chart instance
-  after a symbol/timeframe rebuild, and a workspace re-points the panel at the active cell.
+- **`onChart` is the rebind hook**, not a one-shot: it runs on mount, after a widget rebuild,
+  and when a workspace re-points the panel at another active cell. A symbol or timeframe
+  switch keeps the chart (it switches in place), so a panel that shows per-symbol content
+  subscribes to `chart.on('market:changed', …)` in `onChart` and drops that subscription in
+  the next `onChart` and in `destroy`.
 - Register at import time; after a late registration call `widget.refreshActions()`. Only
   what changed is rebuilt: a panel whose descriptor is still registered as it was stays
   mounted as it is — content, state and open column included — while a re-registered

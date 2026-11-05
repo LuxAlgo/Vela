@@ -1,12 +1,12 @@
 # Theming
 
 A theme is data: the chart's colors and font, every design token, and the settings of each
-component. `createTheme` builds one from a few choices; `applyTheme` writes it once per
-document (or shadow root) as a rule in the `vela.theme` cascade layer, keyed by the host's
+component. `createTheme` builds one from a few choices; applied to a host, it is written once
+per document (or shadow root) as a rule in the `vela.theme` cascade layer, keyed by the host's
 `data-vela-theme` attribute.
 
 ```ts
-import { applyTheme, createTheme } from '@luxalgo/vela-ui/theme';
+import { createTheme, ensureUIHost } from '@luxalgo/vela-ui/theme';
 
 const theme = createTheme({
     base: 'dark',              // 'dark' (default), 'light', or a chart theme's seven fields
@@ -17,8 +17,13 @@ const theme = createTheme({
     components: { button: { radius: '2px' } }, // a component's own settings
 });
 
-applyTheme(document.getElementById('app')!, theme);
+ensureUIHost(document.getElementById('app')!, theme);
 ```
+
+On a page of your own, `ensureUIHost(el, theme)` makes the element a kit host and themes it:
+the kit's base styles apply inside it, and menus, dialogs and tooltips opened from it mount
+there. `applyTheme(el, theme)` alone only themes an element, so a menu opened from it would
+mount outside, unthemed; use it to switch a host that is already one to another theme.
 
 In Vela, pass the theme as the chart's `theme` option or to `setTheme`, and offer it in the
 chart settings with `registerTheme({ id, label, theme })`.

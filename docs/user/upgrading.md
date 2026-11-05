@@ -71,10 +71,12 @@ Nothing here needs a change; it is what you will notice.
 ### Using the kit without the chart
 
 The components work on any page: import each one from its own path, so a bundle holds only
-what it uses, and theme them with `createTheme`. See the kit's
+what it uses, make their container a kit host, and theme it with `createTheme`. See the kit's
 [README](../../packages/vela-ui/README.md) and [Theming](../../packages/vela-ui/docs/theming.md).
 
 ```ts
 import { createButton } from '@luxalgo/vela-ui/button';
-import { applyTheme, createTheme } from '@luxalgo/vela-ui/theme';
+import { createTheme, ensureUIHost } from '@luxalgo/vela-ui/theme';
+
+ensureUIHost(document.getElementById('app')!, createTheme({ accent: '#0ea5e9' }));
 ```
