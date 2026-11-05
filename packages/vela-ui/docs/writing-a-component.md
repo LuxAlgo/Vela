@@ -69,6 +69,32 @@ Released components keep their class (`new Checkbox(…)`, `new Tooltip(trigger,
 controller (`checkboxController`, `tooltipController`) next to the `create…` function; the
 class is the instance the function returns. New components start from the shape above.
 
+## A component of your own
+
+The same shape works outside the kit, for a component a project writes: import the helpers
+from the package root (`import { css, defineComponent, defineStyles, h, t, variants } from
+'@luxalgo/vela-ui'`) and keep the rules below. Three things make it a full citizen:
+
+- **Its CSS goes in `@layer vela.ui`**, like the kit's, not in `vela.custom`: a theme's part
+  CSS sits in `vela.custom`, and only from a later layer does it restyle the component.
+- **Declare it before creating a theme that names it.** `defineComponent` records the
+  component for the page, and `checkTheme` (and `createTheme`'s warnings) then check the
+  theme's settings and parts for it, as they do the kit's.
+- **Type it in themes** by merging its declaration into `ComponentDefs`, so a wrong setting
+  or part fails the typecheck:
+
+```ts
+export const gaugeDef = defineComponent({ name: 'gauge', parts: ['root', 'needle'], settings: { radius: t.radius.lg } });
+
+declare module '@luxalgo/vela-ui/theme' {
+    interface ComponentDefs {
+        gauge: typeof gaugeDef;
+    }
+}
+
+createTheme({ components: { gauge: { radius: '2px', css: { needle: css`color: ${t.accent};` } } } });
+```
+
 ## Changing a component
 
 A component's public contract is what hosts and themes build on: its props and its handle's

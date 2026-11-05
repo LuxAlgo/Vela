@@ -56,8 +56,10 @@ the project's `AGENTS.md` pointing coding agents at this package's reference.
 - [Writing a component](docs/writing-a-component.md): the one-file shape and its rules.
 - `@luxalgo/vela-ui/stylelint`: the shared stylelint config for CSS written with the `css`
   tag (tokens through `t`, no raw colors, logical directions, parts not classes). Extend it
-  and name your layer: `{ extends: ['@luxalgo/vela-ui/stylelint'], rules: { 'vela/layer':
-  'vela.custom' } }`. It needs `stylelint`, `postcss-lit` and `stylelint-config-recommended`.
+  and name your layer: `vela.ui` for components of your own, so themes restyle them like the
+  kit's, and `vela.custom` for CSS that restyles components
+  (`{ extends: ['@luxalgo/vela-ui/stylelint'], rules: { 'vela/layer': 'vela.ui' } }`). It
+  needs `stylelint`, `postcss-lit` and `stylelint-config-recommended`.
   CSS outside the kit takes the tag and the tokens from `@luxalgo/vela-ui/css` and
   `@luxalgo/vela-ui/t`.
 - `@luxalgo/vela-ui/stylelint/lint`: `lintCss({ files, baseline?, update? })` runs that config
