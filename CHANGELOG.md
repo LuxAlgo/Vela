@@ -118,6 +118,9 @@ All notable changes to Vela, newest first.
   with them; the chart's body menu keeps them.
 - **The sidebar's icons are the drawing toolbar's size**, 18px instead of 14px, so the two
   rails read as one set.
+- **A kit button centers its content the same way with or without an icon**, and its label
+  stays on one line. Its icon is 16px at every size but `xs` (12px), so a small button's icon
+  is 16px instead of 13px and centered in an icon-only button.
 - **The kit's menu is `DropdownMenu`** (`@luxalgo/vela-ui/dropdown-menu`,
   `createDropdownMenu`, `dropdownMenuController`, data-slots `dropdown-menu-content`,
   `dropdown-menu-item` and the rest, settings `--vela-dropdown-menu-*`, theme

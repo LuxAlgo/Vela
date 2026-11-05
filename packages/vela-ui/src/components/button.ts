@@ -77,22 +77,27 @@ export const BUTTON_CSS = css`
                 font-weight: 400;
                 font-size: ${buttonDef.vars['font-size']};
                 font-family: inherit;
+                white-space: nowrap;
                 transition:
                     background ${t.dur.fast} ease,
                     color ${t.dur.fast} ease,
                     opacity ${t.dur.fast} ease,
                     border-color ${t.dur.fast} ease;
 
-                &:where(:not([hidden])):has(> [data-icon]) {
+                &:where(:not([hidden])) {
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
                     gap: 6px;
                 }
+                /* Icons draw at 1em: one size for every button size but the smallest. */
                 & > [data-icon] {
-                    width: 16px;
-                    height: 16px;
+                    font-size: 16px;
                     flex: none;
+                }
+                &[data-size='xs'] > [data-icon],
+                &[data-size='icon-xs'] > [data-icon] {
+                    font-size: 12px;
                 }
                 &[data-size='sm'],
                 &[data-size='icon-sm'] {
