@@ -158,8 +158,10 @@ export function agentsBlock() {
 ## ${PACKAGE}
 
 Before writing UI with \`${PACKAGE}\`, read \`node_modules/${PACKAGE}/llms.txt\`: it indexes the
-component manifest, the theme schema and the guides of the installed version. Themes go
-through \`createTheme\`; restyle a component through its parts, never its class names.
+component manifest, the theme schema, the guides and the agent skills
+(\`node_modules/${PACKAGE}/skills/*/SKILL.md\`) of the installed version. Mount components in a
+kit host (\`ensureUIHost\`); themes go through \`createTheme\`; restyle a component through its
+parts, never its class names.
 ${MARK_END}
 `;
 }

@@ -7,14 +7,18 @@ without the chart.
 
 ```ts
 import { createButton } from '@luxalgo/vela-ui/button';
-import { applyTheme, createTheme } from '@luxalgo/vela-ui/theme';
+import { createTheme, ensureUIHost } from '@luxalgo/vela-ui/theme';
 
 const app = document.getElementById('app')!;
-applyTheme(app, createTheme({ accent: '#7c3aed' }));
+ensureUIHost(app, createTheme({ accent: '#7c3aed' }));
 
 const save = createButton({ text: 'Save', variant: 'default' });
 app.append(save.el);
 ```
+
+`ensureUIHost` makes the element a kit host: it carries the theme and the kit's base styles,
+and menus, dialogs and tooltips opened from inside it mount there, themed. `applyTheme(app,
+theme)` switches a host to another theme later.
 
 - **One import path per component** (`@luxalgo/vela-ui/<name>`), so a bundle holds only the
   components it imports. Every component is `create<Name>(props)`, returning a handle with
@@ -44,6 +48,14 @@ A `vela-ui.json` at the project's root says where copies go and which theme file
 `imports` alias, or write a folder). Copies are recorded in `vela-ui.lock.json`, with their
 upstream version kept under `.vela-ui/`: commit both. The first `add` offers to add a note to
 the project's `AGENTS.md` pointing coding agents at this package's reference.
+
+## For coding agents
+
+Three agent skills ship in `skills/`: [using the components](skills/using-vela-ui-components/SKILL.md),
+[theming](skills/theming-vela-ui/SKILL.md) and [writing components](skills/writing-vela-ui-components/SKILL.md).
+`npx skills experimental_sync` links them into a project's agent once the package is installed
+(Vela's own package pulls them in too), and `npx skills add LuxAlgo/Vela` installs them from
+the repository. [`llms.txt`](llms.txt) indexes them with the rest of the reference.
 
 ## Reference
 

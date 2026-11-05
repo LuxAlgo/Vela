@@ -1,0 +1,43 @@
+# @luxalgo/vela
+
+> Vela is a charting library for financial charts: a headless chart core with a WebGL renderer,
+> a full chart app (`VelaWorkspace`: one chart or a grid), data providers, a plugin SDK, and a
+> component kit with one typed theme config (`@luxalgo/vela-ui`, installed with it). Scripting
+> engines are separate packages (Pine Script: `@luxalgo/vela-pinets`).
+
+Start with `VelaWorkspace` from `@luxalgo/vela/workspace` for a chart app, or `Vela` from
+`@luxalgo/vela` for the chart surface alone. Charts run in the browser; give the container a
+height. Themes come from `createTheme` (`@luxalgo/vela`).
+
+## Skills (agent instructions in this package)
+
+- [building-vela-charts](skills/building-vela-charts/SKILL.md): charts, data providers,
+  indicators, themes and saved state.
+- [extending-vela-with-plugins](skills/extending-vela-with-plugins/SKILL.md): buttons, menu
+  rows, panels, overlays, chart types and renderer layers through the plugin SDK.
+- [upgrading-vela](skills/upgrading-vela/SKILL.md): moving a project from 0.9 to 0.10.
+- The UI kit ships three more in `node_modules/@luxalgo/vela-ui/skills/`: using its components,
+  theming, and writing components.
+
+Link them into a project's coding agent with `npx skills experimental_sync` once the package is
+installed, or install them from the repository with `npx skills add LuxAlgo/Vela`.
+
+## Guides (in this package)
+
+- [Quickstart](docs/user/quickstart.md): a chart on screen, an engine, an indicator.
+- [The workspace](docs/user/workspace.md): layouts, cells, sync, persistence, the topbar and the
+  sidebar.
+- [Options](docs/user/options.md): every chart option.
+- [API reference](docs/user/api-reference.md): the chart's methods, events and control surfaces.
+- [Data providers](docs/user/data-providers.md): symbols, venues and the bundled providers.
+- [Scripting engines](docs/user/scripting-engines.md): Pine Script and writing an engine.
+- [Drawing tools](docs/user/drawing-tools.md), [Timeline marks](docs/user/timeline-marks.md),
+  [Localization](docs/user/localization.md), [FAQ](docs/user/faq.md).
+- [Upgrading](docs/user/upgrading.md): breaking changes and deprecated names, release by release.
+- [Plugin SDK](docs/contributing/plugin-sdk.md): every extension hook.
+- [Changelog](CHANGELOG.md).
+
+## The UI kit
+
+`node_modules/@luxalgo/vela-ui/llms.txt` indexes the kit: its component manifest, theme schema,
+guides and skills.

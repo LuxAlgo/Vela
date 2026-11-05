@@ -2,7 +2,7 @@
 // (its declaration, variants, props, the tokens it reads, the attributes its CSS styles by),
 // the theme input's JSON Schema, and llms.txt. `build-reference.mjs` writes them into dist/.
 import ts from 'typescript';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 /** The package's folder. */
@@ -191,10 +191,25 @@ export function themeSchema(components, tokenNames, version) {
 }
 
 /** llms.txt: what the package is, and where each answer lives. */
-export function llmsTxt(components, version) {
+/** The package's agent skills: each folder of skills/ holding a SKILL.md, with the name and
+ *  description its frontmatter declares. */
+export function skillsOf(root = PACKAGE_ROOT) {
+    const dir = join(root, 'skills');
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+        .filter((d) => existsSync(join(dir, d, 'SKILL.md')))
+        .sort()
+        .map((d) => {
+            const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(readFileSync(join(dir, d, 'SKILL.md'), 'utf8'))?.[1] ?? '';
+            return { dir: d, name: /^name:\s*(.+)$/m.exec(head)?.[1].trim() ?? d, description: /^description:\s*(.+)$/m.exec(head)?.[1].trim() ?? '' };
+        });
+}
+
+export function llmsTxt(components, version, skills = []) {
     const list = components
         .map((c) => `- ${c.factory ?? c.exports[0]} (\`${c.import}\`): ${c.description.split('. ')[0].replace(/\.$/, '')}.`)
         .join('\n');
+    const skillList = skills.map((s) => `- [${s.name}](skills/${s.dir}/SKILL.md): ${s.description.split(/(?<=\.)\s+Use when/)[0]}`).join('\n');
     return `# @luxalgo/vela-ui ${version}
 
 > The component kit of Vela: one file per component, Zag state machines for behavior, CSS in
@@ -202,15 +217,23 @@ export function llmsTxt(components, version) {
 
 Every component is a function, \`create<Name>(props)\`, imported from its own path, that returns
 a handle with \`el\` (the element to append) and \`destroy()\`. Every part of a component carries
-a \`data-slot\`; variants and sizes are \`data-variant\` and \`data-size\`.
+a \`data-slot\`; variants and sizes are \`data-variant\` and \`data-size\`. Mount components in a
+kit host: \`ensureUIHost(el, createTheme())\` (\`@luxalgo/vela-ui/theme\`), or inside a Vela chart.
+${skills.length ? `
+## Skills (agent instructions in this package)
 
+${skillList}
+
+Link them into a project's coding agent with \`npx skills experimental_sync\` once the package is
+installed, or install them from the repository with \`npx skills add LuxAlgo/Vela\`.
+` : ''}
 ## Reference (in this package)
 
 - [Components](dist/manifest.json): every component's import, props, variants, parts and
   their slots, settings, the tokens it reads, the attributes its CSS styles by, an example.
 - [Theme schema](dist/theme.schema.json): the JSON Schema of a theme written to a file.
-- [Theming](docs/theming.md): createTheme, applyTheme, colors-only themes, component settings
-  and part CSS.
+- [Theming](docs/theming.md): createTheme, kit hosts, colors-only themes, the tokens, component
+  settings, part CSS and the cascade layers.
 - [What to change, and where](docs/what-to-change.md): one table, a kind of change per row.
 - [Writing a component](docs/writing-a-component.md): the one-file shape and its rules.
 - Plain CSS themes: \`dist/themes/dark.css\`, \`dist/themes/light.css\`.

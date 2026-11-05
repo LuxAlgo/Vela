@@ -134,7 +134,7 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`);
 Host tooling can execute-and-inject safely with `chart.runIndicator(source)` (structured
 errors, no dead legend rows) and read a running script's state, including its **return
 value**, via `handle.context()` (read-only snapshots, worker-safe). See the
-[API reference](docs/user/api-reference.md#reading-a-scripts-execution-context), and
+[API reference](docs/user/api-reference.md#capturing-what-a-script-computes), and
 [Scripting engines](docs/user/scripting-engines.md) for the addon and for writing your own.
 
 The workspace takes an **indicator manifest**: inline JSON, a URL returning it, or an
@@ -180,6 +180,19 @@ Full documentation lives in [docs/](docs/index.md): user guides ([quickstart](do
 [the workspace](docs/user/workspace.md), [options](docs/user/options.md), [API reference](docs/user/api-reference.md)),
 [architecture](docs/architecture/overview.md), and [contributing](docs/contributing/setup.md) guides
 including the [plugin SDK](docs/contributing/plugin-sdk.md).
+
+## For coding agents
+
+The package carries what a coding agent needs, versioned with the code: the docs, an
+[`llms.txt`](llms.txt) index, and agent skills ([building charts](skills/building-vela-charts/SKILL.md),
+[extending with plugins](skills/extending-vela-with-plugins/SKILL.md),
+[upgrading](skills/upgrading-vela/SKILL.md), plus the UI kit's three on using, theming and
+writing components). Give them to your agent with:
+
+```bash
+npx skills add LuxAlgo/Vela          # from this repository
+npx skills experimental_sync         # or: link the ones shipped in node_modules
+```
 
 ## Development
 

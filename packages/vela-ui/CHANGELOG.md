@@ -30,6 +30,11 @@ uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
   variants, parts, settings, the tokens it reads and an example), `theme.schema.json`, the
   guides (theming, what to change and where, writing a component) and `llms.txt` for coding
   agents, all generated from the source.
+- **Agent skills.** Three skills in `skills/` teach a coding agent to use the components,
+  theme them and write new ones, in the Agent Skills format: `npx skills experimental_sync`
+  links them into a project once the package is installed, and `npx skills add LuxAlgo/Vela`
+  installs them from the repository. `llms.txt` and the `AGENTS.md` block `add` writes point
+  at them.
 - **A command line and a lint config.** `npx @luxalgo/vela-ui add`, `diff`, `check` and
   `list`; `@luxalgo/vela-ui/stylelint` checks CSS written with the kit's `css` tag against the
   kit's rules.

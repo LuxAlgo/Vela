@@ -84,6 +84,10 @@
   },
   "files": [
     "dist",
+    "docs",
+    "skills",
+    "llms.txt",
+    "CHANGELOG.md",
     "NOTICE",
     "LICENSE",
     "README.md"
@@ -120,6 +124,9 @@
   "dependencies": {
     "@luxalgo/vela-ui": "^0.1.0"
   },
+  "skills": [
+    "npm:@luxalgo/vela-ui"
+  ],
   "workspaces": [
     "packages/*"
   ]

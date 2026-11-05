@@ -220,6 +220,12 @@ When a change touches a developer-facing interface or adds a feature, check whet
 whether to update it** — a natural moment is when a change is ready to commit. Verify
 prose consistency yourself (terminology, cross-links); there is no compiler for docs.
 
+The agent skills (`skills/*/SKILL.md`, and the kit's in `packages/vela-ui/skills/`) ship in
+the packages and teach external coding agents the public API: a change to an API, option or
+rule they show is a change to them too. `npm test` runs `scripts/check-skills.mjs` (the Agent
+Skills frontmatter rules, bodies under 500 lines, every `node_modules/...` path they cite
+shipping with its package); typecheck their examples when you change them.
+
 ---
 
 ## The changelog

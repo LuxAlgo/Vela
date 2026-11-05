@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { componentReference, llmsTxt, missingDefs, PACKAGE_ROOT as root, themeSchema, tokenAccessors } from './reference.mjs';
+import { componentReference, llmsTxt, missingDefs, PACKAGE_ROOT as root, skillsOf, themeSchema, tokenAccessors } from './reference.mjs';
 
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const { t } = await import(pathToFileURL(join(root, 'dist/index.js')).href);
@@ -41,5 +41,5 @@ if (unpublished.size) {
 
 writeFileSync(join(root, 'dist/manifest.json'), `${JSON.stringify({ package: '@luxalgo/vela-ui', version, tokens: TOKEN_NAMES, components }, null, 2)}\n`);
 writeFileSync(join(root, 'dist/theme.schema.json'), `${JSON.stringify(themeSchema(components, TOKEN_NAMES, version), null, 2)}\n`);
-writeFileSync(join(root, 'llms.txt'), llmsTxt(components, version));
+writeFileSync(join(root, 'llms.txt'), llmsTxt(components, version, skillsOf(root)));
 console.log(`reference: ${components.length} components, ${TOKEN_NAMES.length} tokens`);

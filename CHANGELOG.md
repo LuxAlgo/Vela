@@ -6,6 +6,11 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **The package carries what a coding agent needs.** Three agent skills in `skills/`
+  (building charts, extending them with plugins, upgrading from 0.9), the docs, the
+  changelog and an `llms.txt` index now ship with it, matching the installed version.
+  `npx skills experimental_sync` links the skills into a project, the UI kit's three
+  included; `npx skills add LuxAlgo/Vela` installs them from the repository.
 - **Plugins can give shell options a default.** `registerShellDefaults({ sidebar })` gives
   every shell built afterwards the right-edge sidebar (or a composition of it) where its host
   said nothing about it; the host's own value, `false` included, always wins, and shells
