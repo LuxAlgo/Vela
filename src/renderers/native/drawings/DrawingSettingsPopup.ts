@@ -22,11 +22,15 @@ import {
 import { icon, svg24, svg24Solid } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { contrastColor } from '../../shared/drawing-geometry';
-import { NumberInput } from '../../../ui/components/number-input';
-import { TextArea } from '../../../ui/components/text-area';
-import { buildColorPicker } from '../../../ui/components/color-picker';
-import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
+import { NumberInput } from '@luxalgo/vela-ui/number-input';
+import { TextArea } from '@luxalgo/vela-ui/text-area';
+import { buildColorPicker } from '@luxalgo/vela-ui/color-picker';
+import { Popover, closeOpenPopovers } from '@luxalgo/vela-ui/popover';
 import { DrawingSettingsPanel, type DrawingPanelEnv } from './DrawingSettingsPanel';
+import { css } from '@luxalgo/vela-ui/css';
+import { disposeWithin } from '@luxalgo/vela-ui/dispose';
+import { t } from '@luxalgo/vela-ui/t';
+
 
 const TEXT = {
     icon: msg('drawing.bar.icon', 'Icon'),
@@ -159,18 +163,20 @@ function ensureStyles(): void {
     const s = existing ?? document.createElement('style');
     s.id = STYLE_ID;
     s.dataset.rev = STYLE_REV;
-    s.textContent = `
-.vela-dpop-btn{background:transparent;color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-dpop-btn:hover{background:var(--vela-hover-strong);color:var(--vela-fg-bright);}
-.vela-dpop-btn[data-active='1']{background:var(--vela-active);color:var(--vela-fg-bright);}
+    s.textContent = css`@layer vela.chrome {
+
+.vela-dpop-btn{background:transparent;color:${t.fg.muted};transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-dpop-btn:hover{background:${t.hover.strong};color:${t.fg.bright};}
+.vela-dpop-btn[data-active='1']{background:${t.active};color:${t.fg.bright};}
 /* Mixed (a multi-selection disagrees): the active fill at half strength behind a dashed ring. */
-.vela-dpop-btn[data-active='mixed']{background:var(--vela-hover-strong);color:var(--vela-fg-bright);outline:1px dashed var(--vela-fg-muted);outline-offset:-2px;}
-.vela-dpop-item{background:transparent;transition:background var(--vela-dur-fast) ease;}
-.vela-dpop-item:hover{background:var(--vela-hover-strong);}
-.vela-dpop-item[data-active='1']{background:var(--vela-active);}
+.vela-dpop-btn[data-active='mixed']{background:${t.hover.strong};color:${t.fg.bright};outline:1px dashed ${t.fg.muted};outline-offset:-2px;}
+.vela-dpop-item{background:transparent;transition:background ${t.dur.fast} ease;}
+.vela-dpop-item:hover{background:${t.hover.strong};}
+.vela-dpop-item[data-active='1']{background:${t.active};}
 /* A finger needs a wider grab zone than a cursor — grow the move handle on touch-first
    devices (the glyph stays centered; only the hit target widens). */
-@media (pointer: coarse){.vela-dpop-grip{width:${BTN + 14}px !important;}}`;
+@media (pointer: coarse){.vela-dpop-grip{width:${BTN + 14}px !important;}}
+}`;
     if (!existing) document.head.appendChild(s);
 }
 
@@ -504,6 +510,7 @@ export class DrawingSettingsPopup {
         this.closeMenu();
         this.hideTip();
         if (!keepPanel) this.panel.close();
+        disposeWithin(this.el);
         this.el?.remove();
         this.el = null;
         this.textPanel = null;
@@ -544,6 +551,7 @@ export class DrawingSettingsPopup {
      *  under it, plus color and size when those aren't already on the bar. */
     private toggleTextPanel(drawing: Drawing, actions: SettingsActions, withColorAndSize: boolean): void {
         if (this.textPanel) {
+            disposeWithin(this.textPanel);
             this.textPanel.remove();
             this.textPanel = null;
             this.reposition();
@@ -737,15 +745,17 @@ export class DrawingSettingsPopup {
             host: this.host,
             theme: t,
             position: 'absolute',
-            boundary: this.host,
+            collisionBoundary: this.host,
             boundaryInset: 4,
             viewportInset: 0,
-            gap: 6,
+            sideOffset: 6,
             align: opts.align ?? 'start',
             zIndex: opts.zIndex,
             onClose: () => {
                 if (this.menuPop === pop) { this.menuPop = null; this.menuOwner = null; }
                 if (this.colorPop === pop) { this.colorPop = null; this.colorOwner = null; }
+                // A fresh popover per open: closing discards it.
+                disposeWithin(pop.el);
                 opts.onClose?.();
             },
         });

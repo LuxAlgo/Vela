@@ -4,17 +4,20 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { Translator } from '../core/i18n/types';
-import { Drawer } from '../ui/components/drawer';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { timezoneMenuRows } from './timezones';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     title: msg('widget.timezoneDrawer.title', 'Time zone'),
 };
 
 const STYLE_ID = 'vela-widget-timezone-drawer';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-tzd-list { padding: 2px 0 4px; }
 .vela-tzd-row {
     display: flex;
@@ -26,10 +29,11 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-tzd-row:active { background: var(--vela-hover); }
-.vela-tzd-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-tzd-row .vela-icon { flex: none; color: var(--vela-fg-bright); }
-`;
+.vela-tzd-row:active { background: ${t.hover}; }
+.vela-tzd-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-tzd-row .vela-icon { flex: none; color: ${t.fg.bright}; }
+
+}`;
 
 export interface TimezoneDrawerOptions {
     host: HTMLElement;
@@ -45,7 +49,7 @@ export class TimezoneDrawer {
     private readonly drawer: Drawer;
 
     constructor(private readonly opts: TimezoneDrawerOptions) {
-        injectStyles(STYLE_ID, CSS, opts.host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, opts.host.ownerDocument);
         this.drawer = new Drawer({ host: opts.host, title: textOf(opts.i18n, TEXT.title), onOpenChange: opts.onOpenChange });
     }
 

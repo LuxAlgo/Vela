@@ -8,10 +8,12 @@
 import { msg } from '../core/i18n/message';
 import { eventTimeText, textOf } from '../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
-import { Drawer } from '../ui/components/drawer';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { layoutGridCanvas, layoutGridLabel, paintLayoutGrid } from './layout-picker';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     chartType: msg('widget.moreDrawer.chartType', 'Chart type'),
@@ -26,15 +28,17 @@ const TEXT = {
 };
 
 const STYLE_ID = 'vela-widget-more-drawer';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-md-actions {
     display: flex;
     gap: 6px;
     padding: 2px 2px 10px;
-    border-bottom: 1px solid var(--vela-border);
+    border-bottom: 1px solid ${t.border};
 }
 .vela-md-action {
     all: unset;
+    box-sizing: border-box;
     flex: 1 1 0;
     min-height: 48px;
     display: inline-flex;
@@ -44,11 +48,11 @@ const CSS = `
     gap: 4px;
     border-radius: 8px;
     font-size: 11px;
-    color: var(--vela-fg);
+    color: ${t.fg};
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-md-action:active { background: var(--vela-hover); }
+.vela-md-action:active { background: ${t.hover}; }
 .vela-md-action:disabled { opacity: 0.35; cursor: default; }
 .vela-md-action .vela-icon { font-size: 17px; width: 17px; height: 17px; }
 .vela-md-list { padding: 6px 0 4px; }
@@ -62,11 +66,11 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-md-row:active { background: var(--vela-hover); }
-.vela-md-row[data-checked='1'] { background: var(--vela-hover-strong); }
-.vela-md-row .vela-icon { flex: none; font-size: 17px; width: 17px; height: 17px; color: var(--vela-fg-muted); }
-.vela-md-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-md-row-value { flex: none; font-size: 13px; color: var(--vela-fg-muted); }
+.vela-md-row:active { background: ${t.hover}; }
+.vela-md-row[data-checked='1'] { background: ${t.hover.strong}; }
+.vela-md-row .vela-icon { flex: none; font-size: 17px; width: 17px; height: 17px; color: ${t.fg.muted}; }
+.vela-md-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-md-row-value { flex: none; font-size: 13px; color: ${t.fg.muted}; }
 .vela-md-back {
     all: unset;
     display: flex;
@@ -76,9 +80,9 @@ const CSS = `
     padding: 0 2px;
     font-size: 14px;
     font-weight: 600;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     cursor: pointer;
-    border-bottom: 1px solid var(--vela-border);
+    border-bottom: 1px solid ${t.border};
     width: 100%;
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
@@ -93,10 +97,11 @@ const CSS = `
     font-weight: 600;
     letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
-.vela-md-empty { padding: 18px 2px; color: var(--vela-fg-muted); font-size: 13px; }
-`;
+.vela-md-empty { padding: 18px 2px; color: ${t.fg.muted}; font-size: 13px; }
+
+}`;
 
 export interface MoreDrawerAction {
     label: string;
@@ -156,7 +161,7 @@ export class MoreDrawer {
     private view: MoreView = 'main';
 
     constructor(private readonly opts: MoreDrawerOptions) {
-        injectStyles(STYLE_ID, CSS, opts.host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, opts.host.ownerDocument);
         this.drawer = new Drawer({ host: opts.host, onOpenChange: opts.onOpenChange });
     }
 

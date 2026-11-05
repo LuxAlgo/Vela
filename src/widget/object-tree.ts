@@ -15,9 +15,10 @@ import type { Translator } from '../core/i18n/types';
 import type { Vela } from '../Vela';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { SerializedDrawing } from '../core/drawings/Drawing';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
-import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
 import {
@@ -50,6 +51,8 @@ import {
     type TreeSnapshot,
 } from './object-tree-model';
 import { SidePanel } from './side-panel';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     objectTree: msg('widget.objectTree.objectTree', 'Object tree'),
@@ -105,11 +108,12 @@ const TEXT = {
 export const OBJECT_TREE_TITLE = TEXT.objectTree;
 
 const STYLE_ID = 'vela-widget-objtree';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 /* One pane's block. The transparent border reserves the drop-target outline. */
 .vela-ot-pane {
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: ${t.radius.md};
     margin: 2px 0;
 }
 .vela-ot-panehead { display: flex; align-items: center; gap: 2px; padding: 5px 6px; }
@@ -119,24 +123,24 @@ const CSS = `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
-.vela-ot-panesep { height: 1px; background: var(--vela-border); margin: 6px 8px; }
+.vela-ot-panesep { height: 1px; background: ${t.border}; margin: 6px 8px; }
 
 .vela-ot-row {
     display: flex;
     align-items: center;
     gap: 9px;
     padding: 6px 6px;
-    border-radius: 6px;
+    border-radius: ${t.radius.md};
     cursor: default;
 }
-.vela-ot-row:hover { background: var(--vela-hover); }
-.vela-ot-row > .vela-icon { color: var(--vela-fg-muted); width: 14px; height: 14px; font-size: 14px; justify-content: center; flex: none; }
+.vela-ot-row:hover { background: ${t.hover}; }
+.vela-ot-row > .vela-icon { color: ${t.fg.muted}; width: 14px; height: 14px; font-size: 14px; justify-content: center; flex: none; }
 /* Drawing glyphs come from the type registry at toolbar scale — bring them down to row size. */
 .vela-ot-row > .vela-icon svg { width: 14px; height: 14px; }
 .vela-ot-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -144,9 +148,9 @@ const CSS = `
 .vela-ot-row[data-hidden] > .vela-icon { opacity: 0.45; }
 /* Two different states, and both can be true at once: "picked" is what the panel has selected
    (the group/duplicate candidates), "selected" mirrors what the CHART has selected. */
-.vela-ot-row[data-picked] { background: var(--vela-active); }
-.vela-ot-row[data-picked] .vela-ot-name { color: var(--vela-fg-bright); }
-.vela-ot-row[data-selected] { box-shadow: inset 2px 0 0 var(--vela-accent); }
+.vela-ot-row[data-picked] { background: ${t.active}; }
+.vela-ot-row[data-picked] .vela-ot-name { color: ${t.fg.bright}; }
+.vela-ot-row[data-selected] { box-shadow: inset 2px 0 0 ${t.accent}; }
 .vela-ot-avatar {
     width: 14px;
     height: 14px;
@@ -155,7 +159,7 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--vela-fg-on-fill);
+    color: ${t.fg.onFill};
     font-size: 10px;
     font-weight: 700;
 }
@@ -166,8 +170,8 @@ const CSS = `
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--vela-fg-muted);
-    background: var(--vela-hover);
+    color: ${t.fg.muted};
+    background: ${t.hover};
     border-radius: 3px;
     padding: 1px 4px;
 }
@@ -176,6 +180,7 @@ const CSS = `
 .vela-ot-acts { display: flex; align-items: center; gap: 0; flex: none; }
 .vela-ot-btn {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     flex: none;
     width: 20px;
@@ -184,7 +189,7 @@ const CSS = `
     align-items: center;
     justify-content: center;
     border-radius: 3px;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 12px;
     visibility: hidden;
 }
@@ -192,39 +197,40 @@ const CSS = `
 .vela-ot-panehead:hover .vela-ot-btn { visibility: visible; }
 /* An engaged action stays out: hidden and locked are states, and a state the user can only
    see by hovering is a state they will not find. */
-.vela-ot-row .vela-ot-btn[data-engaged] { visibility: visible; color: var(--vela-fg); }
-.vela-ot-btn:hover:not(:disabled) { background: var(--vela-active); color: var(--vela-fg-bright); }
+.vela-ot-row .vela-ot-btn[data-engaged] { visibility: visible; color: ${t.fg}; }
+.vela-ot-btn:hover:not(:disabled) { background: ${t.active}; color: ${t.fg.bright}; }
 .vela-ot-btn:disabled { opacity: 0.35; cursor: default; }
-.vela-ot-empty { padding: 20px 10px; text-align: center; color: var(--vela-fg-muted); font-size: 12px; }
+.vela-ot-empty { padding: 20px 10px; text-align: center; color: ${t.fg.muted}; font-size: 12px; }
 
 /* ── drawing groups ── */
 /* One top-level entry in a pane's drawing list: a lone drawing, or a whole group block. No
    border of its own — units stack flush, so consecutive highlighted rows read as one block; the
    drop-into-group outline is drawn inside the box instead (see the drag-and-drop rules). */
-.vela-ot-unit { border-radius: 6px; }
+.vela-ot-unit { border-radius: ${t.radius.md}; }
 /* Adjacent picked rows merge into one contiguous highlight: the shared edge loses its rounding. */
 .vela-ot-unit:has(> .vela-ot-row[data-picked]) + .vela-ot-unit > .vela-ot-row[data-picked] { border-top-left-radius: 0; border-top-right-radius: 0; }
 .vela-ot-unit:has(+ .vela-ot-unit > .vela-ot-row[data-picked]) > .vela-ot-row[data-picked] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .vela-ot-row[data-row-kind='group'] > .vela-icon { width: 12px; font-size: 11px; }
 /* A member sits indented under its group's header. */
-.vela-ot-subrow { padding-left: 26px; }
+.vela-ot-subrow { padding-inline-start: 26px; }
 /* An empty group's only content: where its first drawing goes. */
 .vela-ot-grouphint {
-    margin: 2px 6px 4px 26px;
+    margin-block: 2px 4px;
+    margin-inline: 26px 6px;
     padding: 4px 8px;
-    border: 1px dashed var(--vela-border);
-    border-radius: var(--vela-radius-sm);
-    color: var(--vela-fg-muted);
+    border: 1px dashed ${t.border};
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
     font-size: 11px;
 }
 .vela-ot-rename {
     flex: 1;
     min-width: 0;
     padding: 1px 4px;
-    border: 1px solid var(--vela-accent);
-    border-radius: var(--vela-radius-sm);
-    background: var(--vela-surface-elev);
-    color: var(--vela-fg-bright);
+    border: 1px solid ${t.accent};
+    border-radius: ${t.radius.sm};
+    background: ${t.surface.elev};
+    color: ${t.fg.bright};
     font: inherit;
 }
 /* The selection bar. Always there — the actions it holds are the panel's, not a row's, so they
@@ -239,10 +245,10 @@ const CSS = `
     gap: 2px;
     margin: -8px -8px 6px;
     padding: 6px 8px;
-    border-bottom: 1px solid var(--vela-border);
-    background: var(--vela-bg);
+    border-bottom: 1px solid ${t.border};
+    background: ${t.bg};
 }
-.vela-ot-selcount { flex: 1; min-width: 0; color: var(--vela-fg-muted); font-size: 11px; }
+.vela-ot-selcount { flex: 1; min-width: 0; color: ${t.fg.muted}; font-size: 11px; }
 .vela-ot-selbar .vela-ot-btn { visibility: visible; width: 24px; height: 22px; }
 .vela-ot-selbar .vela-ot-btn[data-icon='group'] .vela-icon { width: 16px; height: 16px; font-size: 16px; }
 
@@ -260,23 +266,23 @@ const CSS = `
 .vela-ot-gap::before {
     content: '';
     position: absolute;
-    left: 0;
-    right: 0;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
     top: 50%;
     height: 1px;
-    background: var(--vela-border);
+    background: ${t.border};
     transform: translateY(-50%);
 }
-.vela-ot-gap[data-drop] { height: 4px; background: var(--vela-fg-bright); }
+.vela-ot-gap[data-drop] { height: 4px; background: ${t.fg.bright}; }
 .vela-ot-gap[data-drop]::before { display: none; }
 /* A whole container accepts the drop: merging into a pane, or a pane with no drawings yet.
    The pane block's transparent border reserves the room for this outline; a group unit has no
    border to color, so it draws the same line as an inset outline (no layout footprint). */
-.vela-ot [data-drop='target'] { border-color: var(--vela-fg-bright); background: var(--vela-hover); }
-.vela-ot-unit[data-drop='target'] { outline: 1px solid var(--vela-fg-bright); outline-offset: -1px; }
+.vela-ot [data-drop='target'] { border-color: ${t.fg.bright}; background: ${t.hover}; }
+.vela-ot-unit[data-drop='target'] { outline: 1px solid ${t.fg.bright}; outline-offset: -1px; }
 /* Where a reorder would insert. */
-.vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 var(--vela-fg-bright); }
-.vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 var(--vela-fg-bright); }
+.vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 ${t.fg.bright}; }
+.vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 ${t.fg.bright}; }
 
 .vela-ot-ghost {
     position: fixed;
@@ -284,17 +290,18 @@ const CSS = `
     pointer-events: none;
     max-width: 220px;
     padding: 3px 10px;
-    border: 1px solid var(--vela-fg-bright);
-    border-radius: var(--vela-radius-sm);
-    background: var(--vela-surface-overlay);
-    color: var(--vela-fg);
-    box-shadow: var(--vela-shadow);
+    border: 1px solid ${t.fg.bright};
+    border-radius: ${t.radius.sm};
+    background: ${t.surface.overlay};
+    color: ${t.fg};
+    box-shadow: ${t.shadow};
     font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-`;
+
+}`;
 
 const REFRESH_EVENTS = [
     'indicator:added',
@@ -439,7 +446,7 @@ export class ObjectTree extends SidePanel {
     }
     /** The last render's model, kept so a right-click reads the same state the rows show. */
     private pass: Pass | null = null;
-    private menu: Menu | null = null;
+    private readonly menu: ContextMenu;
     private menuActions = new Map<string, () => void>();
     private drag: DragSession | null = null;
 
@@ -452,9 +459,10 @@ export class ObjectTree extends SidePanel {
         i18n?: Translator,
     ) {
         super(host, TEXT.objectTree, 'vela-ot', i18n ? { i18n } : {});
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
 
-        this.body.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+        // A side panel: a long press opens a row's menu on touch screens.
+        this.menu = new ContextMenu({ target: this.body, items: (e) => this.menuItemsAt(e), onSelect: (id) => this.menuActions.get(id)?.() });
         this.body.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     }
 
@@ -498,8 +506,7 @@ export class ObjectTree extends SidePanel {
     override destroy(): void {
         this.detach();
         this.endDrag(false); // a drag in flight has nothing left to drop onto
-        this.menu?.destroy();
-        this.menu = null;
+        this.menu.destroy();
         super.destroy();
     }
 
@@ -1318,19 +1325,16 @@ export class ObjectTree extends SidePanel {
     // Right-clicking a row opens the same actions its buttons expose, plus the ones with no
     // room on a row: re-paning an indicator, and reordering what draws in front.
 
-    private onContextMenu(e: MouseEvent): void {
+    private menuItemsAt(e: MouseEvent | PointerEvent): MenuItemDescriptor[] | null {
         const pass = this.pass;
-        if (!pass) return;
+        if (!pass) return null;
         const rowEl = (e.target as HTMLElement).closest<HTMLElement>('.vela-ot-row');
-        if (!rowEl) return;
+        if (!rowEl) return null;
         e.preventDefault();
         const b = new MenuBuilder();
         const items = this.itemsForRow(b, pass, rowEl);
-        if (items.length === 0) return;
         this.menuActions = b.actions;
-        const menu = this.ensureMenu();
-        menu.setItems(items);
-        menu.openAt(e.clientX, e.clientY);
+        return items;
     }
 
     private itemsForRow(b: MenuBuilder, pass: Pass, rowEl: HTMLElement): MenuItemDescriptor[] {
@@ -1360,14 +1364,6 @@ export class ObjectTree extends SidePanel {
      *  theme's custom properties don't resolve and the surface renders unstyled. */
     private uiHost(): HTMLElement {
         return (this.el.closest('.vela-ui') as HTMLElement | null) ?? this.el;
-    }
-
-    /** The menu, built on first use — by then the panel is mounted, so the theme host resolves. */
-    private ensureMenu(): Menu {
-        if (!this.menu) {
-            this.menu = new Menu({ host: this.uiHost(), items: [], onSelect: (id) => this.menuActions.get(id)?.() });
-        }
-        return this.menu;
     }
 
     private findIndicatorRow(pass: Pass, id: string): IndicatorRow | undefined {

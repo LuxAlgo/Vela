@@ -3,10 +3,11 @@
 // `bar` event; hover values from the renderer crosshair seam (RendererControl.onCrosshairMove).
 import type { Vela } from '../Vela';
 import type { OHLCV } from '../core/model/ohlcv';
-import { injectStyles } from '../ui/styles';
-import { Tooltip } from '../ui/components/tooltip';
-import { CalloutBubble } from '../ui/components/callout-bubble';
-import { Menu } from '../ui/components/menu';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
 import { segmentVisibility, statuslineMenuItems, STATUSLINE_LADDER, readoutCells, SHOW_CHART_LABEL, type StatuslinePart, type StatuslineLayout } from './statusline-model';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
@@ -18,44 +19,47 @@ import { timeframeLabel } from './timeframe';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { LEGEND_AT_TOP_ATTR } from '../renderers/shared/InputsUI';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-statusline';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-statusline {
     position: absolute;
-    top: var(--vela-space-2);
+    top: ${t.space[2]};
     /* Track the indicator legend's left edge: the renderer publishes its toolbar gutter
      * on the mount container, and the legend sits 10px into the plot to its right —
      * so the two columns stay aligned whether the toolbar is docked (44px), collapsed
      * (16px), or absent entirely (a workspace cell: 0). */
-    left: calc(var(--vela-toolbar-gutter, 0px) + 10px);
+    inset-inline-start: calc(var(--vela-toolbar-gutter, 0px) + 10px);
     z-index: 10;
     display: flex;
     align-items: baseline;
-    gap: var(--vela-space-2);
+    gap: ${t.space[2]};
     /* The chip never grows past the plot: fit() measures overflow against this width to
      * walk the layout ladder (stack, then shed values), so overflow:hidden only guards
      * the transient between a resize and the next measure. */
     max-width: calc(100% - var(--vela-toolbar-gutter, 0px) - var(--vela-scale-gutter, 0px) - 24px);
     overflow: hidden;
-    color: var(--vela-fg);
-    font-size: var(--vela-font-size-md);
+    color: ${t.fg};
+    font-size: ${t.fontSize.md};
     /* Same chip treatment as the indicator legend rows (InputsUI): a translucent wash of
      * the chart background when idle — enough to keep the readout legible when candles
      * reach it — and the solid chart background on hover. Symmetric 7px padding with a
      * compensating negative margin (mirroring the legend rows) keeps the avatar's left
-     * edge on the legend column's left edge (both at left:10px) while the chip itself
+     * edge on the legend column's left edge (both at inset-inline-start:10px) while the chip itself
      * extends 7px further left, so both columns' chips share the same left edge. */
     pointer-events: auto;
-    background: color-mix(in srgb, var(--vela-bg) 60%, transparent);
-    border-radius: 4px;
+    background: color-mix(in srgb, ${t.bg} 60%, transparent);
+    border-radius: ${t.radius.sm};
     padding: 2px 7px;
-    margin-left: -7px;
+    margin-inline-start: -7px;
 }
 /* Hovering opens the chip the same way a legend row opens: solid chart background
  * plus the same inset neutral outline the indicator rows wear (InputsUI's
  * setRowHighlighted) — the two columns read as one family. */
-.vela-statusline:hover { background: var(--vela-bg); box-shadow: inset 0 0 0 1px var(--vela-border); }
+.vela-statusline:hover { background: ${t.bg}; box-shadow: inset 0 0 0 1px ${t.border}; }
 /* Chart hidden (the price series' eye — renderer 'candleVisible'): the line dims to
  * the same 0.5 wash a hidden indicator's legend row wears. */
 .vela-statusline.vela-sl-chart-hidden { opacity: 0.5; }
@@ -66,7 +70,7 @@ const CSS = `
 .vela-statusline .vela-sl-row {
     display: flex;
     align-items: baseline;
-    gap: var(--vela-space-2);
+    gap: ${t.space[2]};
     white-space: nowrap;
 }
 .vela-statusline.vela-sl-stacked {
@@ -74,7 +78,7 @@ const CSS = `
     align-items: flex-start;
     /* The same air between the two rows as between the values row and the legend row
      * that follows the chip (see the stacked legend shift below). */
-    row-gap: var(--vela-space-1);
+    row-gap: ${t.space[1]};
 }
 /* Stacked, the identity row may shrink (the meta carries the ellipsis) — the values row
  * never does, so its overflow is what fit() measures to keep descending the ladder. */
@@ -93,15 +97,15 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--vela-fg-on-fill);
+    color: ${t.fg.onFill};
     font-size: 10px;
     font-weight: 700;
 }
-.vela-statusline .vela-sl-symbol { font-weight: 600; font-size: var(--vela-font-size-lg); }
-.vela-statusline .vela-sl-meta { color: var(--vela-fg-muted); font-size: var(--vela-font-size-md); font-weight: 600; }
+.vela-statusline .vela-sl-symbol { font-weight: 600; font-size: ${t.fontSize.lg}; }
+.vela-statusline .vela-sl-meta { color: ${t.fg.muted}; font-size: ${t.fontSize.md}; font-weight: 600; }
 /* The meta opens with "· " — sit its dot one space-width after the ticker, as far as the
  * venue sits after it, not a full row gap away. */
-.vela-statusline .vela-sl-symbol + .vela-sl-meta { margin-left: calc(var(--vela-space-1) - var(--vela-space-2)); }
+.vela-statusline .vela-sl-symbol + .vela-sl-meta { margin-inline-start: calc(${t.space[1]} - ${t.space[2]}); }
 /* Market status badge — a kit callout bubble (icon-only 16px circle, label on hover
  * via the kit tooltip); the session tint is applied per status in setMarketStatus. While
  * the chart replays past bars it wears the replay badge instead (the inverse chip). */
@@ -111,15 +115,15 @@ const CSS = `
 /* Tabular figures: every digit has one advance, so a readout whose text changes only in
  * its digits keeps its width — render() skips the ladder for those (see widthKey). */
 .vela-statusline .vela-sl-values { font-variant-numeric: tabular-nums; }
-.vela-statusline .vela-sl-ohlc { display: flex; gap: var(--vela-space-1); color: var(--vela-fg-muted); }
-.vela-statusline .vela-sl-ohlc b { color: var(--vela-fg); font-weight: 500; }
+.vela-statusline .vela-sl-ohlc { display: flex; gap: ${t.space[1]}; color: ${t.fg.muted}; }
+.vela-statusline .vela-sl-ohlc b { color: ${t.fg}; font-weight: 500; }
 /* Prices and the signed change are left-to-right isolates (each carries dir="ltr"): inside a
  * right-to-left page the row's order mirrors, but a sign stays in front of its number. */
 .vela-statusline .vela-sl-ohlc b, .vela-statusline .vela-sl-change { unicode-bidi: isolate; }
 /* The change value wears the SAME ink as the OHLC values (set inline per render) —
  * these are the pre-ink fallbacks only. */
-.vela-statusline .vela-sl-change[data-dir='up'] { color: var(--vela-up); }
-.vela-statusline .vela-sl-change[data-dir='down'] { color: var(--vela-down); }
+.vela-statusline .vela-sl-change[data-dir='up'] { color: ${t.up}; }
+.vela-statusline .vela-sl-change[data-dir='down'] { color: ${t.down}; }
 /* The show-chart eye — out only while the chart is hidden (syncParts drives display),
  * replacing the value readout it took away. Same footprint as a legend action button. */
 .vela-statusline .vela-sl-eye {
@@ -132,12 +136,12 @@ const CSS = `
     border: none;
     border-radius: 3px;
     background: none;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     cursor: pointer;
     line-height: 0;
     flex: none;
 }
-.vela-statusline .vela-sl-eye:hover { color: var(--vela-fg); background: color-mix(in srgb, var(--vela-fg) 12%, transparent); }
+.vela-statusline .vela-sl-eye:hover { color: ${t.fg}; background: color-mix(in srgb, ${t.fg} 12%, transparent); }
 /* Stack the TOP pane's legend below the status line (lower study panes stay put).
  * The renderer marks whichever legend sits at the plot's top edge — the price pane
  * normally, or a maximized study pane filling the plot — so the legend never merges
@@ -152,9 +156,10 @@ const CSS = `
 .vela-has-statusline.vela-sl-stacked-host [${LEGEND_AT_TOP_ATTR}] { transform: translateY(40px); }
 /* Mobile: the same ladder at the phone's type scale — the width alone decides how much
  * of the readout fits, exactly as on a narrow desktop chart. */
-[data-layout='mobile'] .vela-statusline { font-size: var(--vela-font-size-sm); }
-[data-layout='mobile'] .vela-statusline .vela-sl-symbol { font-size: var(--vela-font-size-md); }
-`;
+[data-layout='mobile'] .vela-statusline { font-size: ${t.fontSize.sm}; }
+[data-layout='mobile'] .vela-statusline .vela-sl-symbol { font-size: ${t.fontSize.md}; }
+
+}`;
 
 interface BarLike {
     open: number;
@@ -300,7 +305,7 @@ export class Statusline {
     /** The chart replays past bars — the badge shows the replay mode (see {@link setReplaying}). */
     private replaying = false;
     /** The right-click action menu — present once a host wires it via {@link attachMenu}. */
-    private menu: Menu | null = null;
+    private menu: ContextMenu | null = null;
     private menuHooks: StatuslineMenuHooks | null = null;
     /** Mirror of the renderer's `candleVisible` — see {@link setChartHidden}. */
     private chartHidden = false;
@@ -345,7 +350,7 @@ export class Statusline {
         private readonly iconFor?: (symbol: string) => string | undefined,
     ) {
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         host.classList.add('vela-has-statusline'); // scopes the price-legend shift to THIS host
         this.el = doc.createElement('div');
         this.el.className = 'vela-statusline';
@@ -411,8 +416,8 @@ export class Statusline {
         doc.fonts?.addEventListener('loadingdone', this.onFontsLoaded);
         // The tooltips portal to the nearest `.vela-ui` ancestor for theme tokens — resolve
         // them AFTER the statusline is in the DOM. The badge's content follows setMarketStatus.
-        this.marketTip = new Tooltip(this.marketEl, { content: this.t(MARKET_LABELS.open), placement: 'bottom' });
-        this.eyeTip = new Tooltip(this.eyeEl, { content: this.t(SHOW_CHART_LABEL), placement: 'bottom' });
+        this.marketTip = new Tooltip(this.marketEl, { content: this.t(MARKET_LABELS.open), side: 'bottom' });
+        this.eyeTip = new Tooltip(this.eyeEl, { content: this.t(SHOW_CHART_LABEL), side: 'bottom' });
         this.setMarketStatus('open'); // crypto trades continuously (no session model yet)
         this.render();
     }
@@ -593,27 +598,23 @@ export class Statusline {
     attachMenu(hooks: StatuslineMenuHooks): void {
         this.menuHooks = hooks;
         if (this.menu) return;
-        this.menu = new Menu({
+        this.menu = new ContextMenu({
+            target: this.el,
             host: this.host,
-            items: [],
-            placement: 'bottom-start',
-            // Pointer-anchored action menu — checked state reads as a leading ✓ (the
-            // same shape as the chart's own context menu).
-            checkmarks: true,
+            items: this.menuItemsAt,
+            // The status line sits over the chart, where a long press is the touch crosshair.
+            longPress: false,
             onSelect: (id) => this.runMenuItem(id),
         });
-        this.el.addEventListener('contextmenu', this.onContextMenu);
     }
 
-    private readonly onContextMenu = (e: MouseEvent): void => {
-        if (!this.menu || !this.menuHooks) return;
+    private readonly menuItemsAt = (e: MouseEvent | PointerEvent): readonly MenuItemDescriptor[] | null => {
+        if (!this.menuHooks) return null;
         // This right-click is the status line's — keep the chart's own context menu closed.
-        e.preventDefault();
         e.stopPropagation();
         const chartVisible = this.menuHooks.chartVisible();
         this.setChartHidden(!chartVisible); // opportunistic re-sync with the live renderer
-        this.menu.setItems(statuslineMenuItems(this.parts, chartVisible, this.i18n));
-        this.menu.openAt(e.clientX, e.clientY);
+        return statuslineMenuItems(this.parts, chartVisible, this.i18n);
     };
 
     private runMenuItem(id: string): void {
@@ -667,7 +668,6 @@ export class Statusline {
         this.fitRO?.disconnect();
         this.fitRO = null;
         this.el.ownerDocument.fonts?.removeEventListener('loadingdone', this.onFontsLoaded);
-        this.el.removeEventListener('contextmenu', this.onContextMenu);
         this.menu?.destroy();
         this.menu = null;
         this.marketTip.destroy();

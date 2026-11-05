@@ -213,7 +213,8 @@ export interface WidgetActionDescriptor {
      *  mobile drawer row's text, and the context-menu item's label. A message
      *  (`msg(id, 'English')`) follows the shell's language; a plain string shows as is. */
     label: MessageLike;
-    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
+    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). The
+     *  axis context menus carry no icons, so a row added there shows without it. */
     icon?: string;
     /** Topbar only: render the DESKTOP button icon-only, like the built-in tools — the
      *  `label` moves to the aria-label and a kit tooltip instead of button text (mobile

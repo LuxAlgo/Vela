@@ -2212,7 +2212,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      */
     setTheme(theme: VelaTheme): void {
         const cur = this.config.theme;
-        if ((Object.keys(theme) as Array<keyof VelaTheme>).every((k) => theme[k] === cur[k])) return;
+        const keys = new Set([...Object.keys(theme), ...Object.keys(cur)] as Array<keyof VelaTheme>);
+        if ([...keys].every((k) => theme[k] === cur[k])) return;
         this.config.theme = theme;
         this.renderer.setTheme(theme);
         this.events.emit('theme:changed', theme);

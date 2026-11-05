@@ -1,0 +1,137 @@
+{
+    "src/renderers/native/chrome/AttributionMark.ts": {
+        "custom-property-pattern": 2,
+        "function-disallowed-list": 2,
+        "selector-max-compound-selectors": 4,
+        "unit-disallowed-list": 3,
+        "vela/no-raw-token-var": 2
+    },
+    "src/renderers/native/chrome/PaneControls.ts": {
+        "declaration-no-important": 1
+    },
+    "src/renderers/native/chrome/SettingsDialog.ts": {
+        "custom-property-pattern": 1,
+        "declaration-no-important": 5,
+        "selector-class-pattern": 6,
+        "vela/no-raw-token-var": 1,
+        "vela/token-values": 3
+    },
+    "src/renderers/native/chrome/marks/MarkPopover.ts": {
+        "custom-property-pattern": 1,
+        "vela/no-raw-token-var": 1,
+        "vela/token-values": 1
+    },
+    "src/renderers/native/drawings/DrawingSettingsPanel.ts": {
+        "declaration-no-important": 1,
+        "declaration-property-value-disallowed-list": 1,
+        "no-descending-specificity": 4,
+        "vela/token-values": 2
+    },
+    "src/renderers/native/drawings/DrawingSettingsPopup.ts": {
+        "declaration-no-important": 1
+    },
+    "src/renderers/native/drawings/DrawingToolbar.ts": {
+        "declaration-no-important": 1,
+        "no-descending-specificity": 5,
+        "selector-max-specificity": 1,
+        "unit-disallowed-list": 3
+    },
+    "src/renderers/shared/IndicatorInputsDialog.ts": {
+        "declaration-no-important": 1
+    },
+    "src/widget/bottombar.ts": {
+        "selector-class-pattern": 2
+    },
+    "src/widget/data-window.ts": {
+        "no-descending-specificity": 1
+    },
+    "src/widget/drawing-pill.ts": {
+        "declaration-no-important": 1,
+        "vela/token-values": 2
+    },
+    "src/widget/drawings-drawer.ts": {
+        "no-descending-specificity": 1,
+        "vela/token-values": 4
+    },
+    "src/widget/indicator-picker.ts": {
+        "declaration-property-value-disallowed-list": 1,
+        "vela/token-values": 2
+    },
+    "src/widget/layout-picker.ts": {
+        "no-descending-specificity": 1,
+        "selector-class-pattern": 2,
+        "unit-disallowed-list": 4,
+        "vela/token-values": 3
+    },
+    "src/widget/mobile-bar.ts": {
+        "declaration-no-important": 1,
+        "no-duplicate-selectors": 1
+    },
+    "src/widget/more-drawer.ts": {
+        "vela/token-values": 2
+    },
+    "src/widget/object-tree.ts": {
+        "no-descending-specificity": 2,
+        "selector-max-compound-selectors": 2,
+        "selector-max-specificity": 3,
+        "vela/token-values": 8
+    },
+    "src/widget/price-scale-drawer.ts": {
+        "vela/token-values": 2
+    },
+    "src/widget/side-panel.ts": {
+        "custom-property-pattern": 1,
+        "declaration-no-important": 1,
+        "no-descending-specificity": 2,
+        "vela/no-raw-token-var": 1,
+        "vela/token-values": 4
+    },
+    "src/widget/sidebar.ts": {
+        "vela/token-values": 1
+    },
+    "src/widget/statusline.ts": {
+        "custom-property-pattern": 3,
+        "declaration-no-important": 1,
+        "no-descending-specificity": 1,
+        "selector-no-invalid": 2,
+        "vela/no-raw-token-var": 2,
+        "vela/token-values": 3
+    },
+    "src/widget/symbol-picker.ts": {
+        "color-no-hex": 2,
+        "declaration-property-value-disallowed-list": 1,
+        "no-descending-specificity": 1,
+        "vela/token-values": 3
+    },
+    "src/widget/timeframe-drawer.ts": {
+        "no-descending-specificity": 2,
+        "vela/token-values": 1
+    },
+    "src/widget/timeframe-quick.ts": {
+        "declaration-property-value-disallowed-list": 1,
+        "vela/token-values": 1
+    },
+    "src/widget/timezone-drawer.ts": {
+        "vela/token-values": 1
+    },
+    "src/widget/toast.ts": {
+        "vela/token-values": 1
+    },
+    "src/widget/topbar.ts": {
+        "declaration-no-important": 1,
+        "no-descending-specificity": 2,
+        "vela/token-values": 1
+    },
+    "src/widget/watermark.ts": {
+        "custom-property-pattern": 4,
+        "declaration-no-important": 1,
+        "vela/no-raw-token-var": 4,
+        "vela/token-values": 1
+    },
+    "src/workspace/VelaWorkspace.ts": {
+        "declaration-no-important": 2,
+        "no-descending-specificity": 1,
+        "selector-max-specificity": 2,
+        "vela/token-values": 5
+    }
+}

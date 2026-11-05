@@ -54,7 +54,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | Option | Type | Default | Notes |
 |---|---|---|---|
 | `live` | boolean | `false` | `true` adds a forming candle + live ticks on top of history. |
-| `theme` | `'dark' \| 'light'` or a theme object | `dark` | Pass an object to fully customize colors/fonts. |
+| `theme` | `'dark' \| 'light'`, a registered theme's id, a theme object, or a `createTheme` result | `dark` | Pass an object to fully customize colors/fonts; see *Themes from a few choices*. |
 | `renderer` | renderer **class** | native | A renderer class to instantiate; omit for the built-in native renderer (default). The multi-renderer port (`IChartRenderer`) stays open — pass any class implementing it. |
 | `defaultLanguage` | string | first registered engine* | Scripting language used when `addIndicator` doesn't name one. Falls back to the first engine registered at construction, then to `'pine'`. |
 | `currentPriceLine` | boolean | `true` | Dashed line + axis label at the latest price. |
@@ -62,8 +62,8 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |
 | `animations` | boolean or `{ zoom?, pan?, scroll?, autoscale?, liveBar?, intro? }` | **on** | `true`/`false` toggles every motion; an object configures each on its own (see [The `animations` option](#the-animations-option) below). Defaults: eased zoom on, pan momentum on (short snappy glide), autoscale glide on, first-load reveal on, live-bar glide **off**. |
 | `glow` | number | `0` | Neon glow/bloom for line series (~0.6 = strong). **WebGL2 only** — ignored on canvas2d. |
-| `upColor` | string | `#089981` (green) | Bullish candle color (native renderer). |
-| `downColor` | string | `#f23645` (red) | Bearish candle color (native renderer). |
+| `upColor` | string | the theme's up color (`#089981`, green, in the built-in themes) | Bullish candle color (native renderer). Set, it stays through theme switches. |
+| `downColor` | string | the theme's down color (`#f23645`, red, in the built-in themes) | Bearish candle color (native renderer). Set, it stays through theme switches. |
 | `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn (native renderer). |
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 | `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
@@ -398,13 +398,81 @@ new Vela('#chart', { data: bars, theme: midnight });
 
 The theme can also be swapped at runtime — `chart.setTheme('light')` (or a full theme
 object) re-skins the chart live and emits `theme:changed` so your surrounding UI can
-follow; users reach the same switch in chart settings → Canvas → Theme. The built-in
-dark and light themes share the same candle colors, so switching never recolors the
-series. Setting only a background color through the settings dialog (or `applyConfig`)
+follow; users reach the same switch in chart settings → Canvas → Theme. A theme's
+`upColor` and `downColor` are the candles' defaults: a switch moves every series color
+still on the previous theme's to the new theme's, while a color set with the `upColor` /
+`downColor` options or in the chart settings stays. The built-in dark and light themes
+share the same candle colors, so switching between them never recolors the series.
+Setting only a background color through the settings dialog (or `applyConfig`)
 keeps the app theme: when that background lands in the other luminance class (a white
 plot on the dark theme), the derived inks — text, grid, axis border — re-base
 automatically so legends and axis labels stay readable, while any explicitly chosen
 text color wins.
+
+#### Themes from a few choices
+
+`createTheme` builds a whole theme, the chart's colors and every UI token, from a few
+choices. Everything is optional; `createTheme()` is the dark theme:
+
+```js
+import { createTheme, registerTheme } from '@luxalgo/vela';
+
+const brand = createTheme({
+  base: 'dark',              // or 'light', or a theme object like midnight above
+  accent: '#7c3aed',         // brand color; the ink on it is derived
+  radius: 'sm',              // none | sm | md | lg: scales every radius
+  font: 'Inter, sans-serif',
+  tokens: { 'surface-elev': '#1b1c22' },          // any token, by name
+  components: { button: { radius: '2px' } },      // a component's own settings
+});
+chart.setTheme(brand);
+
+// From colors alone: light or dark is read from the background, grid and border derive.
+const paper = createTheme({ colors: { background: '#fdf6e3', accent: '#268bd2' } });
+
+// Offered by id, next to Dark and Light in chart settings → Canvas → Theme.
+registerTheme({ id: 'paper', label: 'Paper', theme: paper });
+```
+
+A theme object can carry the same settings under `ui`: `{ ...DARK_THEME, ui: { accent:
+'#7c3aed' } }`. `checkTheme(input)` lists what a theme gets wrong (unknown tokens,
+components, settings and parts, colors it cannot derive from, text with too little
+contrast), and `createTheme` warns about each in the console.
+
+When settings are not enough, a component's `css` restyles its parts completely: each part's
+CSS, written with the `css` tag, applies to that part wherever the theme does, after every
+other layer of the kit. `&` is the part, so its variants and states follow it:
+
+```js
+import { createTheme, css } from '@luxalgo/vela/ui';
+
+const theme = createTheme({
+  components: {
+    button: {
+      css: {
+        root: css`
+          text-transform: uppercase;
+          &[data-variant='outline'] { border-width: 2px; }
+        `,
+        icon: css`order: 1;`,
+      },
+    },
+  },
+});
+```
+
+Parts, `data-variant`, `data-size` and the state attributes (`data-selected`,
+`data-disabled`) are the contract; class names are not, and `checkTheme` flags them. CSS that
+was not written with the `css` tag, like a theme loaded from a saved JSON, is left out unless
+you pass `createTheme(input, { allowCss: true })`: CSS from someone else can restyle the page
+to mislead or load remote images.
+
+The theme is written once per page in the `vela.theme` cascade layer, keyed by a
+`data-vela-theme` attribute, so your own CSS overrides any token without `!important`:
+
+```css
+[data-vela-theme] { --vela-accent: #7c3aed; }
+```
 
 ### Capability-gated options
 

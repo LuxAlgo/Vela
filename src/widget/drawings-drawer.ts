@@ -4,15 +4,17 @@
 // every group into one filtered list. Data comes from the same DOM-free toolbar model
 // the docked bar paints (`ToolbarDefinition`), so custom `options.drawings` sets and
 // plugin-registered types appear here automatically.
-import { Drawer } from '../ui/components/drawer';
-import { Tabs } from '../ui/components/tabs';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { createTabs, tabsDef, type TabsHandle } from '@luxalgo/vela-ui/tabs';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import type { ToolbarDefinition, ToolDefinition } from '../core/drawings/toolbar';
 import type { DrawingTypeKey } from '../core/drawings/Drawing';
 import { msg } from '../core/i18n/message';
 import { sourceText, textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     title: msg('widget.drawingsDrawer.title', 'Drawings'),
@@ -22,13 +24,14 @@ const TEXT = {
 };
 
 const STYLE_ID = 'vela-widget-drawings-drawer';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 /* Search + tabs stay pinned while the tool list scrolls underneath. */
 .vela-dd-sticky {
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--vela-surface);
+    background: ${t.surface};
     padding-top: 2px;
 }
 .vela-dd-search {
@@ -37,17 +40,19 @@ const CSS = `
     gap: 8px;
     padding: 8px 12px;
     margin: 0 2px 8px;
-    border: 1px solid var(--vela-border);
+    border: 1px solid ${t.border};
     border-radius: 8px;
-    color: var(--vela-fg-muted);
-    background: var(--vela-surface);
+    color: ${t.fg.muted};
+    background: ${t.surface};
 }
 .vela-dd-search input {
     all: unset;
+    user-select: text;
+    -webkit-user-select: text;
     flex: 1 1 auto;
     min-width: 0;
     font-size: 14px;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
 }
 .vela-dd-tabs {
     display: flex;
@@ -58,8 +63,8 @@ const CSS = `
        (the drawer body is pan-y so everywhere ELSE a sideways move swipes the tabs). */
     touch-action: pan-x;
     padding: 0 2px 8px;
-    border-bottom: 1px solid var(--vela-border);
-    background: var(--vela-surface);
+    border-bottom: 1px solid ${t.border};
+    background: ${t.surface};
 }
 .vela-dd-tabs::-webkit-scrollbar { display: none; }
 .vela-dd-list { padding: 6px 0 4px; }
@@ -69,7 +74,7 @@ const CSS = `
     font-weight: 600;
     letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
 .vela-dd-row {
     display: flex;
@@ -81,14 +86,15 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-dd-row:active { background: var(--vela-hover); }
-.vela-dd-row[data-active='1'] { background: var(--vela-hover); }
-.vela-dd-row[data-active='1'] .vela-dd-label { color: var(--vela-accent); }
-.vela-dd-glyph { flex: none; width: 24px; height: 24px; color: var(--vela-fg); }
+.vela-dd-row:active { background: ${t.hover}; }
+.vela-dd-row[data-active='1'] { background: ${t.hover}; }
+.vela-dd-row[data-active='1'] .vela-dd-label { color: ${t.accent}; }
+.vela-dd-glyph { flex: none; width: 24px; height: 24px; color: ${t.fg}; }
 .vela-dd-glyph svg { width: 24px; height: 24px; }
-.vela-dd-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-dd-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-dd-star {
     all: unset;
+    box-sizing: border-box;
     flex: none;
     width: 40px;
     height: 40px;
@@ -96,13 +102,14 @@ const CSS = `
     align-items: center;
     justify-content: center;
     border-radius: 8px;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-dd-star[data-on='1'] { color: var(--vela-highlight); }
-.vela-dd-empty { padding: 18px 2px; color: var(--vela-fg-muted); font-size: 13px; }
-`;
+.vela-dd-star[data-on='1'] { color: ${t.highlight}; }
+.vela-dd-empty { padding: 18px 2px; color: ${t.fg.muted}; font-size: 13px; }
+
+}`;
 
 export interface DrawingsDrawerOptions {
     host: HTMLElement;
@@ -120,14 +127,14 @@ export interface DrawingsDrawerOptions {
 export class DrawingsDrawer {
     private readonly drawer: Drawer;
     private readonly input: HTMLInputElement;
-    private readonly tabs: Tabs;
+    private readonly tabs: TabsHandle;
     private readonly list: HTMLElement;
     private definition: ToolbarDefinition = { groups: [] };
     private activeGroup = '';
 
     constructor(private readonly opts: DrawingsDrawerOptions) {
         const doc = opts.host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.drawer = new Drawer({
             host: opts.host,
             title: this.t(TEXT.title),
@@ -148,18 +155,18 @@ export class DrawingsDrawer {
         this.input.addEventListener('input', () => this.renderList());
         search.appendChild(this.input);
 
-        this.tabs = new Tabs({
+        this.tabs = createTabs({
             variant: 'soft',
             className: 'vela-dd-tabs',
             items: [],
-            onChange: (id) => {
+            onValueChange: (id) => {
                 this.activeGroup = id;
                 this.renderList();
             },
         });
         // Picking a tab — the active one included — leaves search mode.
         this.tabs.el.addEventListener('click', (e) => {
-            if (!(e.target instanceof Element) || !e.target.closest('.vela-tab') || !this.input.value) return;
+            if (!(e.target instanceof Element) || !e.target.closest(`[data-slot='${tabsDef.slot('trigger')}']`) || !this.input.value) return;
             this.input.value = '';
             this.renderList();
         });
@@ -204,11 +211,11 @@ export class DrawingsDrawer {
         this.activeGroup = next.id;
         this.renderTabs();
         this.renderList();
-        this.tabs.tab(next.id)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+        this.tabs.trigger(next.id)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
 
     private renderTabs(): void {
-        this.tabs.setItems(this.definition.groups.map((g) => ({ id: g.id, label: this.t(g.label) })));
+        this.tabs.setItems(this.definition.groups.map((g) => ({ value: g.id, label: this.t(g.label) })));
         this.tabs.setValue(this.activeGroup);
     }
 

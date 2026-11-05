@@ -4,49 +4,53 @@ import { priceStyleMessage } from '../chart-types/labels';
 import { textOf } from '../core/i18n/text';
 import { msg } from '../core/i18n/message';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
-import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
-import { Tooltip } from '../ui/components/tooltip';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { LayoutPicker, type LayoutPickerShape } from './layout-picker';
-import { iconEl, iconMarkup, registerIcon } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { iconEl, iconMarkup, registerIcon } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { chartType } from '../chart-types/registry';
 import { topbarActionOverride, widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition, type TopbarComposition } from './topbar-composition';
 import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
 import { favoriteTimeframeChips, timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 // The component owns its stylesheet (id-guarded, injected at construction) so EVERY
 // host that mounts a Topbar — the widget, a multi-chart workspace — gets the same look.
 const STYLE_ID = 'vela-topbar';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-widget-topbar [data-topbar-hidden] { display: none !important; }
 .vela-widget-topbar {
     display: flex;
     align-items: center;
-    gap: var(--vela-space-1);
-    padding: var(--vela-space-1) var(--vela-space-2);
-    border-bottom: 1px solid var(--vela-border-soft);
-    color: var(--vela-fg);
-    font-size: var(--vela-font-size-md);
+    gap: ${t.space[1]};
+    padding: ${t.space[1]} ${t.space[2]};
+    border-bottom: 1px solid ${t.border.soft};
+    color: ${t.fg};
+    font-size: ${t.fontSize.md};
     flex: none;
 }
 .vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     gap: 6px;
     height: 30px;
     padding: 0 9px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
 }
 .vela-widget-symbol {
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     font-size: 15px;
     font-weight: 600;
     letter-spacing: 0.3px;
@@ -54,28 +58,29 @@ const CSS = `
     gap: 7px;
 }
 .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
 }
-.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* Timeframe cluster: duration-sorted favorite chips, highlight in place, caret
    opening the full dropdown. With no favorites the caret is the merged trigger
    (label + chevron). An unstarred current value sits as an extra chip by the caret. */
 .vela-widget-tf-group { display: inline-flex; align-items: center; gap: 2px; }
 .vela-widget-tf-chips { display: inline-flex; align-items: center; gap: 2px; }
 .vela-widget-tf-chips:empty { display: none; }
-.vela-widget-tf[data-current='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
+.vela-widget-tf[data-current='1'] { background: ${t.hover.strong}; color: ${t.fg.bright}; }
 .vela-widget-tf-caret {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 18px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
-.vela-widget-tf-caret:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tf-caret:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* The merged trigger is a plain button (hover feedback only) — the highlight
    background marks the CURRENT chip among favorites, and a lone trigger with a
    permanent highlight would read as stuck-pressed. */
@@ -83,7 +88,7 @@ const CSS = `
     width: auto;
     padding: 0 6px 0 9px;
     gap: 4px;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
@@ -93,17 +98,17 @@ const CSS = `
 /* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
    fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
    up looking like different thicknesses depending on subpixel placement. */
-.vela-sep { height: 22px; margin: 0 2px; flex: none; background: var(--vela-border-strong); }
+.vela-sep { height: 22px; margin: 0 2px; flex: none; background: ${t.border.strong}; }
 .vela-alerts-badge {
     position: absolute;
     top: 2px;
-    right: 2px;
+    inset-inline-end: 2px;
     min-width: 13px;
     height: 13px;
     padding: 0 3px;
     border-radius: 7px;
-    background: var(--vela-accent);
-    color: var(--vela-fg-on-fill);
+    background: ${t.accent};
+    color: ${t.fg.onFill};
     font-size: 9px;
     font-weight: 700;
     display: inline-flex;
@@ -112,42 +117,45 @@ const CSS = `
 }
 /* The right side of the bar — whatever the composition puts there rides this one
    auto-margin push (the flow-actions host used to carry it; composition can omit it). */
-.vela-topbar-right { margin-left: auto; display: inline-flex; align-items: center; gap: var(--vela-space-1); }
-.vela-widget-actions { display: inline-flex; gap: var(--vela-space-1); }
+.vela-topbar-right { margin-inline-start: auto; display: inline-flex; align-items: center; gap: ${t.space[1]}; }
+.vela-widget-actions { display: inline-flex; gap: ${t.space[1]}; }
 /* Left-aligned contributed actions — the primary-chrome cluster after the dropdowns. */
-.vela-widget-actions-left { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
+.vela-widget-actions-left { display: inline-flex; align-items: center; gap: ${t.space[1]}; }
 /* One PINNED contributed action's slot (a composition entry naming the action's id). */
 .vela-widget-action-pin { display: inline-flex; align-items: center; }
 /* The side-panel toggles, one per docked panel — a group so the dock can rebuild them
    without disturbing the tools around it. */
-.vela-widget-panels { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
+.vela-widget-panels { display: inline-flex; align-items: center; gap: ${t.space[1]}; }
 .vela-widget-tool {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 32px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 14px;
 }
-.vela-widget-tool:hover:not(:disabled) { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tool:hover:not(:disabled) { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-widget-tool:disabled { opacity: 0.35; cursor: default; }
-.vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tool[data-active='1'] { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-widget-action {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    border-radius: var(--vela-radius-sm);
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg);
+    color: ${t.fg};
 }
-.vela-widget-action:hover { background: var(--vela-hover); }
-`;
+.vela-widget-action:hover { background: ${t.hover}; }
+
+}`;
 
 /** A price style's name, in `i18n`'s language (English without one). */
 export function priceStyleLabel(id: string, i18n?: Translator | null): string {
@@ -244,8 +252,8 @@ export class Topbar {
     private layoutButton: HTMLElement | null = null;
     private layoutPicker: LayoutPicker | null = null;
     private layoutId: string | null = null;
-    private readonly tfMenu: Menu;
-    private readonly styleMenu: Menu;
+    private readonly tfMenu: DropdownMenu;
+    private readonly styleMenu: DropdownMenu;
     private readonly tooltips: Tooltip[] = [];
     private readonly actionsHost: HTMLElement;
     /** Left-aligned contributed actions (`align: 'left'`) — right after the dropdowns. */
@@ -308,7 +316,7 @@ export class Topbar {
         this.comp = resolveTopbarComposition(opts.composition);
         const vis = (id: string): boolean => topbarHas(this.comp, id);
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
 
         this.el = doc.createElement('div');
         this.el.className = 'vela-widget-topbar';
@@ -491,7 +499,7 @@ export class Topbar {
                 onToggleSync: (id) => layout.onToggleSync(id),
             });
         }
-        this.tfMenu = new Menu({
+        this.tfMenu = new DropdownMenu({
             trigger: this.tfCaret,
             triggerId: 'vela-topbar-tf',
             host,
@@ -503,7 +511,7 @@ export class Topbar {
             // stylesheet's default min-width would leave the list mostly empty.
             minWidth: '84px',
         });
-        this.styleMenu = new Menu({
+        this.styleMenu = new DropdownMenu({
             trigger: this.styleButton,
             triggerId: 'vela-topbar-style',
             host,

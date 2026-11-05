@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { defineConfig } from 'tsup';
+import { flattenCss } from './scripts/flatten-css.mjs';
 
 // Locale packs: one entry per `src/locales/<tag>.ts`, each published on its own as
 // `@luxalgo/vela/locales/<tag>` (one plain object; nothing registers on import).
@@ -26,6 +27,9 @@ export default defineConfig([
             ...localeEntries,
         },
         format: ['esm', 'cjs'],
+        // The kit is a dependency: imported, never bundled (the tsconfig paths that point the
+        // typecheck at its source would otherwise pull it in).
+        external: [/^@luxalgo\/vela-ui(\/|$)/],
         dts: true,
         // No sourcemaps in the published package (the peer norm — the reference
         // charting libs ship none): maps only cost download size, they play no role
@@ -34,6 +38,7 @@ export default defineConfig([
         sourcemap: false,
         clean: true,
         treeshake: true,
+        esbuildPlugins: [flattenCss()],
         // Write non-ASCII text as UTF-8 rather than `\uXXXX` escapes, which roughly double the
         // size of a locale pack in a non-Latin script. Module files are read as UTF-8 by Node
         // and by bundlers; the script-tag builds below keep ASCII output, since a page that is
@@ -56,6 +61,7 @@ export default defineConfig([
         sourcemap: false,
         clean: false,
         treeshake: true,
+        esbuildPlugins: [flattenCss()],
         minify: false,
     },
     {
@@ -68,6 +74,7 @@ export default defineConfig([
         sourcemap: false,
         clean: false,
         treeshake: true,
+        esbuildPlugins: [flattenCss()],
         minify: true,
     },
 ]);

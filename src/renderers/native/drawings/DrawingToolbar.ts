@@ -4,11 +4,14 @@ import type { ToolbarDefinition, ToolGroup, ToolSection } from '../../../core/dr
 import { icon } from '../../../core/icons';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { attachChromeTooltip } from '../../shared/chrome-tooltip';
-import { announceSurface } from '../../../ui/surface-events';
-import { holdForExit, type SurfaceExit } from '../../../ui/surface-exit';
+import { announceSurface } from '@luxalgo/vela-ui/surface-events';
+import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
 import { msg } from '../../../core/i18n/message';
 import { textOf, upperCase } from '../../../core/i18n/text';
 import type { MessageLike, Translator } from '../../../core/i18n/types';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
+
 
 const TEXT = {
     cursor: msg('drawing.toolbar.cursor', 'Cursor'),
@@ -772,49 +775,42 @@ function ensureStyles(): void {
         s.id = STYLE_ID;
         document.head.appendChild(s);
     }
-    s.textContent = `
-.vela-dtb-hit{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:var(--vela-radius-md);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+    s.textContent = css`@layer vela.chrome {
+
+.vela-dtb-hit{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:${t.radius.md};transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease;}
 .vela-dtb-hit--arrow{width:11px;height:22px;}
-.vela-dtb-btn{position:relative;width:100%;height:30px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;background:transparent;border:none;padding:0;transition:color var(--vela-dur-fast) ease;}
-.vela-dtb-btn:hover{color:var(--vela-fg-bright);}
-.vela-dtb-btn:hover .vela-dtb-hit{background:var(--vela-hover);}
-.vela-dtb-btn[data-active='1']{color:var(--vela-fg-bright);}
-.vela-dtb-btn[data-active='1'] .vela-dtb-hit{background:var(--vela-active);}
+.vela-dtb-btn{position:relative;width:100%;height:30px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;background:transparent;border:none;padding:0;transition:color ${t.dur.fast} ease;}
+.vela-dtb-btn:hover{color:${t.fg.bright};}
+.vela-dtb-btn:hover .vela-dtb-hit{background:${t.hover};}
+.vela-dtb-btn[data-active='1']{color:${t.fg.bright};}
+.vela-dtb-btn[data-active='1'] .vela-dtb-hit{background:${t.active};}
 .vela-dtb-cell{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:30px;}
-.vela-dtb-icon{flex:none;width:26px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;transition:color var(--vela-dur-fast) ease;}
-.vela-dtb-icon:hover{color:var(--vela-fg-bright);}
-.vela-dtb-cell[data-active='1'] .vela-dtb-icon{color:var(--vela-fg-bright);}
-.vela-dtb-cell[data-active='1'] .vela-dtb-icon .vela-dtb-hit{background:var(--vela-active);}
-.vela-dtb-arrow{position:absolute;right:1px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;opacity:0;pointer-events:none;transition:opacity var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-dtb-icon{flex:none;width:26px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;transition:color ${t.dur.fast} ease;}
+.vela-dtb-icon:hover{color:${t.fg.bright};}
+.vela-dtb-cell[data-active='1'] .vela-dtb-icon{color:${t.fg.bright};}
+.vela-dtb-cell[data-active='1'] .vela-dtb-icon .vela-dtb-hit{background:${t.active};}
+.vela-dtb-arrow{position:absolute;inset-inline-end:1px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:inherit;cursor:pointer;padding:0;opacity:0;pointer-events:none;transition:opacity ${t.dur.fast} ease,color ${t.dur.fast} ease;}
 .vela-dtb-cell:hover .vela-dtb-arrow,.vela-dtb-icon:hover~.vela-dtb-arrow,.vela-dtb-cell.vela-open .vela-dtb-arrow{opacity:1;pointer-events:auto;}
-.vela-dtb-arrow:hover{color:var(--vela-fg-bright);}
-.vela-dtb-icon:hover .vela-dtb-hit,.vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-hover);}
-.vela-dtb-cell.vela-open .vela-dtb-arrow .vela-dtb-hit{background:var(--vela-active);}
-.vela-dtb-cell.vela-open .vela-dtb-arrow:hover .vela-dtb-hit{background:var(--vela-hover);}
+.vela-dtb-arrow:hover{color:${t.fg.bright};}
+.vela-dtb-icon:hover .vela-dtb-hit,.vela-dtb-arrow:hover .vela-dtb-hit{background:${t.hover};}
+.vela-dtb-cell.vela-open .vela-dtb-arrow .vela-dtb-hit{background:${t.active};}
+.vela-dtb-cell.vela-open .vela-dtb-arrow:hover .vela-dtb-hit{background:${t.hover};}
 .vela-dtb-collapse{margin-top:auto;}
 .vela-dtb[data-collapsed='1']>*:not(.vela-dtb-collapse){display:none;}
 .vela-dtb[data-collapsed='1'] .vela-dtb-collapse .vela-dtb-hit{width:14px;}
-.vela-dtb-item{background:transparent;border:none;transition:background var(--vela-dur-fast) ease;}
-.vela-dtb-item:hover{background:var(--vela-hover-strong);}
-.vela-dtb-badge{width:24px;height:24px;padding:3px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;border-radius:var(--vela-radius-md);background:var(--vela-hover);border:1px solid var(--vela-border);color:var(--vela-fg-muted);transition:background var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
+.vela-dtb-item{background:transparent;border:none;transition:background ${t.dur.fast} ease;}
+.vela-dtb-item:hover{background:${t.hover.strong};}
+.vela-dtb-badge{width:24px;height:24px;padding:3px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;border-radius:${t.radius.md};background:${t.hover};border:1px solid ${t.border};color:${t.fg.muted};transition:background ${t.dur.fast} ease,border-color ${t.dur.fast} ease,color ${t.dur.fast} ease;}
 .vela-dtb-badge:empty{background:transparent;border-color:transparent;}
 .vela-dtb-badge svg{width:100%;height:100%;}
-.vela-dtb-item:hover .vela-dtb-badge:not(:empty){background:var(--vela-active);color:var(--vela-fg-bright);}
-.vela-dtb-item[data-selected='1'] .vela-dtb-badge:not(:empty){background:color-mix(in srgb,var(--vela-fg-bright) 83%,var(--vela-surface));border-color:color-mix(in srgb,var(--vela-fg-bright) 40%,transparent);color:var(--vela-surface);}
-.vela-dtb-star{width:26px;height:22px;margin:-3px -5px -3px 0;padding:3px 5px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;opacity:0;color:inherit;border-radius:var(--vela-radius-sm);transition:opacity .1s ease,color .1s ease,background .1s ease;}
+.vela-dtb-item:hover .vela-dtb-badge:not(:empty){background:${t.active};color:${t.fg.bright};}
+.vela-dtb-item[data-selected='1'] .vela-dtb-badge:not(:empty){background:color-mix(in srgb,${t.fg.bright} 83%,${t.surface});border-color:color-mix(in srgb,${t.fg.bright} 40%,transparent);color:${t.surface};}
+.vela-dtb-star{width:26px;height:22px;margin:-3px -5px -3px 0;padding:3px 5px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none;opacity:0;color:inherit;border-radius:${t.radius.sm};transition:opacity .1s ease,color .1s ease,background .1s ease;}
 .vela-dtb-star svg{width:16px;height:16px;}
 .vela-dtb-item:hover .vela-dtb-star{opacity:.55;}
-.vela-dtb-star:hover{opacity:1 !important;background:var(--vela-hover-strong);}
-.vela-dtb-star.vela-fav{opacity:.95;color:var(--vela-highlight);}
-/* Thin thumb-only scrollbar. Avoid scrollbar-width in Chromium — it disables ::-webkit-scrollbar. */
-@supports not selector(::-webkit-scrollbar){
-.vela-dtb-flyout{scrollbar-width:thin;scrollbar-color:var(--vela-scroll) transparent;}
-}
-.vela-dtb-flyout::-webkit-scrollbar{width:4px;}
-.vela-dtb-flyout::-webkit-scrollbar-button{display:none;width:0;height:0;}
-.vela-dtb-flyout::-webkit-scrollbar-track,.vela-dtb-flyout::-webkit-scrollbar-track-piece,.vela-dtb-flyout::-webkit-scrollbar-corner{background:transparent;}
-.vela-dtb-flyout::-webkit-scrollbar-thumb{background:var(--vela-scroll);border-radius:var(--vela-radius-sm);}
-.vela-dtb-flyout::-webkit-scrollbar-thumb:hover{background:var(--vela-fg-muted);}`;
+.vela-dtb-star:hover{opacity:1 !important;background:${t.hover.strong};}
+.vela-dtb-star.vela-fav{opacity:.95;color:${t.highlight};}
+}`;
 }
 
 const CURSOR_ICON = icon('cursor');

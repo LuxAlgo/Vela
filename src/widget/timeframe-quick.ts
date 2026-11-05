@@ -4,31 +4,35 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
-import { Dialog } from '../ui/components/dialog';
-import { injectStyles } from '../ui/styles';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { parseTimeframe } from './timeframe';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-tfquick';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-tq-input {
     display: block;
     margin: 0 auto;
     width: 220px;
     box-sizing: border-box;
     height: 40px;
-    background: var(--vela-surface-elev);
-    color: var(--vela-fg);
-    border: 1px solid var(--vela-border);
+    background: ${t.surface.elev};
+    color: ${t.fg};
+    border: 1px solid ${t.border};
     border-radius: 8px;
     padding: 0 12px;
     font-size: 18px;
     text-align: center;
     outline: none;
 }
-.vela-tq-input:focus { border-color: var(--vela-border-strong); }
-.vela-tq-hint { margin-top: var(--vela-space-2); text-align: center; color: var(--vela-fg-muted); min-height: 1.2em; }
-.vela-tq-hint[data-invalid] { color: var(--vela-danger); }
-`;
+.vela-tq-input:focus { border-color: ${t.border.strong}; }
+.vela-tq-hint { margin-top: ${t.space[2]}; text-align: center; color: ${t.fg.muted}; min-height: 1.2em; }
+.vela-tq-hint[data-invalid] { color: ${t.danger}; }
+
+}`;
 
 const TEXT = {
     title: msg('widget.timeframeQuick.title', 'Change timeframe'),
@@ -58,7 +62,7 @@ export class TimeframeQuick {
     constructor(opts: TimeframeQuickOptions) {
         this.i18n = opts.i18n ?? null;
         const doc = (opts.host ?? document.body).ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.input = doc.createElement('input');
         this.input.className = 'vela-tq-input';
         this.input.setAttribute('spellcheck', 'false');

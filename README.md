@@ -51,9 +51,11 @@ touching the rest.
   watermark, bottom bar (ranges, clock, timezone), object tree, keyboard-first UX
   (type a letter or `0` for symbol search, a digit 1–9 for timeframe entry, `?` for the shortcuts
   panel), named cells, sync groups, and one persisted state document.
-- **`@luxalgo/vela/ui`**: the component kit the app is built on. Design tokens, overlay
-  chrome ([Zag.js](https://zagjs.com) menu/dialog/drawer/tooltip), form primitives, and
-  the `KeymapManager`.
+- **`@luxalgo/vela/ui`**: the component kit the app is built on, re-exported from its own
+  package, [`@luxalgo/vela-ui`](packages/vela-ui/README.md), which works without the chart:
+  design tokens and one typed theme config, overlay chrome ([Zag.js](https://zagjs.com)
+  menus, dialogs, drawers, tooltips), form primitives and data components. Next to it, the
+  `KeymapManager`. Upgrading from 0.9? See [Upgrading](docs/user/upgrading.md).
 - **`@luxalgo/vela/plugin`**: the extension SDK. Chart types, renderer layers, native
   indicators.
 - **`@luxalgo/vela/providers/*`**: data providers (Binance, Coinbase, Hyperliquid),
@@ -132,7 +134,7 @@ plot(ta.ema(close, 20), color=color.orange, linewidth=2)`);
 Host tooling can execute-and-inject safely with `chart.runIndicator(source)` (structured
 errors, no dead legend rows) and read a running script's state, including its **return
 value**, via `handle.context()` (read-only snapshots, worker-safe). See the
-[API reference](docs/user/api-reference.md#reading-a-scripts-execution-context), and
+[API reference](docs/user/api-reference.md#capturing-what-a-script-computes), and
 [Scripting engines](docs/user/scripting-engines.md) for the addon and for writing your own.
 
 The workspace takes an **indicator manifest**: inline JSON, a URL returning it, or an
@@ -178,6 +180,22 @@ Full documentation lives in [docs/](docs/index.md): user guides ([quickstart](do
 [the workspace](docs/user/workspace.md), [options](docs/user/options.md), [API reference](docs/user/api-reference.md)),
 [architecture](docs/architecture/overview.md), and [contributing](docs/contributing/setup.md) guides
 including the [plugin SDK](docs/contributing/plugin-sdk.md).
+
+## For coding agents
+
+The package carries what a coding agent needs, versioned with the code: the docs, an
+[`llms.txt`](llms.txt) index, and agent skills ([building charts](skills/building-vela-charts/SKILL.md),
+[data providers](skills/using-vela-data-providers/SKILL.md),
+[indicators and engines](skills/adding-vela-indicators/SKILL.md),
+[drawing tools](skills/using-vela-drawing-tools/SKILL.md),
+[extending with plugins](skills/extending-vela-with-plugins/SKILL.md),
+[upgrading](skills/upgrading-vela/SKILL.md), plus the UI kit's three on using, theming and
+writing components). Give them to your agent with:
+
+```bash
+npx skills add LuxAlgo/Vela          # from this repository
+npx skills experimental_sync         # or: link the ones shipped in node_modules
+```
 
 ## Development
 

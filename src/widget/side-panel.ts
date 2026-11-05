@@ -14,10 +14,12 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
-import { announceSurface } from '../ui/surface-events';
-import { holdForExit, type SurfaceExit } from '../ui/surface-exit';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { announceSurface } from '@luxalgo/vela-ui/surface-events';
+import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-sidepanel';
 
@@ -35,19 +37,20 @@ export const DEFAULT_PANEL_WIDTH = 280;
 export const DEFAULT_PANEL_MIN_WIDTH = 200;
 export const DEFAULT_PANEL_MAX_WIDTH = 640;
 
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-panel[hidden] { display: none !important; }
 .vela-panel {
     position: relative;
     width: var(--vela-panel-w, ${DEFAULT_PANEL_WIDTH}px);
     flex: none;
-    border-left: 1px solid var(--vela-border);
+    border-inline-start: 1px solid ${t.border};
     display: flex;
     flex-direction: column;
-    color: var(--vela-fg);
+    color: ${t.fg};
     font-size: 13px;
     box-sizing: border-box;
-    background: var(--vela-bg);
+    background: ${t.bg};
 }
 .vela-panel-header[hidden] { display: none; }
 .vela-panel-header {
@@ -55,10 +58,10 @@ const CSS = `
     align-items: center;
     gap: 8px;
     padding: 10px 8px 10px 14px;
-    border-bottom: 1px solid var(--vela-border);
+    border-bottom: 1px solid ${t.border};
     font-size: 14px;
     font-weight: 600;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
 }
 .vela-panel-title { flex: none; }
 .vela-panel-title:empty { display: none; }
@@ -67,21 +70,23 @@ const CSS = `
 .vela-panel-header-slot { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; }
 .vela-panel-close {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    color: var(--vela-fg-muted);
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
     font-size: 16px;
 }
 .vela-panel-close .vela-icon { width: 16px; height: 16px; }
-.vela-panel-close:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-panel-close:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* The pin: same footprint as the close button it sits beside; filled + bright once pinned. */
 .vela-panel-pin {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;
@@ -89,14 +94,15 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    color: var(--vela-fg-muted);
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
 }
 .vela-panel-pin .vela-icon { width: 15px; height: 15px; }
-.vela-panel-pin:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-panel-pin[data-on='1'] { color: var(--vela-fg-bright); }
+.vela-panel-pin:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-panel-pin[data-on='1'] { color: ${t.fg.bright}; }
 .vela-panel-max {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;
@@ -104,11 +110,11 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    color: var(--vela-fg-muted);
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
 }
 .vela-panel-max .vela-icon { width: 15px; height: 15px; }
-.vela-panel-max:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-panel-max:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* MAXIMIZED: the panel covers the whole dock host — every chart of the shell — whatever
    its placement; the width handle and the pin have nothing to do meanwhile. */
 .vela-panel[data-maximized] {
@@ -117,20 +123,18 @@ const CSS = `
     width: auto;
     max-width: none;
     z-index: 26;
-    border-left: none;
+    border-inline-start: none;
 }
 .vela-panel[data-maximized] .vela-panel-resizer,
 .vela-panel[data-maximized] .vela-panel-pin { display: none; }
 .vela-panel-body { flex: 1; overflow: auto; padding: 8px; }
-.vela-panel-body::-webkit-scrollbar { width: 8px; }
-.vela-panel-body::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
 /* Straddles the panel's inner border so the whole seam is grabbable; it paints only under the
    pointer — a permanently visible bar would read as a second border. */
 .vela-panel-resizer {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: -3px;
+    inset-inline-start: -3px;
     width: 7px;
     cursor: col-resize;
     touch-action: none;
@@ -141,14 +145,14 @@ const CSS = `
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 3px;
+    inset-inline-start: 3px;
     width: 1px;
     background: transparent;
 }
 /* The same hover ink as the workspace grid splitters and the canvas pane separators, so
    every draggable seam in the shell reads as one family. */
 .vela-panel-resizer:hover::after,
-.vela-panel-resizer[data-dragging]::after { background: var(--vela-separator-hover-line); }
+.vela-panel-resizer[data-dragging]::after { background: ${t.separatorHover.line}; }
 /* An OVERLAY panel floats over the chart's right edge instead of taking a column: the
    chart keeps its width and layout (the dock host is position:relative — the anchoring the
    mobile rule below relies on too). Same z-order as that mobile overlay, above the chart's
@@ -156,11 +160,11 @@ const CSS = `
 .vela-panel[data-overlay] {
     position: absolute;
     top: 0;
-    right: 0;
+    inset-inline-end: 0;
     bottom: 0;
     max-width: 100%;
     z-index: 25;
-    box-shadow: var(--vela-shadow);
+    box-shadow: ${t.shadow};
 }
 /* Mobile: a 280px column would crush a phone-width chart — the panel overlays the
    chart area instead (its flex parent is position:relative), full-bleed, closed by
@@ -170,11 +174,12 @@ const CSS = `
     inset: 0;
     width: auto;
     z-index: 25;
-    border-left: none;
+    border-inline-start: none;
 }
 [data-layout='mobile'] .vela-panel-resizer { display: none; }
 [data-layout='mobile'] .vela-panel-max { display: none; }
-`;
+
+}`;
 
 /** Per-panel width policy. Omitted fields fall back to the module defaults. */
 export interface SidePanelOptions {
@@ -257,7 +262,7 @@ export class SidePanel {
         const doc = host.ownerDocument;
         this.i18n = opts.i18n ?? null;
         this.title = title;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         // A FIXED panel is its own bound — the resize bounds would otherwise silently rewrite a
         // declared width a host set from code (or restored) outside the resizable defaults.
         this.minWidth = opts.resizable ? (opts.minWidth ?? DEFAULT_PANEL_MIN_WIDTH) : 1;

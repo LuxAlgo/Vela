@@ -175,10 +175,14 @@ descriptors working when multiple charts exist.
 
 - Kit components built before their trigger is in the DOM need an **explicit `host`** —
   the `closest()` fallback silently portals to `<body>`, outside the theme variables.
-- Any authored `display` on a component's root defeats the `[hidden]` UA rule — pair it
-  with `[hidden] { display: none !important; }`.
-- New components follow the uniform skeleton (`controller.ts` + `view.ts` + `styles.css`
-  - `index.ts`) documented in `docs/contributing/adding-a-ui-component.md`.
+- Any authored `display` on a component's root defeats the `[hidden]` UA rule — give the
+  root its `display` under `:where(:not([hidden]))` (kit CSS has no `!important`).
+- Components live in the `@luxalgo/vela-ui` workspace package, one file each
+  (`packages/vela-ui/src/components/<name>.ts`: declaration, variants, CSS
+  in `@layer vela.ui`, a `create…` function). The package's own `AGENTS.md` and
+  `docs/writing-a-component.md` hold the authoring rules; Vela's side (where each component
+  is used, how Vela exports it) is `docs/contributing/adding-a-ui-component.md`.
+  `npm run lint` checks their CSS.
 
 **Interface text.**
 
@@ -215,6 +219,12 @@ When a change touches a developer-facing interface or adds a feature, check whet
 `docs/` still matches reality. If it has drifted, **tell the user what is stale and ask
 whether to update it** — a natural moment is when a change is ready to commit. Verify
 prose consistency yourself (terminology, cross-links); there is no compiler for docs.
+
+The agent skills (`skills/*/SKILL.md`, and the kit's in `packages/vela-ui/skills/`) ship in
+the packages and teach external coding agents the public API: a change to an API, option or
+rule they show is a change to them too. `npm test` runs `scripts/check-skills.mjs` (the Agent
+Skills frontmatter rules, bodies under 500 lines, every `node_modules/...` path they cite
+shipping with its package); typecheck their examples when you change them.
 
 ---
 

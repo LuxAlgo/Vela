@@ -276,7 +276,8 @@ describe('the drawing settings panel', () => {
         const cells = s.$$('.vela-dsp-lv-c');
         expect(cells.length).toBe((s.live() as FibRetracement).levels.length);
         expect(cells.filter((c) => !c.hasAttribute('data-off')).length).toBe(7);
-        expect(getComputedStyle(s.$('.vela-dsp-lv')!).gridTemplateColumns).toContain('repeat(2');
+        // jsdom does not apply rules inside `@layer`, so read the rule the panel declares.
+        expect(document.getElementById('vela-dsp-styles')?.textContent).toMatch(/\.vela-dsp-lv\s*\{[^}]*grid-template-columns:\s*repeat\(2/);
         s.popup.destroy();
     });
 
@@ -318,7 +319,8 @@ describe('the drawing settings panel', () => {
     it('a retracement level can be set beyond the swing, as a negative ratio', async () => {
         const s = setup(make('fibretracement'));
         await s.openPanel();
-        const input = s.$$<HTMLInputElement>('.vela-dsp-lv-c input')[1]!;
+        // The level's ratio field (each level's switch holds a checkbox too).
+        const input = s.$$<HTMLInputElement>('.vela-dsp-lv-c input:not([type="checkbox"])')[1]!;
         input.value = '-0.5';
         input.dispatchEvent(new Event('blur'));
         expect((s.live() as FibRetracement).levels[1]!.ratio).toBe(-0.5);

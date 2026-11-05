@@ -43,6 +43,6 @@ describe('Statusline badge', () => {
     it('sits the meta dot one space after the ticker, not a full row gap away', () => {
         make().line.destroy();
         const css = [...document.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n');
-        expect(css).toContain('.vela-statusline .vela-sl-symbol + .vela-sl-meta { margin-left: calc(var(--vela-space-1) - var(--vela-space-2)); }');
+        expect(css).toContain('.vela-statusline .vela-sl-symbol + .vela-sl-meta { margin-inline-start: calc(var(--vela-space-1) - var(--vela-space-2)); }');
     });
 });

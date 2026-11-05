@@ -30,13 +30,14 @@ function sourceFiles(dir) {
 
 const literalText = (node) => (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) ? node.text : null);
 
-/** Every `msg()` call under `root/src`: `{ messages: Map<id, text>, errors: string[] }`. */
+/** Every `msg()` call under `root/src` and the kit's `packages/vela-ui/src` (its own words
+ *  translate with Vela's): `{ messages: Map<id, text>, errors: string[] }`. */
 export function collectMessages(root) {
     const messages = new Map();
     const where = new Map();
     const errors = [];
-    const srcDir = join(root, 'src');
-    for (const file of sourceFiles(srcDir)) {
+    const files = [...sourceFiles(join(root, 'src')), ...sourceFiles(join(root, 'packages/vela-ui/src'))];
+    for (const file of files) {
         const text = readFileSync(file, 'utf8');
         if (!text.includes('msg(')) continue;
         const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);

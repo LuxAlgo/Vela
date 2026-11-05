@@ -773,8 +773,8 @@ Three levels, shallow to deep:
 3. **Contributed actions** — plugins and hosts add topbar buttons and context-menu items
    as data descriptors via
    [`registerWidgetAction`](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction);
-   the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `Popover`, `Switch`,
-   `Select`, `NumberInput`, `TextField`, `ColorField` / `buildColorPicker`,
+   the kit's primitives (`Dialog`, `Drawer`, `DropdownMenu`, `Tooltip`, `Popover`, `Checkbox`,
+   `Select`, `NumberInput`, `Input`, `ColorField` / `buildColorPicker`,
    `KeymapManager`) are exported from `@luxalgo/vela/ui` for building your own panels against
    the headless core. Form controls share `md` (settings dialogs: 34px fields, hover
    steppers, chip colors) and a compact `sm` size so a host panel can match either
