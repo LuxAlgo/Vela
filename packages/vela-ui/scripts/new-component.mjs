@@ -1,8 +1,9 @@
 // Starts a component: `npm run new-component -- gauge` writes src/components/gauge.ts in the
-// kit's shape, adds its declaration to the theme's ComponentDefs, and writes its test in the
-// repo's test/ folder.
+// kit's shape, adds its declaration to the theme's ComponentDefs and to the component index,
+// and writes its test in the repo's test/ folder.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { componentIndex, componentIndexSource, INDEX_FILE } from './component-index.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const repo = resolve(root, '../..');
@@ -86,6 +87,7 @@ entries.sort((a, b) => a.replace(/['\s]/g, '').localeCompare(b.replace(/['\s]/g,
 const head = theme.slice(defsStart, defsEnd).split('\n').filter((l) => !/typeof \w+Def;/.test(l));
 theme = `${theme.slice(0, defsStart)}${[...head, ...entries].join('\n')}${theme.slice(defsEnd)}`;
 writeFileSync(themePath, theme);
+writeFileSync(INDEX_FILE, componentIndexSource(componentIndex(root)));
 
 const testPath = join(repo, 'test', `ui-${name}.test.ts`);
 writeFileSync(
@@ -104,7 +106,7 @@ describe('${name}', () => {
 `,
 );
 
-console.log(`Wrote src/components/${name}.ts, its ComponentDefs entry, and test/ui-${name}.test.ts.
+console.log(`Wrote src/components/${name}.ts, its ComponentDefs and component index entries, and test/ui-${name}.test.ts.
 Next: describe it at the top of the file, give it its parts, settings, variants and behavior,
 then npm run typecheck, npm run lint and npm test. If Vela should re-export it, add its
 public names to src/ui/index.ts.`);

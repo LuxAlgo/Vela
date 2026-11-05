@@ -36,8 +36,9 @@ import type { switchDef } from '../components/switch';
 import type { toggleGroupDef } from '../components/toggle-group';
 import type { tooltipDef } from '../components/tooltip';
 import { contrastRatio, isDarkColor, mix, parseRgb } from './color';
+import { KIT_COMPONENTS } from './component-index';
 import { acceptCss, injectLayerOrder, isWrittenCss } from './css';
-import type { ComponentDef } from './define';
+import { declaredComponents, type ComponentDef, type DeclaredComponent } from './define';
 import { BEARISH, BULLISH } from './palette';
 import { injectStyles } from './styles';
 import { STATIC_TOKENS, themeTokens, type ChartTheme } from './tokens';
@@ -315,10 +316,36 @@ function build(input: ThemeInput, options: CreateThemeOptions): { theme: UiTheme
 
 const isCssVar = (value: string) => value.trim().startsWith('var(');
 
+/** A component's parts and settings: as declared on the page, else as the kit declares them
+ *  (a kit component a page never imported is declared nowhere yet). */
+function componentNamed(name: string): DeclaredComponent | undefined {
+    return declaredComponents().get(name) ?? (Object.prototype.hasOwnProperty.call(KIT_COMPONENTS, name) ? KIT_COMPONENTS[name] : undefined);
+}
+
+function componentProblems(input: ThemeInput): string[] {
+    const problems: string[] = [];
+    for (const [name, values] of Object.entries(input.components ?? {}) as Array<[string, Record<string, unknown> | undefined]>) {
+        const def = componentNamed(name);
+        if (!def) {
+            problems.push(`components.${name}: no component has that name (declare a component of your own with defineComponent before creating the theme)`);
+            continue;
+        }
+        for (const key of Object.keys(values ?? {})) {
+            if (key === 'css' || def.settings.includes(key)) continue;
+            problems.push(`components.${name}.${key} is not a setting of ${name} (${def.settings.length ? `its settings: ${def.settings.join(', ')}` : 'it has none'})`);
+        }
+        for (const part of Object.keys((values?.css ?? {}) as Record<string, unknown>)) {
+            if (!def.parts.includes(part)) problems.push(`components.${name}.css.${part} is not a part of ${name} (its parts: ${def.parts.join(', ')})`);
+        }
+    }
+    return problems;
+}
+
 function problemsOf(input: ThemeInput, theme: UiTheme): string[] {
     const problems: string[] = [];
     const known = new Set<string>(TOKEN_NAMES);
     for (const name of Object.keys(input.tokens ?? {})) if (!known.has(name)) problems.push(`"${name}" is not a token`);
+    problems.push(...componentProblems(input));
     const colors: Array<[string, string | undefined]> = [['accent', input.accent]];
     for (const [k, v] of Object.entries(input.colors ?? {})) colors.push([`colors.${k}`, v]);
     if (typeof input.base === 'object') for (const k of CHART_FIELDS) if (k !== 'fontFamily') colors.push([`base.${k}`, input.base[k]]);
@@ -348,9 +375,10 @@ function problemsOf(input: ThemeInput, theme: UiTheme): string[] {
 
 const droppedProblem = (where: string) => `${where} was not written with the css tag and is left out (pass { allowCss: true } to apply CSS loaded from data)`;
 
-/** What is wrong with a theme's input: unknown tokens, colors the theme cannot derive from,
- *  text with too little contrast on its background, and part CSS that is left out or
- *  reaches past the component's contract. `createTheme` warns about each. */
+/** What is wrong with a theme's input: unknown tokens, components, settings and parts, colors
+ *  the theme cannot derive from, text with too little contrast on its background, and part
+ *  CSS that is left out or reaches past the component's contract. `createTheme` warns about
+ *  each. */
 export function checkTheme(input: ThemeInput = {}, options: CreateThemeOptions = {}): string[] {
     const { theme, dropped } = build(input, options);
     return [...dropped.map(droppedProblem), ...problemsOf(input, theme)];

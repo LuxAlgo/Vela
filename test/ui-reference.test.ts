@@ -7,6 +7,9 @@ import { buttonDef } from '@luxalgo/vela-ui/button';
 import { selectDef } from '@luxalgo/vela-ui/select';
 // @ts-expect-error -- a build script, plain JavaScript
 import { componentReference, missingDefs, PACKAGE_ROOT, themeSchema, tokenAccessors } from '../packages/vela-ui/scripts/reference.mjs';
+// @ts-expect-error -- a build script, plain JavaScript
+import { componentIndex } from '../packages/vela-ui/scripts/component-index.mjs';
+import { KIT_COMPONENTS } from '../packages/vela-ui/src/lib/component-index';
 
 interface Entry {
     name: string;
@@ -59,5 +62,11 @@ describe('the theme schema', () => {
         const button = schema.properties.components.properties.button!;
         expect(Object.keys(button.properties)).toEqual(expect.arrayContaining(['css', 'radius', 'height', 'height-sm', 'font-size-xs']));
         expect(Object.keys((button.properties.css as { properties: object }).properties)).toEqual(['root', 'icon']);
+    });
+});
+
+describe('the component index', () => {
+    it('lists every component with the parts and settings its declaration gives (node packages/vela-ui/scripts/component-index.mjs rewrites it)', () => {
+        expect(KIT_COMPONENTS).toEqual(componentIndex());
     });
 });

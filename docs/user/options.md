@@ -432,9 +432,9 @@ registerTheme({ id: 'paper', label: 'Paper', theme: paper });
 ```
 
 A theme object can carry the same settings under `ui`: `{ ...DARK_THEME, ui: { accent:
-'#7c3aed' } }`. `checkTheme(input)` lists what a theme gets wrong (unknown tokens, colors
-it cannot derive from, text with too little contrast), and `createTheme` warns about each
-in the console.
+'#7c3aed' } }`. `checkTheme(input)` lists what a theme gets wrong (unknown tokens,
+components, settings and parts, colors it cannot derive from, text with too little
+contrast), and `createTheme` warns about each in the console.
 
 When settings are not enough, a component's `css` restyles its parts completely: each part's
 CSS, written with the `css` tag, applies to that part wherever the theme does, after every

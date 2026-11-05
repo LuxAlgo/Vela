@@ -44,9 +44,10 @@ All notable changes to Vela, newest first.
   from the background. Pass it as `theme` or to `setTheme`, or add settings to a chart theme
   of your own (`{ ...DARK_THEME, ui: { accent: '#7c3aed' } }`). `registerTheme` offers a
   theme by id, next to Dark and Light in the chart settings. `checkTheme` lists what a
-  theme gets wrong (unknown tokens, colors it cannot derive from, text with too little
-  contrast), and `createTheme` warns about each. A page using the kit without Vela can link
-  the built-in themes as plain CSS (`@luxalgo/vela-ui/themes/dark.css`).
+  theme gets wrong (unknown tokens, components, settings and parts, colors it cannot derive
+  from, text with too little contrast), and `createTheme` warns about each, so a misspelled
+  name in a theme loaded from JSON is reported rather than ignored. A page using the kit
+  without Vela can link the built-in themes as plain CSS (`@luxalgo/vela-ui/themes/dark.css`).
 - **Restyle a component completely from the theme.** A component's `css` in the theme
   restyles its parts (`components.button.css.root`, `components.button.css.icon`), written
   with the `css` tag, now exported from `@luxalgo/vela/ui` with the typed tokens `t`,

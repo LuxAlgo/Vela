@@ -2,7 +2,7 @@
 // Themes: createTheme builds every token from a few choices, applyTheme writes it once per
 // document in the theme layer, and Vela takes a theme by value or by registered id.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { css } from '@luxalgo/vela-ui';
+import { css, defineComponent } from '@luxalgo/vela-ui';
 import { applyTheme, checkTheme, createTheme, DARK_CHART, LIGHT_CHART, themeCss, TOKEN_NAMES } from '@luxalgo/vela-ui/theme';
 import { STATIC_TOKENS, themeTokens } from '../src/core/tokens';
 import { DARK_THEME, LIGHT_THEME, registeredThemeIdOf, registeredThemes, registerTheme, resolveTheme } from '../src/core/theme';
@@ -160,6 +160,24 @@ describe('checkTheme', () => {
         expect(problems[0]).toContain('"surface-raised" is not a token');
         expect(problems[1]).toContain('accent "hotpink"');
         expect(problems[2]).toMatch(/^fg on bg has a contrast of 1\.\d:1/);
+    });
+
+    it('names a component, a setting or a part that does not exist', () => {
+        const problems = checkTheme({ components: { buton: { radius: '2px' }, button: { radus: '2px', css: { rooot: css`color: red;` } } } } as never);
+        expect(problems).toEqual([
+            expect.stringContaining('components.buton: no component has that name'),
+            expect.stringContaining('components.button.radus is not a setting of button (its settings: radius,'),
+            expect.stringContaining('components.button.css.rooot is not a part of button (its parts: root, icon)'),
+        ]);
+    });
+
+    it('knows the kit components a page has not imported, and a component the page declared', () => {
+        expect(checkTheme({ components: { 'scatter-chart': { 'tip-radius': '2px' }, button: { radius: '2px', css: { icon: css`order: 1;` } } } })).toEqual([]);
+        const gaugeDef = defineComponent({ name: 'test-gauge', parts: ['root', 'needle'], settings: { radius: '4px' } });
+        expect(gaugeDef.slot('needle')).toBe('test-gauge-needle');
+        const theme = { components: { 'test-gauge': { radius: '2px', css: { needle: css`color: red;` } } } } as never;
+        expect(checkTheme(theme)).toEqual([]);
+        expect(checkTheme({ components: { 'test-gauge': { css: { dial: css`color: red;` } } } } as never)).toEqual([expect.stringContaining('is not a part of test-gauge (its parts: root, needle)')]);
     });
 
     it('is what createTheme warns about, once per problem', () => {

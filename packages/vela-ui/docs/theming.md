@@ -121,10 +121,13 @@ CSS changes how a component looks, not its markup or behavior.
 
 ## Checking a theme
 
-`checkTheme(input)` lists what a theme gets wrong: unknown tokens, colors the theme cannot
-derive from (it reads `#rrggbb` and `rgb()`), text with too little contrast on its
-background, ink with too little contrast on the accent, and part CSS that is left out or
-reaches past the component's contract. `createTheme` warns about each problem once.
+`checkTheme(input)` lists what a theme gets wrong: unknown tokens, a component, setting or
+part that does not exist (the kit's components, and those the page declared with
+`defineComponent`), colors the theme cannot derive from (it reads `#rrggbb` and `rgb()`),
+text with too little contrast on its background, ink with too little contrast on the accent,
+and part CSS that is left out or reaches past the component's contract. `createTheme` warns
+about each problem once. The typecheck catches the same names in TypeScript; this catches
+them in a theme loaded from JSON or written in plain JavaScript, where nothing else would.
 
 ## Cascade layers
 
@@ -142,8 +145,13 @@ shadow root) in this order, lowest first:
 
 A later layer wins over an earlier one whatever the selectors' weight, and CSS in no layer
 wins over all of them, so a page overrides any of it without `!important`. Layers a page
-declared before the first Vela stylesheet rank below Vela's. Write a stylesheet of your own
-into `vela.custom` to sit above the kit and below your page's other CSS.
+declared before the first Vela stylesheet rank below Vela's. Write CSS that restyles
+components into `vela.custom` to sit above the kit and below your page's other CSS.
+
+A component of your own (built with the kit's helpers, or copied with `vela-ui add --source`)
+puts its base styles in `vela.ui`, like the kit's, so a theme's part CSS and your restyles
+reach it. In `vela.custom` its rules would tie with the theme's, and whichever stylesheet
+loaded last would win, usually the component's own.
 
 Unlayered CSS also reaches the kit when you did not mean it to: a global reset such as
 `button { background: none; }` or `input { border: 0; }` now restyles the kit's buttons and
