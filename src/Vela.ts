@@ -13,7 +13,6 @@ import type { ScriptRun, ScriptRunResult } from './core/script-run';
 import { EngineOrchestrator, type ResolvedConfig } from './core/engine/EngineOrchestrator';
 import type { SceneInspection } from './core/engine/inspect';
 import { resolveTheme } from './core/theme';
-import { BEARISH, BULLISH } from './core/palette';
 import { RendererControl } from './core/RendererControl';
 import { rendererDefaults } from './core/renderer-defaults';
 import { PanesControl } from './core/PanesControl';
@@ -85,8 +84,8 @@ export class Vela {
             nativeBackend: options.nativeBackend ?? 'auto',
             ...resolveAnimations(options.animations),
             glow: options.glow ?? 0,
-            upColor: options.upColor ?? BULLISH,
-            downColor: options.downColor ?? BEARISH,
+            upColor: options.upColor ?? theme.upColor,
+            downColor: options.downColor ?? theme.downColor,
             priceStyle: options.priceStyle ?? 'candles',
             priceAxisTicks: options.priceAxis?.ticks ?? null,
         };

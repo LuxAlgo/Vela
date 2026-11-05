@@ -226,6 +226,14 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **A theme's candle colors color the candles.** The `upColor` and `downColor` of a theme
+  (`colors.up` and `colors.down` in `createTheme`) only reached the interface: the candles
+  kept the brand green and red. They are now the candles' defaults: a chart starts on them,
+  and a theme switch moves the candles, wicks, borders and bars still on the previous
+  theme's colors to the new one's. A color set with the chart's `upColor` / `downColor`
+  options or in its settings stays, and "Reset defaults" returns to the current theme's
+  colors. The built-in dark and light themes share their candle colors, so they look as
+  before.
 - **Submenus open beside their menu.** A submenu (the price scale's Labels and Levels) covered
   the edge of the menu it opened from, and more of it when it opened to the left near the
   screen's edge; it now opens just past that edge, on whichever side has room, with its first

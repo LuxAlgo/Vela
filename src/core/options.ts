@@ -139,9 +139,11 @@ export interface VelaOptions extends MarketConfig, LocalizationOptions {
     /** Neon glow/bloom intensity for line series (0 = off, ~0.6 = strong). WebGL2 only
      *  — the canvas2d backend ignores it. Default 0. */
     glow?: number;
-    /** Bullish candle body/wick color (native renderer). Defaults to the palette's bullish green. */
+    /** Bullish candle body/wick color (native renderer). Defaults to the theme's up color (the
+     *  palette's bullish green in the built-in themes), which a theme switch then follows. */
     upColor?: string;
-    /** Bearish candle body/wick color (native renderer). Defaults to the palette's bearish red. */
+    /** Bearish candle body/wick color (native renderer). Defaults to the theme's down color
+     *  (the palette's bearish red in the built-in themes), which a theme switch then follows. */
     downColor?: string;
     /** How the base price series is drawn (native renderer): candlestick / OHLC bars /
      *  line / area / baseline. Default `'candles'`. */

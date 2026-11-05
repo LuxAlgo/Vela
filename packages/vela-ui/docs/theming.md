@@ -32,6 +32,10 @@ and the text, and light or dark is read from the background.
 const paper = createTheme({ colors: { background: '#fdf6e3', accent: '#268bd2' } });
 ```
 
+`up` and `down` are the candles' colors, and the `up`, `down`, `profit` and `loss` tokens
+follow them. In Vela they are the candles' defaults: a chart's own `upColor` and
+`downColor` options, and colors a user picks in its settings, win over them.
+
 A theme of colors only is plain JSON that cannot break the UI: users can save their own, an
 app can offer a picker, and an agent can write one. A theme file names the schema shipped in
 the package, so editors and CI check it:

@@ -62,8 +62,8 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |
 | `animations` | boolean or `{ zoom?, pan?, scroll?, autoscale?, liveBar?, intro? }` | **on** | `true`/`false` toggles every motion; an object configures each on its own (see [The `animations` option](#the-animations-option) below). Defaults: eased zoom on, pan momentum on (short snappy glide), autoscale glide on, first-load reveal on, live-bar glide **off**. |
 | `glow` | number | `0` | Neon glow/bloom for line series (~0.6 = strong). **WebGL2 only** — ignored on canvas2d. |
-| `upColor` | string | `#089981` (green) | Bullish candle color (native renderer). |
-| `downColor` | string | `#f23645` (red) | Bearish candle color (native renderer). |
+| `upColor` | string | the theme's up color (`#089981`, green, in the built-in themes) | Bullish candle color (native renderer). Set, it stays through theme switches. |
+| `downColor` | string | the theme's down color (`#f23645`, red, in the built-in themes) | Bearish candle color (native renderer). Set, it stays through theme switches. |
 | `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn (native renderer). |
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 | `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
@@ -398,9 +398,12 @@ new Vela('#chart', { data: bars, theme: midnight });
 
 The theme can also be swapped at runtime — `chart.setTheme('light')` (or a full theme
 object) re-skins the chart live and emits `theme:changed` so your surrounding UI can
-follow; users reach the same switch in chart settings → Canvas → Theme. The built-in
-dark and light themes share the same candle colors, so switching never recolors the
-series. Setting only a background color through the settings dialog (or `applyConfig`)
+follow; users reach the same switch in chart settings → Canvas → Theme. A theme's
+`upColor` and `downColor` are the candles' defaults: a switch moves every series color
+still on the previous theme's to the new theme's, while a color set with the `upColor` /
+`downColor` options or in the chart settings stays. The built-in dark and light themes
+share the same candle colors, so switching between them never recolors the series.
+Setting only a background color through the settings dialog (or `applyConfig`)
 keeps the app theme: when that background lands in the other luminance class (a white
 plot on the dark theme), the derived inks — text, grid, axis border — re-base
 automatically so legends and axis labels stay readable, while any explicitly chosen

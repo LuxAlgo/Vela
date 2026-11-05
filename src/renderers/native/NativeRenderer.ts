@@ -86,7 +86,7 @@ import { MARK_PULSE_MS } from './chrome/marks/paint';
 import type { MarkClickEvent, MarkGroup, TimelineMark } from '../../core/marks/types';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint, sanitizeCrosshairOverride } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, followThemeColors, themeColorFollower, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint, sanitizeCrosshairOverride } from './core/chartConfig';
 import { BackdropRenderer } from './backdrop/BackdropRenderer';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
@@ -403,6 +403,8 @@ export class NativeRenderer implements IChartRenderer {
     private readonly themeSelectCbs = new Set<(theme: ThemeId) => void>();
     /** First-run config snapshot — what "Reset defaults" restores. */
     private factoryConfig: ChartConfig | null = null;
+    /** The app theme {@link factoryConfig} was taken under: its candle colors are the snapshot's defaults. */
+    private factoryTheme: VelaTheme = DARK_THEME;
     private hostSettingsSections: HostSettingsSection[] = [];
     private readonly clickCbs = new Set<(e: ClickEvent) => void>();
     private readonly axisLongPressCbs = new Set<(e: AxisLongPressEvent) => void>();
@@ -1182,7 +1184,8 @@ export class NativeRenderer implements IChartRenderer {
      * merge, like the type bags) are named back to their host-declared visibility.
      */
     private factoryResetDocument(factory: ChartConfig): ChartConfig {
-        const doc = factoryResetConfig(factory, this.scene.priceStyle);
+        // The snapshot's candle colors were its theme's; the reset gives the current theme's.
+        const doc = followThemeColors(factoryResetConfig(factory, this.scene.priceStyle), this.factoryTheme, this.appTheme);
         const groups = { ...doc.marks.groups };
         for (const g of this.markGroupsInUse()) groups[g.id] = g.visible !== false;
         return { ...doc, marks: { ...doc.marks, groups } };
@@ -1427,6 +1430,27 @@ export class NativeRenderer implements IChartRenderer {
         return { ...b, high: o + (b.high - o) * t, low: o + (b.low - o) * t, close: o + (b.close - o) * t };
     }
 
+    /** A theme's up and down colors are the series' defaults: on a theme switch, every series
+     *  color still on the previous theme's moves to the next theme's, and a color a host or
+     *  user chose stays. Colors left to inherit (`null`) keep inheriting. */
+    private followThemeCandles(prev: VelaTheme, next: VelaTheme): void {
+        if (prev.upColor === next.upColor && prev.downColor === next.downColor) return;
+        const follow = themeColorFollower(prev, next);
+        const s = this.scene.style;
+        this.candleUp = follow(this.candleUp);
+        this.candleDown = follow(this.candleDown);
+        s.candle = {
+            ...s.candle,
+            borderUpColor: follow(s.candle.borderUpColor),
+            borderDownColor: follow(s.candle.borderDownColor),
+            wickUpColor: follow(s.candle.wickUpColor),
+            wickDownColor: follow(s.candle.wickDownColor),
+        };
+        s.bars = { upColor: follow(s.bars.upColor), downColor: follow(s.bars.downColor) };
+        s.line = { ...s.line, color: follow(s.line.color) };
+        s.area = { ...s.area, lineColor: follow(s.area.lineColor), topColor: follow(s.area.topColor) };
+    }
+
     /** Theme with the configured candle up/down colors applied (candles, wicks,
      *  plotcandle defaults, and the current-price line direction all follow them). */
     private deriveTheme(theme: VelaTheme): VelaTheme {
@@ -1528,6 +1552,7 @@ export class NativeRenderer implements IChartRenderer {
         this.layerOrderSig = ''; // recomputed on the first data frame (owned layers follow their indicator's z)
         this.wrapper.appendChild(this.plot);
         this.factoryConfig = this.getConfig();
+        this.factoryTheme = theme;
         this.attributionEl = this.buildAttributionEl();
         if (!this.attributionEnabled) this.attributionEl.style.display = 'none';
         this.positionAttribution();
@@ -1851,6 +1876,7 @@ export class NativeRenderer implements IChartRenderer {
     };
 
     setTheme(theme: VelaTheme): void {
+        this.followThemeCandles(this.appTheme, theme);
         this.theme = this.deriveTheme(theme);
         this.appTheme = theme;
         // a full app-theme swap re-bases the chrome surface
