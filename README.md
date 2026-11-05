@@ -185,6 +185,9 @@ including the [plugin SDK](docs/contributing/plugin-sdk.md).
 
 The package carries what a coding agent needs, versioned with the code: the docs, an
 [`llms.txt`](llms.txt) index, and agent skills ([building charts](skills/building-vela-charts/SKILL.md),
+[data providers](skills/using-vela-data-providers/SKILL.md),
+[indicators and engines](skills/adding-vela-indicators/SKILL.md),
+[drawing tools](skills/using-vela-drawing-tools/SKILL.md),
 [extending with plugins](skills/extending-vela-with-plugins/SKILL.md),
 [upgrading](skills/upgrading-vela/SKILL.md), plus the UI kit's three on using, theming and
 writing components). Give them to your agent with:

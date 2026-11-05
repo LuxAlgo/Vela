@@ -61,6 +61,7 @@ the workspace. Scripts need an engine, and **Vela ships none**. For Pine Script 
 `@luxalgo/vela-pinets` and `pinets`, then:
 
 ```ts
+import { VelaWorkspace } from '@luxalgo/vela/workspace';
 import { PineWorkerEngine } from '@luxalgo/vela-pinets';
 
 // workspace: one engine per chart, off the main thread
@@ -110,6 +111,7 @@ The docs ship with the package, matching the installed version:
 - `node_modules/@luxalgo/vela/docs/user/options.md`: every option.
 - `node_modules/@luxalgo/vela/docs/user/api-reference.md`: the chart's methods, events and
   control surfaces (`renderer`, `panes`, `data`, `drawings`, `marks`, `replay`).
-- `node_modules/@luxalgo/vela/docs/user/data-providers.md` and
-  `docs/contributing/adding-a-data-provider.md`: symbols, venues and writing a provider.
-- The `extending-vela-with-plugins` skill adds buttons, menus, panels and chart types.
+- Related skills: `using-vela-data-providers` (venues, symbols, writing a provider),
+  `adding-vela-indicators` (built-in studies, Pine Script®, custom indicators and engines),
+  `using-vela-drawing-tools` (the toolbar, drawings from code, saving them),
+  `extending-vela-with-plugins` (buttons, menus, panels and chart types).

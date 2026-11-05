@@ -13,6 +13,12 @@ height. Themes come from `createTheme` (`@luxalgo/vela`).
 
 - [building-vela-charts](skills/building-vela-charts/SKILL.md): charts, data providers,
   indicators, themes and saved state.
+- [using-vela-data-providers](skills/using-vela-data-providers/SKILL.md): the bundled
+  providers, symbol routing, and writing a provider for any source.
+- [adding-vela-indicators](skills/adding-vela-indicators/SKILL.md): built-in studies, Pine
+  Script through an engine, native indicators, scripting engines, new built-in studies.
+- [using-vela-drawing-tools](skills/using-vela-drawing-tools/SKILL.md): the drawing toolbar,
+  drawings from code, saving them, and adding a drawing tool to Vela.
 - [extending-vela-with-plugins](skills/extending-vela-with-plugins/SKILL.md): buttons, menu
   rows, panels, overlays, chart types and renderer layers through the plugin SDK.
 - [upgrading-vela](skills/upgrading-vela/SKILL.md): moving a project from 0.9 to 0.10.
@@ -35,6 +41,9 @@ installed, or install them from the repository with `npx skills add LuxAlgo/Vela
   [Localization](docs/user/localization.md), [FAQ](docs/user/faq.md).
 - [Upgrading](docs/user/upgrading.md): breaking changes and deprecated names, release by release.
 - [Plugin SDK](docs/contributing/plugin-sdk.md): every extension hook.
+- [Adding a data provider](docs/contributing/adding-a-data-provider.md),
+  [Adding a scripting engine](docs/contributing/adding-an-engine.md),
+  [Adding a drawing tool](docs/contributing/adding-a-drawing-tool.md).
 - [Changelog](CHANGELOG.md).
 
 ## The UI kit
