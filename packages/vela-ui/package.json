@@ -1,0 +1,90 @@
+{
+  "name": "@luxalgo/vela-ui",
+  "version": "0.1.0",
+  "description": "The component kit of Vela: one file per component, Zag state machines for behavior, CSS in cascade layers over design tokens.",
+  "license": "Apache-2.0",
+  "author": "LuxAlgo",
+  "homepage": "https://velacharts.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luxalgo/vela.git",
+    "directory": "packages/vela-ui"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json",
+    "./themes/*.css": "./dist/themes/*.css",
+    "./manifest.json": "./dist/manifest.json",
+    "./theme.schema.json": "./dist/theme.schema.json",
+    "./cli": "./cli/engine.mjs",
+    "./stylelint": "./stylelint/index.mjs",
+        "./stylelint/lint": "./stylelint/lint.mjs",
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "bin": {
+    "vela-ui": "./cli/index.mjs"
+  },
+  "files": [
+    "dist",
+    "src",
+    "docs",
+    "cli",
+    "registry",
+    "stylelint",
+    "skills",
+    "llms.txt",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node scripts/component-index.mjs && tsup && node scripts/build-reference.mjs"
+  },
+  "peerDependencies": {
+    "postcss-lit": "^1.4.1",
+    "stylelint": "^18.0.0",
+    "stylelint-config-recommended": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "postcss-lit": {
+      "optional": true
+    },
+    "stylelint": {
+      "optional": true
+    },
+    "stylelint-config-recommended": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@zag-js/core": "^1.42.0",
+    "@zag-js/dialog": "^1.42.0",
+    "@zag-js/dom-query": "^1.42.0",
+    "@zag-js/listbox": "^1.42.0",
+    "@zag-js/menu": "^1.42.0",
+    "@zag-js/number-input": "^1.42.0",
+    "@zag-js/slider": "^1.42.0",
+    "@zag-js/switch": "^1.42.0",
+    "@zag-js/tabs": "^1.42.0",
+    "@zag-js/toggle-group": "^1.42.0",
+    "@zag-js/tooltip": "^1.42.0",
+    "@zag-js/types": "^1.42.0",
+    "@zag-js/vanilla": "^1.42.0"
+  },
+  "keywords": [
+    "ui components",
+    "design tokens",
+    "cascade layers",
+    "zag",
+    "vela",
+    "luxalgo"
+  ]
+}

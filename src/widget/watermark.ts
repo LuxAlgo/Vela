@@ -3,10 +3,12 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { Translator } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
 import { timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 /** The watermark's largest type size — a lone full-size chart renders at this cap. */
 const MAX_FONT_PX = 36;
@@ -16,7 +18,8 @@ const MIN_FONT_PX = 12;
 const FILL = 0.9;
 
 const STYLE_ID = 'vela-widget-watermark';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-watermark {
     position: absolute;
     /* Insets follow the renderer-published gutters AND the price-pane vertical
@@ -24,8 +27,8 @@ const CSS = `
      * the study panes below, the drawings toolbar, or the price scale. */
     top: var(--vela-price-pane-top, 0px);
     bottom: var(--vela-price-pane-bottom, 0px);
-    left: var(--vela-toolbar-gutter, 0px);
-    right: var(--vela-scale-gutter, 0px);
+    inset-inline-start: var(--vela-toolbar-gutter, 0px);
+    inset-inline-end: var(--vela-scale-gutter, 0px);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -33,7 +36,7 @@ const CSS = `
     overflow: hidden;
     pointer-events: none;
     z-index: 1;
-    color: var(--vela-fg);
+    color: ${t.fg};
     opacity: 0.05;
     font-size: ${MAX_FONT_PX}px;
     font-weight: 700;
@@ -49,7 +52,8 @@ const CSS = `
     font-size: 0.8em;
 }
 .vela-watermark [hidden] { display: none !important; }
-`;
+
+}`;
 
 /**
  * The font size that fits `textPxAtMax` (the text's width measured AT the cap) into
@@ -94,7 +98,7 @@ export class Watermark {
         timeframe: string,
         private readonly i18n: () => Translator | null | undefined = () => null,
     ) {
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
         this.el = host.ownerDocument.createElement('div');
         this.el.className = 'vela-watermark';
         // Opt into the renderer's PNG export, beneath the canvases — on screen the mark

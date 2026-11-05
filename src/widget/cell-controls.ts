@@ -8,9 +8,11 @@ import { icon } from '../core/icons';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { Glider, ZOOM_IN, ZOOM_OUT } from './glide';
 import type { Vela } from '../Vela';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 /** Cursor distance (px, from the cluster center) that reveals the cluster —
  *  mirrors the scroll-to-realtime button's proximity radius. */
@@ -45,14 +47,16 @@ const TEXT = {
 };
 
 const STYLE_ID = 'vela-cell-controls';
-const CSS = `
-.vela-cc-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:none;border-radius:var(--vela-radius-sm);background:transparent;line-height:0;font-size:12px;color:var(--vela-fg-muted);cursor:pointer;}
+const CSS = css`@layer vela.chrome {
+
+.vela-cc-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:none;border-radius:${t.radius.sm};background:transparent;line-height:0;font-size:12px;color:${t.fg.muted};cursor:pointer;}
 .vela-cc-btn svg{display:block;}
-.vela-cc-btn:hover{background:var(--vela-active);color:var(--vela-fg-bright);}
-.vela-cc-on,.vela-cc-on:hover{background:var(--vela-selected-bg);color:var(--vela-selected-fg);}
+.vela-cc-btn:hover{background:${t.active};color:${t.fg.bright};}
+.vela-cc-on,.vela-cc-on:hover{background:${t.selected.bg};color:${t.selected.fg};}
 .vela-cc-grip{cursor:grab;touch-action:none;}
 .vela-cc-grip:active{cursor:grabbing;}
-`;
+
+}`;
 
 /** Horizontal center of the plot (candles) in cell-local x — the scale gutter
  *  is the price axis, the toolbar gutter is the drawings dock. PURE. */
@@ -121,7 +125,7 @@ export class CellControls {
         private readonly host: HTMLElement,
         private readonly deps: CellControlsDeps,
     ) {
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
         this.glider = new Glider(deps.chart);
         this.root = host.ownerDocument.createElement('div');
         Object.assign(this.root.style, {

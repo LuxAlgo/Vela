@@ -386,7 +386,7 @@ chart.drawings.lock(d.id);          // make it non-interactive
 chart.drawings.showToolbar(false);  // hide the toolbar (drawings still work from code)
 ```
 
-See the [`chart.drawings` reference](./api-reference.md#chartdrawings-control-surface) for the full
+See the [`chart.drawings` reference](./api-reference.md#chartdrawings--the-drawings-control-surface) for the full
 method list and which methods are gated by renderer support.
 
 ---
@@ -465,8 +465,9 @@ the next load.
 Interactive drawing requires a renderer that declares the `userDrawings` capability — the **native
 renderer** does; a minimal custom adapter may not. When unsupported,
 `chart.drawings.supported` is `false`, the interactive methods warn and no-op, **but** the
-core-owned methods (`add` of the model, `all`, `toJSON`/`fromJSON`, `undo`/`redo`) still work, so a
-document round-trips even without an on-chart toolbar.
+core-owned methods (`all`, `update`, `remove`, `toJSON`/`fromJSON`, `undo`/`redo`) still work, so a
+document round-trips even without an on-chart toolbar. Placing a drawing (`add`) is interactive and
+returns `null` there; restore drawings with `fromJSON` instead.
 
 > **Stability:** the drawing-tools API is young and may change before a 1.0 release. The persisted
 > `DrawingsDocument` is versioned and migrated forward.

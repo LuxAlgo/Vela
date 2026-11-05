@@ -13,7 +13,7 @@
 //   single `c1` cell, and that is exactly what the workspace reads back.
 import { VelaWorkspace } from '../workspace/VelaWorkspace';
 import type { Vela } from '../Vela';
-import type { VelaOptions, VelaTheme, ThemeName, MarketSession } from '../core/options';
+import type { VelaOptions, MarketSession } from '../core/options';
 import type { WorkspaceState } from '../state/document';
 import type { VelaShellOptions } from './shell-options';
 import type { WidgetContext } from './contributions';
@@ -114,7 +114,7 @@ export class VelaWidget {
         this.ws.active.setIndicatorValuesVisible(visible);
     }
 
-    setTheme(theme: ThemeName | VelaTheme): void {
+    setTheme(theme: NonNullable<VelaOptions['theme']>): void {
         this.ws.setTheme(theme);
     }
 

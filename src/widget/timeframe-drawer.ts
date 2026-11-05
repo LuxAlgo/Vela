@@ -5,20 +5,23 @@
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
-import { Drawer } from '../ui/components/drawer';
-import { injectStyles } from '../ui/styles';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { rangeLabel, type RangePreset } from './bottombar';
 import { timeframeLabel } from './timeframe';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-tf-drawer';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-tfd-heading {
     padding: 4px 2px 8px;
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
 }
 .vela-tfd-heading + .vela-tfd-ranges,
 .vela-tfd-heading + .vela-tfd-grid { padding-top: 0; }
@@ -40,27 +43,29 @@ const CSS = `
 }
 .vela-tfd-chip {
     all: unset;
+    box-sizing: border-box;
     min-height: 40px;
     padding: 0 14px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: none;
-    border: 1px solid var(--vela-border);
+    border: 1px solid ${t.border};
     border-radius: 8px;
     font-size: 13px;
     font-weight: 600;
-    color: var(--vela-fg);
+    color: ${t.fg};
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-tfd-chip:active { background: var(--vela-hover); }
+.vela-tfd-chip:active { background: ${t.hover}; }
 .vela-tfd-chip[data-active='1'] {
-    color: var(--vela-fg-bright);
-    border-color: var(--vela-fg-bright);
-    background: var(--vela-hover);
+    color: ${t.fg.bright};
+    border-color: ${t.fg.bright};
+    background: ${t.hover};
 }
-`;
+
+}`;
 
 const TEXT = {
     dateRange: msg('widget.timeframeDrawer.dateRange', 'Date Range'),
@@ -90,7 +95,7 @@ export class TimeframeDrawer {
 
     constructor(private readonly opts: TimeframeDrawerOptions) {
         const doc = opts.host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.drawer = new Drawer({ host: opts.host, onOpenChange: opts.onOpenChange });
 
         const rangeHeading = doc.createElement('div');

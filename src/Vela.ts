@@ -2,7 +2,7 @@ import type { IChartRenderer, VisibleRange } from './core/ports/IChartRenderer';
 import type { ScriptingEngine } from './core/ports/ScriptingEngine';
 import type { MarketDataFeed } from './core/ports/MarketDataFeed';
 import type { VisibleRangePreset } from './core/visible-range';
-import type { VelaOptions, VelaTheme, ThemeName, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
+import type { VelaOptions, VelaTheme, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
 import { resolveAnimations } from './core/options';
 import type { InputValue } from './core/model/inputs';
 import type { IndicatorHandle } from './core/IndicatorHandle';
@@ -13,7 +13,6 @@ import type { ScriptRun, ScriptRunResult } from './core/script-run';
 import { EngineOrchestrator, type ResolvedConfig } from './core/engine/EngineOrchestrator';
 import type { SceneInspection } from './core/engine/inspect';
 import { resolveTheme } from './core/theme';
-import { BEARISH, BULLISH } from './core/palette';
 import { RendererControl } from './core/RendererControl';
 import { rendererDefaults } from './core/renderer-defaults';
 import { PanesControl } from './core/PanesControl';
@@ -85,8 +84,8 @@ export class Vela {
             nativeBackend: options.nativeBackend ?? 'auto',
             ...resolveAnimations(options.animations),
             glow: options.glow ?? 0,
-            upColor: options.upColor ?? BULLISH,
-            downColor: options.downColor ?? BEARISH,
+            upColor: options.upColor ?? theme.upColor,
+            downColor: options.downColor ?? theme.downColor,
             priceStyle: options.priceStyle ?? 'candles',
             priceAxisTicks: options.priceAxis?.ticks ?? null,
         };
@@ -492,14 +491,14 @@ export class Vela {
     }
 
     /**
-     * Swap the app theme at runtime — `'dark'`, `'light'`, or a full custom
-     * {@link VelaTheme}. Re-skins the chart surface, axes, legends and in-chart chrome
+     * Swap the app theme at runtime — `'dark'`, `'light'`, a full custom
+     * {@link VelaTheme}, or a `createTheme` result. Re-skins the chart surface, axes, legends and in-chart chrome
      * live (no indicator re-run, no rebuild) and emits `theme:changed` with the resolved
      * theme so host chrome around the chart can follow. Explicitly customized plot
      * cosmetics (a config-set background or series color) are re-based only when they
      * were inherited from the previous theme.
      */
-    setTheme(theme: ThemeName | VelaTheme): this {
+    setTheme(theme: NonNullable<VelaOptions['theme']>): this {
         this.orchestrator.setTheme(resolveTheme(theme));
         return this;
     }

@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { clampNumber, numberInputController, snapToStep } from '../src/ui/components/number-input/controller';
-import { NUMBER_CSS } from '../src/ui/components/number-input/styles';
-import { placePopover, viewportRect, insetRect, intersectRects } from '../src/ui/components/popover/controller';
-import { switchController } from '../src/ui/components/switch/controller';
-import { selectController } from '../src/ui/components/select/controller';
-import { SELECT_CSS } from '../src/ui/components/select/styles';
-import { textFieldController } from '../src/ui/components/text-field/controller';
-import { TEXT_CSS } from '../src/ui/components/text-field/styles';
+import { clampNumber, NUMBER_CSS, numberInputController, snapToStep } from '@luxalgo/vela-ui/number-input';
+import { placePopover, viewportRect, insetRect, intersectRects } from '@luxalgo/vela-ui/popover';
+import { checkboxController } from '@luxalgo/vela-ui/checkbox';
+import { SELECT_CSS, selectController } from '@luxalgo/vela-ui/select';
+import { TEXT_CSS, inputController } from '@luxalgo/vela-ui/input';
 
 describe('clampNumber', () => {
     it('clamps to min and max', () => {
@@ -34,7 +31,7 @@ describe('placePopover', () => {
             originX: 0,
             originY: 0,
         });
-        expect(pos).toEqual({ left: 100, top: 138 });
+        expect(pos).toEqual({ left: 100, top: 138, side: 'bottom' });
     });
 
     it('right-aligns when align is end', () => {
@@ -88,7 +85,7 @@ describe('placePopover', () => {
             originX: 40,
             originY: 20,
         });
-        expect(pos).toEqual({ left: 60, top: 118 });
+        expect(pos).toEqual({ left: 60, top: 118, side: 'bottom' });
     });
 });
 
@@ -102,10 +99,10 @@ describe('rect helpers', () => {
     });
 });
 
-describe('switchController', () => {
+describe('checkboxController', () => {
     it('toggle emits; setChecked does not (vela-sync)', () => {
         const seen: boolean[] = [];
-        const c = switchController({ checked: false, onChange: (v) => seen.push(v) });
+        const c = checkboxController({ checked: false, onChange: (v) => seen.push(v) });
         c.setChecked(true);
         expect(c.checked).toBe(true);
         expect(seen).toEqual([]);
@@ -114,7 +111,7 @@ describe('switchController', () => {
     });
 
     it('does not toggle when disabled', () => {
-        const c = switchController({ checked: false, disabled: true, onChange: () => { throw new Error('emitted'); } });
+        const c = checkboxController({ checked: false, disabled: true, onChange: () => { throw new Error('emitted'); } });
         expect(c.toggle()).toBe(false);
     });
 });
@@ -181,20 +178,20 @@ describe('snapToStep', () => {
 
 describe('closed field size', () => {
     it('number, text, and select share a 100px column and ellipsize overflow', () => {
-        expect(NUMBER_CSS).toContain('.vela-num:not([data-fill]) { width: 100px;');
-        expect(TEXT_CSS).toContain('.vela-text:not([data-fill]) { width: 100px;');
-        expect(SELECT_CSS).toContain('.vela-select:not([data-fill]) { width: 100px;');
+        expect(NUMBER_CSS).toMatch(/:not\(\[data-fill\]\)\s*\{\s*width:\s*100px;/);
+        expect(TEXT_CSS).toMatch(/:not\(\[data-fill\]\)\s*\{\s*width:\s*100px;/);
+        expect(SELECT_CSS).toMatch(/:not\(\[data-fill\]\)\s*\{\s*width:\s*100px;/);
         expect(TEXT_CSS).toContain('text-overflow: ellipsis');
         expect(SELECT_CSS).toContain('text-overflow: ellipsis');
-        expect(SELECT_CSS).toContain('.vela-select-list {\n    width: max-content;');
+        expect(SELECT_CSS).toMatch(/select-content'\]\s*\{\s*width:\s*max-content;/);
         expect(SELECT_CSS).toContain('white-space: nowrap');
     });
 });
 
-describe('textFieldController', () => {
+describe('inputController', () => {
     it('commit emits on change; sync does not', () => {
         const seen: string[] = [];
-        const c = textFieldController({ value: 'a', onChange: (v) => seen.push(v) });
+        const c = inputController({ value: 'a', onChange: (v) => seen.push(v) });
         expect(c.commit('a')).toBeNull();
         expect(c.commit('b')).toBe('b');
         expect(seen).toEqual(['b']);

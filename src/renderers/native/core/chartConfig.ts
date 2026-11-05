@@ -564,6 +564,40 @@ function nullableBound(v: unknown, base: number | null): number | null {
     return isNum(v) ? (v < 0 ? 0 : v) : base;
 }
 
+/** A theme's candle colors: the defaults of every series color that inherits them. */
+export interface CandleColors {
+    upColor: string;
+    downColor: string;
+}
+
+/** The colors a theme switch carries over: a color still on `prev`'s up or down color is the
+ *  theme's default, so it becomes `next`'s; any other color was chosen and stays. Kept
+ *  `null` (inherit) stays `null`. */
+export function themeColorFollower(prev: CandleColors, next: CandleColors): <C extends string | null>(color: C) => C {
+    return <C extends string | null>(color: C): C => (color === prev.upColor ? next.upColor : color === prev.downColor ? next.downColor : color) as C;
+}
+
+/** `config` with its series colors moved from `prev`'s candle colors to `next`'s (see
+ *  {@link themeColorFollower}). */
+export function followThemeColors(config: ChartConfig, prev: CandleColors, next: CandleColors): ChartConfig {
+    const follow = themeColorFollower(prev, next);
+    const { candles, bars, line, area } = config;
+    return {
+        ...config,
+        candles: {
+            ...candles,
+            upColor: follow(candles.upColor),
+            downColor: follow(candles.downColor),
+            borderUpColor: follow(candles.borderUpColor),
+            borderDownColor: follow(candles.borderDownColor),
+            wickUpColor: follow(candles.wickUpColor),
+            wickDownColor: follow(candles.wickDownColor),
+        },
+        bars: { upColor: follow(bars.upColor), downColor: follow(bars.downColor) },
+        line: { ...line, color: follow(line.color) },
+        area: { ...area, lineColor: follow(area.lineColor), topColor: follow(area.topColor) },
+    };
+}
 
 /**
  * The document "Reset defaults" applies. `mergeConfig` is deliberately ADDITIVE for

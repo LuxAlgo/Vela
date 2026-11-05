@@ -2,7 +2,8 @@ import { msg, withValues } from '../../../core/i18n/message';
 import { sourceText, textOf } from '../../../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../../../core/i18n/types';
 import { priceStyleMessage } from '../../../chart-types/labels';
-import type { VelaTheme, ThemeName } from '../../../core/options';
+import type { VelaTheme, ThemeId } from '../../../core/options';
+import { registeredThemes } from '../../../core/theme';
 import type { ChartConfig } from '../core/chartConfig';
 import {
     chartType,
@@ -20,17 +21,17 @@ import {
 } from '../../../chart-types/registry';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
-import { closeOpenPopovers } from '../../../ui/components/popover';
-import { closeWidthPopover } from '../../../ui/components/glyph-select';
-import { Dialog } from '../../../ui/components/dialog';
-import { overlayScrollbarCss } from '../../../ui/styles';
+import { closeOpenPopovers } from '@luxalgo/vela-ui/popover';
+import { closeWidthPopover } from '@luxalgo/vela-ui/glyph-select';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { overlayScrollbarCss } from '@luxalgo/vela-ui/styles';
 import {
     fieldGrid,
     fieldRow,
     fieldSection,
     fieldSeparator,
     buildFieldControl,
-} from '../../../ui/components/field';
+} from '@luxalgo/vela-ui/field';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 import { chromeHint } from '../../shared/chrome-tooltip';
 import {
@@ -45,7 +46,11 @@ import {
 } from './settings-visibility';
 import type { MarkGroup } from '../../../core/marks/types';
 import { markGroupRows } from '../../../core/marks/visibility';
-import { withKitTranslator } from '../../../ui/kit-text';
+import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
+import { css } from '@luxalgo/vela-ui/css';
+import { disposeWithin } from '@luxalgo/vela-ui/dispose';
+import { t } from '@luxalgo/vela-ui/t';
+
 
 const TEXT = {
     sections: msg('chart.settings.sections', 'Sections'),
@@ -200,34 +205,35 @@ function ensureControlStyles(): void {
     const st = existing ?? document.createElement('style');
     st.id = SD_STYLE_ID;
     st.dataset.rev = SD_STYLE_REV;
-    st.textContent = `
+    st.textContent = css`@layer vela.chrome {
+
 ${overlayScrollbarCss('.vela-sd-pane')}
 /* Tab rail / footer button / header close: base styles live HERE, not inline on the
    elements — inline declarations always beat stylesheet :hover rules, which is exactly
    what killed these hovers before. Active tab state is the .on class,
    hover fills follow the app convention (--vela-hover + --vela-fg-bright, fast transition). */
-.vela-sd-tab{text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-sd-tab:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-sd-tab.on{background:var(--vela-active);color:var(--vela-fg-bright);}
-.vela-sd-btn{height:30px;padding:0 14px;font-size:var(--vela-font-size-md);color:var(--vela-fg);background:var(--vela-surface-sunken);border:1px solid var(--vela-border);border-radius:var(--vela-radius-md);cursor:pointer;font-family:inherit;transition:background var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-sd-btn:hover{background:var(--vela-hover);border-color:var(--vela-border-strong);color:var(--vela-fg-bright);}
-.vela-sd-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;border-radius:var(--vela-radius-sm);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-sd-close:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-sd-tab{text-align:start;padding:9px 12px;background:transparent;border:none;border-radius:${t.radius.md};color:${t.fg.muted};font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-sd-tab:hover{background:${t.hover};color:${t.fg.bright};}
+.vela-sd-tab.on{background:${t.active};color:${t.fg.bright};}
+.vela-sd-btn{height:30px;padding:0 14px;font-size:${t.fontSize.md};color:${t.fg};background:${t.surface.sunken};border:1px solid ${t.border};border-radius:${t.radius.md};cursor:pointer;font-family:inherit;transition:background ${t.dur.fast} ease,border-color ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-sd-btn:hover{background:${t.hover};border-color:${t.border.strong};color:${t.fg.bright};}
+.vela-sd-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:${t.fg.muted};line-height:0;width:30px;height:30px;border-radius:${t.radius.sm};transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-sd-close:hover{background:${t.hover};color:${t.fg.bright};}
 /* Rows/blocks gated away by chart-type conditions, TOC filters, or the instance strip.
    !important: the pane grid rewrites inline display ('contents') AFTER the initial
    visibility pass, so a class must win. */
 .vela-sd-hide{display:none !important;}
 /* Indented rail sub-entry (a chart-type section's subsection tab). */
-.vela-sd-tab-sub{padding-left:28px;font-weight:600;font-size:12px;}
+.vela-sd-tab-sub{padding-inline-start:28px;font-weight:600;font-size:12px;}
 /* Instance strip: a tab per present instance (label, ✕ on the active removable one)
    and a dashed + that turns on the next absent instance. The rule under it separates
    the strip from the instance's TOC + rows area. */
-.vela-sd-itabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:14px 0 0;padding-bottom:12px;border-bottom:1px solid var(--vela-border);}
-.vela-sd-itab{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;background:transparent;border:1px solid var(--vela-border);border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-family:inherit;font-size:var(--vela-font-size-md);font-weight:600;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
-.vela-sd-itab:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-sd-itab.on{background:var(--vela-active);color:var(--vela-fg-bright);border-color:var(--vela-border-strong);}
-.vela-sd-ix{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:-4px;border-radius:var(--vela-radius-sm);color:var(--vela-fg-muted);font-size:10px;line-height:1;}
-.vela-sd-ix:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-sd-itabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:14px 0 0;padding-bottom:12px;border-bottom:1px solid ${t.border};}
+.vela-sd-itab{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;background:transparent;border:1px solid ${t.border};border-radius:${t.radius.md};color:${t.fg.muted};font-family:inherit;font-size:${t.fontSize.md};font-weight:600;cursor:pointer;transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease,border-color ${t.dur.fast} ease;}
+.vela-sd-itab:hover{background:${t.hover};color:${t.fg.bright};}
+.vela-sd-itab.on{background:${t.active};color:${t.fg.bright};border-color:${t.border.strong};}
+.vela-sd-ix{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-inline-end:-4px;border-radius:${t.radius.sm};color:${t.fg.muted};font-size:10px;line-height:1;}
+.vela-sd-ix:hover{background:${t.hover};color:${t.fg.bright};}
 .vela-sd-itab-add{border-style:dashed;min-width:30px;justify-content:center;padding:0;}
 /* Structured pane: group TOC column + rows column, TOP-ALIGNED (the shared padding-top
    lives on the wrap, never on one column). The TOC sticks while the pane scrolls; the
@@ -235,11 +241,11 @@ ${overlayScrollbarCss('.vela-sd-pane')}
    group gates out the TOC hides and .no-toc drops the rule with it. */
 .vela-sd-struct{display:flex;align-items:flex-start;padding-top:14px;}
 .vela-sd-toc{position:sticky;top:0;flex:0 0 auto;min-width:104px;display:flex;flex-direction:column;gap:2px;padding:2px 14px 0 0;}
-.vela-sd-struct>[data-sd-rows-host]{border-left:1px solid var(--vela-border);padding-left:18px;}
-.vela-sd-struct.no-toc>[data-sd-rows-host]{border-left:none;padding-left:0;}
-.vela-sd-toc-btn{text-align:left;padding:6px 10px;background:transparent;border:none;border-radius:var(--vela-radius-sm);color:var(--vela-fg-muted);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-sd-toc-btn:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-sd-toc-btn.on{background:var(--vela-active);color:var(--vela-fg-bright);}
+.vela-sd-struct>[data-sd-rows-host]{border-inline-start:1px solid ${t.border};padding-inline-start:18px;}
+.vela-sd-struct.no-toc>[data-sd-rows-host]{border-inline-start:none;padding-inline-start:0;}
+.vela-sd-toc-btn{text-align:start;padding:6px 10px;background:transparent;border:none;border-radius:${t.radius.sm};color:${t.fg.muted};font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-sd-toc-btn:hover{background:${t.hover};color:${t.fg.bright};}
+.vela-sd-toc-btn.on{background:${t.active};color:${t.fg.bright};}
 /* Soft-disable: a subsection's enableKey is off — rows stay visible (browseable) but
    muted and non-interactive. Applied to each row's children so it survives display:contents;
    !important beats the inline opacity on labels. */
@@ -247,23 +253,23 @@ ${overlayScrollbarCss('.vela-sd-pane')}
 /* A mark group nested under a parent group on the Events tab: indented one step per level
    (--vela-sd-depth). The indent rides the first child (the switch) as a MARGIN — padding
    would push the switch's own tick out of its box. */
-.vela-sd-nested>*:first-child{margin-left:calc(var(--vela-sd-depth,1)*24px);}
+.vela-sd-nested>*:first-child{margin-inline-start:calc(var(--vela-sd-depth,1)*24px);}
 /* ── mobile presentation (.vela-sd-mobile on the scrim; structural sizes are inline in open()) ──
    The tab rail becomes a burger-opened overlay sidebar; the group TOC becomes a sticky
    row of horizontally scrollable tabs; the instance strip scrolls instead of wrapping;
    controls grow to touch size and labels may wrap (the grid gives them a flexible track). */
-.vela-sd-mobile .vela-sd-burger{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg);line-height:0;width:36px;height:36px;border-radius:var(--vela-radius-sm);margin-right:2px;}
-.vela-sd-mobile .vela-sd-burger:active{background:var(--vela-hover);}
-.vela-sd-mobile .vela-sd-railscrim{position:absolute;inset:0;z-index:2;background:var(--vela-backdrop);display:none;}
+.vela-sd-mobile .vela-sd-burger{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:${t.fg};line-height:0;width:36px;height:36px;border-radius:${t.radius.sm};margin-inline-end:2px;}
+.vela-sd-mobile .vela-sd-burger:active{background:${t.hover};}
+.vela-sd-mobile .vela-sd-railscrim{position:absolute;inset:0;z-index:2;background:${t.backdrop};display:none;}
 .vela-sd-mobile .vela-sd-railscrim.open{display:block;}
-.vela-sd-mobile .vela-sd-rail{position:absolute;left:0;top:0;bottom:0;z-index:3;width:min(240px,80%);box-sizing:border-box;background:var(--vela-surface);border-right:1px solid var(--vela-border);box-shadow:var(--vela-shadow-dialog);transform:translateX(-105%);transition:transform var(--vela-dur-med) var(--vela-ease);}
+.vela-sd-mobile .vela-sd-rail{position:absolute;inset-inline-start:0;top:0;bottom:0;z-index:3;width:min(240px,80%);box-sizing:border-box;background:${t.surface};border-inline-end:1px solid ${t.border};box-shadow:${t.shadow.dialog};transform:translateX(-105%);transition:transform ${t.dur.med} ${t.ease};}
 .vela-sd-mobile .vela-sd-rail.open{transform:translateX(0);}
 .vela-sd-mobile .vela-sd-tab{padding:12px;}
 .vela-sd-mobile .vela-sd-struct{flex-direction:column;padding-top:8px;}
-.vela-sd-mobile .vela-sd-toc{position:sticky;top:0;z-index:1;background:var(--vela-surface);flex-direction:row;overflow-x:auto;scrollbar-width:none;min-width:0;width:100%;box-sizing:border-box;gap:4px;padding:2px 0 8px;}
+.vela-sd-mobile .vela-sd-toc{position:sticky;top:0;z-index:1;background:${t.surface};flex-direction:row;overflow-x:auto;scrollbar-width:none;min-width:0;width:100%;box-sizing:border-box;gap:4px;padding:2px 0 8px;}
 .vela-sd-mobile .vela-sd-toc::-webkit-scrollbar{display:none;}
 .vela-sd-mobile .vela-sd-toc-btn{flex:none;padding:8px 12px;font-size:13px;}
-.vela-sd-mobile .vela-sd-struct>[data-sd-rows-host]{border-left:none;padding-left:0;width:100%;}
+.vela-sd-mobile .vela-sd-struct>[data-sd-rows-host]{border-inline-start:none;padding-inline-start:0;width:100%;}
 .vela-sd-mobile .vela-sd-itabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
 .vela-sd-mobile .vela-sd-itabs::-webkit-scrollbar{display:none;}
 .vela-sd-mobile .vela-sd-itab{height:36px;flex:none;}
@@ -279,7 +285,8 @@ ${overlayScrollbarCss('.vela-sd-pane')}
    alignment device; on mobile the trigger hugs its value instead (the grid's control
    column is max-content), capped so a long option still ellipsizes before the label. */
 .vela-sd-mobile .vela-select-trigger .vela-select-label{white-space:nowrap !important;}
-.vela-sd-mobile .vela-select:not([data-fill]){width:auto;min-width:100px;max-width:min(220px,55vw);}`;
+.vela-sd-mobile .vela-select:not([data-fill]){width:auto;min-width:100px;max-width:min(220px,55vw);}
+}`;
     if (!existing) document.head.appendChild(st);
 }
 
@@ -300,7 +307,7 @@ export class SettingsDialog {
     /** The Canvas → Theme row: current app theme + where a pick is raised. The row is a
      *  host callback, NOT a config patch — the app theme stays out of the persisted
      *  `ChartConfig`, so exported templates never carry it. */
-    private themeControl: { current: ThemeName; onSelect: (name: ThemeName) => void } | null = null;
+    private themeControl: { current: ThemeId; onSelect: (id: ThemeId) => void } | null = null;
     /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
     private tabs: Array<{ title: string; show: () => void }> = [];
     private hintTips: Array<() => void> = []; // ⓘ tooltip disposers of the open build (see hint)
@@ -340,7 +347,7 @@ export class SettingsDialog {
     }
 
     /** Configure the Canvas → Theme row (see {@link themeControl}); null hides the row. */
-    setThemeControl(current: ThemeName, onSelect: (name: ThemeName) => void): void {
+    setThemeControl(current: ThemeId, onSelect: (id: ThemeId) => void): void {
         this.themeControl = { current, onSelect };
     }
 
@@ -447,7 +454,7 @@ export class SettingsDialog {
             align: 'top',
             draggable: !mobile,
             flush: true,
-            className: 'vela-dialog--settings',
+            variant: 'settings',
             headerStart: burger,
             closeOnBackdrop: true,
             footer: (foot) => {
@@ -489,6 +496,7 @@ export class SettingsDialog {
         for (const dispose of this.hintTips) dispose();
         this.hintTips = [];
         this.config = config;
+        disposeWithin(ui.body);
         ui.body.replaceChildren();
         this.layoutPanes(withKitTranslator(this.i18n?.(), () => this.buildContent(ui, config, this.activeSection ?? undefined, this.mobileLayout)));
     }
@@ -759,7 +767,8 @@ export class SettingsDialog {
         if (this.themeControl) {
             const tc = this.themeControl;
             body.append(sid(this.sectionTitle(TEXT.theme), 'canvas.theme'));
-            body.append(sid(this.selectRowLabeled(TEXT_THEME.colorTheme, tc.current, [['dark', TEXT_THEME.dark], ['light', TEXT_THEME.light]] as const, (v) => tc.onSelect(v === 'dark' ? 'dark' : 'light')), 'canvas.theme'));
+            const choices: Array<readonly [string, MessageLike]> = [['dark', TEXT_THEME.dark], ['light', TEXT_THEME.light], ...registeredThemes().map((t) => [t.id, t.label] as const)];
+            body.append(sid(this.selectRowLabeled(TEXT_THEME.colorTheme, tc.current, choices, (v) => tc.onSelect(v)), 'canvas.theme'));
         }
 
         // ══ EVENTS — timeline-mark group visibility, a tab of its own (present only while marks name groups) ══
@@ -808,11 +817,14 @@ export class SettingsDialog {
                     skipTab = child.dataset.sdId !== undefined && settingsIdHidden(child.dataset.sdId, this.hiddenSettings);
                 }
                 if (skipTab || (child.dataset.sdId !== undefined && settingsIdHidden(child.dataset.sdId, this.hiddenSettings))) {
+                    disposeWithin(child);
                     child.remove();
                     continue;
                 }
                 for (const el of [...child.querySelectorAll('[data-sd-id]')] as HTMLElement[]) {
-                    if (settingsIdHidden(el.dataset.sdId!, this.hiddenSettings)) el.remove();
+                    if (!settingsIdHidden(el.dataset.sdId!, this.hiddenSettings)) continue;
+                    disposeWithin(el);
+                    el.remove();
                 }
             }
         }

@@ -8,13 +8,16 @@ import { withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip } from './chrome-tooltip';
-import { Menu, type MenuItemDescriptor } from '../../ui/components/menu';
-import { CalloutBubble } from '../../ui/components/callout-bubble';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
+import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
 import {
     IndicatorInputsDialog,
     ensureDialogStyles,
     type InputsUIChange,
 } from './IndicatorInputsDialog';
+import { css } from '@luxalgo/vela-ui/css';
+
 export type { InputsUIChange } from './IndicatorInputsDialog';
 export {
     nameOf,
@@ -107,12 +110,15 @@ interface LegendRow {
     /** The live bubble instances in {@link calloutsEl} (kept so their panels die with the row). */
     callouts: CalloutBubble[];
     native: boolean;
+    /** The row's right-click menu. */
+    menu: ContextMenu;
 }
 
 /** Keyframes for the legend-row live pulse, injected once into the document (the load
  *  dots animate through the Web Animations API and need no stylesheet). */
-const STATUS_KEYFRAMES =
-    '@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}';
+const STATUS_KEYFRAMES = css`@layer vela.chrome {
+@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}
+}`;
 
 /** Legend glyph size — the row's own font belongs to the indicator title beside them. */
 const LEGEND_ICON_PX = 16;
@@ -223,7 +229,7 @@ export class InputsUI {
     /** Same, for the contributed callouts only (rebuilt independently by setLegendCallouts). */
     private readonly calloutTips = new Map<string, Array<() => void>>();
     /** Open "Move to" menu (kept so it can be torn down). */
-    private moveMenu: Menu | null = null;
+    private moveMenu: DropdownMenu | null = null;
     private moveTargets: MoveTarget[] = [];
     private moveMenuId: string | null = null;
     /** Collapsed panes → the master indicator id to keep visible (others hidden in the strip). */
@@ -239,8 +245,6 @@ export class InputsUI {
      *  context-menu choice ({@link LegendRow.showValues}) overrides it per indicator. */
     private valuesVisible = true;
     /** Open legend-row context menu (kept so it can be torn down). */
-    private rowMenu: Menu | null = null;
-    private rowMenuId: string | null = null;
     /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
      *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
     private foldToggle: HTMLButtonElement | null = null;
@@ -595,10 +599,10 @@ export class InputsUI {
         if (moves[0] && stack.length > 0) moves[0].separatorBefore = true;
         const descriptors = [...stack, ...moves];
         if (!this.moveMenu) {
-            this.moveMenu = new Menu({
+            this.moveMenu = new DropdownMenu({
                 host: this.container,
                 items: descriptors,
-                placement: 'bottom-start',
+                side: 'bottom', align: 'start',
                 onSelect: (itemId) => {
                     const rowId = this.moveMenuId;
                     if (!rowId || this.runStackItem(itemId, rowId)) return;
@@ -619,16 +623,35 @@ export class InputsUI {
 
     // ── legend row context menu (right-click) ───────────────────────────────
 
-    /** Open the row's action menu at the pointer: an overlay indicator's restacking steps
-     *  first (where a layer is there to pass), then the values toggle. */
-    private openRowMenu(id: string, x: number, y: number): void {
-        this.closeRowMenu();
-        this.closeMoveMenu();
+    /** A row's right-click menu: an overlay indicator's restacking steps first (where a layer
+     *  is there to pass), then the values toggle. */
+    private rowMenu(id: string, el: HTMLElement): ContextMenu {
+        return new ContextMenu({
+            target: el,
+            host: this.container,
+            // The legend sits over the chart, where a long press is the touch crosshair.
+            longPress: false,
+            items: (e) => {
+                // This right-click is the row's: the chart-body menu (bound higher up) stays closed.
+                e.stopPropagation();
+                this.closeMoveMenu();
+                return this.rowMenuItems(id);
+            },
+            onSelect: (itemId) => {
+                if (this.runStackItem(itemId, id) || itemId !== 'values') return;
+                const row = this.rows.get(id);
+                if (!row) return;
+                row.showValues = !this.rowValuesShown(row);
+                this.renderRowValues(row);
+            },
+        });
+    }
+
+    private rowMenuItems(id: string): MenuItemDescriptor[] | null {
         const row = this.rows.get(id);
-        if (!row) return;
-        this.rowMenuId = id;
+        if (!row) return null;
         const stack = this.stackItems(id);
-        const items: MenuItemDescriptor[] = [
+        return [
             ...stack,
             {
                 id: 'values',
@@ -637,31 +660,6 @@ export class InputsUI {
                 separatorBefore: stack.length > 0,
             },
         ];
-        if (!this.rowMenu) {
-            this.rowMenu = new Menu({
-                host: this.container,
-                items,
-                placement: 'bottom-start',
-                // Right-click action menu — checked state reads as a leading ✓ (see the kit Menu).
-                checkmarks: true,
-                onSelect: (itemId) => {
-                    const rowId = this.rowMenuId;
-                    if (!rowId || this.runStackItem(itemId, rowId)) return;
-                    if (itemId !== 'values') return;
-                    const target = this.rows.get(rowId);
-                    if (!target) return;
-                    target.showValues = !this.rowValuesShown(target);
-                    this.renderRowValues(target);
-                },
-            });
-        } else {
-            this.rowMenu.setItems(items);
-        }
-        this.rowMenu.openAt(x, y);
-    }
-
-    private closeRowMenu(): void {
-        this.rowMenu?.close();
     }
 
     /** A row's one-step restacking entries (forward, then back), for whichever neighbor exists. */
@@ -937,13 +935,6 @@ export class InputsUI {
             e.preventDefault();
             this.onRemove?.(id);
         });
-        // Right-click opens the row's own action menu — swallowed here so the host's
-        // chart-body context menu (bound higher up the tree) doesn't open over it.
-        el.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.openRowMenu(id, e.clientX, e.clientY);
-        });
         // Status indicator (right of the title): pulsing load dots while fetching, a
         // pulse while live, hidden when idle. Lives next to the title — not the row's
         // far end — so the dots stay a title companion even before values arrive.
@@ -1051,7 +1042,7 @@ export class InputsUI {
         el.appendChild(controlsEl);
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        const row: LegendRow = { id, title, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, calloutsEl, callouts: [], native: !!opts.native };
+        const row: LegendRow = { id, title, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, calloutsEl, callouts: [], native: !!opts.native, menu: this.rowMenu(id, el) };
         this.rows.set(id, row);
         this.renderCallouts(row);
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
@@ -1199,6 +1190,7 @@ export class InputsUI {
     remove(id: string): void {
         const row = this.rows.get(id);
         for (const bubble of row?.callouts ?? []) bubble.destroy(); // an open panel must not outlive its row
+        row?.menu.destroy();
         row?.el.remove();
         this.rows.delete(id);
         this.disposeTips(this.rowTips, id);
@@ -1218,8 +1210,7 @@ export class InputsUI {
         this.inputsDialog.close();
         this.moveMenu?.destroy();
         this.moveMenu = null;
-        this.rowMenu?.destroy();
-        this.rowMenu = null;
+        for (const row of this.rows.values()) row.menu.destroy();
         for (const id of [...this.rowTips.keys()]) this.disposeTips(this.rowTips, id);
         for (const id of [...this.extrasTips.keys()]) this.disposeTips(this.extrasTips, id);
         for (const id of [...this.calloutTips.keys()]) this.disposeTips(this.calloutTips, id);

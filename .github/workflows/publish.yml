@@ -1,7 +1,8 @@
-# Mirrors @luxalgo/vela to GitHub Packages when a version tag is pushed.
+# Mirrors @luxalgo/vela (and @luxalgo/vela-ui, the kit it depends on) to GitHub Packages
+# when a version tag is pushed.
 #
-# npmjs stays the package's PUBLIC home, published as today (npm publish, by hand,
-# before tagging). This mirror exists for the org's PRIVATE consumers: npm maps
+# npmjs stays the packages' PUBLIC home, published as today (npm publish, by hand, before
+# tagging: the kit first when its version changed, then Vela). This mirror exists for the org's PRIVATE consumers: npm maps
 # registries per SCOPE, not per package, and @luxalgo/vela-pro lives on GitHub
 # Packages — so any project consuming vela-pro must resolve the WHOLE @luxalgo
 # scope there, vela included. Flow: publish to npmjs → push the vX.Y.Z tag → this
@@ -52,6 +53,19 @@ jobs:
 
       - name: Auth npm.pkg.github.com (publish only — installs never touch it)
         run: echo "//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
+
+      # The kit is its own package, which Vela depends on: mirror its version first. A Vela
+      # release that keeps the kit's version finds it there already.
+      - name: Mirror @luxalgo/vela-ui
+        run: |
+          v="$(node -p "require('./packages/vela-ui/package.json').version")"
+          if npm view "@luxalgo/vela-ui@$v" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "@luxalgo/vela-ui@$v is already mirrored"
+          else
+            npm publish -w @luxalgo/vela-ui --registry=https://npm.pkg.github.com
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - run: npm publish --registry=https://npm.pkg.github.com
         env:

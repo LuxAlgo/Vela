@@ -1,0 +1,582 @@
+// ColorPicker: a swatch grid (grays, then hue × shade), a recents row with a custom "+"
+// chooser, and an opacity slider over a transparency checker; and ColorField, the swatch
+// button that opens it on a popover. Colors travel as `#RRGGBB` / `#RRGGBBAA`.
+import { ACCENT, ACCENT_BRIGHT, BEARISH, BULLISH, NEUTRAL, WARNING } from '../lib/palette';
+import { msg } from '../lib/i18n';
+import { textOf } from '../lib/i18n';
+import type { Translator } from '../lib/i18n';
+import type { ChartTheme } from '../lib/tokens';
+import { kitTranslator } from '../lib/kit-text';
+import { css, defineStyles } from '../lib/css';
+import { defineComponent } from '../lib/define';
+import { disposeWithin, ownTeardown } from '../lib/dispose';
+import { h } from '../lib/h';
+import { t } from '../lib/t';
+import { nextUid, normalizeProps, runMachine, spreadProps } from '../lib/zag';
+import { Popover, closeOpenPopovers, openPopoverTrigger, type PlacementProps, type PopoverBoundary, type PopoverOptions } from './popover';
+import * as zagSlider from '@zag-js/slider';
+
+/** Split a color into its `#RRGGBB` part + alpha 0..1 (handles `#RGB`, `#RRGGBB(AA)`, `rgba()`). */
+export function splitColor(color: string): { hex6: string; alpha: number } {
+    const s = String(color ?? '').trim();
+    let m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(s);
+    if (m) return { hex6: `#${m[1]!.toLowerCase()}`, alpha: m[2] ? parseInt(m[2], 16) / 255 : 1 };
+    m = /^#([0-9a-f]{3})$/i.exec(s);
+    if (m) {
+        const x = m[1]!.toLowerCase();
+        return { hex6: `#${x[0]}${x[0]}${x[1]}${x[1]}${x[2]}${x[2]}`, alpha: 1 };
+    }
+    const rgba = /^rgba?\(([^)]+)\)/i.exec(s);
+    if (rgba) {
+        const p = rgba[1]!.split(',').map((v) => v.trim());
+        const hx = (n: number): string => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+        const a = p[3] != null ? Math.max(0, Math.min(1, parseFloat(p[3]))) : 1;
+        return { hex6: `#${hx(parseInt(p[0] ?? '0', 10))}${hx(parseInt(p[1] ?? '0', 10))}${hx(parseInt(p[2] ?? '0', 10))}`, alpha: a };
+    }
+    return { hex6: ACCENT_BRIGHT, alpha: 1 };
+}
+
+/** Combine a `#RRGGBB` + alpha into `#RRGGBB` (opaque) or `#RRGGBBAA`. */
+export function combineColor(hex6: string, alpha: number): string {
+    const a = Math.max(0, Math.min(1, alpha));
+    if (a >= 0.999) return hex6;
+    return `${hex6}${Math.round(a * 255)
+        .toString(16)
+        .padStart(2, '0')}`;
+}
+
+/** Composite `fg` over `bg` at `alpha`, returning an opaque `#rrggbb`. */
+export function blendOver(fg: string, bg: string, alpha: number): string {
+    const rgb = (c: string): [number, number, number] => {
+        const n = parseInt(splitColor(c).hex6.slice(1), 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    };
+    const [fr, fgc, fb] = rgb(fg);
+    const [br, bgc, bb] = rgb(bg);
+    const a = Math.max(0, Math.min(1, alpha));
+    const hx = (n: number): string => Math.round(n).toString(16).padStart(2, '0');
+    return `#${hx(fr * a + br * (1 - a))}${hx(fgc * a + bgc * (1 - a))}${hx(fb * a + bb * (1 - a))}`;
+}
+
+/** HSL (h 0-360, s/l 0-100) → `#rrggbb`. */
+export function hslHex(hue: number, s: number, l: number): string {
+    const sn = s / 100;
+    const ln = l / 100;
+    const k = (n: number): number => (n + hue / 30) % 12;
+    const a = sn * Math.min(ln, 1 - ln);
+    const f = (n: number): number => ln - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    const to = (x: number): string => Math.round(x * 255).toString(16).padStart(2, '0');
+    return `#${to(f(0))}${to(f(8))}${to(f(4))}`;
+}
+
+/** A swatch palette: a grayscale row, then hue columns × shade rows. */
+export function buildPalette(): string[][] {
+    const grays = [100, 90, 80, 68, 56, 45, 35, 25, 14, 0].map((l) => hslHex(0, 0, l));
+    const hues = [4, 28, 50, 96, 140, 174, 200, 224, 270, 322];
+    const levels: Array<[number, number]> = [
+        [82, 56],
+        [58, 84],
+        [62, 74],
+        [66, 62],
+        [70, 50],
+        [64, 39],
+        [54, 29],
+    ];
+    return [grays, ...levels.map(([s, l]) => hues.map((hue) => hslHex(hue, s, l)))];
+}
+
+/** The alpha checkerboard laid under translucent colors. Its grays are fixed on purpose:
+ *  it stands for "nothing here", so it must not shift with the theme. */
+export function transparencyChecker(size: number): string {
+    return `repeating-conic-gradient(#9aa0a6 0% 25%, #d3d6da 0% 50%) 0 0 / ${size}px ${size}px`; // palette-exempt: these grays stand for transparency itself
+}
+
+export type ColorFieldShape = 'square' | 'circle';
+
+export interface ColorPickerControllerOptions {
+    color?: string;
+    onChange?: (value: string) => void;
+}
+
+export interface ColorPickerController {
+    hex6: string;
+    alpha: number;
+    combined(): string;
+    setHex(hex: string): void;
+    setAlpha(a: number): void;
+}
+
+/** The picked color as a hex part and an opacity, without DOM. */
+export function colorPickerController(opts: ColorPickerControllerOptions = {}): ColorPickerController {
+    const parsed = splitColor(opts.color ?? ACCENT_BRIGHT);
+    let hex6 = parsed.hex6;
+    let alpha = parsed.alpha;
+    return {
+        get hex6() {
+            return hex6;
+        },
+        get alpha() {
+            return alpha;
+        },
+        combined() {
+            return combineColor(hex6, alpha);
+        },
+        setHex(hex: string) {
+            hex6 = splitColor(hex).hex6;
+        },
+        setAlpha(a: number) {
+            alpha = Math.max(0, Math.min(1, a));
+        },
+    };
+}
+
+export const colorPickerDef = defineComponent({
+    name: 'color-picker',
+    parts: ['root', 'trigger', 'swatch', 'content'],
+    settings: {
+        'swatch-ring': 'inset 0 0 0 1px rgba(0, 0, 0, 0.25)',
+        'circle-swatch-radius': '2px',
+        'content-radius': t.radius.lg,
+    },
+});
+
+const TEXT = {
+    opacity: msg('ui.colorPicker.opacity', 'Opacity'),
+    opacityPercent: msg('ui.colorPicker.opacityPercent', 'Opacity (%)'),
+};
+
+const PALETTE = buildPalette();
+const CHECKER = transparencyChecker(10);
+const FIELD_CHECKER = transparencyChecker(8);
+
+/** Session-shared recently-picked colors (most-recent first). */
+const recents: string[] = [ACCENT, BULLISH, BEARISH, WARNING, NEUTRAL];
+
+function addRecent(hex6: string): void {
+    const i = recents.findIndex((c) => c.toLowerCase() === hex6.toLowerCase());
+    if (i >= 0) recents.splice(i, 1);
+    recents.unshift(hex6);
+    if (recents.length > 10) recents.length = 10;
+}
+
+/**
+ * When the opacity slider hands its value to `onChange` during a drag: `'live'` on every
+ * pointer move (the consumer repaints cheaply, so the chart previews the drag), `'release'`
+ * once on pointerup/pointercancel (the consumer recomputes — a script re-runs over its whole
+ * history, so a per-move commit would queue seconds of work behind the pointer). The knob,
+ * gradient and percentage follow the pointer either way; swatch picks always emit at once.
+ */
+export type ColorCommit = 'live' | 'release';
+
+export interface ColorPickerOptions {
+    commit?: ColorCommit;
+    /** The translator of the picker's labels (default: the kit build's, else English). */
+    i18n?: Translator | null;
+}
+
+const injectStyles = defineStyles(
+    'vela-ui-color',
+    css`
+        @layer vela.ui {
+            [data-slot='color-picker-swatch'] {
+                display: block;
+                width: 100%;
+                height: 100%;
+                border-radius: 0;
+                box-shadow: ${colorPickerDef.vars['swatch-ring']};
+            }
+            [data-slot='color-picker-trigger'] {
+                width: 24px;
+                height: 24px;
+                padding: 2px;
+                border: 1px solid ${t.border};
+                border-radius: 0;
+                background: ${t.surface.sunken};
+                cursor: pointer;
+                flex: none;
+
+                &:where(:not([hidden])) {
+                    display: inline-flex;
+                }
+                &:where([data-shape='circle']) {
+                    width: 26px;
+                    height: 26px;
+                    padding: 3px;
+                    border: 1px solid ${t.border.strong};
+                    border-radius: ${t.radius.sm};
+                    background: transparent;
+                    overflow: hidden;
+                }
+                &:hover {
+                    border-color: ${t.fg.muted};
+                }
+                &:where([data-shape='circle']) [data-slot='color-picker-swatch'] {
+                    border-radius: ${colorPickerDef.vars['circle-swatch-radius']};
+                    box-shadow: none;
+                }
+            }
+            [data-slot~='color-picker-content'] {
+                background: ${t.surface.overlay};
+                border: 1px solid ${t.border};
+                border-radius: ${colorPickerDef.vars['content-radius']};
+                box-shadow: ${t.shadow};
+                padding: 10px;
+            }
+        }
+    `,
+);
+
+/**
+ * A self-contained color picker: a swatch grid (grays + hue × shade), a
+ * recents row with a custom "+" picker, and an opacity slider over a transparency checker.
+ * Emits `#RRGGBB` / `#RRGGBBAA` through `onChange`.
+ */
+export function buildColorPicker(color: string, theme: ChartTheme, onChange: (v: string) => void, options: ColorPickerOptions = {}): HTMLElement {
+    const commit: ColorCommit = options.commit ?? 'live';
+    const i18n = options.i18n ?? kitTranslator();
+    const parsed = splitColor(color);
+    let curHex = parsed.hex6;
+    let curAlpha = parsed.alpha;
+
+    const root = document.createElement('div');
+    root.dataset.slot = colorPickerDef.slot('root');
+    root.style.cssText = 'display:flex;flex-direction:column;gap:9px;width:236px;';
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(10,1fr);gap:4px;';
+    const swatches: HTMLButtonElement[] = [];
+    for (const row of PALETTE) {
+        for (const c of row) {
+            const sw = document.createElement('button');
+            sw.type = 'button';
+            sw.dataset.c = c;
+            sw.setAttribute('aria-label', c);
+            sw.style.cssText = `width:100%;aspect-ratio:1;border-radius:4px;border:none;cursor:pointer;background:${c};padding:0;`;
+            sw.addEventListener('click', (e) => {
+                e.stopPropagation();
+                pickHex(c);
+            });
+            grid.appendChild(sw);
+            swatches.push(sw);
+        }
+    }
+    const paintSelection = (): void => {
+        for (const sw of swatches) {
+            const on = (sw.dataset.c ?? '').toLowerCase() === curHex.toLowerCase();
+            sw.setAttribute('aria-pressed', String(on));
+            sw.style.outline = on ? `2px solid ${theme.textColor}` : 'none';
+            sw.style.outlineOffset = '2px';
+            sw.style.zIndex = on ? '1' : '';
+            sw.style.position = on ? 'relative' : '';
+        }
+    };
+
+    const recentRow = document.createElement('div');
+    recentRow.style.cssText = 'display:flex;align-items:center;gap:5px;flex-wrap:wrap;border-top:1px solid var(--vela-border);padding-top:9px;';
+    // Swatches get their own wrapper so re-rendering them never detaches the native
+    // color input — the browser closes its chooser the moment its input leaves the DOM.
+    const recentSwatches = document.createElement('div');
+    recentSwatches.style.cssText = 'display:contents;';
+    const add = document.createElement('label');
+    add.style.cssText = `width:17px;height:17px;border-radius:var(--vela-radius-sm);border:1px dashed var(--vela-border-strong);cursor:pointer;display:flex;align-items:center;justify-content:center;color:${theme.textColor};font:14px ${theme.fontFamily};position:relative;`;
+    add.textContent = '+';
+    const customInput = document.createElement('input');
+    customInput.type = 'color';
+    customInput.value = curHex;
+    customInput.style.cssText = 'position:absolute;inset:0;opacity:0;cursor:pointer;';
+    // `input` streams while the chooser is open (preview); `change` is the committed pick.
+    customInput.addEventListener('input', () => previewHex(customInput.value));
+    customInput.addEventListener('change', () => pickHex(customInput.value, true));
+    add.appendChild(customInput);
+    recentRow.append(recentSwatches, add);
+    const renderRecents = (): void => {
+        recentSwatches.replaceChildren();
+        for (const c of recents) {
+            const sw = document.createElement('button');
+            sw.type = 'button';
+            sw.setAttribute('aria-label', c);
+            sw.style.cssText = `width:17px;height:17px;border-radius:var(--vela-radius-sm);border:1px solid var(--vela-border);cursor:pointer;background:${c};padding:0;`;
+            sw.addEventListener('click', (e) => {
+                e.stopPropagation();
+                pickHex(c);
+            });
+            recentSwatches.appendChild(sw);
+        }
+    };
+
+    const opLabel = document.createElement('div');
+    opLabel.textContent = textOf(i18n, TEXT.opacity);
+    opLabel.style.cssText = `font:11px ${theme.fontFamily};color:var(--vela-fg-muted);`;
+    const opRow = document.createElement('div');
+    opRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
+    const track = document.createElement('div');
+    track.style.cssText = 'flex:1;position:relative;height:13px;border-radius:7px;cursor:pointer;';
+    const knob = document.createElement('div');
+    knob.style.cssText = 'position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:var(--vela-selected-bg);box-shadow:0 1px 3px rgba(0,0,0,0.55);transform:translate(-50%,-50%);pointer-events:none;';
+    track.appendChild(knob);
+    const pctBox = document.createElement('input');
+    pctBox.type = 'text';
+    pctBox.inputMode = 'numeric';
+    pctBox.title = textOf(i18n, TEXT.opacityPercent);
+    pctBox.style.cssText = `width:46px;box-sizing:border-box;text-align:center;font:var(--vela-font-size-md) ${theme.fontFamily};color:var(--vela-fg);background:transparent;border:1px solid var(--vela-border);border-radius:5px;padding:3px 4px;outline:none;`;
+    pctBox.addEventListener('focus', () => {
+        pctBox.style.borderColor = 'var(--vela-border-strong)';
+        pctBox.select();
+    });
+    opRow.append(track, pctBox);
+    const paintOpacity = (): void => {
+        track.style.background = `linear-gradient(to right, ${curHex}00, ${curHex}ff), ${CHECKER}`;
+        knob.style.left = `${curAlpha * 100}%`;
+        pctBox.value = `${Math.round(curAlpha * 100)}%`;
+    };
+    // A typed value is one discrete edit, so it commits once under either `commit` policy.
+    // Unparseable input snaps back to the current opacity.
+    const commitTyped = (): void => {
+        pctBox.style.borderColor = 'var(--vela-border)';
+        const n = parseFloat(pctBox.value.replace('%', ''));
+        if (Number.isFinite(n)) {
+            const next = Math.max(0, Math.min(100, n)) / 100;
+            if (Math.round(next * 100) !== Math.round(curAlpha * 100)) {
+                curAlpha = next;
+                paintOpacity();
+                emit();
+                zagSlider.connect(slider.service, normalizeProps).setValue([next]);
+                return;
+            }
+        }
+        paintOpacity();
+    };
+    pctBox.addEventListener('change', commitTyped);
+    pctBox.addEventListener('blur', () => {
+        // `change` does not fire when the text is unchanged; still restore the "%" readout.
+        pctBox.style.borderColor = 'var(--vela-border)';
+        paintOpacity();
+    });
+    pctBox.addEventListener('keydown', (e) => {
+        // Typing must not reach chart/dialog shortcuts; Escape stays with the popover.
+        if (e.key === 'Escape') return;
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            commitTyped();
+            pctBox.blur();
+        }
+    });
+    // The opacity is Zag's slider machine: the track is its control, the knob its thumb (the
+    // slider role, the arrow keys, Page Up/Down, Home/End). A move always previews (knob,
+    // readout, gradient); whether each move also COMMITS is the `commit` option — see
+    // {@link ColorCommit}. The knob and the track keep their own paint: the machine's inline
+    // styles are left out.
+    const pct = (a: number): number => Math.round(a * 100);
+    const sliderId = nextUid('vela-color-opacity');
+    // A press or a key on the slider is pending its end; the opacity typed in the readout
+    // (synced into the machine) is not, it has committed already.
+    let pressed = false;
+    const slider = runMachine(
+        zagSlider.machine,
+        {
+            id: sliderId,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            defaultValue: [curAlpha],
+            thumbAlignment: 'center',
+            'aria-label': [textOf(i18n, TEXT.opacity)],
+            getAriaValueText: ({ value }) => `${pct(value)}%`,
+            onValueChange: ({ value: [a] }) => {
+                if (a === undefined || pct(a) === pct(curAlpha)) return;
+                curAlpha = a;
+                paintOpacity();
+                if (commit === 'live') emit();
+            },
+            onValueChangeEnd: ({ value: [a] }) => {
+                if (commit !== 'release' || !pressed) return;
+                pressed = false;
+                if (a !== undefined && pct(a) !== pct(curAlpha)) {
+                    curAlpha = a;
+                    paintOpacity();
+                }
+                emit();
+            },
+        },
+        (service) => {
+            const api = zagSlider.connect(service, normalizeProps);
+            const own = <T extends object>(props: T): T => {
+                const { style: _style, ...rest } = props as T & { style?: unknown };
+                return rest as T;
+            };
+            spreadProps(opRow, own(api.getRootProps()), sliderId);
+            spreadProps(track, own(api.getControlProps()), sliderId);
+            spreadProps(knob, own(api.getThumbProps({ index: 0 })), sliderId);
+        },
+    );
+    ownTeardown(root, () => slider.stop());
+    // The press belongs to the picker: an open popover or dialog must not read it as its own.
+    track.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        pressed = true;
+    });
+    knob.addEventListener('keydown', () => {
+        pressed = true;
+    });
+
+    function emit(): void {
+        onChange(combineColor(curHex, curAlpha));
+    }
+    function previewHex(hex: string): void {
+        curHex = splitColor(hex).hex6;
+        paintSelection();
+        paintOpacity();
+        emit();
+    }
+    function pickHex(hex: string, custom = false): void {
+        previewHex(hex);
+        addRecent(curHex);
+        customInput.value = curHex;
+        if (custom) renderRecents();
+    }
+
+    renderRecents();
+    paintSelection();
+    paintOpacity();
+    root.append(grid, recentRow, opLabel, opRow);
+    return root;
+}
+
+/** Where the picker opens beside the swatch (shadcn's placement props; default below and
+ *  end-aligned, 6px away). */
+export interface ColorFieldOpts extends PlacementProps {
+    shape?: ColorFieldShape;
+    theme: ChartTheme;
+    getVal: () => string;
+    onVal: (v: string) => void;
+    id?: string;
+    /** The picker's host, layer and positioning strategy. `gap`, `align` and `boundary` here
+     *  are deprecated: the field's placement props replace them. */
+    popover?: Pick<PopoverOptions, 'host' | 'position' | 'boundary' | 'zIndex' | 'gap' | 'align'>;
+    /** Opacity-drag commit policy of the popover picker (default `'live'`) — see {@link ColorCommit}. */
+    commit?: ColorCommit;
+    /** The translator of the picker's labels (default: the kit build's, else English). */
+    i18n?: Translator | null;
+}
+
+export type ColorFieldProps = ColorFieldOpts;
+
+/** Closed-state swatch shape. `circle` is the settings-dialog preview (a square chip
+ *  inset from a matching field border); `square` is the compact drawing-chrome swatch. */
+export function colorField(
+    theme: ChartTheme,
+    getVal: () => string,
+    onVal: (v: string) => void,
+    opts?: { shape?: ColorFieldShape; id?: string; popover?: ColorFieldOpts['popover']; commit?: ColorCommit } & PlacementProps,
+): HTMLElement {
+    return new ColorField({ ...opts, theme, getVal, onVal }).el;
+}
+
+export class ColorField {
+    readonly el: HTMLButtonElement;
+    private readonly swatch: HTMLElement;
+    private readonly getVal: () => string;
+    private readonly onVal: (v: string) => void;
+    private readonly theme: ChartTheme;
+    private readonly popoverOpts: ColorFieldOpts['popover'];
+    private readonly placement: PlacementProps;
+    private readonly commit: ColorCommit | undefined;
+    private readonly i18n: Translator | null;
+    private readonly release: () => void;
+
+    constructor(opts: ColorFieldOpts) {
+        injectStyles(document);
+        this.theme = opts.theme;
+        this.getVal = opts.getVal;
+        this.onVal = opts.onVal;
+        this.popoverOpts = opts.popover;
+        this.placement = opts;
+        this.commit = opts.commit;
+        this.i18n = opts.i18n ?? kitTranslator();
+
+        const circle = opts.shape === 'circle';
+        const swatch = h('span', { className: 'vela-color-field-swatch', slot: colorPickerDef.slot('swatch') });
+        const trigger = h(
+            'button',
+            {
+                className: circle ? 'vela-color-field vela-color-field-circle' : 'vela-color-field',
+                slot: colorPickerDef.slot('trigger'),
+                attrs: { type: 'button', id: opts.id },
+                data: { shape: opts.shape ?? 'square' },
+            },
+            swatch,
+        );
+        this.el = trigger;
+        this.swatch = swatch;
+        this.paint();
+        trigger.addEventListener('vela-sync', () => this.paint());
+        // Suppress the default mousedown focus: when this press outside-dismisses an open
+        // popover, Chrome's focus action can scroll the dialog body under the pointer.
+        trigger.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            trigger.focus({ preventScroll: true });
+        });
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggle();
+        });
+        this.release = ownTeardown(trigger, () => {
+            if (openPopoverTrigger() === trigger) closeOpenPopovers();
+        });
+    }
+
+    destroy(): void {
+        this.release();
+    }
+
+    private paint(): void {
+        const v = this.getVal();
+        this.swatch.style.background = `linear-gradient(${v}, ${v}), ${FIELD_CHECKER}`;
+    }
+
+    private toggle(): void {
+        if (openPopoverTrigger() === this.el) {
+            closeOpenPopovers();
+            return;
+        }
+        const content = buildColorPicker(
+            this.getVal(),
+            this.theme,
+            (val) => {
+                this.onVal(val);
+                this.paint();
+            },
+            { commit: this.commit, i18n: this.i18n },
+        );
+        const pop = new Popover({
+            trigger: this.el,
+            theme: this.theme,
+            side: this.placement.side,
+            align: this.placement.align ?? this.popoverOpts?.align ?? 'end',
+            sideOffset: this.placement.sideOffset ?? this.popoverOpts?.gap ?? 6,
+            alignOffset: this.placement.alignOffset,
+            avoidCollisions: this.placement.avoidCollisions,
+            collisionPadding: this.placement.collisionPadding,
+            host: this.popoverOpts?.host,
+            position: this.popoverOpts?.position,
+            collisionBoundary: this.placement.collisionBoundary ?? (this.popoverOpts?.boundary as PopoverBoundary | undefined),
+            zIndex: this.popoverOpts?.zIndex,
+            className: 'vela-color-field-pop',
+            slot: colorPickerDef.slot('content'),
+            content,
+            // A fresh popover per open: closing discards it.
+            onClose: () => disposeWithin(content),
+        });
+        pop.show();
+    }
+}
+
+export function createColorField(props: ColorFieldProps): ColorField {
+    return new ColorField(props);
+}
+
+/** Close any open color (or other kit) popover — dialog teardown. */
+export function closeColorPopover(): void {
+    closeOpenPopovers();
+}

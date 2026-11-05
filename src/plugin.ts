@@ -87,6 +87,7 @@ export {
 } from './chart-types/registry';
 export type { BarTransform } from './core/price-styles/BarTransform';
 export { registerRendererDefaults, unregisterRendererDefaults, rendererDefaults } from './core/renderer-defaults';
+export { registerShellDefaults, unregisterShellDefaults, shellDefaults, type ShellDefaults } from './widget/shell-defaults';
 export {
     registerNativeIndicator,
     unregisterNativeIndicator,
@@ -168,7 +169,7 @@ export { CONTEXT_MENU_BUILTIN_ORDER } from './widget/context-menu-model';
 export { clampPanelWidth, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_MIN_WIDTH, DEFAULT_PANEL_MAX_WIDTH, type SidePanelOptions } from './widget/side-panel';
 export { drawingTypes, getDrawingType, type DrawingTypeMeta } from './core/drawings/registry';
 export type { DrawingTypeKey } from './core/drawings/Drawing';
-export { registerIcon, iconMarkup } from './ui/icons';
+export { registerIcon, iconMarkup } from '@luxalgo/vela-ui/icons';
 export type { KeyBindingDescriptor, ResolvedBinding } from './ui/keymap';
 export type { PriceStyle } from './core/options';
 export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';

@@ -4,8 +4,8 @@ import type { MessageLike } from '../../../core/i18n/types';
 import type { FrvpStyle, PositionLevelMode } from '../../../core/drawings';
 import { DIRECTION_OPTIONS, FixedRangeVolumeProfile, LINE_STYLE_OPTIONS, PositionTool } from '../../../core/drawings';
 import { contrastColor } from '../../shared/drawing-geometry';
-import { fieldRow, fieldSection, buildFieldControl } from '../../../ui/components/field';
-import type { SelectOption } from '../../../ui/components/select';
+import { fieldRow, fieldSection, buildFieldControl } from '@luxalgo/vela-ui/field';
+import type { SelectOption } from '@luxalgo/vela-ui/select';
 import type { SettingsActions } from './DrawingSettingsPopup';
 
 const TEXT = {
@@ -178,6 +178,7 @@ export function buildPositionSection(grid: HTMLElement, drawing: PositionTool, a
 
     const summary = document.createElement('div');
     summary.className = 'vela-field-span';
+    summary.dataset.slot = 'field-span';
     summary.style.cssText = 'opacity:0.7;font-size:11px;line-height:1.4;border-top:1px solid var(--vela-border);padding-top:6px;font-variant-numeric:tabular-nums;';
     refreshers.push(() => {
         const d = live();
@@ -247,6 +248,7 @@ export function buildProfileSection(grid: HTMLElement, drawing: FixedRangeVolume
     const levelRow = (label: string, showPath: keyof FrvpStyle, colorPath: keyof FrvpStyle, stylePath: keyof FrvpStyle): void => {
         const row = document.createElement('div');
         row.className = 'vela-field-span';
+        row.dataset.slot = 'field-span';
         row.style.cssText = 'display:flex;align-items:center;gap:8px;';
         const sw = buildFieldControl({
             kind: 'switch',
@@ -255,6 +257,7 @@ export function buildProfileSection(grid: HTMLElement, drawing: FixedRangeVolume
         });
         const lbl = document.createElement('span');
         lbl.className = 'vela-field-label';
+        lbl.dataset.slot = 'field-label';
         lbl.style.flex = '1';
         lbl.textContent = label;
         let cur = (s[colorPath] as string | undefined) ?? contrastColor(theme.background);

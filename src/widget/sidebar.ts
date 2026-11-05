@@ -3,15 +3,17 @@
 // drives it through {@link PanelChrome}, as it drives the topbar) and the actions plugins
 // register with `target: 'sidebar'`, laid out by the host's `sidebar` composition. Desktop
 // only: on the mobile layout the panels keep their menu rows and the actions join them.
-import { Tooltip } from '../ui/components/tooltip';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
 import type { PanelChrome } from './panel-dock';
 import { widgetActions, type SidebarControl, type SidePanelButton, type WidgetActionDescriptor, type WidgetContext } from './contributions';
 import { composeSidebar, type SidebarComposition } from './sidebar-composition';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     sidebar: msg('vela.sidebar.label', 'Sidebar'),
@@ -20,7 +22,8 @@ const TEXT = {
 export const SIDEBAR_WIDTH_PX = 44;
 
 const STYLE_ID = 'vela-sidebar';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-sidebar {
     order: 1;
     width: ${SIDEBAR_WIDTH_PX}px;
@@ -29,9 +32,9 @@ const CSS = `
     flex-direction: column;
     justify-content: space-between;
     gap: 12px;
-    padding: var(--vela-space-1) 0;
-    border-left: 1px solid var(--vela-border-soft);
-    color: var(--vela-fg-muted);
+    padding: ${t.space[1]} 0;
+    border-inline-start: 1px solid ${t.border.soft};
+    color: ${t.fg.muted};
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: none;
@@ -41,34 +44,36 @@ const CSS = `
 [data-layout='mobile'] .vela-sidebar { display: none; }
 .vela-sidebar-section, .vela-sidebar-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .vela-sidebar-section { gap: 6px; }
-.vela-sidebar-sep { width: 20px; height: 1px; background: var(--vela-border); }
+.vela-sidebar-sep { width: 20px; height: 1px; background: ${t.border}; }
 .vela-sidebar-btn {
     all: unset;
+    box-sizing: border-box;
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 32px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg-muted);
-    font-size: 14px;
+    color: ${t.fg.muted};
+    /* Icons draw at 1em: the drawing toolbar's 18px, so both rails read as one set. */
+    font-size: 18px;
 }
-.vela-sidebar-btn:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-sidebar-btn[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-sidebar-btn:focus-visible { outline: 2px solid var(--vela-focus); outline-offset: -2px; }
+.vela-sidebar-btn:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-sidebar-btn[data-active='1'] { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-sidebar-btn:focus-visible { outline: 2px solid ${t.focus}; outline-offset: -2px; }
 .vela-sidebar-badge {
     position: absolute;
     top: 1px;
-    right: 1px;
+    inset-inline-end: 1px;
     min-width: 13px;
     height: 13px;
     padding: 0 3px;
     box-sizing: border-box;
     border-radius: 7px;
-    background: var(--vela-accent);
-    color: var(--vela-fg-on-fill);
+    background: ${t.accent};
+    color: ${t.fg.onFill};
     font-size: 9px;
     font-weight: 700;
     display: inline-flex;
@@ -76,7 +81,8 @@ const CSS = `
     justify-content: center;
     pointer-events: none;
 }
-`;
+
+}`;
 
 export interface SidebarOptions {
     /** The host's layout of the entries (default: panels on top, the inspection panels and
@@ -117,7 +123,7 @@ export class Sidebar implements PanelChrome {
 
     constructor(private readonly opts: SidebarOptions) {
         const doc = opts.host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.el = doc.createElement('nav');
         this.el.className = 'vela-sidebar';
         this.topEl = doc.createElement('div');
@@ -256,7 +262,7 @@ export class Sidebar implements PanelChrome {
         }
         this.paintActive(b, e.active);
         b.addEventListener('click', () => e.run());
-        this.tooltips.push(new Tooltip(b, { content: e.title, placement: 'left', triggerId: `vela-sidebar-${e.id}`, host: this.opts.host }));
+        this.tooltips.push(new Tooltip(b, { content: e.title, side: 'left', triggerId: `vela-sidebar-${e.id}`, host: this.opts.host }));
         this.buttons.set(e.id, b);
         return b;
     }

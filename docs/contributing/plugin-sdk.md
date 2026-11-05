@@ -280,7 +280,7 @@ registerWidgetAction({
         //   undo/redo re-add under the same id
         // ctx.addNativeIndicator(type) — same, for native (core-computed) indicators
         // ctx.stateChanged() — persistable third-party state changed (debounced save)
-        // ctx.host  — mount host for kit components (Dialog/Menu/Tooltip)
+        // ctx.host  — mount host for kit components (Dialog/DropdownMenu/Tooltip)
         // ctx.toast(message, kind?) — the widget's feedback pill
         // ctx.pointer (context:* only) — where the right-click landed: { price, time, paneKind, paneId }
     },
@@ -347,7 +347,7 @@ Two rules keep actions portable:
   market and active-cell switch. Read them at the point of use; copying one into a
   variable at mount freezes it (an attachment once named screenshot files after the
   mount-time symbol that way).
-- **Kit components get `ctx.host`.** Mounting a `Dialog`/`Menu`/`Tooltip` without an
+- **Kit components get `ctx.host`.** Mounting a `Dialog`/`DropdownMenu`/`Tooltip` without an
   explicit host portals it to `<body>`, outside the theme's CSS variables (invisible
   backgrounds). Pass `host: ctx.host`.
 
@@ -406,7 +406,9 @@ two removals | Settings…; price axis: Auto and Invert | the four scale modes |
 Levels | More settings…; time axis: Time zone | More settings…), and each run of
 consecutive contributed rows. An `order` that falls inside a built-in group
 splits it around your row. The built-in body rows carry icons; give yours an `icon` so it
-reads the same (an iconless row keeps its label aligned with the others).
+reads the same (an iconless row keeps its label aligned with the others). The axis menus
+carry none: a row added there shows without its `icon`, its label in line with the
+checkmarked rows.
 
 ## Widget attachments — `registerWidgetAttachment`
 
@@ -677,7 +679,7 @@ registerLegendAction({
 });
 ```
 
-- `ind` is a {@link LegendIndicatorInfo}: `{ id, title, source?, language? }` — `source`
+- `ind` is a `LegendIndicatorInfo`: `{ id, title, source?, language? }` — `source`
   is the script the indicator runs NOW (the same as `handle.source`, read at click time,
   so an in-place `updateCode` shows through); `language` is the language id of the
   engine running it (the same as `handle.language`: the indicator's `language` option,
@@ -729,7 +731,7 @@ registerLegendCallout({
   `refreshActions()` and the bubbles re-dress.
 - Panel content is **data, never DOM**: ordered `text` and `button` items (consecutive
   buttons share one row). A button's `run` receives a fresh `WidgetContext` plus the
-  row's {@link LegendIndicatorInfo}; buttons close the panel after `run` unless
+  row's `LegendIndicatorInfo`; buttons close the panel after `run` unless
   `close: false`.
 - The bubble itself is the kit's `CalloutBubble` (`@luxalgo/vela/ui`) — reusable in
   host chrome; the widget's own market-status badge is the same component.
@@ -813,8 +815,11 @@ registerSidePanel({
   main work surface (an editor).
 - **The dock is exclusive.** Opening a panel closes the one showing — the chart keeps its
   width, and only one column is ever docked. `onOpen` is where a lazy panel renders.
-- **`onChart` is the rebind hook**, not a one-shot: the widget hands over a new chart instance
-  after a symbol/timeframe rebuild, and a workspace re-points the panel at the active cell.
+- **`onChart` is the rebind hook**, not a one-shot: it runs on mount, after a widget rebuild,
+  and when a workspace re-points the panel at another active cell. A symbol or timeframe
+  switch keeps the chart (it switches in place), so a panel that shows per-symbol content
+  subscribes to `chart.on('market:changed', …)` in `onChart` and drops that subscription in
+  the next `onChart` and in `destroy`.
 - Register at import time; after a late registration call `widget.refreshActions()`. Only
   what changed is rebuilt: a panel whose descriptor is still registered as it was stays
   mounted as it is — content, state and open column included — while a re-registered
@@ -900,6 +905,24 @@ registerWidgetAction({
 - On the mobile layout the sidebar is hidden and its actions are rows in the three-dots menu.
 - Which entries show, and where, is the host's call (its `sidebar` composition). A plugin that
   wants its entry somewhere specific documents the id for hosts to place.
+
+### A plugin that needs the sidebar — `registerShellDefaults`
+
+The sidebar is a shell option, which a plugin cannot set on a host's behalf. It registers a
+**default** instead, which every shell built afterwards uses where its host gave no value:
+
+```ts
+import { registerShellDefaults } from '@luxalgo/vela/plugin';
+
+registerShellDefaults({ sidebar: true }); // or a composition: { top: [...], bottom: [...] }
+```
+
+- The host's own `sidebar` always wins, `false` included: a host can keep the sidebar off.
+- Shells built before the call are untouched. The disposer it returns removes exactly the
+  values it set; `unregisterShellDefaults(...keys)` drops them by key, and `shellDefaults()`
+  reads them.
+- It is the shell's counterpart of `registerRendererDefaults`, which gives every chart
+  built afterwards a default renderer feature.
 
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 

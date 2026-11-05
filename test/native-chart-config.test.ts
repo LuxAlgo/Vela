@@ -1,8 +1,9 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
 import { registerChartType, unregisterChartType } from '../src/chart-types/registry';
-import { CHART_CONFIG_VERSION, candleOverrideFor, defaultChartStyle, factoryResetConfig, mergeConfig, type ChartConfig } from '../src/renderers/native/core/chartConfig';
+import { CHART_CONFIG_VERSION, candleOverrideFor, defaultChartStyle, factoryResetConfig, followThemeColors, mergeConfig, type ChartConfig } from '../src/renderers/native/core/chartConfig';
 import type { PriceStyle } from '../src/core/options';
+import { DARK_THEME } from '../src/core/theme';
 
 /** A known-good baseline config for the pure mergeConfig tests. */
 function baseConfig(): ChartConfig {
@@ -146,6 +147,18 @@ describe('NativeRenderer.getConfig — defaults resolve to concrete values', () 
     it('is fully JSON-serializable (round-trips through stringify/parse)', () => {
         const cfg = new NativeRenderer().getConfig();
         expect(JSON.parse(JSON.stringify(cfg))).toEqual(cfg);
+    });
+});
+
+describe('candle colors follow the theme', () => {
+    const OCEAN = { ...DARK_THEME, upColor: '#00aaff', downColor: '#ff00aa' };
+
+    it('gives a reset document the current theme’s colors and leaves other colors alone', () => {
+        const factory = new NativeRenderer().getConfig();
+        const doc = followThemeColors(factory, DARK_THEME, OCEAN);
+        expect(doc.candles).toMatchObject({ upColor: '#00aaff', downColor: '#ff00aa', wickUpColor: '#00aaff' });
+        expect(doc.line.color).toBe(factory.line.color);
+        expect(doc.layout).toEqual(factory.layout);
     });
 });
 

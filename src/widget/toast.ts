@@ -1,12 +1,15 @@
 // Bottom-center status toast — the reference's small pill over the chart (loading /
 // info / error states, auto-hide). One instance per widget.
-import { injectStyles } from '../ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-toast';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-toast {
     position: absolute;
-    left: 50%;
+    inset-inline-start: 50%;
     bottom: 34px;
     transform: translateX(-50%);
     z-index: 30;
@@ -16,27 +19,28 @@ const CSS = `
     max-width: 70%;
     padding: 6px 14px;
     border-radius: 999px;
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
-    color: var(--vela-fg);
-    font-size: var(--vela-font-size-md);
-    box-shadow: var(--vela-shadow);
+    background: ${t.surface.elev};
+    border: 1px solid ${t.border};
+    color: ${t.fg};
+    font-size: ${t.fontSize.md};
+    box-shadow: ${t.shadow};
     pointer-events: none;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .vela-toast[data-open] { display: inline-flex; }
-.vela-toast[data-type='error'] { color: var(--vela-down); border-color: var(--vela-down); }
-.vela-toast[data-type='success'] { color: var(--vela-up); }
-`;
+.vela-toast[data-type='error'] { color: ${t.down}; border-color: ${t.down}; }
+.vela-toast[data-type='success'] { color: ${t.up}; }
+
+}`;
 
 export class Toast {
     private readonly el: HTMLElement;
     private timer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(host: HTMLElement) {
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
         this.el = host.ownerDocument.createElement('div');
         this.el.className = 'vela-toast';
         host.appendChild(this.el);

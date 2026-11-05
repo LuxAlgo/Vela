@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { Vela } from '../src/index';
+import { DARK_THEME, Vela } from '../src/index';
 import { ACCENT, BEARISH, BULLISH } from '../src/core/palette';
 import type {
     IChartRenderer,
@@ -431,6 +431,21 @@ describe('EngineOrchestrator', () => {
         expect(seen).toHaveLength(1);
         chart.setTheme('dark');
         expect(seen).toHaveLength(2);
+    });
+
+    it('starts the candles on the theme’s colors, unless upColor and downColor are given', () => {
+        const display: Array<{ upColor?: string; downColor?: string }> = [];
+        class Capturing extends FakeRenderer {
+            constructor(opts: { upColor?: string; downColor?: string }) {
+                super();
+                display.push(opts);
+            }
+        }
+        const theme = { ...DARK_THEME, upColor: '#00aaff', downColor: '#ff00aa' };
+        new Vela({} as unknown as HTMLElement, { live: false, theme, renderer: Capturing as never }, { engines: [], dataFeed: new MockDataFeed() });
+        new Vela({} as unknown as HTMLElement, { live: false, theme, upColor: '#111111', renderer: Capturing as never }, { engines: [], dataFeed: new MockDataFeed() });
+        expect(display[0]).toMatchObject({ upColor: '#00aaff', downColor: '#ff00aa' });
+        expect(display[1]).toMatchObject({ upColor: '#111111', downColor: '#ff00aa' });
     });
 
     it('the in-chart legend ✕ removes the indicator (renderer teardown + stream stop + event)', async () => {

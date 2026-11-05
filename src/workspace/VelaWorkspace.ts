@@ -15,9 +15,9 @@ import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
-import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
+import { ensureUIHost, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
-import { Menu } from '../ui/components/menu';
+import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
 import type { Vela } from '../Vela';
 import { LocaleState, pickLocalization } from '../core/i18n/translator';
 import type { LocaleChangedEvent, LocalizationOptions, MessageArgs, MessageLike, Translator } from '../core/i18n/types';
@@ -41,6 +41,7 @@ import { legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, s
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { Sidebar, sidebarActions, sidebarControl } from '../widget/sidebar';
+import { shellDefaults } from '../widget/shell-defaults';
 import { MobileBar } from '../widget/mobile-bar';
 import { TimeframeDrawer } from '../widget/timeframe-drawer';
 import { DrawingsDrawer } from '../widget/drawings-drawer';
@@ -80,6 +81,9 @@ import {
 } from './layouts';
 import { SplitterLayer, evenTracks } from './splitters';
 import { compositeLayoutScreenshot, tilesFromCellRects, triggerPngDownload, type LayoutShotTile } from './screenshot';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 /**
  * The workspace options: the widget's chart vocabulary + the shared shell surface + the
@@ -171,38 +175,43 @@ const TIME_AXIS_H = 22; // px the renderer reserves for a time axis (mirrors Nat
 const ALERT_CAP = 50;
 
 const STYLE_ID = 'vela-workspace';
-const CSS = `
-.vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--vela-bg); }
+const CSS = css`@layer vela.chrome {
+
+.vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: ${t.bg}; }
 .vela-ws-main { position: relative; display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-ws-toolbar { position: relative; flex: none; }
 .vela-ws-strips { position: relative; flex: none; display: flex; flex-direction: column; min-width: 0; }
 .vela-ws-strips:empty { display: none; }
 /* REGIONS: once a plugin uses a layout region (a full-height column panel, the right edge,
-   a covering strip), the shell lays out as a grid — the chart column (topbar, main row,
-   strips, bottom bar, lower strips), the column-panel region, the edge — with the mobile
-   bar across the foot. Every known child is placed explicitly, so one hidden by CSS
-   (the topbar on mobile) never shifts the others. */
-.vela-workspace[data-vela-regions] { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: auto minmax(0, 1fr) auto auto auto auto; }
-[data-vela-regions] > .vela-widget-topbar { grid-area: 1 / 1; }
-[data-vela-regions] > .vela-ws-main { grid-area: 2 / 1; }
-[data-vela-regions] > .vela-ws-strips { grid-area: 3 / 1; }
-[data-vela-regions] > .vela-widget-bottombar { grid-area: 4 / 1; }
-[data-vela-regions] > .vela-ws-strips-below { grid-area: 5 / 1; }
+   a docked strip), the shell lays out as a grid — the drawing toolbar's column, the chart
+   column (topbar, main row, strips, bottom bar, lower strips), the column-panel region, the
+   edge — with the mobile bar across the foot. The side toolbars run the shell's full height:
+   the drawing toolbar from under the topbar to the foot, the edge from top to foot. Every
+   known child is placed explicitly, so one hidden by CSS (the topbar on mobile) never
+   shifts the others. */
+.vela-workspace[data-vela-regions] { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-rows: auto minmax(0, 1fr) auto auto auto auto; }
+[data-vela-regions] > .vela-widget-topbar { grid-area: 1 / 1 / 2 / 3; }
+[data-vela-regions] > .vela-ws-toolbar { grid-area: 2 / 1 / 6 / 2; display: flex; min-height: 0; }
+[data-vela-regions] > .vela-ws-main { grid-area: 2 / 2; }
+[data-vela-regions] > .vela-ws-strips { grid-area: 3 / 2; }
+[data-vela-regions] > .vela-widget-bottombar { grid-area: 4 / 2; }
+[data-vela-regions] > .vela-ws-strips-below { grid-area: 5 / 2; }
 [data-vela-regions] > .vela-mobilebar { grid-area: 6 / 1 / 7 / -1; }
-[data-vela-regions] > .vela-ws-column { grid-area: 1 / 2 / 6 / 3; position: relative; display: flex; min-height: 0; }
-[data-vela-regions] > .vela-ws-edge { grid-area: 1 / 3 / 6 / 4; position: relative; display: flex; min-height: 0; }
+[data-vela-regions] > .vela-ws-column { grid-area: 1 / 3 / 6 / 4; position: relative; display: flex; min-height: 0; }
+[data-vela-regions] > .vela-ws-edge { grid-area: 1 / 4 / 6 / 5; position: relative; display: flex; min-height: 0; }
 /* The sidebar hosts the panel toggles on the desktop layout; the topbar's group steps aside. */
 .vela-workspace[data-vela-sidebar]:not([data-layout='mobile']) .vela-widget-panels { display: none; }
-/* Covering, the strip takes the area whatever height it set itself while docked. */
-[data-vela-regions] > [data-vela-cover] { grid-area: 1 / 1 / 5 / 2; z-index: 30; min-height: 0; min-width: 0; height: auto !important; max-height: none !important; align-self: stretch; }
+/* Covering, the strip takes the area (the chart column and the drawing toolbar) whatever
+   height it set itself while docked. */
+[data-vela-regions] > [data-vela-cover] { grid-area: 1 / 1 / 5 / 3; z-index: 30; min-height: 0; min-width: 0; height: auto !important; max-height: none !important; align-self: stretch; }
 /* Maximized, a column panel covers the chart column with it. */
-[data-vela-regions] > .vela-ws-column:has(> .vela-panel[data-maximized]) { grid-column: 1 / 3; z-index: 26; }
+[data-vela-regions] > .vela-ws-column:has(> .vela-panel[data-maximized]) { grid-column: 1 / 4; z-index: 26; }
 /* Mobile: a column panel covers the chart area like any panel, above the bottom bar; the
    region lets the pointer through while it holds no open panel. */
 [data-layout='mobile'][data-vela-regions] > .vela-ws-column { grid-area: 1 / 1 / 6 / -1; z-index: 25; pointer-events: none; }
 [data-layout='mobile'][data-vela-regions] > .vela-ws-column > .vela-panel { pointer-events: auto; }
-.vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
-.vela-cell { background: var(--vela-bg); position: relative; }
+.vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: ${t.border.soft}; }
+.vela-cell { background: ${t.bg}; position: relative; }
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
    outline on the cell is painted under them) — inert to the pointer. Scoped to
    multi-cell grids ([data-multi]): a single-cell layout always has an active cell,
@@ -211,16 +220,16 @@ const CSS = `
     content: '';
     position: absolute;
     inset: 0;
-    border: 2px solid var(--vela-fg-bright);
+    border: 2px solid ${t.fg.bright};
     pointer-events: none;
     z-index: 10;
 }
 /* Splitter hover mirrors the in-chart pane separator hover (CrosshairRenderer):
    a soft band over the whole grab target + a solid 2px line on the seam center. */
-.vela-ws-splitter:hover { background: var(--vela-separator-hover-band); }
-.vela-ws-splitter:hover::after { content: ''; position: absolute; background: var(--vela-separator-hover-line); }
-.vela-ws-splitter[data-axis='cols']:hover::after { left: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
-.vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); left: 0; height: 2px; width: 100%; }
+.vela-ws-splitter:hover { background: ${t.separatorHover.band}; }
+.vela-ws-splitter:hover::after { content: ''; position: absolute; background: ${t.separatorHover.line}; }
+.vela-ws-splitter[data-axis='cols']:hover::after { inset-inline-start: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
+.vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); inset-inline-start: 0; height: 2px; width: 100%; }
 /* Mobile: the docked drawing-toolbar column would eat a phone-width grid — the shell's
    drawings drawer + on-chart pill replace it (same policy as the widget's in-chart bar). */
 [data-layout='mobile'] .vela-ws-toolbar { display: none; }
@@ -234,12 +243,13 @@ const CSS = `
     content: '';
     position: absolute;
     inset: 0;
-    border: 2px dashed var(--vela-fg-bright);
-    background: var(--vela-separator-hover-band);
+    border: 2px dashed ${t.fg.bright};
+    background: ${t.separatorHover.band};
     pointer-events: none;
     z-index: 11;
 }
-`;
+
+}`;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
 registerIcon('layout', svg16('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/>'));
@@ -461,7 +471,7 @@ export class VelaWorkspace {
     private alerts: Array<{ cellId: string; source: string; title: string; message: string; time: number }> = [];
     /** Bell retention — `alertCap` option, default {@link ALERT_CAP}. */
     private readonly alertCap: number;
-    private alertsMenu: Menu | null = null;
+    private alertsMenu: DropdownMenu | null = null;
     /** Built-in topbar items a plugin hid at runtime (`ctx.topbar`). */
     private readonly topbarHidden = new Set<string>();
     private readonly topbarItems: TopbarItems = {
@@ -471,6 +481,9 @@ export class VelaWorkspace {
     private dockView: PanelDockView | null = null;
     /** The right-edge toolbar (`sidebar` option), or null when the shell has none. */
     private sidebar: Sidebar | null = null;
+    /** The drawing toolbar's host: in the main row, until the shell lays out as a grid. */
+    private toolbarHost: HTMLElement | null = null;
+    private mainEl: HTMLElement | null = null;
     private readonly sidebarCtl = sidebarControl(() => this.sidebar);
     private screenshotKeyOff: (() => void) | null = null;
     // ── mobile chrome (same components as the widget shell; CSS keys off data-layout
@@ -566,7 +579,7 @@ export class VelaWorkspace {
         const bootActive = boot?.activeCellId ?? null;
 
         const doc = hostEl.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.root = doc.createElement('div');
         this.root.className = 'vela-workspace';
         ensureUIHost(this.root, resolveTheme(opts.theme));
@@ -685,14 +698,17 @@ export class VelaWorkspace {
             toolbarHost.className = 'vela-ws-toolbar';
             main.appendChild(toolbarHost);
         }
+        this.toolbarHost = toolbarHost;
+        this.mainEl = main;
         this.gridEl = doc.createElement('div');
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
         // The sidebar exists before the dock: the dock publishes the built-in panels' toggles
-        // as it docks them.
-        if (opts.sidebar) {
+        // as it docks them. A host's own value wins over a plugin's default.
+        const sidebar = opts.sidebar !== undefined ? opts.sidebar : shellDefaults().sidebar;
+        if (sidebar) {
             this.sidebar = new Sidebar({
-                composition: opts.sidebar === true ? undefined : opts.sidebar,
+                composition: sidebar === true ? undefined : sidebar,
                 host: this.root,
                 i18n: this.localeState,
                 context: () => this.context(),
@@ -729,6 +745,7 @@ export class VelaWorkspace {
         // Panels that are not registered yet keep their entry until they dock.
         if (boot?.panels) this.dock.applyState(boot.panels);
         this.root.appendChild(main);
+        this.placeToolbar();
         // Docked strips (`ctx.dockStrip`) — before the bottom bar, which appends itself next.
         this.stripsEl = doc.createElement('div');
         this.stripsEl.className = 'vela-ws-strips';
@@ -1129,15 +1146,34 @@ export class VelaWorkspace {
             el.className = kind === 'column' ? 'vela-ws-column' : 'vela-ws-edge';
             this.root.appendChild(el);
             this.regions.set(kind, el);
-            this.root.setAttribute('data-vela-regions', '');
+            this.useRegions();
         }
         return el;
+    }
+
+    /**
+     * Lay the shell out as a grid, for the rest of its life. The drawing toolbar leaves the main
+     * row for its own column, so it runs from under the topbar to the foot of the shell, beside
+     * the docked strips and the bottom bar.
+     */
+    private useRegions(): void {
+        if (this.root.hasAttribute('data-vela-regions')) return;
+        this.root.setAttribute('data-vela-regions', '');
+        this.placeToolbar();
+    }
+
+    /** In the grid, the drawing toolbar sits in its own column, just ahead of the main row. */
+    private placeToolbar(): void {
+        if (!this.root.hasAttribute('data-vela-regions') || !this.toolbarHost || !this.mainEl) return;
+        if (this.mainEl.parentElement === this.root && this.toolbarHost.parentElement === this.mainEl) this.root.insertBefore(this.toolbarHost, this.mainEl);
     }
 
     /** `ctx.dockStrip`: a strip above or under the bottom bar, which can cover the chart column. */
     private dockStrip(el: HTMLElement, opts?: DockStripOptions): DockedStrip {
         const home = opts?.position === 'below-bottombar' ? this.stripsBelowEl : this.stripsEl;
         home.appendChild(el);
+        // A strip sits beside the drawing toolbar, not under it.
+        if (this.toolbarHost) this.useRegions();
         // Covering, the strip is a grid item of the root; the placeholder keeps its spot in the column.
         let placeholder: Comment | null = null;
         const uncover = (): void => {
@@ -1157,7 +1193,7 @@ export class VelaWorkspace {
             placeholder = this.root.ownerDocument.createComment('vela-strip');
             el.replaceWith(placeholder);
             el.setAttribute('data-vela-cover', '');
-            this.root.setAttribute('data-vela-regions', '');
+            this.useRegions();
             this.root.appendChild(el);
         };
         return strip;
@@ -2667,7 +2703,7 @@ export class VelaWorkspace {
                   label: sliceGraphemes(this.t(TEXT.alertRow, { source: a.source, time: eventTimeText(a.time, this.localeState), title: a.title, message: a.message }), ALERT_ROW_MAX),
               }))
             : [{ id: 'none', label: this.t(TEXT.noAlerts), disabled: true }];
-        this.alertsMenu = new Menu({
+        this.alertsMenu = new DropdownMenu({
             host: this.root,
             items,
             onSelect: (id) => {

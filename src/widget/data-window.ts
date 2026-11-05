@@ -9,8 +9,10 @@ import type { DataWindowReadout } from '../core/ports/IChartRenderer';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { Translator } from '../core/i18n/types';
-import { injectStyles } from '../ui/styles';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { SidePanel } from './side-panel';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
     title: msg('widget.dataWindow.title', 'Data window'),
@@ -31,12 +33,13 @@ const TEXT = {
 export const DATA_WINDOW_TITLE = TEXT.title;
 
 const STYLE_ID = 'vela-widget-datawindow';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-dw-group {
     padding: 10px 8px 4px;
     margin-top: 4px;
-    border-top: 1px solid var(--vela-border);
-    color: var(--vela-fg-muted);
+    border-top: 1px solid ${t.border};
+    color: ${t.fg.muted};
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
@@ -51,14 +54,15 @@ const CSS = `
     align-items: center;
     gap: 12px;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
 }
-.vela-dw-row:hover { background: var(--vela-hover); }
-.vela-dw-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vela-fg-bright); }
+.vela-dw-row:hover { background: ${t.hover}; }
+.vela-dw-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: ${t.fg.bright}; }
 /* Values are left-to-right isolates (dir="ltr"), so a sign keeps its place in a right-to-left page. */
-.vela-dw-value { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; unicode-bidi: isolate; }
-.vela-dw-empty { padding: 20px 10px; text-align: center; color: var(--vela-fg-muted); font-size: 12px; }
-`;
+.vela-dw-value { margin-inline-start: auto; font-variant-numeric: tabular-nums; white-space: nowrap; unicode-bidi: isolate; }
+.vela-dw-empty { padding: 20px 10px; text-align: center; color: ${t.fg.muted}; font-size: 12px; }
+
+}`;
 
 /** Events that change what the readout holds — indicator values, plots, or the live bar. */
 const REFRESH_EVENTS = ['bar', 'context:changed', 'indicator:added', 'indicator:removed', 'indicator:visibility', 'indicator:moved', 'pane:changed', 'market:changed', 'history:complete'] as const;
@@ -119,7 +123,7 @@ export class DataWindow extends SidePanel {
 
     constructor(host: HTMLElement, i18n?: Translator) {
         super(host, TEXT.title, 'vela-dw', i18n ? { i18n } : {});
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
     }
 
     override toggle(open = !this.open, instant = false): void {

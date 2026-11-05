@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { floatingLayerHost } from '../src/ui/tokens';
+import { floatingLayerHost } from '@luxalgo/vela-ui/theme';
 
 describe('floatingLayerHost', () => {
     it('mounts on the nearest .vela-ui so menus inherit the app theme, not a plot-overlay cell', () => {

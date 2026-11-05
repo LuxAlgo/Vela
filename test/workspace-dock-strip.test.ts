@@ -65,14 +65,25 @@ describe('docking a strip under the charts', () => {
         ws.destroy();
     });
 
-    it('docks under the bottom bar on request, and leaves the shell a plain column', () => {
+    it('docks under the bottom bar on request, with the drawing toolbar running down beside it', () => {
         const { ws, root } = mountWorkspace();
         const below = document.createElement('div');
         ws.context().dockStrip(below, { position: 'below-bottombar' });
         const order = layout(root);
         expect(order.indexOf('vela-widget-bottombar')).toBeLessThan(order.indexOf('vela-ws-strips', order.indexOf('vela-widget-bottombar')));
         expect(below.parentElement?.classList.contains('vela-ws-strips-below')).toBe(true);
-        expect(root.hasAttribute('data-vela-regions')).toBe(false); // no region in use: layout unchanged
+        // The side toolbars run the shell's full height: the drawing toolbar leaves the main
+        // row for its own grid column, beside the strips and the bottom bar.
+        expect(root.hasAttribute('data-vela-regions')).toBe(true);
+        expect(root.querySelector(':scope > .vela-ws-toolbar')).not.toBeNull();
+        expect(root.querySelector('.vela-ws-main > .vela-ws-toolbar')).toBeNull();
+        ws.destroy();
+    });
+
+    it('leaves a shell without a drawing toolbar a plain column when a strip docks', () => {
+        const { ws, root } = mountWorkspace({ drawingToolbar: false });
+        ws.context().dockStrip(document.createElement('div'), { position: 'below-bottombar' });
+        expect(root.hasAttribute('data-vela-regions')).toBe(false);
         ws.destroy();
     });
 
