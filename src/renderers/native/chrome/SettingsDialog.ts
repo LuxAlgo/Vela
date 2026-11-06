@@ -443,9 +443,11 @@ export class SettingsDialog {
             burger.title = this.t(TEXT.sections);
             burger.addEventListener('click', () => this.toggleRail?.());
         }
+        const i18n = this.i18n?.();
         const ui = new Dialog({
             host: this.container,
             title: this.t(TEXT.chartSettings),
+            ...(i18n ? { i18n } : {}),
             // Non-modal: a live-edit dialog must leave the page interactive — a modal
             // machine locks pointer events on the whole body, killing the chart, the
             // legend, and the body-portaled popovers (color picker, select lists).

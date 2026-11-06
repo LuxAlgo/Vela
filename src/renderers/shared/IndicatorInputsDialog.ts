@@ -138,9 +138,11 @@ export class IndicatorInputsDialog {
         const t = this.host.theme();
         const host = this.host.dialogHost() ?? this.host.container;
 
+        const i18n = this.i18n;
         const ui = new Dialog({
             host,
             title: row.title,
+            ...(i18n ? { i18n } : {}),
             // Non-modal: live-edit dialog — a modal machine locks pointer events on the
             // whole body, killing the chart and the body-portaled popovers.
             modal: false,
