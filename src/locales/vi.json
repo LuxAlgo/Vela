@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "Xóa khỏi mục yêu thích",
     "ui.numberInput.decrease": "Giảm",
     "ui.numberInput.increase": "Tăng",
+    "ui.sortButton.ascending": "sắp xếp tăng dần",
+    "ui.sortButton.descending": "sắp xếp giảm dần",
     "vela.sidebar.label": "Thanh bên",
     "widget.bottombar.chartSettings": "Cài đặt biểu đồ",
     "widget.bottombar.extended": "ETH",

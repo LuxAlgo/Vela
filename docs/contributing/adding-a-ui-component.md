@@ -109,12 +109,16 @@ on shadcn reads them without a glossary. Released components keep their option n
 
 - **`createButton`** — `variant`: `default` (filled with the selection color: OK, Apply),
   `outline` (bordered: the dialogs' Cancel), `secondary` (a sunken fill), `ghost` (no
-  border or fill until hovered), `destructive` (tinted with `--vela-danger`), `link`.
+  border or fill until hovered), `destructive` (tinted with `--vela-danger`), `link`,
+  `favorite` (a bare star, `--vela-highlight` while pressed).
   `size`: `xs` 26px, `sm` 30px (panels), `default` 34px (dialog footers), `lg` 40px
   (touch); `icon-xs`, `icon-sm`, `icon`, `icon-lg` are the same heights, square, showing
   only `icon` (`label` names them). `icon` sits before the text and `iconEnd` after it
-  (`data-icon="inline-start"` / `"inline-end"`); `pressed` makes a toggle (`aria-pressed`);
-  a button that opens a menu keeps its hover look while `aria-expanded="true"`.
+  (`data-icon="inline-start"` / `"inline-end"`), `keys` and `keysEnd` put key caps there
+  (`↵ Open`). `pressed` makes a controlled toggle (`aria-pressed`): a press only calls
+  `onPressedChange`; `defaultPressed` an uncontrolled one that flips itself; `iconPressed`
+  is the icon while pressed. A button that opens a menu keeps its hover look while
+  `aria-expanded="true"`.
 - **`createTabs`** — WAI-ARIA tabs over `items: { value, label }[]`: one tab stop on the
   selected tab, arrow keys along the `orientation` (mirrored for `dir: 'rtl'`), Home and
   End, disabled and hidden tabs skipped. `activationMode: 'automatic'` selects as focus
@@ -125,7 +129,8 @@ on shadcn reads them without a glossary. Released components keep their option n
   element. Variants: `default` (a tinted track, the island), `line` (the indicator
   dialog's underlined strip), `filled` (the symbol picker's strip), `soft` (the drawings
   drawer's strip), `nav` (a vertical settings rail). Only an inactive tab reacts to hover.
-  `className` adds the host's layout of the strip.
+  An item's `description` is a second line under its label (a day strip: the weekday over
+  the date). `className` adds the host's layout of the strip.
 - **`createToggleGroup`** — a few options (`items: { value, label, icon? }[]`) side by side
   on a tinted track. `type: 'single'` (default) is a radio group where one option is
   always chosen (a segmented control); `type: 'multiple'` toggles each option on its own

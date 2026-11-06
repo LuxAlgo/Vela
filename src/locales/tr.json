@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "Favorilerden kaldır",
     "ui.numberInput.decrease": "Azalt",
     "ui.numberInput.increase": "Artır",
+    "ui.sortButton.ascending": "artan sırada",
+    "ui.sortButton.descending": "azalan sırada",
     "vela.sidebar.label": "Kenar çubuğu",
     "widget.bottombar.chartSettings": "Grafik ayarları",
     "widget.bottombar.extended": "ETH",

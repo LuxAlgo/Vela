@@ -3,7 +3,8 @@
 // select; the caller shows what the selected tab stands for, through panels it attaches or as
 // a filter of one view. `default` puts the tabs on one tinted track, `line` underlines the
 // selected one (the indicator dialog), `filled` is the symbol picker's market strip, `soft`
-// the drawings drawer's category strip, `nav` a vertical settings rail.
+// the drawings drawer's category strip, `nav` a vertical settings rail. A tab with a
+// `description` reads on two lines, its label over it (a day strip: the weekday, then the date).
 import * as tabs from '@zag-js/tabs';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
@@ -16,7 +17,7 @@ import { nextUid, normalizeProps, runMachine, spreadProps, type HandleOf } from 
 
 export const tabsDef = defineComponent({
     name: 'tabs',
-    parts: ['list', 'trigger', 'icon', 'count', 'content'],
+    parts: ['list', 'trigger', 'icon', 'count', 'label', 'description', 'content'],
     settings: { 'track-radius': '8px', 'trigger-radius': t.radius.md, 'filled-radius': '5px', 'soft-radius': '8px', 'count-radius': '8px' },
 });
 
@@ -34,6 +35,8 @@ export interface TabItem {
     icon?: string;
     /** A count after the label (open orders, trades); null shows none. */
     count?: number | null;
+    /** A second line under the label (a day strip's date under its weekday). */
+    description?: string;
 }
 
 export interface TabsProps extends VariantProps<typeof tabsVariants> {
@@ -234,6 +237,30 @@ export const TABS_CSS = css`
                     background: ${t.active};
                     color: ${t.fg.bright};
                 }
+                &[data-description] {
+                    display: inline-flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 2px;
+                }
+                &[data-description]:not([data-variant='line']) {
+                    padding-block: 6px;
+                }
+            }
+            [data-slot='tabs-list'][data-variant='default']:has(> [data-description]) {
+                height: auto;
+            }
+            [data-slot='tabs-label'] {
+                display: inline-flex;
+                align-items: center;
+                line-height: 16px;
+            }
+            [data-slot='tabs-description'] {
+                font-size: 11px;
+                font-weight: 400;
+                line-height: 14px;
+                opacity: 0.85;
             }
         }
     `;
@@ -333,7 +360,7 @@ class TabsImpl implements TabsHandle {
         this.items = this.items.map((i) => (i.value === value ? { ...i, count } : i));
         b.querySelector(`[data-slot="${tabsDef.slot('count')}"]`)?.remove();
         const el = countEl(count);
-        if (el) b.appendChild(el);
+        if (el) (b.querySelector(`[data-slot="${tabsDef.slot('label')}"]`) ?? b).appendChild(el);
     }
 
     trigger(value: string): HTMLButtonElement | null {
@@ -364,7 +391,14 @@ class TabsImpl implements TabsHandle {
                     icon = iconEl(item.icon, document);
                     icon.dataset.slot = tabsDef.slot('icon');
                 }
-                const b = h('button', { className, slot: tabsDef.slot('trigger'), data: { variant: this.variant } }, icon, item.label, countEl(item.count));
+                const b = item.description
+                    ? h(
+                          'button',
+                          { className, slot: tabsDef.slot('trigger'), data: { variant: this.variant, description: true } },
+                          h('span', { slot: tabsDef.slot('label') }, icon, item.label, countEl(item.count)),
+                          h('span', { slot: tabsDef.slot('description'), text: item.description }),
+                      )
+                    : h('button', { className, slot: tabsDef.slot('trigger'), data: { variant: this.variant } }, icon, item.label, countEl(item.count));
                 this.triggers.set(item.value, b);
                 return b;
             }),

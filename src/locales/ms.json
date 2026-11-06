@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "Alih keluar daripada kegemaran",
     "ui.numberInput.decrease": "Kurangkan",
     "ui.numberInput.increase": "Tambahkan",
+    "ui.sortButton.ascending": "disusun menaik",
+    "ui.sortButton.descending": "disusun menurun",
     "vela.sidebar.label": "Bar sisi",
     "widget.bottombar.chartSettings": "Tetapan carta",
     "widget.bottombar.extended": "ETH",

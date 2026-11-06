@@ -1,6 +1,6 @@
 ---
 name: using-vela-ui-components
-description: Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, form controls (checkbox, switch, input, select, number input, date and color pickers) and data components (data table, stat, sparkline, bar, line and scatter charts). Use when adding or wiring these components on a page or next to a Vela chart, when a menu, dialog or tooltip from the kit renders unstyled or in the wrong place, or when the user wants UI that matches their Vela chart, even if they do not name the kit.
+description: Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, collapsible sections, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts). Use when adding or wiring these components on a page or next to a Vela chart, when a menu, dialog or tooltip from the kit renders unstyled or in the wrong place, or when the user wants UI that matches their Vela chart, even if they do not name the kit.
 license: Apache-2.0
 ---
 
@@ -40,15 +40,17 @@ To find a component, its props, parts and an example, search
 
 | Need | Component |
 | --- | --- |
-| An action | `button` (variants `default`, `outline`, `secondary`, `ghost`, `destructive`, `link`, `up`, `down`) |
-| Switch between views | `tabs`; a few exclusive options on one track: `toggle-group` |
+| An action | `button` (variants `default`, `outline`, `secondary`, `ghost`, `destructive`, `link`, `up`, `down`, `favorite`; `keys` for key caps) |
+| Switch between views | `tabs` (a `description` puts a second line under a label); a few exclusive options on one track: `toggle-group` |
 | A status or a count | `badge`, `stat`, `kbd` |
 | A list of actions from a button or a right-click | `dropdown-menu`, `context-menu` |
 | A label or a card on hover | `tooltip`, `hover-card` |
 | A modal or a sheet | `dialog`, `drawer` |
 | Floating content of your own | `popover` |
-| A form | `input`, `input-group`, `text-area`, `number-input`, `select`, `checkbox`, `switch`, `date-picker`, `color-picker` |
-| Data | `data-table`, `sparkline`, `line-chart`, `bar-chart`, `scatter-chart`, `donut`, `empty` |
+| A section that folds | `collapsible` |
+| Rows of a list (a watchlist, alerts, results) | `item`, stacked by `createItemGroup` |
+| A form | `input`, `input-group`, `text-area`, `number-input`, `select`, `checkbox`, `switch`, `slider`, `date-picker`, `color-picker` |
+| Data | `data-table`, `sort-button` (sorts a list that is not a table), `month-grid` (a figure per day), `sparkline`, `line-chart`, `bar-chart`, `scatter-chart`, `donut`, `empty` |
 
 ## Rules that prevent the common bugs
 
@@ -56,10 +58,11 @@ To find a component, its props, parts and an example, search
    takes it as `list: { host }`). Without it, the component looks for a host from the trigger,
    finds none, and mounts in `<body>`, unthemed. When unsure whether the trigger is in the page
    yet (inside a panel's `mount`, say), pass it.
-2. **Start a value with `defaultValue` or `defaultChecked`, listen with `onValueChange` or
-   `onCheckedChange`, and change it from code with `setValue` or `setChecked`.** The setters
-   never call the listeners, so a host can refresh a control without loops. A select's options
-   are fixed: build a new one to change them.
+2. **Start a value with `defaultValue`, `defaultChecked`, `defaultOpen` or `defaultPressed`,
+   listen with the matching `on…Change`, and change it from code with `setValue`,
+   `setChecked`, `setOpen` or `setPressed`.** The setters never call the listeners, so a host
+   can refresh a control without loops. A select's options are fixed: build a new one to
+   change them. A slider also reports `onValueCommit` once a drag ends: run costly work there.
 3. **Every floating part takes the same placement props:** `side`, `align`, `sideOffset`,
    `alignOffset`, `avoidCollisions`, `collisionPadding`, `collisionBoundary`.
 4. **Release what you discard.** Controls that run a state machine keep page-wide listeners

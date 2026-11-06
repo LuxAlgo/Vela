@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "Quitar de favoritos",
     "ui.numberInput.decrease": "Disminuir",
     "ui.numberInput.increase": "Aumentar",
+    "ui.sortButton.ascending": "orden ascendente",
+    "ui.sortButton.descending": "orden descendente",
     "vela.sidebar.label": "Barra lateral",
     "widget.bottombar.chartSettings": "Configuración del gráfico",
     "widget.bottombar.extended": "ETH",

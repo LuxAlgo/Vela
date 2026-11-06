@@ -1,7 +1,8 @@
 # @luxalgo/vela-ui
 
 The component kit of Vela: buttons, tabs, toggle groups, badges, dialogs, drawers, menus,
-tooltips, popovers and form controls. One file per component, Zag state machines for
+tooltips, popovers, form controls, collapsible sections, list rows and data components (a
+data table, sort buttons, a month grid, charts). One file per component, Zag state machines for
 behavior, CSS in cascade layers over design tokens, and one typed theme config. It works
 without the chart.
 
