@@ -339,6 +339,7 @@ export class SymbolPicker {
 
         this.dialog = new Dialog({
             title: textOf(opts.i18n, TEXT.title),
+            ...(opts.i18n ? { i18n: opts.i18n } : {}),
             host: opts.host,
             closeOnInteractOutside: true,
             flush: true,
@@ -508,6 +509,7 @@ export class SymbolPicker {
     relabel(): void {
         const i18n = this.opts.i18n;
         this.dialog.titleEl.textContent = textOf(i18n, TEXT.title);
+        this.dialog.setI18n(i18n ?? null);
         this.input.placeholder = textOf(i18n, TEXT.search);
         this.tabs.setItems(TABS.map((tab) => ({ value: tab.id, label: textOf(i18n, tab.label) })));
     }

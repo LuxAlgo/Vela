@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **The chart's dialogs name their close button.** Screen readers announced the ✕ of the
+  settings, the symbol search, the timeframe and the other dialogs as an unnamed button; it
+  is now "Close", in the chart's language.
+
 ## [0.10.1]
 
 ### Added

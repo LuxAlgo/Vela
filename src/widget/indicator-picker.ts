@@ -151,6 +151,7 @@ export class IndicatorPicker {
         this.list.className = 'vela-ip-list';
         this.dialog = new Dialog({
             title: this.t(TEXT.title),
+            ...(opts.i18n ? { i18n: opts.i18n } : {}),
             host: opts.host,
             draggable: true,
             closeOnInteractOutside: true,
@@ -189,6 +190,7 @@ export class IndicatorPicker {
     /** The dialog's fixed text in the shell's language, re-read on every open. */
     relabel(): void {
         this.dialog.titleEl.textContent = this.t(TEXT.title);
+        this.dialog.setI18n(this.opts.i18n ?? null);
         this.search.placeholder = this.t(TEXT.search);
     }
 

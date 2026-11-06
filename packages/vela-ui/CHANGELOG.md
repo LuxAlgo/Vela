@@ -3,6 +3,18 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **Key caps read on every button.** On the `default`, `up` and `down` buttons, key caps
+  (`keys`, `keysEnd`) drew their label in the button's own fill color, so only an empty cap
+  showed. Inside a button a key cap now takes the button's text color and draws only its
+  outline, on every variant.
+- **A dialog's close button has a name.** Screen readers announced it as an unnamed button;
+  it is now "Close", in the language of the dialog's new `i18n` option, else the kit build's
+  translator. `setI18n` renames it when the language changes while the dialog is open.
+
 ## [0.2.0]
 
 ### Added

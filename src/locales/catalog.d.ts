@@ -1968,6 +1968,7 @@ export interface VelaCoreMessageCatalog {
     'ui.datePicker.previousDecade': string;
     'ui.datePicker.previousMonth': string;
     'ui.datePicker.previousYear': string;
+    'ui.dialog.close': string;
     'ui.keys.alt': string;
     'ui.keys.ctrl': string;
     'ui.keys.general': string;

@@ -70,6 +70,7 @@ export class TimeframeQuick {
         this.hint.className = 'vela-tq-hint';
         this.dialog = new Dialog({
             title: this.t(TEXT.title),
+            ...(this.i18n ? { i18n: this.i18n } : {}),
             host: opts.host,
             draggable: true,
             closeOnInteractOutside: true,
@@ -95,6 +96,7 @@ export class TimeframeQuick {
     /** The dialog's title in the shell's language, re-read on every open. */
     relabel(): void {
         this.dialog.titleEl.textContent = this.t(TEXT.title);
+        this.dialog.setI18n(this.i18n);
     }
 
     open(seed = ''): void {
