@@ -4,6 +4,14 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **More components for the panels next to a chart.** `@luxalgo/vela-ui` 0.2.0, which Vela now
+  requires, adds a slider, collapsible sections, list rows, sort buttons for lists that are
+  not tables, and a month grid of daily figures. Its tabs can read on two lines, and its
+  buttons can hold key caps or be favorite stars. Its
+  [changelog](packages/vela-ui/CHANGELOG.md) has the details.
+
 ### Fixed
 
 - **The current price wears the candles' own colors on every candle style.** On a
@@ -11,6 +19,17 @@ All notable changes to Vela, newest first.
   current-price line, label and countdown stayed the chart's default up/down colors;
   they now take the last candle's color as it is painted, and its outline color when
   candle bodies are hidden.
+- **The chart no longer restyles the page around it.** Once the chart had built a control of
+  the UI kit, the page's own controls that share its part names took the kit's styles too:
+  opening the chart settings, for one, restyled every shadcn/ui select on the page. The kit's
+  styles now stay inside the chart, the menus and dialogs it opens, and other kit hosts. The
+  fix ships in `@luxalgo/vela-ui` 0.2.0, which Vela now requires.
+- **Switch rows in the chart's menus** fill with the theme's selected color when on, like every
+  other toggle, instead of the accent (from `@luxalgo/vela-ui` 0.2.0).
+- **A timeline mark's popup has its card again.** Since 0.10.0 the popup showed its titles,
+  text and buttons unstyled, with no background, so they were hard to read over the chart. It
+  is the UI kit's callout panel again: an elevated card with bold titles, muted text and
+  themed buttons, which a theme's `callout-bubble` parts restyle.
 
 ## [0.10.0]
 

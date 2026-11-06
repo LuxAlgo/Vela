@@ -83,6 +83,11 @@ export function weekdayNames(settings: CalendarSettings): string[] {
     return Array.from({ length: 7 }, (_, d) => stripBidiMarks(dtf.format(Date.UTC(2000, 0, 2 + d))));
 }
 
+/** A day in words, for a screen reader (`Friday, November 6, 2026`). `month` counts from 0. */
+export function longDate(settings: CalendarSettings, year: number, month: number, day: number): string {
+    return stripBidiMarks(dateFormat(settings, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(Date.UTC(year, month, day)));
+}
+
 /** A year as a header label (`2026`, `2026年`). */
 export function yearLabel(settings: CalendarSettings, year: number): string {
     if (settings.english) return localizeDigits(String(year), settings);

@@ -37,6 +37,7 @@ import { DARK_THEME, LIGHT_THEME } from '../src/core/theme';
 import { shadcnTheme } from './shadcn-look';
 import { themeEditor } from './theme-editor';
 import { dataGallery } from './gallery-data';
+import { collapsibleGallery, itemGallery, monthGallery, sliderGallery, sortGallery } from './gallery-lists';
 
 const app = document.getElementById('app')!;
 ensureUIHost(app, DARK_THEME);
@@ -103,6 +104,24 @@ row(
 );
 const lock = createButton({ text: 'Lock', icon: 'lock', variant: 'ghost', size: 'sm', pressed: false, onClick: () => lock.setPressed(!lock.pressed) });
 row(buttons, 'states', lock.el, createButton({ text: 'Disabled', variant: 'outline', disabled: true }).el, createButton({ text: 'Disabled', disabled: true }).el);
+row(
+    buttons,
+    'key caps',
+    createButton({ text: 'Navigate', keys: ['↑', '↓'], variant: 'ghost', size: 'xs' }).el,
+    createButton({ text: 'Open', keys: ['↵'], variant: 'ghost', size: 'xs' }).el,
+    createButton({ text: 'Markets', keys: ['Tab'], variant: 'ghost', size: 'xs' }).el,
+    createButton({ text: 'Close', keys: ['Esc'], variant: 'ghost', size: 'xs' }).el,
+    createButton({ text: 'Search', keysEnd: ['Ctrl', 'K'], variant: 'outline', size: 'sm' }).el,
+);
+row(
+    buttons,
+    'favorite',
+    createButton({ variant: 'favorite', size: 'icon-xs', label: 'Add to favorites', defaultPressed: false }).el,
+    createButton({ variant: 'favorite', size: 'icon-xs', label: 'Remove from favorites', defaultPressed: true }).el,
+    createButton({ variant: 'favorite', size: 'icon-sm', label: 'Favorite', defaultPressed: true }).el,
+    createButton({ variant: 'favorite', size: 'sm', text: 'Favorite', defaultPressed: false }).el,
+    createButton({ variant: 'ghost', size: 'icon-sm', icon: 'pin', iconPressed: 'pin-filled', label: 'Pin', defaultPressed: false }).el,
+);
 
 // Tabs.
 const tabs = section('Tabs', 'default is the island; line is the indicator settings strip, filled the symbol picker strip, soft the drawings drawer strip, nav a settings rail. Arrow keys move and select.');
@@ -117,6 +136,8 @@ row(tabs, 'default', createTabs({ items: [{ value: 'perf', label: 'Performance' 
 row(tabs, 'line', createTabs({ variant: 'line', items: [{ value: 'inputs', label: 'Inputs' }, { value: 'style', label: 'Style' }, { value: 'visibility', label: 'Visibility' }, { value: 'off', label: 'Disabled', disabled: true }], className: 'w-320' }).el);
 row(tabs, 'filled', createTabs({ variant: 'filled', items: markets }).el);
 row(tabs, 'soft', createTabs({ variant: 'soft', items: [{ value: 'lines', label: 'Lines' }, { value: 'fib', label: 'Fibonacci' }, { value: 'patterns', label: 'Patterns' }, { value: 'shapes', label: 'Shapes' }] }).el);
+const week = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, i) => ({ value: `2026-11-0${i + 2}`, label, description: String(i + 2) }));
+row(tabs, 'two lines', createTabs({ variant: 'soft', items: week, defaultValue: '2026-11-06' }).el, createTabs({ items: week.slice(0, 5), defaultValue: '2026-11-03' }).el);
 const navItems = [
     { value: 'symbol', label: 'Symbol' },
     { value: 'status', label: 'Status line' },
@@ -262,6 +283,18 @@ contextArea.tabIndex = 0;
 contextArea.style.cssText = 'padding: 18px 24px; border: 1px dashed var(--vela-border-strong); border-radius: var(--vela-radius-md);';
 createContextMenu({ target: contextArea, host: app, iconBadges: true, items: actionItems });
 row(overlays, 'context', contextArea);
+
+// Lists and sections.
+const sliders = section('Slider', 'The replay scrubber: a drag previews, the release commits. The arrow keys, Page Up/Down and Home/End move it.');
+sliderGallery((label, ...children) => row(sliders, label, ...children));
+const collapsibles = section('Collapsible', "default is a panel's drawer, label a list's group header; a row's own chevron can drive one too.");
+collapsibleGallery((label, ...children) => row(collapsibles, label, ...children));
+const itemSection = section('Item', 'List rows: media, a title over a description, the meta, the actions. A clickable row is a button to the keyboard; its actions can wait for the hover.');
+itemGallery((label, ...children) => row(itemSection, label, ...children));
+const sorts = section('Sort button', "Column headers over a list that isn't a table: a press steps through the first direction, the other, and unsorted.");
+sortGallery((label, ...children) => row(sorts, label, ...children));
+const months = section('Month grid', "A journal's P&L by day. A press opens a day; the arrow keys walk the days, Home and End the week's ends.");
+monthGallery((label, ...children) => row(months, label, ...children));
 
 // Data components.
 const dataSection = section('Data', 'Stats, keycaps, an empty state, a table, a sparkline, a donut, the charts and a hover card.');

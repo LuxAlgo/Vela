@@ -11,8 +11,8 @@ import type { Translator } from '../../../../core/i18n/types';
 import type { VelaTheme } from '../../../../core/options';
 import type { MarkContent, MarkContentSource, MarkPanelItem } from '../../../../core/marks/types';
 import { Popover } from '@luxalgo/vela-ui/popover';
-import { CALLOUT_CSS, CALLOUT_STYLE_ID } from '@luxalgo/vela-ui/callout-bubble';
-import { chromeLayer, injectChromeStyles } from '../../../../ui/chromeStyles';
+import { calloutPart } from '@luxalgo/vela-ui/callout-bubble';
+import { injectChromeStyles } from '../../../../ui/chromeStyles';
 import { sanitizeHtml } from '../../../../ui/sanitize-html';
 import type { MarkCluster } from './layout';
 import { css } from '@luxalgo/vela-ui/css';
@@ -89,7 +89,6 @@ export class MarkPopover {
 
     constructor(private readonly deps: MarkPopoverDeps) {
         const doc = deps.plot.ownerDocument;
-        injectChromeStyles(CALLOUT_STYLE_ID, chromeLayer(CALLOUT_CSS), doc);
         injectChromeStyles(MARKS_STYLE_ID, MARKS_CSS, doc);
         this.anchor = doc.createElement('div');
         this.anchor.className = 'vela-marks-anchor';
@@ -171,6 +170,7 @@ export class MarkPopover {
         const doc = body.ownerDocument;
         const root = doc.createElement('div');
         root.className = 'vela-callout-panel vela-marks-panel';
+        calloutPart(root, 'panel');
         const pending: Array<{ el: HTMLElement; resolve: () => void }> = [];
         for (const mark of cluster.marks) {
             const section = doc.createElement('section');
@@ -178,6 +178,7 @@ export class MarkPopover {
             if (mark.title) {
                 const title = doc.createElement('div');
                 title.className = 'vela-callout-title';
+                calloutPart(title, 'title');
                 title.textContent = mark.title;
                 section.appendChild(title);
             }
@@ -227,6 +228,7 @@ export class MarkPopover {
         if ('text' in content) {
             const text = doc.createElement('div');
             text.className = 'vela-callout-text';
+            calloutPart(text, 'text');
             text.textContent = String(content.text);
             section.appendChild(text);
             return;
@@ -246,11 +248,14 @@ export class MarkPopover {
                     if (!actions) {
                         actions = doc.createElement('div');
                         actions.className = 'vela-callout-actions';
+                        calloutPart(actions, 'actions');
                         section.appendChild(actions);
                     }
                     const btn = doc.createElement('button');
                     btn.type = 'button';
                     btn.className = 'vela-callout-btn' + (item.primary ? ' vela-callout-btn-primary' : '');
+                    calloutPart(btn, 'button');
+                    if (item.primary) btn.dataset.primary = '';
                     btn.textContent = item.label;
                     btn.addEventListener('click', () => {
                         item.run();
@@ -263,6 +268,7 @@ export class MarkPopover {
                 if (item.type === 'text') {
                     const text = doc.createElement('div');
                     text.className = 'vela-callout-text';
+                    calloutPart(text, 'text');
                     text.textContent = item.text;
                     section.appendChild(text);
                 } else if (item.type === 'field') {

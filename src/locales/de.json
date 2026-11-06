@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "Aus Favoriten entfernen",
     "ui.numberInput.decrease": "Verringern",
     "ui.numberInput.increase": "Erhöhen",
+    "ui.sortButton.ascending": "aufsteigend sortiert",
+    "ui.sortButton.descending": "absteigend sortiert",
     "vela.sidebar.label": "Seitenleiste",
     "widget.bottombar.chartSettings": "Charteinstellungen",
     "widget.bottombar.extended": "ETH",

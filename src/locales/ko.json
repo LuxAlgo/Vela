@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "즐겨찾기에서 제거",
     "ui.numberInput.decrease": "감소",
     "ui.numberInput.increase": "증가",
+    "ui.sortButton.ascending": "오름차순 정렬됨",
+    "ui.sortButton.descending": "내림차순 정렬됨",
     "vela.sidebar.label": "사이드바",
     "widget.bottombar.chartSettings": "차트 설정",
     "widget.bottombar.extended": "ETH",
