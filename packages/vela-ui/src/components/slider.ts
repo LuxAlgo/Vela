@@ -121,7 +121,7 @@ const injectStyles = defineStyles(
             [data-slot='slider-range'] {
                 height: 100%;
                 border-radius: inherit;
-                background: ${t.accent};
+                background: ${t.selected.bg};
 
                 &[data-orientation='vertical'] {
                     width: 100%;
@@ -133,7 +133,7 @@ const injectStyles = defineStyles(
                 height: var(--_thumb);
                 border: 2px solid ${t.bg};
                 border-radius: 50%;
-                background: ${t.accent};
+                background: ${t.selected.bg};
                 outline: 2px solid transparent;
                 transition: box-shadow ${t.dur.fast} ease;
 

@@ -24,6 +24,8 @@ All notable changes to Vela, newest first.
   opening the chart settings, for one, restyled every shadcn/ui select on the page. The kit's
   styles now stay inside the chart, the menus and dialogs it opens, and other kit hosts. The
   fix ships in `@luxalgo/vela-ui` 0.2.0, which Vela now requires.
+- **Switch rows in the chart's menus** fill with the theme's selected color when on, like every
+  other toggle, instead of the accent (from `@luxalgo/vela-ui` 0.2.0).
 - **A timeline mark's popup has its card again.** Since 0.10.0 the popup showed its titles,
   text and buttons unstyled, with no background, so they were hard to read over the chart. It
   is the UI kit's callout panel again: an elevated card with bold titles, muted text and

@@ -310,12 +310,12 @@ const injectStyles = defineStyles(
                         background ${t.dur.med} ease;
                 }
                 &[data-on] {
-                    background: var(${t.accent.bright.name}, ${t.accent});
-                    border-color: var(${t.accent.bright.name}, ${t.accent});
+                    background: ${t.selected.bg};
+                    border-color: ${t.selected.bg};
                 }
                 &[data-on]::after {
                     transform: translateX(16px);
-                    background: ${t.bg};
+                    background: ${t.selected.fg};
                 }
             }
             [data-slot~='dropdown-menu-separator'] {

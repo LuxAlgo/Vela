@@ -17,8 +17,10 @@ uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 - **List rows.** `@luxalgo/vela-ui/item` is a row of a list (a watchlist, alerts, search
   results): media, a title over a description, figures, and buttons that can stay hidden
   until the row is hovered. A clickable row works with the keyboard and screen readers like
-  a button, while the buttons inside it keep their own presses. `createItemGroup` stacks rows,
-  with a line between them on request.
+  a button, while the buttons inside it keep their own presses; a row with actions makes its
+  text the button, as a button cannot hold other buttons. `createItemGroup` stacks rows, with
+  a line between them on request; a labelled group is a `group` to screen readers, or the
+  `role` you give it (`listbox` for option rows).
 - **Sort buttons for lists that are not tables.** `@luxalgo/vela-ui/sort-button` is a column
   header that steps through its sort directions on each press, shows the current one with an
   arrow, and says it to screen readers.
@@ -38,6 +40,10 @@ uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
 ### Fixed
 
+- **What is on or chosen reads in the theme's selected colors.** A dropdown's switch rows, when
+  on, fill like the Switch (`selected.bg`, the knob in `selected.fg`) instead of the accent,
+  as does the slider's range and thumb, and a month grid marks today in bright, bold type:
+  white on a dark theme, black on a light one.
 - **The kit's styles stay inside the kit.** Once a page created a kit component, the kit's
   styles also reached the page's own components that use the same part names, such as a
   shadcn/ui select, switch or button, and restyled them. A component's styles now apply only

@@ -37,7 +37,7 @@ export interface MonthGridProps {
     days?: Readonly<Record<string, MonthGridDay>>;
     /** The selected day (`2026-11-06`), ringed. */
     selected?: string | null;
-    /** Today (`2026-11-06`), its date in the accent color. */
+    /** Today (`2026-11-06`), its date bright and bold. */
     today?: string | null;
     /** A day was chosen: a click, Enter or Space. Without it the days are not buttons. */
     onSelect?: (date: string) => void;
@@ -138,7 +138,7 @@ const injectStyles = defineStyles(
                 line-height: 12px;
 
                 &:is([data-today] > *) {
-                    color: ${t.accent};
+                    color: ${t.fg.bright};
                     font-weight: 600;
                 }
             }

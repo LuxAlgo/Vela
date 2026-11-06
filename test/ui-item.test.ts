@@ -63,6 +63,28 @@ describe('item', () => {
         expect(onSelect).toHaveBeenCalledTimes(1);
     });
 
+    it('makes its text the button when it holds actions, as a button cannot hold buttons', () => {
+        const onSelect = vi.fn();
+        const button = document.createElement('button');
+        const item = createItem({ title: 'ETHUSDT', description: 'Ether', meta: '3,180.2', onSelect, actions: button, selected: true });
+        document.body.append(item.el);
+        const content = part(item.el, 'content')!;
+        expect(item.el.hasAttribute('role')).toBe(false);
+        expect(item.el.hasAttribute('tabindex')).toBe(false);
+        expect(content.getAttribute('role')).toBe('button');
+        expect(content.tabIndex).toBe(0);
+        expect(content.getAttribute('aria-current')).toBe('true');
+        expect(content.contains(button)).toBe(false);
+        // The keyboard reaches the text; the mouse still chooses from anywhere on the row.
+        key(content, 'Enter');
+        part(item.el, 'meta')!.click();
+        expect(onSelect).toHaveBeenCalledTimes(2);
+        item.setDisabled(true);
+        expect(content.getAttribute('aria-disabled')).toBe('true');
+        expect(content.tabIndex).toBe(-1);
+        expect(item.el.hasAttribute('data-disabled')).toBe(true);
+    });
+
     it('marks the current row, and an option row as selected', () => {
         const item = createItem({ title: 'SOLUSDT', onSelect: () => {}, selected: true });
         expect(item.el.hasAttribute('data-selected')).toBe(true);
@@ -110,8 +132,12 @@ describe('item', () => {
         expect(group.el.getAttribute('data-slot')).toBe('item-group');
         expect(group.el.hasAttribute('data-separated')).toBe(true);
         expect(group.el.getAttribute('aria-label')).toBe('Watchlist');
+        // A name needs a role to be read.
+        expect(group.el.getAttribute('role')).toBe('group');
         expect([...group.el.children]).toEqual([a.el, b]);
         group.setItems([b]);
         expect([...group.el.children]).toEqual([b]);
+        expect(createItemGroup().el.hasAttribute('role')).toBe(false);
+        expect(createItemGroup({ label: 'Results', role: 'listbox' }).el.getAttribute('role')).toBe('listbox');
     });
 });
