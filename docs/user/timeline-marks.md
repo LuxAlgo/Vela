@@ -131,7 +131,9 @@ Several marks of one group on one bar share a single, slightly larger token that
 
 Clicking a glyph opens a popup centered on it: the mark's `title`, then its `content`. A cluster
 lists every mark it holds, one section each, in a scrollable panel. The popup closes on an
-outside click or `Escape`.
+outside click or `Escape`. It is the UI kit's callout panel, so it follows the theme, and a
+theme's `callout-bubble` parts (`panel`, `title`, `text`, `actions`, `button`) restyle it
+along with the chart's other callouts.
 
 `content` takes one of three forms:
 

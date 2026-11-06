@@ -7,6 +7,7 @@ import { iconAt } from '../lib/icons';
 import type { ChartTheme } from '../lib/tokens';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
+import { addSlot } from '../lib/h';
 import { t } from '../lib/t';
 import { Popover, type PlacementProps, type PopoverBoundary } from './popover';
 
@@ -185,6 +186,17 @@ export const CALLOUT_CSS = css`
 
 const injectStyles = defineStyles(CALLOUT_STYLE_ID, CALLOUT_CSS);
 
+/** A part of the deployed panel, as {@link calloutPart} gives it. */
+export type CalloutPanelPart = Exclude<(typeof calloutBubbleDef.parts)[number], 'root'>;
+
+/** Make `el` a part of a deployed panel, with the panel's look: for a panel built without a
+ *  bubble, such as a chart's timeline-mark popup. Returns `el`. */
+export function calloutPart<E extends HTMLElement>(el: E, part: CalloutPanelPart): E {
+    injectStyles(el.ownerDocument);
+    addSlot(el, calloutBubbleDef.slot(part));
+    return el;
+}
+
 export class CalloutBubble {
     readonly el: HTMLElement;
     private spec: CalloutBubbleSpec;
@@ -294,11 +306,10 @@ export class CalloutBubble {
 
     private buildPanel(body: HTMLElement, panel: CalloutPanel): void {
         const doc = body.ownerDocument;
-        const part = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, name: (typeof calloutBubbleDef.parts)[number]): HTMLElementTagNameMap[K] => {
+        const part = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, name: CalloutPanelPart): HTMLElementTagNameMap[K] => {
             const el = doc.createElement(tag);
             el.className = className;
-            el.dataset.slot = calloutBubbleDef.slot(name);
-            return el;
+            return calloutPart(el, name);
         };
         const root = part('div', 'vela-callout-panel', 'panel');
         if (panel.title) {

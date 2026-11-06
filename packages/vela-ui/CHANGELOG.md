@@ -5,6 +5,13 @@ uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
 ## [0.1.1]
 
+### Added
+
+- **A callout panel without a bubble.** `calloutPart(el, part)` makes an element a part of the
+  callout bubble's deployed panel (`panel`, `title`, `text`, `actions`, `button`) and gives it
+  that part's look, so a panel built elsewhere, such as a chart's timeline-mark popup, matches
+  the bubble's, and a theme's `callout-bubble` parts restyle both.
+
 ### Fixed
 
 - **The kit's styles stay inside the kit.** Once a page created a kit component, the kit's
