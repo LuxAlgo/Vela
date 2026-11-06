@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **The current price wears the candles' own colors on every candle style.** On a
+  candle-based plugin style that keeps its own candle colors (Footprint, TPO), the
+  current-price line, label and countdown stayed the chart's default up/down colors;
+  they now take the last candle's color as it is painted, and its outline color when
+  candle bodies are hidden.
+
 ## [0.10.0]
 
 ### Added
