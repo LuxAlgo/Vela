@@ -3,6 +3,17 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **The kit's styles stay inside the kit.** Once a page created a kit component, the kit's
+  styles also reached the page's own components that use the same part names, such as a
+  shadcn/ui select, switch or button, and restyled them. A component's styles now apply only
+  inside kit hosts (`ensureUIHost`), the menus, dialogs and tooltips they open, and themed
+  hosts, so the page's own components keep their look. A component mounted outside any kit
+  host gets none of the kit's styles: mount it in one, as the README shows.
+
 ## [0.1.0]
 
 ### Added

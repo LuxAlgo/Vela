@@ -11,6 +11,11 @@ All notable changes to Vela, newest first.
   current-price line, label and countdown stayed the chart's default up/down colors;
   they now take the last candle's color as it is painted, and its outline color when
   candle bodies are hidden.
+- **The chart no longer restyles the page around it.** Once the chart had built a control of
+  the UI kit, the page's own controls that share its part names took the kit's styles too:
+  opening the chart settings, for one, restyled every shadcn/ui select on the page. The kit's
+  styles now stay inside the chart, the menus and dialogs it opens, and other kit hosts. The
+  fix ships in `@luxalgo/vela-ui` 0.1.1, which Vela now requires.
 
 ## [0.10.0]
 

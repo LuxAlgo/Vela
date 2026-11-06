@@ -28,7 +28,9 @@ theme)` switches a host to another theme later.
   stay behind. A destroyed dialog, drawer or popover releases its content itself.
 - **Styles give way to yours.** Component CSS sits in the `vela.ui` cascade layer, so a
   page's own CSS overrides it without `!important`. Every part carries a `data-slot`;
-  variants and sizes are `data-variant` and `data-size`.
+  variants and sizes are `data-variant` and `data-size`. The kit's CSS applies inside kit
+  hosts only, so the page's own components keep their look, even those that use the same
+  part names.
 - **One theme config.** `createTheme` sets the brand color, radius and font, any token by
   name, each component's settings, or a component's whole look; a wrong name fails the
   typecheck. See [Theming](docs/theming.md) and [What to change, and where](docs/what-to-change.md).
