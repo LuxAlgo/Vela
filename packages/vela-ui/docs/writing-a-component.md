@@ -127,7 +127,10 @@ change.
 - **`css`** marks a template as CSS (editors highlight it, stylelint checks it) and
   **`defineStyles(id, text)`** returns the injector a component calls at creation, never at
   import: it declares the layer order once per document or shadow root, then injects the
-  sheet, id-guarded.
+  sheet, id-guarded. The sheet applies inside kit hosts, their floating layers and themed
+  hosts only: a `:where()` joins the first compound of each top-level selector, adding no
+  weight, so a page's own elements that carry the same `data-slot` names are never restyled.
+  Inject a component's CSS through it, never by hand.
 - **`t`** reads the design tokens: `${t.radius.md}` prints `var(--vela-radius-md)`, and a
   name that does not exist fails the typecheck. A test checks that `t` and the tokens the
   theme writes match in both directions.

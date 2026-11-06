@@ -167,6 +167,10 @@ Unlayered CSS also reaches the kit when you did not mean it to: a global reset s
 fields. Scope such rules away from Vela (`button:where(:not(.vela-ui *)) { … }`), or move them
 into a layer declared before Vela's (`@layer reset;` first in your stylesheet).
 
+The kit's CSS does not reach the other way: a component's styles apply inside kit hosts and
+the floating layers they open only, so a page's own components keep their look, even those
+that use the same part names (`data-slot="select-trigger"`).
+
 ## Overriding from a page's CSS
 
 The theme layer sits below every other style, so a page's own CSS overrides any token without
@@ -209,3 +213,5 @@ sets every token on the page root:
 ```
 
 Bundlers resolve `@luxalgo/vela-ui/themes/dark.css` and `@luxalgo/vela-ui/themes/light.css`.
+The components still go in a kit host, which gives them their base styles: call
+`ensureUIHost(el)` without a theme on the element that holds them.

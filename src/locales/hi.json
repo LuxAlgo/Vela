@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "फ़ेवरेट से हटाएं",
     "ui.numberInput.decrease": "घटाएं",
     "ui.numberInput.increase": "बढ़ाएं",
+    "ui.sortButton.ascending": "आरोही क्रम में",
+    "ui.sortButton.descending": "अवरोही क्रम में",
     "vela.sidebar.label": "साइडबार",
     "widget.bottombar.chartSettings": "चार्ट सेटिंग्स",
     "widget.bottombar.extended": "ETH",

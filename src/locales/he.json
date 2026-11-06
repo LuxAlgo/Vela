@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "הסרה מהמועדפים",
     "ui.numberInput.decrease": "הקטנה",
     "ui.numberInput.increase": "הגדלה",
+    "ui.sortButton.ascending": "ממוין בסדר עולה",
+    "ui.sortButton.descending": "ממוין בסדר יורד",
     "vela.sidebar.label": "סרגל צד",
     "widget.bottombar.chartSettings": "הגדרות גרף",
     "widget.bottombar.extended": "ETH",

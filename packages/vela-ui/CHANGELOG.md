@@ -3,6 +3,54 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [0.2.0]
+
+### Added
+
+- **A slider.** `@luxalgo/vela-ui/slider` holds a value on a track, dragged or moved with the
+  arrow keys, Page Up/Down and Home/End. It reports every move, and once a drag ends it
+  reports the settled value through `onValueCommit`, the moment for costly work such as a
+  replay's seek.
+- **Collapsible sections.** `@luxalgo/vela-ui/collapsible` shows and hides its content from a
+  header: a section header with a count (a panel's drawers) or a small group label (a list's
+  groups). A button of the host's, such as a row's chevron, can toggle it instead.
+- **List rows.** `@luxalgo/vela-ui/item` is a row of a list (a watchlist, alerts, search
+  results): media, a title over a description, figures, and buttons that can stay hidden
+  until the row is hovered. A clickable row works with the keyboard and screen readers like
+  a button, while the buttons inside it keep their own presses; a row with actions makes its
+  text the button, as a button cannot hold other buttons. `createItemGroup` stacks rows, with
+  a line between them on request; a labelled group is a `group` to screen readers, or the
+  `role` you give it (`listbox` for option rows).
+- **Sort buttons for lists that are not tables.** `@luxalgo/vela-ui/sort-button` is a column
+  header that steps through its sort directions on each press, shows the current one with an
+  arrow, and says it to screen readers.
+- **A month grid.** `@luxalgo/vela-ui/month-grid` lays out a month of days with a figure each,
+  tinted by its tone (a trading journal's P&L by day). Weeks start on the locale's first day,
+  and the arrow keys walk the days.
+- **Two-line tabs.** A tab's `description` puts a second line under its label, such as a day
+  strip's date under its weekday.
+- **Key caps and favorite stars in buttons.** A button's `keys` and `keysEnd` show key caps
+  before or after its text (`↵ Open`). The `favorite` variant is a star that takes the
+  favorites color while pressed. A toggle button can now flip itself (`defaultPressed`,
+  `onPressedChange`) and show another icon while pressed (`iconPressed`).
+- **A callout panel without a bubble.** `calloutPart(el, part)` makes an element a part of the
+  callout bubble's deployed panel (`panel`, `title`, `text`, `actions`, `button`) and gives it
+  that part's look, so a panel built elsewhere, such as a chart's timeline-mark popup, matches
+  the bubble's, and a theme's `callout-bubble` parts restyle both.
+
+### Fixed
+
+- **What is on or chosen reads in the theme's selected colors.** A dropdown's switch rows, when
+  on, fill like the Switch (`selected.bg`, the knob in `selected.fg`) instead of the accent,
+  as does the slider's range and thumb, and a month grid marks today in bright, bold type:
+  white on a dark theme, black on a light one.
+- **The kit's styles stay inside the kit.** Once a page created a kit component, the kit's
+  styles also reached the page's own components that use the same part names, such as a
+  shadcn/ui select, switch or button, and restyled them. A component's styles now apply only
+  inside kit hosts (`ensureUIHost`), the menus, dialogs and tooltips they open, and themed
+  hosts, so the page's own components keep their look. A component mounted outside any kit
+  host gets none of the kit's styles: mount it in one, as the README shows.
+
 ## [0.1.0]
 
 ### Added

@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "Удалить из избранного",
     "ui.numberInput.decrease": "Уменьшить",
     "ui.numberInput.increase": "Увеличить",
+    "ui.sortButton.ascending": "по возрастанию",
+    "ui.sortButton.descending": "по убыванию",
     "vela.sidebar.label": "Боковая панель",
     "widget.bottombar.chartSettings": "Настройки графика",
     "widget.bottombar.extended": "ETH",

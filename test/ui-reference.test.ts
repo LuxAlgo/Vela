@@ -32,7 +32,7 @@ describe('the component manifest', () => {
         expect(components.length).toBeGreaterThanOrEqual(19);
         const button = byName('button');
         expect(button.factory).toBe('createButton');
-        expect(button.parts).toEqual({ root: buttonDef.slot('root'), icon: buttonDef.slot('icon') });
+        expect(button.parts).toEqual({ root: buttonDef.slot('root'), icon: buttonDef.slot('icon'), keys: buttonDef.slot('keys') });
         expect(button.settings?.radius).toEqual({ default: 'var(--vela-radius-md)', token: 'radius-md' });
         expect(button.settings?.['height-sm']).toEqual({ default: '30px' });
         expect(button.variants?.size).toContain('icon-sm');
@@ -61,7 +61,7 @@ describe('the theme schema', () => {
         expect(Object.keys(schema.properties.tokens.properties).sort()).toEqual([...TOKEN_NAMES].sort());
         const button = schema.properties.components.properties.button!;
         expect(Object.keys(button.properties)).toEqual(expect.arrayContaining(['css', 'radius', 'height', 'height-sm', 'font-size-xs']));
-        expect(Object.keys((button.properties.css as { properties: object }).properties)).toEqual(['root', 'icon']);
+        expect(Object.keys((button.properties.css as { properties: object }).properties)).toEqual(['root', 'icon', 'keys']);
     });
 });
 

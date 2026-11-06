@@ -10,6 +10,7 @@ import { buttonVariants, createButton } from '@luxalgo/vela-ui/button';
 import { createTabs } from '@luxalgo/vela-ui/tabs';
 import { createToggleGroup } from '@luxalgo/vela-ui/toggle-group';
 import { createBadge } from '@luxalgo/vela-ui/badge';
+import { iconEl } from '../packages/vela-ui/src/lib/icons';
 
 // Browsers run queued microtasks between animation-frame callbacks; jsdom runs a frame's
 // callbacks back to back. Zag focuses in one frame callback and reads the focus in the
@@ -104,6 +105,48 @@ describe('Button', () => {
     it('resolves variants to their defaults', () => {
         expect(buttonVariants()).toEqual({ 'data-variant': 'default', 'data-size': 'default' });
         expect(buttonVariants({ size: 'sm' })).toEqual({ 'data-variant': 'default', 'data-size': 'sm' });
+    });
+
+    it('holds key caps before and after its text, never on an icon size', () => {
+        const b = createButton({ text: 'Navigate', keys: ['↑', '↓'], keysEnd: ['Esc'], variant: 'ghost', size: 'xs' });
+        const groups = [...b.el.querySelectorAll('[data-slot="button-keys"]')];
+        expect(groups.map((g) => g.getAttribute('data-keys'))).toEqual(['inline-start', 'inline-end']);
+        expect([...groups[0]!.querySelectorAll('kbd[data-slot="kbd"]')].map((k) => k.textContent)).toEqual(['↑', '↓']);
+        expect(b.el.textContent).toBe('↑↓NavigateEsc');
+        expect(createButton({ icon: 'close', size: 'icon-sm', label: 'Close', keys: ['Esc'] }).el.querySelector('kbd')).toBeNull();
+        expect(createButton({ text: 'Plain', keys: [] }).el.querySelector('[data-slot="button-keys"]')).toBeNull();
+    });
+
+    it('a favorite star toggles itself, swapping to the filled star, when uncontrolled', () => {
+        const onPressedChange = vi.fn();
+        const star = createButton({ variant: 'favorite', size: 'icon-xs', label: 'Favorite', defaultPressed: false, onPressedChange });
+        const icon = () => star.el.querySelector('[data-icon="inline-start"]')!.innerHTML;
+        expect(icon()).toBe(iconEl('star').innerHTML);
+        expect(star.el.getAttribute('aria-pressed')).toBe('false');
+        star.el.click();
+        expect(onPressedChange).toHaveBeenLastCalledWith(true);
+        expect(star.pressed).toBe(true);
+        expect(star.el.hasAttribute('data-pressed')).toBe(true);
+        expect(icon()).toBe(iconEl('star-filled').innerHTML);
+        star.el.click();
+        expect(onPressedChange).toHaveBeenLastCalledWith(false);
+        expect(icon()).toBe(iconEl('star').innerHTML);
+    });
+
+    it('a controlled toggle only asks, until setPressed moves it', () => {
+        const onPressedChange = vi.fn();
+        const onClick = vi.fn();
+        const b = createButton({ variant: 'ghost', size: 'icon-sm', label: 'Lock', icon: 'lock', iconPressed: 'unlock', pressed: false, onPressedChange, onClick });
+        b.el.click();
+        expect(onPressedChange).toHaveBeenCalledWith(true);
+        expect(onClick).toHaveBeenCalledTimes(1);
+        expect(b.pressed).toBe(false);
+        expect(b.el.getAttribute('aria-pressed')).toBe('false');
+        b.setPressed(true);
+        expect(b.el.querySelector('[data-icon="inline-start"]')!.innerHTML).toBe(iconEl('unlock').innerHTML);
+        expect(onPressedChange).toHaveBeenCalledTimes(1);
+        // A toggle named only by its callback starts unpressed.
+        expect(createButton({ text: 'Bold', onPressedChange: () => {} }).el.getAttribute('aria-pressed')).toBe('false');
     });
 });
 
@@ -204,6 +247,31 @@ describe('Tabs (Zag tabs machine)', () => {
         tabs.setHidden('a', false);
         expect(tabs.trigger('a')!.hidden).toBe(false);
         expect(tabs.value).toBe('c'); // showing a tab never moves the selection
+    });
+
+    it('reads a tab with a description on two lines, its count on the label line', () => {
+        const tabs = createTabs({
+            items: [
+                { value: '2026-11-05', label: 'Thu', description: '5' },
+                { value: '2026-11-06', label: 'Fri', description: '6', count: 3 },
+                { value: 'all', label: 'All' },
+            ],
+            variant: 'soft',
+        });
+        const fri = tabs.trigger('2026-11-06')!;
+        expect(fri.hasAttribute('data-description')).toBe(true);
+        expect(fri.querySelector('[data-slot="tabs-label"]')!.textContent).toBe('Fri3');
+        expect(fri.querySelector('[data-slot="tabs-description"]')!.textContent).toBe('6');
+        expect(fri.textContent).toBe('Fri36');
+        tabs.setCount('2026-11-06', 4);
+        expect(fri.querySelector('[data-slot="tabs-label"] [data-slot="tabs-count"]')!.textContent).toBe('4');
+        tabs.setCount('2026-11-05', 1);
+        expect(tabs.trigger('2026-11-05')!.querySelector('[data-slot="tabs-label"] [data-slot="tabs-count"]')).not.toBeNull();
+        // A one-line tab keeps its text and count directly in the trigger.
+        const all = tabs.trigger('all')!;
+        expect(all.hasAttribute('data-description')).toBe(false);
+        expect(all.querySelector('[data-slot="tabs-label"]')).toBeNull();
+        expect(all.firstChild?.nodeType).toBe(Node.TEXT_NODE);
     });
 
     it('keeps the selection across new items, or falls back to the first available one', async () => {

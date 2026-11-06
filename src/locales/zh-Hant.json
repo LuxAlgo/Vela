@@ -1974,6 +1974,8 @@
     "ui.menu.removeFavorite": "從最愛移除",
     "ui.numberInput.decrease": "減少",
     "ui.numberInput.increase": "增加",
+    "ui.sortButton.ascending": "遞增排序",
+    "ui.sortButton.descending": "遞減排序",
     "vela.sidebar.label": "側邊欄",
     "widget.bottombar.chartSettings": "圖表設定",
     "widget.bottombar.extended": "ETH",

@@ -167,7 +167,7 @@ describe('checkTheme', () => {
         expect(problems).toEqual([
             expect.stringContaining('components.buton: no component has that name'),
             expect.stringContaining('components.button.radus is not a setting of button (its settings: radius,'),
-            expect.stringContaining('components.button.css.rooot is not a part of button (its parts: root, icon)'),
+            expect.stringContaining('components.button.css.rooot is not a part of button (its parts: root, icon, keys)'),
         ]);
     });
 

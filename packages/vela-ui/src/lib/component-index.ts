@@ -13,7 +13,7 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         settings: ['tip-radius', 'tip-shadow', 'tip-z', 'tip-bg'],
     },
     button: {
-        parts: ['root', 'icon'],
+        parts: ['root', 'icon', 'keys'],
         settings: ['radius', 'height', 'height-xs', 'height-sm', 'height-lg', 'font-size', 'font-size-xs', 'font-size-sm'],
     },
     'callout-bubble': {
@@ -23,6 +23,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
     checkbox: {
         parts: ['root', 'icon'],
         settings: ['radius'],
+    },
+    collapsible: {
+        parts: ['root', 'trigger', 'icon', 'title', 'count', 'chevron', 'content'],
+        settings: ['trigger-height', 'radius'],
     },
     'color-picker': {
         parts: ['root', 'trigger', 'swatch', 'content'],
@@ -76,6 +80,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['root', 'control', 'addon', 'text'],
         settings: ['radius', 'height', 'height-sm', 'focus-ring'],
     },
+    item: {
+        parts: ['root', 'media', 'content', 'title', 'description', 'meta', 'actions', 'group'],
+        settings: ['radius', 'gap'],
+    },
     kbd: {
         parts: ['root'],
         settings: ['radius', 'shadow'],
@@ -83,6 +91,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
     'line-chart': {
         parts: ['root', 'label', 'area', 'line', 'dot', 'tip'],
         settings: ['tip-radius', 'tip-shadow', 'tip-z', 'tip-bg', 'stroke-width'],
+    },
+    'month-grid': {
+        parts: ['root', 'weekday', 'day', 'date', 'value', 'detail', 'blank'],
+        settings: ['radius', 'day-height', 'gap', 'selected-ring'],
     },
     'number-input': {
         parts: ['root', 'input', 'steps', 'step'],
@@ -100,6 +112,14 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['root', 'trigger', 'value', 'icon', 'sizer', 'native', 'content', 'viewport', 'item', 'rail', 'thumb'],
         settings: ['radius', 'content-radius', 'thumb-radius', 'focus-ring'],
     },
+    slider: {
+        parts: ['root', 'control', 'track', 'range', 'thumb'],
+        settings: ['track-height', 'thumb-size', 'radius', 'focus-ring'],
+    },
+    'sort-button': {
+        parts: ['root', 'icon', 'state'],
+        settings: ['radius'],
+    },
     sparkline: {
         parts: ['root', 'area', 'baseline', 'line'],
         settings: ['stroke-width'],
@@ -113,7 +133,7 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         settings: ['width', 'height', 'thumb-size', 'width-sm', 'height-sm', 'thumb-size-sm'],
     },
     tabs: {
-        parts: ['list', 'trigger', 'icon', 'count', 'content'],
+        parts: ['list', 'trigger', 'icon', 'count', 'label', 'description', 'content'],
         settings: ['track-radius', 'trigger-radius', 'filled-radius', 'soft-radius', 'count-radius'],
     },
     'text-area': {
