@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.2]
+
+### Added
+
+- **Every Hyperliquid market, HIP-3 dexes included.** The Hyperliquid provider now serves the
+  perpetuals that builder-deployed (HIP-3) dexes list next to the main perps and spot pairs:
+  stocks, commodities, indices and whatever else is deployed, around the clock. Chart one by
+  the name Hyperliquid gives it, with the provider in front (`hyperliquid:xyz:TSLA`). Symbol
+  search finds them with the dex's name in the description, and they load with live candles
+  and the right price precision. Main perps and spot pairs work as before.
+
 ## [0.10.1]
 
 ### Added

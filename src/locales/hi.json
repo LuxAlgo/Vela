@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "बढ़ाएं",
     "ui.sortButton.ascending": "आरोही क्रम में",
     "ui.sortButton.descending": "अवरोही क्रम में",
+    "ui.treemap.all": "सभी",
+    "ui.treemap.zoomIn": "ज़ूम इन",
     "vela.sidebar.label": "साइडबार",
     "widget.bottombar.chartSettings": "चार्ट सेटिंग्स",
     "widget.bottombar.extended": "ETH",

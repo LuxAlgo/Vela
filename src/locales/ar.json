@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "زيادة",
     "ui.sortButton.ascending": "مرتّب تصاعديًا",
     "ui.sortButton.descending": "مرتّب تنازليًا",
+    "ui.treemap.all": "الكل",
+    "ui.treemap.zoomIn": "تكبير",
     "vela.sidebar.label": "الشريط الجانبي",
     "widget.bottombar.chartSettings": "إعدادات الرسم البياني",
     "widget.bottombar.extended": "ETH",

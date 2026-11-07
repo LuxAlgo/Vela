@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "Zwiększ",
     "ui.sortButton.ascending": "sortowanie rosnąco",
     "ui.sortButton.descending": "sortowanie malejąco",
+    "ui.treemap.all": "Wszystkie",
+    "ui.treemap.zoomIn": "Powiększ",
     "vela.sidebar.label": "Pasek boczny",
     "widget.bottombar.chartSettings": "Ustawienia wykresu",
     "widget.bottombar.extended": "ETH",

@@ -1,7 +1,8 @@
 // The gallery's data components: stats, keycaps, an empty state, a table, a sparkline, a donut,
-// the three charts and a hover card, on sample trading figures.
+// the three charts, a treemap, cards and a hover card, on sample trading figures.
 import { t } from '@luxalgo/vela-ui';
 import { createBarChart } from '@luxalgo/vela-ui/bar-chart';
+import { createCard } from '@luxalgo/vela-ui/card';
 import { createDataTable } from '@luxalgo/vela-ui/data-table';
 import { createDonut } from '@luxalgo/vela-ui/donut';
 import { createEmpty } from '@luxalgo/vela-ui/empty';
@@ -11,7 +12,16 @@ import { createLineChart } from '@luxalgo/vela-ui/line-chart';
 import { createScatterChart } from '@luxalgo/vela-ui/scatter-chart';
 import { createSparkline } from '@luxalgo/vela-ui/sparkline';
 import { createStat, toneOf } from '@luxalgo/vela-ui/stat';
+import { createTreemap, type TreemapItem } from '@luxalgo/vela-ui/treemap';
 import { createButton } from '../src/ui';
+
+const markets = (rows: Array<[label: string, weight: number, change: number | null]>): TreemapItem[] => rows.map(([label, weight, value]) => ({ id: label, label, weight, value }));
+
+const MARKETS: TreemapItem[] = [
+    { id: 'crypto', label: 'Crypto', children: markets([['BTC', 6, 2.4], ['ETH', 4, -1.2], ['SOL', 2, 5.1], ['BNB', 2, 0.4], ['XRP', 1, -3.3], ['DOGE', 1, 1.8]]) },
+    { id: 'stocks', label: 'Stocks', children: markets([['NVDA', 5, 3.2], ['AAPL', 4, -0.6], ['MSFT', 4, 0.9], ['TSLA', 2, -4.4], ['AMZN', 3, 1.1]]) },
+    { id: 'forex', label: 'Forex', children: markets([['EURUSD', 1, -0.2], ['USDJPY', 1, 0.5], ['GBPUSD', 1, null]]) },
+];
 
 interface Trade {
     id: string;
@@ -71,6 +81,32 @@ export function dataGallery(row: (label: string, ...children: HTMLElement[]) => 
     const scatter = createScatterChart({ xTitle: 'Bars held', yTitle: 'P&L' });
     row('scatter-chart', box('420px', '200px', scatter.el));
     scatter.setData(TRADES.map((r) => ({ x: r.bars, y: r.pnl, color: r.pnl >= 0 ? t.profit.var : t.loss.var })), [{ x: 0, y: 40 }, { x: 32, y: 160 }]);
+
+    const map = createTreemap({ items: MARKETS, domain: 4, legend: true, drill: true, label: 'Moves by market', format: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%` });
+    row('treemap', box('480px', '300px', map.el));
+    const leaves = MARKETS.flatMap((group) => group.children ?? []);
+    setInterval(() => {
+        const moved = leaves[Math.floor(Math.random() * leaves.length)]!;
+        moved.value = Math.round(((moved.value ?? 0) + (Math.random() - 0.5)) * 100) / 100;
+        map.setValues({ [moved.id]: moved.value });
+    }, 2000);
+
+    const tiles = document.createElement('div');
+    tiles.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px';
+    tiles.append(
+        createCard({ variant: 'inset', size: 'sm', content: createStat({ label: 'Win rate', value: '67%', tone: 'profit' }).el }).el,
+        createCard({ variant: 'inset', size: 'sm', content: createStat({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el }).el,
+    );
+    const summary = createCard({
+        eyebrow: 'Journal',
+        title: 'This week',
+        description: 'Closed trades on every account.',
+        action: createButton({ text: 'Export', variant: 'outline', size: 'sm' }).el,
+        content: tiles,
+        footer: [Object.assign(document.createElement('span'), { textContent: `${TRADES.length} trades` }), Object.assign(document.createElement('span'), { textContent: 'Updated just now' })],
+    });
+    const pick = createCard({ size: 'sm', title: 'BTCUSDT', description: 'Bitcoin / TetherUS · +1.24%', onSelect: () => pick.setSelected(!pick.el.hasAttribute('data-selected')) });
+    row('card', box('380px', 'auto', summary.el), box('220px', 'auto', pick.el));
 
     const trigger = createButton({ text: 'Hover me', variant: 'outline', size: 'sm' }).el;
     attachHoverCard(trigger, () => ({ title: 'Long position', icon: 'bell', shortcut: 'Alt+L', description: 'Draws a long trade with its target and stop.', hint: 'Shift-click to keep the tool' }), { host, openDelay: 150 });

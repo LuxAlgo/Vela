@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "증가",
     "ui.sortButton.ascending": "오름차순 정렬됨",
     "ui.sortButton.descending": "내림차순 정렬됨",
+    "ui.treemap.all": "전체",
+    "ui.treemap.zoomIn": "확대",
     "vela.sidebar.label": "사이드바",
     "widget.bottombar.chartSettings": "차트 설정",
     "widget.bottombar.extended": "ETH",

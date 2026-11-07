@@ -20,6 +20,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['root', 'panel', 'title', 'text', 'actions', 'button'],
         settings: ['panel-radius', 'button-radius'],
     },
+    card: {
+        parts: ['root', 'header', 'heading', 'eyebrow', 'title', 'trigger', 'description', 'action', 'content', 'footer'],
+        settings: ['radius', 'padding', 'padding-sm', 'gap', 'gap-sm', 'background', 'border', 'inset-background'],
+    },
     checkbox: {
         parts: ['root', 'icon'],
         settings: ['radius'],
@@ -147,5 +151,9 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
     tooltip: {
         parts: ['positioner', 'content'],
         settings: ['radius'],
+    },
+    treemap: {
+        parts: ['root', 'crumbs', 'crumb', 'map', 'group', 'group-name', 'group-value', 'tile', 'tile-label', 'tile-value', 'legend', 'legend-bar', 'tip'],
+        settings: ['radius', 'up', 'down', 'tile-bg', 'tint-min', 'tint-max', 'hover-z', 'tip-radius', 'tip-bg', 'tip-shadow', 'tip-z'],
     },
 };

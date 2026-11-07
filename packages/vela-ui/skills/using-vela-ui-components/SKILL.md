@@ -1,6 +1,6 @@
 ---
 name: using-vela-ui-components
-description: Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, collapsible sections, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts). Use when adding or wiring these components on a page or next to a Vela chart, when a menu, dialog or tooltip from the kit renders unstyled or in the wrong place, or when the user wants UI that matches their Vela chart, even if they do not name the kit.
+description: Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, collapsible sections, cards, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts, treemap). Use when adding or wiring these components on a page or next to a Vela chart, when a menu, dialog or tooltip from the kit renders unstyled or in the wrong place, or when the user wants UI that matches their Vela chart, even if they do not name the kit.
 license: Apache-2.0
 ---
 
@@ -48,9 +48,10 @@ To find a component, its props, parts and an example, search
 | A modal or a sheet | `dialog`, `drawer` |
 | Floating content of your own | `popover` |
 | A section that folds | `collapsible` |
+| A panel or tile of figures, a chart with its title | `card` (`inset` for tiles inside a card; `onSelect` makes it clickable) |
 | Rows of a list (a watchlist, alerts, results) | `item`, stacked by `createItemGroup` |
 | A form | `input`, `input-group`, `text-area`, `number-input`, `select`, `checkbox`, `switch`, `slider`, `date-picker`, `color-picker` |
-| Data | `data-table`, `sort-button` (sorts a list that is not a table), `month-grid` (a figure per day), `sparkline`, `line-chart`, `bar-chart`, `scatter-chart`, `donut`, `empty` |
+| Data | `data-table`, `sort-button` (sorts a list that is not a table), `month-grid` (a figure per day), `sparkline`, `line-chart`, `bar-chart`, `scatter-chart`, `donut`, `treemap` (weighted tiles tinted by a value, in groups that can zoom), `empty` |
 
 ## Rules that prevent the common bugs
 

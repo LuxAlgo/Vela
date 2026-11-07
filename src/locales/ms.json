@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "Tambahkan",
     "ui.sortButton.ascending": "disusun menaik",
     "ui.sortButton.descending": "disusun menurun",
+    "ui.treemap.all": "Semua",
+    "ui.treemap.zoomIn": "Zum masuk",
     "vela.sidebar.label": "Bar sisi",
     "widget.bottombar.chartSettings": "Tetapan carta",
     "widget.bottombar.extended": "ETH",
