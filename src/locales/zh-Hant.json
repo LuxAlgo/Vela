@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "增加",
     "ui.sortButton.ascending": "遞增排序",
     "ui.sortButton.descending": "遞減排序",
+    "ui.treemap.all": "全部",
+    "ui.treemap.zoomIn": "放大",
     "vela.sidebar.label": "側邊欄",
     "widget.bottombar.chartSettings": "圖表設定",
     "widget.bottombar.extended": "ETH",

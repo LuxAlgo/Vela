@@ -1,5 +1,5 @@
 // The gallery's data components: stats, keycaps, an empty state, a table, a sparkline, a donut,
-// the three charts and a hover card, on sample trading figures.
+// the three charts, a treemap and a hover card, on sample trading figures.
 import { t } from '@luxalgo/vela-ui';
 import { createBarChart } from '@luxalgo/vela-ui/bar-chart';
 import { createDataTable } from '@luxalgo/vela-ui/data-table';
@@ -11,7 +11,16 @@ import { createLineChart } from '@luxalgo/vela-ui/line-chart';
 import { createScatterChart } from '@luxalgo/vela-ui/scatter-chart';
 import { createSparkline } from '@luxalgo/vela-ui/sparkline';
 import { createStat, toneOf } from '@luxalgo/vela-ui/stat';
+import { createTreemap, type TreemapItem } from '@luxalgo/vela-ui/treemap';
 import { createButton } from '../src/ui';
+
+const markets = (rows: Array<[label: string, weight: number, change: number | null]>): TreemapItem[] => rows.map(([label, weight, value]) => ({ id: label, label, weight, value }));
+
+const MARKETS: TreemapItem[] = [
+    { id: 'crypto', label: 'Crypto', children: markets([['BTC', 6, 2.4], ['ETH', 4, -1.2], ['SOL', 2, 5.1], ['BNB', 2, 0.4], ['XRP', 1, -3.3], ['DOGE', 1, 1.8]]) },
+    { id: 'stocks', label: 'Stocks', children: markets([['NVDA', 5, 3.2], ['AAPL', 4, -0.6], ['MSFT', 4, 0.9], ['TSLA', 2, -4.4], ['AMZN', 3, 1.1]]) },
+    { id: 'forex', label: 'Forex', children: markets([['EURUSD', 1, -0.2], ['USDJPY', 1, 0.5], ['GBPUSD', 1, null]]) },
+];
 
 interface Trade {
     id: string;
@@ -71,6 +80,15 @@ export function dataGallery(row: (label: string, ...children: HTMLElement[]) => 
     const scatter = createScatterChart({ xTitle: 'Bars held', yTitle: 'P&L' });
     row('scatter-chart', box('420px', '200px', scatter.el));
     scatter.setData(TRADES.map((r) => ({ x: r.bars, y: r.pnl, color: r.pnl >= 0 ? t.profit.var : t.loss.var })), [{ x: 0, y: 40 }, { x: 32, y: 160 }]);
+
+    const map = createTreemap({ items: MARKETS, domain: 4, legend: true, drill: true, label: 'Moves by market', format: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%` });
+    row('treemap', box('480px', '300px', map.el));
+    const leaves = MARKETS.flatMap((group) => group.children ?? []);
+    setInterval(() => {
+        const moved = leaves[Math.floor(Math.random() * leaves.length)]!;
+        moved.value = Math.round(((moved.value ?? 0) + (Math.random() - 0.5)) * 100) / 100;
+        map.setValues({ [moved.id]: moved.value });
+    }, 2000);
 
     const trigger = createButton({ text: 'Hover me', variant: 'outline', size: 'sm' }).el;
     attachHoverCard(trigger, () => ({ title: 'Long position', icon: 'bell', shortcut: 'Alt+L', description: 'Draws a long trade with its target and stop.', hint: 'Shift-click to keep the tool' }), { host, openDelay: 150 });

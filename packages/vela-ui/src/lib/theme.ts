@@ -40,6 +40,7 @@ import type { sortButtonDef } from '../components/sort-button';
 import type { switchDef } from '../components/switch';
 import type { toggleGroupDef } from '../components/toggle-group';
 import type { tooltipDef } from '../components/tooltip';
+import type { treemapDef } from '../components/treemap';
 import { contrastRatio, isDarkColor, mix, parseRgb } from './color';
 import { KIT_COMPONENTS } from './component-index';
 import { acceptCss, injectLayerOrder, isWrittenCss } from './css';
@@ -173,6 +174,7 @@ export interface ComponentDefs {
     'text-area': typeof textAreaDef;
     'toggle-group': typeof toggleGroupDef;
     tooltip: typeof tooltipDef;
+    treemap: typeof treemapDef;
 }
 
 type SettingsOf<D> = D extends ComponentDef<string, string, infer S> ? S : never;

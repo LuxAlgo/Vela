@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "Artır",
     "ui.sortButton.ascending": "artan sırada",
     "ui.sortButton.descending": "azalan sırada",
+    "ui.treemap.all": "Tümü",
+    "ui.treemap.zoomIn": "Yakınlaştır",
     "vela.sidebar.label": "Kenar çubuğu",
     "widget.bottombar.chartSettings": "Grafik ayarları",
     "widget.bottombar.extended": "ETH",
