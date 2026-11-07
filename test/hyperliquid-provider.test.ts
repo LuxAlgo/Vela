@@ -8,6 +8,7 @@ import {
     aggregate,
 } from '../src/data/providers/hyperliquid/HyperliquidProvider';
 import type { OHLCV } from '../src/core/model/ohlcv';
+import { ProviderRegistry } from '../src/data/ProviderRegistry';
 
 const MIN = 60_000;
 
@@ -31,6 +32,11 @@ describe('Hyperliquid pure helpers', () => {
         expect(parseCoin('btc')).toBe('BTC');
         expect(parseCoin(' eth ')).toBe('ETH');
         expect(parseCoin('PURR/USDC')).toBe('PURR/USDC');
+    });
+
+    it('a HIP-3 ticker keeps its dex prefix, the dex lower-case and the coin upper-case', () => {
+        expect(parseCoin('xyz:TSLA')).toBe('xyz:TSLA');
+        expect(parseCoin('XYZ:tsla')).toBe('xyz:TSLA');
     });
 
     it('candleToOHLCV parses string prices into numbers (open-time in ms)', () => {
@@ -224,5 +230,143 @@ describe('HyperliquidProvider.subscribe', () => {
         expect(FakeWS.instances[0]!.readyState).toBe(3); // the dead socket was closed
         unsub();
         warn.mockRestore();
+    });
+});
+
+describe('Hyperliquid HIP-3 markets (builder-deployed perp dexes)', () => {
+    afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+    const mainMeta = { universe: [{ name: 'BTC', szDecimals: 5, maxLeverage: 40 }], collateralToken: 0 };
+    const spotMeta = {
+        universe: [{ tokens: [1, 0], name: 'PURR/USDC', index: 0, isCanonical: true }],
+        // Token indexes are not array positions on the live API.
+        tokens: [{ name: 'USDC', szDecimals: 8, index: 0 }, { name: 'PURR', szDecimals: 0, index: 1 }, { name: 'USDH', szDecimals: 2, index: 360 }],
+    };
+    const perpDexs = [null, { name: 'xyz', fullName: 'XYZ' }, { name: 'flx', fullName: 'Felix Exchange' }, { name: 'gone', fullName: 'Gone' }, { name: 'down', fullName: 'Down' }];
+    const dexMetas: Record<string, unknown> = {
+        xyz: { universe: [
+            { name: 'xyz:TSLA', szDecimals: 3, maxLeverage: 20 },
+            { name: 'xyz:kGOLD', szDecimals: 2, maxLeverage: 10 },
+            { name: 'xyz:OLD', szDecimals: 2, maxLeverage: 10, isDelisted: true },
+        ], collateralToken: 0 },
+        flx: { universe: [{ name: 'flx:SILVER', szDecimals: 2, maxLeverage: 10 }], collateralToken: 360 },
+        gone: { universe: [{ name: 'gone:NVDA', szDecimals: 2, maxLeverage: 10, isDelisted: true }], collateralToken: 0 },
+    };
+    const route = (b: any): unknown => {
+        if (b.type === 'perpDexs') return perpDexs;
+        if (b.type === 'spotMeta') return spotMeta;
+        if (b.type === 'meta' && b.dex == null) return mainMeta;
+        if (b.type === 'meta') return dexMetas[b.dex] ?? { __notok: true, status: 500 };
+        if (b.type === 'candleSnapshot') return [candle(0, 60, '1', '1', '1', '1', b.req.coin)];
+        return [];
+    };
+
+    it('search lists every live HIP-3 market with the dex that lists it', async () => {
+        stubInfo(route);
+        const list = await new HyperliquidProvider().listSymbols();
+        expect(list.find((s) => s.ticker === 'xyz:TSLA')).toEqual({ ticker: 'xyz:TSLA', description: 'TSLA / USD Perpetual (XYZ)', type: 'futures' });
+        expect(list.find((s) => s.ticker === 'flx:SILVER')!.description).toBe('SILVER / USDH Perpetual (Felix Exchange)');
+    });
+
+    it('search leaves out delisted HIP-3 markets, halted dexes and dexes that fail to answer', async () => {
+        stubInfo(route);
+        const tickers = (await new HyperliquidProvider().listSymbols()).map((s) => s.ticker);
+        expect(tickers).not.toContain('xyz:OLD');
+        expect(tickers.some((t) => t.startsWith('gone:') || t.startsWith('down:'))).toBe(false);
+        expect(tickers).toContain('xyz:TSLA');
+    });
+
+    it('main perps and spot pairs read the same as before when HIP-3 dexes are listed', async () => {
+        stubInfo(route);
+        const p = new HyperliquidProvider();
+        const list = await p.listSymbols();
+        expect(list.find((s) => s.ticker === 'BTC')).toEqual({ ticker: 'BTC', description: 'BTC / USD Perpetual', type: 'futures' });
+        expect(list.find((s) => s.ticker === 'PURR/USDC')).toEqual({ ticker: 'PURR/USDC', description: 'PURR / USDC', type: 'crypto' });
+        expect(await p.getSymbolInfo('BTC')).toMatchObject({ ticker: 'BTC', description: 'BTC / USD Perpetual', currency: 'USD', mintick: 0.1 });
+    });
+
+    it('perps and spot stay searchable when the dex list cannot be fetched', async () => {
+        stubInfo((b) => (b.type === 'perpDexs' ? { __notok: true, status: 503 } : route(b)));
+        const tickers = (await new HyperliquidProvider().listSymbols()).map((s) => s.ticker);
+        expect(tickers).toEqual(['BTC', 'PURR/USDC']);
+    });
+
+    it('a HIP-3 market has symbol info naming its coin, quote and dex, with perp price precision', async () => {
+        stubInfo(route);
+        const info = await new HyperliquidProvider().getSymbolInfo('xyz:TSLA');
+        expect(info).toMatchObject({
+            ticker: 'xyz:TSLA',
+            tickerid: 'HYPERLIQUID:xyz:TSLA',
+            description: 'TSLA / USD Perpetual (XYZ)',
+            type: 'futures',
+            basecurrency: 'TSLA',
+            currency: 'USD',
+            session: '24x7',
+        });
+        expect(info!.mintick).toBeCloseTo(0.001); // 6 − szDecimals(3) = 3 decimals
+        expect(info!.pricescale).toBe(1000);
+    });
+
+    it('a HIP-3 market margined in another stablecoin is quoted in it', async () => {
+        stubInfo(route);
+        expect(await new HyperliquidProvider().getSymbolInfo('flx:SILVER')).toMatchObject({ currency: 'USDH', description: 'SILVER / USDH Perpetual (Felix Exchange)' });
+    });
+
+    it('an unknown HIP-3 market has no symbol info', async () => {
+        stubInfo(route);
+        expect(await new HyperliquidProvider().getSymbolInfo('xyz:NOPE')).toBeUndefined();
+        expect(await new HyperliquidProvider().getSymbolInfo('down:TSLA')).toBeUndefined();
+    });
+
+    it('loading a HIP-3 market asks Hyperliquid for the dex coin', async () => {
+        const calls = stubInfo(route);
+        const bars = await new HyperliquidProvider().getBars('xyz:TSLA', '1h', { limit: 1 });
+        expect(bars.length).toBe(1);
+        expect(calls.find((c) => c.type === 'candleSnapshot').req).toMatchObject({ coin: 'xyz:TSLA', interval: '1h' });
+    });
+
+    it('a HIP-3 market typed in any letter case loads under its listed spelling', async () => {
+        const calls = stubInfo(route);
+        await new HyperliquidProvider().getBars('XYZ:tsla', '1h', { limit: 1 });
+        await new HyperliquidProvider().getBars('XYZ:KGOLD', '1h', { limit: 1 });
+        expect(calls.filter((c) => c.type === 'candleSnapshot').map((c) => c.req.coin)).toEqual(['xyz:TSLA', 'xyz:kGOLD']);
+    });
+
+    it('loading a main perp makes no HIP-3 request', async () => {
+        const calls = stubInfo(route);
+        await new HyperliquidProvider().getBars('BTC', '1h', { limit: 1 });
+        expect(calls.map((c) => c.type)).toEqual(['candleSnapshot']);
+        expect(calls[0].req.coin).toBe('BTC');
+    });
+
+    it('a HIP-3 market streams live candles under its dex coin', () => {
+        const FakeWS = makeFakeWS();
+        vi.stubGlobal('WebSocket', FakeWS);
+        const bars: OHLCV[] = [];
+        const unsub = new HyperliquidProvider().subscribe('xyz:TSLA', '1m', (b) => bars.push(b));
+        const ws = FakeWS.instances[0]!;
+        ws._open();
+        expect(JSON.parse(ws.sent[0]!)).toMatchObject({ method: 'subscribe', subscription: { type: 'candle', coin: 'xyz:TSLA', interval: '1m' } });
+        ws._msg({ channel: 'candle', data: { t: 1000, s: 'BTC', i: '1m', o: '1', h: '1', l: '1', c: '1', v: '1', n: 1 } }); // another coin: ignored
+        ws._msg({ channel: 'candle', data: { t: 2000, s: 'xyz:TSLA', i: '1m', o: '358', h: '359', l: '357', c: '358.5', v: '4', n: 3 } });
+        expect(bars).toEqual([{ time: 2000, open: 358, high: 359, low: 357, close: 358.5, volume: 4 }]);
+        unsub();
+    });
+
+    it("a HIP-3 market's icon is looked up by its coin, not its dex", () => {
+        const p = new HyperliquidProvider();
+        expect(p.resolveSymbolIcon({ ticker: 'hyna:BTC' })).toBe('https://crypto-icons.ledger.com/BTC.png');
+        expect(p.resolveSymbolIcon({ ticker: 'hyna:BTC', description: 'BTC / USD Perpetual (HyENA)' })).toBe('https://crypto-icons.ledger.com/BTC.png');
+    });
+
+    it('a chart symbol hyperliquid:xyz:TSLA routes to the HIP-3 market and keeps that form', async () => {
+        stubInfo(route);
+        const registry = new ProviderRegistry();
+        await registry.register('hyperliquid', new HyperliquidProvider());
+        const resolved = registry.resolve('hyperliquid:xyz:TSLA');
+        expect(resolved).toEqual({ provider: 'hyperliquid', ticker: 'xyz:TSLA' });
+        expect(registry.canonicalSymbol(resolved!)).toBe('hyperliquid:xyz:TSLA');
+        // A bare main perp still resolves by itself.
+        expect(registry.resolve('BTC')).toEqual({ provider: 'hyperliquid', ticker: 'BTC' });
     });
 });

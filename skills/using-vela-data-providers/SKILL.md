@@ -29,7 +29,7 @@ new VelaWorkspace('#chart', {
     symbol: 'BTCUSDT',
     providers: {                                   // one instance, shared by every cell
         binance: () => new BinanceProvider(),      // BTCUSDT (spot), BTCUSDT.P (perpetual)
-        hyperliquid: () => new HyperliquidProvider(), // BTC, ETH (perps), PURR/USDC (spot)
+        hyperliquid: () => new HyperliquidProvider(), // BTC, ETH (perps), PURR/USDC (spot), hyperliquid:xyz:TSLA (HIP-3)
     },
 });
 ```
