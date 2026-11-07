@@ -1,15 +1,16 @@
-# Mirrors @luxalgo/vela (and @luxalgo/vela-ui, the kit it depends on) to GitHub Packages
-# when a version tag is pushed.
+# Publishes @luxalgo/vela (and @luxalgo/vela-ui, the kit it depends on) when a
+# version tag is pushed: first to npmjs, the packages' public home, then a mirror to
+# GitHub Packages.
 #
-# npmjs stays the packages' PUBLIC home, published as today (npm publish, by hand, before
-# tagging: the kit first when its version changed, then Vela). This mirror exists for the org's PRIVATE consumers: npm maps
-# registries per SCOPE, not per package, and @luxalgo/vela-pro lives on GitHub
-# Packages — so any project consuming vela-pro must resolve the WHOLE @luxalgo
-# scope there, vela included. Flow: publish to npmjs → push the vX.Y.Z tag → this
-# run mirrors the same version to GitHub Packages.
+# npmjs: npm trusted publishing (OIDC). No npm token exists anywhere; npm accepts
+# the publish only from this repository, this workflow and the `npm` environment,
+# whose protection rules decide who approves a release. Provenance is attached, so
+# the package page shows the commit it was built from.
 #
-# GITHUB_TOKEN publishes — no secret to configure; the package is created on the
-# first run and inherits the repository's visibility and access.
+# GitHub Packages: a mirror for the org's PRIVATE consumers. npm maps registries per
+# SCOPE, not per package, and @luxalgo/vela-pro lives on GitHub Packages, so any
+# project consuming vela-pro must resolve the WHOLE @luxalgo scope there, vela
+# included. GITHUB_TOKEN publishes; the package inherits the repository's visibility.
 name: publish
 on:
   push:
@@ -20,7 +21,61 @@ permissions:
   packages: write
 
 jobs:
+  npmjs:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - run: npm install -g npm@^11.5.1
+
+      - name: Tag must match package.json version
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          [ "$pkg" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != $pkg"; exit 1; }
+
+      - run: npm ci
+
+      - name: Gate
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - run: npm run build
+
+      # The kit first when its version is new to npmjs (it needs its own trusted
+      # publisher entry on npmjs); a Vela release that keeps the kit's version skips it.
+      - name: Publish @luxalgo/vela-ui
+        run: |
+          v="$(node -p "require('./packages/vela-ui/package.json').version")"
+          if npm view "@luxalgo/vela-ui@$v" version >/dev/null 2>&1; then
+            echo "@luxalgo/vela-ui@$v is already on npmjs"
+          else
+            npm publish -w @luxalgo/vela-ui --access public --provenance
+          fi
+
+      - name: Publish @luxalgo/vela
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          if npm view "@luxalgo/vela@$v" version >/dev/null 2>&1; then
+            echo "@luxalgo/vela@$v is already on npmjs"
+          else
+            npm publish --access public --provenance
+          fi
+
   mirror-github-packages:
+    needs: npmjs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
