@@ -68,10 +68,11 @@ The load-bearing rules:
   v1 — the measurements do not justify it**. Create/destroy cycles are clean
   (DOM/canvas counts return to baseline; the WebGL backend explicitly releases its
   context on destroy so churn cannot evict live charts' contexts).
-- The workspace duplicates ~a few hundred lines of the widget's chrome glue.
-  Accepted for v1. **Future work:** `VelaWidget` should delegate to a one-cell
-  workspace; the unified state document already makes the two interchangeable
-  (a widget document restores into a workspace slot verbatim, and back).
+- At introduction, the workspace duplicated a few hundred lines of the widget's chrome
+  glue. This was accepted for v1, with delegation to a one-cell workspace planned as a
+  follow-up. **Follow-up completed:** `VelaWidget` is now a deprecated wrapper over
+  `VelaWorkspace` with `layout: false`. The unified state document supports this
+  delegation; see the [single-chart migration notes](../../user/workspace.md#single-chart-layout-false).
 - Crosshair sync shipped as the port's first OPTIONAL interaction seam:
   `setExternalCrosshair?(time, price?)`, detected by presence (no capability flag).
   Followers show a dimmed data-space ghost; the contract's one rule — a ghost never
