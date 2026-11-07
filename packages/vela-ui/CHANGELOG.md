@@ -3,6 +3,20 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- **A treemap.** `@luxalgo/vela-ui/treemap` lays weighted items out as tiles close to square,
+  each tinted by its value on a diverging scale (a watchlist's moves of the day, sized equally
+  or by market cap). Items with children form groups headed by their name and the median of
+  their values, or the mean, the sum or a figure of your own. Tiles show their label and value
+  as their size allows, a readout follows the pointer and the keyboard focus, the arrow keys
+  move between tiles, and a click reports the tile with its groups. New values repaint the
+  tiles in place, and a resize moves them. With `drill`, a group's header zooms into it and a
+  breadcrumb, or Esc, leads back. An optional legend shows the scale, and `squarify` lays out
+  rectangles of your own.
+
 ## [0.2.0]
 
 ### Added

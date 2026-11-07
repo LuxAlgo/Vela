@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "Increase",
     "ui.sortButton.ascending": "sorted ascending",
     "ui.sortButton.descending": "sorted descending",
+    "ui.treemap.all": "All",
+    "ui.treemap.zoomIn": "Zoom in",
     "vela.sidebar.label": "Sidebar",
     "widget.bottombar.chartSettings": "Chart settings",
     "widget.bottombar.extended": "ETH",

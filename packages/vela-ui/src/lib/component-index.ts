@@ -148,4 +148,8 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['positioner', 'content'],
         settings: ['radius'],
     },
+    treemap: {
+        parts: ['root', 'crumbs', 'crumb', 'map', 'group', 'group-name', 'group-value', 'tile', 'tile-label', 'tile-value', 'legend', 'legend-bar', 'tip'],
+        settings: ['radius', 'up', 'down', 'tile-bg', 'tint-min', 'tint-max', 'hover-z', 'tip-radius', 'tip-bg', 'tip-shadow', 'tip-z'],
+    },
 };

@@ -1980,6 +1980,8 @@ export interface VelaCoreMessageCatalog {
     'ui.numberInput.increase': string;
     'ui.sortButton.ascending': string;
     'ui.sortButton.descending': string;
+    'ui.treemap.all': string;
+    'ui.treemap.zoomIn': string;
     'vela.sidebar.label': string;
     'widget.bottombar.chartSettings': string;
     'widget.bottombar.extended': string;

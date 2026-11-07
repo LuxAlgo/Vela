@@ -1976,6 +1976,8 @@
     "ui.numberInput.increase": "Aumentar",
     "ui.sortButton.ascending": "ordem crescente",
     "ui.sortButton.descending": "ordem decrescente",
+    "ui.treemap.all": "Todos",
+    "ui.treemap.zoomIn": "Aumentar zoom",
     "vela.sidebar.label": "Barra lateral",
     "widget.bottombar.chartSettings": "Configurações do gráfico",
     "widget.bottombar.extended": "ETH",
