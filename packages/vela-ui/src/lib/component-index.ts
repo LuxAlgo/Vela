@@ -20,6 +20,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['root', 'panel', 'title', 'text', 'actions', 'button'],
         settings: ['panel-radius', 'button-radius'],
     },
+    card: {
+        parts: ['root', 'header', 'heading', 'eyebrow', 'title', 'trigger', 'description', 'action', 'content', 'footer'],
+        settings: ['radius', 'padding', 'padding-sm', 'gap', 'gap-sm', 'background', 'border', 'inset-background'],
+    },
     checkbox: {
         parts: ['root', 'icon'],
         settings: ['radius'],
