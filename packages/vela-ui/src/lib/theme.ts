@@ -8,6 +8,7 @@ import type { badgeDef } from '../components/badge';
 import type { barChartDef } from '../components/bar-chart';
 import type { buttonDef } from '../components/button';
 import type { calloutBubbleDef } from '../components/callout-bubble';
+import type { cardDef } from '../components/card';
 import type { colorPickerDef } from '../components/color-picker';
 import type { dataTableDef } from '../components/data-table';
 import type { datePickerDef } from '../components/date-picker';
@@ -142,6 +143,7 @@ export interface ComponentDefs {
     'bar-chart': typeof barChartDef;
     button: typeof buttonDef;
     'callout-bubble': typeof calloutBubbleDef;
+    card: typeof cardDef;
     checkbox: typeof checkboxDef;
     collapsible: typeof collapsibleDef;
     'color-picker': typeof colorPickerDef;

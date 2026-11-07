@@ -16,6 +16,13 @@ uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
   tiles in place, and a resize moves them. With `drill`, a group's header zooms into it and a
   breadcrumb, or Esc, leads back. An optional legend shows the scale, and `squarify` lays out
   rectangles of your own.
+- **A card.** `@luxalgo/vela-ui/card` holds one subject on a surface of its own: a header with
+  an eyebrow over the title and a description under it, an action at its end, then the
+  content and a footer past a line. `inset` is the sunken tile for figures inside another
+  card, and `sm` is tighter. Its title is a heading, so screen readers move from card to card.
+  With `onSelect` the whole card is clickable while a press on a button inside it stays the
+  button's, and `selected` marks the current one. Its padding, radius, background and border
+  are settings a theme can change.
 
 ## [0.2.0]
 

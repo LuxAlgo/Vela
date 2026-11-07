@@ -1,7 +1,8 @@
 // The gallery's data components: stats, keycaps, an empty state, a table, a sparkline, a donut,
-// the three charts, a treemap and a hover card, on sample trading figures.
+// the three charts, a treemap, cards and a hover card, on sample trading figures.
 import { t } from '@luxalgo/vela-ui';
 import { createBarChart } from '@luxalgo/vela-ui/bar-chart';
+import { createCard } from '@luxalgo/vela-ui/card';
 import { createDataTable } from '@luxalgo/vela-ui/data-table';
 import { createDonut } from '@luxalgo/vela-ui/donut';
 import { createEmpty } from '@luxalgo/vela-ui/empty';
@@ -89,6 +90,23 @@ export function dataGallery(row: (label: string, ...children: HTMLElement[]) => 
         moved.value = Math.round(((moved.value ?? 0) + (Math.random() - 0.5)) * 100) / 100;
         map.setValues({ [moved.id]: moved.value });
     }, 2000);
+
+    const tiles = document.createElement('div');
+    tiles.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px';
+    tiles.append(
+        createCard({ variant: 'inset', size: 'sm', content: createStat({ label: 'Win rate', value: '67%', tone: 'profit' }).el }).el,
+        createCard({ variant: 'inset', size: 'sm', content: createStat({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el }).el,
+    );
+    const summary = createCard({
+        eyebrow: 'Journal',
+        title: 'This week',
+        description: 'Closed trades on every account.',
+        action: createButton({ text: 'Export', variant: 'outline', size: 'sm' }).el,
+        content: tiles,
+        footer: [Object.assign(document.createElement('span'), { textContent: `${TRADES.length} trades` }), Object.assign(document.createElement('span'), { textContent: 'Updated just now' })],
+    });
+    const pick = createCard({ size: 'sm', title: 'BTCUSDT', description: 'Bitcoin / TetherUS · +1.24%', onSelect: () => pick.setSelected(!pick.el.hasAttribute('data-selected')) });
+    row('card', box('380px', 'auto', summary.el), box('220px', 'auto', pick.el));
 
     const trigger = createButton({ text: 'Hover me', variant: 'outline', size: 'sm' }).el;
     attachHoverCard(trigger, () => ({ title: 'Long position', icon: 'bell', shortcut: 'Alt+L', description: 'Draws a long trade with its target and stop.', hint: 'Shift-click to keep the tool' }), { host, openDelay: 150 });
