@@ -1,6 +1,6 @@
 ---
 name: using-vela-ui-components
-description: Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, collapsible sections, cards, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts, treemap). Use when adding or wiring these components on a page or next to a Vela chart, when a menu, dialog or tooltip from the kit renders unstyled or in the wrong place, or when the user wants UI that matches their Vela chart, even if they do not name the kit.
+description: Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, toasts, collapsible sections, cards, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts, treemap). Use when adding or wiring these components on a page or next to a Vela chart, when a menu, dialog or tooltip from the kit renders unstyled or in the wrong place, or when the user wants UI that matches their Vela chart, even if they do not name the kit.
 license: Apache-2.0
 ---
 
@@ -47,6 +47,7 @@ To find a component, its props, parts and an example, search
 | A label or a card on hover | `tooltip`, `hover-card` |
 | A modal or a sheet | `dialog`, `drawer` |
 | Floating content of your own | `popover` |
+| A notice that leaves on its own (saved, failed, an alert fired) | `toast`: raise it with `toast()` / `toast.success(…)` from anywhere, shown by one `createToaster()` |
 | A section that folds | `collapsible` |
 | A panel or tile of figures, a chart with its title | `card` (`inset` for tiles inside a card; `onSelect` makes it clickable) |
 | Rows of a list (a watchlist, alerts, results) | `item`, stacked by `createItemGroup` |

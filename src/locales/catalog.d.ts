@@ -1980,6 +1980,8 @@ export interface VelaCoreMessageCatalog {
     'ui.numberInput.increase': string;
     'ui.sortButton.ascending': string;
     'ui.sortButton.descending': string;
+    'ui.toast.close': string;
+    'ui.toast.region': string;
     'ui.treemap.all': string;
     'ui.treemap.zoomIn': string;
     'vela.sidebar.label': string;
@@ -2206,7 +2208,6 @@ export interface VelaCoreMessageCatalog {
     'workspace.alerts.drawerTitle': string;
     'workspace.alerts.none': string;
     'workspace.alerts.row': string;
-    'workspace.alerts.toast': string;
     'workspace.alerts.toastUntitled': string;
     'workspace.alerts.untitled': string;
     'workspace.indicators.builtIn': string;

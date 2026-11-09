@@ -33,6 +33,7 @@ import {
 } from '../src/ui';
 import { createSwitch } from '../packages/vela-ui/src/components/switch';
 import { createInputGroup } from '../packages/vela-ui/src/components/input-group';
+import { createToaster, toast, type ToasterPosition, type ToasterProps } from '../packages/vela-ui/src/components/toast';
 import { DARK_THEME, LIGHT_THEME } from '../src/core/theme';
 import { shadcnTheme } from './shadcn-look';
 import { themeEditor } from './theme-editor';
@@ -284,6 +285,67 @@ contextArea.style.cssText = 'padding: 18px 24px; border: 1px dashed var(--vela-b
 createContextMenu({ target: contextArea, host: app, iconBadges: true, items: actionItems });
 row(overlays, 'context', contextArea);
 
+// Toasts: one toaster over the page, re-created when its options change.
+const toasts = section('Toast', 'Raised from anywhere with toast(); the newest is in front and the older ones fold behind it. Hover the stack (or press Alt+T) to spread it out, swipe a toast away.');
+const toasterOptions: ToasterProps = { host: app, position: 'bottom-right' };
+let toaster = createToaster(toasterOptions);
+const retoast = (patch: Partial<ToasterProps>): void => {
+    Object.assign(toasterOptions, patch);
+    toaster.destroy();
+    toaster = createToaster(toasterOptions);
+};
+const raise = (text: string, run: () => void): HTMLButtonElement => {
+    const b = trigger(text);
+    b.addEventListener('click', run);
+    return b;
+};
+const wait = (ms: number, fail = false): Promise<{ name: string }> => new Promise((ok, ko) => setTimeout(() => (fail ? ko(new Error('Network error')) : ok({ name: 'BTCUSDT' })), ms));
+row(
+    toasts,
+    'kinds',
+    raise('Default', () => toast('Event has been created')),
+    raise('Description', () => toast('Event has been created', { description: 'Sunday, December 03, 2023 at 9:00 AM' })),
+    raise('Success', () => toast.success('Alert created')),
+    raise('Info', () => toast.info('Market opens in 5 minutes')),
+    raise('Warning', () => toast.warning('Feed delayed', { description: 'Quotes are 15 minutes behind.' })),
+    raise('Error', () => toast.error('Could not load BTCUSDT', { description: 'The provider did not answer.' })),
+);
+row(
+    toasts,
+    'actions',
+    raise('Action', () => toast('Alert deleted', { description: 'BTCUSDT crossing 64,000', action: { label: 'Undo', onClick: () => toast.success('Alert restored') } })),
+    raise('Cancel + action', () => toast('Close all positions?', { duration: Infinity, cancel: { label: 'Cancel', onClick: () => undefined }, action: { label: 'Close', onClick: () => toast.success('Positions closed') } })),
+    raise('Loading', () => {
+        const id = toast.loading('Saving layout…');
+        setTimeout(() => toast.success('Layout saved', { id }), 2000);
+    }),
+    raise('Promise', () => toast.promise(wait(2000), { loading: 'Loading symbol…', success: (d) => `${d.name} loaded`, error: 'Could not load' })),
+    raise('Promise (fails)', () => toast.promise(wait(2000, true), { loading: 'Loading symbol…', success: 'Loaded', error: (e) => (e instanceof Error ? e.message : 'Failed') })),
+    raise('Dismiss all', () => toast.dismiss()),
+);
+row(
+    toasts,
+    'toaster',
+    createToggleGroup({
+        size: 'sm',
+        label: 'Position',
+        items: (['top-left', 'top-center', 'top-right', 'bottom-left', 'bottom-center', 'bottom-right'] as ToasterPosition[]).map((value) => ({ value, label: value })),
+        defaultValue: 'bottom-right',
+        onValueChange: (position) => retoast({ position: position as ToasterPosition }),
+    }).el,
+    createToggleGroup({
+        size: 'sm',
+        type: 'multiple',
+        label: 'Options',
+        items: [
+            { value: 'richColors', label: 'Rich colors' },
+            { value: 'expand', label: 'Expand' },
+            { value: 'closeButton', label: 'Close button' },
+        ],
+        onValueChange: (on) => retoast({ richColors: on.includes('richColors'), expand: on.includes('expand'), closeButton: on.includes('closeButton') }),
+    }).el,
+);
+
 // Lists and sections.
 const sliders = section('Slider', 'The replay scrubber: a drag previews, the release commits. The arrow keys, Page Up/Down and Home/End move it.');
 sliderGallery((label, ...children) => row(sliders, label, ...children));
@@ -305,6 +367,8 @@ const editor = section('Theme editor', 'A brand color, a radius scale and a font
 editor.append(themeEditor((theme) => ensureUIHost(app, theme)));
 
 (window as unknown as { gallery: unknown }).gallery = {
+    toast,
+    retoast,
     open(name: string): void {
         if (name === 'dialog') dialog.show();
         else if (name === 'drawer') drawer.show();

@@ -39,6 +39,7 @@ import type { monthGridDef } from '../components/month-grid';
 import type { sliderDef } from '../components/slider';
 import type { sortButtonDef } from '../components/sort-button';
 import type { switchDef } from '../components/switch';
+import type { toastDef } from '../components/toast';
 import type { toggleGroupDef } from '../components/toggle-group';
 import type { tooltipDef } from '../components/tooltip';
 import type { treemapDef } from '../components/treemap';
@@ -174,6 +175,7 @@ export interface ComponentDefs {
     switch: typeof switchDef;
     tabs: typeof tabsDef;
     'text-area': typeof textAreaDef;
+    toast: typeof toastDef;
     'toggle-group': typeof toggleGroupDef;
     tooltip: typeof tooltipDef;
     treemap: typeof treemapDef;

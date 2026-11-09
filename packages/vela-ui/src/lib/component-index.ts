@@ -144,6 +144,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['root', 'input'],
         settings: ['radius', 'focus-ring'],
     },
+    toast: {
+        parts: ['root', 'list', 'item', 'close', 'icon', 'content', 'title', 'description', 'cancel', 'action'],
+        settings: ['width', 'radius', 'background', 'border', 'foreground', 'description-color', 'shadow', 'success', 'info', 'warning', 'error'],
+    },
     'toggle-group': {
         parts: ['root', 'item', 'icon'],
         settings: ['radius', 'radius-sm', 'item-radius', 'item-radius-sm'],
