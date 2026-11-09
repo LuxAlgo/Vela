@@ -2,6 +2,18 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Script box text sits on the box's midpoint and is never cut off.** Text inside a Pine
+  Script® box was drawn slightly above the box's centre, so it no longer lined up with a
+  level drawn through the middle of the box, and a box smaller than its text cut the letters
+  off at its edges. The text is now centred on the midpoint and shows in full, overflowing a
+  box too small for it, as text on a drawn rectangle does. To keep text inside its box, use
+  the automatic text size: it shrinks the text to fit the box, and hides it when the box is
+  too small to hold readable text.
+
 ## [0.10.2]
 
 ### Added

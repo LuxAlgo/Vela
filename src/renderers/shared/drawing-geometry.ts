@@ -180,13 +180,16 @@ export function namedFontSize(size: BoxTextSize): number {
     }
 }
 
-/** Auto font size that fits `lines` within a box (px). */
-export function autoFontSize(lines: readonly string[], boxW: number, boxH: number, bold: boolean): number {
-    // In-place max (no per-frame allocation, no argument-spread overflow on long wraps).
-    let maxChars = 1;
-    for (const l of lines) if (l.length > maxChars) maxChars = l.length;
-    const ratio = bold ? 0.62 : 0.55;
-    const byWidth = (boxW * 0.9) / (maxChars * ratio);
-    const byHeight = (boxH * 0.85) / (lines.length * 1.3);
-    return Math.max(6, Math.min(byWidth, byHeight, 48));
+/** Smallest auto-fitted box text still drawn (px); below it the text is hidden. */
+const MIN_AUTO_FONT_PX = 6;
+
+/**
+ * Auto font size (px) that fits `lineCount` lines, the widest measuring `widestAt14` px at
+ * 14px, within a box's text area; 0 when the fit is too small to read.
+ */
+export function autoFontSize(widestAt14: number, lineCount: number, boxW: number, boxH: number): number {
+    const byWidth = widestAt14 > 0 ? (boxW * 14) / widestAt14 : Infinity;
+    const byHeight = (boxH * 0.85) / (lineCount * 1.3);
+    const size = Math.min(byWidth, byHeight, 48);
+    return size >= MIN_AUTO_FONT_PX ? size : 0;
 }

@@ -453,9 +453,12 @@ export class DrawingSceneRenderer {
         let size = namedFontSize(bx.textSize);
         let lines: string[];
         if (size === 0) {
-            const initial = `${variant}14px ${family}`;
-            lines = bx.wrap ? this.wrapText(ctx, initial, text, Math.max(1, w - pad * 2)) : text.split('\n');
-            size = autoFontSize(lines, w, h, bx.bold);
+            const ref = `${variant}14px ${family}`;
+            lines = bx.wrap ? this.wrapText(ctx, ref, text, Math.max(1, w - pad * 2)) : text.split('\n');
+            let widest = 0;
+            for (const l of lines) widest = Math.max(widest, this.measure(ctx, ref, l));
+            size = autoFontSize(widest, lines.length, w - pad * 2, h);
+            if (size === 0) return;
         } else {
             const font = `${variant}${size}px ${family}`;
             lines = bx.wrap ? this.wrapText(ctx, font, text, Math.max(1, w - pad * 2)) : text.split('\n');
@@ -477,18 +480,13 @@ export class DrawingSceneRenderer {
             ctx.textAlign = 'center';
             tx = left + w / 2;
         }
-        ctx.textBaseline = 'top';
+        ctx.textBaseline = 'middle';
         let blockTop: number;
         if (bx.vAlign === 'top') blockTop = top + pad;
         else if (bx.vAlign === 'bottom') blockTop = top + h - pad - blockH;
         else blockTop = top + (h - blockH) / 2;
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(left, top, w, h);
-        ctx.clip();
-        for (let i = 0; i < lines.length; i += 1) ctx.fillText(lines[i]!, tx, blockTop + i * lineH);
-        ctx.restore();
+        for (let i = 0; i < lines.length; i += 1) ctx.fillText(lines[i]!, tx, blockTop + (i + 0.5) * lineH);
     }
 
     // ── labels ───────────────────────────────────────────────────────────────
