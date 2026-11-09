@@ -2,6 +2,34 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.3]
+
+### Added
+
+- **Toasts, cards and treemaps in the kit.** `@luxalgo/vela-ui` 0.3.0, which Vela now requires,
+  adds toasts that stack in a corner and can be raised from anywhere, a card for one subject
+  (a panel of figures, a chart with its title) and a treemap of weighted tiles tinted by a
+  value. Its [changelog](packages/vela-ui/CHANGELOG.md) has the details.
+
+### Changed
+
+- **Script alerts arrive as cards that stack.** When an indicator raises an alert, it now shows
+  as a card in the bottom corner of the charts: the alert's title, then the symbol, timeframe
+  and indicator with its message, under a bell. Alerts that fire close together stack instead
+  of replacing each other; hovering the stack spreads it out and holds it, and a swipe
+  dismisses one. Plugins can raise their own notices there with the toasts of
+  `@luxalgo/vela-ui`.
+
+### Fixed
+
+- **Script box text sits on the box's midpoint and is never cut off.** Text inside a Pine
+  Script® box was drawn slightly above the box's centre, so it no longer lined up with a
+  level drawn through the middle of the box, and a box smaller than its text cut the letters
+  off at its edges. The text is now centred on the midpoint and shows in full, overflowing a
+  box too small for it, as text on a drawn rectangle does. To keep text inside its box, use
+  the automatic text size: it shrinks the text to fit the box, and hides it when the box is
+  too small to hold readable text.
+
 ## [0.10.2]
 
 ### Added

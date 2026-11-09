@@ -3,10 +3,20 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
-## [Unreleased]
+## [0.3.0]
 
 ### Added
 
+- **Toasts.** `@luxalgo/vela-ui/toast` shows short notices that stack in a corner and leave on
+  their own, with the same calls and options as shadcn's toast. `toast('Saved')` raises one
+  from anywhere on the page, `toast.success`, `.info`, `.warning`, `.error` and `.loading` give
+  it its kind's icon, and `toast.promise` follows a task from loading to its result. A toast
+  takes a description, an action and a cancel button, its own icon and duration, and raising
+  it again with the same `id` updates it in place; `toast.dismiss` takes one or all away.
+  `createToaster` shows them, over the page or inside a host: the newest in front with the
+  older ones folded behind it, spread out while hovered (or with Alt+T), and swiped away
+  towards their edge. It takes the corner, the number shown, rich colors per kind, close
+  buttons and the toasts' defaults, and a theme sets its width, colors and radius.
 - **A treemap.** `@luxalgo/vela-ui/treemap` lays weighted items out as tiles close to square,
   each tinted by its value on a diverging scale (a watchlist's moves of the day, sized equally
   or by market cap). Items with children form groups headed by their name and the median of
