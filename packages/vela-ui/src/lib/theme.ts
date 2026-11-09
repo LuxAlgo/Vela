@@ -27,7 +27,7 @@ import type { popoverDef } from '../components/popover';
 import type { scatterChartDef } from '../components/scatter-chart';
 import type { selectDef } from '../components/select';
 import type { sparklineDef } from '../components/sparkline';
-import type { statDef } from '../components/stat';
+import type { figureDef } from '../components/figure';
 import type { checkboxDef } from '../components/checkbox';
 import type { collapsibleDef } from '../components/collapsible';
 import type { tabsDef } from '../components/tabs';
@@ -156,6 +156,7 @@ export interface ComponentDefs {
     'dropdown-menu': typeof dropdownMenuDef;
     empty: typeof emptyDef;
     field: typeof fieldDef;
+    figure: typeof figureDef;
     'glyph-select': typeof glyphSelectDef;
     'hover-card': typeof hoverCardDef;
     'input-group': typeof inputGroupDef;
@@ -171,7 +172,6 @@ export interface ComponentDefs {
     slider: typeof sliderDef;
     'sort-button': typeof sortButtonDef;
     sparkline: typeof sparklineDef;
-    stat: typeof statDef;
     switch: typeof switchDef;
     tabs: typeof tabsDef;
     'text-area': typeof textAreaDef;
@@ -606,6 +606,20 @@ ${STATIC_DECLS}
 :where(.vela-ui, .vela-ui-layer, .vela-ui *, .vela-ui-layer *)::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 @supports not selector(::-webkit-scrollbar) {
     :where(.vela-ui, .vela-ui-layer, .vela-ui *, .vela-ui-layer *) { scrollbar-width: thin; scrollbar-color: var(--vela-scroll) transparent; }
+}
+/* A search field's clear cross in the theme's ink: Chromium and Safari otherwise draw their own,
+   blue on some systems. */
+:where(.vela-ui, .vela-ui-layer) :where(input[type='search'])::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: none;
+    width: 12px;
+    height: 12px;
+    margin-inline-start: 4px;
+    cursor: pointer;
+    background-color: var(--vela-fg-bright);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 2.5l7 7m0-7l-7 7' stroke='%23000' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 2.5l7 7m0-7l-7 7' stroke='%23000' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 }
 .vela-ui, .vela-ui-layer {

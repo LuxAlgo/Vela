@@ -2,6 +2,18 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Open menus stay on top of the chart.** On a fresh install, the timeframe and chart style
+  menus could sink under the chart as soon as the pointer left them, so they seemed to vanish
+  when the pointer crossed the status line. They now stay above the chart until you close
+  them.
+- **Search fields clear with a cross in the theme's color.** The cross that clears a search
+  field shows in the chart's text color, white on a dark theme and black on a light one,
+  instead of the browser's own blue one.
+
 ## [0.10.3]
 
 ### Added

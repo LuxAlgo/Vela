@@ -1,4 +1,4 @@
-// The gallery's data components: stats, keycaps, an empty state, a table, a sparkline, a donut,
+// The gallery's data components: figures, keycaps, an empty state, a table, a sparkline, a donut,
 // the three charts, a treemap, cards and a hover card, on sample trading figures.
 import { t } from '@luxalgo/vela-ui';
 import { createBarChart } from '@luxalgo/vela-ui/bar-chart';
@@ -11,7 +11,7 @@ import { shortcutKeys } from '@luxalgo/vela-ui/kbd';
 import { createLineChart } from '@luxalgo/vela-ui/line-chart';
 import { createScatterChart } from '@luxalgo/vela-ui/scatter-chart';
 import { createSparkline } from '@luxalgo/vela-ui/sparkline';
-import { createStat, toneOf } from '@luxalgo/vela-ui/stat';
+import { createFigure, toneOf } from '@luxalgo/vela-ui/figure';
 import { createTreemap, type TreemapItem } from '@luxalgo/vela-ui/treemap';
 import { createButton } from '../src/ui';
 
@@ -48,7 +48,7 @@ const box = (w: string, h: string, child: HTMLElement): HTMLElement => {
 
 export function dataGallery(row: (label: string, ...children: HTMLElement[]) => void, host: HTMLElement): void {
     const net = TRADES.reduce((a, r) => a + r.pnl, 0);
-    row('stat', createStat({ label: 'Net P&L', value: net.toFixed(2), tone: toneOf(net), sub: `${TRADES.length} trades` }).el, createStat({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el, createStat({ label: 'Open orders' }).el);
+    row('figure', createFigure({ label: 'Net P&L', value: net.toFixed(2), tone: toneOf(net), sub: `${TRADES.length} trades` }).el, createFigure({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el, createFigure({ label: 'Open orders' }).el);
     row('kbd', ...shortcutKeys('Ctrl+Shift+K'));
     row('empty', box('320px', 'auto', createEmpty({ icon: 'bell', title: 'No alerts yet', description: 'Create one from the chart or the alerts panel.', action: createButton({ text: 'New alert', variant: 'outline', size: 'sm' }).el }).el));
 
@@ -94,8 +94,8 @@ export function dataGallery(row: (label: string, ...children: HTMLElement[]) => 
     const tiles = document.createElement('div');
     tiles.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px';
     tiles.append(
-        createCard({ variant: 'inset', size: 'sm', content: createStat({ label: 'Win rate', value: '67%', tone: 'profit' }).el }).el,
-        createCard({ variant: 'inset', size: 'sm', content: createStat({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el }).el,
+        createCard({ variant: 'inset', size: 'sm', content: createFigure({ label: 'Win rate', value: '67%', tone: 'profit' }).el }).el,
+        createCard({ variant: 'inset', size: 'sm', content: createFigure({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el }).el,
     );
     const summary = createCard({
         eyebrow: 'Journal',

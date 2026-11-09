@@ -68,6 +68,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['grid', 'row', 'span', 'label', 'cell', 'bool', 'stacked', 'stacked-head', 'inline', 'inline-item', 'toggle-label', 'section', 'sep'],
         settings: [],
     },
+    figure: {
+        parts: ['root', 'label', 'value', 'sub'],
+        settings: [],
+    },
     'glyph-select': {
         parts: ['root', 'value', 'icon', 'content', 'item'],
         settings: ['radius', 'content-radius', 'focus-ring'],
@@ -127,10 +131,6 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
     sparkline: {
         parts: ['root', 'area', 'baseline', 'line'],
         settings: ['stroke-width'],
-    },
-    stat: {
-        parts: ['root', 'label', 'value', 'sub'],
-        settings: [],
     },
     switch: {
         parts: ['root', 'control', 'thumb'],

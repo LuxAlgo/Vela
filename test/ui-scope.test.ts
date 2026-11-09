@@ -18,7 +18,7 @@ import { createInput } from '@luxalgo/vela-ui/input';
 import { createKbd } from '@luxalgo/vela-ui/kbd';
 import { createNumberInput } from '@luxalgo/vela-ui/number-input';
 import { createSelect } from '@luxalgo/vela-ui/select';
-import { createStat } from '@luxalgo/vela-ui/stat';
+import { createFigure } from '@luxalgo/vela-ui/figure';
 import { createSwitch } from '@luxalgo/vela-ui/switch';
 import { createTabs } from '@luxalgo/vela-ui/tabs';
 import { createTextArea } from '@luxalgo/vela-ui/text-area';
@@ -81,7 +81,7 @@ function renderKit(): HTMLElement {
         createTextArea({ value: 'notes' }).el,
         createNumberInput({ value: 1 }).el,
         createEmpty({ title: 'Nothing yet', description: 'Add one' }).el,
-        createStat({ label: 'P&L', value: '+1' }).el,
+        createFigure({ label: 'P&L', value: '+1' }).el,
     );
     select.el.querySelector('button')!.click();
     createDialog({ title: 'Settings', host, content: createButton({ text: 'Apply' }).el }).show();
