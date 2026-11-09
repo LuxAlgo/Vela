@@ -7,6 +7,8 @@ import { iconEl } from '../lib/icons';
 import { css, defineStyles } from '../lib/css';
 import { defineComponent } from '../lib/define';
 import { disposeWithin } from '../lib/dispose';
+import { msg, textOf, type Translator } from '../lib/i18n';
+import { kitTranslator } from '../lib/kit-text';
 import { t } from '../lib/t';
 import { injectStyles as injectSheet } from '../lib/styles';
 import { announceSurface } from '../lib/surface-events';
@@ -83,9 +85,14 @@ export interface DialogOptions extends DialogControllerOptions {
     className?: string;
     /** Close when the backdrop itself is pressed (not when a portaled popover is). */
     closeOnBackdrop?: boolean;
+    /** The translator of the close button's name ("Close"). Default: the kit build's, else
+     *  English. */
+    i18n?: Translator;
 }
 
 export type DialogProps = DialogOptions;
+
+const CLOSE = msg('ui.dialog.close', 'Close');
 
 const injectStyles = defineStyles(
     'vela-ui-dialog-5',
@@ -286,6 +293,7 @@ export class Dialog {
     readonly positioner: HTMLElement;
     readonly backdrop: HTMLElement;
     readonly footer: HTMLElement | null;
+    private readonly closeButton: HTMLElement;
     private readonly handle: HandleOf<typeof dialog.machine>;
     private readonly ctrl: DialogController;
 
@@ -357,6 +365,8 @@ export class Dialog {
         this.titleEl = title;
         const close = part(doc.createElement('button'), 'close');
         close.className = 'vela-dialog-close';
+        this.closeButton = close;
+        this.setI18n(opts.i18n ?? kitTranslator());
         close.appendChild(iconEl('close', doc));
         header.append(title, close);
 
@@ -485,6 +495,12 @@ export class Dialog {
     private announce(open: boolean): void {
         const opener = this.opener === this.panel.ownerDocument.body ? null : this.opener;
         announceSurface(this.panel, open, 'dialog', opener);
+    }
+
+    /** Speak the dialog's own words (the close button's name) through `i18n`, for a language
+     *  that changes while the dialog lives; null is English. */
+    setI18n(i18n: Translator | null): void {
+        this.closeButton.setAttribute('aria-label', textOf(i18n, CLOSE));
     }
 
     get open(): boolean {

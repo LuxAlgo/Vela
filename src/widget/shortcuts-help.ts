@@ -63,6 +63,7 @@ export class ShortcutsHelp {
         this.list = doc.createElement('div');
         this.dialog = new Dialog({
             title: this.i18n().t(TEXT.title),
+            i18n: this.i18n(),
             host,
             closeOnInteractOutside: true,
             content: (body) => body.appendChild(this.list),
@@ -90,6 +91,7 @@ export class ShortcutsHelp {
         const i18n = this.i18n();
         const t = (m: MessageLike): string => i18n.t(m);
         this.dialog.titleEl.textContent = t(TEXT.title);
+        this.dialog.setI18n(i18n);
         this.list.replaceChildren();
         const addCategory = (text: string): void => {
             const cat = doc.createElement('div');

@@ -29,6 +29,9 @@ All notable changes to Vela, newest first.
   box too small for it, as text on a drawn rectangle does. To keep text inside its box, use
   the automatic text size: it shrinks the text to fit the box, and hides it when the box is
   too small to hold readable text.
+- **The chart's dialogs name their close button.** Screen readers announced the ✕ of the
+  settings, the symbol search, the timeframe and the other dialogs as an unnamed button; it
+  is now "Close", in the chart's language.
 
 ## [0.10.2]
 

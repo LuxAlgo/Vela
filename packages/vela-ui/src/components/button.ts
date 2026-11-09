@@ -132,6 +132,14 @@ export const BUTTON_CSS = css`
                 & > [data-keys]:where(:not([hidden])) {
                     display: inline-flex;
                 }
+                /* A key cap's own colors vanish on a fill that matches them (the solid
+                   variants): inside a button it takes the button's text and draws only its outline. */
+                & > [data-keys] > [data-slot='kbd'] {
+                    border-color: ${t.border};
+                    background: transparent;
+                    color: inherit;
+                    box-shadow: none;
+                }
                 &[data-size='sm'],
                 &[data-size='icon-sm'] {
                     height: ${buttonDef.vars['height-sm']};
