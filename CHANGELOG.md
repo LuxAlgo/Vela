@@ -4,6 +4,15 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- **Script alerts arrive as cards that stack.** When an indicator raises an alert, it now shows
+  as a card in the bottom corner of the charts: the alert's title, then the symbol, timeframe
+  and indicator with its message, under a bell. Alerts that fire close together stack instead
+  of replacing each other; hovering the stack spreads it out and holds it, and a swipe
+  dismisses one. Plugins can raise their own notices there with the toasts of
+  `@luxalgo/vela-ui`.
+
 ### Fixed
 
 - **Script box text sits on the box's midpoint and is never cut off.** Text inside a Pine
