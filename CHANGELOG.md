@@ -2,7 +2,14 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [0.10.3]
+
+### Added
+
+- **Toasts, cards and treemaps in the kit.** `@luxalgo/vela-ui` 0.3.0, which Vela now requires,
+  adds toasts that stack in a corner and can be raised from anywhere, a card for one subject
+  (a panel of figures, a chart with its title) and a treemap of weighted tiles tinted by a
+  value. Its [changelog](packages/vela-ui/CHANGELOG.md) has the details.
 
 ### Changed
 

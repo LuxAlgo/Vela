@@ -1,6 +1,6 @@
 {
   "name": "@luxalgo/vela-ui",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The component kit of Vela: one file per component, Zag state machines for behavior, CSS in cascade layers over design tokens.",
   "license": "Apache-2.0",
   "author": "LuxAlgo",
