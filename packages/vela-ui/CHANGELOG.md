@@ -3,7 +3,7 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
-## [Unreleased]
+## [0.3.0]
 
 ### Added
 
