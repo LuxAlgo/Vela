@@ -2,13 +2,47 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [0.10.3]
+
+### Added
+
+- **Toasts, cards and treemaps in the kit.** `@luxalgo/vela-ui` 0.3.0, which Vela now requires,
+  adds toasts that stack in a corner and can be raised from anywhere, a card for one subject
+  (a panel of figures, a chart with its title) and a treemap of weighted tiles tinted by a
+  value. Its [changelog](packages/vela-ui/CHANGELOG.md) has the details.
+
+### Changed
+
+- **Script alerts arrive as cards that stack.** When an indicator raises an alert, it now shows
+  as a card in the bottom corner of the charts: the alert's title, then the symbol, timeframe
+  and indicator with its message, under a bell. Alerts that fire close together stack instead
+  of replacing each other; hovering the stack spreads it out and holds it, and a swipe
+  dismisses one. Plugins can raise their own notices there with the toasts of
+  `@luxalgo/vela-ui`.
 
 ### Fixed
 
+- **Script box text sits on the box's midpoint and is never cut off.** Text inside a Pine
+  Script® box was drawn slightly above the box's centre, so it no longer lined up with a
+  level drawn through the middle of the box, and a box smaller than its text cut the letters
+  off at its edges. The text is now centred on the midpoint and shows in full, overflowing a
+  box too small for it, as text on a drawn rectangle does. To keep text inside its box, use
+  the automatic text size: it shrinks the text to fit the box, and hides it when the box is
+  too small to hold readable text.
 - **The chart's dialogs name their close button.** Screen readers announced the ✕ of the
   settings, the symbol search, the timeframe and the other dialogs as an unnamed button; it
   is now "Close", in the chart's language.
+
+## [0.10.2]
+
+### Added
+
+- **Every Hyperliquid market, HIP-3 dexes included.** The Hyperliquid provider now serves the
+  perpetuals that builder-deployed (HIP-3) dexes list next to the main perps and spot pairs:
+  stocks, commodities, indices and whatever else is deployed, around the clock. Chart one by
+  the name Hyperliquid gives it, with the provider in front (`hyperliquid:xyz:TSLA`). Symbol
+  search finds them with the dex's name in the description, and they load with live candles
+  and the right price precision. Main perps and spot pairs work as before.
 
 ## [0.10.1]
 

@@ -8,6 +8,7 @@ import type { badgeDef } from '../components/badge';
 import type { barChartDef } from '../components/bar-chart';
 import type { buttonDef } from '../components/button';
 import type { calloutBubbleDef } from '../components/callout-bubble';
+import type { cardDef } from '../components/card';
 import type { colorPickerDef } from '../components/color-picker';
 import type { dataTableDef } from '../components/data-table';
 import type { datePickerDef } from '../components/date-picker';
@@ -38,8 +39,10 @@ import type { monthGridDef } from '../components/month-grid';
 import type { sliderDef } from '../components/slider';
 import type { sortButtonDef } from '../components/sort-button';
 import type { switchDef } from '../components/switch';
+import type { toastDef } from '../components/toast';
 import type { toggleGroupDef } from '../components/toggle-group';
 import type { tooltipDef } from '../components/tooltip';
+import type { treemapDef } from '../components/treemap';
 import { contrastRatio, isDarkColor, mix, parseRgb } from './color';
 import { KIT_COMPONENTS } from './component-index';
 import { acceptCss, injectLayerOrder, isWrittenCss } from './css';
@@ -141,6 +144,7 @@ export interface ComponentDefs {
     'bar-chart': typeof barChartDef;
     button: typeof buttonDef;
     'callout-bubble': typeof calloutBubbleDef;
+    card: typeof cardDef;
     checkbox: typeof checkboxDef;
     collapsible: typeof collapsibleDef;
     'color-picker': typeof colorPickerDef;
@@ -171,8 +175,10 @@ export interface ComponentDefs {
     switch: typeof switchDef;
     tabs: typeof tabsDef;
     'text-area': typeof textAreaDef;
+    toast: typeof toastDef;
     'toggle-group': typeof toggleGroupDef;
     tooltip: typeof tooltipDef;
+    treemap: typeof treemapDef;
 }
 
 type SettingsOf<D> = D extends ComponentDef<string, string, infer S> ? S : never;

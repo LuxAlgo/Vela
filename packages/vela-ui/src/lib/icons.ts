@@ -178,6 +178,13 @@ registerIcon('burger', S('<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>'));
 registerIcon('info', S('<path d="M8 7.4v4.4"/><circle cx="8" cy="4.6" r="0.9" fill="currentColor" stroke="none"/>'));
 registerIcon('reset', S('<path d="M2 8a6 6 0 1 0 6-6 6.5 6.5 0 0 0-4.5 1.83L2 5.33"/><path d="M2 2v3.33h3.33"/>'));
 
+// ── status glyphs (toasts, notices) ──
+registerIcon('circle-check', S('<circle cx="8" cy="8" r="6.2"/><path d="m5.4 8.2 1.8 1.8 3.4-3.7"/>'));
+registerIcon('circle-info', S('<circle cx="8" cy="8" r="6.2"/><path d="M8 7.4v3.6"/><circle cx="8" cy="5.1" r="0.8" fill="currentColor" stroke="none"/>'));
+registerIcon('triangle-alert', S('<path d="M7.1 2.6a1 1 0 0 1 1.8 0l5.3 9.6a1 1 0 0 1-.9 1.5H2.7a1 1 0 0 1-.9-1.5z"/><path d="M8 6.3v3.2"/><circle cx="8" cy="11.4" r="0.8" fill="currentColor" stroke="none"/>'));
+registerIcon('circle-x', S('<circle cx="8" cy="8" r="6.2"/><path d="m5.9 5.9 4.2 4.2M10.1 5.9l-4.2 4.2"/>'));
+registerIcon('loader', S('<path d="M8 1.8a6.2 6.2 0 1 0 6.2 6.2"/>'));
+
 // ── pane chrome (stack order, collapse, maximize) ──
 registerIcon('pane-collapse', S('<path d="M2.6 9.4h4v4M13.4 6.6h-4v-4"/><path d="m9.4 6.6 4.2-4.2M2.4 13.6l4.2-4.2"/>'));
 registerIcon('pane-expand', S('<path d="M9.8 2.4h3.8v3.8M6.2 13.6H2.4V9.8"/><path d="m13.6 2.4-4.4 4.4M2.4 13.6l4.4-4.4"/>'));

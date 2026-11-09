@@ -18,6 +18,7 @@ import { sharedBarStore } from '../data/BarStore';
 import { ensureUIHost, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
+import { createToaster, toast, type ToasterHandle } from '@luxalgo/vela-ui/toast';
 import type { Vela } from '../Vela';
 import { LocaleState, pickLocalization } from '../core/i18n/translator';
 import type { LocaleChangedEvent, LocalizationOptions, MessageArgs, MessageLike, Translator } from '../core/i18n/types';
@@ -277,8 +278,7 @@ const TEXT = {
     syncCrosshair: msg('workspace.sync.crosshair', 'Crosshair'),
     syncStyle: msg('workspace.sync.style', 'Style'),
     alert: msg('workspace.alerts.untitled', 'Alert'),
-    alertToast: msg('workspace.alerts.toast', '{source} — {title} — {message}'),
-    alertToastUntitled: msg('workspace.alerts.toastUntitled', '{source} — {message}'),
+    alertToastDescription: msg('workspace.alerts.toastUntitled', '{source} — {message}'),
     alertRow: msg('workspace.alerts.row', '{source} · {time} · {title}: {message}'),
     alertDrawerTitle: msg('workspace.alerts.drawerTitle', '{source} · {title}'),
     noAlerts: msg('workspace.alerts.none', 'No alerts yet'),
@@ -405,6 +405,8 @@ export class VelaWorkspace {
     private readonly tfQuick: TimeframeQuick;
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly toastHost: Toast;
+    /** The grid's toaster: alert notices, and whatever a plugin raises with the kit's `toast()`. */
+    private readonly toaster: ToasterHandle;
     private readonly glider = new Glider(() => (this.activeId ? (this.cellsById.get(this.activeId)?.chart ?? null) : null));
     private readonly drawToolbar: DrawingToolbar | null;
     /** The GLOBAL armed tool/magnet/stay (workspace policy) — re-applied to whichever cell
@@ -751,6 +753,7 @@ export class VelaWorkspace {
         this.stripsEl.className = 'vela-ws-strips';
         this.root.appendChild(this.stripsEl);
         this.toastHost = new Toast(this.gridEl);
+        this.toaster = createToaster({ host: this.gridEl, contained: true, i18n: this.localeState });
 
         // ONE attribution mark for the whole grid (bottom-left, floating above the
         // bottom-left cell's time axis) — the cells disable their per-chart marks, and
@@ -1097,6 +1100,7 @@ export class VelaWorkspace {
         this.drawToolbar?.relabel();
         this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap, this.localeState));
         this.drawingPill?.relocalize();
+        this.toaster.relabel();
         if (this.attributionMark) relabelAttributionMark(this.attributionMark, this.localeState);
     }
 
@@ -1629,6 +1633,7 @@ export class VelaWorkspace {
         this.tfQuick.destroy();
         this.shortcutsHelp?.destroy();
         this.toastHost.destroy();
+        this.toaster.destroy();
         this.alertsMenu?.destroy();
         this.glider.stop();
         sharedBarStore.retain(new Set(), this); // release OUR declaration only — other shells on the page keep theirs
@@ -2012,8 +2017,7 @@ export class VelaWorkspace {
                 .join(' ');
             this.alerts.unshift({ cellId: cell.id, source, title: alert.title ?? this.t(TEXT.alert), message: alert.message, time: alert.time });
             if (this.alerts.length > this.alertCap) this.alerts.pop();
-            const toast = alert.title ? this.t(TEXT.alertToast, { source, title: alert.title, message: alert.message }) : this.t(TEXT.alertToastUntitled, { source, message: alert.message });
-            this.toastHost.show(toast, 'info', 4000);
+            toast(alert.title ?? this.t(TEXT.alert), { description: this.t(TEXT.alertToastDescription, { source, message: alert.message }), icon: 'bell' });
             this.topbar.setAlertCount(this.alerts.length);
         });
         // Favorites are a WORKSPACE preference: one shared toolbar, one star set — a star

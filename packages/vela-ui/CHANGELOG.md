@@ -3,7 +3,36 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
-## [Unreleased]
+## [0.3.0]
+
+### Added
+
+- **Toasts.** `@luxalgo/vela-ui/toast` shows short notices that stack in a corner and leave on
+  their own, with the same calls and options as shadcn's toast. `toast('Saved')` raises one
+  from anywhere on the page, `toast.success`, `.info`, `.warning`, `.error` and `.loading` give
+  it its kind's icon, and `toast.promise` follows a task from loading to its result. A toast
+  takes a description, an action and a cancel button, its own icon and duration, and raising
+  it again with the same `id` updates it in place; `toast.dismiss` takes one or all away.
+  `createToaster` shows them, over the page or inside a host: the newest in front with the
+  older ones folded behind it, spread out while hovered (or with Alt+T), and swiped away
+  towards their edge. It takes the corner, the number shown, rich colors per kind, close
+  buttons and the toasts' defaults, and a theme sets its width, colors and radius.
+- **A treemap.** `@luxalgo/vela-ui/treemap` lays weighted items out as tiles close to square,
+  each tinted by its value on a diverging scale (a watchlist's moves of the day, sized equally
+  or by market cap). Items with children form groups headed by their name and the median of
+  their values, or the mean, the sum or a figure of your own. Tiles show their label and value
+  as their size allows, a readout follows the pointer and the keyboard focus, the arrow keys
+  move between tiles, and a click reports the tile with its groups. New values repaint the
+  tiles in place, and a resize moves them. With `drill`, a group's header zooms into it and a
+  breadcrumb, or Esc, leads back. An optional legend shows the scale, and `squarify` lays out
+  rectangles of your own.
+- **A card.** `@luxalgo/vela-ui/card` holds one subject on a surface of its own: a header with
+  an eyebrow over the title and a description under it, an action at its end, then the
+  content and a footer past a line. `inset` is the sunken tile for figures inside another
+  card, and `sm` is tighter. Its title is a heading, so screen readers move from card to card.
+  With `onSelect` the whole card is clickable while a press on a button inside it stays the
+  button's, and `selected` marks the current one. Its padding, radius, background and border
+  are settings a theme can change.
 
 ### Fixed
 

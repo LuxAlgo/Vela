@@ -113,14 +113,16 @@ chart.data.registerProvider('coinbase', new CoinbaseProvider());
 
 ## The bundled Hyperliquid provider
 
-`@luxalgo/vela/providers/hyperliquid` is a from-scratch [Hyperliquid](https://hyperliquid.xyz) provider (no third-party SDK, no API key). It serves USD-margined perpetuals — **bare coins** like `BTC`, `ETH` (not `BTCUSDT`) — and spot pairs (`PURR/USDC`), and aggregates timeframes Hyperliquid doesn't serve natively (e.g. `45`, `180`, `360`). **Live ticks come from a real WebSocket candle stream**, with the same automatic poll fallback as Binance if a stream can't deliver.
+`@luxalgo/vela/providers/hyperliquid` is a from-scratch [Hyperliquid](https://hyperliquid.xyz) provider (no third-party SDK, no API key). It serves USD-margined perpetuals — **bare coins** like `BTC`, `ETH` (not `BTCUSDT`) — spot pairs (`PURR/USDC`) and the perpetuals of every builder-deployed (HIP-3) perp dex, and aggregates timeframes Hyperliquid doesn't serve natively (e.g. `45`, `180`, `360`). **Live ticks come from a real WebSocket candle stream**, with the same automatic poll fallback as Binance if a stream can't deliver.
 
 ```js
 import { HyperliquidProvider } from '@luxalgo/vela/providers/hyperliquid';
 chart.data.registerProvider('hyperliquid', new HyperliquidProvider());
 // new Vela('#chart', { symbol: 'BTC', timeframe: '1h' })  → perps
-// or 'HYPERLIQUID:ETH', 'PURR/USDC', …
+// or 'HYPERLIQUID:ETH', 'PURR/USDC', 'hyperliquid:xyz:TSLA', …
 ```
+
+**Builder-deployed (HIP-3) markets** — the perpetuals each dex deploys on Hyperliquid (stocks, commodities, indices and more, trading around the clock) — are named the way Hyperliquid names them: the dex, a colon, the coin (`xyz:TSLA`, `xyz:GOLD`). Put the provider in front to chart one, `hyperliquid:xyz:TSLA`: the first colon separates the provider, so a HIP-3 ticker never collides with a main perp or a spot pair. Without the provider in front, `xyz:` would read as a provider name. Symbol search lists every live market of every dex, with the dex's name in the description (`TSLA / USD Perpetual (XYZ)`); a dex's delisted markets, and dexes whose markets are all delisted, are left out. Prices follow the same precision rule as the main perps, and a dex margined in another stablecoin is quoted in it.
 
 > **History is recent-only.** Hyperliquid serves just the most recent ~5000 candles per interval — roughly 3.5 days of `1m`, ~17 days of `5m`, ~7 months of `1h`, and daily back to listing. There is no deeper backfill, so it's a live / recent-history venue rather than a deep-history source. Requesting more bars than exist simply returns what's available.
 
