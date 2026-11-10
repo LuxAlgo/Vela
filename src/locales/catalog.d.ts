@@ -218,6 +218,9 @@ export interface VelaCoreMessageCatalog {
     'drawing.bat.patternName': string;
     'drawing.box.fillColor': string;
     'drawing.box.label': string;
+    'drawing.box.midline': string;
+    'drawing.box.midlineColor': string;
+    'drawing.box.midlineStyle': string;
     'drawing.butterfly.label': string;
     'drawing.butterfly.patternName': string;
     'drawing.callout.label': string;

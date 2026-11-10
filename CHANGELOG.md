@@ -6,6 +6,13 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Rectangles can show their midline.** A rectangle's settings have a **Midline** switch, off
+  by default, that draws a line at the halfway price between its top and bottom, such as a
+  range's 50% level, across the full width of the box. The line moves with the box while you
+  draw, resize or move it. Its color follows the border color until you pick one, and its
+  style is dashed until you change it. The setting is saved with the drawing in its `props`
+  (`midline`, `midColor`, `midStyle`), so it comes back on reload and travels with tool
+  styles, copies and linked charts. Rectangles saved before this change look the same.
 - **Data sources can refuse a timeframe they never serve.** A provider can now say that a
   series does not exist at a timeframe, such as a monthly economic series asked for hourly
   bars, by throwing a `DataUnavailableError` that names the finest timeframe it serves. The
