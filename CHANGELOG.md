@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [0.10.5]
 
 ### Added
 
@@ -46,6 +46,12 @@ All notable changes to Vela, newest first.
   `chart.renderer.get('shownPriceStyle')`, the symbol's facts with `chart.symbolFacts()` and the
   `symbol:facts` event, and test a style with `priceStyleApplies`. In the workspace,
   `cell.priceStyle` is the drawn style and `cell.requestedPriceStyle` the chosen one.
+
+### Changed
+
+- **Vela requires `@luxalgo/vela-ui` 0.4.1.** The kit adds the icons of the new chart
+  styles and lets a menu row or a select option say why it is unavailable, which the
+  chart style pickers use.
 
 ### Fixed
 
