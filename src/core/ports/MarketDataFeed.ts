@@ -50,7 +50,29 @@ export interface SymbolInfo {
      * `true` ⇒ volume as usual.
      */
     volume?: boolean;
+    /**
+     * `false` when the source has ONE value per bar for this symbol, at every timeframe:
+     * open = high = low = close, so open, high and low carry no information (a
+     * macro-economic series). The chart then draws it with a style that reads the close
+     * (a line) whatever style is chosen, and its style pickers grey out the styles that
+     * need open, high and low (candles, bars, Heikin Ashi). Absent or `true` ⇒ normal OHLC
+     * bars. State it here: the chart never guesses it from the symbol's type or its bars.
+     */
+    ohlc?: boolean;
     [key: string]: unknown;
+}
+
+/**
+ * The facts about the chart's symbol that decide which price styles can draw it: the
+ * neutral subset of {@link SymbolInfo} the chart applies once the symbol's info lands
+ * (`chart.symbolFacts()`) and hands to a chart type's `supports` predicate. Each key
+ * mirrors the `SymbolInfo` field of the same name; an absent key means the usual.
+ */
+export interface SymbolFacts {
+    /** `false`: one value per bar — open, high and low carry no information. */
+    ohlc?: boolean;
+    /** `false`: the source has no volume for this symbol. */
+    volume?: boolean;
 }
 
 /**

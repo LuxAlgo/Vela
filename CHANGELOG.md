@@ -24,6 +24,19 @@ All notable changes to Vela, newest first.
   volume indicator you added or saved stays. Hosts that save a chart's indicators themselves
   can read `chart.pendingNativeIndicators()` beside `presentNativeIndicators()`, so a save made
   while that choice is still loading keeps the volume indicator.
+- **Series with one value per bar are drawn as a line.** A data provider can now say that a
+  symbol has one value per bar at every timeframe, such as an economic series, with
+  `ohlc: false` in `getSymbolInfo`. Candles, bars and Heikin Ashi have nothing to show there,
+  so the chart draws such a symbol as a line whatever style is chosen, and the style menu, the
+  mobile style list and the chart settings show those styles greyed out, with a tooltip saying
+  why. The style you chose stays yours: it is the one saved with the layout, and it comes back
+  on the next symbol that can draw it. Picking another style on such a symbol, such as an
+  area, makes it your style. Nothing is greyed while the symbol's information is still
+  loading. A plugin chart type can declare which symbols it can draw with `supports`, and it is
+  greyed and replaced by a line the same way. Hosts read the drawn style with
+  `chart.renderer.get('shownPriceStyle')`, the symbol's facts with `chart.symbolFacts()` and the
+  `symbol:facts` event, and test a style with `priceStyleApplies`. In the workspace,
+  `cell.priceStyle` is the drawn style and `cell.requestedPriceStyle` the chosen one.
 
 ### Fixed
 

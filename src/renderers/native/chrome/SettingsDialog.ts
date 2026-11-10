@@ -1,7 +1,7 @@
 import { msg, withValues } from '../../../core/i18n/message';
 import { sourceText, textOf } from '../../../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../../../core/i18n/types';
-import { priceStyleMessage } from '../../../chart-types/labels';
+import { PRICE_STYLE_UNAVAILABLE, priceStyleMessage } from '../../../chart-types/labels';
 import type { VelaTheme, ThemeId } from '../../../core/options';
 import { registeredThemes } from '../../../core/theme';
 import type { ChartConfig } from '../core/chartConfig';
@@ -297,6 +297,9 @@ export class SettingsDialog {
     private onImport: ((json: unknown) => void) | null = null;
     private onReset: (() => void) | null = null;
     private config: ChartConfig | null = null;
+    /** The style the chart draws and the styles its symbol rules out, read at every build
+     *  (see {@link setPriceStyleState}). Absent: the config's style, nothing ruled out. */
+    private priceStyleState: (() => { shown: string; unavailable: readonly string[] }) | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
     /** The timeline-mark groups (defined + named by marks) — one checkbox each on the Events tab. */
@@ -344,6 +347,12 @@ export class SettingsDialog {
         const same = next.size === this.hiddenSettings.size && [...next].every((id) => this.hiddenSettings.has(id));
         this.hiddenSettings = next;
         if (!same) this.reopenIfLive();
+    }
+
+    /** Where the Type row reads the style the chart DRAWS (its value — a fallback while the
+     *  symbol rules the chosen one out) and the styles to grey out (not selectable). */
+    setPriceStyleState(read: () => { shown: string; unavailable: readonly string[] }): void {
+        this.priceStyleState = read;
     }
 
     /** Configure the Canvas → Theme row (see {@link themeControl}); null hides the row. */
@@ -538,6 +547,9 @@ export class SettingsDialog {
         // ══ SYMBOL — chart type + per-style cosmetics + time zone (the reference tab) ══
         body.append(sid(this.section(TEXT.symbol), 'symbol'));
         body.append(sid(this.sectionTitle(TEXT.chartType), 'symbol.type'));
+        const styles = this.priceStyleState?.() ?? { shown: config.series.style, unavailable: [] };
+        const shownStyle = styles.shown;
+        const unavailable = new Set(styles.unavailable);
         const groups: Partial<Record<string, HTMLElement>> = {};
         const showActive = (style: string): void => {
             const active = style === 'heikinashi' ? 'candles' : style; // heikin-ashi is candle-drawn
@@ -548,11 +560,11 @@ export class SettingsDialog {
             }
         };
         body.append(
-            sid(this.selectRowLabeled(TEXT.type, config.series.style, priceStyleIds().map((id) => [id, priceStyleMessage(id)] as const), (v) => {
+            sid(this.selectRowLabeled(TEXT.type, shownStyle, priceStyleIds().map((id) => [id, priceStyleMessage(id)] as const), (v) => {
                 this.emit({ series: { style: v } });
                 showActive(v);
                 this.syncTypeTabs?.(v);
-            }), 'symbol.type'),
+            }, { ids: unavailable, title: PRICE_STYLE_UNAVAILABLE }), 'symbol.type'),
         );
         // Candles — the reference compact rows: one toggle + an up/down swatch pair each.
         const candles = sid(this.group(), 'symbol.style.candles');
@@ -641,7 +653,7 @@ export class SettingsDialog {
             groups[def.id] = g;
             body.append(g);
         }
-        showActive(config.series.style);
+        showActive(shownStyle);
 
         // Style-independent (every motion applies to every price style), so it gets its own
         // group. On/off switches only — the durations stay the host's.
@@ -920,9 +932,9 @@ export class SettingsDialog {
         const wanted =
             section !== undefined
                 ? panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase())
-                : panes.findIndex((p) => p.style === config.series.style && !p.tab.classList.contains('vela-sd-tab-sub'));
+                : panes.findIndex((p) => p.style === shownStyle && !p.tab.classList.contains('vela-sd-tab-sub'));
         activate(wanted >= 0 ? wanted : 0);
-        this.syncTypeTabs?.(config.series.style);
+        this.syncTypeTabs?.(shownStyle);
 
         shell.append(rail, paneHost);
         if (railScrim) shell.append(railScrim);
@@ -1481,14 +1493,22 @@ export class SettingsDialog {
     }
 
     /** A dropdown whose option values differ from their display labels. */
-    private selectRowLabeled(label: MessageLike, value: string, options: readonly (readonly [string, MessageLike])[], onChange: (v: string) => void): HTMLElement {
+    private selectRowLabeled(
+        label: MessageLike,
+        value: string,
+        options: readonly (readonly [string, MessageLike])[],
+        onChange: (v: string) => void,
+        /** Options listed but not selectable, with the tooltip saying why. */
+        unavailable?: { ids: ReadonlySet<string>; title: MessageLike },
+    ): HTMLElement {
+        const off = unavailable && unavailable.ids.size > 0 ? { ids: unavailable.ids, title: this.t(unavailable.title) } : null;
         return fieldRow({
             label: this.t(label),
             labelSize: 'sm',
             className: 'vela-sd-row',
             control: buildFieldControl({
                 kind: 'select',
-                options: options.map(([v, l]) => ({ value: v, label: this.t(l) })),
+                options: options.map(([v, l]) => (off?.ids.has(v) ? { value: v, label: this.t(l), disabled: true, title: off.title } : { value: v, label: this.t(l) })),
                 value,
                 fill: false,
                 theme: this.theme,

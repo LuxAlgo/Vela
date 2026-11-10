@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "Mumlar",
     "chart.priceStyle.heikinashi": "Heikin Ashi",
     "chart.priceStyle.line": "Çizgi",
+    "chart.priceStyle.unavailable": "Bu sembolün verileri için kullanılamaz",
     "chart.scrollToLatest.label": "En son muma kaydır",
     "chart.scrollToLatest.title": "En son muma kaydır (Alt+Shift+→)",
     "chart.settings.addInstance": "Ekle: {name}",

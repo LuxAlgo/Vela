@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "캔들",
     "chart.priceStyle.heikinashi": "하이킨 아시",
     "chart.priceStyle.line": "라인",
+    "chart.priceStyle.unavailable": "이 심볼의 데이터에는 사용할 수 없습니다",
     "chart.scrollToLatest.label": "최신 봉으로 이동",
     "chart.scrollToLatest.title": "최신 봉으로 이동 (Alt+Shift+→)",
     "chart.settings.addInstance": "{name} 추가",

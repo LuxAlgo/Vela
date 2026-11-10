@@ -44,6 +44,8 @@ import type { LocalizationOptions, MessageLike, Translator } from '../core/i18n/
 import { msg } from '../core/i18n/message';
 import { sourceText, textOf } from '../core/i18n/text';
 import { nativeIndicatorEntry } from '../core/native-indicators/NativeIndicator';
+import { priceStyleApplies } from '../chart-types/applicability';
+import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { STATUSLINE_PART_LABELS } from '../widget/statusline-model';
 
 /** The cell's settings rows (the chart settings dialog renders them in the chart's language). */
@@ -210,6 +212,9 @@ export interface CellDeps {
     onMarketChanged(id: string): void;
     /** The cell's price style changed in place (topbar icon/menu refresh upstream). */
     onPriceStyleChanged(id: string): void;
+    /** What the cell can draw changed with its symbol's facts — the drawn style, the greyed
+     *  styles — while the chosen style did not: refresh the style chrome, nothing to save. */
+    onPriceStyleShown?(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** A Status line tab or watermark pref changed on this cell (the style link mirrors upstream). */
@@ -439,7 +444,7 @@ export class ChartCell {
             // A document can carry the price style too (a template import): the renderer
             // is already showing it, so adopt it and re-project the chrome (topbar icon,
             // persisted state) — the `setPriceStyle` path never ran for it.
-            const style = this.priceStyle;
+            const style = this.requestedPriceStyle;
             if (style !== (this.state.priceStyle ?? 'candles')) {
                 this.state.priceStyle = style;
                 this.deps.onPriceStyleChanged(this.id);
@@ -489,6 +494,13 @@ export class ChartCell {
         });
         // A source that refuses the requested timeframe for good: show the one it suggests.
         this.inner.on('data:unavailable', (e) => this.onDataUnavailable(e));
+        // The symbol's facts landed (or a switch reset them): the chart already draws the
+        // fallback of a style they rule out — re-project the style chrome (shown style,
+        // greyed entries, status-line ink). The requested style is untouched.
+        this.inner.on('symbol:facts', () => {
+            this.syncStatuslineColors();
+            this.deps.onPriceStyleShown?.(this.id);
+        });
         // The loading affordance and the watermark never share the canvas.
         this.inner.on('load:start', ({ symbol }) => {
             this.watermark?.setLoading(true);
@@ -1062,9 +1074,26 @@ export class ChartCell {
         return this.state.timeframe ?? '60';
     }
 
+    /** The price style the chart draws — the requested one, or its close-based fallback while
+     *  the symbol's data cannot draw it (what the topbar shows). */
     get priceStyle(): string {
+        const shown = this.inner?.renderer.get('shownPriceStyle');
+        return typeof shown === 'string' ? shown : this.requestedPriceStyle;
+    }
+
+    /** The price style the user chose — what the cell persists. Differs from
+     *  {@link priceStyle} while the symbol's data cannot draw it (`SymbolInfo.ohlc: false`
+     *  rules out candles, bars and Heikin Ashi); it comes back on the next symbol that can. */
+    get requestedPriceStyle(): string {
         const live = this.inner?.renderer.get('priceStyle');
         return typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
+    }
+
+    /** The style ids the symbol's data cannot draw — greyed in the style pickers. Empty while
+     *  the symbol's facts are unknown. */
+    unavailablePriceStyles(): string[] {
+        const facts = this.inner?.symbolFacts() ?? null;
+        return facts ? priceStyleIds().filter((id) => !priceStyleApplies(id, facts)) : [];
     }
 
     /** Manifest instances + native instances — the topbar indicator count. */
@@ -1604,7 +1633,7 @@ export class ChartCell {
      */
     rehydrate(cs: CellState): void {
         if (!this.inner || this.destroyed) return;
-        if (cs.priceStyle && cs.priceStyle !== this.priceStyle) this.setPriceStyle(cs.priceStyle);
+        if (cs.priceStyle && cs.priceStyle !== this.requestedPriceStyle) this.setPriceStyle(cs.priceStyle);
         if (cs.watermark !== undefined && cs.watermark !== this.watermarkOn) this.setWatermarkVisible(cs.watermark);
         if (cs.replayWatermark !== undefined && cs.replayWatermark !== this.replayWatermarkOn) this.setReplayWatermarkVisible(cs.replayWatermark);
         if (cs.indicatorTitles !== undefined && cs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cs.indicatorTitles);
@@ -1662,7 +1691,8 @@ export class ChartCell {
             ...this.state,
             // The REQUESTED timeframe while a fallback shows another: a reload asks for it again.
             ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: this.fallback && live.symbol === this.fallback.symbol && live.timeframe === this.fallback.timeframe ? this.state.timeframe : live.timeframe } : {}),
-            priceStyle: this.priceStyle,
+            // The CHOSEN style while the symbol's data shows a fallback: a reload draws it again.
+            priceStyle: this.requestedPriceStyle,
             watermark: this.watermarkOn,
             replayWatermark: this.replayWatermarkOn,
             indicatorTitles: this.indicatorTitlesOn,

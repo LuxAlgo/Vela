@@ -9,6 +9,7 @@ import type { DrawingMode } from "../drawings/port";
 import type { MarkClickEvent } from "../marks/types";
 import type { ReplayEndReason } from "../ReplayControl";
 import type { DataUnavailableReason } from "../data-unavailable";
+import type { SymbolFacts } from "../ports/MarketDataFeed";
 
 /** Chart-level events emitted on `chart.on(...)`. */
 export interface VelaEventMap extends Record<string, unknown> {
@@ -65,6 +66,15 @@ export interface VelaEventMap extends Record<string, unknown> {
     finest?: string;
     default?: string;
   };
+  /**
+   * The facts the chart applies about its symbol changed (`chart.symbolFacts()`): they
+   * landed for the symbol on screen (`facts`), or a symbol switch reset them to unknown
+   * (`null`) until the new symbol's land. They decide which price styles can draw the
+   * symbol: by the time it fires the chart already draws its fallback for a style they
+   * rule out (`chart.renderer.get('shownPriceStyle')`), so a host's style picker re-reads
+   * here which styles to grey.
+   */
+  "symbol:facts": { symbol: string; facts: SymbolFacts | null };
   /** An indicator was moved/merged to another pane (`chart.panes` / legend / object tree). */
   "indicator:moved": { id: string; paneId: string };
   /** An indicator was shown/hidden (legend eye, `handle.setVisible`, or object tree). */

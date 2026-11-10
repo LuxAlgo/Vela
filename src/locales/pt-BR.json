@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "Candles",
     "chart.priceStyle.heikinashi": "Heikin Ashi",
     "chart.priceStyle.line": "Linha",
+    "chart.priceStyle.unavailable": "Indisponível para os dados deste símbolo",
     "chart.scrollToLatest.label": "Ir para a barra mais recente",
     "chart.scrollToLatest.title": "Ir para a barra mais recente (Alt+Shift+→)",
     "chart.settings.addInstance": "Adicionar {name}",

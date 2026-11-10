@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "ローソク足",
     "chart.priceStyle.heikinashi": "平均足",
     "chart.priceStyle.line": "ライン",
+    "chart.priceStyle.unavailable": "このシンボルのデータでは利用できません",
     "chart.scrollToLatest.label": "最新の足へスクロール",
     "chart.scrollToLatest.title": "最新の足へスクロール（Alt+Shift+→）",
     "chart.settings.addInstance": "{name}を追加",

@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "कैंडल",
     "chart.priceStyle.heikinashi": "हाइकिन आशी",
     "chart.priceStyle.line": "लाइन",
+    "chart.priceStyle.unavailable": "इस सिंबल के डेटा के लिए उपलब्ध नहीं",
     "chart.scrollToLatest.label": "सबसे नए बार पर स्क्रॉल करें",
     "chart.scrollToLatest.title": "सबसे नए बार पर स्क्रॉल करें (Alt+Shift+→)",
     "chart.settings.addInstance": "{name} जोड़ें",
