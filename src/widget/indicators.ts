@@ -127,10 +127,11 @@ export interface LedgerInputs {
      */
     manifestSettled: boolean;
     /**
-     * The volume auto-add is still owed (before the first `load:end`) AND the intent —
-     * restored ledger, else the `volume` option — says volume. The registry cannot show
-     * it yet; without this, an early save would write `natives: []` and the reload would
-     * read it as a deliberate opt-out, silencing volume forever.
+     * The volume auto-add is still owed: before the first `load:end` while the intent —
+     * restored ledger, else the `volume` option — says volume, or after it while the chart
+     * waits for the symbol's facts to decide the add. The registry cannot show it yet;
+     * without this, an early save would write `natives: []` and the reload would read it as
+     * a deliberate opt-out, silencing volume forever.
      */
     volumePending: boolean;
 }

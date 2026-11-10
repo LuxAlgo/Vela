@@ -59,12 +59,13 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `defaultLanguage` | string | first registered engine* | Scripting language used when `addIndicator` doesn't name one. Falls back to the first engine registered at construction, then to `'pine'`. |
 | `currentPriceLine` | boolean | `true` | Dashed line + axis label at the latest price. |
 | `logScale` | boolean | `false` | Logarithmic price scale. |
+| `volume` | boolean | `true` | Adds the built-in volume indicator when the chart first loads (native renderer), except on a symbol whose source states it has no volume. `false` opts out; `chart.addNativeIndicator('volume')` still adds it by hand. |
 | `nativeBackend` | `'auto' \| 'canvas2d' \| 'webgl2'` | `auto` | Native geometry backend. `auto` = WebGL2 if available, else canvas2d. Only applies to the native renderer. |
 | `animations` | boolean or `{ zoom?, pan?, scroll?, autoscale?, liveBar?, intro? }` | **on** | `true`/`false` toggles every motion; an object configures each on its own (see [The `animations` option](#the-animations-option) below). Defaults: eased zoom on, pan momentum on (short snappy glide), autoscale glide on, first-load reveal on, live-bar glide **off**. |
 | `glow` | number | `0` | Neon glow/bloom for line series (~0.6 = strong). **WebGL2 only** — ignored on canvas2d. |
 | `upColor` | string | the theme's up color (`#089981`, green, in the built-in themes) | Bullish candle color (native renderer). Set, it stays through theme switches. |
 | `downColor` | string | the theme's down color (`#f23645`, red, in the built-in themes) | Bearish candle color (native renderer). Set, it stays through theme switches. |
-| `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'area' \| 'baseline'` | `'candles'` | How the base price series is drawn (native renderer). |
+| `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'linemarkers' \| 'stepline' \| 'area' \| 'baseline' \| 'columns' \| 'heikinashi'`, or a registered chart-type id | `'candles'` | How the base price series is drawn (native renderer). See [Price styles](./renderer-features.md#appearance). A symbol whose source has one value per bar (`SymbolInfo.ohlc: false`) is drawn as a line with markers instead of candles, bars or Heikin Ashi; the chosen style stays and comes back on the next symbol. |
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 | `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
 | `priceAxis` | `{ ticks?: (ctx) => PriceAxisTick[] \| null }` | built-in ticks | Your own price-axis ladder (native renderer): `ticks` returns each pane's ticks, and the axis labels and horizontal gridlines both follow them (see below). |
@@ -198,7 +199,7 @@ new VelaWorkspace('#chart', {
       'symbol.style.bars.up-color',          //     Up color
       'symbol.style.bars.down-color',        //     Down color
       'symbol.style.bars.spacing',           //     Spacing
-      'symbol.style.line',                   //   Line group
+      'symbol.style.line',                   //   Line group (also styles Line with markers and Step line)
       'symbol.style.line.color',             //     Color
       'symbol.style.line.width',             //     Width
       'symbol.style.area',                   //   Area group
@@ -213,6 +214,10 @@ new VelaWorkspace('#chart', {
       'symbol.style.baseline.fill-bottom',   //     Fill bottom area
       'symbol.style.baseline.base-level',    //     Base level %
       'symbol.style.baseline.width',         //     Width
+      'symbol.style.columns',                //   Columns group
+      'symbol.style.columns.up-color',       //     Up color
+      'symbol.style.columns.down-color',     //     Down color
+      'symbol.style.columns.spacing',        //     Spacing
       'symbol.animation',                    //   Animation group
       'symbol.animation.zoom',               //     Animate zoom (the wheel-zoom glide)
       'symbol.animation.pan',                //     Pan momentum (drag-release inertia + scroll glide)

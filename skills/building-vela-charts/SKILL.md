@@ -81,7 +81,8 @@ ema.on('ready', () => console.log('computed'));
 ## Rules that prevent the common bugs
 
 1. **An empty chart** usually means no provider serves the symbol (the load waits, the
-   `data:unresolved` event fires), or the container has no height.
+   `data:unresolved` event fires), the provider refuses that timeframe for the symbol
+   (`data:unavailable` fires with its `finest` timeframe), or the container has no height.
 2. **A script that never shows** means no engine is registered for its language.
 3. **Read state through the chart, not from your copies.** `chart.market` is the current
    market; switch it in place with `chart.setMarket({ symbol, timeframe })` (indicators and

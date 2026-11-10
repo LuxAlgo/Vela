@@ -1,5 +1,5 @@
 import type { IChartRenderer, VisibleRange } from '../ports/IChartRenderer';
-import type { MarketDataFeed, BarRange } from '../ports/MarketDataFeed';
+import type { MarketDataFeed, BarRange, SymbolFacts, SymbolInfo } from '../ports/MarketDataFeed';
 import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
 import type { OHLCV } from '../model/ohlcv';
@@ -36,6 +36,7 @@ import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
 import { timeframeToMs } from '../../data/timeframe';
 import { parseSymbol } from '../../data/ProviderRegistry';
+import { isDataUnavailableError, type DataUnavailableError } from '../data-unavailable';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
 import { chartType, type SeriesDataEngine } from '../../chart-types/registry';
 import { resolveTheme } from '../theme';
@@ -234,6 +235,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     /** A load is in flight with nothing painted — the state behind the renderer's loading
      *  affordance and the `load:start`/`load:end` event pair (transition-guarded). */
     private loadingUp = false;
+    /** The load generation whose market the source refused for good (`data:unavailable`):
+     *  nothing streams, heals or re-asks until the next load. A new generation clears it. */
+    private unavailableGen = -1;
 
     constructor(
         container: HTMLElement,
@@ -429,6 +433,31 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     }
 
     /**
+     * The source refused THIS chart's market for good. Only the chart's own pipeline lands
+     * here — the initial/switch load, the history backfill and the gap heal, each tagged with
+     * its load generation; the engines' `fetchSeries` gateway never does (its promise rejects
+     * to the script instead). Ends the load like an empty answer would, stops live updates so
+     * nothing keeps polling a series that will never come, and reports once per load. The
+     * timeframe stays as set: falling back is the host's policy, not the core's.
+     */
+    private marketUnavailable(gen: number, e: DataUnavailableError): void {
+        if (this.generation !== gen || this.unavailableGen === gen) return;
+        this.unavailableGen = gen;
+        console.warn(`[vela] ${e.message}`);
+        this.stopLive();
+        this.completeHistory('aborted');
+        this.endLoad();
+        const m = this.config.market;
+        this.events.emit('data:unavailable', {
+            symbol: m.symbol ?? 'TEST',
+            timeframe: m.timeframe ?? '60',
+            reason: e.reason,
+            ...(e.finest !== undefined ? { finest: e.finest } : {}),
+            ...(e.default !== undefined ? { default: e.default } : {}),
+        });
+    }
+
+    /**
      * Enter the loading state: raise the renderer's affordance and tell the plugins
      * (`load:start`) — BEFORE the series is blanked or fetched, so extensions and custom
      * indicators can hide or reset their own visuals first. Transition-guarded: a switch
@@ -471,6 +500,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private async loadMarket(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         try {
             await this.loadMarketInner(gen, opts);
+        } catch (e) {
+            if (!isDataUnavailableError(e)) throw e;
+            this.marketUnavailable(gen, e);
         } finally {
             // The owning load always ends the loading state — this is the belt for the paths
             // that never hand the renderer a non-empty series (a failed fetch, an empty
@@ -481,6 +513,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     private async loadMarketInner(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         const market = this.config.market;
+        // The new market's facts decide the style its first candles draw in: known ones apply
+        // now, the rest as soon as they land (the load's own metadata request, usually ahead
+        // of the bars). A symbol switch starts from unknown, so the chosen style comes back.
+        this.syncSymbolFacts();
         const requested = market.bars ?? 500;
         const initialRange = market.visibleRange;
         // Only a DEEP request is worth splitting, and only when a requested initial window
@@ -546,9 +582,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                         this.completeHistory(full.length >= requested ? 'depth' : 'genesis');
                         signal(true);
                     })
-                    .catch(() => {
+                    .catch((e: unknown) => {
                         if (this.progressiveAbort === abort) this.progressiveAbort = null;
-                        if (this.generation === gen) this.completeHistory('aborted');
+                        if (isDataUnavailableError(e)) this.marketUnavailable(gen, e);
+                        else if (this.generation === gen) this.completeHistory('aborted');
                         signal(true);
                     });
             });
@@ -597,11 +634,15 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         // axis switches from the zoom formula to the symbol's true precision as soon as it lands.
         this.refreshPriceFormat();
         void this.ensurePriceFormat();
+        // Backstop for facts the early probe could not reach (the symbol was not resolvable
+        // before the provider indexes settled; a custom feed filling its cache with the bars).
+        if (this.facts === null) this.syncSymbolFacts();
     }
 
-    /** Start the live tick subscription + the tab-restore catch-up listener. */
+    /** Start the live tick subscription + the tab-restore catch-up listener — never for a
+     *  market the source refused (nothing would ever stream). */
     private startLive(): void {
-        if (!this.config.live) return;
+        if (!this.config.live || this.unavailableGen === this.generation) return;
         this.live = new LiveSession(this.feed, this.config.market, (bar) => this.onBar(bar));
         this.live.start();
         // Tab-restore catch-up: browsers throttle hidden tabs (timers → 1/min, sockets can
@@ -1025,6 +1066,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             }
             if (this.generation === gen) this.completeHistory('depth');
         } catch (e) {
+            if (isDataUnavailableError(e)) return this.marketUnavailable(gen, e);
             console.warn(`[vela] history backfill failed — keeping ${this.rawBars.length} bars (${e instanceof Error ? e.message : String(e)})`);
             if (this.generation === gen) this.completeHistory('aborted');
         }
@@ -1511,13 +1553,95 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         }
     }
 
-    /** Auto-add the built-in volume indicator. Bar volume needs no capability probe (always supported). */
     /** The user removed the volume indicator — the auto-add must never override that. */
     private volumeOptedOut = false;
+    /** The volume auto-add waiting for its symbol's facts (they landed after the first candles). */
+    private volumeFactsWait: { symbol: string } | null = null;
 
+    /**
+     * Auto-add the built-in volume indicator, unless the symbol's facts say its source has no
+     * volume (`SymbolInfo.volume === false`). The load prefetches those facts beside the bars,
+     * so they are usually known by now; when they are still in flight the add waits for them
+     * rather than holding the first paint, and {@link pendingNativeIndicators} reports it.
+     */
     private maybeAutoAddVolume(): void {
         if (!this.config.volume || this.volumeOptedOut || !this.renderer.setNativeData) return; // off, opted out, or no layer
-        if (nativeIndicatorEntry('volume')) this.addNativeIndicator('volume');
+        if (!nativeIndicatorEntry('volume')) return;
+        const known = this.feed.symbolInfo?.(this.config.market);
+        const symbol = this.qualifiedSymbol();
+        if (known === undefined && symbol && this.symbolFactsComing(symbol)) {
+            const wait = { symbol };
+            this.volumeFactsWait = wait;
+            void this.dataControl
+                .symbolInfo(symbol)
+                .catch(() => undefined)
+                .then((info) => {
+                    if (this.volumeFactsWait !== wait) return; // destroyed meanwhile
+                    this.volumeFactsWait = null;
+                    // A switch to another symbol meanwhile drops the add, as a switch before
+                    // the first candles does: only the first market gets one.
+                    if (this.qualifiedSymbol() !== symbol || this.volumeOptedOut) return;
+                    if (info?.volume !== false) this.addNativeIndicator('volume');
+                });
+            return;
+        }
+        if (known?.volume !== false) this.addNativeIndicator('volume');
+    }
+
+    /** Whether `symbol`'s facts will still arrive: the registry routes it to a provider that
+     *  answers them. Offline data and a custom feed state facts synchronously or not at all. */
+    private symbolFactsComing(symbol: string): boolean {
+        if (this.config.market.data?.length) return false;
+        const resolved = this.dataControl.resolve(symbol);
+        return !!resolved && typeof this.dataControl.providerInstance(resolved.provider)?.getSymbolInfo === 'function';
+    }
+
+    /** The facts the renderer was last handed (see {@link syncSymbolFacts}); null = unknown. */
+    private facts: SymbolFacts | null = null;
+    /** Bumped per facts probe and at destroy: only the latest probe may apply its answer. */
+    private factsProbe = 0;
+
+    /** The facts in force for the chart's symbol (a copy), null while unknown. */
+    symbolFacts(): SymbolFacts | null {
+        return this.facts ? { ...this.facts } : null;
+    }
+
+    /**
+     * Hand the renderer the facts about the market's symbol that decide which price styles
+     * can draw it, and announce a change (`symbol:facts`). The feed's metadata cache answers
+     * first, so a symbol seen before switches in one step; otherwise the facts read unknown
+     * (every style applies) until the async answer lands — dropped if the chart has moved
+     * to another symbol or a newer probe has started meanwhile.
+     */
+    private syncSymbolFacts(): void {
+        const probe = ++this.factsProbe;
+        const known = this.feed.symbolInfo?.(this.config.market);
+        this.applySymbolFacts(symbolFactsOf(known));
+        const symbol = this.qualifiedSymbol();
+        if (known !== undefined || !symbol || this.config.market.data?.length) return;
+        void this.dataControl
+            .symbolInfo(symbol)
+            .catch(() => undefined)
+            .then((info) => {
+                if (this.factsProbe !== probe || this.qualifiedSymbol() !== symbol) return;
+                if (info !== undefined) this.applySymbolFacts(symbolFactsOf(info));
+            });
+    }
+
+    private applySymbolFacts(facts: SymbolFacts | null): void {
+        const prev = this.facts;
+        if (prev === facts || (prev && facts && prev.ohlc === facts.ohlc && prev.volume === facts.volume)) return;
+        this.facts = facts;
+        this.renderer.setSymbolFacts?.(facts);
+        this.events.emit('symbol:facts', { symbol: this.config.market.symbol ?? 'TEST', facts: this.symbolFacts() });
+    }
+
+    /** The native types the chart is about to add on its own — the volume auto-add while it
+     *  waits for its symbol's facts. SYNC, for persistence snapshots (see the facade). */
+    pendingNativeIndicators(): string[] {
+        const wait = this.volumeFactsWait;
+        if (!wait || wait.symbol !== this.qualifiedSymbol() || this.volumeOptedOut) return [];
+        return this.presentNativeIndicators().includes('volume') ? [] : ['volume'];
     }
 
     /**
@@ -1794,8 +1918,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             if (this.generation !== gen) return; // market switched / chart destroyed mid-heal — drop the stale bars
             if (this.replayQueue) return; // replay began mid-heal — these bars lie past its cursor
             for (const b of bars) this.applyBar(b, false);
-        } catch {
-            // transient — the buffered ticks still apply; a later discontinuity re-triggers the heal
+        } catch (e) {
+            // Transient — the buffered ticks still apply; a later discontinuity re-triggers the
+            // heal. A permanent refusal ends the market's updates instead.
+            if (isDataUnavailableError(e)) this.marketUnavailable(gen, e);
         } finally {
             // A superseded heal leaves the state alone: setMarket/destroy already reset it,
             // and replaying its buffer would push the OLD market's bars into the new array.
@@ -2253,6 +2379,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     destroy(): void {
         this.bumpGeneration(); // abandon backfill loops/loads mid-flight + release superseded setMarket awaiters
+        this.volumeFactsWait = null;
+        this.factsProbe += 1; // a facts answer landing after destroy must not reach the renderer
         this.resolveHistoryComplete(); // never leave historyComplete() awaiters hanging
         this.clearReplayTimer();
         this.replayQueue = null;
@@ -3259,4 +3387,14 @@ function modelToValuePatch(model: IndicatorModel): ValuePatch {
         tables: model.tables ?? [],
         trades: model.trades ?? [],
     };
+}
+
+/** The style-deciding facts in a symbol's info: null while there is no info (unknown), `{}`
+ *  for info that states none (every style applies). */
+function symbolFactsOf(info: SymbolInfo | undefined): SymbolFacts | null {
+    if (!info) return null;
+    const facts: SymbolFacts = {};
+    if (typeof info.ohlc === 'boolean') facts.ohlc = info.ohlc;
+    if (typeof info.volume === 'boolean') facts.volume = info.volume;
+    return facts;
 }

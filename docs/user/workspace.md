@@ -148,13 +148,50 @@ chart over the grid, and the stop lights up as an inverse chip whenever somethin
 isolated — the chart itself, or a pane inside it (a double-tap in the plot maximizes
 a pane). Tapping the lit stop restores the view.
 
+### A timeframe the source never serves
+
+When a cell's data source refuses the requested timeframe for good — a monthly economic
+series asked for hourly bars, which a provider signals with a `DataUnavailableError` (see
+[Adding a data provider](../contributing/adding-a-data-provider.md#failures-transient-or-permanent))
+— the cell switches to the timeframe the source suggests (its `default`, else its `finest`)
+and a toast says so: *GDP is not available at 1h. Showing 1D instead.* The timeframe the user
+asked for stays the cell's own:
+
+- `cell.requestedTimeframe` reads it, the saved state keeps it, and the `timeframe` sync link
+  shares it, never the fallback.
+- The next symbol that serves it runs it again.
+- `cell.timeframe`, the topbar and the status line show the timeframe the chart runs.
+- Picking a timeframe by hand (the topbar, a range chip, `ctx.setTimeframe`) makes it the
+  requested one, the fallback included.
+
+A source that suggests no other timeframe gets an error toast, and the chart keeps the
+timeframe as set. The cell never chains switches: a refused fallback is only reported.
+
+### A style the symbol's data cannot draw
+
+A symbol whose source has one value per bar (`SymbolInfo.ohlc: false`, an economic series;
+see [Adding a data provider](../contributing/adding-a-data-provider.md)) has nothing to show in
+candles, bars or Heikin Ashi, nor in a plugin chart type whose `supports` rules it out. On such
+a symbol the cell draws a line instead, and the style menus (the topbar, the mobile drawer, the
+chart settings dialog) show those styles greyed out, with a tooltip saying why. The style the
+user chose stays the cell's own:
+
+- `cell.requestedPriceStyle` reads it, and the saved state keeps it.
+- The next symbol that can draw it shows it again.
+- `cell.priceStyle`, the topbar and the status line show the style the chart draws;
+  `cell.unavailablePriceStyles()` lists the greyed ids.
+- Picking a style by hand on such a symbol (a line, an area…) makes it the cell's style.
+
+Nothing is greyed while the symbol's facts are still loading, or when its source states none.
+
 ## Sync links
 
 Per kind — `viewport`, `symbol`, `timeframe`, `crosshair`, `drawings`, `style` — link
 every cell (`true`) or named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a',
 sol: 'b' }`: only same-group cells follow each other). Cross-timeframe viewport groups
 align on the **right edge** (a finer-timeframe cell clamps the window to its own
-minimum zoom).
+minimum zoom). The `timeframe` link carries each cell's requested timeframe, never one a
+source forced on a cell ([A timeframe the source never serves](#a-timeframe-the-source-never-serves)).
 
 `crosshair` mirrors the pointer's TIME onto same-group cells as a **ghost crosshair**
 (a dimmed vertical line snapped to each follower's own bar, with its time chip);

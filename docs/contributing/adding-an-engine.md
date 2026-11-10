@@ -65,6 +65,8 @@ Secondary series are different but still inverted. When a script needs another s
 
 If no gateway is supplied, secondary fetches degrade to empty rather than failing — the primary series still runs.
 
+A source can refuse a secondary series for good — a monthly series asked for hourly bars. The gateway's promise then rejects with a `DataUnavailableError` whose message names the series and its finest timeframe (`CPI is not served at 60; its finest timeframe is 1D`). Detect it with `isDataUnavailableError(e)` (from `@luxalgo/vela/plugin`) — never `instanceof`, since the provider may bundle another copy of Vela — and report it to the script's author instead of retrying. Other transient failures still arrive as an empty series.
+
 Why it matters: causality. Scripts are stateful and run over **all** bars, never just the visible window. Centralizing data ownership in the core keeps one consistent, correctly-ordered, deduped bar history feeding every engine and renderer. The viewport changes *what* a viewport-aware script computes — it never scopes *which* bars execute.
 
 ## Stable ids: the identity contract

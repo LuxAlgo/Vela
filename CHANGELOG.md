@@ -2,6 +2,66 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.5]
+
+### Added
+
+- **Line with markers, step line and columns.** Three more chart styles suit series with one
+  value per bar, such as economic data. Line with markers draws the line with a dot on each
+  bar, shown once the bars are far enough apart to tell the dots apart. Step line holds each
+  value flat until the next bar, then steps to it. Columns draw a column per bar from the
+  bottom of the chart up to its value, in the up color when the value is at or above the
+  previous bar's and in the down color when it is lower. Pick them from the chart style menu
+  or with `priceStyle: 'linemarkers'`, `'stepline'` or `'columns'`. The first two take the
+  line's color and width from the chart settings; columns have their own up and down colors,
+  which start as the chart's up and down colors at half opacity.
+- **Data sources can refuse a timeframe they never serve.** A provider can now say that a
+  series does not exist at a timeframe, such as a monthly economic series asked for hourly
+  bars, by throwing a `DataUnavailableError` that names the finest timeframe it serves. The
+  chart then stops loading and polling that market instead of waiting on an empty chart, and
+  fires `data:unavailable` with the provider's suggested timeframes so the page can switch.
+  A script that asks for such a series with `request.security` gets the provider's message
+  instead of empty data. Any other provider error still reads as an empty answer. In the
+  workspace, a chart on such a symbol switches to the timeframe the source suggests and says
+  so. The timeframe you picked stays yours: it is the one saved with the layout and shared
+  with linked charts, and it comes back on the next symbol that serves it.
+- **Data providers can describe what each symbol offers.** `getSymbolInfo` now has typed,
+  documented fields for a symbol's data: the timeframes the source serves for it (the finest
+  one and its natural one, or an exact list), whether it has volume (`volume: false` when it
+  has none), and the market's time zone and trading hours. A chart opened on a symbol without
+  volume, such as a macro-economic series, no longer adds the volume indicator on its own; a
+  volume indicator you added or saved stays. Hosts that save a chart's indicators themselves
+  can read `chart.pendingNativeIndicators()` beside `presentNativeIndicators()`, so a save made
+  while that choice is still loading keeps the volume indicator.
+- **Series with one value per bar are drawn as a line.** A data provider can now say that a
+  symbol has one value per bar at every timeframe, such as an economic series, with
+  `ohlc: false` in `getSymbolInfo`. Candles, bars and Heikin Ashi have nothing to show there,
+  so the chart draws such a symbol as a line whatever style is chosen, and the style menu, the
+  mobile style list and the chart settings show those styles greyed out, with a tooltip saying
+  why. The style you chose stays yours: it is the one saved with the layout, and it comes back
+  on the next symbol that can draw it. Picking another style on such a symbol, such as an
+  area, makes it your style. Nothing is greyed while the symbol's information is still
+  loading. A plugin chart type can declare which symbols it can draw with `supports`, and it is
+  greyed and replaced by a line the same way. Hosts read the drawn style with
+  `chart.renderer.get('shownPriceStyle')`, the symbol's facts with `chart.symbolFacts()` and the
+  `symbol:facts` event, and test a style with `priceStyleApplies`. In the workspace,
+  `cell.priceStyle` is the drawn style and `cell.requestedPriceStyle` the chosen one.
+
+### Changed
+
+- **Vela requires `@luxalgo/vela-ui` 0.4.1.** The kit adds the icons of the new chart
+  styles and lets a menu row or a select option say why it is unavailable, which the
+  chart style pickers use.
+
+### Fixed
+
+- **Month and second timeframes are measured correctly.** A timeframe written with a month
+  count (`1M`, `3M`, `12M`) was measured as that many minutes in places, and a seconds
+  timeframe (`30S`) as one hour. Scripts that ask for monthly or quarterly data now load it
+  in one right-sized request instead of a long run of oversized ones, and on these charts
+  live updates, replay and the drawing tools that read finer-timeframe data work from the
+  true bar length.
+
 ## [0.10.4]
 
 ### Changed

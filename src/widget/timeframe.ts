@@ -70,8 +70,8 @@ const UNIT_MINUTES: Record<Exclude<UnitKey, 'S'>, number> = {
 };
 
 /** The canonical timeframe string the chart consumes. Every unit from minutes up collapses
- *  to BARE MINUTES — the one form providers and the core read identically (`3M` would mean
- *  "3 minutes" to `timeframeToMs`, not "3 months"). Seconds pass through as `NS`. */
+ *  to BARE MINUTES — the one form providers and the core read identically (a provider's
+ *  interval table knows `M`, not every `NM` count). Seconds pass through as `NS`. */
 function canonicalFor(key: UnitKey, count: number): string {
     if (key === 'S') return `${count}S`;
     return `${count * UNIT_MINUTES[key]}`;
@@ -118,6 +118,20 @@ export function parseTimeframe(text: string, i18n?: Translator | null): ParsedTi
         label: textOf(i18n, UNIT_NAME[key], { count, n: localizeNumberText(String(count), i18n) }),
         short: shortLabel(key, count, i18n),
     };
+}
+
+/**
+ * A data source's timeframe (`'1D'`, `'W'`, `'1M'`, `'3M'`, `'12M'`, `'240'`, `'30S'`) in the
+ * form the chart consumes: `D`, `W` or `M` for one day, week or month — the default presets'
+ * own values — and the canonical bare minutes for any other count (`'3M'` → `'129600'`).
+ * Unit letters read as sources write them, upper-case: `M` is a month. Null when unparsed.
+ */
+export function chartTimeframeOf(value: string | undefined): string | null {
+    if (value === undefined) return null;
+    const parsed = parseTimeframe(value);
+    if (!parsed.valid) return null;
+    if (parsed.count === 1 && (parsed.unit === 'D' || parsed.unit === 'W' || parsed.unit === 'M')) return parsed.unit;
+    return parsed.canonical ?? null;
 }
 
 /** Duration in ms of an existing timeframe value (`1`, `60`, `4h`, `D`, `W`, …), NaN if unknown. */

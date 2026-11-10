@@ -1,6 +1,6 @@
 import type { IChartRenderer, VisibleRange } from './core/ports/IChartRenderer';
 import type { ScriptingEngine } from './core/ports/ScriptingEngine';
-import type { MarketDataFeed } from './core/ports/MarketDataFeed';
+import type { MarketDataFeed, SymbolFacts } from './core/ports/MarketDataFeed';
 import type { VisibleRangePreset } from './core/visible-range';
 import type { VelaOptions, VelaTheme, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
 import { resolveAnimations } from './core/options';
@@ -221,6 +221,28 @@ export class Vela {
      */
     presentNativeIndicators(): string[] {
         return this.orchestrator.presentNativeIndicators();
+    }
+
+    /**
+     * The native-indicator types the chart is about to add on its own and has not yet: the
+     * volume indicator while the first market's symbol facts, which decide it, are still in
+     * flight after the first candles (a source can state that a symbol has no volume). Empty
+     * otherwise. Persistence snapshots report these beside {@link presentNativeIndicators},
+     * so a save in that moment is not read back as the user removing the indicator.
+     */
+    pendingNativeIndicators(): string[] {
+        return this.orchestrator.pendingNativeIndicators();
+    }
+
+    /**
+     * The facts the chart applies about its symbol, from its data source's `SymbolInfo`:
+     * `ohlc: false` for one value per bar, `volume: false` for no volume. `null` while
+     * unknown (the info has not landed, or the source states none); `{}` when it landed
+     * without either. They decide which price styles can draw the symbol — test one with
+     * `priceStyleApplies(id, chart.symbolFacts())` — and change with `symbol:facts`.
+     */
+    symbolFacts(): SymbolFacts | null {
+        return this.orchestrator.symbolFacts();
     }
 
     /** Live handles of every indicator currently on the chart (script + native) — drive

@@ -48,7 +48,7 @@ const ws = new VelaWorkspace('#chart', {
     //                                 //  group ('canvas.grid'), or a row; ids via chart.renderer.listSettingsIds()
     // data: myBars,                   // offline OHLCV[] — replaces the provider entirely (no fetches, no live)
     // visibleRange: '3M',             // initial window: '1D'|'1W'|'1M'|'3M'|'6M'|'1Y'|'5Y'|'YTD'|'ALL' or {from,to} in ms (default: frame the tail)
-    // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'area'|'baseline'|'heikinashi' or a registered chart-type id
+    // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'linemarkers'|'stepline'|'area'|'baseline'|'columns'|'heikinashi' or a registered chart-type id
     // volume: true,                   // the built-in volume columns (native indicator); false opts out
     // logScale: false,                // logarithmic price scale
     // currentPriceLine: true,         // dashed line + axis chip at the latest price

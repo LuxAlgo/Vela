@@ -11,6 +11,8 @@ import type { PriceStyle } from '../options';
  * (Pine `request.security` HTF/LTF/cross-symbol) are fetched + cached through
  * this so they get real, correctly-resolved data (no aggregation; timeframes
  * kept separate). Provided by the orchestrator, backed by `MarketDataFeed`.
+ * Rejects with a `DataUnavailableError` (`isDataUnavailableError`) when the source
+ * refuses the series for good: report its message instead of retrying.
  */
 export type FetchSeries = (symbol: string, timeframe: string, range: BarRange) => Promise<OHLCV[]>;
 

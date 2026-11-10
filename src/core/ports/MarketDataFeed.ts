@@ -3,13 +3,76 @@ import type { MarketConfig } from '../options';
 import type { Unsubscribe } from '../util/types';
 
 /**
- * Symbol metadata an engine may need (e.g. Pine `syminfo.*`). Free-form beyond
- * `ticker` — engines read the keys they understand and synthesize a fallback for
- * the rest.
+ * Facts about one symbol, stated by its data source (`DataProvider.getSymbolInfo`): the
+ * chart reads the typed keys below, and engines receive the whole record (e.g. Pine
+ * `syminfo.*`). Free-form beyond them — engines read the keys they understand and
+ * synthesize a fallback for the rest. Every typed key but `ticker` is optional, and an
+ * absent one means the usual behavior.
  */
 export interface SymbolInfo {
     ticker: string;
+    /**
+     * The market's IANA time zone (`'America/New_York'`, `'Etc/UTC'`): the zone `session`
+     * and `session_extended` are written in, and the zone the "exchange" display time zone
+     * follows. Absent or empty ⇒ `'Etc/UTC'`.
+     */
+    timezone?: string;
+    /**
+     * The regular trading hours, `HHMM-HHMM` in {@link timezone} (`'0930-1600'`; `2400` is
+     * the end of the day). Any other non-empty value marks a market with sessions (the
+     * regular/extended toggle, the calendar-driven market status) but shades nothing.
+     * `'24x7'`, empty or absent ⇒ a continuous market.
+     */
+    session?: string;
+    /**
+     * The whole extended tape, `HHMM-HHMM` in {@link timezone}, containing the `session`
+     * window (`'0400-2000'`). A span that wraps midnight (`'1700-1600'`) marks a market whose
+     * trading day runs from evening to evening. Absent ⇒ the whole civil day.
+     */
+    session_extended?: string;
+    /**
+     * The timeframes the source serves for this symbol. Timeframe strings use the uppercase
+     * canonical form: `'1D'` (or `'D'`), `'W'`, `'1M'` (or `'M'`), `'3M'`, `'12M'`, or bare
+     * minutes such as `'60'`. Never lowercase: `'1m'` is one minute, not one month. Absent ⇒
+     * the provider's `info().supportedTimeframes`, if any.
+     */
+    timeframes?: {
+        /** The finest timeframe served. Every coarser one is served too, unless `list` is present. */
+        finest: string;
+        /** The source's own frequency: the natural timeframe to show the symbol in. */
+        default?: string;
+        /** When present, the EXHAUSTIVE list of timeframes served. */
+        list?: readonly string[];
+    };
+    /**
+     * `false` when the source has no volume data for this symbol: the chart then does not
+     * add its volume indicator on its own (one the user added or saved stays). Absent or
+     * `true` ⇒ volume as usual.
+     */
+    volume?: boolean;
+    /**
+     * `false` when the source has ONE value per bar for this symbol, at every timeframe:
+     * open = high = low = close, so open, high and low carry no information (a
+     * macro-economic series). The chart then draws it with a style that reads the close
+     * (a line) whatever style is chosen, and its style pickers grey out the styles that
+     * need open, high and low (candles, bars, Heikin Ashi). Absent or `true` ⇒ normal OHLC
+     * bars. State it here: the chart never guesses it from the symbol's type or its bars.
+     */
+    ohlc?: boolean;
     [key: string]: unknown;
+}
+
+/**
+ * The facts about the chart's symbol that decide which price styles can draw it: the
+ * neutral subset of {@link SymbolInfo} the chart applies once the symbol's info lands
+ * (`chart.symbolFacts()`) and hands to a chart type's `supports` predicate. Each key
+ * mirrors the `SymbolInfo` field of the same name; an absent key means the usual.
+ */
+export interface SymbolFacts {
+    /** `false`: one value per bar — open, high and low carry no information. */
+    ohlc?: boolean;
+    /** `false`: the source has no volume for this symbol. */
+    volume?: boolean;
 }
 
 /**
@@ -38,7 +101,15 @@ export interface BarRange {
 }
 
 export interface MarketDataFeed {
-    /** Load the initial history (from a provider or the offline `data` array). */
+    /**
+     * Load the initial history (from a provider or the offline `data` array).
+     *
+     * Every bar method — `load`, `loadProgressive`, `loadRange` — rejects with a
+     * `DataUnavailableError` when the source refuses the series for good. On the chart's
+     * own market the chart then ends the load, stops live updates and fires
+     * `data:unavailable`; on a secondary series the rejection reaches the engine through
+     * `fetchSeries`. Feeds should keep transient failures out of this channel.
+     */
     load(cfg: MarketConfig): Promise<OHLCV[]>;
     /**
      * Progressive load: emit growing snapshots while the source heals a cold symbol,

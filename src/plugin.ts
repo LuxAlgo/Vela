@@ -85,6 +85,7 @@ export {
     type SeriesDataEngine,
     type SeriesDataEngineHost,
 } from './chart-types/registry';
+export { priceStyleApplies, shownPriceStyle } from './chart-types/applicability';
 export type { BarTransform } from './core/price-styles/BarTransform';
 export { registerRendererDefaults, unregisterRendererDefaults, rendererDefaults } from './core/renderer-defaults';
 export { registerShellDefaults, unregisterShellDefaults, shellDefaults, type ShellDefaults } from './widget/shell-defaults';
@@ -173,6 +174,10 @@ export { registerIcon, iconMarkup } from '@luxalgo/vela-ui/icons';
 export type { KeyBindingDescriptor, ResolvedBinding } from './ui/keymap';
 export type { PriceStyle } from './core/options';
 export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';
+// A provider's PERMANENT refusal of a series (a timeframe finer than the series' own): throw
+// it from `getBars`; engines detect it on a rejected `fetchSeries` with the guard, which reads
+// the name, never the class (a provider may bundle its own copy of Vela).
+export { DataUnavailableError, isDataUnavailableError, type DataUnavailableReason, type DataUnavailableDetails } from './core/data-unavailable';
 
 // SCRIPTING ENGINES (`chart.registerEngine` / the widget's `engines` option): a language
 // runtime implementing the `ScriptingEngine` port — prepare/execute sessions over bars
@@ -195,7 +200,7 @@ export type {
     EngineContextSnapshot,
     ContextSelect,
 } from './core/ports/ScriptingEngine';
-export type { MarketDataFeed, SymbolInfo, BarRange } from './core/ports/MarketDataFeed';
+export type { MarketDataFeed, SymbolInfo, SymbolFacts, BarRange } from './core/ports/MarketDataFeed';
 // What an engine fills so a host can read a running strategy (`EngineContextSnapshot.strategy`
 // / `.trades`) and what the core reshapes it into (`script:run`, `chart.runScript()`).
 export type { StrategyState, StrategyTrade, StrategyFill } from './core/model/strategy';

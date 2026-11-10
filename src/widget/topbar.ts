@@ -1,6 +1,6 @@
 // Topbar — symbol label, timeframe dropdown, and the price-style dropdown (built-ins +
 // every chart type registered through the plugin SDK, labels from the registry).
-import { priceStyleMessage } from '../chart-types/labels';
+import { PRICE_STYLE_UNAVAILABLE, priceStyleMessage } from '../chart-types/labels';
 import { textOf } from '../core/i18n/text';
 import { msg } from '../core/i18n/message';
 import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
@@ -287,6 +287,8 @@ export class Topbar {
     private readonly opts: TopbarOptions;
     private timeframe: string;
     private priceStyle: string;
+    /** Style ids the current symbol's data cannot draw: listed greyed, not selectable. */
+    private unavailableStyles: ReadonlySet<string> = new Set();
     private readonly onHairlineSync = (): void => {
         if (this.hairlineRaf) return;
         const win = this.el.ownerDocument.defaultView;
@@ -574,8 +576,11 @@ export class Topbar {
         this.onHairlineSync(); // the cluster width changed
     }
 
-    setPriceStyle(style: string): void {
+    /** Reflect the style the chart draws, and the styles its symbol's data cannot draw
+     *  (greyed in the menu with a tooltip saying why; omitted ⇒ none). */
+    setPriceStyle(style: string, unavailable: readonly string[] = []): void {
         this.priceStyle = style;
+        this.unavailableStyles = new Set(unavailable);
         this.renderStyleButton(this.styleButton.ownerDocument);
         this.styleMenu.setItems(this.styleItems());
     }
@@ -805,6 +810,7 @@ export class Topbar {
             icon: priceStyleIcon(id),
             checked: id === this.priceStyle,
             separatorBefore: i === BUILTIN_PRICE_STYLES.length,
+            ...(this.unavailableStyles.has(id) ? { disabled: true, title: this.t(PRICE_STYLE_UNAVAILABLE) } : {}),
         }));
     }
 }

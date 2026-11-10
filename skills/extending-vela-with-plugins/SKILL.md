@@ -17,7 +17,7 @@ and Vela projects them into its chrome; it never edits Vela's DOM.
 | An overlay, a gesture, key handling: behavior mounted once per chart app | `registerWidgetAttachment` |
 | A docked panel on the right, with its own toggle button | `registerSidePanel` |
 | A full-width strip or a rail at the edge | `ctx.dockStrip(el)`, `ctx.dockEdge(el, 'right')` from an action or attachment |
-| A new chart style (in the style menu) | `registerChartType` |
+| A new chart style (in the style menu) | `registerChartType` (`supports(facts)` greys it on a symbol it cannot draw) |
 | Drawing on the chart canvas | `registerRendererLayer` |
 | A computed study without a script | `registerNativeIndicator` |
 | Buttons or badges on legend rows | `registerLegendAction`, `registerLegendCallout` |

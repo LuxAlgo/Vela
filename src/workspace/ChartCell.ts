@@ -15,10 +15,11 @@ import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
+import type { VelaEventMap } from '../core/events/types';
 import { Statusline, statuslineInkOf, type StatuslinePart } from '../widget/statusline';
 import { MarketStatusTracker } from '../widget/market-status';
 import { SessionShadingTracker, parseSessionSpec } from '../widget/session-shading';
-import { timeframeMs } from '../widget/timeframe';
+import { chartTimeframeOf, timeframeLabel, timeframeMs } from '../widget/timeframe';
 import { Watermark } from '../widget/watermark';
 import { CellControls } from '../widget/cell-controls';
 import { ChartContextMenu } from '../widget/context-menu';
@@ -43,6 +44,8 @@ import type { LocalizationOptions, MessageLike, Translator } from '../core/i18n/
 import { msg } from '../core/i18n/message';
 import { sourceText, textOf } from '../core/i18n/text';
 import { nativeIndicatorEntry } from '../core/native-indicators/NativeIndicator';
+import { priceStyleApplies } from '../chart-types/applicability';
+import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { STATUSLINE_PART_LABELS } from '../widget/statusline-model';
 
 /** The cell's settings rows (the chart settings dialog renders them in the chart's language). */
@@ -67,6 +70,8 @@ const TEXT = {
     indicatorTitles: msg('workspace.settings.indicatorTitles', 'Titles'),
     indicatorValues: msg('workspace.settings.indicatorValues', 'Values'),
     builtIn: msg('workspace.indicators.builtIn', 'Built-in'),
+    unavailableFallback: msg('workspace.data.unavailableFallback', '{symbol} is not available at {timeframe}. Showing {shown} instead.'),
+    unavailable: msg('workspace.data.unavailable', '{symbol} is not available at {timeframe}.'),
 };
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
@@ -207,6 +212,9 @@ export interface CellDeps {
     onMarketChanged(id: string): void;
     /** The cell's price style changed in place (topbar icon/menu refresh upstream). */
     onPriceStyleChanged(id: string): void;
+    /** What the cell can draw changed with its symbol's facts — the drawn style, the greyed
+     *  styles — while the chosen style did not: refresh the style chrome, nothing to save. */
+    onPriceStyleShown?(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** A Status line tab or watermark pref changed on this cell (the style link mirrors upstream). */
@@ -313,7 +321,8 @@ export class ChartCell {
      *  (a pool/persisted cell can be built before the shared manifest has loaded). */
     private pendingManifestNames: LedgerManifestEntry[] | null = null;
     /** The volume auto-add rides the cell's first candles (`load:end`); until then the
-     *  registry can't show it and the dehydrated ledger reports the INTENT instead. */
+     *  registry can't show it and the dehydrated ledger reports the INTENT instead. After
+     *  them the chart itself reports an add still waiting for the symbol's facts. */
     private volumeMayBePending = true;
     /** Volume intent: the seed's ledger, else the workspace `volume` option — a
      *  rehydrated ledger overwrites it (see {@link applyIndicatorLedger}). */
@@ -326,6 +335,11 @@ export class ChartCell {
     /** Last symbol we toasted "no provider serves this" for — once per symbol (the
      *  core re-reports on every provider-index settle). */
     private unresolvedToasted: string | null = null;
+    /** The timeframe the chart RUNS for a symbol whose source refused the requested one
+     *  (`data:unavailable`). The requested timeframe stays in `state.timeframe` — what the
+     *  cell persists and the timeframe link shares — and returns on the next symbol, or
+     *  ends with an explicit timeframe choice. Null while the chart runs what was asked. */
+    private fallback: { symbol: string; timeframe: string } | null = null;
     /** The cell's third-party state bag (`ext` of the persisted per-chart state) —
      *  seeded from the boot/restored document, refreshed by handler `serialize` calls at
      *  dehydrate time. Entries with no registered handler this session ride along
@@ -430,7 +444,7 @@ export class ChartCell {
             // A document can carry the price style too (a template import): the renderer
             // is already showing it, so adopt it and re-project the chrome (topbar icon,
             // persisted state) — the `setPriceStyle` path never ran for it.
-            const style = this.priceStyle;
+            const style = this.requestedPriceStyle;
             if (style !== (this.state.priceStyle ?? 'candles')) {
                 this.state.priceStyle = style;
                 this.deps.onPriceStyleChanged(this.id);
@@ -465,7 +479,8 @@ export class ChartCell {
         // indicators must not call back into a workspace that doesn't know the cell yet.
         this.extState = { ...(seed.ext ?? {}) };
         // The volume auto-add rides the cell's first candles — from `load:end` on, the
-        // registry is the whole truth and the dehydrated ledger stops reporting intent.
+        // registry (plus the chart's own pending read) is the whole truth and the
+        // dehydrated ledger stops reporting intent.
         this.inner.on('load:end', () => {
             this.volumeMayBePending = false;
         });
@@ -476,6 +491,15 @@ export class ChartCell {
             this.unresolvedToasted = symbol;
             const list = providers.length > 0 ? providers.join(', ') : 'none';
             this.deps.toast(`No registered provider serves "${symbol}" (registered: ${list})`, 'error', 6000);
+        });
+        // A source that refuses the requested timeframe for good: show the one it suggests.
+        this.inner.on('data:unavailable', (e) => this.onDataUnavailable(e));
+        // The symbol's facts landed (or a switch reset them): the chart already draws the
+        // fallback of a style they rule out — re-project the style chrome (shown style,
+        // greyed entries, status-line ink). The requested style is untouched.
+        this.inner.on('symbol:facts', () => {
+            this.syncStatuslineColors();
+            this.deps.onPriceStyleShown?.(this.id);
         });
         // The loading affordance and the watermark never share the canvas.
         this.inner.on('load:start', ({ symbol }) => {
@@ -523,7 +547,7 @@ export class ChartCell {
         void this.inner.data.ready().then(() => {
             if (this.inner && this.state.symbol) {
                 this.statusline?.setSymbol(this.state.symbol);
-                this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
+                this.statusline?.setMeta(this.timeframe, this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
             }
             this.refreshSymbolMetadata();
             if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
@@ -635,9 +659,12 @@ export class ChartCell {
      * only pass for host `chart.setMarket` calls). Idempotent, so the double run converges.
      */
     private projectMarket(symbol: string, timeframe: string): void {
+        // Any market other than the fallback's ends it — a host switching the chart directly
+        // included: the timeframe the chart then runs is the cell's own.
+        if (this.fallback && (this.fallback.symbol !== symbol || this.fallback.timeframe !== timeframe)) this.fallback = null;
         this.state.symbol = symbol;
         this.state.provider = parseSymbol(symbol).provider ?? undefined;
-        this.state.timeframe = timeframe;
+        if (!this.fallback) this.state.timeframe = timeframe;
         this.state.session = normalizeSession(this.inner?.market.session);
         this.watermark?.update(symbol, timeframe);
         this.statusline?.setSymbol(symbol);
@@ -746,7 +773,7 @@ export class ChartCell {
         const symbol = this.state.symbol;
         if (!chart || !symbol) return;
         const now = Date.now();
-        const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
+        const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.timeframe);
         const fallbackSpan = Number.isFinite(requestedSpan) ? Math.max(3 * 86_400_000, requestedSpan) : 3 * 86_400_000;
         const range = chart.getVisibleRange() ?? { from: now - fallbackSpan, to: now };
         this.sessionShading.track(chart.data, symbol, { session: this.session, timeframe: this.timeframe, range });
@@ -1035,13 +1062,38 @@ export class ChartCell {
         return this.state.symbol ?? '';
     }
 
+    /** The timeframe the chart shows — the requested one, or the fallback while the symbol's
+     *  source refuses it (what the topbar shows). */
     get timeframe(): string {
+        return this.fallback?.timeframe ?? this.state.timeframe ?? '60';
+    }
+
+    /** The timeframe the user asked for — what the cell persists and the timeframe link
+     *  shares. Differs from {@link timeframe} while the symbol's source refuses it. */
+    get requestedTimeframe(): string {
         return this.state.timeframe ?? '60';
     }
 
+    /** The price style the chart draws — the requested one, or its close-based fallback while
+     *  the symbol's data cannot draw it (what the topbar shows). */
     get priceStyle(): string {
+        const shown = this.inner?.renderer.get('shownPriceStyle');
+        return typeof shown === 'string' ? shown : this.requestedPriceStyle;
+    }
+
+    /** The price style the user chose — what the cell persists. Differs from
+     *  {@link priceStyle} while the symbol's data cannot draw it (`SymbolInfo.ohlc: false`
+     *  rules out candles, bars and Heikin Ashi); it comes back on the next symbol that can. */
+    get requestedPriceStyle(): string {
         const live = this.inner?.renderer.get('priceStyle');
         return typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
+    }
+
+    /** The style ids the symbol's data cannot draw — greyed in the style pickers. Empty while
+     *  the symbol's facts are unknown. */
+    unavailablePriceStyles(): string[] {
+        const facts = this.inner?.symbolFacts() ?? null;
+        return facts ? priceStyleIds().filter((id) => !priceStyleApplies(id, facts)) : [];
     }
 
     /** Manifest instances + native instances — the topbar indicator count. */
@@ -1055,19 +1107,64 @@ export class ChartCell {
     setSymbol(symbol: string): void {
         if (!this.inner || symbol === this.symbol) return;
         this.unresolvedToasted = null; // a re-picked symbol gets a fresh verdict
-        void this.inner.setMarket({ symbol });
-        this.projectMarket(symbol, this.timeframe);
+        // A fallback belongs to the symbol that refused: the next one is asked for the
+        // requested timeframe again.
+        const fellBack = this.fallback !== null;
+        this.fallback = null;
+        const timeframe = this.timeframe;
+        void this.inner.setMarket(fellBack ? { symbol, timeframe } : { symbol });
+        this.projectMarket(symbol, timeframe);
         this.deps.onMarketChanged(this.id);
     }
 
+    /** An explicit timeframe choice — it becomes the requested one, also while a fallback
+     *  runs: picking the fallback keeps it shown, anything else asks the chart for it. */
     setTimeframe(timeframe: string): void {
-        if (!this.inner || timeframe === this.timeframe) return;
+        if (!this.inner || (!this.fallback && timeframe === this.timeframe)) return;
+        const shown = this.timeframe;
+        this.fallback = null;
+        if (timeframe === shown) {
+            this.projectMarket(this.symbol, timeframe);
+            this.deps.onMarketChanged(this.id);
+            return;
+        }
         // Leaving range mode: drop the chip AND its fetch budget (back to the cell's own bars).
         this.activeRangeId = null;
         this.rangeBars = 0;
         void this.inner.setMarket({ timeframe, bars: this.state.bars });
         this.projectMarket(this.symbol, timeframe);
         this.deps.onMarketChanged(this.id);
+    }
+
+    /**
+     * The source refused the chart's timeframe for this symbol for good: switch to the one it
+     * suggests (`default`, else `finest`) and say so, keeping the requested timeframe as the
+     * cell's own. A refusal of the fallback itself, or one with nothing better to offer, is
+     * only reported — the cell never chains switches.
+     */
+    private onDataUnavailable(e: VelaEventMap['data:unavailable']): void {
+        const chart = this.inner;
+        if (!chart || this.destroyed) return;
+        const market = chart.market;
+        if (e.symbol !== (market.symbol ?? 'TEST') || e.timeframe !== (market.timeframe ?? '60')) return; // superseded
+        const i18n = chart.i18n;
+        const symbol = parseSymbol(e.symbol).ticker || e.symbol;
+        const asked = timeframeLabel(e.timeframe, i18n);
+        const to = chartTimeframeOf(e.default) ?? chartTimeframeOf(e.finest);
+        const again = this.fallback !== null && this.fallback.symbol === e.symbol && this.fallback.timeframe === e.timeframe;
+        if (to === null || again || timeframeMs(to) === timeframeMs(e.timeframe)) {
+            this.deps.toast(textOf(i18n, TEXT.unavailable, { symbol, timeframe: asked }), 'error', 6000);
+            return;
+        }
+        this.fallback = { symbol: e.symbol, timeframe: to };
+        // The range chip's timeframe is not what shows any more: leave range mode.
+        this.activeRangeId = null;
+        this.rangeBars = 0;
+        this.pendingRange = null;
+        void chart.setMarket({ timeframe: to, bars: this.state.bars });
+        this.projectMarket(e.symbol, to);
+        this.deps.onMarketChanged(this.id);
+        this.deps.toast(textOf(i18n, TEXT.unavailableFallback, { symbol, timeframe: asked, shown: timeframeLabel(to, i18n) }), 'info', 5000);
     }
 
     /** Applied live (renderer feature) — no reload. */
@@ -1105,8 +1202,16 @@ export class ChartCell {
      */
     applyRange(preset: RangePreset): void {
         if (!this.inner || this.destroyed) return;
+        const shown = this.timeframe;
+        // A chip names its timeframe explicitly: a running fallback ends, the chip's timeframe
+        // is the requested one from here on.
+        const endsFallback = this.fallback !== null;
+        if (endsFallback) {
+            this.fallback = null;
+            this.state.timeframe = preset.tf;
+        }
         this.activeRangeId = preset.id;
-        const tfChanged = preset.tf !== this.timeframe;
+        const tfChanged = preset.tf !== shown;
         const deeper = preset.bars > Math.max(this.state.bars ?? 500, this.rangeBars);
         this.rangeBars = preset.bars;
         if (tfChanged || deeper) {
@@ -1122,6 +1227,7 @@ export class ChartCell {
         } else {
             this.inner.setVisibleRangePreset(preset.preset);
         }
+        if (endsFallback) this.deps.onMarketChanged(this.id); // the requested timeframe changed
     }
 
     /** Reset this cell's view: re-enable auto scale and frame the full history —
@@ -1527,7 +1633,7 @@ export class ChartCell {
      */
     rehydrate(cs: CellState): void {
         if (!this.inner || this.destroyed) return;
-        if (cs.priceStyle && cs.priceStyle !== this.priceStyle) this.setPriceStyle(cs.priceStyle);
+        if (cs.priceStyle && cs.priceStyle !== this.requestedPriceStyle) this.setPriceStyle(cs.priceStyle);
         if (cs.watermark !== undefined && cs.watermark !== this.watermarkOn) this.setWatermarkVisible(cs.watermark);
         if (cs.replayWatermark !== undefined && cs.replayWatermark !== this.replayWatermarkOn) this.setReplayWatermarkVisible(cs.replayWatermark);
         if (cs.indicatorTitles !== undefined && cs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cs.indicatorTitles);
@@ -1552,7 +1658,15 @@ export class ChartCell {
         const bars = typeof cs.bars === 'number' && Number.isFinite(cs.bars) && cs.bars > 0 ? cs.bars : 0;
         const next: { symbol?: string; timeframe?: string; bars?: number; session?: MarketSession } = {};
         if (symbol && symbol !== this.symbol) next.symbol = symbol;
-        if (cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
+        const timeframe = cs.timeframe || this.requestedTimeframe;
+        if (this.fallback && (next.symbol !== undefined || timeframe !== this.requestedTimeframe)) {
+            // The document names another market or timeframe: the fallback ends, and the
+            // document's timeframe is the requested one (asked for unless already shown).
+            const shown = this.fallback.timeframe;
+            this.fallback = null;
+            this.state.timeframe = timeframe;
+            if (timeframe !== shown) next.timeframe = timeframe;
+        } else if (!this.fallback && cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
         if (session !== this.session) {
             this.state.session = session;
             next.session = session;
@@ -1575,8 +1689,10 @@ export class ChartCell {
         const statuslineParts = this.statusPrefs().parts;
         return {
             ...this.state,
-            ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
-            priceStyle: this.priceStyle,
+            // The REQUESTED timeframe while a fallback shows another: a reload asks for it again.
+            ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: this.fallback && live.symbol === this.fallback.symbol && live.timeframe === this.fallback.timeframe ? this.state.timeframe : live.timeframe } : {}),
+            // The CHOSEN style while the symbol's data shows a fallback: a reload draws it again.
+            priceStyle: this.requestedPriceStyle,
             watermark: this.watermarkOn,
             replayWatermark: this.replayWatermarkOn,
             indicatorTitles: this.indicatorTitlesOn,
@@ -1605,7 +1721,7 @@ export class ChartCell {
                     }),
                 pendingManifest: this.pendingManifestNames,
                 manifestSettled: this.deps.manifestSettled(),
-                volumePending: this.volumeMayBePending && this.volumeIntent,
+                volumePending: (this.volumeMayBePending && this.volumeIntent) || (this.inner?.pendingNativeIndicators().includes('volume') ?? false),
             }),
             ...(ext ? { ext } : {}),
         };

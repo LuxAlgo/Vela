@@ -1,7 +1,7 @@
 import { msg, withValues } from '../../../core/i18n/message';
 import { sourceText, textOf } from '../../../core/i18n/text';
 import type { MessageArgs, MessageLike, Translator } from '../../../core/i18n/types';
-import { priceStyleMessage } from '../../../chart-types/labels';
+import { PRICE_STYLE_UNAVAILABLE, priceStyleMessage } from '../../../chart-types/labels';
 import type { VelaTheme, ThemeId } from '../../../core/options';
 import { registeredThemes } from '../../../core/theme';
 import type { ChartConfig } from '../core/chartConfig';
@@ -80,6 +80,7 @@ const TEXT = {
     fillTopArea: msg('chart.settings.fillTopArea', 'Fill top area'),
     fillBottomArea: msg('chart.settings.fillBottomArea', 'Fill bottom area'),
     baseLevelPct: msg('chart.settings.baseLevelPct', 'Base level %'),
+    columns: msg('chart.settings.columns', 'Columns'),
     animation: msg('chart.settings.animation', 'Animation'),
     animateZoom: msg('chart.settings.animateZoom', 'Animate zoom'),
     animateZoomHint: msg('chart.settings.animateZoomHint', 'Glide the chart to each zoom step instead of jumping.'),
@@ -129,6 +130,13 @@ const TEXT = {
     visibleEvents: msg('chart.settings.visibleEvents', 'Visible events'),
 };
 
+/** Built-in styles drawn with another style's settings: Heikin Ashi is candle-drawn, and
+ *  the line with markers and the step line are the line drawn two other ways. */
+const SHARED_STYLE_GROUP: ReadonlyMap<string, string> = new Map([
+    ['heikinashi', 'candles'],
+    ['linemarkers', 'line'],
+    ['stepline', 'line'],
+]);
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -297,6 +305,9 @@ export class SettingsDialog {
     private onImport: ((json: unknown) => void) | null = null;
     private onReset: (() => void) | null = null;
     private config: ChartConfig | null = null;
+    /** The style the chart draws and the styles its symbol rules out, read at every build
+     *  (see {@link setPriceStyleState}). Absent: the config's style, nothing ruled out. */
+    private priceStyleState: (() => { shown: string; unavailable: readonly string[] }) | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
     /** The timeline-mark groups (defined + named by marks) — one checkbox each on the Events tab. */
@@ -344,6 +355,12 @@ export class SettingsDialog {
         const same = next.size === this.hiddenSettings.size && [...next].every((id) => this.hiddenSettings.has(id));
         this.hiddenSettings = next;
         if (!same) this.reopenIfLive();
+    }
+
+    /** Where the Type row reads the style the chart DRAWS (its value — a fallback while the
+     *  symbol rules the chosen one out) and the styles to grey out (not selectable). */
+    setPriceStyleState(read: () => { shown: string; unavailable: readonly string[] }): void {
+        this.priceStyleState = read;
     }
 
     /** Configure the Canvas → Theme row (see {@link themeControl}); null hides the row. */
@@ -538,9 +555,12 @@ export class SettingsDialog {
         // ══ SYMBOL — chart type + per-style cosmetics + time zone (the reference tab) ══
         body.append(sid(this.section(TEXT.symbol), 'symbol'));
         body.append(sid(this.sectionTitle(TEXT.chartType), 'symbol.type'));
+        const styles = this.priceStyleState?.() ?? { shown: config.series.style, unavailable: [] };
+        const shownStyle = styles.shown;
+        const unavailable = new Set(styles.unavailable);
         const groups: Partial<Record<string, HTMLElement>> = {};
         const showActive = (style: string): void => {
-            const active = style === 'heikinashi' ? 'candles' : style; // heikin-ashi is candle-drawn
+            const active = SHARED_STYLE_GROUP.get(style) ?? style;
             // Gate via the !important class, not inline display: the field-grid pass
             // rewrites every group's display to 'contents' AFTER this visibility pass.
             for (const key of priceStyleIds()) {
@@ -548,11 +568,11 @@ export class SettingsDialog {
             }
         };
         body.append(
-            sid(this.selectRowLabeled(TEXT.type, config.series.style, priceStyleIds().map((id) => [id, priceStyleMessage(id)] as const), (v) => {
+            sid(this.selectRowLabeled(TEXT.type, shownStyle, priceStyleIds().map((id) => [id, priceStyleMessage(id)] as const), (v) => {
                 this.emit({ series: { style: v } });
                 showActive(v);
                 this.syncTypeTabs?.(v);
-            }), 'symbol.type'),
+            }, { ids: unavailable, title: PRICE_STYLE_UNAVAILABLE }), 'symbol.type'),
         );
         // Candles — the reference compact rows: one toggle + an up/down swatch pair each.
         const candles = sid(this.group(), 'symbol.style.candles');
@@ -614,6 +634,14 @@ export class SettingsDialog {
         groups.baseline = baseline;
         body.append(baseline);
 
+        const columns = sid(this.group(), 'symbol.style.columns');
+        columns.append(this.sectionTitle(TEXT.columns));
+        columns.append(sid(this.colorRow(TEXT.colorUp, config.columns.upColor, (v) => this.emit({ columns: { upColor: v } })), 'symbol.style.columns.up-color'));
+        columns.append(sid(this.colorRow(TEXT.colorDown, config.columns.downColor, (v) => this.emit({ columns: { downColor: v } })), 'symbol.style.columns.down-color'));
+        columns.append(sid(this.numberRow(TEXT.spacing, config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.columns.spacing'));
+        groups.columns = columns;
+        body.append(columns);
+
         // Candle-based PLUGIN styles (an order-flow type keeps candles under its layer):
         // the same candle rows, but stored in the type's OWN bag (chartTypes.<id>.candle*)
         // so edits style THAT type's candles without touching the shared candles block the
@@ -641,7 +669,7 @@ export class SettingsDialog {
             groups[def.id] = g;
             body.append(g);
         }
-        showActive(config.series.style);
+        showActive(shownStyle);
 
         // Style-independent (every motion applies to every price style), so it gets its own
         // group. On/off switches only — the durations stay the host's.
@@ -920,9 +948,9 @@ export class SettingsDialog {
         const wanted =
             section !== undefined
                 ? panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase())
-                : panes.findIndex((p) => p.style === config.series.style && !p.tab.classList.contains('vela-sd-tab-sub'));
+                : panes.findIndex((p) => p.style === shownStyle && !p.tab.classList.contains('vela-sd-tab-sub'));
         activate(wanted >= 0 ? wanted : 0);
-        this.syncTypeTabs?.(config.series.style);
+        this.syncTypeTabs?.(shownStyle);
 
         shell.append(rail, paneHost);
         if (railScrim) shell.append(railScrim);
@@ -1481,14 +1509,22 @@ export class SettingsDialog {
     }
 
     /** A dropdown whose option values differ from their display labels. */
-    private selectRowLabeled(label: MessageLike, value: string, options: readonly (readonly [string, MessageLike])[], onChange: (v: string) => void): HTMLElement {
+    private selectRowLabeled(
+        label: MessageLike,
+        value: string,
+        options: readonly (readonly [string, MessageLike])[],
+        onChange: (v: string) => void,
+        /** Options listed but not selectable, with the tooltip saying why. */
+        unavailable?: { ids: ReadonlySet<string>; title: MessageLike },
+    ): HTMLElement {
+        const off = unavailable && unavailable.ids.size > 0 ? { ids: unavailable.ids, title: this.t(unavailable.title) } : null;
         return fieldRow({
             label: this.t(label),
             labelSize: 'sm',
             className: 'vela-sd-row',
             control: buildFieldControl({
                 kind: 'select',
-                options: options.map(([v, l]) => ({ value: v, label: this.t(l) })),
+                options: options.map(([v, l]) => (off?.ids.has(v) ? { value: v, label: this.t(l), disabled: true, title: off.title } : { value: v, label: this.t(l) })),
                 value,
                 fill: false,
                 theme: this.theme,

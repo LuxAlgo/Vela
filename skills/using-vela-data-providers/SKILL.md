@@ -86,7 +86,7 @@ export const exampleProvider: DataProvider = {
     // A true live stream; without it the chart polls getBars.
     subscribe(ticker, timeframe, onBar) {
         const interval = INTERVAL[timeframe];
-        if (!interval) return () => {};    // nothing to stream (rule 7: poll a timeframe you aggregate)
+        if (!interval) return () => {};    // nothing to stream (rule 8: poll a timeframe you aggregate)
         const ws = new WebSocket(`wss://stream.example.com/${ticker}@${interval}`);
         ws.onmessage = (e) => {
             const k = JSON.parse(String(e.data));
@@ -118,16 +118,24 @@ export const exampleProvider: DataProvider = {
    an empty answer ends the history, which is right for a source with a start date. A thrown
    error is logged and read as an empty answer too, so retry transient failures inside the
    provider before giving up.
-6. **Timeframes: a bare number is minutes** (`'1'`, `'60'`, `'240'`), and **`'D'`, `'W'`, `'M'`
+6. **A timeframe you never serve for a symbol is a refusal, not an empty answer.** A monthly
+   economic series has no hourly bars: throw
+   `new DataUnavailableError({ reason: 'timeframe', finest: '1D', default: '1D' })` (from
+   `@luxalgo/vela`). The chart then stops loading and polling that market and fires
+   `data:unavailable` with your `finest` and `default` as hints; the workspace switches to
+   `default`, else `finest`, and keeps the user's timeframe for symbols that serve it. A
+   script's `request.security` gets the error. Detect it with `isDataUnavailableError(e)`,
+   never `instanceof`.
+7. **Timeframes: a bare number is minutes** (`'1'`, `'60'`, `'240'`), and **`'D'`, `'W'`, `'M'`
    are a day, a week and a MONTH**. Aliases reach you too: `'15m'` and `'1h'` (minutes, hours),
    `'1d'`, `'1w'`. Normalize to one form, then map to your API's codes: never pass Vela's string
    through, since an API's `M` often means minutes. Aggregate a timeframe the source lacks
    inside the provider, in `getBars` and in `subscribe`.
-7. **`subscribe` covers every timeframe once you implement it**: the chart then never polls for
+8. **`subscribe` covers every timeframe once you implement it**: the chart then never polls for
    you. For a timeframe you cannot stream (one you aggregate), poll your own
    `getBars(ticker, timeframe, { limit: 2 })` every few seconds inside `subscribe`, as the
    bundled providers do, and seed a forming aggregate from REST.
-8. **Icons must be CORS-clean** (`Access-Control-Allow-Origin`), or the chart's PNG export
+9. **Icons must be CORS-clean** (`Access-Control-Allow-Origin`), or the chart's PNG export
    breaks.
 
 Other optional methods: `getSymbolInfo(ticker)` returns `{ ticker, ...fields }`, handed to the
@@ -137,6 +145,25 @@ market sessions and holidays (leave it out for 24/7 markets, or when the source 
 calendar), `info()` for a display name and the timeframes served, `configure(config)` for keys.
 `listSymbols` is what makes a bare or prefixed symbol resolve: retry it on failure, or symbols
 stay unresolved.
+
+The chart itself reads a few typed facts from `getSymbolInfo`, all optional: `timezone` (IANA,
+default `'Etc/UTC'`), `session` (regular hours, `'0930-1600'`; `'24x7'` when continuous),
+`session_extended` (`'0400-2000'`), `timeframes: { finest, default?, list? }` (the finest
+timeframe served, every coarser one too unless `list` is the exhaustive set; `default` is the
+source's own frequency), `volume: false` for a symbol with no volume data, so the chart adds
+no volume indicator on its own, and `ohlc: false` for a symbol with one value per bar at every
+timeframe (open = high = low = close), so the chart draws it as a line whatever style is chosen
+and greys out candles, bars and Heikin Ashi in its style pickers (the chosen style is kept and
+comes back on the next symbol). Write those timeframes in uppercase canonical form (`'1D'`,
+`'W'`, `'1M'`, `'3M'`, `'12M'`, `'60'`): `'1m'` is a minute, not a month.
+
+```ts
+import type { SymbolInfo } from '@luxalgo/vela';
+
+// What getSymbolInfo returns for a monthly macro-economic series: nothing finer, no volume,
+// one value per bar.
+const facts: SymbolInfo = { ticker: 'CPI', timeframes: { finest: '1M', default: '1M' }, volume: false, ohlc: false };
+```
 
 ## Check your work
 

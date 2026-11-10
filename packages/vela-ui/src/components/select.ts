@@ -18,6 +18,10 @@ export type SelectSize = 'sm' | 'md';
 export interface SelectOption {
     value: string;
     label: string;
+    /** Shown in the list but not selectable (dimmed, skipped by the keyboard). */
+    disabled?: boolean;
+    /** The option's tooltip, e.g. why it is disabled. */
+    title?: string;
 }
 
 export interface SelectControllerOptions {
@@ -240,6 +244,11 @@ export const SELECT_CSS = css`
             &[data-checked][data-highlighted] {
                 background: ${t.hover.strong};
             }
+            &[data-disabled] {
+                opacity: 0.4;
+                cursor: default;
+                background: transparent;
+            }
         }
         /* The highlighted option shows where the keyboard is; the list itself draws no ring. */
         [data-slot='select-viewport']:focus {
@@ -357,7 +366,7 @@ export function fillSelectList(menu: HTMLElement, options: readonly SelectOption
     let picked = false;
     const choose = (value: string): void => {
         const option = options.find((o) => o.value === value);
-        if (picked || !option) return;
+        if (picked || !option || option.disabled) return;
         picked = true;
         onPick(option.value, option.label);
     };
@@ -365,7 +374,7 @@ export function fillSelectList(menu: HTMLElement, options: readonly SelectOption
         h('button', {
             className: 'vela-select-item',
             slot: selectDef.slot('item'),
-            attrs: { type: 'button', tabindex: -1 },
+            attrs: { type: 'button', tabindex: -1, title: p.title },
             data: { checked: p.value === current ? '1' : null },
             text: p.label,
             on: {
@@ -384,7 +393,7 @@ export function fillSelectList(menu: HTMLElement, options: readonly SelectOption
         zagListbox.machine,
         {
             id: mid,
-            collection: zagListbox.collection({ items: options, itemToValue: (o) => o.value, itemToString: (o) => o.label }),
+            collection: zagListbox.collection({ items: options, itemToValue: (o) => o.value, itemToString: (o) => o.label, isItemDisabled: (o) => o.disabled === true }),
             selectionMode: 'single',
             defaultValue: known ? [current] : [],
             defaultHighlightedValue: known ? current : null,
@@ -534,7 +543,7 @@ export class Select {
                       'select',
                       { slot: selectDef.slot('native'), attrs: { name: opts.name, 'aria-hidden': 'true', tabindex: -1 } },
                       opts.placeholder !== undefined ? h('option', { attrs: { value: '' } }) : null,
-                      this.ctrl.options.map((o) => h('option', { attrs: { value: o.value }, text: o.label })),
+                      this.ctrl.options.map((o) => h('option', { attrs: { value: o.value, disabled: o.disabled }, text: o.label })),
                   )
                 : null;
         if (this.native) {
