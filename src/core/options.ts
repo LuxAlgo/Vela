@@ -168,6 +168,12 @@ export interface VelaOptions extends MarketConfig, LocalizationOptions {
     /** Price-axis customization (native renderer): `ticks` replaces the built-in tick
      *  ladder of every pane's price axis — labels and horizontal gridlines together. */
     priceAxis?: PriceAxisOptions;
+    /** Free panning (native renderer). On, a middle-button drag on the plot pans time and
+     *  that pane's price together (an auto-scaled pane switches to manual scale as the drag
+     *  starts), a middle-click deletes a drawing on release instead of on press, and the
+     *  settings dialog's Canvas tab offers a per-chart switch that makes a plain left drag
+     *  pan both ways too. Default `false`. Seeds the renderer's runtime `freePan` feature. */
+    freePan?: boolean;
 }
 
 /** Price-axis customization (see `VelaOptions.priceAxis`). */
@@ -387,6 +393,8 @@ export interface RendererDisplayOptions {
     priceStyle: PriceStyle;
     /** Host price-axis ticks (`VelaOptions.priceAxis.ticks`); absent/null = built-in ticks. */
     priceAxisTicks?: PriceAxisTicksFn | null;
+    /** Free panning (`VelaOptions.freePan`); absent = off. */
+    freePan?: boolean;
 }
 
 /**

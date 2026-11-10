@@ -175,7 +175,9 @@ Shortcuts stand down while a text field (e.g. a label editor) is focused, so typ
 hijacked.
 
 Three mouse shortcuts complement these, and need no selection first: **middle-click** a drawing
-to delete it, **right-click** while a drawing tool, the ruler, or the eraser is active — placing
+to delete it (with the chart's [`freePan` option](./options.md#the-freepan-option--panning-time-and-price-together)
+on, the delete happens on release, and a middle press that moves pans the chart instead),
+**right-click** while a drawing tool, the ruler, or the eraser is active — placing
 or merely armed — to cancel it and return to the pointer (even in stay-in-drawing-mode, and
 without opening the chart's context menu for that click; persistent toggles like the magnet and
 stay-in-drawing-mode itself are untouched), and **Shift+click** an empty spot to start the

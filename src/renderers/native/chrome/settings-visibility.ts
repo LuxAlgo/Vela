@@ -34,6 +34,10 @@ export function settingsIdSlug(label: MessageLike): string {
 export const MARKS_SETTINGS_ID = 'events';
 /** Its "Visible events" section: one checkbox per mark group (the id names the groups, not the label). */
 export const MARKS_GROUPS_SETTINGS_ID = 'events.groups';
+/** The Canvas tab's Navigation group and its free-drag row — present only while the
+ *  chart's `freePan` option is on. */
+export const NAVIGATION_SETTINGS_ID = 'canvas.navigation';
+export const FREE_DRAG_SETTINGS_ID = 'canvas.navigation.free-drag';
 
 /** A mark group's settings-row id (`events.groups.<group-id>`, the id kebab-cased). */
 export function markGroupSettingsId(groupId: string): string {
@@ -224,13 +228,22 @@ export const BUILTIN_SETTINGS_IDS: readonly string[] = [
 /**
  * Every addressable setting id of a chart instance: the built-ins, the registered
  * chart types' sections (rows enumerated across flat rows, instances, and
- * subsections), the given host sections, and the timeline-mark groups (the Events tab,
- * present once marks name groups). The discovery surface behind
+ * subsections), the given host sections, the timeline-mark groups (the Events tab,
+ * present once marks name groups), and the Canvas → Navigation row (present while the
+ * `freePan` option is on). The discovery surface behind
  * `chart.renderer.listSettingsIds()` — hosts enumerate this instead of reading
  * contributor source.
  */
-export function settingsIdCatalog(hostSections: readonly HostSectionIdSource[], markGroups: readonly { id: string }[] = []): string[] {
+export function settingsIdCatalog(
+    hostSections: readonly HostSectionIdSource[],
+    markGroups: readonly { id: string }[] = [],
+    opts: { freePan?: boolean } = {},
+): string[] {
     const ids = new Set<string>(BUILTIN_SETTINGS_IDS);
+    if (opts.freePan) {
+        ids.add(NAVIGATION_SETTINGS_ID);
+        ids.add(FREE_DRAG_SETTINGS_ID);
+    }
     // Dynamic rows — one per mark group — so they enumerate here, not in the static list.
     if (markGroups.length > 0) {
         ids.add(MARKS_SETTINGS_ID);

@@ -258,6 +258,13 @@ export interface ChartConfig {
         /** The first-paint candle reveal — takes effect on the next load. */
         intro: boolean;
     };
+    /** Pointer navigation preferences (the settings dialog's Canvas → Navigation group,
+     *  shown while the chart's `freePan` option is on). */
+    navigation: {
+        /** A plain left drag on the empty plot pans price and time together, like the
+         *  middle-button drag. Takes effect only while the `freePan` option is on. */
+        freeDrag: boolean;
+    };
     /** Stacked-pane chrome — the draggable line between an indicator's pane and the one above it. */
     panes: {
         separatorColor: string;
@@ -676,6 +683,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const cross = asObject(p.crosshair);
     const ps = asObject(p.priceScale);
     const anim = asObject(p.animations);
+    const nav = asObject(p.navigation);
     const panes = asObject(p.panes);
     const margins = asObject(p.margins);
     const trades = asObject(p.trades);
@@ -735,6 +743,9 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             pan: isBool(anim.pan) ? anim.pan : base.animations.pan,
             autoscale: isBool(anim.autoscale) ? anim.autoscale : base.animations.autoscale,
             intro: isBool(anim.intro) ? anim.intro : base.animations.intro,
+        },
+        navigation: {
+            freeDrag: isBool(nav.freeDrag) ? nav.freeDrag : base.navigation.freeDrag,
         },
         panes: {
             separatorColor: isColor(panes.separatorColor) ? panes.separatorColor : base.panes.separatorColor,

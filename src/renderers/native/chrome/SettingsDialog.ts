@@ -37,10 +37,12 @@ import { chromeHint } from '../../shared/chrome-tooltip';
 import {
     filterHiddenHostRows,
     filterHiddenRows,
+    FREE_DRAG_SETTINGS_ID,
     hostSectionId,
     markGroupSettingsId,
     MARKS_GROUPS_SETTINGS_ID,
     MARKS_SETTINGS_ID,
+    NAVIGATION_SETTINGS_ID,
     settingsIdHidden,
     settingsIdSlug,
 } from './settings-visibility';
@@ -124,6 +126,8 @@ const TEXT = {
     top: msg('chart.settings.top', 'Top'),
     bottom: msg('chart.settings.bottom', 'Bottom'),
     right: msg('chart.settings.right', 'Right'),
+    navigation: msg('chart.settings.navigation', 'Navigation'),
+    freeDrag: msg('chart.settings.freeDrag', 'Drag moves price and time together'),
     theme: msg('chart.settings.theme', 'Theme'),
     events: msg('chart.settings.events', 'Events'),
     visibleEvents: msg('chart.settings.visibleEvents', 'Visible events'),
@@ -311,6 +315,8 @@ export class SettingsDialog {
      *  host callback, NOT a config patch — the app theme stays out of the persisted
      *  `ChartConfig`, so exported templates never carry it. */
     private themeControl: { current: ThemeId; onSelect: (id: ThemeId) => void } | null = null;
+    /** Whether the chart's `freePan` option is on — the Canvas → Navigation row exists only then. */
+    private freePan = false;
     /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
     private tabs: Array<{ title: string; show: () => void }> = [];
     private hintTips: Array<() => void> = []; // ⓘ tooltip disposers of the open build (see hint)
@@ -358,6 +364,14 @@ export class SettingsDialog {
     /** Configure the Canvas → Theme row (see {@link themeControl}); null hides the row. */
     setThemeControl(current: ThemeId, onSelect: (id: ThemeId) => void): void {
         this.themeControl = { current, onSelect };
+    }
+
+    /** Show or drop the Canvas → Navigation row (the `freePan` option); an open dialog
+     *  rebuilds in place when it changes. */
+    setFreePan(on: boolean): void {
+        if (on === this.freePan) return;
+        this.freePan = on;
+        this.reopenIfLive();
     }
 
     /** Refresh the stored config snapshot — a theme swap re-bases layout values while the
@@ -778,6 +792,10 @@ export class SettingsDialog {
         body.append(sid(this.numberRow(TEXT.top, config.margins.top, 0, 40, 1, (v) => this.emit({ margins: { top: v } }), '%'), 'canvas.margins.top'));
         body.append(sid(this.numberRow(TEXT.bottom, config.margins.bottom, 0, 40, 1, (v) => this.emit({ margins: { bottom: v } }), '%'), 'canvas.margins.bottom'));
         body.append(sid(this.numberRow(TEXT.right, config.margins.right, 0, 200, 1, (v) => this.emit({ margins: { right: v } }), TEXT_UNITS.bars), 'canvas.margins.right'));
+        if (this.freePan) {
+            body.append(sid(this.sectionTitle(TEXT.navigation), NAVIGATION_SETTINGS_ID));
+            body.append(sid(this.boolRow(TEXT.freeDrag, config.navigation.freeDrag, (v) => this.emit({ navigation: { freeDrag: v } })), FREE_DRAG_SETTINGS_ID));
+        }
         if (this.themeControl) {
             const tc = this.themeControl;
             body.append(sid(this.sectionTitle(TEXT.theme), 'canvas.theme'));

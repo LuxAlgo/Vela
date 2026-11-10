@@ -70,6 +70,7 @@ last non-zero duration set through the option or the feature.
 | `zoomAnchor` | `'right' \| 'cursor'` | `'right'` | Wheel-zoom anchor: pin the right edge / latest bar, or the bar under the cursor. Affects the next wheel-zoom. Holding `Shift` (or a horizontal/trackpad swipe) makes the wheel **pan through history** instead of zooming. |
 | `axisDrag` | boolean | `true` | Drag the right price-axis strip to rescale vertically and the bottom time-axis strip to zoom horizontally; scrolling the wheel over the price-axis strip rescales the same way, gently (scroll up compresses the span, down expands it); double-clicking an axis strip resets it. |
 | `paneResize` | boolean | `true` | Drag the separator between panes to resize them; double-clicking a separator restores the two adjacent panes to an even split. |
+| `freePan` | boolean | `false` | Free panning: a middle-button drag on a pane's plot pans time and that pane's price together, switching an auto-scaled pane to manual scale as the drag starts (no jump; the A button then shows auto off). A middle-click deletes a drawing on release instead of on press, and a middle press that moves never deletes. The settings dialog's *Canvas* tab shows the *Drag moves price and time together* switch (`navigation.freeDrag` in `getConfig()`), which gives a plain left drag the same behavior. Seeded by the [`freePan` option](./options.md#the-freepan-option--panning-time-and-price-together). Not part of `getConfig()`. Takes effect on the next gesture. |
 | `keyboard` | boolean | `true` | Keyboard navigation/accessibility: focusable chart with arrow-key crosshair stepping (`Shift`+Arrow pans), `Alt`+`Shift`+`→` scrolls back to the latest bars at the current zoom, `+`/`-` zoom, Home/End jump, `0` **reset (fit content)**, Escape clear, plus ARIA labels and a live region. `Ctrl`/`Cmd` chords are left untouched for the host's own shortcuts (the widget's pan/zoom glides, the browser's `Ctrl`+`0`, …). When the latest bar is scrolled off-screen, a proximity-revealed `»` button in the bottom-right corner does the same. |
 | `historyChords` | boolean | `true` | The drawings layer answers `Ctrl`/`Cmd`+`Z` / `Y` itself (drawing undo/redo). A host that owns a **unified** history — drawings plus its own app actions in one timeline, like the widget — sets it to `false` so the chords bubble up to the host's keymap instead of being consumed in-chart. Copy/paste/duplicate/delete/nudge keys are unaffected. |
 
@@ -210,8 +211,9 @@ chart.renderer.applyConfig({ candles: { upColor: '#26a69a' } }); // partial patc
 The covered cosmetics include layout (background, text, font), grid colors/visibility,
 crosshair (color/width/style/opacity/label), price scale (mode, log, border, labels,
 current-price line, last-price animation on/off), the animation switches (zoom, pan
-momentum, price-scale glide, first-load reveal), time-scale timezone, candle body, border
-and wick, and per-style colors for bars / line / area / baseline.
+momentum, price-scale glide, first-load reveal), the left-drag free-pan switch
+(`navigation.freeDrag`, live only with the `freePan` feature on), time-scale timezone, candle
+body, border and wick, and per-style colors for bars / line / area / baseline.
 
 ### Hollow candles
 

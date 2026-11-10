@@ -351,6 +351,10 @@ export class NativeRenderer implements IChartRenderer {
     private scaleDragHolder: ScaleHolder | null = null; // pane master OR merged-indicator scale being dragged
     private scaleDragHeight = 0; // the grabbed pane's pixel height (for vertical-pan math)
     private scaleDragStart: PriceScale | null = null; // its price window when the gesture began
+    // Free panning: the `freePan` feature (middle drag pans time + price) and the user's
+    // saved switch (`navigation.freeDrag`) making a plain left drag do the same while it is on.
+    private freePanEnabled = false;
+    private freeDragPref = false;
 
     // ── pane resize (drag the separator between stacked panes) ──
     private paneResizeEnabled = true;
@@ -442,6 +446,7 @@ export class NativeRenderer implements IChartRenderer {
             this.scene.basePainting = basePaintingOf(opts.priceStyle);
             this.scene.candleOverride = candleOverrideFor(opts.priceStyle, this.scene.style.chartTypes);
             if (typeof opts.priceAxisTicks === 'function') this.priceAxisTicks.setHook(opts.priceAxisTicks);
+            this.freePanEnabled = opts.freePan === true;
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
         // it with the real, Vela-resolved theme). Candle colors follow opts.
@@ -449,7 +454,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks', 'freePan'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -522,6 +527,10 @@ export class NativeRenderer implements IChartRenderer {
                 this.paneResizeEnabled = Boolean(value);
                 if (this.input) this.input.paneResize = this.paneResizeEnabled;
                 return; // affects the next gesture only — nothing to repaint
+            case 'freePan':
+                this.freePanEnabled = value === true;
+                this.syncFreePan();
+                return; // affects the next gesture (and the settings row) only — nothing to repaint
             case 'candleZOrder':
                 this.scene.candleZ = Number(value) || 0;
                 break;
@@ -675,6 +684,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'zoomAnchor': return this.zoomAnchorMode;
             case 'axisDrag': return this.input ? this.input.axisDrag : this.axisDragEnabled;
             case 'paneResize': return this.input ? this.input.paneResize : this.paneResizeEnabled;
+            case 'freePan': return this.freePanEnabled;
             case 'candleZOrder': return this.scene.candleZ;
             case 'candleVisible': return !this.scene.candlesHidden;
             case 'seriesOrder': return this.scene.indicatorZOrder();
@@ -861,6 +871,7 @@ export class NativeRenderer implements IChartRenderer {
                 autoscale: this.animAutoscale.on,
                 intro: this.intro.style !== false,
             },
+            navigation: { freeDrag: this.freeDragPref },
             panes: { separatorColor: s.separatorColor ?? t.borderColor },
             margins: { ...s.margins },
             trades: {
@@ -1000,6 +1011,9 @@ export class NativeRenderer implements IChartRenderer {
         this.animScroll.toggle(next.animations.pan); // the scroll glide is pan motion too
         this.animAutoscale.toggle(next.animations.autoscale);
         this.intro = { style: next.animations.intro ? this.introOnStyle : false, duration: this.intro.duration || INTRO_DURATION_DEFAULT_MS };
+        // navigation — the left-drag switch is stored either way, live only under `freePan`
+        this.freeDragPref = next.navigation.freeDrag;
+        this.syncFreePan();
         // panes
         s.separatorColor = keepInherit(s.separatorColor, next.panes.separatorColor, prevTheme.borderColor);
         // margins — top/bottom flow into the next autoscale pass; a right-margin edit
@@ -1190,6 +1204,7 @@ export class NativeRenderer implements IChartRenderer {
         );
         this.settingsDialog.setHiddenSettings(this.hiddenSettings);
         this.settingsDialog.setPriceStyleState(() => ({ shown: this.scene.priceStyle, unavailable: this.unavailablePriceStyles() }));
+        this.settingsDialog.setFreePan(this.freePanEnabled);
         this.syncThemeControl();
         this.settingsDialog.toggle(
             this.getConfig(),
@@ -1619,7 +1634,7 @@ export class NativeRenderer implements IChartRenderer {
             },
             beginPriceScale: (x, y) => this.beginPriceScale(x, y),
             priceScaleBy: (dy) => this.priceScaleBy(dy),
-            beginPricePan: (y) => this.beginPricePan(y),
+            beginPricePan: (y, free) => this.beginPricePan(y, free),
             pricePanBy: (dy) => this.pricePanBy(dy),
             resetPriceScale: (x, y) => this.resetPriceScale(x, y),
             dataDblClick: (x, y) => this.dataDblClick(x, y),
@@ -1647,6 +1662,7 @@ export class NativeRenderer implements IChartRenderer {
         this.input.axisDrag = this.axisDragEnabled;
         this.input.paneResize = this.paneResizeEnabled;
         this.input.drawings = this.drawingsInteractive;
+        this.syncFreePan();
         // Attach to the data canvas so legend/gear/dialog clicks (above it) don't pan.
         this.input.attach(this.dataCanvas);
         if (this.settingsEnabled) this.setSettingsEnabled(true); // honor a pre-mount feature set
@@ -2580,7 +2596,18 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     listSettingsIds(): string[] {
-        return settingsIdCatalog(this.hostSettingsSections, this.markGroupsInUse());
+        return settingsIdCatalog(this.hostSettingsSections, this.markGroupsInUse(), { freePan: this.freePanEnabled });
+    }
+
+    /** Push the free-pan state into the input controller (the middle drag follows the
+     *  feature; the left drag follows the feature AND the user's switch) and the settings
+     *  dialog (the Canvas → Navigation row exists only while the feature is on). */
+    private syncFreePan(): void {
+        if (this.input) {
+            this.input.freePan = this.freePanEnabled;
+            this.input.freeDrag = this.freePanEnabled && this.freeDragPref;
+        }
+        this.settingsDialog?.setFreePan(this.freePanEnabled);
     }
 
     onChartTypeSettingsChange(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe {
@@ -3097,10 +3124,18 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     /** Grab inside the data area: vertical price-pan is available only when the pane is
-     *  already manual (so a normal drag stays a pure time-pan until the user opts in). */
-    private beginPricePan(y: number): boolean {
+     *  already manual (so a normal drag stays a pure time-pan until the user opts in).
+     *  A free pan (`free`) opts in: an auto-scaled pane freezes its CURRENT visible window
+     *  into manual mode first — exactly like the A chip's off click — so nothing jumps. */
+    private beginPricePan(y: number, free = false): boolean {
         const pane = this.paneNodeAtY(y);
-        if (!pane || !pane.manualScale) return false;
+        if (!pane) return false;
+        if (!pane.manualScale) {
+            if (!free) return false;
+            pane.manualScale = { ...pane.scale };
+            this.axisScaleButtons?.reposition(); // drop the A chip at once (the cursor may be still)
+            this.scheduler.invalidate(InvalidateLevel.Full);
+        }
         this.scaleDragHolder = pane;
         this.scaleDragHeight = pane.bounds.height;
         this.scaleDragStart = { ...pane.scale };

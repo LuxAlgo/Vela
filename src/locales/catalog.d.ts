@@ -102,6 +102,7 @@ export interface VelaCoreMessageCatalog {
     'chart.settings.events': string;
     'chart.settings.fillBottomArea': string;
     'chart.settings.fillTopArea': string;
+    'chart.settings.freeDrag': string;
     'chart.settings.grid': string;
     'chart.settings.horizontal': string;
     'chart.settings.indexedTo100': string;
@@ -113,6 +114,7 @@ export interface VelaCoreMessageCatalog {
     'chart.settings.logarithmic': string;
     'chart.settings.margins': string;
     'chart.settings.mode': string;
+    'chart.settings.navigation': string;
     'chart.settings.panMomentum': string;
     'chart.settings.panMomentumHint': string;
     'chart.settings.paneSeparatorColor': string;

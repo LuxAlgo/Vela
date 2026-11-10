@@ -69,6 +69,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 | `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
 | `priceAxis` | `{ ticks?: (ctx) => PriceAxisTick[] \| null }` | built-in ticks | Your own price-axis ladder (native renderer): `ticks` returns each pane's ticks, and the axis labels and horizontal gridlines both follow them (see below). |
+| `freePan` | boolean | `false` | Free panning (native renderer): a middle-button drag pans time and price together, and the Canvas tab offers a switch that makes a left drag do the same (see below). |
 
 \* `defaultLanguage` falls back to the first injected engine's language if you don't set it.
 
@@ -252,6 +253,8 @@ new VelaWorkspace('#chart', {
       'canvas.margins.top',                  //     Top (% of pane height)
       'canvas.margins.bottom',               //     Bottom (% of pane height)
       'canvas.margins.right',                //     Right (bars after the newest bar)
+      'canvas.navigation',                   //   Navigation group (only with the `freePan` option on)
+      'canvas.navigation.free-drag',         //     Drag moves price and time together
       'canvas.theme',                        //   Theme group (Dark/Light)
 
       // ══ Events tab (timeline marks — present once marks name groups) ═
@@ -374,6 +377,38 @@ it later with `chart.renderer.set('priceAxisTicks', fn)` or `null` (see
 [Renderer features](./renderer-features.md#axes--scale)). A function is never part of
 `getConfig()`. On a [workspace](./workspace.md), the top-level `priceAxis` is the default
 of every cell, including cells a later layout change creates.
+
+### The `freePan` option — panning time and price together
+
+By default, dragging the plot pans through time only, and it moves prices too only once the
+pane is on a manual scale (after you dragged or scrolled its price axis, or turned its A button
+off). Set `freePan: true` to pan both at once:
+
+```js
+const chart = new Vela('#chart', { symbol: 'BTCUSDT', freePan: true });
+```
+
+- **Middle-button drag.** Press the middle button anywhere on a pane's plot and drag: the chart
+  pans in time exactly like a left drag, and that pane's prices move up and down with the
+  pointer. A pane that was fitting its prices automatically switches to a manual scale when the
+  drag starts, from the view on screen, so nothing jumps. Its A (auto) button then shows auto
+  scaling off; click it, or double-click the price axis, to fit the prices again. The browser's
+  middle-button autoscroll (and the paste on Linux) is suppressed for these presses.
+- **Middle-click still deletes a drawing**, but on release: a middle press that does not move
+  past the drag threshold deletes the drawing under it, and one that moves pans and deletes
+  nothing. With the option off, a middle-click deletes on press, as before.
+- **Drag moves price and time together.** The settings dialog's *Canvas* tab gains a
+  *Navigation* group with this switch, off by default. On, a plain left drag on the empty plot
+  pans both ways like the middle drag; a left click still only clicks. A press on a drawing,
+  `Shift`+drag (the measure ruler) and `Ctrl`/`Cmd`+drag (the selection box) keep their
+  meaning. The switch is saved with the chart's settings, as `navigation.freeDrag` in
+  `chart.renderer.getConfig()`, and only takes effect while the option is on.
+
+Touch gestures, the wheel, axis drags, `Shift`+wheel and `Ctrl`+wheel are unchanged. The
+option seeds the native renderer's runtime `freePan` feature: change it later with
+`chart.renderer.set('freePan', true)` (see
+[Renderer features](./renderer-features.md#interaction)). On a [workspace](./workspace.md),
+the top-level `freePan` applies to every chart.
 
 ### Non-obvious defaults, called out
 

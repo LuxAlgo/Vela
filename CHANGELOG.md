@@ -37,6 +37,17 @@ All notable changes to Vela, newest first.
   `chart.renderer.get('shownPriceStyle')`, the symbol's facts with `chart.symbolFacts()` and the
   `symbol:facts` event, and test a style with `priceStyleApplies`. In the workspace,
   `cell.priceStyle` is the drawn style and `cell.requestedPriceStyle` the chosen one.
+- **Pan through time and price in one drag.** With the new `freePan: true` option, dragging
+  the plot with the middle mouse button moves the chart in time and moves that pane's prices
+  up and down with the pointer. A pane that was fitting its prices automatically switches to
+  a manual scale at the moment you start dragging, from the view on screen, so nothing jumps;
+  its A button shows auto scaling off, and clicking it turns auto scaling back on. A
+  middle-click on a drawing still deletes it, now when you release the button, and a middle
+  press that moves pans instead of deleting. The settings dialog's Canvas tab then also offers
+  **Drag moves price and time together**, a switch that gives a plain left drag the same
+  behavior and is saved with the chart's settings. The option is off by default, so charts
+  that don't set it behave as before; a workspace passes it to every chart, and
+  `chart.renderer.set('freePan', …)` changes it at runtime.
 
 ### Fixed
 

@@ -429,7 +429,7 @@ at the top level and are each cell's **default** — `symbol` (bare = first decl
 provider; an `EXCHANGE:` prefix pins a venue), `timeframe`, `bars`, `priceStyle`,
 `data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`, `downColor`, `glow`,
 `animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar excepted),
-`priceAxis`, `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
+`priceAxis`, `freePan`, `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
 `maxWebglCells` policy). The [localization options](./options.md#localization-options)
 (`locale`, `direction`, `messages`, `numberingSystem`, `hourCycle`, `weekStart`,
 `formatters`) are one choice for the whole workspace rather than per cell: every cell and
@@ -508,7 +508,9 @@ The shell is keyboard-first (bindings act on the **active cell**):
   the trend line tool; `alt+H` / `alt+V` drop a horizontal / vertical line at the
   cursor — the drawing toolbar's menus show these chords beside the tools.
 - Mouse: `Shift`+scroll pans through history instead of zooming, `Shift`+click starts
-  the measure ruler at the cursor, and middle-click deletes the drawing under it.
+  the measure ruler at the cursor, and middle-click deletes the drawing under it. With
+  `freePan: true`, a middle drag pans time and price together (see
+  [the `freePan` option](./options.md#the-freepan-option--panning-time-and-price-together)).
 - Drawing keys (undo/redo, copy/paste, delete, nudge) come from the core — see
   [Drawing tools](./drawing-tools.md).
 

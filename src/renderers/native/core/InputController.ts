@@ -19,8 +19,10 @@ export interface InputControllerDeps {
     /** Rescale the grabbed pane vertically by the TOTAL pixel drag (down ⇒ zoom out / compress). */
     priceScaleBy(dyTotal: number): void;
     /** Grab inside the data area at pixel `y` — returns true when vertical price-panning is
-     *  enabled for that pane (i.e. it is already in manual-scale mode). */
-    beginPricePan(y: number): boolean;
+     *  enabled for that pane (i.e. it is already in manual-scale mode). With `free`, an
+     *  auto-scaled pane first switches to manual scale at its current visible window (no
+     *  jump), so the pan always moves price too. */
+    beginPricePan(y: number, free?: boolean): boolean;
     /** Pan the grabbed pane's price window by the TOTAL pixel drag (down ⇒ show lower prices). */
     pricePanBy(dyTotal: number): void;
     /** Double-click on the price axis → re-enable autoscale for the pane/column at (`x`,`y`). */
@@ -57,7 +59,8 @@ export interface InputControllerDeps {
     /** Ctrl/Cmd+press on empty plot: start sweeping a selection box at (x,y). True when it
      *  started (the drawings layer then owns the rest of the gesture). */
     drawingsMarqueeStart?(x: number, y: number): boolean;
-    /** Middle-click: delete the drawing under the cursor. True when one was removed. */
+    /** Middle-click: delete the drawing under the cursor. True when one was removed. With
+     *  `freePan` on, this runs on the RELEASE of a middle press that never became a drag. */
     drawingsDeleteAt?(x: number, y: number): boolean;
     /** Right-click: cancel/disarm whatever non-persistent tool is active — an in-progress
      *  placement, an armed-but-idle drawing tool, the measure ruler, or the eraser — and
@@ -212,11 +215,26 @@ export class InputController {
      *  is a plain pan/click and hover leaves them alone; a drawing gesture already under way
      *  still finishes. */
     drawings = true;
+    /** When true, a middle-button drag on the data area pans time and that pane's price
+     *  together (switching an auto-scaled pane to manual scale as the drag begins), and a
+     *  middle-click deletes the drawing under it on RELEASE instead of on press. When false
+     *  (the default), a middle press deletes on press and never pans. */
+    freePan = false;
+    /** When true, a plain left drag on the empty data area pans time and price together,
+     *  exactly like the {@link freePan} middle drag. Mouse and pen only — a finger pan stays
+     *  a time pan. The renderer sets it only while `freePan` is on. */
+    freeDrag = false;
     private el: HTMLElement | null = null;
     private dragging = false;
     private moved = false;
     private region: DragRegion = 'data';
     private verticalPan = false; // data-area drag also pans price (pane in manual-scale mode)
+    // The drag pans price too once it starts, switching an auto-scaled pane to manual scale
+    // at that moment (deferred so a click never turns autoscale off).
+    private freePending = false;
+    // The live gesture is a middle-button press with `freePan` on: a drag pans, a click
+    // deletes the drawing under it on release.
+    private middlePress = false;
     private startX = 0;
     private startY = 0;
     private startRightOffset = 0;
@@ -225,7 +243,7 @@ export class InputController {
     private lastX = 0;
     private lastT = 0;
     private vx = 0; // smoothed pointer velocity, px/ms
-    private middleDeleted = false; // the last middle press deleted a drawing (suppress autoscroll/paste)
+    private middleDeleted = false; // the last middle press deleted a drawing or grabbed the plot (suppress autoscroll/paste)
     private rightCancelled = false; // the last right press cancelled a placement (suppress the context menu)
     // Last cursor position over the element (NaN once it leaves) — lets a modifier
     // press/release re-shape the drawings preview with the pointer stationary.
@@ -369,9 +387,13 @@ export class InputController {
 
     private readonly onDown = (e: PointerEvent): void => {
         if (e.button === 1) {
+            const { x, y } = this.local(e);
+            if (this.freePan && !this.dragging && this.regionAt(x, y) === 'data') {
+                this.beginMiddlePress(e, x, y);
+                return;
+            }
             // Middle-click deletes the drawing under the cursor. The flag lets the
             // mousedown/auxclick companions suppress autoscroll/paste for THIS press only.
-            const { x, y } = this.local(e);
             this.middleDeleted = this.drawings && (this.deps.drawingsDeleteAt?.(x, y) ?? false);
             if (this.middleDeleted) e.preventDefault();
             return;
@@ -437,9 +459,14 @@ export class InputController {
         this.startBarSpacing = vp.barSpacing;
         this.region = this.regionAt(x, y);
         this.verticalPan = false;
+        this.freePending = false;
+        this.middlePress = false;
         if (this.region === 'price') this.deps.beginPriceScale(x, y);
         else if (this.region === 'separator') this.deps.beginPaneResize(y);
-        else if (this.region === 'data') this.verticalPan = this.deps.beginPricePan(y);
+        else if (this.region === 'data') {
+            this.verticalPan = this.deps.beginPricePan(y);
+            this.freePending = !this.verticalPan && this.freeDrag && e.pointerType !== 'touch';
+        }
         // A stationary touch hold in the plot becomes crosshair inspection — the touch
         // substitute for hovering (a finger can't hover, and a pan would move the view).
         // On an axis strip the same hold opens the host's timezone / price-scale sheet
@@ -452,6 +479,31 @@ export class InputController {
         this.vx = 0;
         this.capture(e.pointerId);
     };
+
+    /** A middle press on the data area with `freePan` on. Nothing moves until the pointer
+     *  travels past the drag slop: then it is a pan of time and price (see onMove), and it
+     *  never deletes; released before that, it deletes the drawing under the press. The
+     *  browser's autoscroll / paste for this press are vetoed either way. */
+    private beginMiddlePress(e: PointerEvent, x: number, y: number): void {
+        this.middleDeleted = true; // arms onMiddleGuard for this press's mousedown/auxclick
+        e.preventDefault();
+        const vp = this.deps.getCoords().getViewport();
+        this.deps.apply(vp); // freeze any in-flight zoom/fling before grabbing
+        this.dragging = true;
+        this.moved = false;
+        this.region = 'data';
+        this.middlePress = true;
+        this.startX = x;
+        this.startY = y;
+        this.startRightOffset = vp.rightOffset;
+        this.startBarSpacing = vp.barSpacing;
+        this.verticalPan = false;
+        this.freePending = true;
+        this.lastX = x;
+        this.lastT = e.timeStamp;
+        this.vx = 0;
+        this.capture(e.pointerId);
+    }
 
     /** Arm the long-press timer for a data-area → crosshair or axis → sheet hold;
      *  movement past TOUCH_SLOP or a second finger cancels it. */
@@ -563,11 +615,21 @@ export class InputController {
             } else if (this.region === 'drawing') {
                 if (Math.abs(x - this.startX) > slop || Math.abs(y - this.startY) > slop) this.moved = true;
                 this.deps.drawingsPointerMove?.(x, y, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
+            } else if (this.middlePress && !this.moved && Math.abs(x - this.startX) <= slop && Math.abs(y - this.startY) <= slop) {
+                // A middle press stays put until it is a drag (it may still be a delete-click).
             } else {
                 const coords = this.deps.getCoords();
                 const vp = coords.getViewport();
                 const dx = x - this.startX;
                 if (Math.abs(dx) > slop) this.moved = true;
+                if (this.freePending && (this.moved || Math.abs(y - this.startY) > slop)) {
+                    // The free pan starts: the pane goes manual at its current window, and the
+                    // price follows the pointer from the press point from here on.
+                    this.freePending = false;
+                    this.moved = true;
+                    if (this.middlePress) this.deps.drawingsClearTransient?.();
+                    this.verticalPan = this.deps.beginPricePan(this.startY, true);
+                }
                 // Drag right → reveal earlier bars → rightOffset decreases. Track by the effective
                 // pitch (zoom × spacing multiplier) so the chart follows the cursor 1:1.
                 this.deps.apply({ barSpacing: vp.barSpacing, rightOffset: this.startRightOffset - dx / coords.pxPerBar() });
@@ -611,6 +673,7 @@ export class InputController {
                 const vp = this.deps.getCoords().getViewport();
                 this.region = 'data';
                 this.verticalPan = false;
+                this.freePending = false;
                 this.startX = rest.x;
                 this.startY = rest.y;
                 this.startRightOffset = vp.rightOffset;
@@ -633,6 +696,14 @@ export class InputController {
             return;
         }
         const { x, y } = this.local(e);
+        if (this.dragging && this.middlePress) {
+            // A middle-click that never became a drag deletes the drawing it pressed on.
+            if (!this.moved && this.drawings) this.deps.drawingsDeleteAt?.(this.startX, this.startY);
+            this.middlePress = false;
+            this.freePending = false;
+            this.endGesture(e);
+            return;
+        }
         const wasTouch = e.pointerType === 'touch';
         // Click/tap-hood of this release. A mouse uses the latched travel (`moved`)
         // alone; a touch must ALSO land within TOUCH_TAP_SLOP of where it lifted —
@@ -700,6 +771,8 @@ export class InputController {
         // A cancelled separator drag keeps the sizes it reached, so it still reports them.
         if (this.region === 'separator') this.deps.endPaneResize?.();
         if (this.region === 'crosshair' || e.pointerType === 'touch') this.deps.onPointerMove(null, null);
+        this.middlePress = false; // a cancelled middle press is neither a pan nor a delete
+        this.freePending = false;
         this.endGesture(e);
     };
 
