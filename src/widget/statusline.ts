@@ -13,6 +13,7 @@ import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageDescriptor, Translator } from '../core/i18n/types';
 import { SESSION_PRE, SESSION_POST, SESSION_OFF } from '../core/palette';
+import { withAlpha } from '../core/color';
 import { iconAt } from '../core/icons';
 import { decimalsFor } from './format';
 import { timeframeLabel } from './timeframe';
@@ -179,7 +180,8 @@ interface RendererReads {
 }
 
 /** How the status line reads a bar out: the four O/H/L/C values (bar-shaped styles),
- *  or the single plotted value — the close — for one-line styles (line/area/baseline). */
+ *  or the single plotted value — the close — for the single-value styles (the line
+ *  family, area, baseline, columns). */
 export type StatuslineReadout = 'ohlc' | 'value';
 
 /** The market session states the status badge can wear. Crypto venues trade
@@ -228,12 +230,13 @@ const MARKET_INKS: Record<MarketStatus, string> = {
  * The active price style's value readout for the status line, read live from the
  * renderer: the up/down COLORS from the cosmetic config (candle bodies for candles/HA —
  * and plugin styles, which paint candles as their base — bar ticks for bars, the single
- * plot color for line/area, the two baseline line colors for baseline), the DIRECTION
- * rule that decides which of the two a bar wears, and the readout SHAPE. Candles/bars
- * compare close to open and show O/H/L/C; single-line styles show just the plotted
- * value; baseline compares close to the LIVE baseline reference price (the paint splits
- * by position, not by bar direction — a bar that closed down can still sit in the green
- * region). Null colors fall back to the theme tokens.
+ * plot color for the line family and area, the two baseline line colors for baseline,
+ * the column colors made opaque for columns), the DIRECTION rule that decides which of
+ * the two a bar wears, and the readout SHAPE. Candles/bars compare close to open and show
+ * O/H/L/C; single-value styles show just the plotted value; baseline compares close to
+ * the LIVE baseline reference price (the paint splits by position, not by bar direction —
+ * a bar that closed down can still sit in the green region), and columns compare it to
+ * the previous bar's close, as they are painted. Null colors fall back to the theme tokens.
  */
 export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [string | null, string | null, ((bar: { open: number; close: number }) => boolean) | null, StatuslineReadout] {
     const cfg = renderer.getConfig() as
@@ -243,6 +246,7 @@ export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [s
               line?: { color?: unknown };
               area?: { lineColor?: unknown };
               baseline?: { topLineColor?: unknown; bottomLineColor?: unknown };
+              columns?: { upColor?: unknown; downColor?: unknown };
           }
         | null
         | undefined;
@@ -250,7 +254,9 @@ export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [s
     switch (priceStyle) {
         case 'bars':
             return [c(cfg?.bars?.upColor), c(cfg?.bars?.downColor), null, 'ohlc'];
-        case 'line': {
+        case 'line':
+        case 'linemarkers':
+        case 'stepline': {
             const v = c(cfg?.line?.color);
             return [v, v, null, 'value'];
         }
@@ -265,6 +271,17 @@ export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [s
                 return Number.isFinite(level) ? bar.close >= level : bar.close >= bar.open;
             };
             return [c(cfg?.baseline?.topLineColor), c(cfg?.baseline?.bottomLineColor), isUp, 'value'];
+        }
+        case 'columns': {
+            // Resolved per render: the previous close follows the bar the readout shows. The
+            // first bar has none and is up, as its column is.
+            const isUp = (bar: { open: number; close: number }): boolean => {
+                const prev = renderer.get('previousClose');
+                return typeof prev === 'number' && Number.isFinite(prev) ? bar.close >= prev : true;
+            };
+            // Text in the columns' translucent wash would read faint: the readout wears it opaque.
+            const solid = (v: unknown): string | null => (typeof v === 'string' ? withAlpha(v, 1) : null);
+            return [solid(cfg?.columns?.upColor), solid(cfg?.columns?.downColor), isUp, 'value'];
         }
         default:
             return [c(cfg?.candles?.upColor), c(cfg?.candles?.downColor), null, 'ohlc'];

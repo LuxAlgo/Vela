@@ -35,6 +35,16 @@ const BADGE_STROKE = SLATE;
 /** The frame a text label wears when it's the target: firm once clicked, a hint under the cursor.
  *  (Its box is the shared TEXT_FRAME inset/rise, so it coincides with the inline editor's border.) */
 const TEXT_FRAME_ALPHA = { selected: 0.3, hovered: 0.12 };
+/** How the magnifier inset paints each built-in price style (anything else: candles). */
+const MAGNIFIER_MODES: ReadonlyMap<string, 'bars' | 'line' | 'area'> = new Map([
+    ['bars', 'bars'],
+    ['line', 'line'],
+    ['linemarkers', 'line'],
+    ['stepline', 'line'],
+    ['baseline', 'line'],
+    ['area', 'area'],
+    ['columns', 'area'],
+]);
 
 /**
  * Paints user drawings onto the L1.5 canvas. The caller has already applied the DPR
@@ -977,13 +987,13 @@ export class DrawingPainter {
         if (res && (res.state === 'ready' || res.state === 'loading') && seriesBars.length > 0) {
             // The inset mirrors the CHART's series look: bar-transform styles (Heikin Ashi,
             // and any registered type that declares one) transform the raw fetched bars;
-            // line/area/bars restyle the paint; unknown/custom styles fall back to candles.
+            // line/area/bars restyle the paint (the line family as a line, columns as the
+            // filled area they read as); unknown/custom styles fall back to candles.
             // Colors default to the main series' own; a user-picked color wins.
             const look = this.seriesLook;
             const transform = look.style !== 'candles' ? barTransformFor(look.style) : null;
             if (transform) seriesBars = transform.full(seriesBars as readonly OHLCV[]);
-            const mode: 'candles' | 'bars' | 'line' | 'area' =
-                look.style === 'bars' ? 'bars' : look.style === 'line' || look.style === 'baseline' ? 'line' : look.style === 'area' ? 'area' : 'candles';
+            const mode: 'candles' | 'bars' | 'line' | 'area' = MAGNIFIER_MODES.get(look.style) ?? 'candles';
             const halfPitch = (proj.xOf(from + chartMs) - proj.xOf(from)) / 2;
             ctx.save();
             ctx.beginPath();

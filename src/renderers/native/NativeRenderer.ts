@@ -88,7 +88,7 @@ import { MARK_PULSE_MS } from './chrome/marks/paint';
 import type { MarkClickEvent, MarkGroup, TimelineMark } from '../../core/marks/types';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, followThemeColors, themeColorFollower, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint, sanitizeCrosshairOverride } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, followThemeColors, themeColorFollower, columnsColorFollower, columnsDefaultColors, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint, sanitizeCrosshairOverride } from './core/chartConfig';
 import { BackdropRenderer } from './backdrop/BackdropRenderer';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
@@ -449,7 +449,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'previousClose', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -705,6 +705,14 @@ export class NativeRenderer implements IChartRenderer {
                 const price = this.scene.panes.get(PRICE_PANE_ID);
                 return price ? this.scene.baselinePriceFor(price.scale) : this.scene.baselineValue;
             }
+            case 'previousClose': {
+                // READ-ONLY: the close of the bar before the one the readouts show — the bar
+                // under the crosshair, else the latest; null on the first bar. Host chrome
+                // coloring by change (the columns style's status line ink) compares against it.
+                const idx = this.hoverLogical ?? this.bars.length - 1;
+                const prev = this.bars[idx - 1];
+                return prev && Number.isFinite(prev.close) ? prev.close : null;
+            }
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'marks': return { visible: this.scene.marks.visible, groups: { ...this.scene.marks.groups } };
             case 'crosshairOverride': return this.scene.crosshairOverride ? { ...this.scene.crosshairOverride } : null;
@@ -919,6 +927,10 @@ export class NativeRenderer implements IChartRenderer {
                     baselineLevel: s.baseline.baselineLevel,
                 };
             })(),
+            columns: (() => {
+                const wash = columnsDefaultColors({ upColor: this.candleUp, downColor: this.candleDown });
+                return { upColor: s.columns.upColor ?? wash.upColor, downColor: s.columns.downColor ?? wash.downColor };
+            })(),
             series: { style: this.chosenStyle, baseline: this.scene.baselineValue, spacing: this.coords.spacingScale },
             sessions: { premarketColor: s.sessions.premarketColor, postmarketColor: s.sessions.postmarketColor, extendedColor: s.sessions.extendedColor },
         };
@@ -1052,6 +1064,7 @@ export class NativeRenderer implements IChartRenderer {
             width: next.baseline.width,
             baselineLevel: next.baseline.baselineLevel,
         };
+        s.columns = { upColor: next.columns.upColor, downColor: next.columns.downColor };
         // session shading
         s.sessions = { premarketColor: next.sessions.premarketColor, postmarketColor: next.sessions.postmarketColor, extendedColor: next.sessions.extendedColor };
         // series
@@ -1477,6 +1490,8 @@ export class NativeRenderer implements IChartRenderer {
         s.bars = { upColor: follow(s.bars.upColor), downColor: follow(s.bars.downColor) };
         s.line = { ...s.line, color: follow(s.line.color) };
         s.area = { ...s.area, lineColor: follow(s.area.lineColor), topColor: follow(s.area.topColor) };
+        const followColumns = columnsColorFollower(prev, next);
+        s.columns = { upColor: followColumns(s.columns.upColor), downColor: followColumns(s.columns.downColor) };
     }
 
     /** Theme with the configured candle up/down colors applied (candles, wicks,
@@ -1704,7 +1719,12 @@ export class NativeRenderer implements IChartRenderer {
                     style,
                     upColor: style === 'bars' ? barsUp : paint.up,
                     downColor: style === 'bars' ? barsDown : paint.down,
-                    lineColor: style === 'area' ? (st.area.lineColor ?? this.theme.upColor) : (st.line.color ?? this.theme.upColor),
+                    lineColor:
+                        style === 'area'
+                            ? (st.area.lineColor ?? this.theme.upColor)
+                            : style === 'columns'
+                              ? withAlpha(st.columns.upColor ?? this.theme.upColor, 1)
+                              : (st.line.color ?? this.theme.upColor),
                 };
             },
             chartBarMs: () => this.coords.barInterval,

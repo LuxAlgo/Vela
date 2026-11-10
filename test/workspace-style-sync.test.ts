@@ -54,6 +54,7 @@ describe('style link', () => {
             line: { color: '#aa00aa', width: 4 },
             area: { lineColor: '#00aaaa', topColor: '#00aaaa55' },
             baseline: { topLineColor: '#aaaa00', baselineLevel: 30 },
+            columns: { upColor: '#0a0b0c', downColor: '#0c0b0a' },
             series: { spacing: 2 },
             margins: { top: 20, right: 30 },
             animations: { zoom: false, pan: false },
@@ -65,6 +66,7 @@ describe('style link', () => {
         expect(c2.line).toMatchObject({ color: '#aa00aa', width: 4 });
         expect(c2.area).toMatchObject({ lineColor: '#00aaaa', topColor: '#00aaaa55' });
         expect(c2.baseline).toMatchObject({ topLineColor: '#aaaa00', baselineLevel: 30 });
+        expect(c2.columns).toEqual({ upColor: '#0a0b0c', downColor: '#0c0b0a' });
         expect(c2.series.spacing).toBe(2);
         expect(c2.margins).toMatchObject({ top: 20, right: 30 });
         expect(c2.animations).toMatchObject({ zoom: false, pan: false });

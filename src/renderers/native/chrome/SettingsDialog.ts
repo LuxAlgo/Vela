@@ -80,6 +80,7 @@ const TEXT = {
     fillTopArea: msg('chart.settings.fillTopArea', 'Fill top area'),
     fillBottomArea: msg('chart.settings.fillBottomArea', 'Fill bottom area'),
     baseLevelPct: msg('chart.settings.baseLevelPct', 'Base level %'),
+    columns: msg('chart.settings.columns', 'Columns'),
     animation: msg('chart.settings.animation', 'Animation'),
     animateZoom: msg('chart.settings.animateZoom', 'Animate zoom'),
     animateZoomHint: msg('chart.settings.animateZoomHint', 'Glide the chart to each zoom step instead of jumping.'),
@@ -129,6 +130,13 @@ const TEXT = {
     visibleEvents: msg('chart.settings.visibleEvents', 'Visible events'),
 };
 
+/** Built-in styles drawn with another style's settings: Heikin Ashi is candle-drawn, and
+ *  the line with markers and the step line are the line drawn two other ways. */
+const SHARED_STYLE_GROUP: ReadonlyMap<string, string> = new Map([
+    ['heikinashi', 'candles'],
+    ['linemarkers', 'line'],
+    ['stepline', 'line'],
+]);
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -552,7 +560,7 @@ export class SettingsDialog {
         const unavailable = new Set(styles.unavailable);
         const groups: Partial<Record<string, HTMLElement>> = {};
         const showActive = (style: string): void => {
-            const active = style === 'heikinashi' ? 'candles' : style; // heikin-ashi is candle-drawn
+            const active = SHARED_STYLE_GROUP.get(style) ?? style;
             // Gate via the !important class, not inline display: the field-grid pass
             // rewrites every group's display to 'contents' AFTER this visibility pass.
             for (const key of priceStyleIds()) {
@@ -625,6 +633,14 @@ export class SettingsDialog {
         baseline.append(sid(this.numberRow(TEXT.width, config.baseline.width, 1, 10, 1, (v) => this.emit({ baseline: { width: v } })), 'symbol.style.baseline.width'));
         groups.baseline = baseline;
         body.append(baseline);
+
+        const columns = sid(this.group(), 'symbol.style.columns');
+        columns.append(this.sectionTitle(TEXT.columns));
+        columns.append(sid(this.colorRow(TEXT.colorUp, config.columns.upColor, (v) => this.emit({ columns: { upColor: v } })), 'symbol.style.columns.up-color'));
+        columns.append(sid(this.colorRow(TEXT.colorDown, config.columns.downColor, (v) => this.emit({ columns: { downColor: v } })), 'symbol.style.columns.down-color'));
+        columns.append(sid(this.numberRow(TEXT.spacing, config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.columns.spacing'));
+        groups.columns = columns;
+        body.append(columns);
 
         // Candle-based PLUGIN styles (an order-flow type keeps candles under its layer):
         // the same candle rows, but stored in the type's OWN bag (chartTypes.<id>.candle*)
