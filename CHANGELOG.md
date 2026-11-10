@@ -2,7 +2,14 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [0.10.4]
+
+### Changed
+
+- **Vela requires `@luxalgo/vela-ui` 0.4.0.** In the kit, the component that shows a value
+  under its label is now the figure (`@luxalgo/vela-ui/figure`, `createFigure`), because
+  content blockers blocked the old stat module. Its
+  [changelog](packages/vela-ui/CHANGELOG.md) explains how to move to it.
 
 ### Fixed
 
