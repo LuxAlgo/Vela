@@ -3,6 +3,27 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [0.4.0]
+
+### Changed
+
+- **The stat is now the figure.** The component that shows a value under its label is
+  `@luxalgo/vela-ui/figure`, with `createFigure` and its slots and theme entry named `figure`.
+  Content blockers took the old module's file for a tracking script and blocked it, so a
+  page using it lost the component while developing. _(Breaking: import `createFigure` from
+  `@luxalgo/vela-ui/figure` instead of `createStat` from `@luxalgo/vela-ui/stat`, and rename
+  `stat` to `figure` in your theme's `components` and in CSS that targets its slots.)_
+
+### Fixed
+
+- **Open menus stay on top of the page.** With `@zag-js` 1.47, which a fresh install
+  resolves, an open dropdown menu dropped under the content beside it as soon as the pointer
+  left it, so it seemed to vanish over a chart. Menus, tooltips and dialogs now keep their
+  stacking.
+- **A search field's clear cross follows the theme.** Search fields inside a kit host show
+  their clear cross in the theme's text color, white on a dark theme and black on a light one,
+  instead of the browser's own, which some systems paint blue.
+
 ## [0.3.0]
 
 ### Added

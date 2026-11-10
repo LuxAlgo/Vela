@@ -2,11 +2,26 @@
 // controller is a running Zag machine (framework-agnostic state/behavior/ARIA); the vanilla
 // view subscribes and projects api props onto its own DOM via `spreadProps`. A future
 // `vela/react` reuses the SAME machines through Zag's React adapter and swaps only the view.
-import { VanillaMachine, normalizeProps, spreadProps } from '@zag-js/vanilla';
+import { VanillaMachine, normalizeProps, spreadProps as zagSpreadProps } from '@zag-js/vanilla';
 import type { Machine, MachineSchema, Service } from '@zag-js/core';
 import { pageUid } from './page';
 
-export { normalizeProps, spreadProps };
+export { normalizeProps };
+
+/**
+ * Zag's `spreadProps`, without the style keys a part leaves unset. Zag's own spread removes
+ * those from the element, which wipes what Zag writes there itself: from 1.47 a positioner's
+ * style carries `zIndex: undefined` while the popper sets its z-index inline, so every
+ * re-render dropped an open menu under the page. A key the part set and then clears is still
+ * removed: that runs off the previous style.
+ */
+export function spreadProps(...[node, attrs, machineId]: Parameters<typeof zagSpreadProps>): ReturnType<typeof zagSpreadProps> {
+    const style: unknown = attrs['style'];
+    if (style === null || typeof style !== 'object') return zagSpreadProps(node, attrs, machineId);
+    const set: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(style)) if (value != null) set[key] = value;
+    return zagSpreadProps(node, { ...attrs, style: set }, machineId);
+}
 
 /** The MachineHandle for a given machine definition (package schemas aren't exported —
  *  infer them from the machine value: `HandleOf<typeof tooltip.machine>`). */

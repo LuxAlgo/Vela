@@ -2,6 +2,25 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.4]
+
+### Changed
+
+- **Vela requires `@luxalgo/vela-ui` 0.4.0.** In the kit, the component that shows a value
+  under its label is now the figure (`@luxalgo/vela-ui/figure`, `createFigure`), because
+  content blockers blocked the old stat module. Its
+  [changelog](packages/vela-ui/CHANGELOG.md) explains how to move to it.
+
+### Fixed
+
+- **Open menus stay on top of the chart.** On a fresh install, the timeframe and chart style
+  menus could sink under the chart as soon as the pointer left them, so they seemed to vanish
+  when the pointer crossed the status line. They now stay above the chart until you close
+  them.
+- **Search fields clear with a cross in the theme's color.** The cross that clears a search
+  field shows in the chart's text color, white on a dark theme and black on a light one,
+  instead of the browser's own blue one.
+
 ## [0.10.3]
 
 ### Added

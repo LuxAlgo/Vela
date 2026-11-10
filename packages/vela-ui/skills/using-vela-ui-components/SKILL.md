@@ -1,6 +1,6 @@
 ---
 name: using-vela-ui-components
-description: Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, toasts, collapsible sections, cards, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts, treemap). Use when adding or wiring these components on a page or next to a Vela chart, when a menu, dialog or tooltip from the kit renders unstyled or in the wrong place, or when the user wants UI that matches their Vela chart, even if they do not name the kit.
+description: Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, toasts, collapsible sections, cards, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, figure, sparkline, bar, line and scatter charts, treemap). Use when adding or wiring these components on a page or next to a Vela chart, when a menu, dialog or tooltip from the kit renders unstyled or in the wrong place, or when the user wants UI that matches their Vela chart, even if they do not name the kit.
 license: Apache-2.0
 ---
 
@@ -42,7 +42,7 @@ To find a component, its props, parts and an example, search
 | --- | --- |
 | An action | `button` (variants `default`, `outline`, `secondary`, `ghost`, `destructive`, `link`, `up`, `down`, `favorite`; `keys` for key caps) |
 | Switch between views | `tabs` (a `description` puts a second line under a label); a few exclusive options on one track: `toggle-group` |
-| A status or a count | `badge`, `stat`, `kbd` |
+| A status or a count | `badge`, `figure`, `kbd` |
 | A list of actions from a button or a right-click | `dropdown-menu`, `context-menu` |
 | A label or a card on hover | `tooltip`, `hover-card` |
 | A modal or a sheet | `dialog`, `drawer` |
