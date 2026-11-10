@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}：{message}",
     "workspace.alerts.toastUntitled": "{source}：{message}",
     "workspace.alerts.untitled": "提醒",
+    "workspace.data.unavailable": "{symbol} 不提供 {timeframe} 周期的数据。",
+    "workspace.data.unavailableFallback": "{symbol} 不提供 {timeframe} 周期的数据。已改为显示 {shown}。",
     "workspace.indicators.builtIn": "内置",
     "workspace.keys.category.chart": "图表",
     "workspace.keys.category.drawings": "画图",

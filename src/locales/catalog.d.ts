@@ -2211,6 +2211,8 @@ export interface VelaCoreMessageCatalog {
     'workspace.alerts.row': string;
     'workspace.alerts.toastUntitled': string;
     'workspace.alerts.untitled': string;
+    'workspace.data.unavailable': string;
+    'workspace.data.unavailableFallback': string;
     'workspace.indicators.builtIn': string;
     'workspace.keys.category.chart': string;
     'workspace.keys.category.drawings': string;

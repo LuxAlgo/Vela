@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} — {message}",
     "workspace.alerts.untitled": "Оповещение",
+    "workspace.data.unavailable": "{symbol} недоступен на таймфрейме {timeframe}.",
+    "workspace.data.unavailableFallback": "{symbol} недоступен на таймфрейме {timeframe}. Вместо него показан {shown}.",
     "workspace.indicators.builtIn": "Встроенные",
     "workspace.keys.category.chart": "График",
     "workspace.keys.category.drawings": "Рисование",

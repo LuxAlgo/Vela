@@ -65,7 +65,7 @@ async getBars(ticker, timeframe, range) {
 
 What the refusal does depends on who asked:
 
-- **The chart's own series** — the initial load, a market switch, the history backfill or a gap heal. The chart ends its loading state, stops live updates for that market (no poll starts), and fires `data:unavailable` with `{ symbol, timeframe, reason, finest?, default? }`. The core never changes the timeframe the host set: falling back is the host's call.
+- **The chart's own series** — the initial load, a market switch, the history backfill or a gap heal. The chart ends its loading state, stops live updates for that market (no poll starts), and fires `data:unavailable` with `{ symbol, timeframe, reason, finest?, default? }`. The core never changes the timeframe the host set: falling back is the host's call. [The workspace](../user/workspace.md#a-timeframe-the-source-never-serves) makes it: it switches to `default`, else `finest`, tells the user, and keeps the user's timeframe for the next symbol.
 - **A secondary series** — a script's `request.security`, read through the engine's `fetchSeries`. The promise rejects with the error, so the engine can report it. The chart's own load, events and timeframe stay untouched.
 
 Neither path caches the refusal: the next request reaches the provider again. Detect the error with `isDataUnavailableError(e)`, which reads the `name` and the fields. Never use `instanceof`: a provider may bundle its own copy of Vela, whose class is a different one.

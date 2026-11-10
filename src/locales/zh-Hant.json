@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}：{message}",
     "workspace.alerts.toastUntitled": "{source}：{message}",
     "workspace.alerts.untitled": "提醒",
+    "workspace.data.unavailable": "{symbol} 不提供 {timeframe} 週期的資料。",
+    "workspace.data.unavailableFallback": "{symbol} 不提供 {timeframe} 週期的資料。已改為顯示 {shown}。",
     "workspace.indicators.builtIn": "內建",
     "workspace.keys.category.chart": "圖表",
     "workspace.keys.category.drawings": "繪圖",

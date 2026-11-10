@@ -122,8 +122,10 @@ export const exampleProvider: DataProvider = {
    economic series has no hourly bars: throw
    `new DataUnavailableError({ reason: 'timeframe', finest: '1D', default: '1D' })` (from
    `@luxalgo/vela`). The chart then stops loading and polling that market and fires
-   `data:unavailable` with your `finest` and `default` as hints. A script's `request.security`
-   gets the error. Detect it with `isDataUnavailableError(e)`, never `instanceof`.
+   `data:unavailable` with your `finest` and `default` as hints; the workspace switches to
+   `default`, else `finest`, and keeps the user's timeframe for symbols that serve it. A
+   script's `request.security` gets the error. Detect it with `isDataUnavailableError(e)`,
+   never `instanceof`.
 7. **Timeframes: a bare number is minutes** (`'1'`, `'60'`, `'240'`), and **`'D'`, `'W'`, `'M'`
    are a day, a week and a MONTH**. Aliases reach you too: `'15m'` and `'1h'` (minutes, hours),
    `'1d'`, `'1w'`. Normalize to one form, then map to your API's codes: never pass Vela's string

@@ -12,7 +12,10 @@ All notable changes to Vela, newest first.
   chart then stops loading and polling that market instead of waiting on an empty chart, and
   fires `data:unavailable` with the provider's suggested timeframes so the page can switch.
   A script that asks for such a series with `request.security` gets the provider's message
-  instead of empty data. Any other provider error still reads as an empty answer.
+  instead of empty data. Any other provider error still reads as an empty answer. In the
+  workspace, a chart on such a symbol switches to the timeframe the source suggests and says
+  so. The timeframe you picked stays yours: it is the one saved with the layout and shared
+  with linked charts, and it comes back on the next symbol that serves it.
 
 ### Fixed
 

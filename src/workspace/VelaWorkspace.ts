@@ -2437,7 +2437,12 @@ export class VelaWorkspace {
             if (origin.symbol) {
                 for (const id of syncTargets(originId, this.syncOpts.symbol, ids)) this.cellsById.get(id)?.setSymbol(origin.symbol);
             }
-            for (const id of syncTargets(originId, this.syncOpts.timeframe, ids)) this.cellsById.get(id)?.setTimeframe(origin.timeframe);
+            // The REQUESTED timeframe links, never a fallback a symbol's source forced; a
+            // follower that already requests it keeps whatever fallback its own symbol needs.
+            for (const id of syncTargets(originId, this.syncOpts.timeframe, ids)) {
+                const follower = this.cellsById.get(id);
+                if (follower && follower.requestedTimeframe !== origin.requestedTimeframe) follower.setTimeframe(origin.requestedTimeframe);
+            }
         } finally {
             this.syncBusy = false;
         }

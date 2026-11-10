@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} — {message}",
     "workspace.alerts.untitled": "Peringatan",
+    "workspace.data.unavailable": "{symbol} tidak tersedia pada timeframe {timeframe}.",
+    "workspace.data.unavailableFallback": "{symbol} tidak tersedia pada timeframe {timeframe}. Menampilkan {shown} sebagai gantinya.",
     "workspace.indicators.builtIn": "Bawaan",
     "workspace.keys.category.chart": "Grafik",
     "workspace.keys.category.drawings": "Gambar",

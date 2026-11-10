@@ -15,10 +15,11 @@ import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
+import type { VelaEventMap } from '../core/events/types';
 import { Statusline, statuslineInkOf, type StatuslinePart } from '../widget/statusline';
 import { MarketStatusTracker } from '../widget/market-status';
 import { SessionShadingTracker, parseSessionSpec } from '../widget/session-shading';
-import { timeframeMs } from '../widget/timeframe';
+import { chartTimeframeOf, timeframeLabel, timeframeMs } from '../widget/timeframe';
 import { Watermark } from '../widget/watermark';
 import { CellControls } from '../widget/cell-controls';
 import { ChartContextMenu } from '../widget/context-menu';
@@ -67,6 +68,8 @@ const TEXT = {
     indicatorTitles: msg('workspace.settings.indicatorTitles', 'Titles'),
     indicatorValues: msg('workspace.settings.indicatorValues', 'Values'),
     builtIn: msg('workspace.indicators.builtIn', 'Built-in'),
+    unavailableFallback: msg('workspace.data.unavailableFallback', '{symbol} is not available at {timeframe}. Showing {shown} instead.'),
+    unavailable: msg('workspace.data.unavailable', '{symbol} is not available at {timeframe}.'),
 };
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
@@ -326,6 +329,11 @@ export class ChartCell {
     /** Last symbol we toasted "no provider serves this" for — once per symbol (the
      *  core re-reports on every provider-index settle). */
     private unresolvedToasted: string | null = null;
+    /** The timeframe the chart RUNS for a symbol whose source refused the requested one
+     *  (`data:unavailable`). The requested timeframe stays in `state.timeframe` — what the
+     *  cell persists and the timeframe link shares — and returns on the next symbol, or
+     *  ends with an explicit timeframe choice. Null while the chart runs what was asked. */
+    private fallback: { symbol: string; timeframe: string } | null = null;
     /** The cell's third-party state bag (`ext` of the persisted per-chart state) —
      *  seeded from the boot/restored document, refreshed by handler `serialize` calls at
      *  dehydrate time. Entries with no registered handler this session ride along
@@ -477,6 +485,8 @@ export class ChartCell {
             const list = providers.length > 0 ? providers.join(', ') : 'none';
             this.deps.toast(`No registered provider serves "${symbol}" (registered: ${list})`, 'error', 6000);
         });
+        // A source that refuses the requested timeframe for good: show the one it suggests.
+        this.inner.on('data:unavailable', (e) => this.onDataUnavailable(e));
         // The loading affordance and the watermark never share the canvas.
         this.inner.on('load:start', ({ symbol }) => {
             this.watermark?.setLoading(true);
@@ -523,7 +533,7 @@ export class ChartCell {
         void this.inner.data.ready().then(() => {
             if (this.inner && this.state.symbol) {
                 this.statusline?.setSymbol(this.state.symbol);
-                this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
+                this.statusline?.setMeta(this.timeframe, this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
             }
             this.refreshSymbolMetadata();
             if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
@@ -635,9 +645,12 @@ export class ChartCell {
      * only pass for host `chart.setMarket` calls). Idempotent, so the double run converges.
      */
     private projectMarket(symbol: string, timeframe: string): void {
+        // Any market other than the fallback's ends it — a host switching the chart directly
+        // included: the timeframe the chart then runs is the cell's own.
+        if (this.fallback && (this.fallback.symbol !== symbol || this.fallback.timeframe !== timeframe)) this.fallback = null;
         this.state.symbol = symbol;
         this.state.provider = parseSymbol(symbol).provider ?? undefined;
-        this.state.timeframe = timeframe;
+        if (!this.fallback) this.state.timeframe = timeframe;
         this.state.session = normalizeSession(this.inner?.market.session);
         this.watermark?.update(symbol, timeframe);
         this.statusline?.setSymbol(symbol);
@@ -746,7 +759,7 @@ export class ChartCell {
         const symbol = this.state.symbol;
         if (!chart || !symbol) return;
         const now = Date.now();
-        const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
+        const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.timeframe);
         const fallbackSpan = Number.isFinite(requestedSpan) ? Math.max(3 * 86_400_000, requestedSpan) : 3 * 86_400_000;
         const range = chart.getVisibleRange() ?? { from: now - fallbackSpan, to: now };
         this.sessionShading.track(chart.data, symbol, { session: this.session, timeframe: this.timeframe, range });
@@ -1035,7 +1048,15 @@ export class ChartCell {
         return this.state.symbol ?? '';
     }
 
+    /** The timeframe the chart shows — the requested one, or the fallback while the symbol's
+     *  source refuses it (what the topbar shows). */
     get timeframe(): string {
+        return this.fallback?.timeframe ?? this.state.timeframe ?? '60';
+    }
+
+    /** The timeframe the user asked for — what the cell persists and the timeframe link
+     *  shares. Differs from {@link timeframe} while the symbol's source refuses it. */
+    get requestedTimeframe(): string {
         return this.state.timeframe ?? '60';
     }
 
@@ -1055,19 +1076,64 @@ export class ChartCell {
     setSymbol(symbol: string): void {
         if (!this.inner || symbol === this.symbol) return;
         this.unresolvedToasted = null; // a re-picked symbol gets a fresh verdict
-        void this.inner.setMarket({ symbol });
-        this.projectMarket(symbol, this.timeframe);
+        // A fallback belongs to the symbol that refused: the next one is asked for the
+        // requested timeframe again.
+        const fellBack = this.fallback !== null;
+        this.fallback = null;
+        const timeframe = this.timeframe;
+        void this.inner.setMarket(fellBack ? { symbol, timeframe } : { symbol });
+        this.projectMarket(symbol, timeframe);
         this.deps.onMarketChanged(this.id);
     }
 
+    /** An explicit timeframe choice — it becomes the requested one, also while a fallback
+     *  runs: picking the fallback keeps it shown, anything else asks the chart for it. */
     setTimeframe(timeframe: string): void {
-        if (!this.inner || timeframe === this.timeframe) return;
+        if (!this.inner || (!this.fallback && timeframe === this.timeframe)) return;
+        const shown = this.timeframe;
+        this.fallback = null;
+        if (timeframe === shown) {
+            this.projectMarket(this.symbol, timeframe);
+            this.deps.onMarketChanged(this.id);
+            return;
+        }
         // Leaving range mode: drop the chip AND its fetch budget (back to the cell's own bars).
         this.activeRangeId = null;
         this.rangeBars = 0;
         void this.inner.setMarket({ timeframe, bars: this.state.bars });
         this.projectMarket(this.symbol, timeframe);
         this.deps.onMarketChanged(this.id);
+    }
+
+    /**
+     * The source refused the chart's timeframe for this symbol for good: switch to the one it
+     * suggests (`default`, else `finest`) and say so, keeping the requested timeframe as the
+     * cell's own. A refusal of the fallback itself, or one with nothing better to offer, is
+     * only reported — the cell never chains switches.
+     */
+    private onDataUnavailable(e: VelaEventMap['data:unavailable']): void {
+        const chart = this.inner;
+        if (!chart || this.destroyed) return;
+        const market = chart.market;
+        if (e.symbol !== (market.symbol ?? 'TEST') || e.timeframe !== (market.timeframe ?? '60')) return; // superseded
+        const i18n = chart.i18n;
+        const symbol = parseSymbol(e.symbol).ticker || e.symbol;
+        const asked = timeframeLabel(e.timeframe, i18n);
+        const to = chartTimeframeOf(e.default) ?? chartTimeframeOf(e.finest);
+        const again = this.fallback !== null && this.fallback.symbol === e.symbol && this.fallback.timeframe === e.timeframe;
+        if (to === null || again || timeframeMs(to) === timeframeMs(e.timeframe)) {
+            this.deps.toast(textOf(i18n, TEXT.unavailable, { symbol, timeframe: asked }), 'error', 6000);
+            return;
+        }
+        this.fallback = { symbol: e.symbol, timeframe: to };
+        // The range chip's timeframe is not what shows any more: leave range mode.
+        this.activeRangeId = null;
+        this.rangeBars = 0;
+        this.pendingRange = null;
+        void chart.setMarket({ timeframe: to, bars: this.state.bars });
+        this.projectMarket(e.symbol, to);
+        this.deps.onMarketChanged(this.id);
+        this.deps.toast(textOf(i18n, TEXT.unavailableFallback, { symbol, timeframe: asked, shown: timeframeLabel(to, i18n) }), 'info', 5000);
     }
 
     /** Applied live (renderer feature) — no reload. */
@@ -1105,8 +1171,16 @@ export class ChartCell {
      */
     applyRange(preset: RangePreset): void {
         if (!this.inner || this.destroyed) return;
+        const shown = this.timeframe;
+        // A chip names its timeframe explicitly: a running fallback ends, the chip's timeframe
+        // is the requested one from here on.
+        const endsFallback = this.fallback !== null;
+        if (endsFallback) {
+            this.fallback = null;
+            this.state.timeframe = preset.tf;
+        }
         this.activeRangeId = preset.id;
-        const tfChanged = preset.tf !== this.timeframe;
+        const tfChanged = preset.tf !== shown;
         const deeper = preset.bars > Math.max(this.state.bars ?? 500, this.rangeBars);
         this.rangeBars = preset.bars;
         if (tfChanged || deeper) {
@@ -1122,6 +1196,7 @@ export class ChartCell {
         } else {
             this.inner.setVisibleRangePreset(preset.preset);
         }
+        if (endsFallback) this.deps.onMarketChanged(this.id); // the requested timeframe changed
     }
 
     /** Reset this cell's view: re-enable auto scale and frame the full history —
@@ -1552,7 +1627,15 @@ export class ChartCell {
         const bars = typeof cs.bars === 'number' && Number.isFinite(cs.bars) && cs.bars > 0 ? cs.bars : 0;
         const next: { symbol?: string; timeframe?: string; bars?: number; session?: MarketSession } = {};
         if (symbol && symbol !== this.symbol) next.symbol = symbol;
-        if (cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
+        const timeframe = cs.timeframe || this.requestedTimeframe;
+        if (this.fallback && (next.symbol !== undefined || timeframe !== this.requestedTimeframe)) {
+            // The document names another market or timeframe: the fallback ends, and the
+            // document's timeframe is the requested one (asked for unless already shown).
+            const shown = this.fallback.timeframe;
+            this.fallback = null;
+            this.state.timeframe = timeframe;
+            if (timeframe !== shown) next.timeframe = timeframe;
+        } else if (!this.fallback && cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
         if (session !== this.session) {
             this.state.session = session;
             next.session = session;
@@ -1575,7 +1658,8 @@ export class ChartCell {
         const statuslineParts = this.statusPrefs().parts;
         return {
             ...this.state,
-            ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
+            // The REQUESTED timeframe while a fallback shows another: a reload asks for it again.
+            ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: this.fallback && live.symbol === this.fallback.symbol && live.timeframe === this.fallback.timeframe ? this.state.timeframe : live.timeframe } : {}),
             priceStyle: this.priceStyle,
             watermark: this.watermarkOn,
             replayWatermark: this.replayWatermarkOn,

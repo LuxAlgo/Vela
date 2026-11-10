@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} — {message}",
     "workspace.alerts.untitled": "Cảnh báo",
+    "workspace.data.unavailable": "{symbol} không khả dụng ở khung thời gian {timeframe}.",
+    "workspace.data.unavailableFallback": "{symbol} không khả dụng ở khung thời gian {timeframe}. Đang hiển thị {shown} thay thế.",
     "workspace.indicators.builtIn": "Tích hợp sẵn",
     "workspace.keys.category.chart": "Biểu đồ",
     "workspace.keys.category.drawings": "Hình vẽ",

@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} — {message}",
     "workspace.alerts.untitled": "Alert",
+    "workspace.data.unavailable": "{symbol} is not available at {timeframe}.",
+    "workspace.data.unavailableFallback": "{symbol} is not available at {timeframe}. Showing {shown} instead.",
     "workspace.indicators.builtIn": "Built-in",
     "workspace.keys.category.chart": "Chart",
     "workspace.keys.category.drawings": "Drawings",
