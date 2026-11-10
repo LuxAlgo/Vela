@@ -91,4 +91,29 @@ describe('the select', () => {
         dispose();
         menu.remove();
     });
+
+    it('lists a disabled option with its tooltip, and neither a click nor the keyboard picks it', async () => {
+        const onChange = vi.fn();
+        const options = [OPTIONS[0]!, { value: 'b', label: 'Beta', disabled: true, title: 'Not now' }, OPTIONS[2]!];
+        const sel = createSelect({ options, value: 'a', onChange });
+        document.body.append(sel.el);
+        sel.el.querySelector('button')!.click();
+        const beta = items()[1]!;
+        expect(beta.hasAttribute('data-disabled')).toBe(true);
+        expect(beta.getAttribute('aria-disabled')).toBe('true');
+        expect(beta.title).toBe('Not now');
+        beta.click();
+        expect(onChange).not.toHaveBeenCalled();
+
+        // The keyboard skips it: one step down from Alpha lands on Gamma.
+        const list = document.querySelector<HTMLElement>('[role="listbox"]')!;
+        list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+        await settle();
+        expect(items()[2]!.hasAttribute('data-highlighted')).toBe(true);
+        list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await settle();
+        expect(onChange).toHaveBeenCalledWith('c', 'Gamma');
+        sel.destroy();
+        sel.el.remove();
+    });
 });

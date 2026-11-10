@@ -24,6 +24,8 @@ export interface MenuItemDescriptor {
     id: string;
     label: string;
     disabled?: boolean;
+    /** The row's tooltip, e.g. why a disabled row is unavailable. */
+    title?: string;
     /** Draw a separator line above this item. */
     separatorBefore?: boolean;
     /** Right-aligned hint (e.g. a shortcut display from KeymapManager). */
@@ -590,6 +592,7 @@ class Surface {
             li.className = 'vela-menu-item';
             li.dataset.slot = dropdownMenuDef.slot('item');
             li.dataset.veiId = item.id;
+            if (item.title) li.title = item.title;
             if (item.toggle) {
                 // Switch row: the pill carries the state.
                 // (Zag owns the item's ARIA props; the pill below is decorative.)
