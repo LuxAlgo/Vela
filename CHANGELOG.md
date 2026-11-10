@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Synced drawings stay linked after a reload.** With drawings sync on, a drawing made in
+  an earlier session now moves, restyles and deletes together with its copies on the other
+  charts, as it did on the day it was drawn. This also covers layouts restored with
+  `applyState` and charts that a layout change brings back. Copies that still match are
+  linked again, including in layouts saved before this fix; a copy you changed while sync
+  was off stays independent. Turning drawings sync on links matching copies the same way.
+
 ## [0.10.5]
 
 ### Added
