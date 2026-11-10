@@ -85,6 +85,7 @@ export {
     type SeriesDataEngine,
     type SeriesDataEngineHost,
 } from './chart-types/registry';
+export { priceStyleApplies, shownPriceStyle } from './chart-types/applicability';
 export type { BarTransform } from './core/price-styles/BarTransform';
 export { registerRendererDefaults, unregisterRendererDefaults, rendererDefaults } from './core/renderer-defaults';
 export { registerShellDefaults, unregisterShellDefaults, shellDefaults, type ShellDefaults } from './widget/shell-defaults';
@@ -199,7 +200,7 @@ export type {
     EngineContextSnapshot,
     ContextSelect,
 } from './core/ports/ScriptingEngine';
-export type { MarketDataFeed, SymbolInfo, BarRange } from './core/ports/MarketDataFeed';
+export type { MarketDataFeed, SymbolInfo, SymbolFacts, BarRange } from './core/ports/MarketDataFeed';
 // What an engine fills so a host can read a running strategy (`EngineContextSnapshot.strategy`
 // / `.trades`) and what the core reshapes it into (`script:run`, `chart.runScript()`).
 export type { StrategyState, StrategyTrade, StrategyFill } from './core/model/strategy';

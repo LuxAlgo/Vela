@@ -3,6 +3,18 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [0.4.1]
+
+### Added
+
+- **Unavailable choices can say why.** A dropdown menu row takes a `title`, shown as its
+  tooltip, so a disabled row can explain what makes it unavailable. A select's options take
+  `disabled` and `title` too: a disabled option stays in the list, dimmed, cannot be picked
+  with the pointer or the keyboard, and shows its tooltip on hover.
+- **Icons for three more chart styles.** The icon set draws `style-linemarkers`,
+  `style-stepline` and `style-columns` beside the other chart-style icons, in the same
+  16-pixel chrome tier.
+
 ## [0.4.0]
 
 ### Changed

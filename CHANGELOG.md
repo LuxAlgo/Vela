@@ -4,8 +4,28 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Synced drawings stay linked after a reload.** With drawings sync on, a drawing made in
+  an earlier session now moves, restyles and deletes together with its copies on the other
+  charts, as it did on the day it was drawn. This also covers layouts restored with
+  `applyState` and charts that a layout change brings back. Copies that still match are
+  linked again, including in layouts saved before this fix; a copy you changed while sync
+  was off stays independent. Turning drawings sync on links matching copies the same way.
+
+## [0.10.5]
+
 ### Added
 
+- **Line with markers, step line and columns.** Three more chart styles suit series with one
+  value per bar, such as economic data. Line with markers draws the line with a dot on each
+  bar, shown once the bars are far enough apart to tell the dots apart. Step line holds each
+  value flat until the next bar, then steps to it. Columns draw a column per bar from the
+  bottom of the chart up to its value, in the up color when the value is at or above the
+  previous bar's and in the down color when it is lower. Pick them from the chart style menu
+  or with `priceStyle: 'linemarkers'`, `'stepline'` or `'columns'`. The first two take the
+  line's color and width from the chart settings; columns have their own up and down colors,
+  which start as the chart's up and down colors at half opacity.
 - **Data sources can refuse a timeframe they never serve.** A provider can now say that a
   series does not exist at a timeframe, such as a monthly economic series asked for hourly
   bars, by throwing a `DataUnavailableError` that names the finest timeframe it serves. The
@@ -24,15 +44,32 @@ All notable changes to Vela, newest first.
   volume indicator you added or saved stays. Hosts that save a chart's indicators themselves
   can read `chart.pendingNativeIndicators()` beside `presentNativeIndicators()`, so a save made
   while that choice is still loading keeps the volume indicator.
+- **Series with one value per bar are drawn as a line.** A data provider can now say that a
+  symbol has one value per bar at every timeframe, such as an economic series, with
+  `ohlc: false` in `getSymbolInfo`. Candles, bars and Heikin Ashi have nothing to show there,
+  so the chart draws such a symbol as a line whatever style is chosen, and the style menu, the
+  mobile style list and the chart settings show those styles greyed out, with a tooltip saying
+  why. The style you chose stays yours: it is the one saved with the layout, and it comes back
+  on the next symbol that can draw it. Picking another style on such a symbol, such as an
+  area, makes it your style. Nothing is greyed while the symbol's information is still
+  loading. A plugin chart type can declare which symbols it can draw with `supports`, and it is
+  greyed and replaced by a line the same way. Hosts read the drawn style with
+  `chart.renderer.get('shownPriceStyle')`, the symbol's facts with `chart.symbolFacts()` and the
+  `symbol:facts` event, and test a style with `priceStyleApplies`. In the workspace,
+  `cell.priceStyle` is the drawn style and `cell.requestedPriceStyle` the chosen one.
+
+### Changed
+
+- **Vela requires `@luxalgo/vela-ui` 0.4.1.** The kit adds the icons of the new chart
+  styles and lets a menu row or a select option say why it is unavailable, which the
+  chart style pickers use.
 
 ### Fixed
 
-- **Synced drawings stay linked after a reload.** With drawings sync on, a drawing made in
-  an earlier session now moves, restyles and deletes together with its copies on the other
-  charts, as it did on the day it was drawn. This also covers layouts restored with
-  `applyState` and charts that a layout change brings back. Copies that still match are
-  linked again, including in layouts saved before this fix; a copy you changed while sync
-  was off stays independent. Turning drawings sync on links matching copies the same way.
+- **Inline date-time and session inputs show at full width.** In an indicator's settings
+  dialog, a date-and-time or session input placed on the same line as another input (such as
+  an enable checkbox) was squeezed into a narrow column that cut off the date and time text.
+  It now keeps the same full width as a standalone date-and-time or session row.
 - **Month and second timeframes are measured correctly.** A timeframe written with a month
   count (`1M`, `3M`, `12M`) was measured as that many minutes in places, and a seconds
   timeframe (`30S`) as one hour. Scripts that ask for monthly or quarterly data now load it

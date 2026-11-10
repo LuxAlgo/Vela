@@ -11,5 +11,11 @@ const HEIKIN_ASHI: BarTransform = { full: heikinAshiFull, next: heikinAshiNext }
 
 /** Register the built-in chart types (idempotent — called by the Vela constructor). */
 export function registerBuiltinChartTypes(): void {
-    registerChartType({ id: 'heikinashi', label: msg('chart.priceStyle.heikinashi', 'Heikin Ashi'), barTransform: HEIKIN_ASHI });
+    registerChartType({
+        id: 'heikinashi',
+        label: msg('chart.priceStyle.heikinashi', 'Heikin Ashi'),
+        barTransform: HEIKIN_ASHI,
+        // Averages open, high and low: one value per bar leaves nothing to average.
+        supports: (facts) => facts.ohlc !== false,
+    });
 }

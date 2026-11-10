@@ -30,6 +30,18 @@ const MIXED: MenuItemDescriptor[] = [
     { id: 'alerts', label: 'Alerts', icon: 'bell' },
 ];
 
+describe('Menu row tooltip', () => {
+    it('shows a row\'s title as its tooltip, a disabled row\'s included', () => {
+        const h = host();
+        const menu = new DropdownMenu({ host: h, items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', disabled: true, title: 'Not for this symbol' }] });
+        const [a, b] = [...h.querySelectorAll<HTMLElement>('.vela-menu-item')];
+        expect(a!.hasAttribute('title')).toBe(false);
+        expect(b!.title).toBe('Not for this symbol');
+        expect(b!.hasAttribute('data-disabled')).toBe(true);
+        menu.destroy();
+    });
+});
+
 describe('Menu iconBadges', () => {
     it('wraps each icon in a badge and reserves an empty badge on icon-less rows', () => {
         const h = host();

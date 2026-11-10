@@ -62,8 +62,12 @@ export interface VelaCoreMessageCatalog {
     'chart.priceStyle.bars': string;
     'chart.priceStyle.baseline': string;
     'chart.priceStyle.candles': string;
+    'chart.priceStyle.columns': string;
     'chart.priceStyle.heikinashi': string;
     'chart.priceStyle.line': string;
+    'chart.priceStyle.linemarkers': string;
+    'chart.priceStyle.stepline': string;
+    'chart.priceStyle.unavailable': string;
     'chart.scrollToLatest.label': string;
     'chart.scrollToLatest.title': string;
     'chart.settings.addInstance': string;
@@ -94,6 +98,7 @@ export interface VelaCoreMessageCatalog {
     'chart.settings.colorDown': string;
     'chart.settings.colorTheme': string;
     'chart.settings.colorUp': string;
+    'chart.settings.columns': string;
     'chart.settings.countdownToBarClose': string;
     'chart.settings.crosshair': string;
     'chart.settings.dashed': string;

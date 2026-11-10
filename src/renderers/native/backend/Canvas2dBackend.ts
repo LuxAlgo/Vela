@@ -7,7 +7,8 @@ import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
-import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
+import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, COLUMNS_FILL_ALPHA, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
+import { lineMarkerRadius, lineMarkersVisible, columnIsUp, columnGeometry, snapStroke, closeRuns, stepVertices } from './close-styles';
 import type { IRenderBackend } from './IRenderBackend';
 import { beginPlotFrame } from '../core/plotDirection';
 
@@ -172,7 +173,8 @@ export class Canvas2dBackend implements IRenderBackend {
     // ── base price series (chart type) ──
     /**
      * Draw the base price series in the configured style: candlesticks, OHLC bars,
-     * line, area, or baseline. All stay time-indexed.
+     * line (plain, with markers, or stepped), area, baseline, or columns. All stay
+     * time-indexed.
      */
     private drawPriceSeries(
         ctx: CanvasRenderingContext2D,
@@ -195,6 +197,15 @@ export class Canvas2dBackend implements IRenderBackend {
             case 'line':
                 this.drawPriceLine(ctx, bars, i0, i1, coords, pane, st.line.color ?? theme.upColor, st.line.width);
                 return;
+            case 'linemarkers': {
+                const color = st.line.color ?? theme.upColor;
+                this.drawPriceLine(ctx, bars, i0, i1, coords, pane, color, st.line.width);
+                this.drawLineMarkers(ctx, bars, i0, i1, coords, pane, color, st.line.width);
+                return;
+            }
+            case 'stepline':
+                this.drawStepLine(ctx, bars, i0, i1, coords, pane, st.line.color ?? theme.upColor, st.line.width);
+                return;
             case 'area': {
                 const lineColor = st.area.lineColor ?? theme.upColor;
                 this.drawPriceArea(ctx, bars, i0, i1, coords, pane, st.area.topColor ?? lineColor, st.area.bottomColor ?? 'rgba(0,0,0,0)');
@@ -204,6 +215,12 @@ export class Canvas2dBackend implements IRenderBackend {
             case 'baseline':
                 this.drawBaseline(ctx, bars, i0, i1, coords, pane, scene, theme, dataW);
                 return;
+            case 'columns': {
+                const up = st.columns.upColor ?? withAlpha(theme.upColor, COLUMNS_FILL_ALPHA);
+                const down = st.columns.downColor ?? withAlpha(theme.downColor, COLUMNS_FILL_ALPHA);
+                this.drawColumns(ctx, bars, i0, i1, coords, pane, up, down, barColors);
+                return;
+            }
             default: // 'candles' + candle-drawn styles (a plugin style may fade candles to reveal its
                 // order-flow layer) and 'heikinashi' (the bars themselves arrive already transformed)
                 this.drawCandles(ctx, scene, bars, i0, i1, coords, pane, theme, barColors);
@@ -279,6 +296,76 @@ export class Canvas2dBackend implements IRenderBackend {
         }
         ctx.stroke();
         ctx.lineCap = 'butt';
+    }
+
+    /** Line with markers: a filled dot on each bar's close, once bars are spaced enough
+     *  to tell the dots apart (see {@link lineMarkersVisible}). One path, so dots that
+     *  touch never darken a translucent color where they overlap. */
+    private drawLineMarkers(ctx: CanvasRenderingContext2D, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, color: string, width: number): void {
+        const r = lineMarkerRadius(width);
+        if (!lineMarkersVisible(coords.pxPerBar(), r)) return;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        for (let i = Math.max(0, i0 - 1); i <= i1; i += 1) {
+            const b = bars[i];
+            if (!b) continue;
+            const x = coords.logicalToX(i);
+            const y = coords.priceToY(b.close, pane.scale, pane.bounds);
+            ctx.moveTo(x + r, y);
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+        }
+        ctx.fill();
+    }
+
+    /** Step line: each close held flat to the next bar, then a vertical step to its close.
+     *  Vertices snap so the runs cover whole device pixels; square caps and miter joins
+     *  give the corners and ends the same square shape the WebGL2 backend builds. */
+    private drawStepLine(ctx: CanvasRenderingContext2D, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, color: string, width: number): void {
+        const dpr = coords.dpr;
+        ctx.lineWidth = width;
+        ctx.lineJoin = 'miter';
+        ctx.lineCap = 'square';
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        const runs = closeRuns(Math.max(0, i0 - 1), i1, (i) => {
+            const b = bars[i];
+            return b ? { x: snapStroke(coords.logicalToX(i), width, dpr), y: snapStroke(coords.priceToY(b.close, pane.scale, pane.bounds), width, dpr) } : null;
+        });
+        for (const run of runs) {
+            const vs = stepVertices(run);
+            ctx.moveTo(vs[0]!.x, vs[0]!.y);
+            for (let k = 1; k < vs.length; k += 1) ctx.lineTo(vs[k]!.x, vs[k]!.y);
+        }
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+    }
+
+    /** Columns: one per bar from the pane's bottom edge up to its close, colored by the
+     *  close against the previous close ({@link columnIsUp}); barcolor() tints a column
+     *  as it tints a candle body. */
+    private drawColumns(
+        ctx: CanvasRenderingContext2D,
+        bars: OHLCV[],
+        i0: number,
+        i1: number,
+        coords: CoordinateSystem,
+        pane: PaneNode,
+        up: string,
+        down: string,
+        barColors: ReadonlyMap<number, string>,
+    ): void {
+        const spacing = coords.bodySpacing();
+        const dpr = coords.dpr;
+        const bottom = snapY(pane.bounds.top + pane.bounds.height, dpr);
+        for (let i = i0; i <= i1; i += 1) {
+            const b = bars[i];
+            if (!b) continue;
+            const top = snapY(coords.priceToY(b.close, pane.scale, pane.bounds), dpr);
+            if (!(top < bottom)) continue;
+            const g = columnGeometry(coords.logicalToX(i), spacing, dpr);
+            ctx.fillStyle = barColors.get(b.time) ?? (columnIsUp(bars, i) ? up : down);
+            ctx.fillRect(g.left, top, g.width, bottom - top);
+        }
     }
 
     /** Filled area under the close line: a vertical gradient from `topColor` (at the

@@ -1,5 +1,5 @@
 import type { IChartRenderer, VisibleRange } from '../ports/IChartRenderer';
-import type { MarketDataFeed, BarRange } from '../ports/MarketDataFeed';
+import type { MarketDataFeed, BarRange, SymbolFacts, SymbolInfo } from '../ports/MarketDataFeed';
 import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
 import type { OHLCV } from '../model/ohlcv';
@@ -513,6 +513,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     private async loadMarketInner(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         const market = this.config.market;
+        // The new market's facts decide the style its first candles draw in: known ones apply
+        // now, the rest as soon as they land (the load's own metadata request, usually ahead
+        // of the bars). A symbol switch starts from unknown, so the chosen style comes back.
+        this.syncSymbolFacts();
         const requested = market.bars ?? 500;
         const initialRange = market.visibleRange;
         // Only a DEEP request is worth splitting, and only when a requested initial window
@@ -630,6 +634,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         // axis switches from the zoom formula to the symbol's true precision as soon as it lands.
         this.refreshPriceFormat();
         void this.ensurePriceFormat();
+        // Backstop for facts the early probe could not reach (the symbol was not resolvable
+        // before the provider indexes settled; a custom feed filling its cache with the bars).
+        if (this.facts === null) this.syncSymbolFacts();
     }
 
     /** Start the live tick subscription + the tab-restore catch-up listener — never for a
@@ -1589,6 +1596,46 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         return !!resolved && typeof this.dataControl.providerInstance(resolved.provider)?.getSymbolInfo === 'function';
     }
 
+    /** The facts the renderer was last handed (see {@link syncSymbolFacts}); null = unknown. */
+    private facts: SymbolFacts | null = null;
+    /** Bumped per facts probe and at destroy: only the latest probe may apply its answer. */
+    private factsProbe = 0;
+
+    /** The facts in force for the chart's symbol (a copy), null while unknown. */
+    symbolFacts(): SymbolFacts | null {
+        return this.facts ? { ...this.facts } : null;
+    }
+
+    /**
+     * Hand the renderer the facts about the market's symbol that decide which price styles
+     * can draw it, and announce a change (`symbol:facts`). The feed's metadata cache answers
+     * first, so a symbol seen before switches in one step; otherwise the facts read unknown
+     * (every style applies) until the async answer lands — dropped if the chart has moved
+     * to another symbol or a newer probe has started meanwhile.
+     */
+    private syncSymbolFacts(): void {
+        const probe = ++this.factsProbe;
+        const known = this.feed.symbolInfo?.(this.config.market);
+        this.applySymbolFacts(symbolFactsOf(known));
+        const symbol = this.qualifiedSymbol();
+        if (known !== undefined || !symbol || this.config.market.data?.length) return;
+        void this.dataControl
+            .symbolInfo(symbol)
+            .catch(() => undefined)
+            .then((info) => {
+                if (this.factsProbe !== probe || this.qualifiedSymbol() !== symbol) return;
+                if (info !== undefined) this.applySymbolFacts(symbolFactsOf(info));
+            });
+    }
+
+    private applySymbolFacts(facts: SymbolFacts | null): void {
+        const prev = this.facts;
+        if (prev === facts || (prev && facts && prev.ohlc === facts.ohlc && prev.volume === facts.volume)) return;
+        this.facts = facts;
+        this.renderer.setSymbolFacts?.(facts);
+        this.events.emit('symbol:facts', { symbol: this.config.market.symbol ?? 'TEST', facts: this.symbolFacts() });
+    }
+
     /** The native types the chart is about to add on its own — the volume auto-add while it
      *  waits for its symbol's facts. SYNC, for persistence snapshots (see the facade). */
     pendingNativeIndicators(): string[] {
@@ -2333,6 +2380,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     destroy(): void {
         this.bumpGeneration(); // abandon backfill loops/loads mid-flight + release superseded setMarket awaiters
         this.volumeFactsWait = null;
+        this.factsProbe += 1; // a facts answer landing after destroy must not reach the renderer
         this.resolveHistoryComplete(); // never leave historyComplete() awaiters hanging
         this.clearReplayTimer();
         this.replayQueue = null;
@@ -3339,4 +3387,14 @@ function modelToValuePatch(model: IndicatorModel): ValuePatch {
         tables: model.tables ?? [],
         trades: model.trades ?? [],
     };
+}
+
+/** The style-deciding facts in a symbol's info: null while there is no info (unknown), `{}`
+ *  for info that states none (every style applies). */
+function symbolFactsOf(info: SymbolInfo | undefined): SymbolFacts | null {
+    if (!info) return null;
+    const facts: SymbolFacts = {};
+    if (typeof info.ohlc === 'boolean') facts.ohlc = info.ohlc;
+    if (typeof info.volume === 'boolean') facts.volume = info.volume;
+    return facts;
 }

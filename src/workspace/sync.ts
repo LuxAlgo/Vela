@@ -91,7 +91,7 @@ export function rangesWithin(a: { from: number; to: number }, b: { from: number;
 }
 
 /** The renderer-config blocks the STYLE link mirrors whole — every look the settings
- *  dialog edits: the Symbol tab's per-style cosmetics (`candles` … `baseline`) and
+ *  dialog edits: the Symbol tab's per-style cosmetics (`candles` … `columns`) and
  *  animation switches, the Canvas tab (`layout` = background/text, `panes` =
  *  separators, `grid`, `margins`), the Scales-and-lines tab (`priceScale`,
  *  `crosshair`), and the session shading colors. Two blocks travel in part (see
@@ -111,6 +111,7 @@ export const STYLE_SYNC_CONFIG_KEYS = [
     'line',
     'area',
     'baseline',
+    'columns',
     'sessions',
 ] as const;
 

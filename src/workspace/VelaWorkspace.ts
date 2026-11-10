@@ -59,6 +59,7 @@ import { buildToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMod
 import { timeframeToMs } from '../data/timeframe';
 import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
+import { PRICE_STYLE_UNAVAILABLE } from '../chart-types/labels';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { syncTargets, syncGroups, pairIdenticalDrawings, drawingLinkContent, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type DrawingToolsState, type WorkspaceState, type WorkspaceStorage } from './persist';
@@ -1653,7 +1654,7 @@ export class VelaWorkspace {
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
         this.topbar.setTimeframe(cell.timeframe);
-        this.topbar.setPriceStyle(cell.priceStyle);
+        this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
         this.mobileBar?.renderActions();
@@ -1960,6 +1961,7 @@ export class VelaWorkspace {
                 dropCell: (id, target) => this.swapCells(id, target),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onPriceStyleChanged: (id) => this.onCellPriceStyleChanged(id),
+                onPriceStyleShown: (id) => this.projectCellPriceStyle(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStatusPrefsChanged: (id) => this.propagateStylePrefs(id),
                 onStateDirty: () => this.markStateDirty(),
@@ -2522,10 +2524,16 @@ export class VelaWorkspace {
      *  renderer actually applied. */
     private onCellPriceStyleChanged(id: string): void {
         this.markStateDirty();
+        this.projectCellPriceStyle(id);
+    }
+
+    /** The topbar style button/menu from the cell, if active: the style it draws and the
+     *  styles its symbol's data cannot draw (greyed). */
+    private projectCellPriceStyle(id: string): void {
         if (id !== this.activeId) return;
         const cell = this.cellsById.get(id);
         if (!cell) return;
-        this.topbar.setPriceStyle(cell.priceStyle);
+        this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
     }
 
     /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */
@@ -2666,7 +2674,11 @@ export class VelaWorkspace {
                 : {}),
             canUndo: () => this.active.history.canUndo,
             canRedo: () => this.active.history.canRedo,
-            priceStyles: () => priceStyleIds().map((id) => ({ id, label: priceStyleLabel(id, this.localeState), icon: priceStyleIcon(id) })),
+            priceStyles: () => {
+                const unavailable = new Set(this.active.unavailablePriceStyles());
+                const why = textOf(this.localeState, PRICE_STYLE_UNAVAILABLE);
+                return priceStyleIds().map((id) => ({ id, label: priceStyleLabel(id, this.localeState), icon: priceStyleIcon(id), ...(unavailable.has(id) ? { unavailable: true, title: why } : {}) }));
+            },
             priceStyle: () => this.active.priceStyle,
             onPriceStyle: (id) => this.active.setPriceStyle(id),
             panels: () => (has('panels') ? [...this.dock.list()] : []),

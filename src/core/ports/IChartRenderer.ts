@@ -9,6 +9,7 @@ import type { Unsubscribe } from '../util/types';
 import type { WallClock } from '../util/wall-clock';
 import type { IDrawingsRendererPort } from '../drawings/port';
 import type { MarkClickEvent, MarkGroup, TimelineMark } from '../marks/types';
+import type { SymbolFacts } from './MarketDataFeed';
 import type { MessageLike, TextDirection, Translator } from '../i18n/types';
 
 /** The language and direction attributes of a renderer's root element (`null` = unset). */
@@ -280,6 +281,16 @@ export interface IChartRenderer {
     setPricePrecision?(mintick: number | undefined): void;
 
     /**
+     * Set the facts about the active symbol that decide which price styles can draw it
+     * (`SymbolFacts`, derived from `SymbolInfo`): passed when they land and again on every
+     * symbol change, `null` while unknown. A renderer draws a style the facts rule out
+     * (candles for `ohlc: false`) with a close-based fallback instead, keeping the chosen
+     * style as its `priceStyle`, and greys such styles in its own pickers. Optional — a
+     * renderer without it draws whatever style is set.
+     */
+    setSymbolFacts?(facts: SymbolFacts | null): void;
+
+    /**
      * Push a bespoke NATIVE-LAYER render payload, keyed by layer `type`. Visuals that aren't
      * ordinary series/fills draw through a dedicated renderer layer instead of the model; this is
      * the channel. Producers are native indicators (`'volume'`, `'vpvr'` — layer config) and core
@@ -414,8 +425,9 @@ export interface IChartRenderer {
     setIndicatorVisible?(handle: IndicatorRenderHandle, visible: boolean): void;
 
     /**
-     * The renderer tells core when the base price style changes — from ANY source (the
-     * `priceStyle` feature, the in-chart settings dialog, an applied config template).
+     * The renderer tells core when the base price style it DRAWS changes — from ANY source
+     * (the `priceStyle` feature, the in-chart settings dialog, an applied config template,
+     * symbol facts that rule the chosen style out: see {@link setSymbolFacts}).
      * Display state stays renderer-owned; the core listens because some styles carry a
      * DATA requirement (a plugin style may need its data engine running). Optional —
      * a renderer without runtime style switching omits it.

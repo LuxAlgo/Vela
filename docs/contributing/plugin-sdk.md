@@ -59,6 +59,17 @@ Two more levers for full-replacement types:
 - `basePainting: 'none'` suppresses the base candle painting while the style is active —
   for types whose renderer layer fully replaces the price representation (an order-flow
   grid, bricks…). Default `'candles'` keeps candles under your layer.
+- `supports(facts)` says whether the type can draw a symbol, from the facts its data
+  source states about it (`SymbolFacts`: `ohlc: false` for one value per bar,
+  `volume: false` for no volume). Return `false` and the style menus grey the type out
+  for that symbol, and a chart set to it draws a line instead, keeping your type as its
+  chosen style: it comes back on the next symbol you support. It is only called once the
+  facts are known (every type applies while they are not); absent, the type applies to
+  every symbol. Keep it pure and cheap. A type built from volume:
+  `supports: (facts) => facts.volume !== false`. The built-in candles, bars and Heikin
+  Ashi follow the same rule with `facts.ohlc !== false`; `priceStyleApplies(id, facts)`
+  answers it for any style id, built-in or registered, and `shownPriceStyle(id, facts,
+  ids)` names the style a chart draws in its place (for a custom renderer).
 - `chart.data.providerInstance(name)` returns the registered provider **instance** — the
   seam for extended provider surfaces: a provider may implement interfaces beyond the
   `DataProvider` port; your data engine retrieves the instance and narrows it with its
@@ -990,7 +1001,8 @@ registerLocale(acmeDe);
 ## Widget integration
 
 - A registered chart type appears in the **style dropdown** automatically
-  (`priceStyleIds()` = built-ins ∪ registry; labels from `label`).
+  (`priceStyleIds()` = built-ins ∪ registry; labels from `label`), greyed on a symbol its
+  `supports` rules out.
 - Keyboard bindings: `widget.keymap.register({ id, keys: 'mod+shift+k', label,
   category, scope?, run })` — they show up in the `?` shortcuts panel. `'mod'` is ⌘ on
   macOS, Ctrl elsewhere. Scopes: bindings fire when their scope is the top of the
