@@ -16,6 +16,14 @@ All notable changes to Vela, newest first.
   workspace, a chart on such a symbol switches to the timeframe the source suggests and says
   so. The timeframe you picked stays yours: it is the one saved with the layout and shared
   with linked charts, and it comes back on the next symbol that serves it.
+- **Data providers can describe what each symbol offers.** `getSymbolInfo` now has typed,
+  documented fields for a symbol's data: the timeframes the source serves for it (the finest
+  one and its natural one, or an exact list), whether it has volume (`volume: false` when it
+  has none), and the market's time zone and trading hours. A chart opened on a symbol without
+  volume, such as a macro-economic series, no longer adds the volume indicator on its own; a
+  volume indicator you added or saved stays. Hosts that save a chart's indicators themselves
+  can read `chart.pendingNativeIndicators()` beside `presentNativeIndicators()`, so a save made
+  while that choice is still loading keeps the volume indicator.
 
 ### Fixed
 

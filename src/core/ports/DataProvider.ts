@@ -64,7 +64,11 @@ export interface ProviderInfo {
     displayName?: string;
     /** Whether the provider needs `configure()` before use. */
     requiresApiKey?: boolean;
-    /** Timeframes the provider serves (canonical strings); informational. */
+    /**
+     * Timeframes the provider serves, in the uppercase canonical form of
+     * `SymbolInfo.timeframes` (`'1D'`/`'D'`, `'W'`, `'1M'`/`'M'`, bare minutes such as
+     * `'60'`; never lowercase). Informational; a symbol's own `timeframes` overrides it.
+     */
     supportedTimeframes?: readonly string[];
     capabilities: ProviderCapabilities;
 }
@@ -119,7 +123,11 @@ export interface DataProvider {
      */
     listSymbols?(): Promise<SymbolDescriptor[]>;
 
-    /** Per-symbol metadata for engine `syminfo.*`. Absent ⇒ the engine synthesizes a fallback. */
+    /**
+     * Per-symbol facts ({@link SymbolInfo}): the chart reads the typed ones (time zone,
+     * sessions, timeframes, volume), engines receive the whole record as `syminfo.*`.
+     * Absent ⇒ the engine synthesizes a fallback and the chart assumes the usual behavior.
+     */
     getSymbolInfo?(ticker: string): Promise<SymbolInfo | undefined>;
 
     /**

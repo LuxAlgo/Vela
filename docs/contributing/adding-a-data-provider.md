@@ -24,11 +24,17 @@ One method is **required**; the rest are **progressive** — present them when y
 #### Optional
 
 - **`listSymbols()`** — enumerate the symbols you serve, as `{ ticker, description?, type?, prefix? }[]`. This builds the **eager index** at registration that lets a **bare** symbol (no `provider:` prefix) resolve to you, and powers autocomplete. Without it, your provider is reachable **only** by an explicit `name:SYMBOL` prefix. Declare `prefix` when the symbol's **listing venue** is its identity (`NASDAQ` for AAPL, `NYSE` for IBM — a property of the symbol, not of your provider): it is what `NASDAQ:AAPL` strings resolve against and what every label displays. Leave it out where the provider *is* the identity (crypto, fx). **Grouped listings** (futures roots): emit one **group row** per root — `group` repeated in `ticker` (`{ ticker: 'ES', group: 'ES', … }`) — then its members carrying the same `group` with their own tickers, in deliberate order, one marked `default: true`. The picker folds members under the group row (a chevron unfolds them) and a group pick — clicked, or typed as `ES` / `CME:ES` — loads the `default` member (none or several marked ⇒ the **first listed**). The group row itself is listed, never loadable. Declare `market` when sibling markets of one source differ in session shape (futures product classes): consumers resolving per-market vocabulary key on it.
-- **`getSymbolInfo(ticker)`** — per-symbol metadata an engine may read (Pine `syminfo.*`). Absent ⇒ the engine synthesizes a fallback.
+- **`getSymbolInfo(ticker)`** — facts about one symbol. Engines receive the whole record (Pine `syminfo.*`), and the chart reads a few typed keys from it, each optional (absent means the usual behavior):
+  - `timezone` — the market's IANA zone (`'America/New_York'`; default `'Etc/UTC'`). The session hours are written in it, and the exchange display time zone follows it.
+  - `session` — the regular hours as `HHMM-HHMM` (`'0930-1600'`), or `'24x7'` for a continuous market. `session_extended` gives the whole extended tape (`'0400-2000'`, or `'1700-1600'` for a trading day that runs from evening to evening). These drive the regular/extended toggle, the session shading and, with `getCalendar`, the market-status badge.
+  - `timeframes` — `{ finest, default?, list? }`: the finest timeframe you serve for this symbol (every coarser one too, unless `list` gives the exhaustive set), and the source's own frequency, the natural timeframe to show the symbol in. Write timeframes in the uppercase canonical form: `'1D'` (or `'D'`), `'W'`, `'1M'` (or `'M'`), `'3M'`, `'12M'`, bare minutes like `'60'`. Never lowercase: `'1m'` is one minute, not one month. It overrides `info().supportedTimeframes` for this symbol.
+  - `volume` — `false` when your source has no volume for this symbol (a macro-economic series, for example). The chart then adds no volume indicator on its own; one the user adds or saved stays.
+
+  Absent ⇒ the engine synthesizes a fallback and the chart assumes the usual behavior.
 - **`resolveSymbolIcon(descriptor)`** — the icon URL for one of your symbols; the provider owns the knowledge of where its asset class's icons live (the bundled crypto providers predefine the Ledger crypto-icon CDN). Called lazily per RENDERED row — cheap and synchronous. Return `undefined` for "no icon" (the shells show a colored-initials badge; a URL that 404s degrades the same way). Serve CORS-clean images (`Access-Control-Allow-Origin`) or drawing them taints the canvas and breaks the PNG export.
 - **`getCalendar(ticker, range)`** — the RESOLVED market calendar over `[from, to)`: ascending epoch-ms `[start, end)` pairs of open market time, **holidays and DST already applied by your source**. `range.session` selects the window set (`'regular'` default, `'extended'` = the full tape). This is the single market-time truth: the widget's market-status badge (open / pre / post / closed / holiday) and session-anchored consumers read these windows and never recompute a holiday themselves. Absent ⇒ no calendar (the right answer for continuous markets — crypto, most fx): the badge stays "Market Open" and consumers fall back to their own anchoring.
 - **`subscribe(ticker, timeframe, onBar)`** — open a true live candle stream and return an unsubscribe fn. Absent ⇒ the feed **polls `getBars`** for live ticks instead.
-- **`info()`** — provider metadata (display name, supported timeframes, capabilities). Absent ⇒ the registry synthesizes one from the methods you implement.
+- **`info()`** — provider metadata (display name, supported timeframes, capabilities). `supportedTimeframes` uses the same uppercase canonical form as `timeframes` above, which overrides it per symbol. Absent ⇒ the registry synthesizes one from the methods you implement.
 - **`configure(config)`** — apply runtime config (e.g. API keys).
 
 A provider that implements only `getBars` is complete and correct — reachable via an explicit `name:SYMBOL` prefix. Add `listSymbols` to make bare symbols resolve to it.
@@ -97,9 +103,9 @@ const myProvider = {
     return (await fetchSymbols()).map((s) => ({ ticker: s.id, description: s.name }));
   },
 
-  // optional — real syminfo; absence ⇒ engine synthesizes
+  // optional — facts about the symbol + real syminfo; absence ⇒ engine synthesizes
   async getSymbolInfo(ticker) {
-    return { ticker /* + provider-specific fields */ };
+    return { ticker, timezone: 'America/New_York', session: '0930-1600' /* + engine fields */ };
   },
 };
 
@@ -136,7 +142,7 @@ A feed injected this way is used as-is: `chart.data.registerProvider(...)` becom
 - Newest bar treated as the forming candle; roll forward by emitting a larger open-time (no separate close event).
 - Ranged `getBars` tolerates an overlapping `from` and honors "`to` omitted = now"; no timeframe aggregation across requests unless your venue needs it internally.
 - A timeframe the venue never serves for a symbol throws a `DataUnavailableError` with `finest` (and `default` when you have one), not an empty list.
-- (Optional) `listSymbols` so bare symbols resolve to you; `getSymbolInfo` for real syminfo; `subscribe` for a true candle stream (else polling is used); `getCalendar` for resolved market-time windows on venues with trading sessions.
+- (Optional) `listSymbols` so bare symbols resolve to you; `getSymbolInfo` for real syminfo and the symbol's facts (time zone, sessions, timeframes, volume); `subscribe` for a true candle stream (else polling is used); `getCalendar` for resolved market-time windows on venues with trading sessions.
 - Registered via `chart.data.registerProvider(name, provider)`.
 
 ## See also

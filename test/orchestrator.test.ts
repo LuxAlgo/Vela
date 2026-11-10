@@ -24,6 +24,7 @@ import type {
 import type { MarketDataFeed, BarRange } from '../src/core/ports/MarketDataFeed';
 import type { StrategyState } from '../src/core/model/strategy';
 import { MultiProviderFeed } from '../src/data/MultiProviderFeed';
+import { BarStore } from '../src/data/BarStore';
 import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from '../src/core/ports/DataProvider';
 import type { OHLCV } from '../src/core/model/ohlcv';
 import { registerNativeIndicator, unregisterNativeIndicator } from '../src/core/native-indicators/NativeIndicator';
@@ -2083,6 +2084,96 @@ describe('EngineOrchestrator — built-in volume native indicators', () => {
         await flush();
         expect(renderer.removed).toContain(native.id);
         expect(chart.inspect().indicators.some((s) => s.nativeType === 'volume')).toBe(false);
+    });
+});
+
+describe('EngineOrchestrator — the volume auto-add follows the symbol facts', () => {
+    /**
+     * One provider: `MACRO` is stated to carry no volume, `BTCUSDT` states nothing about it.
+     * By default the bars wait a macrotask, so the facts are known when the first candles
+     * paint; `holdFacts` keeps the facts in flight until released, so the candles win.
+     */
+    function factsFeed(opts: { holdFacts?: boolean } = {}): { feed: MultiProviderFeed; releaseFacts: () => void; factCalls: () => number } {
+        let release: () => void = () => {};
+        const gate = opts.holdFacts ? new Promise<void>((r) => (release = r)) : Promise.resolve();
+        let factCalls = 0;
+        const provider: DataProvider = {
+            getBars: async () => {
+                if (!opts.holdFacts) await new Promise((r) => setTimeout(r, 0));
+                return makeBars(50);
+            },
+            listSymbols: () => Promise.resolve([{ ticker: 'MACRO' }, { ticker: 'BTCUSDT' }]),
+            getSymbolInfo: async (ticker) => {
+                factCalls += 1;
+                await gate;
+                return ticker === 'MACRO' ? { ticker, volume: false, timeframes: { finest: '1M', default: '1M' } } : { ticker };
+            },
+        };
+        const feed = new MultiProviderFeed(new BarStore());
+        void feed.registerProvider('lux', provider);
+        return { feed, releaseFacts: () => release(), factCalls: () => factCalls };
+    }
+
+    async function chartOn(symbol: string, feed: MultiProviderFeed): Promise<{ chart: Vela; renderer: FakeRenderer }> {
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { symbol, live: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        await flush();
+        return { chart, renderer };
+    }
+
+    const hasVolume = (chart: Vela): boolean => chart.presentNativeIndicators().includes('volume');
+
+    it('adds no volume indicator for a symbol whose source has no volume; adding one by hand still works', async () => {
+        const { feed } = factsFeed();
+        const { chart, renderer } = await chartOn('LUX:MACRO', feed);
+        expect(renderer.setBarsCalls.some((c) => c.n > 0)).toBe(true);
+        expect(hasVolume(chart)).toBe(false);
+        expect(renderer.volumePushes).toHaveLength(0);
+        expect(chart.pendingNativeIndicators()).toEqual([]);
+
+        chart.addNativeIndicator('volume');
+        await flush();
+        expect(hasVolume(chart)).toBe(true);
+        chart.destroy();
+    });
+
+    it('still adds it for a symbol whose facts say nothing about volume', async () => {
+        const { feed } = factsFeed();
+        const { chart } = await chartOn('LUX:BTCUSDT', feed);
+        expect(hasVolume(chart)).toBe(true);
+        chart.destroy();
+    });
+
+    it('facts that land after the first candles decide the add without holding the paint', async () => {
+        for (const [symbol, expected] of [['LUX:BTCUSDT', true], ['LUX:MACRO', false]] as const) {
+            const { feed, releaseFacts, factCalls } = factsFeed({ holdFacts: true });
+            const { chart, renderer } = await chartOn(symbol, feed);
+            // The candles are painted while the facts are still in flight; the add is owed.
+            expect(renderer.setBarsCalls.some((c) => c.n > 0)).toBe(true);
+            expect(hasVolume(chart)).toBe(false);
+            expect(chart.pendingNativeIndicators()).toEqual(['volume']);
+
+            releaseFacts();
+            await flush();
+            expect(hasVolume(chart)).toBe(expected);
+            expect(chart.pendingNativeIndicators()).toEqual([]);
+            expect(factCalls()).toBe(1); // the add rode the load's own request
+            chart.destroy();
+        }
+    });
+
+    it('a switch to another symbol while the facts are in flight drops the add', async () => {
+        const { feed, releaseFacts } = factsFeed({ holdFacts: true });
+        const { chart } = await chartOn('LUX:BTCUSDT', feed);
+        expect(chart.pendingNativeIndicators()).toEqual(['volume']);
+
+        void chart.setMarket({ symbol: 'LUX:MACRO' });
+        expect(chart.pendingNativeIndicators()).toEqual([]); // the owed add belonged to the first market
+        releaseFacts();
+        await flush();
+        expect(hasVolume(chart)).toBe(false);
+        chart.destroy();
     });
 });
 

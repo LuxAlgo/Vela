@@ -223,6 +223,17 @@ export class Vela {
         return this.orchestrator.presentNativeIndicators();
     }
 
+    /**
+     * The native-indicator types the chart is about to add on its own and has not yet: the
+     * volume indicator while the first market's symbol facts, which decide it, are still in
+     * flight after the first candles (a source can state that a symbol has no volume). Empty
+     * otherwise. Persistence snapshots report these beside {@link presentNativeIndicators},
+     * so a save in that moment is not read back as the user removing the indicator.
+     */
+    pendingNativeIndicators(): string[] {
+        return this.orchestrator.pendingNativeIndicators();
+    }
+
     /** Live handles of every indicator currently on the chart (script + native) — drive
      *  host panels (object trees, indicator lists) with per-id visibility/removal. */
     indicators(): IndicatorHandle[] {
