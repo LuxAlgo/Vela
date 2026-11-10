@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [0.10.5]
 
 ### Added
 
@@ -54,8 +54,18 @@ All notable changes to Vela, newest first.
   `symbol:facts` event, and test a style with `priceStyleApplies`. In the workspace,
   `cell.priceStyle` is the drawn style and `cell.requestedPriceStyle` the chosen one.
 
+### Changed
+
+- **Vela requires `@luxalgo/vela-ui` 0.4.1.** The kit adds the icons of the new chart
+  styles and lets a menu row or a select option say why it is unavailable, which the
+  chart style pickers use.
+
 ### Fixed
 
+- **Inline date-time and session inputs show at full width.** In an indicator's settings
+  dialog, a date-and-time or session input placed on the same line as another input (such as
+  an enable checkbox) was squeezed into a narrow column that cut off the date and time text.
+  It now keeps the same full width as a standalone date-and-time or session row.
 - **Month and second timeframes are measured correctly.** A timeframe written with a month
   count (`1M`, `3M`, `12M`) was measured as that many minutes in places, and a seconds
   timeframe (`30S`) as one hour. Scripts that ask for monthly or quarterly data now load it

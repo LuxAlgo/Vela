@@ -388,7 +388,7 @@ export class IndicatorInputsDialog {
                     id: idOf(d),
                     control: this.buildControl(row, d, idOf(d)),
                     toggleFirst: d.type === 'bool',
-                    fit: d.type === 'color' || d.type === 'bool',
+                    fit: isFitControl(d.type),
                 })),
                 info: [...decls].reverse().find((d) => d.tooltip)?.tooltip
                     ? this.infoButton(this.tooltipOf([...decls].reverse().find((d) => d.tooltip)!))
@@ -425,7 +425,7 @@ export class IndicatorInputsDialog {
             }));
         }
 
-        const fit = lead.type === 'color' || lead.type === 'session' || lead.type === 'time';
+        const fit = isFitControl(lead.type);
         return append(fieldRow({
             label: nameOf(lead, this.i18n),
             id,
@@ -541,7 +541,7 @@ export class IndicatorInputsDialog {
     private buildSession(id: string, current: string, emit: (v: InputValue) => void): HTMLElement {
         const [start, end] = sessionToTimes(current);
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        wrap.style.cssText = 'display:flex;align-items:center;gap:6px;flex:none;';
         let from = start;
         let to = end;
         const commit = (): void => emit(timesToSession(from, to));
@@ -556,7 +556,7 @@ export class IndicatorInputsDialog {
     private buildTime(id: string, current: number, emit: (v: InputValue) => void): HTMLElement {
         const parts = timeParts(current);
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        wrap.style.cssText = 'display:flex;align-items:center;gap:6px;flex:none;';
         let date = parts.date;
         let time = parts.time;
         const commit = (): void => {
@@ -574,7 +574,7 @@ export class IndicatorInputsDialog {
     private timeCombobox(id: string, current: string, width: number, onChange: (v: string) => void): HTMLElement {
         const wrap = document.createElement('div');
         wrap.className = 'vela-ind-combo';
-        wrap.style.cssText = `position:relative;width:${width}px;`;
+        wrap.style.cssText = `position:relative;width:${width}px;flex:none;`;
         const input = document.createElement('input');
         input.type = 'text';
         input.id = id;
@@ -635,7 +635,7 @@ export class IndicatorInputsDialog {
     private dateField(id: string, current: string, onChange: (v: string) => void): HTMLElement {
         const wrap = document.createElement('div');
         wrap.className = 'vela-ind-combo';
-        wrap.style.cssText = 'position:relative;width:128px;';
+        wrap.style.cssText = 'position:relative;width:128px;flex:none;';
         const input = document.createElement('input');
         input.type = 'text';
         input.id = id;
@@ -769,6 +769,11 @@ export class IndicatorInputsDialog {
     private dialogButton(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
         return createButton({ text: label, variant: primary ? 'default' : 'outline', onClick }).el;
     }
+}
+
+/** Controls that size themselves (swatches, toggles, multi-field pickers) instead of sitting in the 100px column. */
+function isFitControl(type: InputSchema['type']): boolean {
+    return type === 'color' || type === 'bool' || type === 'session' || type === 'time';
 }
 
 /**
