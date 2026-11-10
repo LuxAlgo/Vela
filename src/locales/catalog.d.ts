@@ -64,6 +64,7 @@ export interface VelaCoreMessageCatalog {
     'chart.priceStyle.candles': string;
     'chart.priceStyle.heikinashi': string;
     'chart.priceStyle.line': string;
+    'chart.priceStyle.unavailable': string;
     'chart.scrollToLatest.label': string;
     'chart.scrollToLatest.title': string;
     'chart.settings.addInstance': string;

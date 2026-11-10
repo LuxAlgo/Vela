@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "K线",
     "chart.priceStyle.heikinashi": "平均K线",
     "chart.priceStyle.line": "折线",
+    "chart.priceStyle.unavailable": "不适用于此代码的数据",
     "chart.scrollToLatest.label": "滚动到最新K线",
     "chart.scrollToLatest.title": "滚动到最新K线（Alt+Shift+→）",
     "chart.settings.addInstance": "添加 {name}",

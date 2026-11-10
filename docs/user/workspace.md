@@ -167,6 +167,23 @@ asked for stays the cell's own:
 A source that suggests no other timeframe gets an error toast, and the chart keeps the
 timeframe as set. The cell never chains switches: a refused fallback is only reported.
 
+### A style the symbol's data cannot draw
+
+A symbol whose source has one value per bar (`SymbolInfo.ohlc: false`, an economic series;
+see [Adding a data provider](../contributing/adding-a-data-provider.md)) has nothing to show in
+candles, bars or Heikin Ashi, nor in a plugin chart type whose `supports` rules it out. On such
+a symbol the cell draws a line instead, and the style menus (the topbar, the mobile drawer, the
+chart settings dialog) show those styles greyed out, with a tooltip saying why. The style the
+user chose stays the cell's own:
+
+- `cell.requestedPriceStyle` reads it, and the saved state keeps it.
+- The next symbol that can draw it shows it again.
+- `cell.priceStyle`, the topbar and the status line show the style the chart draws;
+  `cell.unavailablePriceStyles()` lists the greyed ids.
+- Picking a style by hand on such a symbol (a line, an area…) makes it the cell's style.
+
+Nothing is greyed while the symbol's facts are still loading, or when its source states none.
+
 ## Sync links
 
 Per kind — `viewport`, `symbol`, `timeframe`, `crosshair`, `drawings`, `style` — link

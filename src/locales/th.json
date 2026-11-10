@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "แท่งเทียน",
     "chart.priceStyle.heikinashi": "Heikin Ashi",
     "chart.priceStyle.line": "เส้น",
+    "chart.priceStyle.unavailable": "ใช้ไม่ได้กับข้อมูลของสัญลักษณ์นี้",
     "chart.scrollToLatest.label": "เลื่อนไปยังแท่งล่าสุด",
     "chart.scrollToLatest.title": "เลื่อนไปยังแท่งล่าสุด (Alt+Shift+→)",
     "chart.settings.addInstance": "เพิ่ม {name}",

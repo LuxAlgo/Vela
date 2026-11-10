@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "Candlestick",
     "chart.priceStyle.heikinashi": "Heikin Ashi",
     "chart.priceStyle.line": "Garis",
+    "chart.priceStyle.unavailable": "Tidak tersedia untuk data simbol ini",
     "chart.scrollToLatest.label": "Gulir ke bar terbaru",
     "chart.scrollToLatest.title": "Gulir ke bar terbaru (Alt+Shift+→)",
     "chart.settings.addInstance": "Tambah {name}",

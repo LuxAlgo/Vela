@@ -72,8 +72,10 @@ To find a component, its props, parts and an example, search
    subtree, or `destroy()` on the handles. A destroyed dialog, drawer or popover releases its
    content.
 5. **Menus take rows as data:** `items: [{ id, label, icon?, hint?, checked?, toggle?, disabled?,
-   separatorBefore?, submenu? }]` and `onSelect(id)`. `checkmarks: true` shows checked rows
-   with a leading check; `iconBadges: true` puts icons in tiles.
+   title?, separatorBefore?, submenu? }]` and `onSelect(id)`; `title` is the row's tooltip (why
+   a disabled row is unavailable). A select's options take `disabled` and `title` the same way.
+   `checkmarks: true` shows checked rows with a leading check; `iconBadges: true` puts icons in
+   tiles.
 6. **Icons are ids from the registry** (`icon: 'kebab'`). Add your own with
    `registerIcon(id, svg)` from `@luxalgo/vela-ui/icons`, drawn with `currentColor`.
 7. **Restyle through the theme or the parts' `data-slot` attributes, never class names.**

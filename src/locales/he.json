@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "נרות",
     "chart.priceStyle.heikinashi": "הייקין אשי",
     "chart.priceStyle.line": "קו",
+    "chart.priceStyle.unavailable": "לא זמין עבור הנתונים של סמל זה",
     "chart.scrollToLatest.label": "גלילה לנר האחרון",
     "chart.scrollToLatest.title": "גלילה לנר האחרון (Alt+Shift+→)",
     "chart.settings.addInstance": "הוספת {name}",

@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "K線",
     "chart.priceStyle.heikinashi": "平均K線",
     "chart.priceStyle.line": "折線",
+    "chart.priceStyle.unavailable": "不適用於此代碼的資料",
     "chart.scrollToLatest.label": "捲動至最新K棒",
     "chart.scrollToLatest.title": "捲動至最新K棒（Alt+Shift+→）",
     "chart.settings.addInstance": "新增 {name}",

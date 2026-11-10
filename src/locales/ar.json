@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "الشموع",
     "chart.priceStyle.heikinashi": "هايكن آشي",
     "chart.priceStyle.line": "خطي",
+    "chart.priceStyle.unavailable": "غير متاح لبيانات هذا الرمز",
     "chart.scrollToLatest.label": "التمرير إلى أحدث شمعة",
     "chart.scrollToLatest.title": "التمرير إلى أحدث شمعة (Alt+Shift+→)",
     "chart.settings.addInstance": "إضافة {name}",

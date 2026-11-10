@@ -86,7 +86,7 @@ Because registration is explicit and the symbol index builds asynchronously, the
 | `displayPrefix(symbol)` | `string \| null` | The venue label to display: the descriptor's **listing prefix** when declared (`NASDAQ` for AAPL), else the resolved provider name. Null while unresolvable. |
 | `canonicalSymbol(symbol)` | `string \| null` | The canonical `PREFIX:TICKER` form (`edgx:aapl` → `NASDAQ:AAPL`). Null while unresolvable. |
 | `symbols(provider?)` | `SymbolDescriptor[]` | Indexed symbols (for autocomplete) — for one provider, or all. |
-| `symbolInfo(symbol)` | `Promise<SymbolInfo \| undefined>` | The symbol's facts (time zone, sessions, timeframes, volume — see [Adding a data provider](../contributing/adding-a-data-provider.md)) and engine metadata (Pine `syminfo.*`), via the owning provider. Callers asking for the same symbol at once share **one** call to `getSymbolInfo`, and the answer is reused for 10 minutes — a provider needs no cache of its own here. A rejected call is not remembered. |
+| `symbolInfo(symbol)` | `Promise<SymbolInfo \| undefined>` | The symbol's facts (time zone, sessions, timeframes, volume, one value per bar — see [Adding a data provider](../contributing/adding-a-data-provider.md)) and engine metadata (Pine `syminfo.*`), via the owning provider. Callers asking for the same symbol at once share **one** call to `getSymbolInfo`, and the answer is reused for 10 minutes — a provider needs no cache of its own here. A rejected call is not remembered. |
 | `capabilities(symbol)` | `ProviderCapabilities \| null` | The full resolved per-symbol capability record (behavior flags). Null while nothing resolves the symbol yet. |
 | `ready()` | `Promise<void>` | Resolves when every provider's symbol index has settled. |
 

@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "Lilin",
     "chart.priceStyle.heikinashi": "Heikin Ashi",
     "chart.priceStyle.line": "Garisan",
+    "chart.priceStyle.unavailable": "Tidak tersedia untuk data simbol ini",
     "chart.scrollToLatest.label": "Tatal ke bar terkini",
     "chart.scrollToLatest.title": "Tatal ke bar terkini (Alt+Shift+→)",
     "chart.settings.addInstance": "Tambah {name}",

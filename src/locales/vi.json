@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "Nến",
     "chart.priceStyle.heikinashi": "Heikin Ashi",
     "chart.priceStyle.line": "Đường",
+    "chart.priceStyle.unavailable": "Không khả dụng cho dữ liệu của mã này",
     "chart.scrollToLatest.label": "Cuộn đến nến mới nhất",
     "chart.scrollToLatest.title": "Cuộn đến nến mới nhất (Alt+Shift+→)",
     "chart.settings.addInstance": "Thêm {name}",

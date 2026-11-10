@@ -150,15 +150,19 @@ The chart itself reads a few typed facts from `getSymbolInfo`, all optional: `ti
 default `'Etc/UTC'`), `session` (regular hours, `'0930-1600'`; `'24x7'` when continuous),
 `session_extended` (`'0400-2000'`), `timeframes: { finest, default?, list? }` (the finest
 timeframe served, every coarser one too unless `list` is the exhaustive set; `default` is the
-source's own frequency), and `volume: false` for a symbol with no volume data, so the chart adds
-no volume indicator on its own. Write those timeframes in uppercase canonical form (`'1D'`,
+source's own frequency), `volume: false` for a symbol with no volume data, so the chart adds
+no volume indicator on its own, and `ohlc: false` for a symbol with one value per bar at every
+timeframe (open = high = low = close), so the chart draws it as a line whatever style is chosen
+and greys out candles, bars and Heikin Ashi in its style pickers (the chosen style is kept and
+comes back on the next symbol). Write those timeframes in uppercase canonical form (`'1D'`,
 `'W'`, `'1M'`, `'3M'`, `'12M'`, `'60'`): `'1m'` is a minute, not a month.
 
 ```ts
 import type { SymbolInfo } from '@luxalgo/vela';
 
-// What getSymbolInfo returns for a monthly macro-economic series: nothing finer, no volume.
-const facts: SymbolInfo = { ticker: 'CPI', timeframes: { finest: '1M', default: '1M' }, volume: false };
+// What getSymbolInfo returns for a monthly macro-economic series: nothing finer, no volume,
+// one value per bar.
+const facts: SymbolInfo = { ticker: 'CPI', timeframes: { finest: '1M', default: '1M' }, volume: false, ohlc: false };
 ```
 
 ## Check your work

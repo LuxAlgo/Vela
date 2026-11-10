@@ -12,6 +12,9 @@ export const PRICE_STYLE_LABELS: Readonly<Record<string, MessageLike>> = {
     baseline: msg('chart.priceStyle.baseline', 'Baseline'),
 };
 
+/** The tooltip of a style a picker greys out: the symbol's data cannot be drawn in it. */
+export const PRICE_STYLE_UNAVAILABLE: MessageLike = msg('chart.priceStyle.unavailable', "Not available for this symbol's data");
+
 /** A price style's name: the registered type's label, the built-in name, else the raw id. */
 export function priceStyleMessage(id: string): MessageLike {
     return chartType(id)?.label ?? PRICE_STYLE_LABELS[id] ?? id;

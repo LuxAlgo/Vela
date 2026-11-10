@@ -68,6 +68,8 @@ const CSS = css`@layer vela.chrome {
 }
 .vela-md-row:active { background: ${t.hover}; }
 .vela-md-row[data-checked='1'] { background: ${t.hover.strong}; }
+.vela-md-row[data-disabled] { opacity: 0.4; cursor: default; }
+.vela-md-row[data-disabled]:active { background: transparent; }
 .vela-md-row .vela-icon { flex: none; font-size: 17px; width: 17px; height: 17px; color: ${t.fg.muted}; }
 .vela-md-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-md-row-value { flex: none; font-size: 13px; color: ${t.fg.muted}; }
@@ -119,8 +121,9 @@ export interface MoreDrawerOptions {
     onScreenshot?: () => void;
     canUndo: () => boolean;
     canRedo: () => boolean;
-    /** Chart style list + current selection (read live at open). */
-    priceStyles: () => Array<{ id: string; label: string; icon?: string }>;
+    /** Chart style list + current selection (read live at open). An `unavailable` style is
+     *  listed greyed, with `title` as its tooltip, and cannot be picked. */
+    priceStyles: () => Array<{ id: string; label: string; icon?: string; unavailable?: boolean; title?: string }>;
     priceStyle: () => string;
     onPriceStyle: (id: string) => void;
     /** Docked side panels (built-in + contributed), toggled by id. */
@@ -207,9 +210,10 @@ export class MoreDrawer {
         else this.renderAlerts(doc);
     }
 
-    private row(doc: Document, label: string, opts: { icon?: string; glyph?: string; value?: string; chevron?: boolean; checked?: boolean; onClick: () => void }): HTMLElement {
+    private row(doc: Document, label: string, opts: { icon?: string; glyph?: string; value?: string; chevron?: boolean; checked?: boolean; disabled?: boolean; title?: string; onClick: () => void }): HTMLElement {
         const el = doc.createElement('div');
         el.className = 'vela-md-row';
+        if (opts.title) el.title = opts.title;
         if (opts.icon) {
             const icon = iconEl(opts.icon, doc);
             if (opts.glyph) icon.innerHTML = opts.glyph;
@@ -227,6 +231,11 @@ export class MoreDrawer {
         }
         if (opts.checked) el.dataset.checked = '1';
         if (opts.chevron) el.appendChild(iconEl('chevron-right', doc));
+        if (opts.disabled) {
+            el.dataset.disabled = '';
+            el.setAttribute('aria-disabled', 'true');
+            return el;
+        }
         el.addEventListener('click', opts.onClick);
         return el;
     }
@@ -300,6 +309,8 @@ export class MoreDrawer {
                 this.row(doc, style.label, {
                     icon: style.icon,
                     checked: style.id === current,
+                    disabled: style.unavailable,
+                    title: style.title,
                     onClick: () => {
                         this.opts.onPriceStyle(style.id);
                         this.drawer.hide();

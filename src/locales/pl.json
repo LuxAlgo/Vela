@@ -60,6 +60,7 @@
     "chart.priceStyle.candles": "Świece",
     "chart.priceStyle.heikinashi": "Heikin Ashi",
     "chart.priceStyle.line": "Linia",
+    "chart.priceStyle.unavailable": "Niedostępne dla danych tego symbolu",
     "chart.scrollToLatest.label": "Przewiń do najnowszej świecy",
     "chart.scrollToLatest.title": "Przewiń do najnowszej świecy (Alt+Shift+→)",
     "chart.settings.addInstance": "Dodaj {name}",

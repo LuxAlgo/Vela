@@ -11,6 +11,7 @@
 import type { OHLCV } from '../core/model/ohlcv';
 import type { BarTransform } from '../core/price-styles/BarTransform';
 import type { DataControl } from '../core/DataControl';
+import type { SymbolFacts } from '../core/ports/MarketDataFeed';
 import { msg, withValues } from '../core/i18n/message';
 import type { MessageLike } from '../core/i18n/types';
 
@@ -103,6 +104,16 @@ export interface ChartTypeDefinition {
      * indicators and drawings are unaffected.
      */
     basePainting?: 'candles' | 'none';
+    /**
+     * Whether the style can draw a symbol, from the facts its data source states about it
+     * (`SymbolFacts`: `ohlc: false` for one value per bar, `volume: false` for no volume).
+     * Return `false` and the style menus grey the type out for that symbol, and a chart set
+     * to it shows a close-based style (a line) instead, without changing the chosen style:
+     * the type comes back on the next symbol it supports. Only called once the facts are
+     * known; while they are not, every type applies. Absent ⇒ the type applies to every
+     * symbol. Keep it pure and cheap: the chart calls it on every symbol change and menu build.
+     */
+    supports?(facts: Readonly<SymbolFacts>): boolean;
 }
 
 /**
