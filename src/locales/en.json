@@ -102,6 +102,7 @@
     "chart.settings.events": "Events",
     "chart.settings.fillBottomArea": "Fill bottom area",
     "chart.settings.fillTopArea": "Fill top area",
+    "chart.settings.freePan": "Free pan",
     "chart.settings.grid": "Grid",
     "chart.settings.horizontal": "Horizontal",
     "chart.settings.indexedTo100": "Indexed to 100",
