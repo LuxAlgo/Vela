@@ -209,15 +209,24 @@ at completion). Link membership is session-scoped and survives a toggle-off: tur
 the link off freezes create/edit/delete propagation (and clears placement ghosts) but
 keeps the in-memory pairs, so re-enabling resumes edit/delete for drawings that were
 linked earlier in the session. Drawings created while the link was off stay
-independent — re-enabling never copies or pairs them. A reload (or `applyState`)
-drops the pairs, so previously synced drawings are independent again.
+independent — re-enabling never copies them onto peers.
+
+The pairs themselves are not saved. When the link is on after a reload (or
+`applyState`), drawings with identical content (type, pane, anchors, style, text and
+per-type settings) on same-group cells are linked again, so drawings synced in an
+earlier session keep moving, restyling and deleting together, in documents saved by
+any version. Identical duplicates pair one to one, in each cell's drawing order. A
+copy edited while the link was off no longer matches and stays independent. Turning
+the link on applies the same rule to the drawings on screen, on top of the pairs
+already made in the session, so drawings restored while the link was off link once
+it comes on.
 
 Cells a later layout change adds to a linked group arrive with every drawing of the
 active cell (or of another group member when the active cell is outside the group),
 including drawings made while the link was off or on a one-chart layout. The copies
 are linked like any synced drawing and add no undo steps on the new cell. A cell
 returning to the grid refreshes the linked copies it already holds instead of
-duplicating them.
+duplicating them; copies it restored from a saved document link by content first.
 
 `style` mirrors the chart's presentation across same-group cells: the settings
 dialog's **Symbol** tab looks (candle body, border and wick colors, the bar, line,

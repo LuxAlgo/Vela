@@ -61,7 +61,7 @@ import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
 import { PRICE_STYLE_UNAVAILABLE } from '../chart-types/labels';
 import { parseSymbol } from '../data/ProviderRegistry';
-import { syncTargets, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
+import { syncTargets, syncGroups, pairIdenticalDrawings, drawingLinkContent, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type DrawingToolsState, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { localStorageAdapter } from '../widget/persist';
 import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
@@ -463,7 +463,8 @@ export class VelaWorkspace {
      *  cell's drawing id), reachable from every member under its `cellId\0drawingId`
      *  key — any member finds its peers to push edits/removals onto. Survives a
      *  toggle-off (propagation freezes while the setting is off; re-enabling resumes
-     *  edit/delete for these pairs). Cleared on reload / `applyState`. */
+     *  edit/delete for these pairs). Never persisted: a reload or `applyState` rebuilds
+     *  it from content ({@link relinkIdenticalDrawings}). */
     private readonly drawingLinks = new Map<string, Map<string, string>>();
     private manifest: ResolvedIndicator[] = [];
     /** The shared manifest can no longer change instance sets — resolved, or no
@@ -913,6 +914,7 @@ export class VelaWorkspace {
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
+        this.relinkIdenticalDrawings(); // a persisted document's copies link again
         this.syncCellPresentation();
         this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.order[0] ?? null));
         // Shortcuts only fire while focus is INSIDE the workspace (the keymap listens
@@ -1323,7 +1325,7 @@ export class VelaWorkspace {
                 for (const cell of this.cellsById.values()) cell.chart.drawings.setFavorites(this.favs as never[]);
             }
             if (st.drawingTools) this.pushToolDefaults(null);
-            this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
+            this.drawingLinks.clear(); // the document decides what is linked — rebuilt below
             // Restored slots differ legitimately — with the style link on, an unguarded
             // rehydrate would smear each cell's restored config over its peers.
             this.styleSyncBusy = true;
@@ -1335,6 +1337,7 @@ export class VelaWorkspace {
             } finally {
                 this.styleSyncBusy = false;
             }
+            this.relinkIdenticalDrawings();
             // AFTER the cells: each restored rendererConfig carries its own zone and the
             // cell mirror adopts it — the document's shell-level field must have the
             // last word when the two disagree (a host editing just `timezone`).
@@ -1368,7 +1371,7 @@ export class VelaWorkspace {
             this.events.emit('cell:destroyed', { id });
         }
         this.pool.clear();
-        this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
+        this.drawingLinks.clear(); // the document decides what is linked — rebuilt after the cells
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
         this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
         const def = this.monoLayout ? null : ensureLayout(st.layout); // mono: grid stays pinned to '1'
@@ -1377,6 +1380,7 @@ export class VelaWorkspace {
         this.clearMaximized(); // ditto — the rebuilt grid starts unmaximized
         this.applyGrid();
         this.buildCells();
+        this.relinkIdenticalDrawings();
         this.syncCellPresentation();
         this.topbar.setLayout(this.def.id);
         const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.order[0] ?? null);
@@ -2127,8 +2131,10 @@ export class VelaWorkspace {
         if (kind === 'drawings') {
             // Placement ghosts are stale under the new setting. Link pairs stay —
             // turning off freezes propagation; turning on resumes edit/delete for
-            // drawings paired earlier (never copies unpaired ones onto peers).
+            // drawings paired earlier and links identical copies the way a reload
+            // does (never copies unpaired ones onto peers).
             for (const cell of this.cellsById.values()) cell.chart.drawings.setExternalGhost(null);
+            this.relinkIdenticalDrawings();
             // The toggle lives on the shared drawing toolbar; keep it truthful.
             this.drawToolbar?.setDrawingsSyncMode(!!setting);
             this.markStateDirty();
@@ -2215,12 +2221,31 @@ export class VelaWorkspace {
             this.drawingSyncBusy = true;
             try {
                 cell.history.silently(() => {
-                    const held = new Set(drawings.all().map((d) => d.id));
+                    const own = drawings.all();
+                    const held = new Set(own.map((d) => d.id));
+                    // Unlinked drawings this chart already holds, by content: a chart back
+                    // from a document saved in an earlier session carries identical copies
+                    // that only lost their link — adopt those instead of duplicating them.
+                    const unlinked = new Map<string, string[]>();
+                    for (const d of own) {
+                        if (this.drawingLinks.has(`${id}\u0000${d.id}`)) continue;
+                        const content = drawingLinkContent(d);
+                        const queue = unlinked.get(content);
+                        if (queue) queue.push(d.id);
+                        else unlinked.set(content, [d.id]);
+                    }
                     for (const doc of source.chart.drawings.all()) {
                         const group = this.drawingLinks.get(`${sourceId}\u0000${doc.id}`) ?? new Map([[sourceId, doc.id]]);
                         const peerId = group.get(id);
                         if (peerId != null && held.has(peerId)) {
                             drawings.update(peerId, { anchors: doc.anchors, style: doc.style, text: doc.text, props: doc.props });
+                            continue;
+                        }
+                        const match = unlinked.get(drawingLinkContent(doc))?.shift();
+                        if (match != null) {
+                            if (peerId != null) this.drawingLinks.delete(`${id}\u0000${peerId}`);
+                            group.set(id, match);
+                            for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
                             continue;
                         }
                         const copy = drawings.add(doc.type, {
@@ -2239,6 +2264,29 @@ export class VelaWorkspace {
                 });
             } finally {
                 this.drawingSyncBusy = false;
+            }
+        }
+    }
+
+    /**
+     * Rebuild the drawings link from content. Which drawings are linked copies lives only
+     * in memory, so a reload or `applyState` restores every chart's drawings unlinked:
+     * here, drawings with identical content ({@link pairIdenticalDrawings}) on charts of
+     * the same link group become one linked set again, so documents saved by any earlier
+     * session relink without a stored pairing. A copy edited while the link was off no
+     * longer matches and stays independent. Drawings already linked keep their links;
+     * runs whenever the link is established — a restore with it on, and turning it on.
+     */
+    private relinkIdenticalDrawings(): void {
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        for (const group of syncGroups(setting, this.cells().map((c) => c.id))) {
+            const cells = group.map((cellId) => ({
+                cellId,
+                drawings: (this.cellsById.get(cellId)?.chart.drawings.all() ?? []).filter((d) => !this.drawingLinks.has(`${cellId}\u0000${d.id}`)),
+            }));
+            for (const link of pairIdenticalDrawings(cells)) {
+                for (const [cellId, dId] of link) this.drawingLinks.set(`${cellId}\u0000${dId}`, link);
             }
         }
     }
