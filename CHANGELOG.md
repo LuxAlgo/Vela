@@ -6,6 +6,15 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Line with markers, step line and columns.** Three more chart styles suit series with one
+  value per bar, such as economic data. Line with markers draws the line with a dot on each
+  bar, shown once the bars are far enough apart to tell the dots apart. Step line holds each
+  value flat until the next bar, then steps to it. Columns draw a column per bar from the
+  bottom of the chart up to its value, in the up color when the value is at or above the
+  previous bar's and in the down color when it is lower. Pick them from the chart style menu
+  or with `priceStyle: 'linemarkers'`, `'stepline'` or `'columns'`. The first two take the
+  line's color and width from the chart settings; columns have their own up and down colors,
+  which start as the chart's up and down colors at half opacity.
 - **Data sources can refuse a timeframe they never serve.** A provider can now say that a
   series does not exist at a timeframe, such as a monthly economic series asked for hourly
   bars, by throwing a `DataUnavailableError` that names the finest timeframe it serves. The

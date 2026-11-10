@@ -369,11 +369,16 @@ export type NativeBackend = 'auto' | 'canvas2d' | 'webgl2';
  *  A plugin chart type (registered via `vela/plugin`) adds its own id to this union
  *  volume-at-price (plus a right-edge visible-range profile); it needs the
  *  provider+symbol to expose trade data — without it, plain candles render.
+ *  `'linemarkers'` is the close line with a dot on each bar (when bars are spaced
+ *  enough to tell the dots apart), `'stepline'` holds each close flat until the next
+ *  bar, and `'columns'` draws a column per bar from the bottom of the pane up to its
+ *  close, up-colored when the close is at or above the previous close — the styles
+ *  that read best on series with one value per bar.
  *  `'heikinashi'` draws Heikin Ashi candles: a 1:1 display transform of the raw
  *  bars applied at the core's bar seam, so indicators compute on the same
  *  smoothed values the chart shows (raw data stays untouched underneath). */
 /** Built-in styles plus any id registered through the chart-type SDK (`registerChartType`). */
-export type PriceStyle = 'candles' | 'bars' | 'line' | 'area' | 'baseline' | 'heikinashi' | (string & {});
+export type PriceStyle = 'candles' | 'bars' | 'line' | 'linemarkers' | 'stepline' | 'area' | 'baseline' | 'columns' | 'heikinashi' | (string & {});
 
 /** Display options passed to a renderer at construction. */
 export interface RendererDisplayOptions {

@@ -38,6 +38,12 @@ export const BASELINE_FILL_ALPHA = 0.25;
 export const BASELINE_FILL_ALPHA_FAR = 0.05;
 export const BASELINE_LEVEL_DEFAULT = 50;
 
+/**
+ * Columns style default: each column is a large filled area, so its default colors are the
+ * chart's up/down at this opacity. A color set in the columns block is used as given.
+ */
+export const COLUMNS_FILL_ALPHA = 0.5;
+
 export { withAlpha } from '../../../core/color';
 
 // ── live style store (renderer-owned; null color ⇒ inherit theme) ──
@@ -85,6 +91,8 @@ export interface BarsStyle {
     downColor: string | null;
 }
 
+/** The line style's color + width, shared by the line, line-with-markers and step-line
+ *  styles (one line look, three ways of drawing it). */
 export interface LineSeriesStyle {
     /** `null` ⇒ inherit the chart up color. */
     color: string | null;
@@ -119,6 +127,15 @@ export interface BaselineSeriesStyle {
     width: number;
     /** Baseline position as a percent of the visible pane price range (0 = low, 100 = high). */
     baselineLevel: number;
+}
+
+/** Columns style: a column per bar wears the up color when its close is at or above the
+ *  previous bar's close, else the down color. */
+export interface ColumnsSeriesStyle {
+    /** `null` ⇒ the chart up color at {@link COLUMNS_FILL_ALPHA}. */
+    upColor: string | null;
+    /** `null` ⇒ the chart down color at {@link COLUMNS_FILL_ALPHA}. */
+    downColor: string | null;
 }
 
 /** Session-zone shading (the `sessionZones` feature): the washes painted over
@@ -169,6 +186,7 @@ export interface ChartStyle {
     line: LineSeriesStyle;
     area: AreaSeriesStyle;
     baseline: BaselineSeriesStyle;
+    columns: ColumnsSeriesStyle;
     sessions: SessionShadeStyle;
 }
 
@@ -205,6 +223,7 @@ export function defaultChartStyle(): ChartStyle {
             width: 2,
             baselineLevel: BASELINE_LEVEL_DEFAULT,
         },
+        columns: { upColor: null, downColor: null },
         sessions: { premarketColor: PREMARKET_SHADE, postmarketColor: POSTMARKET_SHADE, extendedColor: EXTENDED_SHADE },
     };
 }
@@ -310,7 +329,7 @@ export interface ChartConfig {
         upColor: string;
         downColor: string;
     };
-    /** Line style — its own color + width. */
+    /** Line style — its own color + width (also drawn by the line-with-markers and step-line styles). */
     line: {
         color: string;
         width: number;
@@ -333,10 +352,15 @@ export interface ChartConfig {
         width: number;
         baselineLevel: number;
     };
+    /** Columns style — its own up/down colors. */
+    columns: {
+        upColor: string;
+        downColor: string;
+    };
     series: {
         style: PriceStyle;
         baseline: number | null;
-        /** Spacing multiplier for non-connecting styles (candles/bars/HA/plugin types): scales the
+        /** Spacing multiplier for non-connecting styles (candles/bars/columns/HA/plugin types): scales the
          *  center-to-center pitch (and the crosshair step) without changing body width. 1 = default. */
         spacing: number;
     };
@@ -362,7 +386,7 @@ export interface ChartConfig {
 const LINE_STYLES: readonly LineStyle[] = ['solid', 'dashed', 'dotted'];
 /** The library's own price styles, in picker order — {@link priceStyleIds} appends the
  *  SDK-registered chart types after these, so UIs can group the two families. */
-export const BUILTIN_PRICE_STYLES: readonly PriceStyle[] = ['candles', 'bars', 'line', 'area', 'baseline', 'heikinashi'];
+export const BUILTIN_PRICE_STYLES: readonly PriceStyle[] = ['candles', 'bars', 'line', 'linemarkers', 'stepline', 'area', 'baseline', 'columns', 'heikinashi'];
 
 /** Base price-series painting for a style: built-ins paint themselves; a plugin type
  *  may declare `basePainting: 'none'` to suppress candles under its layer. */
@@ -584,11 +608,25 @@ export function themeColorFollower(prev: CandleColors, next: CandleColors): <C e
     return <C extends string | null>(color: C): C => (color === prev.upColor ? next.upColor : color === prev.downColor ? next.downColor : color) as C;
 }
 
+/** The columns' default colors for a theme's candle colors (see {@link COLUMNS_FILL_ALPHA}). */
+export function columnsDefaultColors(theme: CandleColors): CandleColors {
+    return { upColor: withAlpha(theme.upColor, COLUMNS_FILL_ALPHA), downColor: withAlpha(theme.downColor, COLUMNS_FILL_ALPHA) };
+}
+
+/** {@link themeColorFollower} for the columns block: its defaults are washes of the theme's
+ *  colors, so a wash of `prev`'s becomes the same wash of `next`'s, on top of the plain follow. */
+export function columnsColorFollower(prev: CandleColors, next: CandleColors): <C extends string | null>(color: C) => C {
+    const follow = themeColorFollower(prev, next);
+    const followWash = themeColorFollower(columnsDefaultColors(prev), columnsDefaultColors(next));
+    return <C extends string | null>(color: C): C => followWash(follow(color));
+}
+
 /** `config` with its series colors moved from `prev`'s candle colors to `next`'s (see
  *  {@link themeColorFollower}). */
 export function followThemeColors(config: ChartConfig, prev: CandleColors, next: CandleColors): ChartConfig {
     const follow = themeColorFollower(prev, next);
-    const { candles, bars, line, area } = config;
+    const followColumns = columnsColorFollower(prev, next);
+    const { candles, bars, line, area, columns } = config;
     return {
         ...config,
         candles: {
@@ -603,6 +641,7 @@ export function followThemeColors(config: ChartConfig, prev: CandleColors, next:
         bars: { upColor: follow(bars.upColor), downColor: follow(bars.downColor) },
         line: { ...line, color: follow(line.color) },
         area: { ...area, lineColor: follow(area.lineColor), topColor: follow(area.topColor) },
+        columns: { upColor: followColumns(columns.upColor), downColor: followColumns(columns.downColor) },
     };
 }
 
@@ -695,6 +734,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
     const line = asObject(p.line);
     const area = asObject(p.area);
     const baseline = asObject(p.baseline);
+    const columns = asObject(p.columns);
     const series = asObject(p.series);
     const sessions = asObject(p.sessions);
     const stacking = asObject(p.stacking);
@@ -809,6 +849,10 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             bottomFillColor2: isColor(baseline.bottomFillColor2) ? baseline.bottomFillColor2 : base.baseline.bottomFillColor2,
             width: isNum(baseline.width) ? clampWidth(baseline.width) : base.baseline.width,
             baselineLevel: isNum(baseline.baselineLevel) ? clampLevel(baseline.baselineLevel) : base.baseline.baselineLevel,
+        },
+        columns: {
+            upColor: isColor(columns.upColor) ? columns.upColor : base.columns.upColor,
+            downColor: isColor(columns.downColor) ? columns.downColor : base.columns.downColor,
         },
         series: {
             style: isPriceStyle(series.style) ? series.style : base.series.style,

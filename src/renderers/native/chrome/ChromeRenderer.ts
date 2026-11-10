@@ -6,7 +6,8 @@ import type { LineStyle } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { percentScaleFor } from '../core/SceneGraph';
-import { effectiveCandlePaint } from '../core/chartConfig';
+import { effectiveCandlePaint, withAlpha } from '../core/chartConfig';
+import { columnIsUp } from '../backend/close-styles';
 // Re-exported so existing importers (crosshair) can keep sourcing it from here.
 export { percentScaleFor } from '../core/SceneGraph';
 import { DrawingSceneRenderer, modelDrawingSet, type DrawingSet } from '../../shared/DrawingSceneRenderer';
@@ -481,11 +482,12 @@ function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {
 
 /**
  * The color of the latest price element for the active chart style — matches how the
- * series itself is drawn: candle/bar body up-down, the line/area line color, or the
- * baseline side (above/below the baseline price). Candles resolve through the active
- * style's own candle colors (a candle-based plugin style such as Footprint or TPO keeps
- * its own), exactly as the candle painter does; with bodies hidden the candle reads as
- * its outline, so the outline color is used.
+ * series itself is drawn: candle/bar body up-down, the line/area line color, the
+ * baseline side (above/below the baseline price), or the last column's up-down (worn
+ * opaque: the line and label are thin chrome, not a filled area). Candles resolve
+ * through the active style's own candle colors (a candle-based plugin style such as
+ * Footprint or TPO keeps its own), exactly as the candle painter does; with bodies
+ * hidden the candle reads as its outline, so the outline color is used.
  */
 export function priceElementColor(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, last: OHLCV): string {
     const st = scene.style;
@@ -493,7 +495,13 @@ export function priceElementColor(scene: SceneGraph, coords: CoordinateSystem, t
         case 'bars':
             return last.close >= last.open ? (st.bars.upColor ?? theme.upColor) : (st.bars.downColor ?? theme.downColor);
         case 'line':
+        case 'linemarkers':
+        case 'stepline':
             return st.line.color ?? theme.upColor;
+        case 'columns': {
+            const up = columnIsUp(scene.bars, scene.bars.length - 1);
+            return withAlpha(up ? (st.columns.upColor ?? theme.upColor) : (st.columns.downColor ?? theme.downColor), 1);
+        }
         case 'area':
             return st.area.lineColor ?? theme.upColor;
         case 'baseline': {

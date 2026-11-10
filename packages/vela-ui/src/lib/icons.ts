@@ -71,12 +71,21 @@ registerIcon(
 );
 registerIcon('style-line', S('<path d="M1.5 11.5 5.5 7l3 2.5 5-6"/>'));
 registerIcon(
+    'style-linemarkers',
+    S('<path d="M1.5 11.5 5.5 7l3 2.5 5-6"/><g fill="currentColor" stroke="none"><circle cx="1.5" cy="11.5" r="1.4"/><circle cx="5.5" cy="7" r="1.4"/><circle cx="8.5" cy="9.5" r="1.4"/><circle cx="13.5" cy="3.5" r="1.4"/></g>'),
+);
+registerIcon('style-stepline', S('<path d="M1.5 11.5H5V7.5h3.5V10H12V4h2.5"/>'));
+registerIcon(
     'style-area',
     S('<path d="M1.5 11.5 5.5 7l3 2.5 5-6"/><path d="M1.5 11.5 5.5 7l3 2.5 5-6V13.5h-12z" fill="currentColor" fill-opacity="0.25" stroke="none"/>'),
 );
 registerIcon(
     'style-baseline',
     S('<path d="M1.5 8h13" stroke-dasharray="2 2"/><path d="M2.5 8 5.25 4.5 8 8h-5.5z" fill="currentColor" fill-opacity="0.25" stroke="none"/><path d="M2.5 8 5.25 4.5 8 8"/><path d="M8 8l2.75 3.5L13.5 8h-5.5z" fill="currentColor" fill-opacity="0.25" stroke="none"/><path d="M8 8l2.75 3.5L13.5 8"/>'),
+);
+registerIcon(
+    'style-columns',
+    S('<rect x="2" y="8" width="3" height="5.5" rx="0.6" fill="currentColor" fill-opacity="0.25"/><rect x="6.5" y="4" width="3" height="9.5" rx="0.6" fill="currentColor"/><rect x="11" y="6.5" width="3" height="7" rx="0.6" fill="currentColor" fill-opacity="0.25"/>'),
 );
 registerIcon(
     'style-heikinashi',
