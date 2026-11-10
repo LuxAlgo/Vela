@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} — {message}",
     "workspace.alerts.untitled": "Alarm",
+    "workspace.data.unavailable": "{symbol}, {timeframe} zaman diliminde kullanılamıyor.",
+    "workspace.data.unavailableFallback": "{symbol}, {timeframe} zaman diliminde kullanılamıyor. Bunun yerine {shown} gösteriliyor.",
     "workspace.indicators.builtIn": "Yerleşik",
     "workspace.keys.category.chart": "Grafik",
     "workspace.keys.category.drawings": "Çizimler",

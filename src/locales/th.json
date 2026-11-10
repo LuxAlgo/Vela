@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} — {message}",
     "workspace.alerts.untitled": "การแจ้งเตือน",
+    "workspace.data.unavailable": "{symbol} ไม่มีให้ใช้งานในไทม์เฟรม {timeframe}",
+    "workspace.data.unavailableFallback": "{symbol} ไม่มีให้ใช้งานในไทม์เฟรม {timeframe} กำลังแสดง {shown} แทน",
     "workspace.indicators.builtIn": "ในตัว",
     "workspace.keys.category.chart": "กราฟ",
     "workspace.keys.category.drawings": "การวาด",

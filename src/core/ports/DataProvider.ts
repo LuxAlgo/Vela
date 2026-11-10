@@ -85,6 +85,10 @@ export interface DataProvider {
      * meaning — e.g. Binance `.P` = perpetual). The newest bar is treated as the
      * forming candle. Bars: `{ time (open, epoch ms), open, high, low, close, volume? }`,
      * sorted + de-duplicated by open-time.
+     *
+     * A thrown error is logged and read as an empty answer. To say the series is never
+     * served — a timeframe finer than the series' own — throw a `DataUnavailableError`
+     * instead (`{ reason: 'timeframe', finest, default }`): the chart stops asking for it.
      */
     getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]>;
 

@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} — {message}",
     "workspace.alerts.untitled": "알림",
+    "workspace.data.unavailable": "{symbol}은(는) {timeframe} 타임프레임에서 사용할 수 없습니다.",
+    "workspace.data.unavailableFallback": "{symbol}은(는) {timeframe} 타임프레임에서 사용할 수 없습니다. 대신 {shown}을(를) 표시합니다.",
     "workspace.indicators.builtIn": "기본 제공",
     "workspace.keys.category.chart": "차트",
     "workspace.keys.category.drawings": "그리기",

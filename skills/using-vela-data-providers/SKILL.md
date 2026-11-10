@@ -86,7 +86,7 @@ export const exampleProvider: DataProvider = {
     // A true live stream; without it the chart polls getBars.
     subscribe(ticker, timeframe, onBar) {
         const interval = INTERVAL[timeframe];
-        if (!interval) return () => {};    // nothing to stream (rule 7: poll a timeframe you aggregate)
+        if (!interval) return () => {};    // nothing to stream (rule 8: poll a timeframe you aggregate)
         const ws = new WebSocket(`wss://stream.example.com/${ticker}@${interval}`);
         ws.onmessage = (e) => {
             const k = JSON.parse(String(e.data));
@@ -118,16 +118,24 @@ export const exampleProvider: DataProvider = {
    an empty answer ends the history, which is right for a source with a start date. A thrown
    error is logged and read as an empty answer too, so retry transient failures inside the
    provider before giving up.
-6. **Timeframes: a bare number is minutes** (`'1'`, `'60'`, `'240'`), and **`'D'`, `'W'`, `'M'`
+6. **A timeframe you never serve for a symbol is a refusal, not an empty answer.** A monthly
+   economic series has no hourly bars: throw
+   `new DataUnavailableError({ reason: 'timeframe', finest: '1D', default: '1D' })` (from
+   `@luxalgo/vela`). The chart then stops loading and polling that market and fires
+   `data:unavailable` with your `finest` and `default` as hints; the workspace switches to
+   `default`, else `finest`, and keeps the user's timeframe for symbols that serve it. A
+   script's `request.security` gets the error. Detect it with `isDataUnavailableError(e)`,
+   never `instanceof`.
+7. **Timeframes: a bare number is minutes** (`'1'`, `'60'`, `'240'`), and **`'D'`, `'W'`, `'M'`
    are a day, a week and a MONTH**. Aliases reach you too: `'15m'` and `'1h'` (minutes, hours),
    `'1d'`, `'1w'`. Normalize to one form, then map to your API's codes: never pass Vela's string
    through, since an API's `M` often means minutes. Aggregate a timeframe the source lacks
    inside the provider, in `getBars` and in `subscribe`.
-7. **`subscribe` covers every timeframe once you implement it**: the chart then never polls for
+8. **`subscribe` covers every timeframe once you implement it**: the chart then never polls for
    you. For a timeframe you cannot stream (one you aggregate), poll your own
    `getBars(ticker, timeframe, { limit: 2 })` every few seconds inside `subscribe`, as the
    bundled providers do, and seed a forming aggregate from REST.
-8. **Icons must be CORS-clean** (`Access-Control-Allow-Origin`), or the chart's PNG export
+9. **Icons must be CORS-clean** (`Access-Control-Allow-Origin`), or the chart's PNG export
    breaks.
 
 Other optional methods: `getSymbolInfo(ticker)` returns `{ ticker, ...fields }`, handed to the

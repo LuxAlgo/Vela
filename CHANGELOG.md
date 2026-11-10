@@ -4,6 +4,19 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Data sources can refuse a timeframe they never serve.** A provider can now say that a
+  series does not exist at a timeframe, such as a monthly economic series asked for hourly
+  bars, by throwing a `DataUnavailableError` that names the finest timeframe it serves. The
+  chart then stops loading and polling that market instead of waiting on an empty chart, and
+  fires `data:unavailable` with the provider's suggested timeframes so the page can switch.
+  A script that asks for such a series with `request.security` gets the provider's message
+  instead of empty data. Any other provider error still reads as an empty answer. In the
+  workspace, a chart on such a symbol switches to the timeframe the source suggests and says
+  so. The timeframe you picked stays yours: it is the one saved with the layout and shared
+  with linked charts, and it comes back on the next symbol that serves it.
+
 ### Fixed
 
 - **Month and second timeframes are measured correctly.** A timeframe written with a month

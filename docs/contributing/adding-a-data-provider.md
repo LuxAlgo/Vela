@@ -42,6 +42,34 @@ Every bar you return — from `getBars` or a live `onBar` — follows the same n
 - **Sorted and de-duplicated by open-time**, ascending, no two bars sharing an open-time. Normalize before returning if your source can repeat or reorder.
 - **The newest bar is the forming, in-progress candle.** Its high/low/close move as ticks arrive; it's never cached as closed history. Signal "the bar closed" simply by emitting the next, larger open-time — there is no separate close event.
 
+### Failures: transient or permanent
+
+A `getBars` that throws an ordinary error is read as a **transient** failure: the feed logs a warning and treats the call as an empty answer, and the live poll keeps trying. Retry network blips inside the provider before giving up.
+
+Some series are **never** served at some timeframes: a monthly economic series has no hourly bars, however often the chart asks. Say so with a `DataUnavailableError` instead of returning an empty list:
+
+```ts
+import { DataUnavailableError } from '@luxalgo/vela';
+
+async getBars(ticker, timeframe, range) {
+  if (isFinerThanSeries(ticker, timeframe)) {
+    throw new DataUnavailableError({ reason: 'timeframe', symbol: ticker, timeframe, finest: '1D', default: '1D' });
+  }
+  // …
+}
+```
+
+- `reason` is `'timeframe'` today; the type stays open to further reasons.
+- `finest` is the finest timeframe you serve the symbol at, `default` the one you suggest showing it at. Both are hints in your own timeframe notation (`'1D'`, `'W'`, `'1M'`, `'3M'`, or bare minutes).
+- The default message is built from the fields (`GDP is not served at 60; its finest timeframe is 1D`), because scripting engines show errors by their message. The feed fills in `symbol` and `timeframe` when you leave them out.
+
+What the refusal does depends on who asked:
+
+- **The chart's own series** — the initial load, a market switch, the history backfill or a gap heal. The chart ends its loading state, stops live updates for that market (no poll starts), and fires `data:unavailable` with `{ symbol, timeframe, reason, finest?, default? }`. The core never changes the timeframe the host set: falling back is the host's call. [The workspace](../user/workspace.md#a-timeframe-the-source-never-serves) makes it: it switches to `default`, else `finest`, tells the user, and keeps the user's timeframe for the next symbol.
+- **A secondary series** — a script's `request.security`, read through the engine's `fetchSeries`. The promise rejects with the error, so the engine can report it. The chart's own load, events and timeframe stay untouched.
+
+Neither path caches the refusal: the next request reaches the provider again. Detect the error with `isDataUnavailableError(e)`, which reads the `name` and the fields. Never use `instanceof`: a provider may bundle its own copy of Vela, whose class is a different one.
+
 ### Registering it
 
 ```js
@@ -98,6 +126,8 @@ const chart = new Vela(container, options, {
 });
 ```
 
+Its bar methods report a permanent refusal the same way a provider does: reject with a `DataUnavailableError`, and the chart reacts as described in [Failures: transient or permanent](#failures-transient-or-permanent). Any other rejection from `load` fails the load.
+
 A feed injected this way is used as-is: `chart.data.registerProvider(...)` becomes a no-op + warning (there's no registry to register into), and you own any caching. Use this only when the provider model doesn't fit; for a normal data source, Part 1 is the path.
 
 ## Checklist
@@ -105,6 +135,7 @@ A feed injected this way is used as-is: `chart.data.registerProvider(...)` becom
 - `getBars` implemented; reads ticker/timeframe from arguments, returns open-time-in-ms bars, sorted + de-duplicated.
 - Newest bar treated as the forming candle; roll forward by emitting a larger open-time (no separate close event).
 - Ranged `getBars` tolerates an overlapping `from` and honors "`to` omitted = now"; no timeframe aggregation across requests unless your venue needs it internally.
+- A timeframe the venue never serves for a symbol throws a `DataUnavailableError` with `finest` (and `default` when you have one), not an empty list.
 - (Optional) `listSymbols` so bare symbols resolve to you; `getSymbolInfo` for real syminfo; `subscribe` for a true candle stream (else polling is used); `getCalendar` for resolved market-time windows on venues with trading sessions.
 - Registered via `chart.data.registerProvider(name, provider)`.
 

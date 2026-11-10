@@ -36,6 +36,7 @@ import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
 import { timeframeToMs } from '../../data/timeframe';
 import { parseSymbol } from '../../data/ProviderRegistry';
+import { isDataUnavailableError, type DataUnavailableError } from '../data-unavailable';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
 import { chartType, type SeriesDataEngine } from '../../chart-types/registry';
 import { resolveTheme } from '../theme';
@@ -234,6 +235,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     /** A load is in flight with nothing painted — the state behind the renderer's loading
      *  affordance and the `load:start`/`load:end` event pair (transition-guarded). */
     private loadingUp = false;
+    /** The load generation whose market the source refused for good (`data:unavailable`):
+     *  nothing streams, heals or re-asks until the next load. A new generation clears it. */
+    private unavailableGen = -1;
 
     constructor(
         container: HTMLElement,
@@ -429,6 +433,31 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     }
 
     /**
+     * The source refused THIS chart's market for good. Only the chart's own pipeline lands
+     * here — the initial/switch load, the history backfill and the gap heal, each tagged with
+     * its load generation; the engines' `fetchSeries` gateway never does (its promise rejects
+     * to the script instead). Ends the load like an empty answer would, stops live updates so
+     * nothing keeps polling a series that will never come, and reports once per load. The
+     * timeframe stays as set: falling back is the host's policy, not the core's.
+     */
+    private marketUnavailable(gen: number, e: DataUnavailableError): void {
+        if (this.generation !== gen || this.unavailableGen === gen) return;
+        this.unavailableGen = gen;
+        console.warn(`[vela] ${e.message}`);
+        this.stopLive();
+        this.completeHistory('aborted');
+        this.endLoad();
+        const m = this.config.market;
+        this.events.emit('data:unavailable', {
+            symbol: m.symbol ?? 'TEST',
+            timeframe: m.timeframe ?? '60',
+            reason: e.reason,
+            ...(e.finest !== undefined ? { finest: e.finest } : {}),
+            ...(e.default !== undefined ? { default: e.default } : {}),
+        });
+    }
+
+    /**
      * Enter the loading state: raise the renderer's affordance and tell the plugins
      * (`load:start`) — BEFORE the series is blanked or fetched, so extensions and custom
      * indicators can hide or reset their own visuals first. Transition-guarded: a switch
@@ -471,6 +500,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private async loadMarket(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         try {
             await this.loadMarketInner(gen, opts);
+        } catch (e) {
+            if (!isDataUnavailableError(e)) throw e;
+            this.marketUnavailable(gen, e);
         } finally {
             // The owning load always ends the loading state — this is the belt for the paths
             // that never hand the renderer a non-empty series (a failed fetch, an empty
@@ -546,9 +578,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                         this.completeHistory(full.length >= requested ? 'depth' : 'genesis');
                         signal(true);
                     })
-                    .catch(() => {
+                    .catch((e: unknown) => {
                         if (this.progressiveAbort === abort) this.progressiveAbort = null;
-                        if (this.generation === gen) this.completeHistory('aborted');
+                        if (isDataUnavailableError(e)) this.marketUnavailable(gen, e);
+                        else if (this.generation === gen) this.completeHistory('aborted');
                         signal(true);
                     });
             });
@@ -599,9 +632,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         void this.ensurePriceFormat();
     }
 
-    /** Start the live tick subscription + the tab-restore catch-up listener. */
+    /** Start the live tick subscription + the tab-restore catch-up listener — never for a
+     *  market the source refused (nothing would ever stream). */
     private startLive(): void {
-        if (!this.config.live) return;
+        if (!this.config.live || this.unavailableGen === this.generation) return;
         this.live = new LiveSession(this.feed, this.config.market, (bar) => this.onBar(bar));
         this.live.start();
         // Tab-restore catch-up: browsers throttle hidden tabs (timers → 1/min, sockets can
@@ -1025,6 +1059,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             }
             if (this.generation === gen) this.completeHistory('depth');
         } catch (e) {
+            if (isDataUnavailableError(e)) return this.marketUnavailable(gen, e);
             console.warn(`[vela] history backfill failed — keeping ${this.rawBars.length} bars (${e instanceof Error ? e.message : String(e)})`);
             if (this.generation === gen) this.completeHistory('aborted');
         }
@@ -1794,8 +1829,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             if (this.generation !== gen) return; // market switched / chart destroyed mid-heal — drop the stale bars
             if (this.replayQueue) return; // replay began mid-heal — these bars lie past its cursor
             for (const b of bars) this.applyBar(b, false);
-        } catch {
-            // transient — the buffered ticks still apply; a later discontinuity re-triggers the heal
+        } catch (e) {
+            // Transient — the buffered ticks still apply; a later discontinuity re-triggers the
+            // heal. A permanent refusal ends the market's updates instead.
+            if (isDataUnavailableError(e)) this.marketUnavailable(gen, e);
         } finally {
             // A superseded heal leaves the state alone: setMarket/destroy already reset it,
             // and replaying its buffer would push the OLD market's bars into the new array.

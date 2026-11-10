@@ -120,6 +120,20 @@ export function parseTimeframe(text: string, i18n?: Translator | null): ParsedTi
     };
 }
 
+/**
+ * A data source's timeframe (`'1D'`, `'W'`, `'1M'`, `'3M'`, `'12M'`, `'240'`, `'30S'`) in the
+ * form the chart consumes: `D`, `W` or `M` for one day, week or month — the default presets'
+ * own values — and the canonical bare minutes for any other count (`'3M'` → `'129600'`).
+ * Unit letters read as sources write them, upper-case: `M` is a month. Null when unparsed.
+ */
+export function chartTimeframeOf(value: string | undefined): string | null {
+    if (value === undefined) return null;
+    const parsed = parseTimeframe(value);
+    if (!parsed.valid) return null;
+    if (parsed.count === 1 && (parsed.unit === 'D' || parsed.unit === 'W' || parsed.unit === 'M')) return parsed.unit;
+    return parsed.canonical ?? null;
+}
+
 /** Duration in ms of an existing timeframe value (`1`, `60`, `4h`, `D`, `W`, …), NaN if unknown. */
 export function timeframeMs(value: string): number {
     const v = String(value ?? '').trim();

@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} — {message}",
     "workspace.alerts.untitled": "अलर्ट",
+    "workspace.data.unavailable": "{symbol} {timeframe} टाइमफ्रेम पर उपलब्ध नहीं है।",
+    "workspace.data.unavailableFallback": "{symbol} {timeframe} टाइमफ्रेम पर उपलब्ध नहीं है। इसके बजाय {shown} दिखाया जा रहा है।",
     "workspace.indicators.builtIn": "बिल्ट-इन",
     "workspace.keys.category.chart": "चार्ट",
     "workspace.keys.category.drawings": "ड्रॉइंग",

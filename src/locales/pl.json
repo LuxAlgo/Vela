@@ -2207,6 +2207,8 @@
     "workspace.alerts.row": "{source} · {time} · {title}: {message}",
     "workspace.alerts.toastUntitled": "{source} – {message}",
     "workspace.alerts.untitled": "Alert",
+    "workspace.data.unavailable": "{symbol} nie jest dostępny na interwale {timeframe}.",
+    "workspace.data.unavailableFallback": "{symbol} nie jest dostępny na interwale {timeframe}. Zamiast tego wyświetlany jest {shown}.",
     "workspace.indicators.builtIn": "Wbudowane",
     "workspace.keys.category.chart": "Wykres",
     "workspace.keys.category.drawings": "Rysunki",

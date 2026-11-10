@@ -7,6 +7,7 @@ import type { Unsubscribe } from '../core/util/types';
 import { ProviderRegistry, parseSymbol, type Resolved } from './ProviderRegistry';
 import { CachingDataFeed } from './CachingDataFeed';
 import { BarStore, sharedBarStore } from './BarStore';
+import { DataUnavailableError, dataUnavailableMessage, isDataUnavailableError } from '../core/data-unavailable';
 
 
 /** (Reserved) cadence of a shared secondary-data poll fallback. */
@@ -251,15 +252,29 @@ const SYMBOL_INFO_TTL_MS = 10 * 60_000;
  * Call a provider's getBars defensively: a throwing provider yields an empty result + a
  * warning, never a rejected load. Keeps the initial fetch as fault-tolerant as the live
  * poll (which already swallows transient errors) — a bad symbol or network blip empties
- * the chart instead of rejecting the parked load.
+ * the chart instead of rejecting the parked load. The one exception is a PERMANENT refusal
+ * (a `DataUnavailableError`): it rejects, so the chart can stop asking and a script's
+ * secondary fetch can report it — read as empty, the series would be retried forever.
  */
 async function safeBars(provider: DataProvider, ticker: string, tf: string, range: BarRange): Promise<OHLCV[]> {
     try {
         return await provider.getBars(ticker, tf, range);
     } catch (e) {
+        if (isDataUnavailableError(e)) throw refusalOf(e, ticker, tf);
         console.warn(`[vela] data fetch failed for ${ticker} ${tf} — ${e instanceof Error ? e.message : String(e)}`);
         return [];
     }
+}
+
+/**
+ * A provider's refusal with the refused series filled in where it left them out, so the
+ * message a script ends up showing names what was asked. A message of the provider's own
+ * is kept as written.
+ */
+function refusalOf(e: DataUnavailableError, ticker: string, tf: string): DataUnavailableError {
+    if (e.symbol !== undefined && e.timeframe !== undefined) return e;
+    const details = { reason: e.reason, symbol: e.symbol ?? ticker, timeframe: e.timeframe ?? tf, finest: e.finest, default: e.default };
+    return new DataUnavailableError(details, e.message === dataUnavailableMessage(e) ? undefined : e.message);
 }
 
 /**
@@ -286,7 +301,9 @@ class RegistryFetchFeed implements MarketDataFeed {
             return await provider.getBarsProgressive(ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session }, onBatch, opts);
         } catch (e) {
             // Same fault posture as `safeBars`: a throwing provider empties the chart,
-            // never rejects the load — batches already painted stay painted.
+            // never rejects the load — batches already painted stay painted. A permanent
+            // refusal rejects, as there.
+            if (isDataUnavailableError(e)) throw refusalOf(e, ticker, cfg.timeframe ?? '60');
             console.warn(`[vela] progressive fetch failed for ${ticker} ${cfg.timeframe ?? '60'} — ${e instanceof Error ? e.message : String(e)}`);
             return [];
         }
@@ -320,8 +337,14 @@ class RegistryFetchFeed implements MarketDataFeed {
                 // silently REPLACE the new market's forming candle.
                 if (stopped) return;
                 for (const b of bars) onBar(b);
-            } catch {
-                // transient error — keep polling
+            } catch (e) {
+                // A permanent refusal ends the poll: asking again every few seconds can
+                // only be refused again. Anything else is transient — keep polling.
+                if (isDataUnavailableError(e)) {
+                    console.warn(`[vela] live updates stopped — ${e.message}`);
+                    stopped = true;
+                    return;
+                }
             }
             if (!stopped) timer = setTimeout(() => void poll(), 3000);
         };
