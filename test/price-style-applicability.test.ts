@@ -133,7 +133,7 @@ describe('NativeRenderer — the chosen style and the style it draws', () => {
         r.applyFeature('priceStyle', 'candles');
 
         r.setSymbolFacts({ ohlc: false, volume: false });
-        expect(r.readFeature('shownPriceStyle')).toBe('line');
+        expect(r.readFeature('shownPriceStyle')).toBe('linemarkers');
         expect(r.readFeature('priceStyle')).toBe('candles');
         expect(r.getConfig().series.style).toBe('candles');
 
@@ -141,13 +141,13 @@ describe('NativeRenderer — the chosen style and the style it draws', () => {
         r.applyFeature('priceStyle', 'area');
         expect(r.readFeature('shownPriceStyle')).toBe('area');
         r.applyConfig({ series: { style: 'bars' } });
-        expect(r.readFeature('shownPriceStyle')).toBe('line');
+        expect(r.readFeature('shownPriceStyle')).toBe('linemarkers');
         expect(r.getConfig().series.style).toBe('bars');
 
         // Unknown facts (a switch) draw the chosen style again.
         r.setSymbolFacts(null);
         expect(r.readFeature('shownPriceStyle')).toBe('bars');
-        expect(log).toEqual(['candles>line', 'line>area', 'area>line', 'line>bars']);
+        expect(log).toEqual(['candles>linemarkers', 'linemarkers>area', 'area>linemarkers', 'linemarkers>bars']);
     });
 
     it('a plugin type that does not support the symbol falls back too', () => {
@@ -155,7 +155,7 @@ describe('NativeRenderer — the chosen style and the style it draws', () => {
         const r = new NativeRenderer();
         r.applyFeature('priceStyle', NEEDS_VOLUME);
         r.setSymbolFacts({ volume: false });
-        expect(r.readFeature('shownPriceStyle')).toBe('line');
+        expect(r.readFeature('shownPriceStyle')).toBe('linemarkers');
         expect(r.readFeature('priceStyle')).toBe(NEEDS_VOLUME);
         r.setSymbolFacts({ volume: true });
         expect(r.readFeature('shownPriceStyle')).toBe(NEEDS_VOLUME);
@@ -182,7 +182,7 @@ describe('a bare chart on a symbol with one value per bar', () => {
         await until(() => chart.symbolFacts() !== null, 'the CPI facts');
 
         expect(chart.symbolFacts()).toEqual({ ohlc: false, volume: false });
-        expect(chart.renderer.get('shownPriceStyle')).toBe('line');
+        expect(chart.renderer.get('shownPriceStyle')).toBe('linemarkers');
         expect(chart.renderer.get('priceStyle')).toBe('candles');
         expect((chart.renderer.getConfig() as { series: { style: string } }).series.style).toBe('candles');
 
@@ -201,7 +201,7 @@ describe('a bare chart on a symbol with one value per bar', () => {
         expect(chart.renderer.get('shownPriceStyle')).toBe('candles');
 
         v.releaseFacts();
-        await until(() => chart.renderer.get('shownPriceStyle') === 'line', 'the fallback');
+        await until(() => chart.renderer.get('shownPriceStyle') === 'linemarkers', 'the fallback');
         expect(chart.renderer.get('priceStyle')).toBe('candles');
     });
 
@@ -236,7 +236,7 @@ describe('workspace — the style picker on a symbol with one value per bar', ()
         const v = venue();
         const ws = mount({ layout: '1', symbol: 'CPI', timeframe: 'D', priceStyle: 'candles' }, v.provider);
         const cell = ws.cell('c1')!;
-        await until(() => cell.priceStyle === 'line', 'the line fallback');
+        await until(() => cell.priceStyle === 'linemarkers', 'the line fallback');
 
         expect(cell.requestedPriceStyle).toBe('candles');
         expect(ws.getState().charts[0]!.priceStyle).toBe('candles');
@@ -245,7 +245,7 @@ describe('workspace — the style picker on a symbol with one value per bar', ()
         expect(['candles', 'bars', 'heikinashi'].map(greyed)).toEqual([true, true, true]);
         expect(['line', 'area', 'baseline'].map(greyed)).toEqual([false, false, false]);
         expect(styleRow('candles').title).toBe("Not available for this symbol's data");
-        expect(styleRow('line').hasAttribute('data-checked')).toBe(true); // the style drawn
+        expect(styleRow('linemarkers').hasAttribute('data-checked')).toBe(true); // the style drawn
 
         cell.setSymbol('BTC');
         await until(() => cell.priceStyle === 'candles', 'candles on BTC');
@@ -258,7 +258,7 @@ describe('workspace — the style picker on a symbol with one value per bar', ()
         const v = venue();
         const ws = mount({ layout: '1', symbol: 'CPI', timeframe: 'D', priceStyle: 'candles' }, v.provider);
         const cell = ws.cell('c1')!;
-        await until(() => cell.priceStyle === 'line', 'the line fallback');
+        await until(() => cell.priceStyle === 'linemarkers', 'the line fallback');
 
         cell.setPriceStyle('area');
         expect(cell.priceStyle).toBe('area');
@@ -281,7 +281,7 @@ describe('workspace — the style picker on a symbol with one value per bar', ()
 
         v.releaseFacts();
         await until(() => greyed('candles'), 'the greyed candles');
-        expect(cell.priceStyle).toBe('line');
+        expect(cell.priceStyle).toBe('linemarkers');
     });
 
     it('facts landing re-project the chrome without reading as an edit', async () => {
@@ -309,7 +309,7 @@ describe('workspace — the style picker on a symbol with one value per bar', ()
         expect(greyed(NEEDS_VOLUME)).toBe(false);
 
         cell.setSymbol('CPI');
-        await until(() => cell.priceStyle === 'line', 'the fallback');
+        await until(() => cell.priceStyle === 'linemarkers', 'the fallback');
         expect(greyed(NEEDS_VOLUME)).toBe(true);
         expect(cell.requestedPriceStyle).toBe(NEEDS_VOLUME);
         expect(ws.getState().charts[0]!.priceStyle).toBe(NEEDS_VOLUME);
