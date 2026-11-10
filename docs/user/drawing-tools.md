@@ -258,7 +258,7 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 
 | Tool | Type key | What it does |
 |---|---|---|
-| Rectangle | `box` | An axis-aligned filled box. Drag a corner handle to resize both sides, or the handle in the middle of a side to move that side alone. Its settings can switch on a **Midline**, a line at the halfway price between the top and the bottom (a range's 50% level), with its own color (the border color until you pick one) and style (dashed by default). From code: `chart.drawings.add('box', { anchors, props: { midline: true } })`, with optional `midColor` and `midStyle` (`'solid'`, `'dashed'` or `'dotted'`). |
+| Rectangle | `box` | An axis-aligned filled box. Drag a corner handle to resize both sides, or the handle in the middle of a side to move that side alone. Its settings can switch on a **Midline**, a line halfway between the top and the bottom on screen (a range's 50% level), broken where the box's label sits, with its own color (the border color until you pick one) and style (dashed by default). From code: `chart.drawings.add('box', { anchors, props: { midline: true } })`, with optional `midColor` and `midStyle` (`'solid'`, `'dashed'` or `'dotted'`). |
 | Arrow | `arrow` | A straight arrow between two points. |
 | Ellipse | `ellipse` | A data-space ellipse in a bounding box. |
 | Triangle | `triangle` | A three-point filled triangle. |

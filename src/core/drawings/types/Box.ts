@@ -115,20 +115,22 @@ export class Box extends Drawing {
     }
 
     /**
-     * The midline in pixels — at the halfway PRICE between the two corners (not the pixel
-     * middle, so it stays true on a log scale), across the box's full width — with its color
-     * (the border's unless one was picked) and style. Null while the midline is off.
+     * The midline in pixels — halfway between the box's top and bottom edges ON SCREEN (the
+     * same middle its label is centered on, so on a log scale too the line splits the box into
+     * two equal halves), across the box's full width — with its color (the border's unless one
+     * was picked) and style. Null while the midline is off.
      */
     midline(proj: Projector): { x1: number; x2: number; y: number; color: string; lineStyle: LineStyle } | null {
         if (!this.box.midline) return null;
         const a = this.anchors[0];
         const b = this.anchors[1];
         if (!a || !b) return null;
-        const y = proj.yOf((a.price + b.price) / 2, this.paneId);
-        if (y == null) return null;
+        const ya = proj.yOf(a.price, this.paneId);
+        const yb = proj.yOf(b.price, this.paneId);
+        if (ya == null || yb == null) return null;
         const xa = proj.xOf(a.time);
         const xb = proj.xOf(b.time);
-        return { x1: Math.min(xa, xb), x2: Math.max(xa, xb), y, color: this.box.midColor || this.style.lineColor, lineStyle: this.box.midStyle };
+        return { x1: Math.min(xa, xb), x2: Math.max(xa, xb), y: (ya + yb) / 2, color: this.box.midColor || this.style.lineColor, lineStyle: this.box.midStyle };
     }
 
     priceRange(): { min: number; max: number } | null {

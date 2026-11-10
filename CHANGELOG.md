@@ -7,12 +7,13 @@ All notable changes to Vela, newest first.
 ### Added
 
 - **Rectangles can show their midline.** A rectangle's settings have a **Midline** switch, off
-  by default, that draws a line at the halfway price between its top and bottom, such as a
-  range's 50% level, across the full width of the box. The line moves with the box while you
-  draw, resize or move it. Its color follows the border color until you pick one, and its
-  style is dashed until you change it. The setting is saved with the drawing in its `props`
-  (`midline`, `midColor`, `midStyle`), so it comes back on reload and travels with tool
-  styles, copies and linked charts. Rectangles saved before this change look the same.
+  by default, that draws a line halfway between its top and bottom, such as a range's 50%
+  level, across the full width of the box, and breaks around the box's label so the text stays
+  clear. The line moves with the box while you draw, resize or move it. Its color follows the
+  border color until you pick one, and its style is dashed until you change it. The setting is
+  saved with the drawing in its `props` (`midline`, `midColor`, `midStyle`), so it comes back on
+  reload and travels with tool styles, copies and linked charts. Rectangles saved before this
+  change look the same.
 
 ## [0.10.5]
 

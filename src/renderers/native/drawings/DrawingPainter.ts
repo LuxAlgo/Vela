@@ -496,11 +496,15 @@ export class DrawingPainter {
                     ctx.restore();
                 }
                 // The midline sits over the fill and under the label (painted after the shape).
+                // It breaks where the box's centered label sits, so the text reads clear of it.
                 const mid = d instanceof Box ? d.midline(proj) : null;
                 if (mid) {
+                    const gap = this.boxLabelGap(ctx, d, proj, theme, mid.y);
                     this.stroke(ctx, { lineColor: mid.color, lineWidth: d.style.lineWidth, lineStyle: mid.lineStyle }, () => {
-                        ctx.moveTo(mid.x1, mid.y);
-                        ctx.lineTo(mid.x2, mid.y);
+                        for (const [from, to] of midlineSegments(mid.x1, mid.x2, gap)) {
+                            ctx.moveTo(from, mid.y);
+                            ctx.lineTo(to, mid.y);
+                        }
                     });
                 }
                 this.applyStroke(ctx, d.style);
@@ -512,6 +516,25 @@ export class DrawingPainter {
                 break; // text has no geometry — its label is drawn below
         }
         this.paintLabel(ctx, d, proj, theme); // every drawing can carry an optional label
+    }
+
+    /** The span `[left, right]` a box's centered label covers on the row at `y`, padded so the
+     *  line stops just short of the text — null when the box has no label or the label doesn't
+     *  reach that row. Measured with the same font {@link paintLabel} draws it in. */
+    private boxLabelGap(ctx: CanvasRenderingContext2D, d: Drawing, proj: Projector, theme: VelaTheme, y: number): [number, number] | null {
+        const text = d.text;
+        if (!text || !text.value) return null;
+        const layout = labelLayout(d, proj);
+        if (!layout) return null;
+        const fs = namedFontSize(text.size);
+        const lines = text.value.split('\n');
+        if (y < layout.top || y > layout.top + labelLineHeight(fs) * lines.length) return null;
+        ctx.save();
+        ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${fs}px ${theme.fontFamily}`;
+        const width = Math.max(...lines.map((line) => ctx.measureText(line).width));
+        ctx.restore();
+        const half = width / 2 + MIDLINE_LABEL_PAD;
+        return [layout.x - half, layout.x + half];
     }
 
     /** Draw a drawing's optional text label at a type-appropriate anchor (multi-line aware).
@@ -1914,6 +1937,19 @@ function calloutBubblePath(
     seg('left', x, y + r);
     ctx.arcTo(x, y, x + r, y, r);
     ctx.closePath();
+}
+
+/** Space kept clear on each side of a box's label where its midline breaks around it, in px. */
+const MIDLINE_LABEL_PAD = 6;
+
+/** The pieces of the midline from `x1` to `x2` left once the label's `gap` is cut out of it
+ *  (the whole line without a gap; nothing of a side the gap swallows). */
+export function midlineSegments(x1: number, x2: number, gap: readonly [number, number] | null): Array<[number, number]> {
+    if (!gap || gap[1] <= x1 || gap[0] >= x2) return [[x1, x2]];
+    const pieces: Array<[number, number]> = [];
+    if (gap[0] > x1) pieces.push([x1, gap[0]]);
+    if (gap[1] < x2) pieces.push([gap[1], x2]);
+    return pieces;
 }
 
 /** Compact ratio text for Mach circle labels (trim trailing zeros). */
