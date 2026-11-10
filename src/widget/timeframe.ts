@@ -70,8 +70,8 @@ const UNIT_MINUTES: Record<Exclude<UnitKey, 'S'>, number> = {
 };
 
 /** The canonical timeframe string the chart consumes. Every unit from minutes up collapses
- *  to BARE MINUTES — the one form providers and the core read identically (`3M` would mean
- *  "3 minutes" to `timeframeToMs`, not "3 months"). Seconds pass through as `NS`. */
+ *  to BARE MINUTES — the one form providers and the core read identically (a provider's
+ *  interval table knows `M`, not every `NM` count). Seconds pass through as `NS`. */
 function canonicalFor(key: UnitKey, count: number): string {
     if (key === 'S') return `${count}S`;
     return `${count * UNIT_MINUTES[key]}`;

@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Month and second timeframes are measured correctly.** A timeframe written with a month
+  count (`1M`, `3M`, `12M`) was measured as that many minutes in places, and a seconds
+  timeframe (`30S`) as one hour. Scripts that ask for monthly or quarterly data now load it
+  in one right-sized request instead of a long run of oversized ones, and on these charts
+  live updates, replay and the drawing tools that read finer-timeframe data work from the
+  true bar length.
+
 ## [0.10.4]
 
 ### Changed
