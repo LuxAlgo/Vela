@@ -7,7 +7,8 @@ import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
-import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
+import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, COLUMNS_FILL_ALPHA, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
+import { lineMarkerRadius, lineMarkersVisible, columnIsUp, columnGeometry, snapStroke, closeRuns, stepVertices } from './close-styles';
 import type { IRenderBackend } from './IRenderBackend';
 import { Batch, type RGBA } from './gl/Batch';
 import { parseColor } from './gl/color';
@@ -688,6 +689,15 @@ export class WebGL2Backend implements IRenderBackend {
             case 'line':
                 this.emitPriceLine(b, bars, i0, i1, coords, pane, parseColor(st.line.color ?? theme.upColor), st.line.width);
                 return;
+            case 'linemarkers': {
+                const c = parseColor(st.line.color ?? theme.upColor);
+                this.emitPriceLine(b, bars, i0, i1, coords, pane, c, st.line.width);
+                this.emitLineMarkers(b, bars, i0, i1, coords, pane, c, st.line.width);
+                return;
+            }
+            case 'stepline':
+                this.emitStepLine(b, bars, i0, i1, coords, pane, parseColor(st.line.color ?? theme.upColor), st.line.width);
+                return;
             case 'area': {
                 const lineColor = st.area.lineColor ?? theme.upColor;
                 this.emitPriceArea(b, bars, i0, i1, coords, pane, parseColor(st.area.topColor ?? lineColor), parseColor(st.area.bottomColor ?? 'rgba(0,0,0,0)'));
@@ -697,6 +707,12 @@ export class WebGL2Backend implements IRenderBackend {
             case 'baseline':
                 this.emitBaseline(b, bars, i0, i1, coords, pane, scene, theme, dataW);
                 return;
+            case 'columns': {
+                const up = st.columns.upColor ?? cssWithAlpha(theme.upColor, COLUMNS_FILL_ALPHA);
+                const down = st.columns.downColor ?? cssWithAlpha(theme.downColor, COLUMNS_FILL_ALPHA);
+                this.emitColumns(b, bars, i0, i1, coords, pane, up, down, barColors);
+                return;
+            }
             default: // 'candles' + candle-drawn styles (a plugin style may fade candles to reveal its
                 // order-flow layer) and 'heikinashi' (the bars themselves arrive already transformed)
                 this.emitCandles(b, scene, bars, i0, i1, coords, pane, theme, barColors);
@@ -750,6 +766,72 @@ export class WebGL2Backend implements IRenderBackend {
             px = x;
             py = y;
             have = true;
+        }
+    }
+
+    /** Line with markers (mirrors Canvas2dBackend.drawLineMarkers): a dot on each bar's
+     *  close once bars are spaced enough to tell the dots apart. */
+    private emitLineMarkers(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, c: RGBA, width: number): void {
+        const r = lineMarkerRadius(width);
+        if (!lineMarkersVisible(coords.pxPerBar(), r)) return;
+        const segs = Math.max(16, Math.ceil(r * 2));
+        for (let i = Math.max(0, i0 - 1); i <= i1; i += 1) {
+            const bar = bars[i];
+            if (!bar) continue;
+            b.circle(coords.logicalToX(i), coords.priceToY(bar.close, pane.scale, pane.bounds), r, c, segs);
+        }
+    }
+
+    /**
+     * Step line (mirrors Canvas2dBackend.drawStepLine): the snapped step vertices as
+     * axis-aligned rects, each run square-capped at both ends. Every rect owns the corner
+     * square at its END (the first one also at its start), so no pixel is covered twice
+     * and a translucent line keeps one even tone through its corners.
+     */
+    private emitStepLine(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, c: RGBA, width: number): void {
+        const dpr = coords.dpr;
+        const hw = Math.max(1, width) / 2;
+        const runs = closeRuns(Math.max(0, i0 - 1), i1, (i) => {
+            const bar = bars[i];
+            return bar ? { x: snapStroke(coords.logicalToX(i), width, dpr), y: snapStroke(coords.priceToY(bar.close, pane.scale, pane.bounds), width, dpr) } : null;
+        });
+        for (const run of runs) {
+            const vs = stepVertices(run);
+            for (let k = 1; k < vs.length; k += 1) {
+                const a = vs[k - 1]!;
+                const z = vs[k]!;
+                if (a.y === z.y) {
+                    // Horizontal, always left to right.
+                    const x0 = k === 1 ? a.x - hw : a.x + hw;
+                    const x1 = z.x + hw;
+                    if (x1 > x0) b.rect(x0, a.y - hw, x1 - x0, hw * 2, c);
+                } else {
+                    // Vertical: never a run's first segment, so its start corner is the
+                    // previous horizontal's.
+                    const y0 = z.y > a.y ? a.y + hw : z.y - hw;
+                    const y1 = z.y > a.y ? z.y + hw : a.y - hw;
+                    if (y1 > y0) b.rect(a.x - hw, y0, hw * 2, y1 - y0, c);
+                }
+            }
+        }
+    }
+
+    /** Columns (mirrors Canvas2dBackend.drawColumns): one per bar from the pane's bottom
+     *  edge up to its close, up/down by the close against the previous close. */
+    private emitColumns(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, up: string, down: string, barColors: ReadonlyMap<number, string>): void {
+        const spacing = coords.bodySpacing();
+        const dpr = coords.dpr;
+        const bottom = snapY(pane.bounds.top + pane.bounds.height, dpr);
+        const upC = parseColor(up);
+        const downC = parseColor(down);
+        for (let i = i0; i <= i1; i += 1) {
+            const bar = bars[i];
+            if (!bar) continue;
+            const top = snapY(coords.priceToY(bar.close, pane.scale, pane.bounds), dpr);
+            if (!(top < bottom)) continue;
+            const g = columnGeometry(coords.logicalToX(i), spacing, dpr);
+            const bc = barColors.get(bar.time);
+            b.rect(g.left, top, g.width, bottom - top, bc ? parseColor(bc) : columnIsUp(bars, i) ? upC : downC);
         }
     }
 
