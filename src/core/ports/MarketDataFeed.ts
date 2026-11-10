@@ -38,7 +38,15 @@ export interface BarRange {
 }
 
 export interface MarketDataFeed {
-    /** Load the initial history (from a provider or the offline `data` array). */
+    /**
+     * Load the initial history (from a provider or the offline `data` array).
+     *
+     * Every bar method — `load`, `loadProgressive`, `loadRange` — rejects with a
+     * `DataUnavailableError` when the source refuses the series for good. On the chart's
+     * own market the chart then ends the load, stops live updates and fires
+     * `data:unavailable`; on a secondary series the rejection reaches the engine through
+     * `fetchSeries`. Feeds should keep transient failures out of this channel.
+     */
     load(cfg: MarketConfig): Promise<OHLCV[]>;
     /**
      * Progressive load: emit growing snapshots while the source heals a cold symbol,

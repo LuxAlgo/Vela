@@ -8,6 +8,7 @@ import type { SnapMode } from "../drawings/geometry";
 import type { DrawingMode } from "../drawings/port";
 import type { MarkClickEvent } from "../marks/types";
 import type { ReplayEndReason } from "../ReplayControl";
+import type { DataUnavailableReason } from "../data-unavailable";
 
 /** Chart-level events emitted on `chart.on(...)`. */
 export interface VelaEventMap extends Record<string, unknown> {
@@ -48,6 +49,22 @@ export interface VelaEventMap extends Record<string, unknown> {
   /** No registered provider can serve the chart symbol — the load is PARKED, not failed:
    *  it resumes by itself if a capable provider registers later. */
   "data:unresolved": { symbol: string; providers: string[] };
+  /**
+   * The source refused the chart's own series for good (a provider threw a
+   * `DataUnavailableError` — e.g. a monthly series asked for hourly bars). The load has
+   * ended (`load:end` with what was painted, `history:complete` with `'aborted'`) and
+   * nothing streams or polls for this market. `symbol`/`timeframe` are the chart's market
+   * as set; `finest`/`default` are the source's hints, in its own timeframe notation. The
+   * chart never changes its timeframe by itself: falling back is the host's call. A
+   * secondary fetch (`request.security`) never fires it — its promise rejects instead.
+   */
+  "data:unavailable": {
+    symbol: string;
+    timeframe: string;
+    reason: DataUnavailableReason;
+    finest?: string;
+    default?: string;
+  };
   /** An indicator was moved/merged to another pane (`chart.panes` / legend / object tree). */
   "indicator:moved": { id: string; paneId: string };
   /** An indicator was shown/hidden (legend eye, `handle.setVisible`, or object tree). */

@@ -173,6 +173,10 @@ export { registerIcon, iconMarkup } from '@luxalgo/vela-ui/icons';
 export type { KeyBindingDescriptor, ResolvedBinding } from './ui/keymap';
 export type { PriceStyle } from './core/options';
 export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';
+// A provider's PERMANENT refusal of a series (a timeframe finer than the series' own): throw
+// it from `getBars`; engines detect it on a rejected `fetchSeries` with the guard, which reads
+// the name, never the class (a provider may bundle its own copy of Vela).
+export { DataUnavailableError, isDataUnavailableError, type DataUnavailableReason, type DataUnavailableDetails } from './core/data-unavailable';
 
 // SCRIPTING ENGINES (`chart.registerEngine` / the widget's `engines` option): a language
 // runtime implementing the `ScriptingEngine` port — prepare/execute sessions over bars
