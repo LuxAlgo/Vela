@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [0.10.5]
+## [Unreleased]
 
 ### Added
 
@@ -13,6 +13,11 @@ All notable changes to Vela, newest first.
   style is dashed until you change it. The setting is saved with the drawing in its `props`
   (`midline`, `midColor`, `midStyle`), so it comes back on reload and travels with tool
   styles, copies and linked charts. Rectangles saved before this change look the same.
+
+## [0.10.5]
+
+### Added
+
 - **Line with markers, step line and columns.** Three more chart styles suit series with one
   value per bar, such as economic data. Line with markers draws the line with a dot on each
   bar, shown once the bars are far enough apart to tell the dots apart. Step line holds each
