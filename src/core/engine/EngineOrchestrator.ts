@@ -1546,13 +1546,55 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         }
     }
 
-    /** Auto-add the built-in volume indicator. Bar volume needs no capability probe (always supported). */
     /** The user removed the volume indicator — the auto-add must never override that. */
     private volumeOptedOut = false;
+    /** The volume auto-add waiting for its symbol's facts (they landed after the first candles). */
+    private volumeFactsWait: { symbol: string } | null = null;
 
+    /**
+     * Auto-add the built-in volume indicator, unless the symbol's facts say its source has no
+     * volume (`SymbolInfo.volume === false`). The load prefetches those facts beside the bars,
+     * so they are usually known by now; when they are still in flight the add waits for them
+     * rather than holding the first paint, and {@link pendingNativeIndicators} reports it.
+     */
     private maybeAutoAddVolume(): void {
         if (!this.config.volume || this.volumeOptedOut || !this.renderer.setNativeData) return; // off, opted out, or no layer
-        if (nativeIndicatorEntry('volume')) this.addNativeIndicator('volume');
+        if (!nativeIndicatorEntry('volume')) return;
+        const known = this.feed.symbolInfo?.(this.config.market);
+        const symbol = this.qualifiedSymbol();
+        if (known === undefined && symbol && this.symbolFactsComing(symbol)) {
+            const wait = { symbol };
+            this.volumeFactsWait = wait;
+            void this.dataControl
+                .symbolInfo(symbol)
+                .catch(() => undefined)
+                .then((info) => {
+                    if (this.volumeFactsWait !== wait) return; // destroyed meanwhile
+                    this.volumeFactsWait = null;
+                    // A switch to another symbol meanwhile drops the add, as a switch before
+                    // the first candles does: only the first market gets one.
+                    if (this.qualifiedSymbol() !== symbol || this.volumeOptedOut) return;
+                    if (info?.volume !== false) this.addNativeIndicator('volume');
+                });
+            return;
+        }
+        if (known?.volume !== false) this.addNativeIndicator('volume');
+    }
+
+    /** Whether `symbol`'s facts will still arrive: the registry routes it to a provider that
+     *  answers them. Offline data and a custom feed state facts synchronously or not at all. */
+    private symbolFactsComing(symbol: string): boolean {
+        if (this.config.market.data?.length) return false;
+        const resolved = this.dataControl.resolve(symbol);
+        return !!resolved && typeof this.dataControl.providerInstance(resolved.provider)?.getSymbolInfo === 'function';
+    }
+
+    /** The native types the chart is about to add on its own — the volume auto-add while it
+     *  waits for its symbol's facts. SYNC, for persistence snapshots (see the facade). */
+    pendingNativeIndicators(): string[] {
+        const wait = this.volumeFactsWait;
+        if (!wait || wait.symbol !== this.qualifiedSymbol() || this.volumeOptedOut) return [];
+        return this.presentNativeIndicators().includes('volume') ? [] : ['volume'];
     }
 
     /**
@@ -2290,6 +2332,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     destroy(): void {
         this.bumpGeneration(); // abandon backfill loops/loads mid-flight + release superseded setMarket awaiters
+        this.volumeFactsWait = null;
         this.resolveHistoryComplete(); // never leave historyComplete() awaiters hanging
         this.clearReplayTimer();
         this.replayQueue = null;

@@ -448,6 +448,81 @@ describe('ChartCell symbol metadata — the session verdict does not wait for th
     });
 });
 
+describe('ChartCell volume on a symbol whose source has no volume', () => {
+    /**
+     * One provider: `MACRO` is stated to carry no volume, `BTCUSDT` states nothing about it.
+     * By default the bars wait a macrotask, so the facts are known when the first candles
+     * paint; `holdFacts` keeps the facts in flight until released, so the candles win.
+     */
+    function factsFeed(opts: { holdFacts?: boolean } = {}): { feed: MultiProviderFeed; releaseFacts: () => void } {
+        let release: () => void = () => {};
+        const gate = opts.holdFacts ? new Promise<void>((r) => (release = r)) : Promise.resolve();
+        const provider: DataProvider = {
+            getBars: async () => {
+                if (!opts.holdFacts) await new Promise((r) => setTimeout(r, 0));
+                return makeBars(60);
+            },
+            listSymbols: () => Promise.resolve([{ ticker: 'MACRO' }, { ticker: 'BTCUSDT' }]),
+            getSymbolInfo: async (ticker) => {
+                await gate;
+                return ticker === 'MACRO' ? { ticker, volume: false } : { ticker };
+            },
+        };
+        const feed = new MultiProviderFeed(new BarStore());
+        void feed.registerProvider('lux', provider);
+        return { feed, releaseFacts: () => release() };
+    }
+
+    it('a fresh cell neither adds nor saves a volume indicator there', async () => {
+        const { feed } = factsFeed();
+        const cell = makeCell({ symbol: 'LUX:MACRO' }, { feed });
+        await cell.chart.ready();
+        await settle();
+        expect(volumeOf(cell)).toBeUndefined();
+        expect(cell.dehydrate().indicators!.natives).toEqual([]);
+        cell.destroy();
+    });
+
+    it('a fresh cell on a symbol that says nothing about volume still gets it', async () => {
+        const { feed } = factsFeed();
+        const cell = makeCell({ symbol: 'LUX:BTCUSDT' }, { feed });
+        await cell.chart.ready();
+        await settle();
+        expect(volumeOf(cell)).toBeDefined();
+        expect(cell.dehydrate().indicators!.natives).toEqual(['volume']);
+        cell.destroy();
+    });
+
+    it('a saved volume indicator stays there', async () => {
+        const { feed } = factsFeed();
+        const cell = makeCell({ symbol: 'LUX:MACRO', indicators: { natives: ['volume'], manifest: [] } } as Partial<CellBoot>, { feed });
+        await cell.chart.ready();
+        await settle();
+        expect(volumeOf(cell)).toBeDefined();
+        expect(cell.dehydrate().indicators!.natives).toEqual(['volume']);
+        cell.destroy();
+    });
+
+    it('a save while the facts are in flight keeps the owed volume, and the facts settle it', async () => {
+        for (const [symbol, natives] of [['LUX:BTCUSDT', ['volume']], ['LUX:MACRO', []]] as const) {
+            const { feed, releaseFacts } = factsFeed({ holdFacts: true });
+            const cell = makeCell({ symbol }, { feed });
+            await cell.chart.ready();
+            await settle();
+            // The first candles are in and the add waits on the facts: a save now must not
+            // read back as the user removing the volume indicator.
+            expect(volumeOf(cell)).toBeUndefined();
+            expect(cell.dehydrate().indicators!.natives).toEqual(['volume']);
+
+            releaseFacts();
+            await settle();
+            expect(cell.dehydrate().indicators!.natives).toEqual(natives);
+            expect(volumeOf(cell) !== undefined).toBe(natives.length > 0);
+            cell.destroy();
+        }
+    });
+});
+
 describe('ChartCell indicator picker library', () => {
     // Vela is now the name of whole charting products built on this library, so the
     // library's own indicators can't be filed under "Vela" in their picker.

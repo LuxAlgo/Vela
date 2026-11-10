@@ -316,7 +316,8 @@ export class ChartCell {
      *  (a pool/persisted cell can be built before the shared manifest has loaded). */
     private pendingManifestNames: LedgerManifestEntry[] | null = null;
     /** The volume auto-add rides the cell's first candles (`load:end`); until then the
-     *  registry can't show it and the dehydrated ledger reports the INTENT instead. */
+     *  registry can't show it and the dehydrated ledger reports the INTENT instead. After
+     *  them the chart itself reports an add still waiting for the symbol's facts. */
     private volumeMayBePending = true;
     /** Volume intent: the seed's ledger, else the workspace `volume` option — a
      *  rehydrated ledger overwrites it (see {@link applyIndicatorLedger}). */
@@ -473,7 +474,8 @@ export class ChartCell {
         // indicators must not call back into a workspace that doesn't know the cell yet.
         this.extState = { ...(seed.ext ?? {}) };
         // The volume auto-add rides the cell's first candles — from `load:end` on, the
-        // registry is the whole truth and the dehydrated ledger stops reporting intent.
+        // registry (plus the chart's own pending read) is the whole truth and the
+        // dehydrated ledger stops reporting intent.
         this.inner.on('load:end', () => {
             this.volumeMayBePending = false;
         });
@@ -1689,7 +1691,7 @@ export class ChartCell {
                     }),
                 pendingManifest: this.pendingManifestNames,
                 manifestSettled: this.deps.manifestSettled(),
-                volumePending: this.volumeMayBePending && this.volumeIntent,
+                volumePending: (this.volumeMayBePending && this.volumeIntent) || (this.inner?.pendingNativeIndicators().includes('volume') ?? false),
             }),
             ...(ext ? { ext } : {}),
         };
