@@ -2,6 +2,19 @@ import type { CoordinateSystem } from './CoordinateSystem';
 import type { ViewportState } from './ViewportState';
 import { clampBarSpacing } from './ViewportState';
 import type { SnapMode } from '../../../core/drawings';
+import type { FreePanEvent, FreePanTrigger } from '../../../core/options';
+
+/** Whether `e` satisfies the configured {@link FreePanTrigger} (mouse/pen only; touch stays a time pan). */
+export function matchesFreePan(trigger: FreePanTrigger, e: FreePanEvent): boolean {
+    if (!trigger || e.pointerType === 'touch') return false;
+    if (typeof trigger === 'function') return Boolean(trigger(e));
+    if (e.button !== 0) return false;
+    if (trigger === true || trigger === 'drag') return !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey;
+    if (trigger === 'alt') return e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey;
+    if (trigger === 'shift') return e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
+    if (trigger === 'mod') return (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+    return false;
+}
 
 export interface InputControllerDeps {
     getCoords(): CoordinateSystem;
@@ -19,8 +32,8 @@ export interface InputControllerDeps {
     /** Rescale the grabbed pane vertically by the TOTAL pixel drag (down ⇒ zoom out / compress). */
     priceScaleBy(dyTotal: number): void;
     /** Grab inside the data area at pixel `y` — returns true when vertical price-panning is
-     *  enabled for that pane (i.e. it is already in manual-scale mode). */
-    beginPricePan(y: number): boolean;
+     *  enabled for that pane (already manual, or `unlock` freezes its visible window first). */
+    beginPricePan(y: number, unlock?: boolean): boolean;
     /** Pan the grabbed pane's price window by the TOTAL pixel drag (down ⇒ show lower prices). */
     pricePanBy(dyTotal: number): void;
     /** Double-click on the price axis → re-enable autoscale for the pane/column at (`x`,`y`). */
@@ -212,11 +225,14 @@ export class InputController {
      *  is a plain pan/click and hover leaves them alone; a drawing gesture already under way
      *  still finishes. */
     drawings = true;
+    /** Gesture that unlocks manual scaling once a plot drag crosses the slop (`false` = off). */
+    freePan: FreePanTrigger = false;
     private el: HTMLElement | null = null;
     private dragging = false;
     private moved = false;
     private region: DragRegion = 'data';
     private verticalPan = false; // data-area drag also pans price (pane in manual-scale mode)
+    private freePending = false; // data-area drag unlocks manual price-pan once past the slop
     private startX = 0;
     private startY = 0;
     private startRightOffset = 0;
@@ -368,15 +384,16 @@ export class InputController {
     }
 
     private readonly onDown = (e: PointerEvent): void => {
-        if (e.button === 1) {
+        const { x, y } = this.local(e);
+        const freeMatch = this.regionAt(x, y) === 'data' && matchesFreePan(this.freePan, e);
+        if (e.button === 1 && !freeMatch) {
             // Middle-click deletes the drawing under the cursor. The flag lets the
             // mousedown/auxclick companions suppress autoscroll/paste for THIS press only.
-            const { x, y } = this.local(e);
             this.middleDeleted = this.drawings && (this.deps.drawingsDeleteAt?.(x, y) ?? false);
             if (this.middleDeleted) e.preventDefault();
             return;
         }
-        if (e.button === 2) {
+        if (e.button === 2 && !freeMatch) {
             // Right-click cancels/disarms the active tool — placement, armed drawing
             // tool, ruler, or eraser — reverting to the pointer. The flag lets the
             // contextmenu companion suppress the host's chart menu for THIS press
@@ -385,8 +402,11 @@ export class InputController {
             if (this.rightCancelled) e.preventDefault();
             return;
         }
-        if (e.button !== 0) return;
-        const { x, y } = this.local(e);
+        if (e.button !== 0 && !freeMatch) return;
+        if (e.button !== 0) {
+            if (e.button === 1) this.middleDeleted = true;
+            e.preventDefault();
+        }
         if (e.pointerType === 'touch') {
             // A second finger during a pan (or long-press crosshair) escalates to a
             // pinch; during a claimed drawing/axis gesture — and beyond two contacts —
@@ -408,7 +428,7 @@ export class InputController {
         this.lastPressDrawing = false;
         // The drawings layer gets first refusal: when a tool is armed or the press is
         // over a drawing/handle it claims the WHOLE gesture (no pan/fling), atomically.
-        if (this.drawings && this.deps.drawingsClaim?.(x, y)) {
+        if (e.button === 0 && this.drawings && this.deps.drawingsClaim?.(x, y)) {
             this.region = 'drawing';
             this.lastPressDrawing = true;
             this.deps.drawingsPointerDown?.(x, y, this.snapMode(e), e.shiftKey, e.ctrlKey || e.metaKey);
@@ -417,14 +437,14 @@ export class InputController {
         }
         // Shift+press on the empty plot starts the measure ruler in one gesture (a press
         // over a drawing keeps the additive-select meaning of shift, via the claim above).
-        if (this.drawings && e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y, this.snapMode(e))) {
+        if (!freeMatch && this.drawings && e.shiftKey && this.regionAt(x, y) === 'data' && this.deps.drawingsMeasureStart?.(x, y, this.snapMode(e))) {
             this.region = 'drawing';
             this.lastPressDrawing = true;
             this.capture(e.pointerId);
             return;
         }
         // Ctrl/Cmd+press on the empty plot sweeps a selection box over the drawings.
-        if (this.drawings && (e.ctrlKey || e.metaKey) && this.regionAt(x, y) === 'data' && this.deps.drawingsMarqueeStart?.(x, y)) {
+        if (!freeMatch && this.drawings && (e.ctrlKey || e.metaKey) && this.regionAt(x, y) === 'data' && this.deps.drawingsMarqueeStart?.(x, y)) {
             this.region = 'drawing';
             this.lastPressDrawing = true;
             this.capture(e.pointerId);
@@ -437,9 +457,13 @@ export class InputController {
         this.startBarSpacing = vp.barSpacing;
         this.region = this.regionAt(x, y);
         this.verticalPan = false;
+        this.freePending = false;
         if (this.region === 'price') this.deps.beginPriceScale(x, y);
         else if (this.region === 'separator') this.deps.beginPaneResize(y);
-        else if (this.region === 'data') this.verticalPan = this.deps.beginPricePan(y);
+        else if (this.region === 'data') {
+            this.verticalPan = this.deps.beginPricePan(y);
+            this.freePending = !this.verticalPan && freeMatch;
+        }
         // A stationary touch hold in the plot becomes crosshair inspection — the touch
         // substitute for hovering (a finger can't hover, and a pan would move the view).
         // On an axis strip the same hold opens the host's timezone / price-scale sheet
@@ -568,6 +592,11 @@ export class InputController {
                 const vp = coords.getViewport();
                 const dx = x - this.startX;
                 if (Math.abs(dx) > slop) this.moved = true;
+                if (this.freePending && (this.moved || Math.abs(y - this.startY) > slop)) {
+                    this.freePending = false;
+                    this.moved = true;
+                    this.verticalPan = this.deps.beginPricePan(this.startY, true);
+                }
                 // Drag right → reveal earlier bars → rightOffset decreases. Track by the effective
                 // pitch (zoom × spacing multiplier) so the chart follows the cursor 1:1.
                 this.deps.apply({ barSpacing: vp.barSpacing, rightOffset: this.startRightOffset - dx / coords.pxPerBar() });
@@ -644,7 +673,7 @@ export class InputController {
             this.deps.drawingsPointerUp?.(x, y, this.snapMode(e));
         } else if (this.dragging && this.region === 'separator') {
             this.deps.endPaneResize?.();
-        } else if (tapRelease && this.region === 'data') {
+        } else if (tapRelease && this.region === 'data' && e.button === 0) {
             this.deps.onClick(x, y);
         } else if (this.dragging && this.region === 'data' && wasTouch) {
             // Only a finger flicks: a mouse release stops dead, so a scrub lands exactly
@@ -683,6 +712,7 @@ export class InputController {
 
     private endGesture(e: PointerEvent): void {
         this.dragging = false;
+        this.freePending = false;
         try {
             this.el?.releasePointerCapture(e.pointerId);
         } catch {

@@ -255,6 +255,8 @@ export interface ChartConfig {
         invert: boolean;
         /** Autoscale fits the price bars only; indicators no longer widen the window. */
         priceOnly: boolean;
+        /** Dragging an auto-scaled pane unlocks manual scaling to pan time and price together. */
+        freePan: boolean;
         borderColor: string;
         labelsVisible: boolean;
         currentPriceLine: boolean;
@@ -763,6 +765,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             log: isBool(ps.log) ? ps.log : base.priceScale.log,
             invert: isBool(ps.invert) ? ps.invert : base.priceScale.invert,
             priceOnly: isBool(ps.priceOnly) ? ps.priceOnly : base.priceScale.priceOnly,
+            freePan: isBool(ps.freePan) ? ps.freePan : base.priceScale.freePan,
             borderColor: isColor(ps.borderColor) ? ps.borderColor : base.priceScale.borderColor,
             labelsVisible: isBool(ps.labelsVisible) ? ps.labelsVisible : base.priceScale.labelsVisible,
             currentPriceLine: isBool(ps.currentPriceLine) ? ps.currentPriceLine : base.priceScale.currentPriceLine,
