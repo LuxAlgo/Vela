@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [0.10.6]
 
 ### Added
 
@@ -31,6 +31,10 @@ All notable changes to Vela, newest first.
   `applyState` and charts that a layout change brings back. Copies that still match are
   linked again, including in layouts saved before this fix; a copy you changed while sync
   was off stays independent. Turning drawings sync on links matching copies the same way.
+- **Inline date-time and session inputs show at full width.** In an indicator's settings
+  dialog, a date-and-time or session input placed on the same line as another input (such as
+  an enable checkbox) was squeezed into a narrow column that cut off the date and time text.
+  It now keeps the same full width as a standalone date-and-time or session row.
 
 ## [0.10.5]
 
@@ -85,10 +89,6 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
-- **Inline date-time and session inputs show at full width.** In an indicator's settings
-  dialog, a date-and-time or session input placed on the same line as another input (such as
-  an enable checkbox) was squeezed into a narrow column that cut off the date and time text.
-  It now keeps the same full width as a standalone date-and-time or session row.
 - **Month and second timeframes are measured correctly.** A timeframe written with a month
   count (`1M`, `3M`, `12M`) was measured as that many minutes in places, and a seconds
   timeframe (`30S`) as one hour. Scripts that ask for monthly or quarterly data now load it
