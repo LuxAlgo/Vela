@@ -27,6 +27,9 @@ export interface SettingsField {
     /** Only offered while another setting holds one of these values (an option that matters
      *  only in some modes). */
     when?: { path: string; in: readonly unknown[] };
+    /** A color that follows another setting until one is picked (a rectangle's midline takes
+     *  the border color): the path whose value the control shows while this one is unset. */
+    fallback?: string;
     /** The label of the one row this field shares with the next one: a color and its line
      *  style ("Midline" for "Midline color" + "Midline style"), or an upper and a lower color
      *  ("Bands"). */

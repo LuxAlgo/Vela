@@ -103,6 +103,8 @@ export type {
     PriceAxisTick,
     PriceAxisTickContext,
     PriceAxisTicksFn,
+    FreePanEvent,
+    FreePanTrigger,
 } from './core/options';
 export type { CodeUpdateResult, IndicatorHandle, IndicatorEventMap } from './core/IndicatorHandle';
 export type { VelaEventMap } from './core/events/types';

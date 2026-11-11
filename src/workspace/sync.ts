@@ -9,6 +9,7 @@
 // The link TYPES live in the shared state document (`src/state/document.ts`) — sync
 // settings are part of the persisted format. Re-exported here unchanged.
 import type { SyncSetting } from '../state/document';
+import type { SerializedDrawing } from '../core/drawings';
 import { CANDLE_OVERRIDE_KEYS } from '../renderers/native/core/chartConfig';
 
 export type { SyncKind, SyncSetting, SyncOptions } from '../state/document';
@@ -21,6 +22,66 @@ export function syncTargets(originId: string, setting: SyncSetting | undefined, 
     const group = setting[originId];
     if (group == null) return []; // the origin is unlinked — nothing follows it
     return cellIds.filter((id) => id !== originId && setting[id] === group);
+}
+
+/** The cells sharing a link with at least one other cell under `setting`, as groups in
+ *  `cellIds` order — PURE. `true` is one group of every cell; a record yields one group
+ *  per name; unlinked and lone cells drop out. */
+export function syncGroups(setting: SyncSetting | undefined, cellIds: readonly string[]): string[][] {
+    const groups: string[][] = [];
+    const seen = new Set<string>();
+    for (const id of cellIds) {
+        if (seen.has(id)) continue;
+        const peers = syncTargets(id, setting, cellIds);
+        if (peers.length === 0) continue;
+        const group = [id, ...peers];
+        for (const member of group) seen.add(member);
+        groups.push(group);
+    }
+    return groups;
+}
+
+/**
+ * The content a drawings-link copy shares with its original — exactly what a linked
+ * copy is created with and what a linked edit pushes (type, pane, anchors, style, text,
+ * per-type props). Lock, visibility, draw order and timeframe limits stay per chart, so
+ * they are not part of it. Canonical (object keys sorted, absent = undefined) so the
+ * same drawing yields the same key whatever order its document lists the keys in.
+ */
+export function drawingLinkContent(d: Pick<SerializedDrawing, 'type' | 'paneId' | 'anchors' | 'style' | 'text' | 'props'>): string {
+    return canonicalJson({ type: d.type, paneId: d.paneId, anchors: d.anchors, style: d.style, text: d.text, props: d.props });
+}
+
+/**
+ * Pair the drawings that are identical copies of each other across one link group's
+ * cells — PURE. Two drawings pair when their {@link drawingLinkContent} matches; equal
+ * duplicates on the same chart pair one to one, in the order each chart lists them (its
+ * paint order), so three identical lines facing two pair as two links and one loner.
+ * Returns each link as cellId → drawing id, two members or more.
+ */
+export function pairIdenticalDrawings(cells: ReadonlyArray<{ cellId: string; drawings: ReadonlyArray<SerializedDrawing> }>): Array<Map<string, string>> {
+    const byContent = new Map<string, Map<string, string[]>>();
+    for (const { cellId, drawings } of cells) {
+        for (const d of drawings) {
+            const content = drawingLinkContent(d);
+            let perCell = byContent.get(content);
+            if (!perCell) byContent.set(content, (perCell = new Map()));
+            let ids = perCell.get(cellId);
+            if (!ids) perCell.set(cellId, (ids = []));
+            ids.push(d.id);
+        }
+    }
+    const links: Array<Map<string, string>> = [];
+    for (const perCell of byContent.values()) {
+        if (perCell.size < 2) continue;
+        const depth = Math.max(...[...perCell.values()].map((ids) => ids.length));
+        for (let k = 0; k < depth; k++) {
+            const link = new Map<string, string>();
+            for (const [cellId, ids] of perCell) if (k < ids.length) link.set(cellId, ids[k]!);
+            if (link.size > 1) links.push(link);
+        }
+    }
+    return links;
 }
 
 /** Whether two visible ranges agree within `epsMs` on both edges — the short-circuit
@@ -92,4 +153,14 @@ export function styleConfigPatch(origin: unknown, follower: unknown): Record<str
 
 function asRecord(v: unknown): Record<string, unknown> | null {
     return v != null && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+}
+
+/** JSON with object keys sorted at every depth; undefined members drop out as in JSON. */
+function canonicalJson(v: unknown): string {
+    return JSON.stringify(v, (_key, value: unknown) => {
+        if (value == null || typeof value !== 'object' || Array.isArray(value)) return value;
+        const sorted: Record<string, unknown> = {};
+        for (const k of Object.keys(value).sort()) sorted[k] = (value as Record<string, unknown>)[k];
+        return sorted;
+    });
 }

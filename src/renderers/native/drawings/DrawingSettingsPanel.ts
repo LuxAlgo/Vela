@@ -575,7 +575,7 @@ export class DrawingSettingsPanel {
         const read = (): unknown => readPath(b.live(), f.path);
         switch (f.kind) {
             case 'color':
-                return this.swatch(b, this.t(f.label), () => (read() as string | undefined) || DEFAULT_DRAWING_COLOR, f.path);
+                return this.swatch(b, this.t(f.label), () => (read() as string | undefined) || (f.fallback ? (readPath(b.live(), f.fallback) as string | undefined) : undefined) || DEFAULT_DRAWING_COLOR, f.path);
             case 'lineStyle':
                 return this.seg(b, this.t(f.label), LINE_STYLE_OPTIONS.map((o) => ({ value: o.value, html: dashIcon(o.value), title: this.t(o.label) })), () => read() as string, (v) => b.edit({ [f.path]: v }));
             case 'boolean':

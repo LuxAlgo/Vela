@@ -69,6 +69,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 | `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
 | `priceAxis` | `{ ticks?: (ctx) => PriceAxisTick[] \| null }` | built-in ticks | Your own price-axis ladder (native renderer): `ticks` returns each pane's ticks, and the axis labels and horizontal gridlines both follow them (see below). |
+| `freePan` | `boolean \| 'drag' \| 'alt' \| 'shift' \| 'mod' \| ((e) => boolean)` | `false` | Free panning (native renderer): dragging an auto-scaled pane unlocks manual scaling once the drag starts so one gesture pans time and price together (`true` / `'drag'` for plain left-drag, `'alt'` / `'shift'` / `'mod'` for modifier + left-drag, or a custom predicate). Seeds the `freePan` feature and `priceScale.freePan`. |
 
 \* `defaultLanguage` falls back to the first injected engine's language if you don't set it.
 
@@ -232,6 +233,7 @@ new VelaWorkspace('#chart', {
       'scales.price-scale.mode',             //     Regular/Percent/Indexed/Logarithmic
       'scales.price-scale.invert',           //     Invert scale
       'scales.price-scale.price-only',       //     Scale price chart only
+      'scales.price-scale.free-pan',         //     Free pan
       'scales.price-scale.last-price-line',  //     Last price line
       'scales.price-scale.last-price-label', //     Last price label
       'scales.price-scale.countdown',        //     Countdown to bar close

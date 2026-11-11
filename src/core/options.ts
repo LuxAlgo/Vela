@@ -168,7 +168,27 @@ export interface VelaOptions extends MarketConfig, LocalizationOptions {
     /** Price-axis customization (native renderer): `ticks` replaces the built-in tick
      *  ladder of every pane's price axis — labels and horizontal gridlines together. */
     priceAxis?: PriceAxisOptions;
+    /** Free panning (native renderer): unlock manual scaling on drag so one gesture pans
+     *  time and price together (`true` / `'drag'`, `'alt'`, `'shift'`, `'mod'`, or a custom
+     *  predicate; `false` by default). Seeds the runtime `freePan` feature and `priceScale.freePan`. */
+    freePan?: FreePanTrigger;
 }
+
+/** Pointer press state handed to a custom {@link FreePanTrigger} predicate. */
+export interface FreePanEvent {
+    readonly button: number;
+    readonly altKey: boolean;
+    readonly shiftKey: boolean;
+    readonly ctrlKey: boolean;
+    readonly metaKey: boolean;
+    readonly pointerType: string;
+}
+
+/** Which pointer gesture unlocks manual scaling to pan time and price together on an
+ *  auto-scaled pane: `true` / `'drag'` = plain primary drag, `'alt'` / `'shift'` /
+ *  `'mod'` = modifier + primary drag, or a predicate `(e: FreePanEvent) => boolean`
+ *  for any custom button or modifier chord. `false` = off. */
+export type FreePanTrigger = boolean | 'drag' | 'alt' | 'shift' | 'mod' | ((e: FreePanEvent) => boolean);
 
 /** Price-axis customization (see `VelaOptions.priceAxis`). */
 export interface PriceAxisOptions {
@@ -392,6 +412,8 @@ export interface RendererDisplayOptions {
     priceStyle: PriceStyle;
     /** Host price-axis ticks (`VelaOptions.priceAxis.ticks`); absent/null = built-in ticks. */
     priceAxisTicks?: PriceAxisTicksFn | null;
+    /** Free panning (`VelaOptions.freePan`); absent = off. */
+    freePan?: FreePanTrigger;
 }
 
 /**
