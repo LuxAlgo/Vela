@@ -3,6 +3,15 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- **Section headings can carry a mark.** `fieldSection` takes an `info` element, such as a help
+  mark, and places it after the heading text, centered on it.
+- **A question-mark icon.** The icon set draws `help`, a question mark for help marks, in the
+  16-pixel chrome tier beside `info`.
+
 ## [0.4.1]
 
 ### Added

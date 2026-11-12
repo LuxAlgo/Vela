@@ -20,6 +20,7 @@ const CHROME_ICONS = [
     'eye-off',
     'gear',
     'grip',
+    'help',
     'kebab',
     'lock',
     'move',
