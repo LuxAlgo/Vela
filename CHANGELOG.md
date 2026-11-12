@@ -2,7 +2,7 @@
 
 All notable changes to Vela, newest first.
 
-## [Unreleased]
+## [0.10.7]
 
 ### Added
 
@@ -24,6 +24,8 @@ All notable changes to Vela, newest first.
   settings dialog is now as wide as its longest choice instead of a fixed narrow box, so a
   choice such as "On bar close" no longer reads "On bar …". It is never narrower than before,
   and it stops at the edge of the dialog, where a longer choice is shortened as before.
+- **Vela requires `@luxalgo/vela-ui` 0.4.2.** The kit adds the help icon and the help mark
+  beside a section heading that the indicator settings dialog uses.
 
 ## [0.10.6]
 
