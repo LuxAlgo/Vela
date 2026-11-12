@@ -1,4 +1,4 @@
-import { inputVisible, type InputSchema, type InputValue, type SymbolPickerFn } from '../../core/model/inputs';
+import { inputVisible, joinMultiValue, parseMultiValue, type InputGroupHelp, type InputSchema, type InputValue, type SymbolPickerFn } from '../../core/model/inputs';
 import type { VelaTheme } from '../../core/options';
 import type { MessageLike, Translator } from '../../core/i18n/types';
 import { msg, withValues } from '../../core/i18n/message';
@@ -7,10 +7,12 @@ import { isDarkColor } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip, chromeHint } from './chrome-tooltip';
+import { safeUrl } from '../../ui/sanitize-html';
 import { toggleSelectList, type SelectOption } from '@luxalgo/vela-ui/select';
 import { Popover, closeOpenPopovers, eventDismissedPopover, isPopoverOpen, openPopoverTrigger } from '@luxalgo/vela-ui/popover';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
 import { createButton } from '@luxalgo/vela-ui/button';
+import { Checkbox } from '@luxalgo/vela-ui/checkbox';
 import { createTabs } from '@luxalgo/vela-ui/tabs';
 import { DatePicker, normalizeDateInput } from '@luxalgo/vela-ui/date-picker';
 import { fieldRow, fieldSection, buildFieldControl, fieldGridColumns, FIELD_GAP_PX } from '@luxalgo/vela-ui/field';
@@ -77,6 +79,8 @@ const TEXT = {
     openTimeList: msg('chart.indicatorSettings.openTimeList', 'Open time list'),
     openCalendar: msg('chart.indicatorSettings.openCalendar', 'Open calendar'),
     selectSymbol: msg('chart.indicatorSettings.selectSymbol', 'Select symbol…'),
+    help: msg('chart.indicatorSettings.help', 'Help'),
+    noneChecked: msg('chart.indicatorSettings.noneChecked', 'None'),
 };
 
 /**
@@ -263,7 +267,11 @@ export class IndicatorInputsDialog {
             section.style.cssText = 'display:contents;';
             let header: HTMLElement | null = null;
             if (group.name) {
-                header = fieldSection(group.label ? this.t(group.label) : group.name, { variant: 'inputs', first: body.childElementCount === 0 });
+                header = fieldSection(group.label ? this.t(group.label) : group.name, {
+                    variant: 'inputs',
+                    first: body.childElementCount === 0,
+                    info: group.help ? this.groupHelpMark(group.help) : undefined,
+                });
                 section.appendChild(header);
             }
             for (const inputRow of group.rows) {
@@ -388,7 +396,7 @@ export class IndicatorInputsDialog {
                     id: idOf(d),
                     control: this.buildControl(row, d, idOf(d)),
                     toggleFirst: d.type === 'bool',
-                    fit: isFitControl(d.type),
+                    fit: isFitControl(d),
                 })),
                 info: [...decls].reverse().find((d) => d.tooltip)?.tooltip
                     ? this.infoButton(this.tooltipOf([...decls].reverse().find((d) => d.tooltip)!))
@@ -425,12 +433,12 @@ export class IndicatorInputsDialog {
             }));
         }
 
-        const fit = isFitControl(lead.type);
+        const fit = isFitControl(lead);
         return append(fieldRow({
             label: nameOf(lead, this.i18n),
             id,
             fit,
-            controlWidth: fit ? undefined : 100,
+            controlWidth: fit ? undefined : CONTROL_PX,
             info,
             control: this.buildControl(row, lead, id),
         }));
@@ -451,6 +459,7 @@ export class IndicatorInputsDialog {
                 const label = labels?.[value];
                 return { value, label: label ? this.t(label) : value };
             });
+            if (inp.multiple && inp.type === 'string') return this.buildMultiSelect(id, inp, pairs, current, emit);
             return this.selectPairs(id, pairs, String(current), emit);
         }
         if (inp.type === 'source') return this.select(id, SOURCES, String(current), emit);
@@ -519,6 +528,24 @@ export class IndicatorInputsDialog {
         return el;
     }
 
+    /** A section heading's help mark (`groupHelp`): its text as the tooltip, its URL opened in a
+     *  new tab. A URL other than http(s) is never linked; with no text left either, no mark. */
+    private groupHelpMark(help: InputGroupHelp): HTMLElement | undefined {
+        const text = help.text ? this.t(help.text) : '';
+        const href = help.url ? (safeUrl(help.url, true) ?? undefined) : undefined;
+        if (!text && !href) return undefined;
+        const { el, dispose } = chromeHint(text, {
+            host: this.host.container,
+            theme: () => this.host.theme(),
+            size: 16,
+            icon: 'help',
+            href,
+            label: this.t(TEXT.help),
+        });
+        this.dialogTips.push(dispose);
+        return el;
+    }
+
     /** A dropdown over plain string options (value === label) — a thin case of {@link selectPairs}. */
     private select(id: string, options: string[], current: string, emit: (v: InputValue) => void): HTMLElement {
         return this.selectPairs(id, options.map((o) => ({ value: o, label: o })), current, emit);
@@ -526,7 +553,7 @@ export class IndicatorInputsDialog {
 
     /** A dropdown whose visible labels differ from the committed values (label ≠ value pairs). */
     private selectPairs(id: string, pairs: readonly SelectOption[], current: string, onChange: (v: string) => void): HTMLElement {
-        return buildFieldControl({
+        const select = buildFieldControl({
             kind: 'select',
             id,
             options: pairs,
@@ -535,6 +562,140 @@ export class IndicatorInputsDialog {
             list: this.listPopover(),
             onChange,
         }).el;
+        return hugWidest(select, pairs.map((p) => p.label), this.host.mobile());
+    }
+
+    /**
+     * A multi-select (`multiple` on a string input with options): a select-like field showing
+     * the checked options' labels joined by the separator, opening a list of checkboxes.
+     * Locked options are checked and disabled. The list stays open while the user toggles
+     * (several picks are the point); each toggle commits the joined value at once, like a
+     * single select's pick. Escape, Tab, an outside click or the field itself closes it.
+     */
+    private buildMultiSelect(id: string, inp: InputSchema, pairs: readonly SelectOption[], current: InputValue, emit: (v: InputValue) => void): HTMLElement {
+        const sep = inp.multiple?.separator ?? '';
+        const locked = new Set(inp.multiple?.locked ?? []);
+        const labelOf = new Map(pairs.map((p) => [p.value, p.label]));
+        let checked = parseMultiValue(inp, current);
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = id;
+        btn.className = 'vela-ind-multi-trigger';
+        btn.setAttribute('aria-haspopup', 'true');
+        btn.setAttribute('aria-expanded', 'false');
+        const text = document.createElement('span');
+        text.className = 'vela-ind-multi-value';
+        const chevron = document.createElement('span');
+        chevron.className = 'vela-ind-multi-chevron';
+        chevron.innerHTML = iconAt('chevron-down', 12);
+        btn.append(text, chevron);
+        const paint = (): void => {
+            const shown = checked.map((v) => labelOf.get(v) ?? v).join(sep);
+            text.textContent = shown || this.t(TEXT.noneChecked);
+            text.toggleAttribute('data-placeholder', shown === '');
+        };
+        paint();
+
+        const toggle = (value: string, on: boolean): void => {
+            const next = new Set(checked);
+            if (on) next.add(value);
+            else next.delete(value);
+            const joined = joinMultiValue(inp, next);
+            checked = parseMultiValue(inp, joined);
+            paint();
+            emit(joined);
+        };
+
+        const open = (): void => {
+            const boxes: Checkbox[] = [];
+            const pop: Popover = new Popover({
+                trigger: btn,
+                theme: this.host.theme(),
+                matchWidth: true,
+                collisionBoundary: this.dialog ?? 'viewport',
+                boundaryInset: 8,
+                sideOffset: 4,
+                className: 'vela-ind-multi',
+                onClose: () => {
+                    btn.setAttribute('aria-expanded', 'false');
+                    const active = document.activeElement;
+                    if (!active || active === document.body || pop.el.contains(active)) btn.focus({ preventScroll: true });
+                    for (const box of boxes.splice(0)) box.destroy();
+                },
+                content: (el) => {
+                    el.setAttribute('role', 'group');
+                    if (document.getElementById(`${id}--title`)) el.setAttribute('aria-labelledby', `${id}--title`);
+                    pairs.forEach((p, i) => {
+                        const boxId = `${id}-opt-${i}`;
+                        const row = document.createElement('div');
+                        row.className = 'vela-ind-multi-row';
+                        if (locked.has(p.value)) row.dataset.locked = '';
+                        const box = new Checkbox({
+                            id: boxId,
+                            checked: checked.includes(p.value),
+                            disabled: locked.has(p.value),
+                            onCheckedChange: (on) => toggle(p.value, on),
+                        });
+                        boxes.push(box);
+                        const label = document.createElement('label');
+                        label.className = 'vela-ind-multi-label';
+                        label.htmlFor = boxId;
+                        label.textContent = p.label;
+                        row.append(box.el, label);
+                        // The row's own padding toggles too: the whole row is the target.
+                        row.addEventListener('click', (e) => {
+                            if (e.target === row) row.querySelector('input')?.click();
+                        });
+                        el.appendChild(row);
+                    });
+                    el.addEventListener('keydown', (e) => {
+                        const inputs = [...el.querySelectorAll<HTMLInputElement>('input:not(:disabled)')];
+                        const at = inputs.indexOf(document.activeElement as HTMLInputElement);
+                        const focusAt = (i: number): void => {
+                            e.preventDefault();
+                            const next = inputs[(i + inputs.length) % inputs.length];
+                            next?.focus({ preventScroll: true });
+                            next?.closest('.vela-ind-multi-row')?.scrollIntoView?.({ block: 'nearest' });
+                        };
+                        if (e.key === 'ArrowDown') focusAt(at + 1);
+                        else if (e.key === 'ArrowUp') focusAt(at < 0 ? -1 : at - 1);
+                        else if (e.key === 'Home') focusAt(0);
+                        else if (e.key === 'End') focusAt(-1);
+                        else if (e.key === 'Enter' && at >= 0) {
+                            e.preventDefault();
+                            inputs[at]!.click();
+                        } else if (e.key === 'Tab') {
+                            // Focus goes back to the field, and the Tab moves on from there.
+                            pop.hide();
+                        }
+                    });
+                },
+            });
+            pop.show();
+            btn.setAttribute('aria-expanded', 'true');
+            pop.el.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus({ preventScroll: true });
+        };
+
+        // Suppress the default mousedown focus, as the kit select does: when this press
+        // dismisses an open popover, Chrome's focus action can scroll the dialog body.
+        btn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            btn.focus({ preventScroll: true });
+        });
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (openPopoverTrigger() === btn) closeOpenPopovers();
+            else open();
+        });
+        btn.addEventListener('keydown', (e) => {
+            if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && openPopoverTrigger() !== btn) {
+                e.preventDefault();
+                open();
+            }
+        });
+        // As wide as the longest value it can show: every option checked.
+        return hugWidest(btn, [pairs.map((p) => p.label).join(sep)], this.host.mobile());
     }
 
     /** `input.session` → two typeable HH:MM comboboxes committing a `HHMM-HHMM` session string. */
@@ -771,9 +932,41 @@ export class IndicatorInputsDialog {
     }
 }
 
-/** Controls that size themselves (swatches, toggles, multi-field pickers) instead of sitting in the 100px column. */
-function isFitControl(type: InputSchema['type']): boolean {
-    return type === 'color' || type === 'bool' || type === 'session' || type === 'time';
+/** The width of the dialog's control column: number and text fields, and a dropdown's minimum. */
+const CONTROL_PX = 100;
+
+/** Whether an input renders as a dropdown (single or multi-select); mirrors `buildControl`. */
+function isSelectInput(inp: InputSchema): boolean {
+    return inp.type !== 'bool' && ((inp.options?.length ?? 0) > 0 || inp.type === 'source' || inp.type === 'timeframe');
+}
+
+/** Controls that size themselves instead of sitting in the 100px column: swatches, toggles,
+ *  multi-field pickers, and dropdowns (see {@link hugWidest}). */
+function isFitControl(inp: InputSchema): boolean {
+    return isSelectInput(inp) || inp.type === 'color' || inp.type === 'bool' || inp.type === 'session' || inp.type === 'time';
+}
+
+/**
+ * Wrap a dropdown so it is as wide as its longest label: never narrower than the 100px
+ * control column, never wider than the room its row leaves (the trigger ellipsizes past
+ * that). A hidden sizer holds the labels; the wrapper's one `minmax(0,1fr)` track takes the
+ * sizer's width as its preferred size yet lets the row shrink it, which a plain width would
+ * not. On mobile the label column shares the row with it, so it stops at half the screen.
+ */
+function hugWidest(control: HTMLElement, labels: readonly string[], mobile: boolean): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'vela-ind-hug';
+    if (mobile) wrap.dataset.mobile = '';
+    const sizer = document.createElement('div');
+    sizer.className = 'vela-ind-hug-sizer';
+    sizer.setAttribute('aria-hidden', 'true');
+    for (const label of labels) {
+        const line = document.createElement('span');
+        line.textContent = label;
+        sizer.appendChild(line);
+    }
+    wrap.append(control, sizer);
+    return wrap;
 }
 
 /**
@@ -859,6 +1052,8 @@ interface InputGroup {
     name: string | null;
     /** The section heading's translatable text (its first member's `display.group`). */
     label?: MessageLike;
+    /** The section heading's help mark (its first member's `groupHelp`). */
+    help?: InputGroupHelp;
     rows: InputSchema[][];
 }
 
@@ -881,6 +1076,7 @@ function groupInputs(inputs: InputSchema[]): InputGroup[] {
     return order.map((name) => {
         const members = byGroup.get(name)!;
         const label = members.find((m) => m.display?.group)?.display?.group;
+        const help = members.find((m) => m.groupHelp)?.groupHelp;
         const rows: InputSchema[][] = [];
         const inlineRowIndex = new Map<string, number>();
         for (const inp of members) {
@@ -892,7 +1088,7 @@ function groupInputs(inputs: InputSchema[]): InputGroup[] {
                 rows.push([inp]);
             }
         }
-        return { name, ...(label ? { label } : {}), rows };
+        return { name, ...(label ? { label } : {}), ...(help ? { help } : {}), rows };
     });
 }
 
@@ -901,7 +1097,7 @@ const CLOCK_SVG = iconAt('clock', 14);
 
 const DIALOG_STYLE_ID = 'vela-ind-dialog-styles';
 /** Bump when the injected sheet's rules change so an already-mounted page refreshes them. */
-const DIALOG_STYLE_REV = '30';
+const DIALOG_STYLE_REV = '31';
 const LEGEND_ICON_PX = 16;
 
 /** Inject the scoped styles inline cssText can't reach (color-swatch, focus ring, scrollbar). */
@@ -929,6 +1125,24 @@ ${overlayScrollbarCss('.vela-dialog.vela-ind-dialog *')}
 .vela-ind-close:hover{color:${t.danger} !important;background-color:${t.hover.strong};}
 .vela-ind-fold{transition:border-color ${t.dur.fast} ease,opacity ${t.dur.fast} ease;}
 .vela-ind-fold:hover{border-color:${t.border.strong};opacity:0.9;}
+.vela-ind-hug{display:grid;grid-template-columns:minmax(0,1fr);min-width:${CONTROL_PX}px;}
+.vela-ind-hug[data-mobile]{max-width:50vw;}
+.vela-ind-hug-sizer{visibility:hidden;height:0;overflow:hidden;font-size:14px;}
+.vela-ind-hug-sizer>span{display:block;height:0;white-space:nowrap;padding-inline:8px 26px;border-inline:1px solid transparent;}
+.vela-ind-multi-trigger{position:relative;display:flex;align-items:center;width:100%;min-width:0;box-sizing:border-box;height:34px;padding-block:0;padding-inline:8px 26px;background:transparent;border:1px solid ${t.border.strong};border-radius:${t.radius.md};color:${t.fg.bright};font-size:14px;font-family:inherit;cursor:pointer;text-align:start;${FIELD_FOCUS_CSS}}
+.vela-ind-multi-trigger:hover{border-color:${t.fg.muted};}
+.vela-ind-multi-trigger:focus{${FIELD_FOCUS_RING}}
+.vela-ind-multi-value{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.vela-ind-multi-value[data-placeholder]{color:${t.fg.muted};}
+.vela-ind-multi-chevron{position:absolute;inset-inline-end:8px;top:50%;transform:translateY(-50%);display:flex;opacity:0.55;line-height:0;pointer-events:none;}
+.vela-ind-multi{background:${t.bg};color:${t.fg};border-radius:${t.radius.md};box-shadow:${t.shadow};font:14px ${t.font};padding:4px;max-height:min(280px,50vh);overflow-y:auto;user-select:none;}
+${overlayScrollbarCss('.vela-ind-multi')}
+.vela-ind-multi-row{display:flex;align-items:center;gap:10px;padding-inline-start:10px;border-radius:${t.radius.sm};white-space:nowrap;cursor:pointer;}
+.vela-ind-multi-row:hover,.vela-ind-multi-row:has([data-focus-visible]){background:${t.hover};}
+.vela-ind-multi-label{flex:1;padding-block:7px;padding-inline:0 10px;cursor:inherit;}
+.vela-ind-multi-row[data-locked]{cursor:default;}
+.vela-ind-multi-row[data-locked]:hover{background:transparent;}
+.vela-ind-multi-row[data-locked] .vela-ind-multi-label{color:${t.fg.muted};}
 }`;
     if (!existing) document.head.appendChild(s);
 }

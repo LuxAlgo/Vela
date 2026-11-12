@@ -134,8 +134,8 @@ by their indicator id, `ctx.id`).
 An engine turns source into the neutral indicator model: `prepare(source)` parses it,
 `execute(request, handlers)` runs it over the bars the core hands in and emits models. **Before
 writing one, read [references/scripting-engine.md](references/scripting-engine.md)**: a complete
-engine to start from, and the rules the core relies on (ids, history arriving in parts,
-capabilities). Register it with `chart.registerEngine(language, engine)` and add scripts with
+engine to start from, the rules the core relies on (ids, history arriving in parts,
+capabilities), and the schema fields for multi-select inputs and section help. Register it with `chart.registerEngine(language, engine)` and add scripts with
 `chart.addIndicator(source, { language })`.
 
 

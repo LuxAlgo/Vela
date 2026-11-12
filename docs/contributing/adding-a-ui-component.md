@@ -45,7 +45,8 @@ select's list and the color picker's opacity run on Zag machines.
   overlay scrollbar. `md` is 34px/14px and fills its parent unless `fill: false`
   (the shared 100px settings column: a long current label ellipsizes, the open list
   still sizes to its longest item). `sm` is 28px/13px and hugs the widest option
-  (max-width 200px). `setValue` does not emit.
+  (max-width 200px). `setValue` does not emit. The indicator dialog wraps its selects so each
+  is as wide as its longest option: at least the 100px column, at most what the row leaves.
 - **`NumberInput`** — `commit: 'blur'` clamps and shows hover steppers (press-repeat
   400ms then 60ms); `commit: 'live'` emits per keystroke. Chart settings uses live
   commit with steppers on, at the same 34×100px field as the indicator dialog.
@@ -66,6 +67,8 @@ select's list and the color picker's opacity run on Zag machines.
   turn a label + a control descriptor into the shared settings row. Chart settings,
   indicator inputs, and the drawing settings dialog all map their schemas through it.
   Rows use `display:contents` so a pane shares one label column (`max-content 1fr`).
+  `fieldSection` takes an `info` element (the indicator dialog's section help mark) after
+  its heading text.
 - **`GlyphSelect`** / **`widthField`** — icon-rendered options in a popover. Chart
   settings' line-width field is the width preset.
 - **`DatePicker`** — a month calendar whose header month and year open a twelve-month

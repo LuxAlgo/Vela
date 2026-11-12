@@ -41,6 +41,29 @@ export interface InputDisplay {
 }
 
 /**
+ * A multi-select string input: the settings dialog shows its `options` as checkboxes in one
+ * dropdown. The stored value stays ONE string, the checked options joined by `separator` in
+ * `options` order (`'On bar close, On order fill'`), so layouts, `setInputs` and saved state
+ * handle it like any string input.
+ */
+export interface InputMultiple {
+    /** Joins the checked options in the stored value, such as `', '`. */
+    separator: string;
+    /** Options that are always checked: their checkboxes are disabled, and the value always
+     *  holds them. */
+    locked?: readonly string[];
+}
+
+/** A help mark on a group's section heading (see {@link InputSchema.groupHelp}). */
+export interface InputGroupHelp {
+    /** The mark's tooltip and accessible name. */
+    text?: MessageLike;
+    /** Opened in a new tab when the mark is clicked. Only `http:` and `https:` URLs are
+     *  honoured; any other URL leaves the mark a tooltip only. */
+    url?: string;
+}
+
+/**
  * Host-provided symbol picker for the settings dialog's `input.symbol` control. Called when the
  * user activates the field: the host opens its own symbol-selection UI (e.g. the app's ticker
  * menu) seeded with the `current` symbol, and reports the chosen one back through `onPick`. When
@@ -95,6 +118,45 @@ export interface InputSchema {
     tooltip?: string;
     /** Translatable display text for this input (see {@link InputDisplay}). */
     display?: InputDisplay;
+    /** Check several `options` at once (see {@link InputMultiple}). Read on a `string` input
+     *  with `options` only. */
+    multiple?: InputMultiple;
+    /** A help mark beside this input's `group` heading (see {@link InputGroupHelp}). The first
+     *  input of a group that carries one sets it; an input without a `group` shows none. */
+    groupHelp?: InputGroupHelp;
+}
+
+/** The distinct options of an input, as strings (an engine may hand over other scalars). */
+function optionList(inp: Pick<InputSchema, 'options'>): string[] {
+    return [...new Set((inp.options ?? []).map(String))];
+}
+
+/**
+ * The options a multi-select value checks, in `options` order: the value split by the
+ * separator, fragments that name no option dropped, `locked` options always in. An empty
+ * value checks only the locked options.
+ */
+export function parseMultiValue(inp: Pick<InputSchema, 'options' | 'multiple'>, value: InputValue): string[] {
+    const options = optionList(inp);
+    const known = new Set(options);
+    const raw = String(value);
+    const sep = inp.multiple?.separator ?? '';
+    const checked = new Set<string>(inp.multiple?.locked ?? []);
+    for (const part of raw === '' ? [] : sep === '' ? [raw] : raw.split(sep)) {
+        // Trimmed as a fallback: a `','` separator over `'A, B'` still names B.
+        if (known.has(part)) checked.add(part);
+        else if (known.has(part.trim())) checked.add(part.trim());
+    }
+    return options.filter((o) => checked.has(o));
+}
+
+/** The stored value for a set of checked options: the locked options added, unknown ones
+ *  dropped, joined by the separator in `options` order. */
+export function joinMultiValue(inp: Pick<InputSchema, 'options' | 'multiple'>, checked: Iterable<string>): string {
+    const picked = new Set<string>([...checked, ...(inp.multiple?.locked ?? [])]);
+    return optionList(inp)
+        .filter((o) => picked.has(o))
+        .join(inp.multiple?.separator ?? '');
 }
 
 /**

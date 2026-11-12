@@ -2,6 +2,31 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.7]
+
+### Added
+
+- **Check several choices in one indicator setting.** A scripting engine can mark a text setting
+  that has choices as `multiple`, on the Inputs tab or the Properties tab. The settings dialog
+  then shows its choices as checkboxes in one dropdown, which stays open while you check and
+  clear them with the pointer or the keyboard, and the closed field lists the checked choices.
+  The setting is still saved as one text value, the checked choices joined by the setting's
+  separator in their listed order, so layouts, `setInputs`, `setProps` and saved charts handle
+  it as before. Choices marked `locked` stay checked and cannot be cleared.
+- **Help marks on settings sections.** An input's `groupHelp` puts a small question mark beside
+  its section heading in the indicator settings dialog, on any tab. Pointing at it shows the
+  help text, and clicking it opens the help page in a new tab when one is given. Only `http`
+  and `https` addresses open; any other address leaves the mark a tooltip only.
+
+### Changed
+
+- **Dropdowns in indicator settings show their full choice.** A dropdown in an indicator's
+  settings dialog is now as wide as its longest choice instead of a fixed narrow box, so a
+  choice such as "On bar close" no longer reads "On bar …". It is never narrower than before,
+  and it stops at the edge of the dialog, where a longer choice is shortened as before.
+- **Vela requires `@luxalgo/vela-ui` 0.4.2.** The kit adds the help icon and the help mark
+  beside a section heading that the indicator settings dialog uses.
+
 ## [0.10.6]
 
 ### Added
