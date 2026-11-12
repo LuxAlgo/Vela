@@ -144,6 +144,11 @@ const injectFieldStyles = defineStyles(
                 &[data-variant='inputs'][data-first] {
                     padding-top: 4px;
                 }
+                &[data-info]:where(:not([hidden])) {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
             }
             [data-slot~='field-sep'] {
                 grid-column: 1 / -1;
@@ -187,6 +192,8 @@ export function fieldGrid(opts: FieldGridOptions = {}): HTMLElement {
 export interface FieldSectionOptions {
     variant?: FieldGridVariant;
     first?: boolean;
+    /** Placed after the heading text and centered on it, such as a help mark. */
+    info?: HTMLElement;
 }
 
 /** Uppercase group heading that spans the field grid. */
@@ -197,6 +204,10 @@ export function fieldSection(title: string, opts: FieldSectionOptions = {}): HTM
     if (opts.variant) el.dataset.variant = opts.variant;
     if (opts.first) el.dataset.first = '';
     el.textContent = title;
+    if (opts.info) {
+        el.dataset.info = '';
+        el.appendChild(opts.info);
+    }
     return el;
 }
 

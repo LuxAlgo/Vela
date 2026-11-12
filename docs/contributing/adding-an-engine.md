@@ -43,6 +43,30 @@ It resolves to:
 
 Because `prepare` is cheap and data-free, the core can call it eagerly to build settings UI before any execution happens.
 
+#### Multi-selects and section help
+
+Two optional `InputSchema` fields cover settings that a plain dropdown and a plain heading cannot express. Both work in inputs and in declaration props alike.
+
+- **`multiple: { separator, locked? }`** — on a `string` input with `options`, the dialog shows the options as checkboxes in one dropdown, and the user can check several. The stored value stays **one string**: the checked options joined by `separator`, in `options` order. Layouts, `setInputs`/`setProps`, saved state and your engine see that string, so split it by the separator to read it. Options listed in `locked` are always checked: their checkboxes are disabled and the value always holds them. When the dialog reads a value, it keeps only the fragments that name an option and adds the locked ones; the closed field shows the checked options' labels (`display.options` applies to each one) joined by the separator.
+- **`groupHelp: { text?, url? }`** — a small question-mark mark beside the input's `group` heading. `text` (a string or a message) is its tooltip and accessible name; `url` opens in a new tab when the mark is clicked. Only `http:` and `https:` URLs are linked: any other URL leaves the mark a tooltip only, and a mark with neither shows nothing. The first input of a group that carries `groupHelp` sets the group's mark, so declare it once, on any member; an input without a `group` has no heading to carry it.
+
+A strategy's execution modes, published as a declaration prop:
+
+```json
+{
+    "key": "script_execution",
+    "title": "Script execution",
+    "type": "string",
+    "defval": "On bar close",
+    "options": ["On bar close", "On order fill", "On realtime bar tick"],
+    "multiple": { "separator": ", ", "locked": ["On bar close"] },
+    "group": "Detalization and execution",
+    "groupHelp": { "text": "When the strategy runs.", "url": "https://example.com/docs/execution" }
+}
+```
+
+The closed field reads "On bar close"; after the user checks "On order fill", the value your engine receives is `"On bar close, On order fill"`.
+
 ### execute — synchronous handle, async run
 
 Where `prepare` is async, `execute(request, handlers)` is the opposite: it returns an **execution session synchronously**, even though the actual run is asynchronous. The session is a handle the core holds immediately; results arrive later through the handlers. This split is the single biggest source of confusion for new authors, so keep it crisp: the call returns a control surface right away, and the work happens behind it.

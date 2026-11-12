@@ -333,7 +333,7 @@ The labels you hand Vela accept a message as well as a plain string, and Vela sh
 the shell's language: a contributed action's `label`, a side panel's `title`, a legend
 action's `tooltip`, a legend callout's text, a registered layout's `label`, a key binding's
 `label` and `category`, an indicator input's `display` (its title, tooltip, group and the
-names of its options), and a drawing type's name. Messages go in only: what you read back
+names of its options) and its `groupHelp` text, and a drawing type's name. Messages go in only: what you read back
 is text, in the language of the translator you pass (English without one), such as
 `buildToolbar(option, chart.i18n)`, `layouts(chart.i18n)`, `layoutDefinition(id, chart.i18n)`,
 `drawingTypes(chart.i18n)`, `keymap.bindings(chart.i18n)` and
