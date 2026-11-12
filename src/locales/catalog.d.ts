@@ -13,7 +13,9 @@ export interface VelaCoreMessageCatalog {
     'chart.axisButtons.logLetter': string;
     'chart.indicatorSettings.cancel': string;
     'chart.indicatorSettings.close': string;
+    'chart.indicatorSettings.help': string;
     'chart.indicatorSettings.inputsTab': string;
+    'chart.indicatorSettings.noneChecked': string;
     'chart.indicatorSettings.ok': string;
     'chart.indicatorSettings.openCalendar': string;
     'chart.indicatorSettings.openTimeList': string;

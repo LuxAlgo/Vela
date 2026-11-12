@@ -93,6 +93,28 @@ chart.addIndicator('20', { language: 'average' });
 - **The default language is fixed when a chart is built**: an engine registered later needs
   `addIndicator(source, { language })`, or the chart's `defaultLanguage` option.
 
+## Multi-selects and section help
+
+Two optional schema fields, for inputs and declaration props (`prepare`'s `props`) alike:
+
+- **`multiple: { separator, locked? }`** on a `string` input with `options` shows the options as
+  checkboxes in one dropdown. The value stays one string: the checked options joined by
+  `separator` in `options` order, so split it to read it. `locked` options are always checked
+  and their checkboxes disabled. Fragments that name no option are dropped.
+- **`groupHelp: { text?, url? }`** puts a question-mark mark beside the input's `group` heading:
+  `text` is its tooltip, `url` opens in a new tab (`http:` and `https:` only; any other URL is
+  not linked). The first input of the group that carries one sets it.
+
+```ts
+const scriptExecution: InputSchema = {
+    key: 'script_execution', title: 'Script execution', type: 'string', defval: 'On bar close',
+    options: ['On bar close', 'On order fill', 'On realtime bar tick'],
+    multiple: { separator: ', ', locked: ['On bar close'] }, // checking "On order fill" stores "On bar close, On order fill"
+    group: 'Detalization and execution',
+    groupHelp: { text: 'When the strategy runs.', url: 'https://example.com/docs/execution' },
+};
+```
+
 ## Shipping it
 
 An engine is its own package: `@luxalgo/vela` as a peer dependency (never bundled, or the SDK's
