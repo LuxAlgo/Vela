@@ -4,9 +4,9 @@ import { NativeRenderer } from '../src/renderers/native/NativeRenderer';
 /**
  * Animation SETTLING after a resize — regression guards for two workspace bugs.
  *
- * `clampViewport`'s bounds depend on the chart WIDTH, so a container resize (splitter
- * drag, layout change) can strand the ease targets (`targetBarSpacing`, the
- * scroll-to-latest glide) outside the reachable range. The ease then re-arms forever:
+ * `clampViewport`'s zoom-in and pan bounds depend on the chart WIDTH, so a container
+ * resize (splitter drag, layout change) can strand the ease targets (`targetBarSpacing`,
+ * the scroll-to-latest glide) outside the reachable range. The ease then re-arms forever:
  * a permanent rAF loop that repaints and emits `viewport:changed` every frame and
  * visibly jitters `rightOffset` through the zoom anchor ("shaking" cells) until a
  * pointerdown's freeze-on-touch happens to re-align the target. `animTick` must snap a
@@ -52,15 +52,13 @@ function ticksToSettle(r: AnyRenderer, maxFrames = 300): number {
 }
 
 describe('animTick settles when a resize strands its targets outside the clamp', () => {
-    it('zoom ease: a targetBarSpacing below the reachable minimum snaps to the bound', () => {
-        const { r } = setup(100, 800); // minBs = 800/(100+10) ≈ 7.27 — all bars + the default 10-bar right margin
+    it('zoom ease: a zoom-out target is reached whatever the width — the minimum spacing is fixed', () => {
+        const { r } = setup(100, 800); // the bars no longer have to fill the width, so 2 px is in range
         r.coords.setViewport({ barSpacing: 10, rightOffset: 5 });
-        r.targetBarSpacing = 2; // stranded below minBs — as after a widening resize
-        expect(ticksToSettle(r)).toBeLessThan(10);
-        // Settled ON the clamp bound, target re-aligned so the loop stays down.
-        const vp = r.coords.getViewport();
-        expect(vp.barSpacing).toBeCloseTo(800 / 110, 3);
-        expect(r.targetBarSpacing).toBeCloseTo(vp.barSpacing, 6);
+        r.targetBarSpacing = 2;
+        expect(ticksToSettle(r)).toBeLessThan(200);
+        expect(r.coords.getViewport().barSpacing).toBeCloseTo(2, 3);
+        expect(r.targetBarSpacing).toBe(2); // the clamp accepted the target as it was
     });
 
     it('zoom ease: a targetBarSpacing above the reachable maximum snaps to the bound', () => {
@@ -93,8 +91,8 @@ describe('animTick settles when a resize strands its targets outside the clamp',
 
     it('the settled loop stops emitting viewport changes', () => {
         const { r, emits } = setup(100, 800);
-        r.coords.setViewport({ barSpacing: 10, rightOffset: 5 });
-        r.targetBarSpacing = 2;
+        r.coords.setViewport({ barSpacing: 100, rightOffset: 5 });
+        r.targetBarSpacing = 900; // stranded above maxBs = 400
         ticksToSettle(r);
         const settledEmits = emits();
         for (let i = 0; i < 50; i += 1) r.animTick(16); // the Animator would have stopped; even direct ticks must not move anything
