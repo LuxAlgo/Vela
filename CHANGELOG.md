@@ -2,6 +2,21 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Zooming out no longer stops when the bars fill the chart.** The zoom-out limit is now a
+  fixed minimum bar width of half a pixel, whatever the length of the series. A short series,
+  such as a few years of monthly bars, shrinks to a narrow band with empty space on both
+  sides. The time axis keeps its dates and gridlines from the first bar onward, into the
+  future, and shows none before the first bar. Zooming out loads no extra history. The
+  zoom-in limit, the rule that two bars stay on screen while panning, the eased zoom and the
+  zoom anchor are unchanged. The **ALL** range, **Reset chart view** and a double-click on
+  the time axis still fit the data to the chart. When the view spans decades or centuries,
+  the time axis and its gridlines step by 2, 5, 10, 20, 50 or more years instead of one line
+  per year.
+
 ## [0.10.7]
 
 ### Added

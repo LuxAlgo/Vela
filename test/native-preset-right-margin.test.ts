@@ -57,7 +57,7 @@ describe('a range preset keeps the right margin', () => {
         expect(viewport().rightOffset).toBe(40);
     });
 
-    it('the oldest bar stays on screen when the margin is wider than the zoom-out breathing room', () => {
+    it('the oldest bar stays on screen with a wide margin', () => {
         const bars = mkBars(300);
         const { r, viewport } = makeRenderer(bars);
         r.applyConfig({ margins: { right: 40 } });

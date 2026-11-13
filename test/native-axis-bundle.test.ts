@@ -148,6 +148,53 @@ describe('timeTicks calendar alignment', () => {
         expect(ticks[0]!.label).toBe('2017');
         expect(ticks[0]!.time).toBe(Date.UTC(2017, 0, 1) + 5 * H);
     });
+
+    it('a span of decades steps by two years', () => {
+        const ticks = timeTicks(Date.UTC(1996, 2, 10), Date.UTC(2026, 8, 28), 8);
+        expect(ticks.map((t) => t.label)).toEqual(['1998', '2000', '2002', '2004', '2006', '2008', '2010', '2012', '2014', '2016', '2018', '2020', '2022', '2024', '2026']);
+    });
+
+    it('a span of centuries steps by round multiples of years, each on its January 1', () => {
+        // A short monthly series at the minimum bar spacing: ~250 years across the plot.
+        const ticks = timeTicks(Date.UTC(1774, 6, 27), Date.UTC(2027, 8, 7), 8);
+        expect(ticks.map((t) => t.label)).toEqual(['1780', '1800', '1820', '1840', '1860', '1880', '1900', '1920', '1940', '1960', '1980', '2000', '2020']);
+        for (const t of ticks) {
+            const d = new Date(t.time);
+            expect([d.getUTCMonth(), d.getUTCDate(), d.getUTCHours()]).toEqual([0, 1, 0]);
+        }
+    });
+
+    it('the tick count stays bounded however long the span', () => {
+        const YEAR = 365.25 * 24 * H;
+        const to = Date.UTC(2026, 10, 1);
+        for (const years of [17, 40, 90, 250, 640, 2_000, 7_700, 50_000]) {
+            for (const target of [3, 8]) {
+                const ticks = timeTicks(to - years * YEAR, to, target);
+                expect(ticks.length, `${years} years, target ${target}`).toBeGreaterThanOrEqual(2);
+                expect(ticks.length, `${years} years, target ${target}`).toBeLessThanOrEqual(2 * target + 1);
+            }
+        }
+    });
+
+    it('ticks before the first bar are left out, and the step still follows the whole span', () => {
+        // 103 monthly bars from May 2018 as a narrow band, with ~250 years across the plot.
+        const firstBar = Date.UTC(2018, 4, 1);
+        const ticks = timeTicks(Date.UTC(1876, 5, 2), Date.UTC(2129, 6, 14), 8, 0, undefined, firstBar);
+        expect(ticks.map((t) => t.label)).toEqual(['2020', '2040', '2060', '2080', '2100', '2120']);
+        // Intraday: a tick on the first bar itself stays, the ones before it go.
+        const open = Date.UTC(2026, 10, 2, 8); // on the 4-hour step this span picks
+        const intraday = timeTicks(Date.UTC(2026, 10, 2, 0), Date.UTC(2026, 10, 2, 20), 8, 0, undefined, open);
+        expect(intraday[0]!.time).toBe(open);
+        expect(intraday.every((t) => t.time >= open)).toBe(true);
+        expect(intraday.length).toBeGreaterThan(2);
+    });
+
+    it('year ticks before year 100 keep their own year', () => {
+        const at = (year: number): number => new Date(0).setUTCFullYear(year, 0, 1);
+        const ticks = timeTicks(at(-220), at(320), 8);
+        expect(ticks.map((t) => new Date(t.time).getUTCFullYear())).toEqual([-200, -150, -100, -50, 0, 50, 100, 150, 200, 250, 300]);
+        for (const t of ticks) expect([new Date(t.time).getUTCMonth(), new Date(t.time).getUTCDate()]).toEqual([0, 1]);
+    });
 });
 
 describe('keyboard key→action mapping (item 11)', () => {
