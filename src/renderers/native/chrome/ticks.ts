@@ -260,16 +260,19 @@ function pickStep(targetMs: number): number {
  * UTC-aligned tick ladder for the time axis. `offsetMs` shifts alignment + labels into
  * a chosen time zone (0 ⇒ UTC): ticks land on local midnights/hours and the returned
  * `time` is the REAL epoch-ms (zoned alignment undone) so the X mapping stays correct.
+ * `notBeforeMs` (the first bar's time) leaves out the ticks before it: the empty past
+ * carries no dates. The step still follows the whole span, so the ticks that remain keep
+ * the density of the view.
  */
-export function timeTicks(fromMs: number, toMs: number, target = 8, offsetMs = 0, fmt: ResolvedFormatters = ENGLISH_FORMAT): TimeTick[] {
+export function timeTicks(fromMs: number, toMs: number, target = 8, offsetMs = 0, fmt: ResolvedFormatters = ENGLISH_FORMAT, notBeforeMs = -Infinity): TimeTick[] {
     const span = toMs - fromMs;
     if (!(span > 0)) return [];
     const step = pickStep(span / Math.max(1, target));
     // Work in zoned space so `first`/steps align to local wall-clock, then undo the
     // shift on each tick's `time` for pixel placement on the real (UTC) axis.
-    const zFrom = fromMs + offsetMs;
+    const zFrom = Math.max(fromMs, notBeforeMs) + offsetMs;
     const zTo = toMs + offsetMs;
-    if (step >= MONTH) return calendarTicks(zFrom, zTo, step >= YEAR ? 12 : step >= 3 * MONTH ? 3 : 1, offsetMs, fmt);
+    if (step >= MONTH) return calendarTicks(zFrom, zTo, step >= YEAR ? 12 * yearStep(span, target) : step >= 3 * MONTH ? 3 : 1, offsetMs, fmt);
     const first = Math.ceil(zFrom / step) * step;
     const clockUnit: TimeTickUnit = step < MIN ? 'second' : step < HOUR ? 'minute' : 'hour';
     const out: TimeTick[] = [];
@@ -301,13 +304,34 @@ export function timeTicks(fromMs: number, toMs: number, target = 8, offsetMs = 0
 function calendarTicks(zFrom: number, zTo: number, months: number, offsetMs: number, fmt: ResolvedFormatters): TimeTick[] {
     const d0 = new Date(zFrom);
     let idx = d0.getUTCFullYear() * 12 + d0.getUTCMonth();
-    if (Date.UTC(Math.floor(idx / 12), idx % 12, 1) < zFrom) idx += 1;
+    if (monthStart(idx) < zFrom) idx += 1;
     idx = Math.ceil(idx / months) * months;
-    const unit: TimeTickUnit = months === 12 ? 'year' : 'month';
+    const unit: TimeTickUnit = months >= 12 ? 'year' : 'month';
     const out: TimeTick[] = [];
-    for (let zt = Date.UTC(Math.floor(idx / 12), idx % 12, 1); zt <= zTo; idx += months, zt = Date.UTC(Math.floor(idx / 12), idx % 12, 1)) {
+    for (let zt = monthStart(idx); zt <= zTo; idx += months, zt = monthStart(idx)) {
         const time = zt - offsetMs;
         out.push({ time, label: fmt.timeTick(time, { unit, major: true, offsetMs, surface: 'timeAxis' }), major: true });
     }
     return out;
+}
+
+/** Epoch ms of the first of a month, the month counted from year 0 (`year * 12 + month`).
+ *  Not `Date.UTC`, which reads the years 0 to 99 as 1900 to 1999. */
+function monthStart(monthIndex: number): number {
+    const year = Math.floor(monthIndex / 12);
+    return new Date(0).setUTCFullYear(year, monthIndex - year * 12, 1);
+}
+
+/**
+ * Years between ticks once the ladder tops out at one year: 1, 2, 5, 10, 20, 50… A year
+ * label is narrow, so the yearly step holds until more than two ticks would share a
+ * target slot. Past that, a view spanning centuries (a short monthly series at the
+ * minimum bar spacing) would otherwise get one gridline per year.
+ */
+function yearStep(spanMs: number, target: number): number {
+    const need = spanMs / (2 * Math.max(1, target) * YEAR);
+    if (!(need > 1)) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(need)));
+    const norm = need / mag;
+    return (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
 }
