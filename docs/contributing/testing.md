@@ -17,22 +17,21 @@ These run under vitest in Node, with no browser. Run them once with **`npm test`
 The ports exist precisely so the core can be exercised without real backends. The tests lean on this through the **dependency-injection constructor**, substituting:
 
 - a **fake renderer** in place of a real one,
-- a **fake worker that records the messages it receives**, so the worker request/response protocol can be asserted without a real worker, and
+- a **fake scripting engine** that produces controlled models and execution callbacks, and
 - **injected fake feeds** that hand the core whatever bars a scenario needs.
 
 Because the only thing crossing a port is the neutral model, a double only has to honor the contract — it never needs backend-specific behavior.
 
-### Engine output is pinned with captured fixtures
+### Engine integration uses controlled execution
 
-Scripting-engine output is verified against **captured JSON fixtures**. The rule:
+The orchestrator tests use fake `ScriptingEngine` implementations to control preparation,
+execution, updates, and failures. They verify how Vela passes market data to an engine,
+applies its output, and releases its execution sessions. These tests exercise Vela's
+integration contract; they do not validate a scripting language runtime.
 
-> **Regenerate fixtures deliberately; never hand-edit them.**
-
-A fixture is a recorded, trusted run. Editing one by hand quietly changes what "correct" means and defeats the test. When engine behavior legitimately changes, regenerate the fixture as an intentional step and review the diff.
-
-### The inlined worker is stubbed
-
-The browser bundle inlines the worker (see [setup.md](./setup.md#two-artifacts-from-one-source)), which is not appropriate to load in Node. In the unit suite the inline-worker import is **stubbed**, and worker behavior is driven through the fake worker described above. This keeps the worker's port contract testable without a real worker thread.
+Scripting runtimes and their workers belong to engine addons and need tests in those
+packages. Vela's builds include neither an engine nor an inlined scripting worker
+(see [setup.md](./setup.md#two-artifacts-from-one-source)).
 
 ## Tier 2 — browser smoke testing
 
@@ -46,7 +45,7 @@ The playground serves the **source directly** (vite): `npm run playground`, then
 ## Which tier for which change
 
 - Logic in the core, or a port contract: **Tier 1**. Add or update unit tests with the appropriate test double.
-- Anything you need to *see* render — a new indicator, a renderer change, an interaction: **Tier 2**, after rebuilding the bundle.
-- A change to engine output: update the relevant **fixture** (regenerate, don't edit) and smoke-test the affected indicator.
+- Anything you need to *see* render — a new indicator, a renderer change, an interaction: **Tier 2**, using the source playground with no build step.
+- A change to how Vela handles engine output: add a controlled engine regression in **Tier 1** and smoke-test the affected indicator in **Tier 2**. Validate changes to an engine's own output in the addon that implements it.
 
 For isolating *why* a test or smoke run is wrong, see [debugging.md](./debugging.md).
