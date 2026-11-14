@@ -4,7 +4,7 @@ import { FibRatios, type FibEntryLine, type FibLevel } from './FibRatios';
 import { fibLevels, LEVEL_ANCHOR } from '../levelPalette';
 
 /** The Gann-box subdivisions, applied to BOTH the price (horizontal) and time (vertical) axes. */
-const GANN_BOX_LEVELS = fibLevels([0, 0.25, 0.382, 0.5, 0.618, 0.75, 1].map((ratio) => ({ ratio, label: String(ratio) })));
+const GANN_BOX_LEVELS = fibLevels([0, 0.25, 0.382, 0.5, 0.618, 0.75, 1]);
 
 /**
  * A Gann box — a price/time grid between two corners, with horizontal + vertical lines at the

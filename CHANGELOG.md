@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Gann Box and Gann Square numbers follow the ratio you set.** Their levels used to carry
+  the ratio they were created with as a fixed label, and the settings grid edits only the
+  ratio. A level changed from 0.382 to 0.4 kept painting "0.382", and the drawing saved that
+  old number. The painted number now follows the level's own ratio, and a drawing saved with
+  a stale number shows the right one when it loads.
+
 ## [0.10.8]
 
 ### Changed
