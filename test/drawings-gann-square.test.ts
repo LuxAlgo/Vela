@@ -51,4 +51,22 @@ describe('drawings/GannSquare', () => {
         expect(deserializeDrawing(a)!.serialize()).toEqual(a);
         expect(a.type).toBe('gannsquare');
     });
+
+    it('paints an edited grid ratio, not the label the level started with', () => {
+        const d = make();
+        d.applySettings({ 'levels.2.ratio': 0.4 });
+        const painted = d.entryLines(proj)!.map((l) => l.numberText).filter((t) => t !== '');
+        expect(painted).toContain('0.4');
+        expect(painted).not.toContain('0.382');
+    });
+
+    it('repairs a saved grid level whose stale ratio label survived', () => {
+        const d = make();
+        d.applySettings({ 'levels.2.ratio': 0.4 });
+        d.levels[2]!.label = '0.382';
+        const round = deserializeDrawing(d.serialize())! as GannSquare;
+        const painted = round.entryLines(proj)!.map((l) => l.numberText).filter((t) => t !== '');
+        expect(painted).toContain('0.4');
+        expect(painted).not.toContain('0.382');
+    });
 });

@@ -4,7 +4,7 @@ import { FibRatios, type FibEntryLine, type FibLevel } from './FibRatios';
 import { fibLevels, LEVEL_BLUE, LEVEL_GREEN, LEVEL_ORANGE, LEVEL_RED, LEVEL_TEAL, LEVEL_UNITY } from '../levelPalette';
 
 /** The H/V grid subdivisions (editable, like GannBox), applied to both the price + time axes. */
-const GRID_LEVELS = fibLevels([0, 0.25, 0.382, 0.5, 0.618, 0.75, 1].map((ratio) => ({ ratio, label: String(ratio) })));
+const GRID_LEVELS = fibLevels([0, 0.25, 0.382, 0.5, 0.618, 0.75, 1]);
 
 /** The Gann angle fan, all from the origin corner p1. `x` = time units, `y` = price units. */
 const FAN: ReadonlyArray<{ label: string; x: number; y: number; color: string }> = [

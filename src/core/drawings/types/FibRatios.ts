@@ -25,8 +25,20 @@ function sanitizeLevel(v: unknown): FibLevel | null {
         ratio: o.ratio,
         color: o.color,
         enabled: o.enabled !== false,
-        ...(typeof o.label === 'string' && o.label ? { label: o.label } : {}),
+        ...(typeof o.label === 'string' && o.label && !isStaleRatioLabel(o.label, o.ratio) ? { label: o.label } : {}),
     };
+}
+
+/**
+ * A numeric label that does not match its own ratio. Older Gann Box / Square defaults
+ * seeded every level with `label: String(ratio)`; the settings grid edits only the ratio,
+ * so the label stayed on the old number and the grid painted a ratio it no longer used
+ * (and saved it). Semantic labels (1/8, 1/4, wave counts) are never plain numbers, and a
+ * numeric label equal to its ratio reads the same as the ratio, so it is kept.
+ */
+function isStaleRatioLabel(label: string, ratio: number): boolean {
+    const text = label.trim();
+    return text !== '' && Number.isFinite(Number(text)) && Number(text) !== ratio;
 }
 
 /** A resolved entry's pixel line + auto-number + custom-label placement (the painter's input). */

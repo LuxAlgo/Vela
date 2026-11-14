@@ -63,4 +63,31 @@ describe('drawings/gann box', () => {
         expect(deserializeDrawing(a)!.serialize()).toEqual(a);
         expect(a.type).toBe('gannbox');
     });
+
+    it('paints an edited ratio, not the label the level started with', () => {
+        const d = createDrawing('gannbox', { paneId: 'price', anchors: [{ time: 0, price: 40 }, { time: 10 * HR, price: 60 }] })! as GannBox;
+        d.applySettings({ 'levels.2.ratio': 0.4 });
+        const painted = d.entryLines(proj)!.map((l) => l.numberText).filter((t) => t !== '');
+        expect(painted).toContain('0.4');
+        expect(painted).not.toContain('0.382');
+    });
+
+    it('repairs a saved doc whose level kept its old ratio label', () => {
+        // 0.10.x seeded every level with `label: String(ratio)` and kept it through a
+        // ratio edit, so saved boxes carry a number the grid no longer uses.
+        const d = createDrawing('gannbox', { paneId: 'price', anchors: [{ time: 0, price: 40 }, { time: 10 * HR, price: 60 }] })! as GannBox;
+        d.applySettings({ 'levels.2.ratio': 0.4 });
+        d.levels[2]!.label = '0.382';
+        const round = deserializeDrawing(d.serialize())! as GannBox;
+        const painted = round.entryLines(proj)!.map((l) => l.numberText).filter((t) => t !== '');
+        expect(painted).toContain('0.4');
+        expect(painted).not.toContain('0.382');
+    });
+
+    it('keeps a custom, non-numeric level label', () => {
+        const d = createDrawing('gannbox', { paneId: 'price', anchors: [{ time: 0, price: 40 }, { time: 10 * HR, price: 60 }] })! as GannBox;
+        d.applySettings({ 'levels.2.label': 'PDH' });
+        const round = deserializeDrawing(d.serialize())! as GannBox;
+        expect(round.entryLines(proj)!.map((l) => l.numberText)).toContain('PDH');
+    });
 });
