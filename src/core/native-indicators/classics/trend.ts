@@ -1,9 +1,9 @@
 import { msg } from '../../i18n/message';
-import { BULLISH, BEARISH, NEUTRAL } from '../../palette';
+import { BULLISH, BEARISH, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicIndicatorSpec } from './define';
-import { num, str } from './define';
-import { colorInput, floatInput, lengthInput, transp } from './shared';
-import { highs, lows, barsSinceHighest, barsSinceLowest, trueRange, rma, sum, map, zip } from './math';
+import { bool, num, str } from './define';
+import { STYLE, boolInput, centeredOscillator, colorInput, floatInput, gradient, lengthInput, sourceInput, transp } from './shared';
+import { sourceValues, highs, lows, closes, barsSinceHighest, barsSinceLowest, barIndex, correlation, trueRange, ema, rma, sum, highest, lowest, map, zip } from './math';
 
 /** Directional/trend-strength studies. */
 
@@ -110,4 +110,83 @@ const vortex: ClassicIndicatorSpec = {
     },
 };
 
-export const trendSpecs: ClassicIndicatorSpec[] = [aroon, adx, vortex];
+const trendStrength: ClassicIndicatorSpec = {
+    type: 'trend-strength-index',
+    title: msg('indicator.trendStrengthIndex.title', 'Trend Strength Index'),
+    overlay: false,
+    inputs: [
+        { ...lengthInput(14, 'length', msg('indicator.trendStrengthIndex.length', 'Length'), 5000, msg('indicator.trendStrengthIndex.length.tooltip', 'Number of bars over which the source is correlated with time.')), min: 2 },
+        sourceInput('Close', 'source', msg('indicator.trendStrengthIndex.source', 'Source'), msg('indicator.trendStrengthIndex.source.tooltip', 'Price series correlated with time.')),
+        colorInput(NEUTRAL, msg('indicator.trendStrengthIndex.color', 'Line'), 'color', msg('indicator.trendStrengthIndex.color.tooltip', 'Color of the line when the reading sits exactly at zero.')),
+        colorInput(BULLISH, msg('indicator.trendStrengthIndex.bullColor', 'Bullish'), 'bullColor', msg('indicator.trendStrengthIndex.bullColor.tooltip', 'Color of the line and fill while the reading is above zero: price has been rising in step with time.')),
+        colorInput(BEARISH, msg('indicator.trendStrengthIndex.bearColor', 'Bearish'), 'bearColor', msg('indicator.trendStrengthIndex.bearColor.tooltip', 'Color of the line and fill while the reading is below zero: price has been falling in step with time.')),
+        boolInput('gradientFill', msg('indicator.trendStrengthIndex.gradientFill', 'Gradient Fill'), true, STYLE, msg('indicator.trendStrengthIndex.gradientFill.tooltip', 'Fills the area between the line and zero, following the line color.')),
+    ],
+    compute: (bars, inputs) =>
+        // +1 is a straight climb, −1 a straight fall, 0 no trend at all over the window.
+        centeredOscillator({
+            key: 'tsi',
+            title: msg('indicator.trendStrengthIndex.plot.tsi', 'Trend Strength'),
+            values: correlation(sourceValues(bars, str(inputs, 'source', 'Close')), barIndex(bars.length), num(inputs, 'length', 14)),
+            ink: { bull: str(inputs, 'bullColor', BULLISH), bear: str(inputs, 'bearColor', BEARISH), neutral: str(inputs, 'color', NEUTRAL) },
+            zeroInk: NEUTRAL,
+            fill: bool(inputs, 'gradientFill', true),
+        }),
+};
+
+const CHOP_TREND_LENGTH = 34;
+const CHOP_RANGE_LENGTH = 30;
+/** Scales the trend line's one-bar change, as a share of price, against the recent range. */
+const CHOP_SPAN = 25;
+/** Where the four zones on each side of flat begin, in degrees. The angle is rounded to a whole degree before it is placed. */
+const CHOP_ZONE_EDGES = [0.71, 2.14, 3.57, 5] as const;
+
+/** Which zone an angle falls in: 0 flat, 1 to 4 a steeper and steeper rise, −1 to −4 the same falling. */
+function chopZone(angle: number): number {
+    const steepness = Math.abs(angle);
+    let zone = 0;
+    for (const edge of CHOP_ZONE_EDGES) if (steepness >= edge) zone += 1;
+    return angle < 0 ? -zone : zone;
+}
+
+const chopZoneSpec: ClassicIndicatorSpec = {
+    type: 'chop-zone',
+    title: msg('indicator.chopZone.title', 'Chop Zone'),
+    overlay: false,
+    inputs: [
+        colorInput(BULLISH, msg('indicator.chopZone.bullColor', 'Rising'), 'bullColor', msg('indicator.chopZone.bullColor.tooltip', 'Color of the steepest rising zone. The three gentler rising zones blend from the flat color toward it.')),
+        colorInput(BEARISH, msg('indicator.chopZone.bearColor', 'Falling'), 'bearColor', msg('indicator.chopZone.bearColor.tooltip', 'Color of the steepest falling zone. The three gentler falling zones blend from the flat color toward it.')),
+        colorInput(WARNING, msg('indicator.chopZone.flatColor', 'Flat'), 'flatColor', msg('indicator.chopZone.flatColor.tooltip', 'Color of the bars where the trend line is flat: a choppy market.')),
+    ],
+    compute: (bars, inputs) => {
+        const trend = ema(closes(bars), CHOP_TREND_LENGTH);
+        // Both ends of the range are read on the highs.
+        const top = highest(highs(bars), CHOP_RANGE_LENGTH);
+        const bottom = lowest(highs(bars), CHOP_RANGE_LENGTH);
+        const bull = str(inputs, 'bullColor', BULLISH);
+        const bear = str(inputs, 'bearColor', BEARISH);
+        const flat = str(inputs, 'flatColor', WARNING);
+        const steepest = CHOP_ZONE_EDGES.length;
+        const values = new Array<number>(bars.length).fill(Number.NaN);
+        const colors = new Array<string | null>(bars.length).fill(null);
+        for (let i = 1; i < bars.length; i++) {
+            const now = trend[i]!;
+            const before = trend[i - 1]!;
+            const high = top[i]!;
+            const low = bottom[i]!;
+            if (!Number.isFinite(now) || !Number.isFinite(before) || !Number.isFinite(high) || !Number.isFinite(low)) continue;
+            const b = bars[i]!;
+            const typical = (b.high + b.low + b.close) / 3;
+            const range = high - low;
+            // A range of zero is a market that did not move: flat, whatever the trend line did.
+            const rise = range > 0 && typical !== 0 ? ((now - before) / typical) * ((CHOP_SPAN / range) * low) : 0;
+            const degrees = Math.round((Math.atan(Math.abs(rise)) * 180) / Math.PI);
+            const zone = chopZone(rise < 0 ? -degrees : degrees);
+            values[i] = 1;
+            colors[i] = zone === 0 ? flat : gradient(Math.abs(zone), 0, steepest, flat, zone > 0 ? bull : bear);
+        }
+        return { plots: [{ key: 'zone', title: msg('indicator.chopZone.plot.zone', 'Chop Zone'), values, kind: 'columns', color: flat, colors, base: 0 }] };
+    },
+};
+
+export const trendSpecs: ClassicIndicatorSpec[] = [aroon, adx, vortex, trendStrength, chopZoneSpec];

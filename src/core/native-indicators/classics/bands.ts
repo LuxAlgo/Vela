@@ -5,7 +5,7 @@ import { INFO, BULLISH, BEARISH, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicIndicatorSpec, ClassicInput, ClassicPlot } from './define';
 import { bool, num, str } from './define';
 import { STYLE, boolInput, channelStyleInputs, colorInput, directionalChannel, floatInput, intInput, lengthInput, optionInput, sourceInput, transp } from './shared';
-import { sourceValues, highs, lows, sma, ema, rma, stdev, highest, lowest, atr, zip, map, sub, shift } from './math';
+import { sourceValues, highs, lows, sma, ema, rma, wma, stdev, stdError, linreg, highest, lowest, atr, trueRange, zip, map, sub, shift } from './math';
 
 /** Bands and channels — envelopes around price plus their derived oscillators. */
 
@@ -234,6 +234,129 @@ const donchian: ClassicIndicatorSpec = {
     },
 };
 
+const movingAverageChannel: ClassicIndicatorSpec = {
+    type: 'moving-average-channel',
+    title: msg('indicator.movingAverageChannel.title', 'Moving Average Channel'),
+    shortTitle: msg('indicator.movingAverageChannel.shortTitle', 'MAC'),
+    overlay: true,
+    inputs: [
+        lengthInput(20, 'upperLength', msg('indicator.movingAverageChannel.upperLength', 'Upper Length'), 5000, msg('indicator.movingAverageChannel.upperLength.tooltip', 'Number of bars in the simple moving average of the highs.')),
+        lengthInput(20, 'lowerLength', msg('indicator.movingAverageChannel.lowerLength', 'Lower Length'), 5000, msg('indicator.movingAverageChannel.lowerLength.tooltip', 'Number of bars in the simple moving average of the lows.')),
+        intInput('upperOffset', msg('indicator.movingAverageChannel.upperOffset', 'Upper Offset'), 0, -500, 500, msg('indicator.movingAverageChannel.upperOffset.tooltip', 'Bars the upper line is displaced by. Positive values push it to the right.')),
+        intInput('lowerOffset', msg('indicator.movingAverageChannel.lowerOffset', 'Lower Offset'), 0, -500, 500, msg('indicator.movingAverageChannel.lowerOffset.tooltip', 'Bars the lower line is displaced by. Positive values push it to the right.')),
+        colorInput(BEARISH, msg('indicator.movingAverageChannel.upperColor', 'Upper'), 'upperColor', msg('indicator.movingAverageChannel.upperColor.tooltip', 'Color of the upper channel line.')),
+        colorInput(BULLISH, msg('indicator.movingAverageChannel.lowerColor', 'Lower'), 'lowerColor', msg('indicator.movingAverageChannel.lowerColor.tooltip', 'Color of the lower channel line.')),
+        colorInput(transp(NEUTRAL, 92), msg('indicator.movingAverageChannel.fillColor', 'Fill'), 'fillColor', msg('indicator.movingAverageChannel.fillColor.tooltip', 'Color of the channel interior fill.')),
+    ],
+    compute: (bars, inputs) => ({
+        plots: [
+            { key: 'upper', title: msg('indicator.movingAverageChannel.plot.upper', 'Upper'), values: shift(sma(highs(bars), num(inputs, 'upperLength', 20)), Math.trunc(num(inputs, 'upperOffset', 0))), color: str(inputs, 'upperColor', BEARISH) },
+            { key: 'lower', title: msg('indicator.movingAverageChannel.plot.lower', 'Lower'), values: shift(sma(lows(bars), num(inputs, 'lowerLength', 20)), Math.trunc(num(inputs, 'lowerOffset', 0))), color: str(inputs, 'lowerColor', BULLISH) },
+        ],
+        bands: [{ key: 'mac', from: 'upper', to: 'lower', color: str(inputs, 'fillColor', transp(NEUTRAL, 92)) }],
+    }),
+};
+
+/** How far each band's fill fades, on the reference's 0 (opaque) to 100 (invisible) scale. */
+const SEB_FILL_TRANSPARENCY = 90;
+
+const standardErrorBands: ClassicIndicatorSpec = {
+    type: 'standard-error-bands',
+    title: msg('indicator.standardErrorBands.title', 'Standard Error Bands'),
+    shortTitle: msg('indicator.standardErrorBands.shortTitle', 'SEB'),
+    overlay: true,
+    inputs: [
+        { ...lengthInput(21, 'length', msg('indicator.standardErrorBands.length', 'Length'), 5000, msg('indicator.standardErrorBands.length.tooltip', 'Number of bars used to fit the linear regression and compute its standard error.')), min: 3 },
+        floatInput('mult', msg('indicator.standardErrorBands.mult', 'SE Multiplier'), 2, 0, 50, 0.1, msg('indicator.standardErrorBands.mult.tooltip', 'Multiple of the regression standard error used to offset the bands from the regression line.')),
+        lengthInput(3, 'smoothing', msg('indicator.standardErrorBands.smoothing', 'Smoothing'), 500, msg('indicator.standardErrorBands.smoothing.tooltip', 'Moving average length applied to the regression line and to its standard error. 1 leaves both unsmoothed.')),
+        optionInput('smoothingType', msg('indicator.standardErrorBands.smoothingType', 'Smoothing Type'), 'SMA', ['SMA', 'EMA', 'WMA'], msg('indicator.standardErrorBands.smoothingType.tooltip', 'Moving average used for that smoothing.')),
+        sourceInput('Close', 'source', msg('indicator.standardErrorBands.source', 'Source'), msg('indicator.standardErrorBands.source.tooltip', 'Price series the regression is fitted to.')),
+        colorInput(NEUTRAL, msg('indicator.standardErrorBands.basisColor', 'Regression Line'), 'basisColor', msg('indicator.standardErrorBands.basisColor.tooltip', 'Color of the smoothed linear regression midline.')),
+        colorInput(BEARISH, msg('indicator.standardErrorBands.upperColor', 'Upper Band'), 'upperColor', msg('indicator.standardErrorBands.upperColor.tooltip', 'Color of the upper band and of the fill between it and the regression line.')),
+        colorInput(BULLISH, msg('indicator.standardErrorBands.lowerColor', 'Lower Band'), 'lowerColor', msg('indicator.standardErrorBands.lowerColor.tooltip', 'Color of the lower band and of the fill between it and the regression line.')),
+    ],
+    compute: (bars, inputs) => {
+        const len = num(inputs, 'length', 21);
+        const src = sourceValues(bars, str(inputs, 'source', 'Close'));
+        const kind = str(inputs, 'smoothingType', 'SMA');
+        const smoothLen = num(inputs, 'smoothing', 3);
+        const smooth = (v: number[]): number[] => (kind === 'EMA' ? ema(v, smoothLen) : kind === 'WMA' ? wma(v, smoothLen) : sma(v, smoothLen));
+        // The line is each bar's regression endpoint; the bands ride its standard error, both smoothed alike.
+        const middle = smooth(linreg(src, len));
+        const reach = map(smooth(stdError(src, len)), (x) => x * num(inputs, 'mult', 2));
+        const upperInk = str(inputs, 'upperColor', BEARISH);
+        const lowerInk = str(inputs, 'lowerColor', BULLISH);
+        return {
+            plots: [
+                { key: 'basis', title: msg('indicator.standardErrorBands.plot.basis', 'Basis'), values: middle, color: str(inputs, 'basisColor', NEUTRAL) },
+                { key: 'upper', title: msg('indicator.standardErrorBands.plot.upper', 'Upper Band'), values: zip(middle, reach, (m, r) => m + r), color: upperInk },
+                { key: 'lower', title: msg('indicator.standardErrorBands.plot.lower', 'Lower Band'), values: zip(middle, reach, (m, r) => m - r), color: lowerInk },
+            ],
+            bands: [
+                { key: 'sebUpper', from: 'upper', to: 'basis', color: transp(upperInk, SEB_FILL_TRANSPARENCY) },
+                { key: 'sebLower', from: 'basis', to: 'lower', color: transp(lowerInk, SEB_FILL_TRANSPARENCY) },
+            ],
+        };
+    },
+};
+
+const volatilityIndex: ClassicIndicatorSpec = {
+    type: 'volatility-index',
+    title: msg('indicator.volatilityIndex.title', 'Volatility Index'),
+    shortTitle: msg('indicator.volatilityIndex.shortTitle', 'Vol Index'),
+    overlay: true,
+    inputs: [
+        lengthInput(10, 'length', msg('indicator.volatilityIndex.length', 'Length'), 5000, msg('indicator.volatilityIndex.length.tooltip', 'Number of bars in the average true range.')),
+        floatInput('mult', msg('indicator.volatilityIndex.mult', 'ATR Multiplier'), 3, 0, 50, 0.1, msg('indicator.volatilityIndex.mult.tooltip', 'Multiple of the average true range the stop keeps from the most favorable close.')),
+        optionInput('smoothing', msg('indicator.volatilityIndex.smoothing', 'Smoothing'), 'RMA', ['RMA', 'EMA'], msg('indicator.volatilityIndex.smoothing.tooltip', "Average applied to the true range. RMA is Wilder's own smoothing; EMA reacts faster.")),
+        colorInput(BULLISH, msg('indicator.volatilityIndex.longColor', 'Long Stop'), 'longColor', msg('indicator.volatilityIndex.longColor.tooltip', 'Color of the stop while it trails below price.')),
+        colorInput(BEARISH, msg('indicator.volatilityIndex.shortColor', 'Short Stop'), 'shortColor', msg('indicator.volatilityIndex.shortColor.tooltip', 'Color of the stop while it sits above price.')),
+    ],
+    compute: (bars, inputs) => {
+        const len = num(inputs, 'length', 10);
+        const mult = num(inputs, 'mult', 3);
+        const alpha = str(inputs, 'smoothing', 'RMA') === 'EMA' ? 2 / (len + 1) : 1 / len;
+        const range = trueRange(bars);
+        const n = bars.length;
+        const longStop = new Array<number>(n).fill(Number.NaN);
+        const shortStop = new Array<number>(n).fill(Number.NaN);
+        let long = true;
+        let extreme = Number.NaN; // the most favorable close since the stop last switched sides
+        let average = Number.NaN;
+        let seed = 0;
+        let seeded = 0;
+        for (let i = 0; i < n; i++) {
+            const close = bars[i]!.close;
+            // A bar that closes unchanged moves nothing: the stop holds and the average range does not take the bar in.
+            if (i > 0 && close === bars[i - 1]!.close) {
+                longStop[i] = longStop[i - 1]!;
+                shortStop[i] = shortStop[i - 1]!;
+                continue;
+            }
+            // The stop a bar shows was set before the bar: by the closes and the ranges up to the one before it.
+            const stop = long ? extreme - mult * average : extreme + mult * average;
+            if (Number.isFinite(stop)) (long ? longStop : shortStop)[i] = stop;
+            if (Number.isFinite(average)) average += alpha * (range[i]! - average);
+            else {
+                seed += range[i]!;
+                seeded += 1;
+                if (seeded >= len) average = seed / len;
+            }
+            if (Number.isFinite(stop) && (long ? close < stop : close > stop)) {
+                long = !long;
+                extreme = close;
+            } else if (!Number.isFinite(extreme)) extreme = close;
+            else extreme = long ? Math.max(extreme, close) : Math.min(extreme, close);
+        }
+        return {
+            plots: [
+                { key: 'long', title: msg('indicator.volatilityIndex.plot.long', 'Long Stop'), values: longStop, color: str(inputs, 'longColor', BULLISH) },
+                { key: 'short', title: msg('indicator.volatilityIndex.plot.short', 'Short Stop'), values: shortStop, color: str(inputs, 'shortColor', BEARISH) },
+            ],
+        };
+    },
+};
+
 const chandelier: ClassicIndicatorSpec = {
     type: 'chandelier-exit',
     title: msg('indicator.chandelierExit.title', 'Chandelier Exit'),
@@ -432,4 +555,4 @@ const gator: ClassicIndicatorSpec = {
     },
 };
 
-export const bandSpecs: ClassicIndicatorSpec[] = [bollingerBands, percentB, bandwidth, keltner, donchian, chandelier, chandeKroll, supertrend, alligator, gator];
+export const bandSpecs: ClassicIndicatorSpec[] = [bollingerBands, percentB, bandwidth, keltner, donchian, movingAverageChannel, standardErrorBands, volatilityIndex, chandelier, chandeKroll, supertrend, alligator, gator];

@@ -4,6 +4,28 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Twenty-five more built-in indicators.** The Indicators menu and `addNativeIndicator` gain
+  Median Price, Typical Price, Average Price, Momentum, Moving Average Channel, Standard
+  Error Bands, Volatility Index, Net Volume, Accelerator Oscillator, Accumulative Swing
+  Index, Rank Correlation Index, Majority Rule, Advance/Decline, Trend Strength Index, Chop
+  Zone, Standard Error, Volatility O-H-L-C and Volatility Zero Trend Close-to-Close, and
+  seven moving-average studies: MA Cross, EMA Cross, MA with EMA Cross, Moving Average
+  Double, Moving Average Triple, Moving Average Multiple and Guppy Multiple Moving Average.
+  Each has its own settings, legend row and saved state, like the other built-in studies.
+  Rank Correlation Index and Trend Strength Index read from −1 to 1. Volatility Index is
+  Wilder's volatility stop: a line that trails the most favorable close by a multiple of
+  the average true range and changes sides when a close crosses it. The two volatility
+  studies count each bar by the time since the bar before it, so a weekend or an overnight
+  gap weighs as the days it spans, on any timeframe. The Accumulative Swing Index line
+  takes the bullish color above its last confirmed swing high and the bearish color below
+  its last confirmed swing low. The three cross studies draw two averages and mark every
+  bar where they change sides, in the bullish or the bearish color by the way the first
+  crossed the second. Moving Average Double, Triple and Multiple draw two, three or six
+  averages of one source as Simple, Exponential or Weighted lines, and the Guppy study
+  draws its six short and six long exponential averages in two colors.
+
 ### Changed
 
 - **Charts with many line plots pan and zoom about three times faster.** A chart that
@@ -12,6 +34,13 @@ All notable changes to Vela, newest first.
   third of the time it did, and the gain grows with the number of lines and bars on screen.
   Lines, the dot markers of a circles plot and the line and area price styles all benefit.
   The picture itself is unchanged, pixel for pixel.
+
+### Fixed
+
+- **Historical Volatility no longer draws its oldest bars as a black block.** The first
+  hundred bars of the chart's history showed a solid black line and fill. They now draw in
+  the neutral color until the indicator has a hundred bars of its own readings to grade the
+  color by.
 
 ## [0.10.8]
 

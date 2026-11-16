@@ -1,6 +1,7 @@
 import type { MessageLike } from '../../i18n/types';
 import { msg } from '../../i18n/message';
 import type { InputValue } from '../../model/inputs';
+import type { OHLCV } from '../../model/ohlcv';
 import { INFO, BULLISH, BEARISH, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicBand, ClassicIndicatorSpec, ClassicInput, ClassicLevel, ClassicOutput, ClassicPlot } from './define';
 import { bool, num, str } from './define';
@@ -42,6 +43,8 @@ import {
     swma,
     meanDev,
     percentRank,
+    rankCorrelation,
+    cumSum,
     atr,
     zip,
     map,
@@ -59,11 +62,21 @@ function thresholdInputs(
     max = 100,
     obTitle: MessageLike = msg('indicator.threshold.overbought', 'Overbought Level'),
     osTitle: MessageLike = msg('indicator.threshold.oversold', 'Oversold Level'),
+    step = 1,
 ): ClassicInput[] {
     return [
-        floatInput('overbought', obTitle, obDefault, min, max, 1, msg('indicator.threshold.overbought.tooltip', 'Level above which the oscillator is considered overbought.')),
-        floatInput('oversold', osTitle, osDefault, min, max, 1, msg('indicator.threshold.oversold.tooltip', 'Level below which the oscillator is considered oversold.')),
+        floatInput('overbought', obTitle, obDefault, min, max, step, msg('indicator.threshold.overbought.tooltip', 'Level above which the oscillator is considered overbought.')),
+        floatInput('oversold', osTitle, osDefault, min, max, step, msg('indicator.threshold.oversold.tooltip', 'Level below which the oscillator is considered oversold.')),
     ];
+}
+
+/** Column ink by direction against the bar before: rising, or falling (an unchanged bar counts as falling). */
+function directionColors(values: readonly number[], rising: string, falling: string): Array<string | null> {
+    return values.map((x, i) => {
+        if (!Number.isFinite(x)) return null;
+        const prev = i > 0 ? values[i - 1]! : Number.NaN;
+        return Number.isFinite(prev) && x > prev ? rising : falling;
+    });
 }
 
 const rsiSpec: ClassicIndicatorSpec = {
@@ -250,6 +263,12 @@ const ppo: ClassicIndicatorSpec = {
     },
 };
 
+/** The Awesome Oscillator's values: the 5-bar average of the bar midpoint less its 34-bar average. */
+function awesomeValues(bars: readonly OHLCV[]): number[] {
+    const hl2 = sourceValues(bars, 'HL2');
+    return sub(sma(hl2, 5), sma(hl2, 34));
+}
+
 const awesome: ClassicIndicatorSpec = {
     type: 'awesome-oscillator',
     title: msg('indicator.awesomeOscillator.title', 'Awesome Oscillator'),
@@ -261,18 +280,35 @@ const awesome: ClassicIndicatorSpec = {
         colorInput(NEUTRAL, msg('indicator.awesomeOscillator.zeroColor', 'Zero Line'), 'zeroColor', msg('indicator.awesomeOscillator.zeroColor.tooltip', 'Color of the zero reference line.')),
     ],
     compute: (bars, inputs) => {
-        const hl2 = sourceValues(bars, 'HL2');
-        const ao = sub(sma(hl2, 5), sma(hl2, 34));
+        const ao = awesomeValues(bars);
         const rising = str(inputs, 'risingColor', BULLISH);
-        const falling = str(inputs, 'fallingColor', BEARISH);
-        const colors = ao.map((x, i) => {
-            if (!Number.isFinite(x)) return null;
-            const prev = i > 0 ? ao[i - 1]! : Number.NaN;
-            return Number.isFinite(prev) && x > prev ? rising : falling;
-        });
         return {
-            plots: [{ key: 'ao', title: msg('indicator.awesomeOscillator.plot.ao', 'AO'), values: ao, kind: 'columns', color: rising, colors, base: 0 }],
+            plots: [{ key: 'ao', title: msg('indicator.awesomeOscillator.plot.ao', 'AO'), values: ao, kind: 'columns', color: rising, colors: directionColors(ao, rising, str(inputs, 'fallingColor', BEARISH)), base: 0 }],
             levels: [{ key: 'zero', price: 0, color: str(inputs, 'zeroColor', NEUTRAL), lineStyle: 'dashed', title: msg('indicator.awesomeOscillator.level.zero', 'Zero Line') }],
+        };
+    },
+};
+
+const ACCELERATOR_LENGTH = 5;
+
+const accelerator: ClassicIndicatorSpec = {
+    type: 'accelerator-oscillator',
+    title: msg('indicator.acceleratorOscillator.title', 'Accelerator Oscillator'),
+    shortTitle: msg('indicator.acceleratorOscillator.shortTitle', 'AC'),
+    overlay: false,
+    inputs: [
+        colorInput(BULLISH, msg('indicator.acceleratorOscillator.risingColor', 'Rising'), 'risingColor', msg('indicator.acceleratorOscillator.risingColor.tooltip', 'Histogram color when the oscillator is higher than on the previous bar.')),
+        colorInput(BEARISH, msg('indicator.acceleratorOscillator.fallingColor', 'Falling'), 'fallingColor', msg('indicator.acceleratorOscillator.fallingColor.tooltip', 'Histogram color when the oscillator is lower than or equal to the previous bar.')),
+        colorInput(NEUTRAL, msg('indicator.acceleratorOscillator.zeroColor', 'Zero Line'), 'zeroColor', msg('indicator.acceleratorOscillator.zeroColor.tooltip', 'Color of the zero reference line.')),
+    ],
+    compute: (bars, inputs) => {
+        // How far the Awesome Oscillator runs ahead of its own 5-bar average.
+        const ao = awesomeValues(bars);
+        const ac = sub(ao, sma(ao, ACCELERATOR_LENGTH));
+        const rising = str(inputs, 'risingColor', BULLISH);
+        return {
+            plots: [{ key: 'ac', title: msg('indicator.acceleratorOscillator.plot.ac', 'AC'), values: ac, kind: 'columns', color: rising, colors: directionColors(ac, rising, str(inputs, 'fallingColor', BEARISH)), base: 0 }],
+            levels: [{ key: 'zero', price: 0, color: str(inputs, 'zeroColor', NEUTRAL), lineStyle: 'dashed', title: msg('indicator.common.level.zero', 'Zero Line') }],
         };
     },
 };
@@ -1061,6 +1097,175 @@ const ttmSqueeze: ClassicIndicatorSpec = {
     },
 };
 
+const momentum: ClassicIndicatorSpec = {
+    type: 'momentum',
+    title: msg('indicator.momentum.title', 'Momentum'),
+    shortTitle: msg('indicator.momentum.shortTitle', 'Mom'),
+    overlay: false,
+    inputs: [
+        lengthInput(10, 'length', msg('indicator.momentum.length', 'Length'), 5000, msg('indicator.momentum.length.tooltip', 'Lookback period; the source is compared with its value this many bars ago.')),
+        sourceInput('Close', 'source', msg('indicator.momentum.source', 'Source'), msg('indicator.momentum.source.tooltip', 'Series the difference is measured on.')),
+        colorInput(NEUTRAL, msg('indicator.momentum.color', 'Line'), 'color', msg('indicator.momentum.color.tooltip', 'Color of the line when the reading sits exactly at zero.')),
+        colorInput(BULLISH, msg('indicator.momentum.bullColor', 'Bullish'), 'bullColor', msg('indicator.momentum.bullColor.tooltip', 'Color of the line and fill while the reading is above zero.')),
+        colorInput(BEARISH, msg('indicator.momentum.bearColor', 'Bearish'), 'bearColor', msg('indicator.momentum.bearColor.tooltip', 'Color of the line and fill while the reading is below zero.')),
+        boolInput('gradientFill', msg('indicator.momentum.gradientFill', 'Gradient Fill'), true, STYLE, msg('indicator.momentum.gradientFill.tooltip', 'Fills the area between the line and zero, following the line color.')),
+    ],
+    compute: (bars, inputs) =>
+        centeredOscillator({
+            key: 'mom',
+            title: msg('indicator.momentum.plot.mom', 'Momentum'),
+            values: change(sourceValues(bars, str(inputs, 'source', 'Close')), num(inputs, 'length', 10)),
+            ink: { bull: str(inputs, 'bullColor', BULLISH), bear: str(inputs, 'bearColor', BEARISH), neutral: str(inputs, 'color', NEUTRAL) },
+            zeroInk: NEUTRAL,
+            fill: bool(inputs, 'gradientFill', true),
+        }),
+};
+
+/**
+ * Ink of a line against its own last confirmed swing points: `bull` above the swing
+ * high, `bear` below the swing low, `neutral` between them. A swing is a bar no bar
+ * within `length` on either side exceeds, so it is only known `length` bars later.
+ */
+function swingBreakoutColors(values: readonly number[], length: number, ink: { bull: string; bear: string; neutral: string }): Array<string | null> {
+    let swingHigh = Number.NaN;
+    let swingLow = Number.NaN;
+    return values.map((x, i) => {
+        const candidate = i - length;
+        if (candidate - length >= 0) {
+            const pivot = values[candidate]!;
+            let isHigh = Number.isFinite(pivot);
+            let isLow = isHigh;
+            for (let k = candidate - length; k <= i && (isHigh || isLow); k++) {
+                if (k === candidate) continue;
+                const v = values[k]!;
+                // A plateau counts once, at its last bar; a gap in the window confirms nothing.
+                if (!Number.isFinite(v) || (k < candidate ? v > pivot : v >= pivot)) isHigh = false;
+                if (!Number.isFinite(v) || (k < candidate ? v < pivot : v <= pivot)) isLow = false;
+            }
+            if (isHigh) swingHigh = pivot;
+            if (isLow) swingLow = pivot;
+        }
+        if (!Number.isFinite(x)) return null;
+        return x > swingHigh ? ink.bull : x < swingLow ? ink.bear : ink.neutral;
+    });
+}
+
+const accumulativeSwingIndex: ClassicIndicatorSpec = {
+    type: 'accumulative-swing-index',
+    title: msg('indicator.accumulativeSwingIndex.title', 'Accumulative Swing Index'),
+    overlay: false,
+    inputs: [
+        floatInput('limitMove', msg('indicator.accumulativeSwingIndex.limitMove', 'Limit Move'), 10, 0.1, 100000, 0.1, msg('indicator.accumulativeSwingIndex.limitMove.tooltip', 'Largest price change allowed in one direction in a session. Every swing is divided by it, so a larger value flattens the whole line.')),
+        lengthInput(10, 'swingLength', msg('indicator.accumulativeSwingIndex.swingLength', 'Swing Length'), 200, msg('indicator.accumulativeSwingIndex.swingLength.tooltip', 'Bars on each side required to confirm a swing high or low of the line. The line is colored against its most recent confirmed swing points.')),
+        colorInput(NEUTRAL, msg('indicator.accumulativeSwingIndex.color', 'ASI Line'), 'color', msg('indicator.accumulativeSwingIndex.color.tooltip', 'Color of the line while it sits between its prior swing high and swing low.')),
+        colorInput(BULLISH, msg('indicator.accumulativeSwingIndex.bullColor', 'Bullish'), 'bullColor', msg('indicator.accumulativeSwingIndex.bullColor.tooltip', 'Color of the line while it reads above its prior swing high, which Wilder took as confirming an upside breakout in price.')),
+        colorInput(BEARISH, msg('indicator.accumulativeSwingIndex.bearColor', 'Bearish'), 'bearColor', msg('indicator.accumulativeSwingIndex.bearColor.tooltip', 'Color of the line while it reads below its prior swing low, which Wilder took as confirming a downside breakout in price.')),
+    ],
+    compute: (bars, inputs) => {
+        const limit = Math.max(num(inputs, 'limitMove', 10), 0.1);
+        const swing = new Array<number>(bars.length).fill(Number.NaN);
+        for (let i = 1; i < bars.length; i++) {
+            const b = bars[i]!;
+            const p = bars[i - 1]!;
+            const toHigh = Math.abs(b.high - p.close);
+            const toLow = Math.abs(b.low - p.close);
+            const range = b.high - b.low;
+            const prevBody = Math.abs(p.close - p.open);
+            // Wilder's R takes its form from whichever of the three distances is the largest.
+            const r = toHigh >= toLow && toHigh >= range ? toHigh - 0.5 * toLow + 0.25 * prevBody : toLow >= toHigh && toLow >= range ? toLow - 0.5 * toHigh + 0.25 * prevBody : range + 0.25 * prevBody;
+            const weighted = b.close - p.close + 0.5 * (b.close - b.open) + 0.25 * (p.close - p.open);
+            // A bar with no movement at all swings nothing.
+            swing[i] = r === 0 ? 0 : (50 * weighted * (Math.max(toHigh, toLow) / limit)) / r;
+        }
+        const values = cumSum(swing);
+        const ink = { bull: str(inputs, 'bullColor', BULLISH), bear: str(inputs, 'bearColor', BEARISH), neutral: str(inputs, 'color', NEUTRAL) };
+        return { plots: [{ key: 'asi', title: msg('indicator.accumulativeSwingIndex.plot.asi', 'ASI'), values, color: ink.neutral, colors: swingBreakoutColors(values, Math.trunc(num(inputs, 'swingLength', 10)), ink) }] };
+    },
+};
+
+const rankCorrelationIndex: ClassicIndicatorSpec = {
+    type: 'rank-correlation-index',
+    title: msg('indicator.rankCorrelationIndex.title', 'Rank Correlation Index'),
+    shortTitle: msg('indicator.rankCorrelationIndex.shortTitle', 'RCI'),
+    overlay: false,
+    inputs: [
+        { ...lengthInput(12, 'length', msg('indicator.rankCorrelationIndex.length', 'Length'), 1000, msg('indicator.rankCorrelationIndex.length.tooltip', 'Number of bars whose order in time is compared with their order by price.')), min: 2 },
+        sourceInput('Close', 'source', msg('indicator.rankCorrelationIndex.source', 'Source'), msg('indicator.rankCorrelationIndex.source.tooltip', 'Price series the bars are ranked by.')),
+        ...thresholdInputs(0.8, -0.8, -1, 1, undefined, undefined, 0.05),
+        colorInput(NEUTRAL, msg('indicator.rankCorrelationIndex.color', 'RCI Line'), 'color', msg('indicator.rankCorrelationIndex.color.tooltip', 'Color of the RCI line between the levels. Toward either level it blends into that level’s color.')),
+        colorInput(BEARISH, msg('indicator.rankCorrelationIndex.overboughtColor', 'Overbought'), 'overboughtColor', msg('indicator.rankCorrelationIndex.overboughtColor.tooltip', 'Color of the line and zone shading at and above the overbought level.')),
+        colorInput(BULLISH, msg('indicator.rankCorrelationIndex.oversoldColor', 'Oversold'), 'oversoldColor', msg('indicator.rankCorrelationIndex.oversoldColor.tooltip', 'Color of the line and zone shading at and below the oversold level.')),
+    ],
+    compute: (bars, inputs) =>
+        boundedOscillator({
+            key: 'rci',
+            title: msg('indicator.rankCorrelationIndex.plot.rci', 'RCI'),
+            values: rankCorrelation(sourceValues(bars, str(inputs, 'source', 'Close')), num(inputs, 'length', 12)),
+            scale: { top: 1, bottom: -1 },
+            overbought: num(inputs, 'overbought', 0.8),
+            oversold: num(inputs, 'oversold', -0.8),
+            ink: { low: str(inputs, 'oversoldColor', BULLISH), mid: str(inputs, 'color', NEUTRAL), high: str(inputs, 'overboughtColor', BEARISH) },
+            levelInk: NEUTRAL,
+            midline: 0,
+        }),
+};
+
+const majorityRule: ClassicIndicatorSpec = {
+    type: 'majority-rule',
+    title: msg('indicator.majorityRule.title', 'Majority Rule'),
+    overlay: false,
+    inputs: [
+        lengthInput(14, 'length', msg('indicator.majorityRule.length', 'Rolling Period'), 5000, msg('indicator.majorityRule.length.tooltip', 'Number of bars counted. The reading is the percentage of them that closed above the bar before.')),
+        colorInput(NEUTRAL, msg('indicator.majorityRule.color', 'Line'), 'color', msg('indicator.majorityRule.color.tooltip', 'Color of the line when exactly half the bars closed higher.')),
+        colorInput(BULLISH, msg('indicator.majorityRule.bullColor', 'Bullish'), 'bullColor', msg('indicator.majorityRule.bullColor.tooltip', 'Color of the line and fill while more than half the bars closed higher.')),
+        colorInput(BEARISH, msg('indicator.majorityRule.bearColor', 'Bearish'), 'bearColor', msg('indicator.majorityRule.bearColor.tooltip', 'Color of the line and fill while fewer than half the bars closed higher.')),
+        boolInput('gradientFill', msg('indicator.majorityRule.gradientFill', 'Gradient Fill'), true, STYLE, msg('indicator.majorityRule.gradientFill.tooltip', 'Fills the area between the line and the midline, following the line color.')),
+    ],
+    compute: (bars, inputs) => {
+        const len = num(inputs, 'length', 14);
+        const closedHigher = map(change(closes(bars)), (d) => (d > 0 ? 1 : 0));
+        return centeredOscillator({
+            key: 'majority',
+            title: msg('indicator.majorityRule.plot.majority', 'Majority Rule'),
+            values: map(sum(closedHigher, len), (count) => (100 * count) / len),
+            baseline: 50,
+            ink: { bull: str(inputs, 'bullColor', BULLISH), bear: str(inputs, 'bearColor', BEARISH), neutral: str(inputs, 'color', NEUTRAL) },
+            zeroInk: NEUTRAL,
+            zeroTitle: msg('indicator.common.level.midline', 'Midline'),
+            fill: bool(inputs, 'gradientFill', true),
+        });
+    },
+};
+
+const advanceDecline: ClassicIndicatorSpec = {
+    type: 'advance-decline',
+    title: msg('indicator.advanceDecline.title', 'Advance/Decline'),
+    overlay: false,
+    inputs: [
+        lengthInput(10, 'length', msg('indicator.advanceDecline.length', 'Length'), 5000, msg('indicator.advanceDecline.length.tooltip', 'Number of bars counted. The reading divides how many closed above their open by how many closed below it.')),
+        colorInput(NEUTRAL, msg('indicator.advanceDecline.color', 'Line'), 'color', msg('indicator.advanceDecline.color.tooltip', 'Color of the line when up bars and down bars are level.')),
+        colorInput(BULLISH, msg('indicator.advanceDecline.bullColor', 'Bullish'), 'bullColor', msg('indicator.advanceDecline.bullColor.tooltip', 'Color of the line and fill while up bars outnumber down bars.')),
+        colorInput(BEARISH, msg('indicator.advanceDecline.bearColor', 'Bearish'), 'bearColor', msg('indicator.advanceDecline.bearColor.tooltip', 'Color of the line and fill while down bars outnumber up bars.')),
+        boolInput('gradientFill', msg('indicator.advanceDecline.gradientFill', 'Gradient Fill'), true, STYLE, msg('indicator.advanceDecline.gradientFill.tooltip', 'Fills the area between the line and 1, following the line color.')),
+    ],
+    compute: (bars, inputs) => {
+        const len = num(inputs, 'length', 10);
+        const up = sum(bars.map((b) => (b.close > b.open ? 1 : 0)), len);
+        const down = sum(bars.map((b) => (b.close < b.open ? 1 : 0)), len);
+        return centeredOscillator({
+            key: 'ratio',
+            title: msg('indicator.advanceDecline.plot.ratio', 'Advance/Decline'),
+            // A window with no down bar reads as its count of up bars, never a division by zero.
+            values: zip(up, down, (u, d) => (d === 0 ? u : u / d)),
+            baseline: 1,
+            ink: { bull: str(inputs, 'bullColor', BULLISH), bear: str(inputs, 'bearColor', BEARISH), neutral: str(inputs, 'color', NEUTRAL) },
+            zeroInk: NEUTRAL,
+            zeroTitle: msg('indicator.advanceDecline.level.even', 'Even'),
+            fill: bool(inputs, 'gradientFill', true),
+        });
+    },
+};
+
 export const oscillatorSpecs: ClassicIndicatorSpec[] = [
     rsiSpec,
     stochastic,
@@ -1068,6 +1273,7 @@ export const oscillatorSpecs: ClassicIndicatorSpec[] = [
     macd,
     ppo,
     awesome,
+    accelerator,
     cci,
     williamsR,
     cmoSpec,
@@ -1081,10 +1287,15 @@ export const oscillatorSpecs: ClassicIndicatorSpec[] = [
     coppock,
     dpo,
     rocSpec,
+    momentum,
     ultimate,
     rvgi,
     relVolatility,
     bop,
     elderRay,
     ttmSqueeze,
+    accumulativeSwingIndex,
+    rankCorrelationIndex,
+    majorityRule,
+    advanceDecline,
 ];

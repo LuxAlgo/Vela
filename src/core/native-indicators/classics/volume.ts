@@ -124,6 +124,27 @@ const obv: ClassicIndicatorSpec = {
     },
 };
 
+const netVolume: ClassicIndicatorSpec = {
+    type: 'net-volume',
+    title: msg('indicator.netVolume.title', 'Net Volume'),
+    overlay: false,
+    inputs: [
+        colorInput(BULLISH, msg('indicator.netVolume.upColor', 'Up'), 'upColor', msg('indicator.netVolume.upColor.tooltip', 'Color of the columns on bars that close above the previous close.')),
+        colorInput(BEARISH, msg('indicator.netVolume.downColor', 'Down'), 'downColor', msg('indicator.netVolume.downColor.tooltip', 'Color of the columns on bars that close below the previous close.')),
+        colorInput(NEUTRAL, msg('indicator.netVolume.zeroColor', 'Zero Line'), 'zeroColor', msg('indicator.netVolume.zeroColor.tooltip', 'Color of the zero reference line.')),
+    ],
+    compute: (bars, inputs) => {
+        // The bar's whole volume, signed by its close against the previous close; an unchanged close nets to zero.
+        const values = zip(volumes(bars), change(closes(bars)), (v, d) => (d > 0 ? v : d < 0 ? -v : 0));
+        const up = str(inputs, 'upColor', BULLISH);
+        const down = str(inputs, 'downColor', BEARISH);
+        return {
+            plots: [{ key: 'net', title: msg('indicator.netVolume.plot.net', 'Net Volume'), values, kind: 'columns', color: up, colors: values.map((x) => (Number.isFinite(x) ? (x < 0 ? down : up) : null)), base: 0 }],
+            levels: [{ key: 'zero', price: 0, color: str(inputs, 'zeroColor', NEUTRAL), lineStyle: 'dashed', title: msg('indicator.common.level.zero', 'Zero Line') }],
+        };
+    },
+};
+
 const accDist: ClassicIndicatorSpec = {
     type: 'accumulation-distribution',
     title: msg('indicator.accumulationDistribution.title', 'Accumulation / Distribution'),
@@ -623,6 +644,7 @@ const intradayIntensity: ClassicIndicatorSpec = {
 
 export const volumeSpecs: ClassicIndicatorSpec[] = [
     obv,
+    netVolume,
     accDist,
     cmf,
     chaikinOscillator,

@@ -4,7 +4,7 @@ import { BULLISH, BEARISH, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicIndicatorSpec, ClassicPlot } from './define';
 import { bool, num, str } from './define';
 import { STYLE, anchorPlot, baselineGradient, boolInput, boundedOscillator, centeredOscillator, colorInput, floatInput, gradient, intInput, lengthInput, optionInput, sourceInput, transp } from './shared';
-import { sourceValues, highs, lows, closes, trueRange, ema, sma, rma, wma, stdev, sum, highest, lowest, map, zip, sub, shift } from './math';
+import { sourceValues, highs, lows, closes, trueRange, elapsedDays, ema, sma, rma, wma, stdev, stdError, sum, highest, lowest, map, zip, sub, shift } from './math';
 
 /** Volatility studies — how much price moves, regardless of direction. */
 
@@ -23,6 +23,14 @@ function washedToZero(key: string, title: MessageLike, values: number[], colors:
         plots: [{ key, title, values, color: fallback, width, colors }, anchorPlot('zeroAnchor', 'Zero Anchor', values.length, 0)],
         bands: [{ key: 'wash', from: key, to: 'zeroAnchor', color: transp(NEUTRAL, 100), gradient: baselineGradient(values, 0, (_x, i) => colors[i] ?? fallback, valueTransparency) }],
     };
+}
+
+/** An annualized volatility line: inked by where the reading sits in its own recent range, washed down to zero. */
+function rangeInkedVolatility(key: string, title: MessageLike, values: number[], accent: string): ReturnType<typeof washedToZero> {
+    const low = lowest(values, 100);
+    const high = highest(values, 100);
+    const colors = values.map((x, i) => (Number.isFinite(x) ? gradient(x, low[i]!, high[i]!, NEUTRAL, accent) : null));
+    return washedToZero(key, title, values, colors, accent, 75, 2);
 }
 
 const atrSpec: ClassicIndicatorSpec = {
@@ -65,12 +73,63 @@ const historicalVolatility: ClassicIndicatorSpec = {
         const squaredSum = sum(map(logReturns, (r) => r * r), len);
         const factor = bool(inputs, 'annualize', true) ? Math.sqrt(num(inputs, 'periodsPerYear', 252)) : 1;
         const values = zip(squaredSum, meanReturn, (sq, m) => Math.sqrt(Math.max(sq - len * m * m, 0) / (len - 1)) * factor * 100);
-        // Intensity tracks where the reading sits in its own recent range.
-        const low = lowest(values, 100);
-        const high = highest(values, 100);
-        const accent = str(inputs, 'color', WARNING);
-        const colors = values.map((x, i) => (Number.isFinite(x) ? gradient(x, low[i] ?? 0, high[i] ?? 0, NEUTRAL, accent) : null));
-        return washedToZero('hv', msg('indicator.historicalVolatility.plot.hv', 'Historical Volatility'), values, colors, accent, 75, 2);
+        return rangeInkedVolatility('hv', msg('indicator.historicalVolatility.plot.hv', 'Historical Volatility'), values, str(inputs, 'color', WARNING));
+    },
+};
+
+/** Garman and Klass's weight on the squared open-to-close move in their range estimator. */
+const SESSION_BODY_WEIGHT = 2 * Math.LN2 - 1;
+/** Their weight on the overnight gap once part of the day is spent closed. */
+const OVERNIGHT_WEIGHT = 0.12;
+
+const volatilityOhlc: ClassicIndicatorSpec = {
+    type: 'volatility-ohlc',
+    title: msg('indicator.volatilityOhlc.title', 'Volatility O-H-L-C'),
+    shortTitle: msg('indicator.volatilityOhlc.shortTitle', 'Vol OHLC'),
+    overlay: false,
+    inputs: [
+        lengthInput(10, 'length', msg('indicator.volatilityOhlc.length', 'Length'), 5000, msg('indicator.volatilityOhlc.length.tooltip', 'Number of bars whose daily variance estimates are averaged.')),
+        floatInput('marketClosed', msg('indicator.volatilityOhlc.marketClosed', 'Market Closed Fraction'), 0, 0, 0.999, 0.01, msg('indicator.volatilityOhlc.marketClosed.tooltip', 'Share of the day the market spends closed, from 0 to 0.999. At 0 only each bar’s own range counts; above 0 the gap from the previous close is weighed in.')),
+        intInput('daysPerYear', msg('indicator.volatilityOhlc.daysPerYear', 'Days Per Year'), 252, 1, 366, msg('indicator.volatilityOhlc.daysPerYear.tooltip', 'Trading days in a year, used to annualize the daily variance.')),
+        colorInput(WARNING, msg('indicator.volatilityOhlc.color', 'Volatility Line'), 'color', msg('indicator.volatilityOhlc.color.tooltip', 'Color of the line at its recent highs; it fades toward grey as volatility contracts.')),
+    ],
+    compute: (bars, inputs) => {
+        const days = elapsedDays(bars);
+        const closed = Math.min(Math.max(num(inputs, 'marketClosed', 0), 0), 0.999);
+        // Each bar's variance estimate, per day elapsed since the bar before it.
+        const perDay = bars.map((b, i) => {
+            const elapsed = days[i]!;
+            if (!Number.isFinite(elapsed) || !(b.low > 0) || !(b.open > 0)) return Number.NaN;
+            const range = Math.log(b.high / b.low);
+            const body = Math.log(b.close / b.open);
+            const session = 0.5 * range * range - SESSION_BODY_WEIGHT * body * body;
+            if (closed === 0) return session / elapsed;
+            const gap = Math.log(b.open / bars[i - 1]!.close);
+            return ((OVERNIGHT_WEIGHT * gap * gap) / closed + ((1 - OVERNIGHT_WEIGHT) * session) / (1 - closed)) / elapsed;
+        });
+        const annual = num(inputs, 'daysPerYear', 252);
+        const values = map(sma(perDay, num(inputs, 'length', 10)), (v) => 100 * Math.sqrt(v * annual));
+        return rangeInkedVolatility('vol', msg('indicator.volatilityOhlc.plot.vol', 'Volatility'), values, str(inputs, 'color', WARNING));
+    },
+};
+
+const volatilityZeroTrend: ClassicIndicatorSpec = {
+    type: 'volatility-zero-trend',
+    title: msg('indicator.volatilityZeroTrend.title', 'Volatility Zero Trend Close-to-Close'),
+    shortTitle: msg('indicator.volatilityZeroTrend.shortTitle', 'Vol Zero Trend'),
+    overlay: false,
+    inputs: [
+        lengthInput(10, 'length', msg('indicator.volatilityZeroTrend.length', 'Length'), 5000, msg('indicator.volatilityZeroTrend.length.tooltip', 'Number of close-to-close returns averaged.')),
+        intInput('daysPerYear', msg('indicator.volatilityZeroTrend.daysPerYear', 'Days Per Year'), 252, 1, 366, msg('indicator.volatilityZeroTrend.daysPerYear.tooltip', 'Trading days in a year, used to annualize the daily variance.')),
+        colorInput(WARNING, msg('indicator.volatilityZeroTrend.color', 'Volatility Line'), 'color', msg('indicator.volatilityZeroTrend.color.tooltip', 'Color of the line at its recent highs; it fades toward grey as volatility contracts.')),
+    ],
+    compute: (bars, inputs) => {
+        const logClose = map(closes(bars), Math.log);
+        // No mean is taken out: each squared return counts whole, per day elapsed since the bar before it.
+        const perDay = zip(sub(logClose, shift(logClose, 1)), elapsedDays(bars), (r, elapsed) => (r * r) / elapsed);
+        const annual = num(inputs, 'daysPerYear', 252);
+        const values = map(sma(perDay, num(inputs, 'length', 10)), (v) => 100 * Math.sqrt(v * annual));
+        return rangeInkedVolatility('vol', msg('indicator.volatilityZeroTrend.plot.vol', 'Volatility'), values, str(inputs, 'color', WARNING));
     },
 };
 
@@ -164,6 +223,24 @@ const standardDeviation: ClassicIndicatorSpec = {
         const values = stdev(sourceValues(bars, str(inputs, 'source', 'Close')), num(inputs, 'length', 20));
         const calm = str(inputs, 'color', NEUTRAL);
         return washedToZero('stdev', msg('indicator.standardDeviation.plot.stdev', 'Standard Deviation'), values, expansionColors(values, calm, str(inputs, 'expandColor', WARNING)), calm, 80);
+    },
+};
+
+const standardError: ClassicIndicatorSpec = {
+    type: 'standard-error',
+    title: msg('indicator.standardError.title', 'Standard Error'),
+    shortTitle: msg('indicator.standardError.shortTitle', 'StdErr'),
+    overlay: false,
+    inputs: [
+        { ...lengthInput(14, 'length', msg('indicator.standardError.length', 'Length'), 5000, msg('indicator.standardError.length.tooltip', 'Number of bars the regression line is fitted over.')), min: 3 },
+        sourceInput('Close', 'source', msg('indicator.standardError.source', 'Source'), msg('indicator.standardError.source.tooltip', 'Price series the regression line is fitted to.')),
+        colorInput(NEUTRAL, msg('indicator.standardError.color', 'Standard Error'), 'color', msg('indicator.standardError.color.tooltip', 'Line color while the reading contracts or holds flat.')),
+        colorInput(WARNING, msg('indicator.standardError.expandColor', 'Expanding'), 'expandColor', msg('indicator.standardError.expandColor.tooltip', 'Line and fill color while the reading expands bar to bar.')),
+    ],
+    compute: (bars, inputs) => {
+        const values = stdError(sourceValues(bars, str(inputs, 'source', 'Close')), num(inputs, 'length', 14));
+        const calm = str(inputs, 'color', NEUTRAL);
+        return washedToZero('se', msg('indicator.standardError.plot.se', 'Standard Error'), values, expansionColors(values, calm, str(inputs, 'expandColor', WARNING)), calm, 80);
     },
 };
 
@@ -272,4 +349,4 @@ const choppiness: ClassicIndicatorSpec = {
     },
 };
 
-export const volatilitySpecs: ClassicIndicatorSpec[] = [atrSpec, historicalVolatility, chaikinVolatility, massIndex, standardDeviation, ulcerIndex, choppiness];
+export const volatilitySpecs: ClassicIndicatorSpec[] = [atrSpec, historicalVolatility, volatilityOhlc, volatilityZeroTrend, chaikinVolatility, massIndex, standardDeviation, standardError, ulcerIndex, choppiness];

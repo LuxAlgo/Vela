@@ -1,12 +1,13 @@
 import { msg, withValues } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import type { OHLCV } from '../../model/ohlcv';
 import type { MarkerPoint } from '../../model/series';
 import type { DrawingPolyline } from '../../model/drawings';
-import { BULLISH, BEARISH, NEUTRAL, WARNING } from '../../palette';
+import { BULLISH, BEARISH, INFO, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicBand, ClassicIndicatorSpec, ClassicPlot } from './define';
 import { bool, num, str } from './define';
 import { SETTINGS, STYLE, boolInput, colorInput, floatInput, intInput, optionInput, sourceInput, transp } from './shared';
-import { sourceValues } from './math';
+import { sourceValues, type SourceName } from './math';
 
 /** Price-anchored specials: stops, anchored averages, levels, pivots, patterns. */
 
@@ -440,4 +441,33 @@ const williamsFractal: ClassicIndicatorSpec = {
     },
 };
 
-export const overlaySpecs: ClassicIndicatorSpec[] = [parabolicSar, vwap, pivotPoints, fiftyTwoWeek, zigzag, williamsFractal];
+/** One of a bar's summary prices as a study of its own — the line a source input names, found by its name. */
+function priceStudy(type: string, source: SourceName, text: { title: MessageLike; plot: MessageLike; colorTooltip: MessageLike }): ClassicIndicatorSpec {
+    return {
+        type,
+        title: text.title,
+        overlay: true,
+        inputs: [colorInput(INFO, undefined, 'color', text.colorTooltip)],
+        compute: (bars, inputs) => ({ plots: [{ key: 'price', title: text.plot, values: sourceValues(bars, source), color: str(inputs, 'color', INFO) }] }),
+    };
+}
+
+const medianPrice = priceStudy('median-price', 'HL2', {
+    title: msg('indicator.medianPrice.title', 'Median Price'),
+    plot: msg('indicator.medianPrice.plot.price', 'Median Price'),
+    colorTooltip: msg('indicator.medianPrice.color.tooltip', 'Color of the line through the midpoint of each bar: the average of its high and low.'),
+});
+
+const typicalPrice = priceStudy('typical-price', 'HLC3', {
+    title: msg('indicator.typicalPrice.title', 'Typical Price'),
+    plot: msg('indicator.typicalPrice.plot.price', 'Typical Price'),
+    colorTooltip: msg('indicator.typicalPrice.color.tooltip', 'Color of the line through the average of each bar’s high, low and close.'),
+});
+
+const averagePrice = priceStudy('average-price', 'OHLC4', {
+    title: msg('indicator.averagePrice.title', 'Average Price'),
+    plot: msg('indicator.averagePrice.plot.price', 'Average Price'),
+    colorTooltip: msg('indicator.averagePrice.color.tooltip', 'Color of the line through the average of each bar’s open, high, low and close.'),
+});
+
+export const overlaySpecs: ClassicIndicatorSpec[] = [parabolicSar, vwap, pivotPoints, fiftyTwoWeek, zigzag, williamsFractal, medianPrice, typicalPrice, averagePrice];
