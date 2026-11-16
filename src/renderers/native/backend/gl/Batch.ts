@@ -16,6 +16,29 @@ const FLOATS_PER_VERT = 8;
 /** Perpendicular padding added to each side of a line quad so the ~1px edge feather has room. */
 const AA_PAD = 1;
 
+/**
+ * The rim of the unit circle for each fan size in use: [cos, sin] of step `i` of `segments`
+ * at index `(i - 1) * 2`. A frame emits one fan per line joint — tens of thousands on a
+ * crowded chart, all at a handful of sizes — and the trigonometry is the costly part of a
+ * fan. Float64, so a rim point is the same number as `Math.cos`/`Math.sin` computed in place.
+ */
+const UNIT_RIMS = new Map<number, Float64Array>();
+
+function unitRim(segments: number): Float64Array {
+    let rim = UNIT_RIMS.get(segments);
+    if (!rim) {
+        const steps = Math.max(0, Math.floor(segments));
+        rim = new Float64Array(steps * 2);
+        for (let i = 1; i <= steps; i += 1) {
+            const a = (i / segments) * Math.PI * 2;
+            rim[(i - 1) * 2] = Math.cos(a);
+            rim[(i - 1) * 2 + 1] = Math.sin(a);
+        }
+        UNIT_RIMS.set(segments, rim);
+    }
+    return rim;
+}
+
 export class Batch {
     private buf: Float32Array;
     private n = 0; // floats used
@@ -165,13 +188,13 @@ export class Batch {
      */
     circle(cx: number, cy: number, r: number, c: RGBA, segments = 16): void {
         const ext = r + AA_PAD;
+        const rim = unitRim(segments);
         let px = cx + ext;
         let py = cy;
         this.ensure(segments * 3);
-        for (let i = 1; i <= segments; i += 1) {
-            const a = (i / segments) * Math.PI * 2;
-            const nx = cx + Math.cos(a) * ext;
-            const ny = cy + Math.sin(a) * ext;
+        for (let i = 0; i < rim.length; i += 2) {
+            const nx = cx + rim[i]! * ext;
+            const ny = cy + rim[i + 1]! * ext;
             this.v(cx, cy, c, 0, r);
             this.v(px, py, c, ext, r);
             this.v(nx, ny, c, ext, r);
