@@ -143,6 +143,11 @@ export interface VelaEventMap extends Record<string, unknown> {
   "drawing:mode": { mode: DrawingMode };
   /** A user drawing was removed. */
   "drawing:removed": { id: string };
+  /** An undo or a redo put the drawings back to an earlier or a later state. It stands in
+   *  for the `drawing:created` / `edited` / `removed` events, which do not fire for the
+   *  drawings the step brought back, changed or took away: a host that mirrors or stores
+   *  the drawings reads them again (`drawings.all()`, `drawings.toJSON()`). */
+  "drawing:history": { action: "undo" | "redo" };
   /** The user requested a drawing's settings popup. */
   "drawing:settings": { id: string };
   /** A timeline-mark glyph was clicked — `ids` lists every mark under it (a cluster). Fires

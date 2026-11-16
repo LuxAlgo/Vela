@@ -1641,9 +1641,8 @@ export class ChartCell {
         for (const [part, visible] of statuslinePartEntries(cs.statuslineParts)) {
             if (this.statusline && this.statusline.partVisible(part) !== visible) this.setStatuslinePart(part, visible);
         }
-        // Cosmetics + drawings round-trip (both validate untrusted input).
+        // Cosmetics round-trip (validates untrusted input); the drawings follow the market below.
         if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
-        if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
         if (cs.indicators) this.applyIndicatorLedger(cs.indicators as { manifest: LedgerManifestEntry[]; natives: LedgerNativeEntry[] });
         // Third-party state converges to the document too: the restored bag REPLACES
         // the baseline (absent in the document = the document carries none), then the
@@ -1676,6 +1675,10 @@ export class ChartCell {
             next.bars = Math.max(bars, this.rangeBars);
         }
         if (Object.keys(next).length > 0) void this.inner.setMarket(next);
+        // The drawings round-trip (untrusted input too) once the switch has STARTED: a chart
+        // whose drawings belong to its symbol drops them as a symbol switch starts, and the
+        // document's drawings are the ones of the market it names.
+        if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
     }
 
     /** Snapshot everything the pool needs to restore this slot later. The market fields

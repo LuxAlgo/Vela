@@ -457,6 +457,42 @@ the next load.
 - **Clipboard.** `copyToClipboard(ids)` + `paste()`, or `duplicate(ids)` / `clone(id)`, mint fresh
   copies (new ids) and select them — an in-memory, per-chart clipboard. On the chart, the
   popup's overflow menu, **Ctrl/Cmd+D**, and a **Ctrl/Cmd+drag** of the body do the same.
+- **Remove everything.** `chart.drawings.clear()` deletes every drawing, locked ones included,
+  as one undo step.
+
+### Drawings per symbol
+
+By default a chart keeps its drawings when its symbol changes: a trend line drawn on one
+instrument stays at the same prices on the next. Set `clearOnSymbolChange` to make the drawings
+belong to the symbol instead:
+
+```js
+new Vela('#chart', { symbol: 'AAPL', drawings: { clearOnSymbolChange: true } });
+// or on a live chart:
+chart.drawings.setClearOnSymbolChange(true);
+```
+
+- **A switch to another symbol removes every drawing.** A timeframe or session change keeps
+  them.
+- **They go as the switch starts**, before the new bars load, so they never sit on the new
+  instrument's prices. The removal raises no `drawing:*` event and clears the undo history,
+  the way `fromJSON` replaces a document: the user removed nothing.
+- **A restored state keeps its drawings.** `applyState()` and a `persist` boot put back the
+  document's drawings together with its symbol.
+
+Vela itself stores nothing per symbol: with the option on and no store, a symbol's drawings are
+gone once you leave it. To bring them back, keep one document per symbol in your app:
+
+```js
+const bySymbol = new Map();
+const save = () => bySymbol.set(chart.market.symbol, chart.drawings.toJSON());
+for (const ev of ['drawing:created', 'drawing:edited', 'drawing:removed', 'drawing:history']) chart.on(ev, save);
+chart.on('market:changed', ({ symbol }) => chart.drawings.fromJSON(bySymbol.get(symbol)));
+```
+
+Save on the drawing events, not on `market:changed`: by then the old symbol's drawings are
+already removed. `drawing:history` is the event of an undo or a redo, which raises none of the
+other three.
 
 ---
 

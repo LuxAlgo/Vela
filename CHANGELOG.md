@@ -26,6 +26,17 @@ All notable changes to Vela, newest first.
   averages of one source as Simple, Exponential or Weighted lines, and the Guppy study
   draws its six short and six long exponential averages in two colors.
 
+- **Drawings can belong to the chart's symbol.** By default a chart keeps its drawings when
+  its symbol changes, so a line drawn on one instrument stays at the same prices on the
+  next. With `drawings: { clearOnSymbolChange: true }`, or
+  `chart.drawings.setClearOnSymbolChange(true)` on a live chart, switching to another symbol
+  removes every drawing as the switch starts. A timeframe or session change keeps them, and
+  a restored state keeps the drawings it carries. Vela stores nothing per symbol itself: the
+  drawing tools guide shows how an app keeps one document per symbol and puts it back. Two
+  additions serve that: `chart.drawings.clear()` removes every drawing as one undo step, and
+  the new `drawing:history` event tells you when an undo or a redo changed the drawings,
+  which no other drawing event did.
+
 ### Changed
 
 - **Charts with many line plots pan and zoom about three times faster.** A chart that
