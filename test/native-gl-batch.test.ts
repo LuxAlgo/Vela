@@ -90,4 +90,42 @@ describe('native WebGL2 · Batch (triangle geometry)', () => {
             expect([0, 4]).toContainEqual(Math.round(fromCenter)); // center, or rim padded by 1
         }
     });
+
+    it('circle puts every rim point exactly where Math.cos/Math.sin at its angle would, on a first fan and on later ones', () => {
+        // The fan written out with the trigonometry in place: center, previous rim point, next
+        // rim point per segment, the rim padded by 1.
+        const expected = (cx: number, cy: number, r: number, segments: number): Float32Array => {
+            const ext = r + 1;
+            const out: number[] = [];
+            let px = cx + ext;
+            let py = cy;
+            for (let i = 1; i <= segments; i += 1) {
+                const a = (i / segments) * Math.PI * 2;
+                const nx = cx + Math.cos(a) * ext;
+                const ny = cy + Math.sin(a) * ext;
+                out.push(cx, cy, ...RED, 0, r, px, py, ...RED, ext, r, nx, ny, ...RED, ext, r);
+                px = nx;
+                py = ny;
+            }
+            return new Float32Array(out);
+        };
+        // The fan sizes line joints and dot markers ask for (6 to 20, then one per radius), an odd one, and a single step.
+        for (const segments of [1, 6, 7, 8, 10, 12, 16, 20, 33]) {
+            for (const [cx, cy, r] of [[0, 0, 0.5], [812.37, 419.61, 1], [1675.5, 12.25, 2.5], [-40.125, 903.9, 5]] as const) {
+                for (let pass = 0; pass < 2; pass += 1) {
+                    const b = new Batch();
+                    b.circle(cx, cy, r, RED, segments);
+                    expect(b.vertexCount).toBe(segments * 3);
+                    expect(Array.from(b.view)).toEqual(Array.from(expected(cx, cy, r, segments)));
+                }
+            }
+        }
+    });
+
+    it('circle emits nothing for a fan with no whole segment', () => {
+        const b = new Batch();
+        b.circle(5, 5, 3, RED, 0);
+        b.circle(5, 5, 3, RED, 0.5);
+        expect(b.vertexCount).toBe(0);
+    });
 });

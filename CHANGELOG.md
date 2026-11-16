@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Charts with many line plots pan and zoom about three times faster.** A chart that
+  stacks many indicator lines, or one zoomed far out, used to stutter while you dragged or
+  zoomed it. With the default WebGL drawing, each frame of such a chart now takes about a
+  third of the time it did, and the gain grows with the number of lines and bars on screen.
+  Lines, the dot markers of a circles plot and the line and area price styles all benefit.
+  The picture itself is unchanged, pixel for pixel.
+
 ## [0.10.8]
 
 ### Changed
