@@ -2402,6 +2402,7 @@
     "widget.shortcuts.scrollHistoryKeys": "Shift+Scroll",
     "widget.shortcuts.title": "Keyboard shortcuts",
     "widget.shortcuts.typing": "Typing a letter or 0 opens the symbol search; typing a digit from 1 to 9 opens the timeframe entry.",
+    "widget.shortcuts.typingTimeframe": "Typing a digit from 1 to 9 opens the timeframe entry.",
     "widget.sidePanel.close": "Close",
     "widget.sidePanel.maximize": "Maximize",
     "widget.sidePanel.pin": "Pin beside the chart",

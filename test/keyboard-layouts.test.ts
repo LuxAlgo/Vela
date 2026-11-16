@@ -95,3 +95,56 @@ describe('typing on the chart', () => {
         expect(typed.defaultPrevented).toBe(true);
     });
 });
+
+describe('the symbolMenuFromKey option', () => {
+    const idle = { dialogs: 0, symbolSearch: false, timeframeEntry: false };
+    /** What the shell hands its symbol search as typed text. */
+    const searchTyped = (ws: VelaWorkspace) => vi.spyOn((ws as unknown as { symbolPicker: { type(text: string): void } }).symbolPicker, 'type');
+    const type = (root: HTMLElement, key: string): KeyboardEvent => {
+        const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        root.dispatchEvent(e);
+        return e;
+    };
+    const workspace = (opts: Record<string, unknown>): VelaWorkspace => {
+        const host = document.createElement('div');
+        document.body.append(host);
+        const ws = new VelaWorkspace(host, { layout: false, ...opts } as never);
+        disposers.push(() => ws.destroy());
+        return ws;
+    };
+
+    it('off, a letter or 0 opens nothing, while a digit still opens the timeframe entry', () => {
+        const off = { ...idle, symbolMenuFromKey: false };
+        expect(resolveTyping('n', off)).toBeNull();
+        expect(resolveTyping('ж', off)).toBeNull();
+        expect(resolveTyping('0', off)).toBeNull();
+        expect(resolveTyping('5', off)).toEqual({ target: 'timeframe', text: '5' });
+        // On, and left unset, are the same: a letter opens symbol search.
+        expect(resolveTyping('n', { ...idle, symbolMenuFromKey: true })).toEqual({ target: 'symbol', text: 'N' });
+        expect(resolveTyping('n', idle)).toEqual({ target: 'symbol', text: 'N' });
+    });
+
+    it('off, a symbol search opened another way still takes what is typed next', () => {
+        const open = { dialogs: 1, symbolSearch: true, timeframeEntry: false, symbolMenuFromKey: false };
+        expect(resolveTyping('q', open)).toEqual({ target: 'symbol', text: 'Q' });
+    });
+
+    it('a shell built with it off leaves a typed letter to the page and opens no symbol search', () => {
+        const ws = workspace({ symbolMenuFromKey: false });
+        const typed = searchTyped(ws);
+        const letter = type(ws.root, 'n');
+        expect(letter.defaultPrevented).toBe(false);
+        expect(type(ws.root, '0').defaultPrevented).toBe(false);
+        expect(typed).not.toHaveBeenCalled();
+        // The timeframe entry is another route, and keeps its digit.
+        expect(type(ws.root, '5').defaultPrevented).toBe(true);
+        expect(typed).not.toHaveBeenCalled();
+    });
+
+    it('a shell built without it opens symbol search on a typed letter, as before', () => {
+        const ws = workspace({});
+        const typed = searchTyped(ws);
+        expect(type(ws.root, 'n').defaultPrevented).toBe(true);
+        expect(typed).toHaveBeenCalledWith('N');
+    });
+});
