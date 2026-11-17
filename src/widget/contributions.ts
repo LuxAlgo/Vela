@@ -3,7 +3,8 @@
 // chrome — topbar buttons, context-menu items — so any future view layer (React) can
 // project the same descriptors. Register at import time, before widgets are constructed.
 import type { Vela } from '../Vela';
-import type { LegendActionView, LegendCalloutView } from '../core/ports/IChartRenderer';
+import type { DrawingActionView, LegendActionView, LegendCalloutView } from '../core/ports/IChartRenderer';
+import type { SerializedDrawing } from '../core/drawings';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { SymbolDescriptor } from '../core/ports/DataProvider';
 import type { InputValue } from '../core/model/inputs';
@@ -650,6 +651,83 @@ export function legendCalloutsProviderFor(chart: Vela, context: () => WidgetCont
             });
         }
         return views;
+    };
+}
+
+// ── Drawing actions ────────────────────────────────────────────────────────────────
+
+/** Where a contributed drawing action shows: the selection toolbar that floats by a
+ *  selected drawing, and the drawing's settings dialog. */
+export type DrawingActionSurface = 'toolbar' | 'settings';
+
+/**
+ * A contributed DRAWING action: an icon button on the toolbar that floats by a selected
+ * drawing, placed before its settings wheel, and a labelled button at the start of the
+ * drawing's settings dialog footer. It acts on one drawing, so a multi-selection's toolbar
+ * leaves it out. `when` gates per drawing (its type, its anchors); `run` receives the
+ * shell's {@link WidgetContext} and the drawing as it is at click time.
+ */
+export interface DrawingActionDescriptor {
+    /** Stable id — re-registering an id replaces it. */
+    id: string;
+    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
+    icon: string;
+    /** The toolbar button's tooltip and accessible name, and the settings dialog button's
+     *  text. A message (`msg(id, 'English')`) follows the chart's language. */
+    label: MessageLike;
+    /** Sort key within the contributed group (ascending; default 0; ties keep registration order). */
+    order?: number;
+    /** Where the action shows (default: both). */
+    surfaces?: readonly DrawingActionSurface[];
+    /** Per-drawing gate — omitted ⇒ shown on every drawing. */
+    when?: (drawing: SerializedDrawing) => boolean;
+    run(ctx: WidgetContext, drawing: SerializedDrawing): void;
+}
+
+const drawingActionRegistry = new Map<string, DrawingActionDescriptor>();
+
+/** Register (or replace) a drawing action. Returns an unregister disposer. */
+export function registerDrawingAction(desc: DrawingActionDescriptor): () => void {
+    drawingActionRegistry.set(desc.id, desc);
+    return () => {
+        if (drawingActionRegistry.get(desc.id) === desc) drawingActionRegistry.delete(desc.id);
+    };
+}
+
+export function unregisterDrawingAction(id: string): void {
+    drawingActionRegistry.delete(id);
+}
+
+/** Every registered drawing action, `order`-sorted (registration order breaks ties). */
+export function drawingActions(): DrawingActionDescriptor[] {
+    return [...drawingActionRegistry.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+/**
+ * The provider a shell hands to `chart.renderer.setDrawingActions` — resolves the drawing
+ * on THAT chart, gates each descriptor, and binds `run` to a fresh context per click (never
+ * a cached one; the widget context rule). Both shells wire exactly this.
+ */
+export function drawingActionsProviderFor(chart: Vela, context: () => WidgetContext): (drawingId: string) => DrawingActionView[] {
+    return (drawingId) => {
+        if (!chart.drawings.supported) return [];
+        const find = (): SerializedDrawing | undefined => chart.drawings.all().find((d) => d.id === drawingId);
+        const drawing = find();
+        if (!drawing) return [];
+        return drawingActions()
+            .filter((d) => !d.when || d.when(drawing))
+            .map((d) => {
+                const on = d.surfaces ?? ['toolbar', 'settings'];
+                return {
+                    id: d.id,
+                    icon: d.icon,
+                    label: textOf(chart.i18n, d.label),
+                    toolbar: on.includes('toolbar'),
+                    settings: on.includes('settings'),
+                    // Read the drawing AGAIN at click time: the toolbar outlives drags and edits.
+                    run: () => d.run(context(), find() ?? drawing),
+                };
+            });
     };
 }
 

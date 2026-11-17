@@ -367,7 +367,18 @@ export class DrawingSettingsPanel {
             flush: true,
             className: 'vela-dsp',
             closeOnEscape: false,
-            footer: (foot) => foot.append(button(this.t(TEXT.cancel), false, cancel), button(this.t(TEXT.ok), true, () => this.close())),
+            footer: (foot) => {
+                // Host-contributed actions lead the footer, apart from Cancel / Ok.
+                const extras = (actions.extras?.() ?? []).filter((x) => x.settings);
+                for (const extra of extras) {
+                    const b = createButton({ text: extra.label, icon: extra.icon, variant: 'ghost', size: 'sm', onClick: () => extra.run() }).el;
+                    b.dataset.drawingAction = extra.id;
+                    foot.append(b);
+                }
+                const cancelBtn = button(this.t(TEXT.cancel), false, cancel);
+                if (extras.length > 0) cancelBtn.style.marginInlineStart = 'auto';
+                foot.append(cancelBtn, button(this.t(TEXT.ok), true, () => this.close()));
+            },
             onOpenChange: (open) => {
                 if (!open) this.close();
             },

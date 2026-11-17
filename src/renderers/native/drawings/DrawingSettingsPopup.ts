@@ -20,6 +20,7 @@ import {
     effectiveFillColor,
 } from '../../../core/drawings';
 import { icon, svg24, svg24Solid } from '../../../core/icons';
+import type { DrawingActionView } from '../../../core/ports/IChartRenderer';
 import { applyChromeTokens } from '../../shared/theme-tokens';
 import { contrastColor } from '../../shared/drawing-geometry';
 import { NumberInput } from '@luxalgo/vela-ui/number-input';
@@ -112,6 +113,8 @@ export interface SettingsActions {
     applyToolSettings?(settings: DrawingToolDefaults): void;
     /** Show a style on the drawing without committing it; `null` puts the drawing back. */
     preview?(settings: DrawingToolDefaults | null): void;
+    /** The host-contributed actions of the drawing (one drawing only — a multi-selection has none). */
+    extras?(): readonly DrawingActionView[];
 }
 
 /** The value of a control whose drawings disagree — the bar shows it as "mixed" and the first
@@ -481,6 +484,16 @@ export class DrawingSettingsPopup {
         // (z-order + reset) sits just right of delete. The settings panel edits one drawing (its
         // points, levels, sizing) — it stays off a multi-selection.
         bar.appendChild(this.divider());
+        // Host-contributed actions act on one drawing: they lead the trailing group, before the wheel.
+        if (!multi) {
+            for (const extra of actions.extras?.() ?? []) {
+                if (!extra.toolbar) continue;
+                const b = this.iconBtn(extra.label, icon(extra.icon), () => extra.run());
+                b.setAttribute('aria-label', extra.label);
+                b.dataset.drawingAction = extra.id;
+                bar.appendChild(b);
+            }
+        }
         if (!multi) bar.appendChild(this.iconBtn(this.t(TEXT.settings), GEAR_ICON, () => this.openPanel()));
         bar.appendChild(this.toggle(this.t(TEXT.lock), LOCK_ICON, common((d) => d.locked), (v) => actions.setLocked(v), UNLOCK_ICON));
         const del = this.iconBtn(this.t(TEXT.delete), TRASH_ICON, () => actions.remove());
