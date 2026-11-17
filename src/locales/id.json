@@ -1853,7 +1853,7 @@
     "indicator.trendStrengthIndex.gradientFill.tooltip": "Mengisi area antara garis dan nol, mengikuti warna garis.",
     "indicator.trendStrengthIndex.length": "Panjang",
     "indicator.trendStrengthIndex.length.tooltip": "Jumlah bar untuk mengorelasikan sumber dengan waktu.",
-    "indicator.trendStrengthIndex.plot.tsi": "Kekuatan tren",
+    "indicator.trendStrengthIndex.plot.tsi": "Trend Strength",
     "indicator.trendStrengthIndex.source": "Sumber",
     "indicator.trendStrengthIndex.source.tooltip": "Deret harga yang dikorelasikan dengan waktu.",
     "indicator.trendStrengthIndex.title": "Trend Strength Index",

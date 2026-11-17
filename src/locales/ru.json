@@ -877,7 +877,7 @@
     "indicator.chopZone.bullColor": "Рост",
     "indicator.chopZone.bullColor.tooltip": "Цвет зоны самого крутого роста. Цвета трёх зон более пологого роста плавно переходят от цвета флэта к этому цвету.",
     "indicator.chopZone.flatColor": "Флэт",
-    "indicator.chopZone.flatColor.tooltip": "Цвет столбцов там, где линия тренда горизонтальна: рынок в боковике.",
+    "indicator.chopZone.flatColor.tooltip": "Цвет столбцов там, где линия тренда горизонтальна: хаотичный рынок в боковике.",
     "indicator.chopZone.plot.zone": "Зона хаотичности",
     "indicator.chopZone.title": "Зона хаотичности",
     "indicator.choppinessIndex.choppyColor": "Боковик",
