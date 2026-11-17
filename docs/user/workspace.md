@@ -467,6 +467,7 @@ silently reorder them).
 | `indicatorPicker` | `true` | **Deprecated (removal in 0.7.0).** `false` removes the built-in indicator dialog's entry points. Replace it with the composition (omit `'indicators'` from `topbar.left` — same effect) or a plugin [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). |
 | `layoutMode` | `'auto'` | Chrome size class — see [Mobile](#mobile). |
 | `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
+| `symbolMenuFromKey` | `true` | Typing a letter or `0` on a chart opens the symbol search, seeded with it. `false` leaves those keys to the page: for a host whose own shortcuts are bare letters, or whose symbol is chosen outside the chart. The symbol button still opens the search, and a digit from 1 to 9 still opens the timeframe entry. |
 | `persist` / `storage` | off / localStorage | State persistence (see above). |
 
 **Workspace options** (the grid's own):
@@ -508,6 +509,8 @@ wrapper) of entries, inline or fetched from a URL, shared by every cell:
 The shell is keyboard-first (bindings act on the **active cell**):
 
 - Type a **letter** or `0` anywhere on a chart → the symbol search opens, seeded with it.
+  `symbolMenuFromKey: false` turns this off and leaves those keys to the page; the topbar's
+  symbol button still opens the search.
 - Type a **digit from 1 to 9** → the timeframe entry opens (`15`, `4H`, `D`, `3M`, … — a
   bare number is minutes, a bare letter means one unit; letters show in capitals).
 - `alt+S` → download a PNG of the visible layout (every chart, or the

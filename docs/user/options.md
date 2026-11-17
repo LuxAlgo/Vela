@@ -66,7 +66,7 @@ chart.data.registerProvider('binance', new BinanceProvider());
 | `upColor` | string | the theme's up color (`#089981`, green, in the built-in themes) | Bullish candle color (native renderer). Set, it stays through theme switches. |
 | `downColor` | string | the theme's down color (`#f23645`, red, in the built-in themes) | Bearish candle color (native renderer). Set, it stays through theme switches. |
 | `priceStyle` | `'candles' \| 'bars' \| 'line' \| 'linemarkers' \| 'stepline' \| 'area' \| 'baseline' \| 'columns' \| 'heikinashi'`, or a registered chart-type id | `'candles'` | How the base price series is drawn (native renderer). See [Price styles](./renderer-features.md#appearance). A symbol whose source has one value per bar (`SymbolInfo.ohlc: false`) is drawn as a line with markers instead of candles, bars or Heikin Ashi; the chosen style stays and comes back on the next symbol. |
-| `drawings` | `boolean \| { toolbar?, tools?, groups? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
+| `drawings` | `boolean \| { toolbar?, tools?, groups?, clearOnSymbolChange? }` | **toolbar shown** | Interactive [drawing tools](./drawing-tools.md). `true`/omitted ⇒ toolbar visible; `false` ⇒ toolbar hidden (the `chart.drawings` API still works headlessly); object customizes it (see below). Capability-gated (native renderer only). |
 | `settings` | `{ hidden?: string[] }` | **all visible** | Chart-settings dialog visibility policy: setting ids to hide — a whole tab, a group, or a single row (see below). |
 | `priceAxis` | `{ ticks?: (ctx) => PriceAxisTick[] \| null }` | built-in ticks | Your own price-axis ladder (native renderer): `ticks` returns each pane's ticks, and the axis labels and horizontal gridlines both follow them (see below). |
 | `freePan` | `boolean \| 'drag' \| 'alt' \| 'shift' \| 'mod' \| ((e) => boolean)` | `false` | Free panning (native renderer): dragging an auto-scaled pane unlocks manual scaling once the drag starts so one gesture pans time and price together (`true` / `'drag'` for plain left-drag, `'alt'` / `'shift'` / `'mod'` for modifier + left-drag, or a custom predicate). Seeds the `freePan` feature and `priceScale.freePan`. |
@@ -106,6 +106,7 @@ the bar while still driving drawings from code, or an object to customize which 
 | `toolbar` | boolean | Show/hide the bar (default `true`). |
 | `tools` | `DrawingTypeKey[]` | Allow-list of tools; each is bucketed into its own group. |
 | `groups` | `{ id, label, tools }[]` | Explicit, custom-labelled groups (unregistered/empty groups are dropped). |
+| `clearOnSymbolChange` | boolean | The drawings belong to the chart's symbol: switching to another symbol removes them all (default `false`: they stay). See [Drawings per symbol](./drawing-tools.md#drawings-per-symbol). |
 
 ```js
 // hide the bar but keep the programmatic API:

@@ -320,15 +320,17 @@ export interface TypingState {
     dialogs: number;
     symbolSearch: boolean;
     timeframeEntry: boolean;
+    /** The shell's `symbolMenuFromKey`: `false` stops a bare key from OPENING symbol search. */
+    symbolMenuFromKey?: boolean;
 }
 
 /**
  * What a bare keystroke on the workspace root does. Nothing open: a letter or `0` seeds
- * symbol search (no timeframe starts with 0), a digit 1–9 the timeframe entry. An ENTRY
- * dialog open: its field takes focus a tick after the dialog reports open, so the next
- * key of a fast typist (`NQ`, `15`) still lands on the root — it is handed to that
- * dialog as more typed text instead of dropped. Any other open dialog swallows bare
- * typing. Pure — unit-tested.
+ * symbol search (no timeframe starts with 0) unless the shell turned that off, a digit
+ * 1–9 the timeframe entry. An ENTRY dialog open: its field takes focus a tick after the
+ * dialog reports open, so the next key of a fast typist (`NQ`, `15`) still lands on the
+ * root — it is handed to that dialog as more typed text instead of dropped. Any other
+ * open dialog swallows bare typing. Pure — unit-tested.
  */
 export function resolveTyping(key: string, open: TypingState): { target: 'symbol' | 'timeframe'; text: string } | null {
     // One printable character (a code point: a letter outside the Basic Multilingual Plane
@@ -341,7 +343,7 @@ export function resolveTyping(key: string, open: TypingState): { target: 'symbol
         return null;
     }
     // A letter of any script opens symbol search: tickers are searched by name too.
-    if (printable && /^[\p{L}0]$/u.test(key)) return { target: 'symbol', text: key.toUpperCase() };
+    if (printable && /^[\p{L}0]$/u.test(key)) return open.symbolMenuFromKey === false ? null : { target: 'symbol', text: key.toUpperCase() };
     if (/^[1-9]$/.test(key)) return { target: 'timeframe', text: key };
     return null;
 }
@@ -518,6 +520,8 @@ export class VelaWorkspace {
     /** The single grid-wide attribution mark — re-inked on a live theme swap. */
     private attributionMark: HTMLElement | null = null;
     private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
+    /** The `symbolMenuFromKey` option: a bare letter opens symbol search. */
+    private readonly symbolMenuFromKey: boolean;
 
     constructor(container: HTMLElement | string, opts: VelaWorkspaceOptions = {}) {
         registerBuiltinLayouts(); // idempotent — pickers and `layout` ids resolve from the registry
@@ -525,6 +529,7 @@ export class VelaWorkspace {
         const hostEl = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container;
         if (!hostEl) throw new Error(`VelaWorkspace: container not found: ${String(container)}`);
         this.opts = opts;
+        this.symbolMenuFromKey = opts.symbolMenuFromKey !== false;
         this.localeState = new LocaleState(pickLocalization(opts));
         // Before any cell exists: the replay watches every cell from its creation on.
         this.replay = new WorkspaceReplay({
@@ -2075,6 +2080,10 @@ export class VelaWorkspace {
             this.propagateDrawingRemoval(cell.id, id);
             this.markStateDirty();
         });
+        // An undo, a redo and a document put in place change the cell's drawings without any
+        // of the three above: unreported, the saved state keeps the drawings as they were.
+        chart.on('drawing:history', () => this.markStateDirty());
+        chart.on('drawing:replaced', () => this.markStateDirty());
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).
@@ -2877,7 +2886,7 @@ export class VelaWorkspace {
             label: TEXT.showShortcuts,
             category: TEXT.categoryHelp,
             run: () => {
-                this.shortcutsHelp ??= new ShortcutsHelp(this.keymap, this.root, (open) => this.trackDialog(open), () => this.localeState);
+                this.shortcutsHelp ??= new ShortcutsHelp(this.keymap, this.root, (open) => this.trackDialog(open), () => this.localeState, { symbolMenuFromKey: this.symbolMenuFromKey });
                 this.shortcutsHelp.open();
             },
         });
@@ -2890,7 +2899,7 @@ export class VelaWorkspace {
         // An input method composing a character (kana, hangul, pinyin) owns its keystrokes.
         if (ev.isComposing || ev.key === 'Process') return;
         if (isEditableTarget(ev)) return; // never hijack a keystroke someone is TYPING
-        const hit = resolveTyping(ev.key, { dialogs: this.openDialogs, symbolSearch: this.symbolPicker.isOpen, timeframeEntry: this.tfQuick.isOpen });
+        const hit = resolveTyping(ev.key, { dialogs: this.openDialogs, symbolSearch: this.symbolPicker.isOpen, timeframeEntry: this.tfQuick.isOpen, symbolMenuFromKey: this.symbolMenuFromKey });
         if (!hit) return;
         ev.preventDefault();
         if (hit.target === 'symbol') this.symbolPicker.type(hit.text);

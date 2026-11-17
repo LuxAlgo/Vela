@@ -76,6 +76,12 @@ export interface VelaShellOptions {
      *  keystroke — no initial click needed. Default false: an embedded shell must never
      *  steal the page's focus from the host's own controls. */
     autofocus?: boolean;
+    /** Typing a letter (or `0`) on the shell opens the symbol menu, seeded with what was
+     *  typed (default true). `false` leaves those keys to the page: for a host whose own
+     *  shortcuts are bare letters, or whose symbol is chosen outside the chart. The
+     *  topbar's symbol button still opens the menu, and a digit from 1 to 9 still opens
+     *  the timeframe entry. */
+    symbolMenuFromKey?: boolean;
     /** Bring the shell back AS YOU LEFT IT: persist the full state document
      *  (`getState()`) and restore it at construction. `true` uses the shell's default
      *  key ('vela-widget' / 'vela-workspace'); a string is the storage key. */

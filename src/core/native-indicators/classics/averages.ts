@@ -361,4 +361,175 @@ const linearRegressionSlope: ClassicIndicatorSpec = {
     },
 };
 
-export const averageSpecs: ClassicIndicatorSpec[] = [simpleMa, exponentialMa, movingAverage, smoothedMa, zlema, vidya, maEnvelope, leastSquaresMa, linearRegressionSlope];
+/** The smoothings the multi-line studies offer. */
+const BASIC_MA_TYPES = ['SMA', 'EMA', 'WMA'] as const;
+
+/**
+ * Ink of line `index` among `count` averages ordered fastest first: the generic
+ * average's two inks at the ends, blended in between.
+ */
+function lineInk(index: number, count: number): string {
+    return gradient(index, 0, count - 1, INFO, WARNING);
+}
+
+/** Radius of the dot that marks a cross, in pixels. */
+const CROSS_MARKER_RADIUS = 4;
+
+/** Which way the first line crossed the second on each bar: 1 above, −1 below, 0 no cross. */
+function crossDirections(a: readonly number[], b: readonly number[]): number[] {
+    return a.map((x, i) => {
+        if (i === 0) return 0;
+        const now = x - b[i]!;
+        const before = a[i - 1]! - b[i - 1]!;
+        return now > 0 && before < 0 ? 1 : now < 0 && before > 0 ? -1 : 0;
+    });
+}
+
+/** One of the two lines of a cross study. `key` names its plot and prefixes its inputs. */
+interface CrossLine {
+    key: string;
+    title: MessageLike;
+    lengthTitle: MessageLike;
+    length: number;
+    smooth: (src: number[], len: number) => number[];
+}
+
+/** Two averages of one source and a marker on every bar where they change sides. */
+function crossStudy(type: string, title: MessageLike, shortTitle: MessageLike, first: CrossLine, second: CrossLine): ClassicIndicatorSpec {
+    const lengthTooltip = msg('indicator.maCross.length.tooltip', 'Number of bars this average covers.');
+    return {
+        type,
+        title,
+        shortTitle,
+        overlay: true,
+        inputs: [
+            lengthInput(first.length, `${first.key}Length`, first.lengthTitle, 5000, lengthTooltip),
+            lengthInput(second.length, `${second.key}Length`, second.lengthTitle, 5000, lengthTooltip),
+            sourceInput('Close', 'source', msg('indicator.common.source', 'Source'), msg('indicator.maCross.source.tooltip', 'Price series both averages are calculated on.')),
+            colorInput(INFO, first.title, `${first.key}Color`),
+            colorInput(WARNING, second.title, `${second.key}Color`),
+            colorInput(BULLISH, msg('indicator.maCross.bullColor', 'Bullish Cross'), 'bullColor', msg('indicator.maCross.bullColor.tooltip', 'Color of the marker where the first average crosses above the second.')),
+            colorInput(BEARISH, msg('indicator.maCross.bearColor', 'Bearish Cross'), 'bearColor', msg('indicator.maCross.bearColor.tooltip', 'Color of the marker where the first average crosses below the second.')),
+        ],
+        compute: (bars, inputs) => {
+            const src = sourceValues(bars, str(inputs, 'source', 'Close'));
+            const a = first.smooth(src, num(inputs, `${first.key}Length`, first.length));
+            const b = second.smooth(src, num(inputs, `${second.key}Length`, second.length));
+            const directions = crossDirections(a, b);
+            const bull = str(inputs, 'bullColor', BULLISH);
+            const bear = str(inputs, 'bearColor', BEARISH);
+            return {
+                plots: [
+                    { key: first.key, title: first.title, values: a, color: str(inputs, `${first.key}Color`, INFO), width: 2 },
+                    { key: second.key, title: second.title, values: b, color: str(inputs, `${second.key}Color`, WARNING), width: 2 },
+                    // A dot on the first line, not the hairline cross glyph: the marker sits where both lines meet, and the glyph disappears under them.
+                    {
+                        key: 'crosses',
+                        title: msg('indicator.maCross.plot.crosses', 'Crosses'),
+                        values: directions.map((d, i) => (d === 0 ? Number.NaN : a[i]!)),
+                        kind: 'circles',
+                        color: bull,
+                        colors: directions.map((d) => (d === 0 ? null : d > 0 ? bull : bear)),
+                        width: CROSS_MARKER_RADIUS,
+                    },
+                ],
+            };
+        },
+    };
+}
+
+const shortLine = { key: 'short', title: msg('indicator.maCross.plot.short', 'Short'), lengthTitle: msg('indicator.maCross.shortLength', 'Short Length'), length: 9 };
+const longLine = { key: 'long', title: msg('indicator.maCross.plot.long', 'Long'), lengthTitle: msg('indicator.maCross.longLength', 'Long Length'), length: 26 };
+
+const maCross = crossStudy('ma-cross', msg('indicator.maCross.title', 'MA Cross'), msg('indicator.maCross.shortTitle', 'MA Cross'), { ...shortLine, smooth: sma }, { ...longLine, smooth: sma });
+const emaCross = crossStudy('ema-cross', msg('indicator.emaCross.title', 'EMA Cross'), msg('indicator.emaCross.shortTitle', 'EMA Cross'), { ...shortLine, smooth: ema }, { ...longLine, smooth: ema });
+const maWithEmaCross = crossStudy(
+    'ma-with-ema-cross',
+    msg('indicator.maWithEmaCross.title', 'MA with EMA Cross'),
+    msg('indicator.maWithEmaCross.shortTitle', 'MA/EMA Cross'),
+    { key: 'ma', title: msg('indicator.maWithEmaCross.plot.ma', 'MA'), lengthTitle: msg('indicator.maWithEmaCross.maLength', 'MA Length'), length: 10, smooth: sma },
+    { key: 'ema', title: msg('indicator.maWithEmaCross.plot.ema', 'EMA'), lengthTitle: msg('indicator.maWithEmaCross.emaLength', 'EMA Length'), length: 10, smooth: ema },
+);
+
+/** Length and color labels of the multi-line studies, one pair per line. */
+const MULTI_LINE_TEXT: ReadonlyArray<{ length: MessageLike; color: MessageLike }> = [
+    { length: msg('indicator.multiAverage.length1', 'MA 1 Length'), color: msg('indicator.multiAverage.color1', 'MA 1') },
+    { length: msg('indicator.multiAverage.length2', 'MA 2 Length'), color: msg('indicator.multiAverage.color2', 'MA 2') },
+    { length: msg('indicator.multiAverage.length3', 'MA 3 Length'), color: msg('indicator.multiAverage.color3', 'MA 3') },
+    { length: msg('indicator.multiAverage.length4', 'MA 4 Length'), color: msg('indicator.multiAverage.color4', 'MA 4') },
+    { length: msg('indicator.multiAverage.length5', 'MA 5 Length'), color: msg('indicator.multiAverage.color5', 'MA 5') },
+    { length: msg('indicator.multiAverage.length6', 'MA 6 Length'), color: msg('indicator.multiAverage.color6', 'MA 6') },
+];
+
+/** Several averages of one source under one smoothing, a line each. At most six lines. */
+function multiAverage(type: string, title: MessageLike, shortTitle: MessageLike, lengths: readonly number[]): ClassicIndicatorSpec {
+    const lines = lengths.map((length, i) => ({ length, plotKey: `ma${i + 1}`, lengthKey: `length${i + 1}`, colorKey: `color${i + 1}`, ink: lineInk(i, lengths.length), text: MULTI_LINE_TEXT[i]! }));
+    return {
+        type,
+        title,
+        shortTitle,
+        overlay: true,
+        inputs: [
+            optionInput('maType', msg('indicator.multiAverage.maType', 'MA Type'), 'SMA', BASIC_MA_TYPES, msg('indicator.multiAverage.maType.tooltip', 'Moving average calculation every line uses.')),
+            sourceInput('Close', 'source', msg('indicator.common.source', 'Source'), msg('indicator.multiAverage.source.tooltip', 'Price series every line is calculated on.')),
+            ...lines.map((l) => lengthInput(l.length, l.lengthKey, l.text.length, 5000, msg('indicator.multiAverage.length.tooltip', 'Number of bars this line averages.'))),
+            ...lines.map((l) => colorInput(l.ink, l.text.color, l.colorKey)),
+        ],
+        compute: (bars, inputs) => {
+            const kind = str(inputs, 'maType', 'SMA');
+            const src = sourceValues(bars, str(inputs, 'source', 'Close'));
+            return {
+                plots: lines.map((l) => {
+                    const len = num(inputs, l.lengthKey, l.length);
+                    return { key: l.plotKey, title: `${kind} ${len}`, values: movingAverageOf(kind, src, bars, len), color: str(inputs, l.colorKey, l.ink), width: 2 };
+                }),
+            };
+        },
+    };
+}
+
+const maDouble = multiAverage('moving-average-double', msg('indicator.maDouble.title', 'Moving Average Double'), msg('indicator.maDouble.shortTitle', 'MA Double'), [14, 21]);
+const maTriple = multiAverage('moving-average-triple', msg('indicator.maTriple.title', 'Moving Average Triple'), msg('indicator.maTriple.shortTitle', 'MA Triple'), [14, 21, 35]);
+const maMultiple = multiAverage('moving-average-multiple', msg('indicator.maMultiple.title', 'Moving Average Multiple'), msg('indicator.maMultiple.shortTitle', 'MA Multiple'), [14, 21, 35, 50, 100, 200]);
+
+/** The two ribbons of the Guppy study: six short averages, then six long ones. */
+const GUPPY_LINES: ReadonlyArray<{ key: string; length: number; title: MessageLike; trader: boolean }> = [
+    { key: 'trader1', length: 3, title: msg('indicator.guppy.trader1', 'Trader EMA 1 Length'), trader: true },
+    { key: 'trader2', length: 5, title: msg('indicator.guppy.trader2', 'Trader EMA 2 Length'), trader: true },
+    { key: 'trader3', length: 8, title: msg('indicator.guppy.trader3', 'Trader EMA 3 Length'), trader: true },
+    { key: 'trader4', length: 10, title: msg('indicator.guppy.trader4', 'Trader EMA 4 Length'), trader: true },
+    { key: 'trader5', length: 12, title: msg('indicator.guppy.trader5', 'Trader EMA 5 Length'), trader: true },
+    { key: 'trader6', length: 15, title: msg('indicator.guppy.trader6', 'Trader EMA 6 Length'), trader: true },
+    { key: 'investor1', length: 30, title: msg('indicator.guppy.investor1', 'Investor EMA 1 Length'), trader: false },
+    { key: 'investor2', length: 35, title: msg('indicator.guppy.investor2', 'Investor EMA 2 Length'), trader: false },
+    { key: 'investor3', length: 40, title: msg('indicator.guppy.investor3', 'Investor EMA 3 Length'), trader: false },
+    { key: 'investor4', length: 45, title: msg('indicator.guppy.investor4', 'Investor EMA 4 Length'), trader: false },
+    { key: 'investor5', length: 50, title: msg('indicator.guppy.investor5', 'Investor EMA 5 Length'), trader: false },
+    { key: 'investor6', length: 60, title: msg('indicator.guppy.investor6', 'Investor EMA 6 Length'), trader: false },
+];
+
+const guppy: ClassicIndicatorSpec = {
+    type: 'guppy-multiple-moving-average',
+    title: msg('indicator.guppy.title', 'Guppy Multiple Moving Average'),
+    shortTitle: msg('indicator.guppy.shortTitle', 'GMMA'),
+    overlay: true,
+    inputs: [
+        sourceInput('Close', 'source', msg('indicator.common.source', 'Source'), msg('indicator.guppy.source.tooltip', 'Price series the twelve averages are calculated on.')),
+        ...GUPPY_LINES.map((l) => lengthInput(l.length, l.key, l.title, 5000, msg('indicator.guppy.length.tooltip', 'Number of bars this exponential average covers.'))),
+        colorInput(INFO, msg('indicator.guppy.traderColor', 'Traders'), 'traderColor', msg('indicator.guppy.traderColor.tooltip', 'Color of the six short averages.')),
+        colorInput(WARNING, msg('indicator.guppy.investorColor', 'Investors'), 'investorColor', msg('indicator.guppy.investorColor.tooltip', 'Color of the six long averages.')),
+    ],
+    compute: (bars, inputs) => {
+        const src = sourceValues(bars, str(inputs, 'source', 'Close'));
+        const traderInk = str(inputs, 'traderColor', INFO);
+        const investorInk = str(inputs, 'investorColor', WARNING);
+        return {
+            plots: GUPPY_LINES.map((l) => {
+                const len = num(inputs, l.key, l.length);
+                return { key: l.key, title: `EMA ${len}`, values: ema(src, len), color: l.trader ? traderInk : investorInk, width: 1 };
+            }),
+        };
+    },
+};
+
+export const averageSpecs: ClassicIndicatorSpec[] = [simpleMa, exponentialMa, movingAverage, smoothedMa, zlema, vidya, maEnvelope, leastSquaresMa, linearRegressionSlope, maCross, emaCross, maWithEmaCross, maDouble, maTriple, maMultiple, guppy];

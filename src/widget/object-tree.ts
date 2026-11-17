@@ -312,6 +312,9 @@ const REFRESH_EVENTS = [
     'drawing:created',
     'drawing:edited',
     'drawing:removed',
+    // An undo, a redo and a replaced document change the drawings without any of the three above.
+    'drawing:history',
+    'drawing:replaced',
 ] as const;
 
 /** How far a press has to travel before it counts as a drag rather than a click. */

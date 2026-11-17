@@ -295,12 +295,12 @@ function channels(hex: string): [number, number, number] | null {
 
 /**
  * Blend `from`→`to` by where `value` falls in `[low, high]`, clamped at both ends
- * (a non-finite value or an unparseable ink yields `from`).
+ * (a non-finite value or bound, or an unparseable ink, yields `from`).
  */
 export function gradient(value: number, low: number, high: number, from: string, to: string): string {
     const a = channels(from);
     const b = channels(to);
-    if (!a || !b || !Number.isFinite(value)) return from;
+    if (!a || !b || !Number.isFinite(value) || !Number.isFinite(low) || !Number.isFinite(high)) return from;
     const span = high - low;
     const t = span === 0 ? 0 : Math.max(0, Math.min(1, (value - low) / span));
     const mix = (i: number): string =>

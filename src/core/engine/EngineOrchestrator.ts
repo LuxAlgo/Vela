@@ -700,7 +700,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      * Switch the chart's market IN PLACE — no destroy/recreate. The renderer stays
      * mounted (canvases, viewport policy, cosmetic config), panes and indicator records
      * survive, and user drawings are untouched (per-symbol drawing documents are a HOST
-     * policy via `chart.drawings.toJSON()/fromJSON()`, keyed off `market:changed`). The
+     * policy via `chart.drawings.toJSON()/fromJSON()`, keyed off `market:changed`) unless
+     * the chart was told its drawings belong to the symbol (`clearOnSymbolChange`). The
      * bars reload through the shared {@link loadMarket} pipeline, then every consumer
      * restarts over the new market: Pine sessions re-execute, native indicators restart
      * with a fresh context, the active chart-type data engine is rebuilt, and the live
@@ -787,6 +788,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             return;
         }
         const prev = { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60' };
+        // Drawings that belong to the symbol go as the switch STARTS, not once the new bars
+        // are in: until then they would sit on another instrument's prices. Synchronous, so
+        // a caller that loads the new symbol's document right after this call keeps it.
+        if (next.symbol !== undefined && next.symbol !== m.symbol) this.drawings.onSymbolChange();
         // A SESSION-ONLY flip (RTH↔ETH) changes WHICH bars exist but not the time axis:
         // the user's zoom/position carries over to the reload — captured here, before the
         // quiesce below discards it — unless the caller framed a window of its own. Any
