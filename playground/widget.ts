@@ -131,15 +131,15 @@ ws.chart.on('theme:changed', (t) => {
 // }, 5000);
 
 
-// ── Drawing action: a bell on line drawings (selection toolbar + settings dialog). ──
+// ── Drawing action: a demo button on line drawings (selection toolbar + settings dialog). ──
 import { registerDrawingAction } from '../src/plugin';
 
 registerDrawingAction({
-    id: 'dev.drawing-alert',
-    icon: 'bell',
-    label: 'Add alert',
+    id: 'dev.drawing-info',
+    icon: 'code',
+    label: 'Show drawing info',
     when: (d) => d.type === 'hline' || d.type === 'trendline' || d.type === 'hray',
-    run: (ctx, d) => ctx.toast(`Alert on ${d.type} at ${d.anchors[0]?.price.toFixed(2) ?? '?'}`, 'info'),
+    run: (ctx, d) => ctx.toast(`${d.type} at ${d.anchors[0]?.price.toFixed(2) ?? '?'}`, 'info'),
 });
 
 // ── "Code" topbar entry — paste a script, Run it, injected on success (SDK showcase:
