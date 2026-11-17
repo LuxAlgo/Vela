@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **The indicators added in 0.10.9 read in every shipped language.** The twenty-five
+  built-in indicators of 0.10.9 showed their names, settings, tooltips and plot names in
+  English whatever the chart's language. All 19 language packs now translate them, in each
+  pack's own vocabulary: a pack that keeps most indicator names in English keeps the new
+  ones too. The **Free pan** switch of the chart settings and the keyboard help line about
+  typing a timeframe are translated as well, so every pack again covers every message.
+
 ## [0.10.9]
 
 ### Added
