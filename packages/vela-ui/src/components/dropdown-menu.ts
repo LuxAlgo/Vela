@@ -429,10 +429,10 @@ class Surface {
     /** Branch item id → the surface it opens. */
     private readonly subs = new Map<string, Surface>();
     /** What this level opened against, as an offset inside the host: its trigger's rect, or
-     *  the point `openAt` was given. Held in the host's space, not the viewport's, so the list
-     *  keeps its place in the host: a trigger that then moves leaves it still (favorite chips
-     *  shifting the caret), and a page that scrolls the host carries it along. Null on a
-     *  submenu, which follows its row. */
+     *  the point or rectangle `openAt` was given. Held in the host's space, not the
+     *  viewport's, so the list keeps its place in the host: a trigger that then moves leaves
+     *  it still (favorite chips shifting the caret), and a page that scrolls the host carries
+     *  it along. Null on a submenu, which follows its row. */
     private pinnedAnchor: AnchorRect | null = null;
     /** The open state last announced — see {@link announce}. */
     private shown = false;
@@ -762,11 +762,19 @@ export class DropdownMenu {
     }
 
     /** Open anchored to a viewport point (context menus). */
-    openAt(clientX: number, clientY: number): void {
+    openAt(clientX: number, clientY: number): void;
+    /** Open against a rectangle in viewport coordinates, such as the box of a button the menu
+     *  does not own as its trigger (`button.getBoundingClientRect()`): on the menu's side of
+     *  it, with its alignment and offsets, and on the rectangle's other side when that one
+     *  lacks room. */
+    openAt(rect: { x: number; y: number; width: number; height: number }): void;
+    openAt(at: number | { x: number; y: number; width: number; height: number }, clientY = 0): void {
+        // Read now: the caller's rectangle may be one it goes on changing.
+        const rect: AnchorRect = typeof at === 'number' ? { x: at, y: clientY, width: 0, height: 0 } : { x: at.x, y: at.y, width: at.width, height: at.height };
         const api = this.api;
         // Queued, as the machine's own events are: a close still under way lands first, and
         // must not take this anchor with it.
-        queueMicrotask(() => this.root.pin({ x: clientX, y: clientY, width: 0, height: 0 }));
+        queueMicrotask(() => this.root.pin(rect));
         api.setOpen(true);
         api.reposition({ getAnchorRect: () => this.root.anchorRect() });
     }

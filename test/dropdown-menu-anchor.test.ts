@@ -19,7 +19,7 @@ class NoopObserver {
 (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= NoopObserver;
 (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver ??= NoopObserver;
 
-import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { DropdownMenu, type DropdownMenuOptions, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 
 const ROWS: MenuItemDescriptor[] = [
     { id: '1m', label: '1m' },
@@ -66,9 +66,11 @@ interface Rig {
     shiftTrigger(dx: number): Promise<void>;
     /** Where the list sits. */
     offset(): { x: number; y: number };
+    positioner: HTMLElement;
+    list: HTMLElement;
 }
 
-function rig(withTrigger: boolean): Rig {
+function rig(withTrigger: boolean, placement: Pick<DropdownMenuOptions, 'side' | 'align' | 'sideOffset'> = {}): Rig {
     const hostBox: Box = { x: 100, y: 200, width: 800, height: 600 };
     const triggerBox: Box = { x: 140, y: 210, width: 40, height: 30 };
     const host = document.createElement('div');
@@ -78,9 +80,10 @@ function rig(withTrigger: boolean): Rig {
     document.body.append(host);
     place(host, hostBox);
     place(trigger, triggerBox);
-    const menu = new DropdownMenu({ host, items: ROWS, ...(withTrigger ? { trigger } : {}) });
+    const menu = new DropdownMenu({ host, items: ROWS, ...placement, ...(withTrigger ? { trigger } : {}) });
     menus.push(menu);
     const positioner = host.querySelector<HTMLElement>('.vela-ui-layer')!;
+    const list = positioner.querySelector<HTMLElement>('.vela-menu')!;
     // Any scroll re-places an open list; the boxes say what moved.
     const replaced = async (): Promise<void> => {
         window.dispatchEvent(new Event('scroll'));
@@ -100,6 +103,8 @@ function rig(withTrigger: boolean): Rig {
             return replaced();
         },
         offset: () => ({ x: parseFloat(positioner.style.getPropertyValue('--x')), y: parseFloat(positioner.style.getPropertyValue('--y')) }),
+        positioner,
+        list,
     };
 }
 
@@ -179,6 +184,46 @@ describe('an open dropdown menu, when the page moves under it', () => {
         r.menu.open();
         await settled();
         expect(r.offset()).toEqual({ x: 140, y: 60 + 30 + GUTTER });
+    });
+
+    it('opens against a rectangle, on the side and with the alignment and offset it was given', async () => {
+        // A button the menu does not own as its trigger: its box is handed over as it stands.
+        const start = rig(false);
+        place(start.trigger, { x: 300, y: 400, width: 60, height: 24 });
+        start.menu.openAt(start.trigger.getBoundingClientRect());
+        await settled();
+        expect(start.menu.api.open).toBe(true);
+        expect(start.offset()).toEqual({ x: 300, y: 400 + 24 + GUTTER });
+
+        // jsdom gives the list no width, so an end-aligned list starts at the box's far edge.
+        const end = rig(false, { align: 'end', sideOffset: 4 });
+        end.menu.openAt({ x: 300, y: 400, width: 60, height: 24 });
+        await settled();
+        expect(end.offset()).toEqual({ x: 360, y: 400 + 24 + 4 });
+
+        const above = rig(false, { side: 'top', sideOffset: 4 });
+        above.menu.openAt({ x: 300, y: 400, width: 60, height: 24 });
+        await settled();
+        expect(above.offset()).toEqual({ x: 300, y: 400 - 4 });
+    });
+
+    it('follows its host when the page scrolls, opened against a rectangle', async () => {
+        const r = rig(false, { sideOffset: 4 });
+        r.menu.openAt({ x: 300, y: 400, width: 60, height: 24 });
+        await settled();
+        await r.scrollPage(150);
+        expect(r.offset()).toEqual({ x: 300, y: 250 + 24 + 4 });
+    });
+
+    it('opens on the other side of a rectangle that has no room on its own', async () => {
+        const r = rig(false, { sideOffset: 4 });
+        // A list 300px tall, against a box 100px from the bottom of the 2000px viewport.
+        Object.defineProperty(r.positioner, 'offsetHeight', { configurable: true, value: 300 });
+        r.menu.openAt({ x: 300, y: 1876, width: 60, height: 24 });
+        await settled();
+        // Above the box, its bottom edge the offset away from the box's top: clear of the button.
+        expect(r.offset()).toEqual({ x: 300, y: 1876 - 4 - 300 });
+        expect(r.list.dataset.placement).toBe('top-start');
     });
 
     it('opens at the point when a row\'s selection reopens it', async () => {
