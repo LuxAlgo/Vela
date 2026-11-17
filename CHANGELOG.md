@@ -2,6 +2,21 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.11]
+
+### Fixed
+
+- **The indicators added in 0.10.9 read better in 17 languages.** A second, line-by-line
+  reading of the translations that shipped in 0.10.10 corrected 75 messages. Tooltips that
+  could be misread now say what the English says (Arabic, Spanish, Portuguese, Turkish).
+  Short titles no longer abbreviate volatility the way the same pack abbreviates volume
+  (Hindi, Portuguese, Spanish, Turkish). Names follow the market's own term where there is
+  one: Advance/Decline in Japanese, the Accumulative Swing Index in Chinese, Momentum in
+  Traditional Chinese, the Guppy averages in Korean. In Polish, the Double, Triple and
+  Multiple moving averages are named by their count, so they no longer read as double or
+  triple smoothing. A plot named after an indicator whose name stays in English keeps that
+  name too (German, Indonesian, Italian, Thai). Malay and Vietnamese needed no change.
+
 ## [0.10.10]
 
 ### Fixed

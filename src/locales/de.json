@@ -1853,7 +1853,7 @@
     "indicator.trendStrengthIndex.gradientFill.tooltip": "Füllt die Fläche zwischen der Linie und null in der Farbe der Linie.",
     "indicator.trendStrengthIndex.length": "Länge",
     "indicator.trendStrengthIndex.length.tooltip": "Anzahl der Kerzen, über die die Quelle mit der Zeit korreliert wird.",
-    "indicator.trendStrengthIndex.plot.tsi": "Trendstärke",
+    "indicator.trendStrengthIndex.plot.tsi": "Trend Strength",
     "indicator.trendStrengthIndex.source": "Quelle",
     "indicator.trendStrengthIndex.source.tooltip": "Kursreihe, die mit der Zeit korreliert wird.",
     "indicator.trendStrengthIndex.title": "Trend Strength Index",
