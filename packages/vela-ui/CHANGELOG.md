@@ -3,6 +3,24 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [0.4.3]
+
+### Added
+
+- **A dropdown menu opens against any box.** `openAt` takes a rectangle as well as a point,
+  such as the box of a button the menu does not own as its trigger:
+  `menu.openAt(button.getBoundingClientRect())`. The list opens on the menu's `side` of the
+  box, with its `align` and offsets, and on the box's other side when that one lacks room,
+  so it never covers the button. It keeps its place in its host like any other open menu.
+
+### Fixed
+
+- **An open menu follows its host when the page scrolls.** A dropdown menu opened from its
+  trigger stayed at the same place on screen while the page scrolled the trigger away. A
+  menu opened with `openAt`, a context menu included, jumped to the top of the window. An
+  open menu now keeps its place inside its host, whichever way it opened, and still stays
+  where it is when its trigger moves inside the host.
+
 ## [0.4.2]
 
 ### Added

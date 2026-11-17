@@ -169,6 +169,14 @@ panel's chips; the callout bubble's buttons.
 Submenus inherit both options, and open beside their row, past the edge of the list they
 came from (on whichever side has room), never over it.
 
+A menu opens from its `trigger`, or where `openAt` puts it: at a viewport point
+(`openAt(x, y)`), or against a rectangle (`openAt(button.getBoundingClientRect())`) for a
+button the menu does not own as its trigger. Against a rectangle, the list takes the menu's
+`side`, `align` and offsets, and opens on the rectangle's other side when that one lacks
+room. However it opened, an open list keeps its place in its host: a page that scrolls the
+host carries the list along, and a trigger that then moves inside the host leaves it where
+it opened.
+
 `ContextMenu` opens the same rows where the user asks for them: a right-click on its target,
 a long press on a touch screen (`longPress: false` where a long press already means
 something, as on the chart, whose long press is the crosshair), or the keyboard's
