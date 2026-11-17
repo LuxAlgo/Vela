@@ -78,6 +78,24 @@ export interface LegendActionView {
     run(): void;
 }
 
+/**
+ * One HOST-CONTRIBUTED action of a drawing, resolved by the shell for one drawing: an icon
+ * button on the drawing's selection toolbar and a labelled button in its settings dialog.
+ * Plain data plus a bound `run` thunk, like {@link LegendActionView}.
+ */
+export interface DrawingActionView {
+    id: string;
+    /** Icon id in the core icon registry (`registerIcon`). */
+    icon: string;
+    /** The toolbar button's tooltip and accessible name, and the settings dialog button's text. */
+    label: string;
+    /** Show it on the selection toolbar. */
+    toolbar: boolean;
+    /** Show it in the settings dialog. */
+    settings: boolean;
+    run(): void;
+}
+
 /** One block of a legend callout's deployed panel — plain text, or an action button. */
 export type LegendCalloutPanelItem =
     | { type: 'text'; text: string }
@@ -388,6 +406,15 @@ export interface IChartRenderer {
      * renderer without it simply never shows contributed legend actions.
      */
     setLegendActions?(provider: ((indicatorId: string) => LegendActionView[]) | null): void;
+
+    /**
+     * Supply the HOST-CONTRIBUTED actions of each drawing (the shells wire the plugin
+     * registry through this — see `registerDrawingAction`). The provider is called with the
+     * drawing's id each time its selection toolbar or settings dialog opens, so `when()`
+     * gates and late registrations resolve then; an open toolbar keeps the buttons it
+     * opened with. Optional — a renderer without it never shows contributed drawing actions.
+     */
+    setDrawingActions?(provider: ((drawingId: string) => DrawingActionView[]) | null): void;
 
     /**
      * Supply the HOST-CONTRIBUTED callout bubbles of each legend row (the shells wire

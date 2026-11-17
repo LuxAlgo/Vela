@@ -10,6 +10,7 @@ import type {
     VisibleRange,
     VisibleRangeOptions,
     IndicatorStatus,
+    DrawingActionView,
     LegendActionView,
     LegendCalloutView,
     PaneAction,
@@ -285,6 +286,7 @@ export class NativeRenderer implements IChartRenderer {
     private indicatorValuesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
+    private drawingActionsProvider: ((drawingId: string) => DrawingActionView[]) | null = null;
     /** Host-contributed legend callouts — held here so a rebuild of the legend re-wires them. */
     private legendCalloutsProvider: ((indicatorId: string) => LegendCalloutView[]) | null = null;
     /** Host override of the legend's fold toggle — held here so a remount re-applies it. */
@@ -1745,6 +1747,7 @@ export class NativeRenderer implements IChartRenderer {
             setToolbarGutter: (px) => this.setToolbarGutter(px),
         });
         this.userDrawings.historyChords = this.historyChordsEnabled; // may be set before init()
+        this.userDrawings.setDrawingActions(this.drawingActionsProvider); // may be set before init()
         // Honor a layout mode pushed before mount (the shell may set it ahead of the chart build).
         if (this.layoutMode === 'mobile') {
             this.mountContainer?.setAttribute('data-vela-layout', this.layoutMode);
@@ -2481,6 +2484,11 @@ export class NativeRenderer implements IChartRenderer {
     setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
         this.legendActionsProvider = provider;
         this.inputsUI?.setLegendActions(provider);
+    }
+
+    setDrawingActions(provider: ((drawingId: string) => DrawingActionView[]) | null): void {
+        this.drawingActionsProvider = provider;
+        this.userDrawings?.setDrawingActions(provider);
     }
 
     setLegendCallouts(provider: ((indicatorId: string) => LegendCalloutView[]) | null): void {

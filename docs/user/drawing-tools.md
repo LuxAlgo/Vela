@@ -72,7 +72,9 @@ beside it. The popup is built from each tool's own schema, so it shows only the 
 supports — line color/width/style, fill and text. The popup also locks and deletes the drawing, and
 its overflow menu (the `⋮` button) duplicates it in place, reorders it (bring-to-front /
 send-to-back), or resets its settings. A duplicate lands exactly on its source and becomes the
-selection, ready to drag away.
+selection, ready to drag away. An app built on Vela can add its own buttons to the popup and
+to the settings panel — an alert on the line, for example (see `registerDrawingAction` in the
+[plugin SDK](../contributing/plugin-sdk.md#drawing-actions--registerdrawingaction)).
 
 **The settings panel.** The popup's **gear**, or a double-click on the drawing, opens the full
 settings panel, laid out the same way for every tool:
