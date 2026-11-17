@@ -134,6 +134,54 @@ describe('chart.drawings.clear()', () => {
     });
 });
 
+describe('the drawing:replaced event', () => {
+    it('says why the drawings changed as a whole: a document loaded, or the symbol changed', () => {
+        const { chart } = drawn(SCOPED);
+        const seen: string[] = [];
+        chart.on('drawing:replaced', (e) => seen.push(e.cause));
+        chart.drawings.fromJSON(chart.drawings.toJSON());
+        expect(seen).toEqual(['load']);
+        void chart.setMarket({ symbol: 'BBB' });
+        expect(seen).toEqual(['load', 'symbol']);
+        // A chart with nothing to drop drops nothing.
+        void chart.setMarket({ symbol: 'CCC' });
+        expect(seen).toEqual(['load', 'symbol']);
+        chart.drawings.fromJSON(null);
+        expect(seen).toEqual(['load', 'symbol', 'load']);
+    });
+
+    it('stays silent when the user removes drawings, and when a chart keeps its drawings across symbols', () => {
+        const { chart, removed } = drawn();
+        const seen: string[] = [];
+        chart.on('drawing:replaced', (e) => seen.push(e.cause));
+        void chart.setMarket({ symbol: 'BBB' });
+        chart.drawings.clear();
+        expect(removed).toHaveLength(2);
+        expect(seen).toEqual([]);
+    });
+
+    it('a restored state announces the drawings it puts in place', () => {
+        const { ws: first } = drawn(SCOPED);
+        const saved = JSON.parse(JSON.stringify(first.getState())) as never;
+        const second = mountWorkspace({ ...SCOPED, symbol: 'BBB' });
+        const chart = second.cell('c1')!.chart;
+        chart.drawings.add('box', { anchors: ANCHORS });
+        const seen: string[] = [];
+        chart.on('drawing:replaced', (e) => seen.push(`${e.cause}:${chart.drawings.all().length}`));
+        second.applyState(saved);
+        // The chart's own drawing goes with its symbol, then the state's two arrive.
+        expect(seen).toEqual(['symbol:0', 'load:2']);
+    });
+
+    it('takes the dead drawing steps out of the shell’s undo, so Undo is not left lit over nothing', () => {
+        const { ws, chart } = drawn(SCOPED);
+        const history = (ws.cell('c1') as unknown as { history: { canUndo: boolean } }).history;
+        expect(history.canUndo).toBe(true);
+        void chart.setMarket({ symbol: 'BBB' });
+        expect(history.canUndo).toBe(false);
+    });
+});
+
 describe('the drawing:history event', () => {
     it('tells a host that an undo or a redo changed the drawings, which no other drawing event does', () => {
         const { chart, removed, types } = drawn();

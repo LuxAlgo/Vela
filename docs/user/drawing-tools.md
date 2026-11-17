@@ -475,8 +475,9 @@ chart.drawings.setClearOnSymbolChange(true);
 - **A switch to another symbol removes every drawing.** A timeframe or session change keeps
   them.
 - **They go as the switch starts**, before the new bars load, so they never sit on the new
-  instrument's prices. The removal raises no `drawing:*` event and clears the undo history,
-  the way `fromJSON` replaces a document: the user removed nothing.
+  instrument's prices. The removal clears the undo history and raises one
+  `drawing:replaced` (`cause: 'symbol'`) in place of a `drawing:removed` per drawing, the way
+  `fromJSON` replaces a document: the user removed nothing.
 - **A restored state keeps its drawings.** `applyState()` and a `persist` boot put back the
   document's drawings together with its symbol.
 
@@ -492,7 +493,8 @@ chart.on('market:changed', ({ symbol }) => chart.drawings.fromJSON(bySymbol.get(
 
 Save on the drawing events, not on `market:changed`: by then the old symbol's drawings are
 already removed. `drawing:history` is the event of an undo or a redo, which raises none of the
-other three.
+other three. Do not save on `drawing:replaced` with `cause: 'symbol'`: the chart is empty then
+because the new symbol's drawings are still to come.
 
 ---
 

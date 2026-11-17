@@ -32,10 +32,13 @@ All notable changes to Vela, newest first.
   `chart.drawings.setClearOnSymbolChange(true)` on a live chart, switching to another symbol
   removes every drawing as the switch starts. A timeframe or session change keeps them, and
   a restored state keeps the drawings it carries. Vela stores nothing per symbol itself: the
-  drawing tools guide shows how an app keeps one document per symbol and puts it back. Two
-  additions serve that: `chart.drawings.clear()` removes every drawing as one undo step, and
-  the new `drawing:history` event tells you when an undo or a redo changed the drawings,
-  which no other drawing event did.
+  drawing tools guide shows how an app keeps one document per symbol and puts it back.
+  Three additions serve that. `chart.drawings.clear()` removes every drawing as one undo
+  step. The new `drawing:history` event tells you when an undo or a redo changed the
+  drawings, which no other drawing event did. The new `drawing:replaced` event tells you
+  when the drawings changed as a whole, because a document was loaded or the symbol
+  changed; the object tree and the Undo button follow it, so neither is left showing
+  drawings or steps that are gone.
 
 ### Changed
 

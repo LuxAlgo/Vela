@@ -381,10 +381,10 @@ export class DrawingController {
     /**
      * The chart is switching to another symbol. With {@link setClearOnSymbolChange} on, its
      * drawings belonged to the symbol it leaves: they go the way a replaced document does,
-     * with the undo history and without a `drawing:*` event, since the user removed nothing.
+     * with the undo history and no `drawing:removed`, since the user removed nothing.
      */
     onSymbolChange(): void {
-        if (this.clearOnSymbolChange && this.store.serialize().drawings.length > 0) this.fromJSON(null);
+        if (this.clearOnSymbolChange && this.store.serialize().drawings.length > 0) this.replace(null, 'symbol');
     }
 
     setLocked(id: string, v: boolean): void {
@@ -508,9 +508,16 @@ export class DrawingController {
     }
 
     fromJSON(doc: unknown): void {
+        this.replace(doc, 'load');
+    }
+
+    /** Put `doc` in place of every drawing and say so: nothing else tells a list, a count
+     *  or a store of drawings that the set under it changed. */
+    private replace(doc: unknown, cause: 'load' | 'symbol'): void {
         this.history.clear(); // a new document is a context switch — don't undo into the old one
         this.selectedIds = [];
         this.store.load(doc); // load() emits change → sync() when enabled
+        this.events.emit('drawing:replaced', { cause });
     }
 
     destroy(): void {

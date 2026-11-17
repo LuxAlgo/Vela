@@ -135,9 +135,9 @@ export class DrawingsControl {
 
     /**
      * Make the drawings belong to the chart's symbol: switching to another symbol removes
-     * them all, as the switch starts, with the undo history and without a `drawing:*`
-     * event. A timeframe or session change keeps them. Off by default; the `drawings`
-     * option's `clearOnSymbolChange` sets it at construction.
+     * them all, as the switch starts, with the undo history; `drawing:replaced` stands in
+     * for a `drawing:removed` per drawing. A timeframe or session change keeps them. Off by
+     * default; the `drawings` option's `clearOnSymbolChange` sets it at construction.
      */
     setClearOnSymbolChange(on: boolean): this {
         this.ctrl.setClearOnSymbolChange(on);
