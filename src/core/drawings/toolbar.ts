@@ -60,6 +60,16 @@ export type DrawingsOption =
           toolbar?: boolean;
           tools?: DrawingTypeKey[];
           groups?: ToolbarGroupConfig[];
+          /**
+           * The drawings belong to the chart's SYMBOL: switching to another symbol removes
+           * them all (a timeframe or session change keeps them). Default false: drawings
+           * stay on the chart across symbols. They are removed as the switch starts, with
+           * the undo history, and `drawing:replaced` stands in for a `drawing:removed` per
+           * drawing, so a host that keeps a document per symbol saves on the drawing events
+           * and loads the new symbol's document on `market:changed`. Also set at runtime
+           * with `chart.drawings.setClearOnSymbolChange()`.
+           */
+          clearOnSymbolChange?: boolean;
       };
 
 const FIBONACCI_TYPES: DrawingTypeKey[] = [

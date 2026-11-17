@@ -127,6 +127,27 @@ export class DrawingsControl {
         return this;
     }
 
+    /** Remove every drawing as one undo step, locked ones included. */
+    clear(): this {
+        this.ctrl.clear();
+        return this;
+    }
+
+    /**
+     * Make the drawings belong to the chart's symbol: switching to another symbol removes
+     * them all, as the switch starts, with the undo history; `drawing:replaced` stands in
+     * for a `drawing:removed` per drawing. A timeframe or session change keeps them. Off by
+     * default; the `drawings` option's `clearOnSymbolChange` sets it at construction.
+     */
+    setClearOnSymbolChange(on: boolean): this {
+        this.ctrl.setClearOnSymbolChange(on);
+        return this;
+    }
+
+    getClearOnSymbolChange(): boolean {
+        return this.ctrl.getClearOnSymbolChange();
+    }
+
     lock(id: string, v = true): this {
         this.ctrl.setLocked(id, v);
         return this;

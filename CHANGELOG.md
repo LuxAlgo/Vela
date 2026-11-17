@@ -34,6 +34,20 @@ All notable changes to Vela, newest first.
   averages of one source as Simple, Exponential or Weighted lines, and the Guppy study
   draws its six short and six long exponential averages in two colors.
 
+- **Drawings can belong to the chart's symbol.** By default a chart keeps its drawings when
+  its symbol changes, so a line drawn on one instrument stays at the same prices on the
+  next. With `drawings: { clearOnSymbolChange: true }`, or
+  `chart.drawings.setClearOnSymbolChange(true)` on a live chart, switching to another symbol
+  removes every drawing as the switch starts. A timeframe or session change keeps them, and
+  a restored state keeps the drawings it carries. Vela stores nothing per symbol itself: the
+  drawing tools guide shows how an app keeps one document per symbol and puts it back.
+  Three additions serve that. `chart.drawings.clear()` removes every drawing as one undo
+  step. The new `drawing:history` event tells you when an undo or a redo changed the
+  drawings, which no other drawing event did. The new `drawing:replaced` event tells you
+  when the drawings changed as a whole, because a document was loaded or the symbol
+  changed; the object tree and the Undo button follow it, so neither is left showing
+  drawings or steps that are gone.
+
 ### Changed
 
 - **Charts with many line plots pan and zoom about three times faster.** A chart that
@@ -49,6 +63,12 @@ All notable changes to Vela, newest first.
   hundred bars of the chart's history showed a solid black line and fill. They now draw in
   the neutral color until the indicator has a hundred bars of its own readings to grade the
   color by.
+
+- **An undone drawing no longer comes back after a reload.** Undoing or redoing a drawing
+  change in a workspace was not reported as a change, so the saved state, and the app
+  listening to `state:changed`, kept the drawings as they were before the undo until
+  something else changed. The same held for a drawings document loaded with
+  `chart.drawings.fromJSON`. Both are saved now.
 
 ## [0.10.8]
 

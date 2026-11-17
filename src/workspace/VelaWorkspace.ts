@@ -2080,6 +2080,10 @@ export class VelaWorkspace {
             this.propagateDrawingRemoval(cell.id, id);
             this.markStateDirty();
         });
+        // An undo, a redo and a document put in place change the cell's drawings without any
+        // of the three above: unreported, the saved state keeps the drawings as they were.
+        chart.on('drawing:history', () => this.markStateDirty());
+        chart.on('drawing:replaced', () => this.markStateDirty());
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).

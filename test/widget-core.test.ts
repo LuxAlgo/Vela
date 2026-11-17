@@ -546,6 +546,35 @@ describe('WidgetHistory late-resolves the current chart', () => {
         expect(b.drawings.redo).toHaveBeenCalledTimes(1);
     });
 
+    it('a replaced drawings document takes its drawing steps out, and leaves the other steps in order', async () => {
+        const { WidgetHistory } = await import('../src/widget/history');
+        const chart = fakeChart();
+        const h = new WidgetHistory(() => chart as never);
+        h.onChart(chart as never);
+        const ran: string[] = [];
+        const changes: Array<{ undo: boolean; redo: boolean }> = [];
+        h.onChange(() => changes.push({ undo: h.canUndo, redo: h.canRedo }));
+        chart.emit('drawing:created');
+        h.push({ undo: () => ran.push('undo indicator'), redo: () => ran.push('redo indicator') });
+        chart.emit('drawing:edited');
+        h.undo(); // the edit goes to the redo side
+        expect(chart.drawings.undo).toHaveBeenCalledTimes(1);
+        // The chart's symbol changed, or a document was loaded: the core's drawing history is empty now.
+        chart.emit('drawing:replaced');
+        expect(changes[changes.length - 1]).toEqual({ undo: true, redo: false });
+        h.undo();
+        expect(ran).toEqual(['undo indicator']);
+        expect(chart.drawings.undo).toHaveBeenCalledTimes(1); // no dead step took the Ctrl+Z
+        expect(h.canUndo).toBe(false);
+        h.redo();
+        expect(ran).toEqual(['undo indicator', 'redo indicator']);
+        expect(chart.drawings.redo).not.toHaveBeenCalled();
+        // With no drawing step left, another replaced document announces nothing.
+        const before = changes.length;
+        chart.emit('drawing:replaced');
+        expect(changes).toHaveLength(before);
+    });
+
     it('onChange reports canUndo / canRedo for the topbar tools', async () => {
         const { WidgetHistory } = await import('../src/widget/history');
         const h = new WidgetHistory();

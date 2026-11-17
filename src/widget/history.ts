@@ -14,6 +14,8 @@ export class WidgetHistory {
     private readonly listeners = new Set<() => void>();
     private unsubs: Array<() => void> = [];
     private muted = false;
+    /** The steps that delegate to the core's drawing history, to drop when that history is emptied. */
+    private readonly drawingSteps = new Set<HistoryAction>();
 
     /** `getChart` late-resolves the CURRENT chart: drawing steps recorded before a chart
      *  rebuild must undo on the chart that exists when the user presses Ctrl+Z, not on a
@@ -70,6 +72,9 @@ export class WidgetHistory {
             chart.on('drawing:created', () => this.pushDrawingStep()),
             chart.on('drawing:edited', () => this.pushDrawingStep()),
             chart.on('drawing:removed', () => this.pushDrawingStep()),
+            // A replaced document empties the core's drawing history: the steps that
+            // delegate to it would each take a Ctrl+Z and undo nothing.
+            chart.on('drawing:replaced', () => this.dropDrawingSteps()),
         ];
     }
 
@@ -80,7 +85,21 @@ export class WidgetHistory {
     }
 
     private pushDrawingStep(): void {
-        this.push({ undo: () => this.getChart()?.drawings.undo(), redo: () => this.getChart()?.drawings.redo() });
+        const step: HistoryAction = { undo: () => this.getChart()?.drawings.undo(), redo: () => this.getChart()?.drawings.redo() };
+        this.drawingSteps.add(step);
+        this.push(step);
+    }
+
+    private dropDrawingSteps(): void {
+        if (this.drawingSteps.size === 0) return;
+        const keep = (a: HistoryAction): boolean => !this.drawingSteps.has(a);
+        const undo = this.undoStack.filter(keep);
+        const redo = this.redoStack.filter(keep);
+        this.drawingSteps.clear();
+        if (undo.length === this.undoStack.length && redo.length === this.redoStack.length) return;
+        this.undoStack.splice(0, this.undoStack.length, ...undo);
+        this.redoStack.splice(0, this.redoStack.length, ...redo);
+        this.notify();
     }
 
     /** Replaying an action must not re-record the drawing events it triggers. */
