@@ -56,6 +56,12 @@ All notable changes to Vela, newest first.
   the neutral color until the indicator has a hundred bars of its own readings to grade the
   color by.
 
+- **An undone drawing no longer comes back after a reload.** Undoing or redoing a drawing
+  change in a workspace was not reported as a change, so the saved state, and the app
+  listening to `state:changed`, kept the drawings as they were before the undo until
+  something else changed. The same held for a drawings document loaded with
+  `chart.drawings.fromJSON`. Both are saved now.
+
 ## [0.10.8]
 
 ### Changed

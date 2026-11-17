@@ -2,7 +2,7 @@
 // Drawings that belong to the chart's SYMBOL (`clearOnSymbolChange`): a switch to another
 // symbol removes them as it starts, a restored state keeps the drawings it carries, and
 // `clear()` is the user-level "remove everything".
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 
 // This jsdom build ships no `CSS` global; the style injector only needs `escape`.
 (globalThis as { CSS?: unknown }).CSS ??= { escape: (v: string) => v };
@@ -179,6 +179,43 @@ describe('the drawing:replaced event', () => {
         expect(history.canUndo).toBe(true);
         void chart.setMarket({ symbol: 'BBB' });
         expect(history.canUndo).toBe(false);
+    });
+});
+
+describe('the workspace reports the drawing changes that raise no created, edited or removed event', () => {
+    /** Whether `act` makes the workspace announce a state change (flushed by the destroy that follows). */
+    function announces(act: (chart: ReturnType<typeof drawn>['chart']) => void): boolean {
+        vi.useFakeTimers();
+        try {
+            const { ws, chart } = drawn();
+            vi.advanceTimersByTime(1000); // the drawing of the setup is announced and done with
+            let told = 0;
+            ws.on('state:changed', () => void told++);
+            act(chart);
+            vi.advanceTimersByTime(1000);
+            return told > 0;
+        } finally {
+            vi.useRealTimers();
+        }
+    }
+
+    it('an undo and a redo', () => {
+        expect(announces((chart) => chart.drawings.undo())).toBe(true);
+        expect(
+            announces((chart) => {
+                chart.drawings.undo();
+                vi.advanceTimersByTime(1000);
+                chart.drawings.redo();
+            }),
+        ).toBe(true);
+    });
+
+    it('a document put in place', () => {
+        expect(announces((chart) => chart.drawings.fromJSON(null))).toBe(true);
+    });
+
+    it('and stays quiet when nothing changed', () => {
+        expect(announces(() => {})).toBe(false);
     });
 });
 
