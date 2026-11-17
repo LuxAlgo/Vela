@@ -106,6 +106,7 @@ The descriptor covers these fields. Some are tri-state (for example `native` / `
 | Trade markers (`trades` flag) | no | optional — inside the **Drawings** tier family: paints `IndicatorModel.trades` (order-fill arrows + labels + fill-price ticks on the price pane) and honors the `tradeMarkers` feature; absent/false ⇒ the channel is carried but never painted |
 | Inputs UI (you provide the in-chart settings dialog) | no | optional — **Inputs UI** tier |
 | Contributed legend actions (`setLegendActions?`) | no | optional — inside the **Inputs UI** tier: the shells wire `registerLegendAction` through it; without it those buttons simply never show |
+| Contributed drawing actions (`setDrawingActions?`) | no | optional — inside the **Drawings** tier family: the shells wire `registerDrawingAction` through it, and the renderer shows the actions on its selected-drawing toolbar and settings dialog; without it those buttons simply never show |
 | Legend overview override (`setLegendOverviewAction?`) | no | optional — inside the **Inputs UI** tier: a multi-chart shell replaces the legend's fold toggle with its own indicator-overview entry point; without it the inline fold stays |
 | Per-indicator settings opener (`openIndicatorSettings?`) | no | optional — inside the **Inputs UI** tier: host chrome (the object tree's action menu) opens one indicator's settings dialog programmatically; without it that menu entry never shows |
 

@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.13]
+
+### Added
+
+- **Apps can add their own buttons to a selected drawing.** `registerDrawingAction` puts an
+  icon button on the toolbar that floats by a selected drawing, next to its settings wheel,
+  and a labelled button in the drawing's settings dialog. Each action decides which drawings
+  it applies to, so an app can offer an alert on lines and channels only, and it receives the
+  drawing as it is when the user clicks.
+
 ## [0.10.12]
 
 ### Fixed

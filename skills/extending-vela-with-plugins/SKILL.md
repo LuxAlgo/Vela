@@ -1,6 +1,6 @@
 ---
 name: extending-vela-with-plugins
-description: Extends Vela charts through the public plugin SDK (@luxalgo/vela/plugin) - topbar buttons and right-click menu rows (registerWidgetAction), overlays and per-chart behavior (registerWidgetAttachment), docked side panels (registerSidePanel), custom chart types, renderer layers, native indicators, legend actions, saved state and shell defaults. Use when adding a feature, button, menu entry, panel, overlay or chart style to a Vela chart or VelaWorkspace, or packaging such features as a plugin, instead of forking Vela or reaching into its DOM.
+description: Extends Vela charts through the public plugin SDK (@luxalgo/vela/plugin) - topbar buttons and right-click menu rows (registerWidgetAction), overlays and per-chart behavior (registerWidgetAttachment), docked side panels (registerSidePanel), custom chart types, renderer layers, native indicators, legend actions, drawing actions, saved state and shell defaults. Use when adding a feature, button, menu entry, panel, overlay or chart style to a Vela chart or VelaWorkspace, or packaging such features as a plugin, instead of forking Vela or reaching into its DOM.
 license: Apache-2.0
 ---
 
@@ -21,6 +21,7 @@ and Vela projects them into its chrome; it never edits Vela's DOM.
 | Drawing on the chart canvas | `registerRendererLayer` |
 | A computed study without a script | `registerNativeIndicator` |
 | Buttons or badges on legend rows | `registerLegendAction`, `registerLegendCallout` |
+| A button on a selected drawing's toolbar and settings dialog | `registerDrawingAction` (`when(drawing)`, `run(ctx, drawing)`) |
 | State saved with the chart's document | `registerStatePersistence` |
 | A default for every shell (the sidebar on) | `registerShellDefaults` |
 | A scripting language for every chart | `registerDefaultEngine` |

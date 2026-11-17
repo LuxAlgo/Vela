@@ -30,6 +30,7 @@ import { inputDeltas, type InputValue } from '../core/model/inputs';
 import {
     legendActionsProviderFor,
     legendCalloutsProviderFor,
+    drawingActionsProviderFor,
     resolveEngines,
     statePersistenceHandlers,
     type CellStateContext,
@@ -423,6 +424,7 @@ export class ChartCell {
         // context follows the workspace rule (built fresh per click, active-cell bound).
         this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
         this.inner.renderer.setLegendCallouts(legendCalloutsProviderFor(this.inner, () => deps.context()));
+        this.inner.renderer.setDrawingActions(drawingActionsProviderFor(this.inner, () => deps.context()));
         // The cell owns ONE unified undo timeline (drawings + indicator ops), driven by
         // the workspace keymap. The drawings layer must not self-serve Ctrl+Z/Y or the
         // two histories desync (its preempt would pop the core drawing stack while the

@@ -20,6 +20,7 @@ import type {
 } from '../../../core/drawings';
 import { applyToolDefaults, captureToolDefaults, deserializeDrawing, getDrawingType, resetDrawingSettings, shownOnTimeframe, Callout, Magnifier, TextLabel } from '../../../core/drawings';
 import type { Unsubscribe } from '../../../core/util/types';
+import type { DrawingActionView } from '../../../core/ports/IChartRenderer';
 import { contrastColor, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
 import { withAlpha } from '../core/chartConfig';
 import { blendOver, splitColor } from '@luxalgo/vela-ui/color-picker';
@@ -157,6 +158,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
      *  shrinking selection does with it. */
     private popupMulti = false;
     private readonly toolbar: DrawingToolbar;
+    /** Host-contributed actions of one drawing, resolved each time its toolbar opens. */
+    private drawingActions: ((drawingId: string) => DrawingActionView[]) | null = null;
 
     constructor(
         private readonly toolbarHost: HTMLElement, // the left gutter (docked toolbar)
@@ -223,6 +226,12 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.toolbar.relabel();
         this.popup.close();
         this.render();
+    }
+
+    /** Wire the host-contributed drawing actions. An open toolbar keeps its buttons; the
+     *  next one opened shows the new set. */
+    setDrawingActions(provider: ((drawingId: string) => DrawingActionView[]) | null): void {
+        this.drawingActions = provider;
     }
 
     // ── IDrawingsRendererPort (commands down) ──
@@ -1243,6 +1252,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.emit({ kind: 'edit', doc: { ...doc, text } });
             },
             templates: () => this.toolTemplates[drawing.type] ?? [],
+            extras: () => this.drawingActions?.(id) ?? [],
             saveTemplate: (name) => {
                 const d = live();
                 if (d) this.emit({ kind: 'template-save', type: d.type, name, settings: captureToolDefaults(d) });

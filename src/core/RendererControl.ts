@@ -1,4 +1,4 @@
-import type { AxisLongPressEvent, ClickEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, LegendCalloutView, RendererCapabilities } from './ports/IChartRenderer';
+import type { AxisLongPressEvent, ClickEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, DrawingActionView, LegendActionView, LegendCalloutView, RendererCapabilities } from './ports/IChartRenderer';
 import type { Unsubscribe } from './util/types';
 import type { WallClock } from './util/wall-clock';
 import type { SymbolPickerFn } from './model/inputs';
@@ -56,6 +56,16 @@ export class RendererControl {
      */
     setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
         this.renderer.setLegendActions?.(provider);
+    }
+
+    /**
+     * Wire the drawings' HOST-CONTRIBUTED actions (the shells route the plugin registry
+     * through this; see `registerDrawingAction`). Silent on a renderer without the seam —
+     * contributed drawing actions simply never show there, same graceful degradation as
+     * {@link setLegendActions}.
+     */
+    setDrawingActions(provider: ((drawingId: string) => DrawingActionView[]) | null): void {
+        this.renderer.setDrawingActions?.(provider);
     }
 
     /**
