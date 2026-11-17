@@ -6,6 +6,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Open menus stay with the chart when the page scrolls.** On a page that scrolls around the
+  chart, an open timeframe, chart style or time zone menu stayed where it was on screen
+  while its button scrolled away, so it came loose from the toolbar. A right-click menu or
+  the alerts list jumped to the top of the window, where a page header could hide it. An
+  open menu now keeps its place in the chart and moves with it, as the layout menu already
+  did. A chart that fills its page was not affected.
 - **Candles with the wick turned off stay visible when you zoom out.** Once candles became
   too narrow to show a body, a chart with **Wick** off in the candle settings drew nothing,
   and zooming out further brought the candles back as thin lines that ignored the setting.
