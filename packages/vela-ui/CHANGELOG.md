@@ -5,6 +5,14 @@ uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
 ## [Unreleased]
 
+### Added
+
+- **A dropdown menu opens against any box.** `openAt` takes a rectangle as well as a point,
+  such as the box of a button the menu does not own as its trigger:
+  `menu.openAt(button.getBoundingClientRect())`. The list opens on the menu's `side` of the
+  box, with its `align` and offsets, and on the box's other side when that one lacks room,
+  so it never covers the button. It keeps its place in its host like any other open menu.
+
 ### Fixed
 
 - **An open menu follows its host when the page scrolls.** A dropdown menu opened from its
