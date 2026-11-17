@@ -1853,7 +1853,7 @@
     "indicator.trendStrengthIndex.gradientFill.tooltip": "Riempie l’area tra la linea e lo zero, seguendo il colore della linea.",
     "indicator.trendStrengthIndex.length": "Lunghezza",
     "indicator.trendStrengthIndex.length.tooltip": "Numero di barre su cui la sorgente viene correlata con il tempo.",
-    "indicator.trendStrengthIndex.plot.tsi": "Forza del trend",
+    "indicator.trendStrengthIndex.plot.tsi": "Trend Strength",
     "indicator.trendStrengthIndex.source": "Sorgente",
     "indicator.trendStrengthIndex.source.tooltip": "Serie di prezzi correlata con il tempo.",
     "indicator.trendStrengthIndex.title": "Trend Strength Index",
