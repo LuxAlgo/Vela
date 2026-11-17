@@ -3,6 +3,16 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **An open menu follows its host when the page scrolls.** A dropdown menu opened from its
+  trigger stayed at the same place on screen while the page scrolled the trigger away. A
+  menu opened with `openAt`, a context menu included, jumped to the top of the window. An
+  open menu now keeps its place inside its host, whichever way it opened, and still stays
+  where it is when its trigger moves inside the host.
+
 ## [0.4.2]
 
 ### Added
