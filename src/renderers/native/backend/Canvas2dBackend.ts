@@ -6,7 +6,7 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
+import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns, candleStickExtent, candleStickColor } from './candle-lod';
 import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, COLUMNS_FILL_ALPHA, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
 import { lineMarkerRadius, lineMarkersVisible, columnIsUp, columnGeometry, snapStroke, closeRuns, stepVertices } from './close-styles';
 import type { IRenderBackend } from './IRenderBackend';
@@ -520,16 +520,22 @@ export class Canvas2dBackend implements IRenderBackend {
         // the shared candles block); built-ins pass through untouched.
         const paint = effectiveCandlePaint(scene.style.candle, scene.candleOverride, theme.upColor, theme.downColor);
         const cs = paint.candle;
+        // Too thin for a body, the stick IS the candle: it spans whatever part is still
+        // visible, so hiding the wick alone never empties the pane at these zooms.
+        const stick = candleStickExtent(cs);
+        if (stick === 'none') return; // every part hidden: nothing to paint at any zoom
+        // A body stick stands for the body (or for its border when the body is hidden).
+        const bodyStickAlpha = cs.bodyVisible ? this.candleBodyAlpha : this.candleStructureAlpha;
         if (tier === 'aggregate') {
-            // The stick IS the candle, so a bar's paint resolves as in the stick-only tier
-            // below: the wick color setting wins, then barcolor(), then the direction color.
+            if (stick === 'body') ctx.globalAlpha = bodyStickAlpha;
             this.drawCandlesAggregated(ctx, bars, i0, i1, coords, pane, (b) => {
                 const up = b.close >= b.open;
-                return (up ? cs.wickUpColor : cs.wickDownColor) ?? barColors.get(b.time) ?? (up ? paint.up : paint.down);
-            });
+                return candleStickColor(cs, stick, up, barColors.get(b.time) ?? (up ? paint.up : paint.down));
+            }, stick);
             return;
         }
         const drawBody = tier === 'full';
+        const bodyStick = !drawBody && stick === 'body';
         // When a fading style drops the body below the structure, draw a body outline even
         // if no border is configured — so the candle keeps a visible (hollow) skeleton.
         const fading = this.candleStructureAlpha > this.candleBodyAlpha + 0.001;
@@ -547,7 +553,7 @@ export class Canvas2dBackend implements IRenderBackend {
             // Body geometry up front so the wick can be clipped to it when the body is hollow.
             let top = 0;
             let bodyH = 0;
-            if (drawBody) {
+            if (drawBody || bodyStick) {
                 const oY = coords.priceToY(b.open, pane.scale, pane.bounds);
                 const cY = coords.priceToY(b.close, pane.scale, pane.bounds);
                 // Both edges snapped to the device grid so the horizontal edges rasterize
@@ -555,7 +561,15 @@ export class Canvas2dBackend implements IRenderBackend {
                 top = snapY(Math.min(oY, cY), coords.dpr);
                 bodyH = Math.max(1 / coords.dpr, snapY(Math.max(oY, cY), coords.dpr) - top);
             }
-            if (cs.wickVisible) {
+            if (bodyStick) {
+                ctx.globalAlpha = bodyStickAlpha;
+                ctx.strokeStyle = candleStickColor(cs, 'body', up, color);
+                ctx.lineWidth = g.wickW;
+                ctx.beginPath();
+                ctx.moveTo(x, top);
+                ctx.lineTo(x, top + bodyH);
+                ctx.stroke();
+            } else if (cs.wickVisible) {
                 // barcolor() recolors only the BODY (TV semantics): the wick keeps the
                 // direction color while a body is drawn. At stick-only zoom the stick IS
                 // the candle, so it keeps the barcolor tint.
@@ -604,12 +618,13 @@ export class Canvas2dBackend implements IRenderBackend {
     }
 
     /**
-     * Sub-pixel LOD: bars sharing a rounded pixel column collapse into high-low
-     * sticks (one per contiguous SAME-COLOR coverage run — see
-     * {@link aggregateCandleColumns}), so draw cost is bounded by screen width (not
-     * bar count) when zoomed far out, a price gap inside the column stays a void, and
-     * every bar's extent keeps its own color. `colorOf` is the calling style's per-bar
-     * paint rule (candles and OHLC bars resolve theirs differently).
+     * Sub-pixel LOD: bars sharing a rounded pixel column collapse into sticks (one
+     * per contiguous SAME-COLOR coverage run — see {@link aggregateCandleColumns}),
+     * so draw cost is bounded by screen width (not bar count) when zoomed far out, a
+     * price gap inside the column stays a void, and every bar's extent keeps its own
+     * color. `colorOf` is the calling style's per-bar paint rule (candles and OHLC
+     * bars resolve theirs differently); `extent` is what each bar covers — high to
+     * low, or open to close for candles whose wick is hidden.
      */
     private drawCandlesAggregated(
         ctx: CanvasRenderingContext2D,
@@ -619,15 +634,19 @@ export class Canvas2dBackend implements IRenderBackend {
         coords: CoordinateSystem,
         pane: PaneNode,
         colorOf: (bar: OHLCV) => string,
+        extent: 'range' | 'body' = 'range',
     ): void {
         const yOf = (price: number): number => coords.priceToY(price, pane.scale, pane.bounds);
+        // A body can be flat (a doji): it keeps one device pixel, as a wide candle's does.
+        const minH = extent === 'body' ? 1 / coords.dpr : 0;
         ctx.lineWidth = 1;
-        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf, colorOf)) {
+        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf, colorOf, extent)) {
             const x = s.x + 0.5;
+            const top = yOf(s.hi);
             ctx.strokeStyle = s.color;
             ctx.beginPath();
-            ctx.moveTo(x, yOf(s.hi));
-            ctx.lineTo(x, yOf(s.lo));
+            ctx.moveTo(x, top);
+            ctx.lineTo(x, Math.max(top + minH, yOf(s.lo)));
             ctx.stroke();
         }
     }
