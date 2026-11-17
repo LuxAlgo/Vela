@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { candleTier, wickWidth, candleGeometry, aggregateCandleColumns, CANDLE_AGG_MAX_SPACING, CANDLE_BODY_MIN_SPACING, CANDLE_WICK_W } from '../src/renderers/native/backend/candle-lod';
+import { candleTier, wickWidth, candleGeometry, aggregateCandleColumns, candleStickExtent, candleStickColor, CANDLE_AGG_MAX_SPACING, CANDLE_BODY_MIN_SPACING, CANDLE_WICK_W } from '../src/renderers/native/backend/candle-lod';
+import type { CandleStyle } from '../src/renderers/native/core/chartConfig';
 import type { OHLCV } from '../src/core/model/ohlcv';
 
 describe('native candle LOD tiers', () => {
@@ -22,6 +23,55 @@ describe('native candle LOD tiers', () => {
 
     it('keeps the thresholds ordered', () => {
         expect(CANDLE_AGG_MAX_SPACING).toBeLessThan(CANDLE_BODY_MIN_SPACING);
+    });
+});
+
+describe('candle stick (the tiers too thin for a body)', () => {
+    const style = (over: Partial<CandleStyle> = {}): CandleStyle => ({
+        bodyVisible: true,
+        borderVisible: false,
+        borderUpColor: null,
+        borderDownColor: null,
+        wickVisible: true,
+        wickUpColor: null,
+        wickDownColor: null,
+        ...over,
+    });
+
+    it('spans the high-low range whenever the wick is visible', () => {
+        expect(candleStickExtent(style())).toBe('range');
+        expect(candleStickExtent(style({ bodyVisible: false }))).toBe('range');
+        expect(candleStickExtent(style({ bodyVisible: false, borderVisible: true }))).toBe('range');
+    });
+
+    it('spans the body when the wick is hidden but the body or its border is visible', () => {
+        expect(candleStickExtent(style({ wickVisible: false }))).toBe('body');
+        expect(candleStickExtent(style({ wickVisible: false, bodyVisible: false, borderVisible: true }))).toBe('body');
+    });
+
+    it('is nothing once every part is hidden', () => {
+        expect(candleStickExtent(style({ wickVisible: false, bodyVisible: false, borderVisible: false }))).toBe('none');
+    });
+
+    it('a range stick wears the wick color, falling back to the body color', () => {
+        const colored = style({ wickUpColor: '#111', wickDownColor: '#222' });
+        expect(candleStickColor(colored, 'range', true, 'body')).toBe('#111');
+        expect(candleStickColor(colored, 'range', false, 'body')).toBe('#222');
+        expect(candleStickColor(style(), 'range', true, 'body')).toBe('body');
+    });
+
+    it('a body stick wears the body color, never the hidden wick\u2019s', () => {
+        const colored = style({ wickVisible: false, wickUpColor: '#111', wickDownColor: '#222', borderUpColor: '#333', borderDownColor: '#444' });
+        expect(candleStickColor(colored, 'body', true, 'body')).toBe('body');
+        expect(candleStickColor(colored, 'body', false, 'body')).toBe('body');
+    });
+
+    it('a body stick wears the border color when the border is all that shows', () => {
+        const hollow = style({ wickVisible: false, bodyVisible: false, borderVisible: true, borderUpColor: '#333', borderDownColor: '#444' });
+        expect(candleStickColor(hollow, 'body', true, 'body')).toBe('#333');
+        expect(candleStickColor(hollow, 'body', false, 'body')).toBe('#444');
+        // An unconfigured border inherits the body color, as it does on a wide candle.
+        expect(candleStickColor(style({ wickVisible: false, bodyVisible: false, borderVisible: true }), 'body', true, 'body')).toBe('body');
     });
 });
 
@@ -193,6 +243,22 @@ describe('aggregateCandleColumns (sub-pixel LOD bucketing)', () => {
         // Reverse the time order and the down bar paints on top instead.
         const flipped = aggregateCandleColumns([bars[1]!, bars[0]!], 0, 1, oneColumn, yOf, dirColor);
         expect(flipped.map((s) => s.color)).toEqual(['up', 'down']);
+    });
+
+    it('under a BODY extent, covers open to close and leaves the wicks out of the column', () => {
+        // Two up bars in one column: wicks reach 9..15, bodies only 10..13.
+        const bars = [bar(1, 10, 15, 9, 11), bar(2, 11, 14, 9.5, 13)];
+        expect(aggregateCandleColumns(bars, 0, 1, oneColumn, yOf, dirColor)).toEqual([{ x: 0, hi: 15, lo: 9, color: 'up' }]);
+        expect(aggregateCandleColumns(bars, 0, 1, oneColumn, yOf, dirColor, 'body')).toEqual([{ x: 0, hi: 13, lo: 10, color: 'up' }]);
+    });
+
+    it('under a BODY extent, a down bar\u2019s body runs from its close up to its open', () => {
+        expect(aggregateCandleColumns([bar(1, 12, 13, 6, 9)], 0, 0, oneColumn, yOf, dirColor, 'body')).toEqual([{ x: 0, hi: 12, lo: 9, color: 'down' }]);
+    });
+
+    it('under a BODY extent, a doji\u2019s flat body stays a stick of its own', () => {
+        const bars = [bar(1, 10, 12, 9, 10)];
+        expect(aggregateCandleColumns(bars, 0, 0, oneColumn, yOf, dirColor, 'body')).toEqual([{ x: 0, hi: 10, lo: 10, color: 'up' }]);
     });
 
     it('groups by the RESOLVED paint, so a barcolor()ed bar forms its own run', () => {

@@ -2,6 +2,17 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Candles with the wick turned off stay visible when you zoom out.** Once candles became
+  too narrow to show a body, a chart with **Wick** off in the candle settings drew nothing,
+  and zooming out further brought the candles back as thin lines that ignored the setting.
+  A candle too narrow for a body now draws as a thin line over its body, in the body's
+  color, or in the border's color when only the border is on. With the body, border and
+  wick all off, candles stay hidden at every zoom.
+
 ## [0.10.11]
 
 ### Fixed
