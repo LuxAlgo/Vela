@@ -394,6 +394,14 @@ interface SurfaceOptions {
     submenu?: boolean;
 }
 
+/** The rectangle a menu level is placed against. */
+interface AnchorRect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 /** How far a row sits inside its list: the list's padding (6px) plus its border (1px). */
 const ROW_INSET_PX = 7;
 /** The space between a submenu and the list it opened from. */
@@ -420,9 +428,12 @@ class Surface {
     private items: readonly MenuItemDescriptor[] = [];
     /** Branch item id → the surface it opens. */
     private readonly subs = new Map<string, Surface>();
-    /** Trigger rect captured when this level opened — the list stays put if the
-     *  trigger then moves (favorite chips shifting the caret). */
-    private pinnedAnchor: { x: number; y: number; width: number; height: number } | null = null;
+    /** What this level opened against, as an offset inside the host: its trigger's rect, or
+     *  the point or rectangle `openAt` was given. Held in the host's space, not the
+     *  viewport's, so the list keeps its place in the host: a trigger that then moves leaves
+     *  it still (favorite chips shifting the caret), and a page that scrolls the host carries
+     *  it along. Null on a submenu, which follows its row. */
+    private pinnedAnchor: AnchorRect | null = null;
     /** The open state last announced — see {@link announce}. */
     private shown = false;
     /** The list's exit animation after a close; a reopen cancels it. */
@@ -454,14 +465,11 @@ class Surface {
             id: opts.id,
             ...opts.placement,
             onSelect: (id) => this.onSelect(id),
-            getAnchorRect: () => this.pinnedAnchor,
+            getAnchorRect: () => this.anchorRect(),
             onOpenChange: (open) => {
-                if (open && trigger) {
-                    const r = trigger.getBoundingClientRect();
-                    this.pinnedAnchor = { x: r.x, y: r.y, width: r.width, height: r.height };
-                } else {
-                    this.pinnedAnchor = null;
-                }
+                // An anchor already there is the point this opening was asked at.
+                if (!open) this.pinnedAnchor = null;
+                else if (trigger && !this.pinnedAnchor) this.pin(trigger.getBoundingClientRect());
                 opts.onOpenChange?.(open);
             },
             triggerId: opts.triggerId,
@@ -510,6 +518,20 @@ class Surface {
 
     get api(): zagMenu.Api {
         return this.ctrl.connect(this.handle.service);
+    }
+
+    /** Anchor this level to `rect`, given in viewport coordinates. */
+    pin(rect: AnchorRect): void {
+        const origin = this.host.getBoundingClientRect();
+        this.pinnedAnchor = { x: rect.x - origin.x, y: rect.y - origin.y, width: rect.width, height: rect.height };
+    }
+
+    /** The anchor in viewport coordinates, where the host stands now. */
+    anchorRect(): AnchorRect | null {
+        const anchor = this.pinnedAnchor;
+        if (!anchor) return null;
+        const origin = this.host.getBoundingClientRect();
+        return { x: origin.x + anchor.x, y: origin.y + anchor.y, width: anchor.width, height: anchor.height };
     }
 
     private announce(open: boolean): void {
@@ -740,10 +762,21 @@ export class DropdownMenu {
     }
 
     /** Open anchored to a viewport point (context menus). */
-    openAt(clientX: number, clientY: number): void {
+    openAt(clientX: number, clientY: number): void;
+    /** Open against a rectangle in viewport coordinates, such as the box of a button the menu
+     *  does not own as its trigger (`button.getBoundingClientRect()`): on the menu's side of
+     *  it, with its alignment and offsets, and on the rectangle's other side when that one
+     *  lacks room. */
+    openAt(rect: { x: number; y: number; width: number; height: number }): void;
+    openAt(at: number | { x: number; y: number; width: number; height: number }, clientY = 0): void {
+        // Read now: the caller's rectangle may be one it goes on changing.
+        const rect: AnchorRect = typeof at === 'number' ? { x: at, y: clientY, width: 0, height: 0 } : { x: at.x, y: at.y, width: at.width, height: at.height };
         const api = this.api;
+        // Queued, as the machine's own events are: a close still under way lands first, and
+        // must not take this anchor with it.
+        queueMicrotask(() => this.root.pin(rect));
         api.setOpen(true);
-        api.reposition({ getAnchorRect: () => ({ x: clientX, y: clientY, width: 0, height: 0 }) });
+        api.reposition({ getAnchorRect: () => this.root.anchorRect() });
     }
 
     close(): void {

@@ -12,6 +12,23 @@ All notable changes to Vela, newest first.
   it applies to, so an app can offer an alert on lines and channels only, and it receives the
   drawing as it is when the user clicks.
 
+## [0.10.12]
+
+### Fixed
+
+- **Open menus stay with the chart when the page scrolls.** On a page that scrolls around the
+  chart, an open timeframe, chart style or time zone menu stayed where it was on screen
+  while its button scrolled away, so it came loose from the toolbar. A right-click menu or
+  the alerts list jumped to the top of the window, where a page header could hide it. An
+  open menu now keeps its place in the chart and moves with it, as the layout menu already
+  did. A chart that fills its page was not affected.
+- **Candles with the wick turned off stay visible when you zoom out.** Once candles became
+  too narrow to show a body, a chart with **Wick** off in the candle settings drew nothing,
+  and zooming out further brought the candles back as thin lines that ignored the setting.
+  A candle too narrow for a body now draws as a thin line over its body, in the body's
+  color, or in the border's color when only the border is on. With the body, border and
+  wick all off, candles stay hidden at every zoom.
+
 ## [0.10.11]
 
 ### Fixed
