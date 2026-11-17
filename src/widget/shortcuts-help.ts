@@ -20,6 +20,7 @@ const TEXT = {
     erase: msg('widget.shortcuts.deleteDrawing', 'Delete the drawing under the cursor'),
     eraseKeys: msg('widget.shortcuts.deleteDrawingKeys', 'Middle-click'),
     typing: msg('widget.shortcuts.typing', 'Typing a letter or 0 opens the symbol search; typing a digit from 1 to 9 opens the timeframe entry.'),
+    typingTimeframe: msg('widget.shortcuts.typingTimeframe', 'Typing a digit from 1 to 9 opens the timeframe entry.'),
 };
 
 const STYLE_ID = 'vela-widget-shortcuts';
@@ -53,11 +54,14 @@ export class ShortcutsHelp {
     private readonly keymap: KeymapManager;
 
     private readonly i18n: () => Translator;
+    /** Whether a bare letter opens symbol search on this shell: the panel only lists what the shell does. */
+    private readonly symbolMenuFromKey: boolean;
 
     /** `i18n` returns the shell's current translator; the panel reads it each time it opens. */
-    constructor(keymap: KeymapManager, host?: HTMLElement, onOpenChange?: (open: boolean) => void, i18n?: () => Translator) {
+    constructor(keymap: KeymapManager, host?: HTMLElement, onOpenChange?: (open: boolean) => void, i18n?: () => Translator, opts: { symbolMenuFromKey?: boolean } = {}) {
         this.keymap = keymap;
         this.i18n = i18n ?? englishTranslator;
+        this.symbolMenuFromKey = opts.symbolMenuFromKey !== false;
         const doc = (host ?? document.body).ownerDocument;
         injectChromeStyles(STYLE_ID, CSS, doc);
         this.list = doc.createElement('div');
@@ -135,7 +139,7 @@ export class ShortcutsHelp {
         // The two type-to-act routes live outside the keymap (any-printable routing).
         const s = doc.createElement('div');
         s.className = 'vela-sh-static';
-        s.textContent = t(TEXT.typing);
+        s.textContent = t(this.symbolMenuFromKey ? TEXT.typing : TEXT.typingTimeframe);
         this.list.appendChild(s);
     }
 }

@@ -2406,6 +2406,7 @@ export interface VelaCoreMessageCatalog {
     'widget.shortcuts.scrollHistoryKeys': string;
     'widget.shortcuts.title': string;
     'widget.shortcuts.typing': string;
+    'widget.shortcuts.typingTimeframe': string;
     'widget.sidePanel.close': string;
     'widget.sidePanel.maximize': string;
     'widget.sidePanel.pin': string;

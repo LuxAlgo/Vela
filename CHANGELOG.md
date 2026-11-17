@@ -6,6 +6,14 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **`symbolMenuFromKey` keeps typed letters from opening the symbol search.** Typing a
+  letter or `0` on a chart opens the symbol search, which takes those keys from a page that
+  uses bare letters for its own shortcuts, or that chooses the symbol outside the chart.
+  `symbolMenuFromKey: false` on a workspace or widget leaves them to the page. The option
+  is on by default, so nothing changes until you set it. The topbar's symbol button still
+  opens the search, typing a digit still opens the timeframe entry, and the shortcuts panel
+  lists only what the shell does.
+
 - **Twenty-five more built-in indicators.** The Indicators menu and `addNativeIndicator` gain
   Median Price, Typical Price, Average Price, Momentum, Moving Average Channel, Standard
   Error Bands, Volatility Index, Net Volume, Accelerator Oscillator, Accumulative Swing
