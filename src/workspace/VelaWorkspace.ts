@@ -61,7 +61,7 @@ import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
 import { PRICE_STYLE_UNAVAILABLE } from '../chart-types/labels';
 import { parseSymbol } from '../data/ProviderRegistry';
-import { syncTargets, syncGroups, pairIdenticalDrawings, drawingLinkContent, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
+import { syncTargets, syncGroups, pairIdenticalDrawings, drawingLinkContent, drawingsMarket, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type DrawingToolsState, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { localStorageAdapter } from '../widget/persist';
 import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
@@ -462,12 +462,27 @@ export class VelaWorkspace {
      *  configs that legitimately differ — neither must propagate. */
     private styleSyncBusy = false;
     /** LINKED drawings (the drawings sync): one map per synced set (cellId → that
-     *  cell's drawing id), reachable from every member under its `cellId\0drawingId`
-     *  key — any member finds its peers to push edits/removals onto. Survives a
-     *  toggle-off (propagation freezes while the setting is off; re-enabling resumes
+     *  cell's drawing id), reachable from every member under its {@link drawingLinkKey}
+     *  — any member finds its peers to push edits/removals onto. A key names the MARKET
+     *  the set was drawn on: a chart whose drawings belong to its symbol holds one
+     *  document per symbol, and their ids repeat from one document to the next. Survives
+     *  a toggle-off (propagation freezes while the setting is off; re-enabling resumes
      *  edit/delete for these pairs). Never persisted: a reload or `applyState` rebuilds
      *  it from content ({@link relinkIdenticalDrawings}). */
     private readonly drawingLinks = new Map<string, Map<string, string>>();
+    /** Linked copies whose set lost a member while their chart showed another symbol, by
+     *  {@link drawingLinkKey}: the removal reaches them when the chart is back on the
+     *  market ({@link alignCellDrawings}). Session-scoped, like the links. */
+    private readonly drawingRemovalsOwed = new Set<string>();
+    /** The market each cell's drawings were last brought in line on ({@link onCellMarketLanded}). */
+    private readonly drawingMarketSeen = new Map<string, string>();
+    /** The market each cell's links are keyed under ({@link drawingMarketOf}). */
+    private readonly drawingLinkMarket = new Map<string, string>();
+    /** Per linked set, the edit each member's copy stands at (cellId → a count the link
+     *  raises with every edit it carries). Members on another symbol miss edits, each in
+     *  its turn: when two meet again on a market, the copy that stands later is the one
+     *  both take ({@link alignCellDrawings}). */
+    private readonly drawingLinkEdits = new WeakMap<Map<string, string>, Map<string, number>>();
     private manifest: ResolvedIndicator[] = [];
     /** The shared manifest can no longer change instance sets — resolved, or no
      *  `indicators` option so nothing ever will. Gates the cells' ledger fallback. */
@@ -1333,13 +1348,19 @@ export class VelaWorkspace {
             }
             if (st.drawingTools) this.pushToolDefaults(null);
             this.drawingLinks.clear(); // the document decides what is linked — rebuilt below
+            this.drawingRemovalsOwed.clear();
             // Restored slots differ legitimately — with the style link on, an unguarded
             // rehydrate would smear each cell's restored config over its peers.
             this.styleSyncBusy = true;
             try {
                 for (const [i] of this.def.cells.entries()) {
                     const { id, ...cs } = st.charts[i]!;
-                    this.cellsById.get(id)?.rehydrate(cs);
+                    const cell = this.cellsById.get(id);
+                    if (!cell) continue;
+                    cell.rehydrate(cs);
+                    // The document's drawings are the ones of the market it names: its
+                    // symbol switch is not an arrival to bring in line with the peers.
+                    this.drawingMarketSeen.set(id, this.drawingMarketOf(cell));
                 }
             } finally {
                 this.styleSyncBusy = false;
@@ -1379,6 +1400,7 @@ export class VelaWorkspace {
         }
         this.pool.clear();
         this.drawingLinks.clear(); // the document decides what is linked — rebuilt after the cells
+        this.drawingRemovalsOwed.clear();
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
         this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
         const def = this.monoLayout ? null : ensureLayout(st.layout); // mono: grid stays pinned to '1'
@@ -2068,6 +2090,10 @@ export class VelaWorkspace {
         // cells and the set stays LINKED: edits and removals of any member follow
         // (the guard stops the propagated mutations from fanning out again).
         chart.on('drawing:created', ({ id }) => {
+            // A removal is owed to a copy in the document the chart had saved for this
+            // market. A drawing made here before that document is back starts the ids
+            // over, and one of them must not be taken for the copy.
+            if (this.drawingRemovalsOwed.size > 0) this.forgetDrawingRemovalsOwed(this.drawingMarketOf(cell), cell.id);
             this.propagateDrawing(cell.id, id);
             this.markStateDirty();
         });
@@ -2086,6 +2112,9 @@ export class VelaWorkspace {
         // of the three above: unreported, the saved state keeps the drawings as they were.
         chart.on('drawing:history', () => this.markStateDirty());
         chart.on('drawing:replaced', () => this.markStateDirty());
+        // A chart that lands on another symbol joins the charts already on it.
+        this.drawingMarketSeen.set(cell.id, this.drawingMarketOf(cell));
+        chart.on('market:changed', () => this.onCellMarketLanded(cell));
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).
@@ -2145,6 +2174,8 @@ export class VelaWorkspace {
             // drawings paired earlier and links identical copies the way a reload
             // does (never copies unpaired ones onto peers).
             for (const cell of this.cellsById.values()) cell.chart.drawings.setExternalGhost(null);
+            // A removal made while the link is off reaches no peer, on screen or away.
+            if (!this.syncOpts.drawings) this.drawingRemovalsOwed.clear();
             this.relinkIdenticalDrawings();
             // The toggle lives on the shared drawing toolbar; keep it truthful.
             this.drawToolbar?.setDrawingsSyncMode(!!setting);
@@ -2218,65 +2249,131 @@ export class VelaWorkspace {
     private alignNewCellDrawings(preexisting: ReadonlySet<string>): void {
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        const ids = [...this.cellsById.keys()];
-        for (const id of ids) {
+        for (const id of [...this.cellsById.keys()]) {
             if (preexisting.has(id)) continue;
-            const cell = this.cellsById.get(id);
-            if (!cell?.chart.drawings.supported) continue;
             // Only a peer on the arriving chart's market has drawings that belong on it.
-            const peers = this.drawingSyncTargets(id, setting).filter((p) => preexisting.has(p));
-            if (peers.length === 0) continue; // an unlinked or all-new group has no source to inherit
-            const sourceId = this.activeId && peers.includes(this.activeId) ? this.activeId : peers[0]!;
-            const source = this.cellsById.get(sourceId);
-            if (!source) continue;
-            const drawings = cell.chart.drawings;
-            this.drawingSyncBusy = true;
-            try {
-                cell.history.silently(() => {
-                    const own = drawings.all();
-                    const held = new Set(own.map((d) => d.id));
-                    // Unlinked drawings this chart already holds, by content: a chart back
-                    // from a document saved in an earlier session carries identical copies
-                    // that only lost their link — adopt those instead of duplicating them.
-                    const unlinked = new Map<string, string[]>();
-                    for (const d of own) {
-                        if (this.drawingLinks.has(`${id}\u0000${d.id}`)) continue;
-                        const content = drawingLinkContent(d);
-                        const queue = unlinked.get(content);
-                        if (queue) queue.push(d.id);
-                        else unlinked.set(content, [d.id]);
-                    }
-                    for (const doc of source.chart.drawings.all()) {
-                        const group = this.drawingLinks.get(`${sourceId}\u0000${doc.id}`) ?? new Map([[sourceId, doc.id]]);
-                        const peerId = group.get(id);
-                        if (peerId != null && held.has(peerId)) {
+            this.alignCellDrawings(
+                id,
+                this.drawingSyncTargets(id, setting).filter((p) => preexisting.has(p)),
+            );
+        }
+    }
+
+    /**
+     * A chart finished a switch to another symbol. Where a chart's drawings belong to its
+     * symbol (`clearOnSymbolChange`), the switch swapped the document it holds, and that
+     * document missed whatever the link did while the chart showed something else: with
+     * the link on, it is brought in line with the charts already on the market
+     * ({@link alignCellDrawings}). A chart that carries its drawings from one symbol to
+     * the next holds no document of the market to bring in line, and is left as it is.
+     *
+     * Runs once the event's listeners are done: a host that keeps drawings per symbol
+     * puts the symbol's saved document back from one of them, and what the chart is
+     * brought in line with must be that document, not the empty chart before it. A
+     * timeframe or session change, and the switch a restored document makes, land on the
+     * market already seen and bring nothing in line.
+     */
+    private onCellMarketLanded(cell: ChartCell): void {
+        if (this.destroyed || this.cellsById.get(cell.id) !== cell) return;
+        const market = this.drawingMarketOf(cell);
+        if (this.drawingMarketSeen.get(cell.id) === market) return;
+        this.drawingMarketSeen.set(cell.id, market);
+        if (!cell.chart.drawings.getClearOnSymbolChange()) return;
+        queueMicrotask(() => {
+            if (this.destroyed || this.cellsById.get(cell.id) !== cell) return;
+            if (this.drawingMarketOf(cell) !== market) return; // already on its way elsewhere
+            const setting = this.syncOpts.drawings;
+            if (!setting) return;
+            this.alignCellDrawings(cell.id, this.drawingSyncTargets(cell.id, setting));
+        });
+    }
+
+    /**
+     * Bring one chart's drawings in line with its link on the market it shows. A linked
+     * copy whose set lost a member while this chart was away goes ({@link
+     * drawingRemovalsOwed}). Then, from a peer among `peers` (the active cell when it is
+     * one): a drawing this chart already holds a linked copy of is refreshed in place, an
+     * identical unlinked one is adopted, any other is copied and linked. The arrival is
+     * the chart's starting state, not an edit: it stays out of the undo timeline, and the
+     * busy guard keeps the changes' own events from fanning back out.
+     */
+    private alignCellDrawings(id: string, peers: readonly string[]): void {
+        const cell = this.cellsById.get(id);
+        if (!cell?.chart.drawings.supported) return;
+        const market = this.drawingMarketOf(cell);
+        const drawings = cell.chart.drawings;
+        const owed = drawings.all().filter((d) => this.drawingRemovalsOwed.has(this.drawingLinkKey(market, id, d.id)));
+        this.forgetDrawingRemovalsOwed(market, id); // a copy the document did not bring back is gone already
+        const sourceId = peers.length === 0 ? null : this.activeId && peers.includes(this.activeId) ? this.activeId : peers[0]!;
+        const source = sourceId == null ? undefined : this.cellsById.get(sourceId);
+        if (owed.length === 0 && (sourceId == null || !source)) return; // nothing owed, and no peer to inherit from
+        this.drawingSyncBusy = true;
+        try {
+            cell.history.silently(() => {
+                for (const d of owed) drawings.remove(d.id);
+                if (sourceId == null || !source) return;
+                const own = drawings.all();
+                const held = new Set(own.map((d) => d.id));
+                // Unlinked drawings this chart already holds, by content: a chart back
+                // from a document saved in an earlier session carries identical copies
+                // that only lost their link — adopt those instead of duplicating them.
+                const unlinked = new Map<string, string[]>();
+                for (const d of own) {
+                    if (this.drawingLinks.has(this.drawingLinkKey(market, id, d.id))) continue;
+                    const content = drawingLinkContent(d);
+                    const queue = unlinked.get(content);
+                    if (queue) queue.push(d.id);
+                    else unlinked.set(content, [d.id]);
+                }
+                for (const doc of source.chart.drawings.all()) {
+                    const sourceKey = this.drawingLinkKey(market, sourceId, doc.id);
+                    const group = this.drawingLinks.get(sourceKey) ?? new Map([[sourceId, doc.id]]);
+                    // Both ends are on `market`; the set's other members keep the keys they have.
+                    const link = (drawingId: string): void => {
+                        group.set(id, drawingId);
+                        this.drawingLinks.set(sourceKey, group);
+                        this.drawingLinks.set(this.drawingLinkKey(market, id, drawingId), group);
+                        this.markDrawingEdit(group, [id], this.drawingEditOf(group, sourceId));
+                    };
+                    const peerId = group.get(id);
+                    if (peerId != null && held.has(peerId)) {
+                        const mine = this.drawingEditOf(group, id);
+                        const later = mine > this.drawingEditOf(group, sourceId) ? own.find((d) => d.id === peerId) : undefined;
+                        if (later) {
+                            // This chart edited its copy after the charts here last followed
+                            // the set (they were away in turn): they take its edit.
+                            const followers = peers.filter((p) => group.has(p));
+                            for (const p of followers) {
+                                this.cellsById.get(p)?.chart.drawings.update(group.get(p)!, { anchors: later.anchors, style: later.style, text: later.text, props: later.props });
+                            }
+                            this.markDrawingEdit(group, followers, mine);
+                        } else {
                             drawings.update(peerId, { anchors: doc.anchors, style: doc.style, text: doc.text, props: doc.props });
-                            continue;
+                            this.markDrawingEdit(group, [id], this.drawingEditOf(group, sourceId));
                         }
-                        const match = unlinked.get(drawingLinkContent(doc))?.shift();
-                        if (match != null) {
-                            if (peerId != null) this.drawingLinks.delete(`${id}\u0000${peerId}`);
-                            group.set(id, match);
-                            for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
-                            continue;
-                        }
-                        const copy = drawings.add(doc.type, {
-                            paneId: doc.paneId,
-                            anchors: doc.anchors,
-                            style: doc.style,
-                            text: doc.text,
-                            props: doc.props,
-                            zIndex: doc.zIndex,
-                        });
-                        if (!copy) continue;
-                        if (peerId != null) this.drawingLinks.delete(`${id}\u0000${peerId}`);
-                        group.set(id, copy.id);
-                        for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
+                        continue;
                     }
-                });
-            } finally {
-                this.drawingSyncBusy = false;
-            }
+                    const match = unlinked.get(drawingLinkContent(doc))?.shift();
+                    if (match != null) {
+                        if (peerId != null) this.drawingLinks.delete(this.drawingLinkKey(market, id, peerId));
+                        link(match);
+                        continue;
+                    }
+                    const copy = drawings.add(doc.type, {
+                        paneId: doc.paneId,
+                        anchors: doc.anchors,
+                        style: doc.style,
+                        text: doc.text,
+                        props: doc.props,
+                        zIndex: doc.zIndex,
+                    });
+                    if (!copy) continue;
+                    if (peerId != null) this.drawingLinks.delete(this.drawingLinkKey(market, id, peerId));
+                    link(copy.id);
+                }
+            });
+        } finally {
+            this.drawingSyncBusy = false;
         }
     }
 
@@ -2294,7 +2391,7 @@ export class VelaWorkspace {
     private relinkIdenticalDrawings(): void {
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        const byMarket: string[][] = [];
+        const byMarket: Array<{ market: string; members: string[] }> = [];
         for (const group of syncGroups(setting, this.cells().map((c) => c.id))) {
             const split = new Map<string, string[]>();
             for (const cellId of group) {
@@ -2305,15 +2402,15 @@ export class VelaWorkspace {
                 if (members) members.push(cellId);
                 else split.set(market, [cellId]);
             }
-            for (const members of split.values()) if (members.length > 1) byMarket.push(members);
+            for (const [market, members] of split) if (members.length > 1) byMarket.push({ market, members });
         }
-        for (const group of byMarket) {
-            const cells = group.map((cellId) => ({
+        for (const { market, members } of byMarket) {
+            const cells = members.map((cellId) => ({
                 cellId,
-                drawings: (this.cellsById.get(cellId)?.chart.drawings.all() ?? []).filter((d) => !this.drawingLinks.has(`${cellId}\u0000${d.id}`)),
+                drawings: (this.cellsById.get(cellId)?.chart.drawings.all() ?? []).filter((d) => !this.drawingLinks.has(this.drawingLinkKey(market, cellId, d.id))),
             }));
             for (const link of pairIdenticalDrawings(cells)) {
-                for (const [cellId, dId] of link) this.drawingLinks.set(`${cellId}\u0000${dId}`, link);
+                for (const [cellId, dId] of link) this.drawingLinks.set(this.drawingLinkKey(market, cellId, dId), link);
             }
         }
     }
@@ -2400,17 +2497,67 @@ export class VelaWorkspace {
     }
 
     /**
-     * The market a cell shows, as the drawings link compares it: the canonical
-     * `PREFIX:TICKER` form, so `BTCUSDT` and `binance:BTCUSDT` are one market, or the
-     * symbol as written while nothing resolves it yet.
+     * The market a cell shows, as the drawings link compares it ({@link drawingsMarket}).
+     * Read off the CHART: its symbol changes as a switch starts, in the same step that
+     * takes a symbol's drawings off it, while the cell follows only once the switch has
+     * landed when a host switched the chart itself. A drawing made in between must not
+     * be taken for one of the market the cell still names.
+     *
+     * Every link operation reads its cells' markets here, so this is also where a cell's
+     * link keys catch up with a market it moved to ({@link drawingLinkMarket}).
      */
     private drawingMarketOf(cell: ChartCell): string {
-        const symbol = cell.symbol;
-        if (!symbol) return '';
+        let symbol = cell.symbol;
+        let carries = false;
         try {
-            return cell.chart.data.canonicalSymbol(symbol) ?? symbol;
+            symbol = cell.chart.market.symbol ?? symbol;
+            carries = !cell.chart.drawings.getClearOnSymbolChange();
         } catch {
-            return symbol;
+            // A destroyed cell names the market it last showed.
+        }
+        const market = drawingsMarket(symbol);
+        const keyed = this.drawingLinkMarket.get(cell.id);
+        if (keyed !== market) {
+            this.drawingLinkMarket.set(cell.id, market);
+            // A chart that keeps its drawings across symbols took its linked copies with
+            // it: their keys follow, so copies that travel together stay linked. A chart
+            // whose drawings belong to the symbol left them in the market's document.
+            if (keyed !== undefined && carries) this.moveDrawingLinks(cell.id, keyed, market);
+        }
+        return market;
+    }
+
+    /** A drawing's key in {@link drawingLinks}: the market its document is of, its cell, its id. */
+    private drawingLinkKey(market: string, cellId: string, drawingId: string): string {
+        return `${market}\u0000${cellId}\u0000${drawingId}`;
+    }
+
+    /** The edit of its set a cell's linked copy stands at ({@link drawingLinkEdits}). */
+    private drawingEditOf(group: Map<string, string>, cellId: string): number {
+        return this.drawingLinkEdits.get(group)?.get(cellId) ?? 0;
+    }
+
+    /** Record that `cellIds` hold their set's copy as of edit `at` (default: a new edit). */
+    private markDrawingEdit(group: Map<string, string>, cellIds: readonly string[], at?: number): void {
+        let edits = this.drawingLinkEdits.get(group);
+        if (!edits) this.drawingLinkEdits.set(group, (edits = new Map()));
+        const edit = at ?? Math.max(0, ...edits.values()) + 1;
+        for (const cellId of cellIds) edits.set(cellId, edit);
+    }
+
+    /** Drop the removals owed to one cell on one market ({@link drawingRemovalsOwed}). */
+    private forgetDrawingRemovalsOwed(market: string, cellId: string): void {
+        const prefix = this.drawingLinkKey(market, cellId, '');
+        for (const key of [...this.drawingRemovalsOwed]) if (key.startsWith(prefix)) this.drawingRemovalsOwed.delete(key);
+    }
+
+    /** Re-key one cell's linked drawings from one market to another. */
+    private moveDrawingLinks(cellId: string, from: string, to: string): void {
+        const prefix = this.drawingLinkKey(from, cellId, '');
+        for (const [key, group] of [...this.drawingLinks]) {
+            if (!key.startsWith(prefix)) continue;
+            this.drawingLinks.delete(key);
+            this.drawingLinks.set(this.drawingLinkKey(to, cellId, key.slice(prefix.length)), group);
         }
     }
 
@@ -2441,8 +2588,10 @@ export class VelaWorkspace {
         if (this.drawingSyncBusy || this.destroyed) return;
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        const doc = this.cellsById.get(originId)?.chart.drawings.all().find((d) => d.id === drawingId);
-        if (!doc) return;
+        const origin = this.cellsById.get(originId);
+        const doc = origin?.chart.drawings.all().find((d) => d.id === drawingId);
+        if (!origin || !doc) return;
+        const market = this.drawingMarketOf(origin);
         this.drawingSyncBusy = true;
         try {
             const group = new Map([[originId, drawingId]]);
@@ -2457,7 +2606,7 @@ export class VelaWorkspace {
                 if (copy) group.set(id, copy.id);
             }
             if (group.size > 1) {
-                for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
+                for (const [cellId, dId] of group) this.drawingLinks.set(this.drawingLinkKey(market, cellId, dId), group);
             }
         } finally {
             this.drawingSyncBusy = false;
@@ -2479,15 +2628,20 @@ export class VelaWorkspace {
 
     /** Push a linked drawing's edited CONTENT (anchors, style, text, per-type props)
      *  onto its same-group peers on the same market — any member propagates, not just
-     *  the original. A peer whose chart moved to another symbol keeps its copy as it is. */
+     *  the original. A peer whose chart moved to another symbol keeps its copy as it is;
+     *  where drawings belong to the symbol, it takes the edit once back on the market
+     *  ({@link onCellMarketLanded}). */
     private propagateDrawingEdit(originId: string, drawingId: string): void {
         if (this.drawingSyncBusy || this.destroyed) return;
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        const group = this.drawingLinks.get(`${originId}\u0000${drawingId}`);
+        const origin = this.cellsById.get(originId);
+        if (!origin) return;
+        const group = this.drawingLinks.get(this.drawingLinkKey(this.drawingMarketOf(origin), originId, drawingId));
         if (!group) return;
-        const doc = this.cellsById.get(originId)?.chart.drawings.all().find((d) => d.id === drawingId);
+        const doc = origin.chart.drawings.all().find((d) => d.id === drawingId);
         if (!doc) return;
+        const followed = [originId];
         this.drawingSyncBusy = true;
         try {
             for (const id of this.drawingSyncTargets(originId, setting)) {
@@ -2499,19 +2653,28 @@ export class VelaWorkspace {
                     text: doc.text,
                     props: doc.props,
                 });
+                followed.push(id);
             }
         } finally {
             this.drawingSyncBusy = false;
         }
+        this.markDrawingEdit(group, followed);
     }
 
     /** Remove a linked drawing's peers with it. The removed member always leaves its
      *  link group (whatever the setting); peers are only deleted while the link is on,
-     *  and only on charts that show the same market. A propagated peer removal
-     *  re-enters here under the busy guard and just cleans its own link key. */
+     *  and only on charts that show the same market. A linked chart on another symbol
+     *  keeps its copy as it is; where its drawings belong to the symbol, that copy is
+     *  out of sight in the market's document, and the removal is owed to it for when the
+     *  chart is back ({@link drawingRemovalsOwed}). A propagated peer removal re-enters
+     *  here under the busy guard and just cleans its own link key. */
     private propagateDrawingRemoval(originId: string, drawingId: string): void {
         if (this.destroyed) return;
-        const key = `${originId}\u0000${drawingId}`;
+        const origin = this.cellsById.get(originId);
+        if (!origin) return;
+        const market = this.drawingMarketOf(origin);
+        const key = this.drawingLinkKey(market, originId, drawingId);
+        this.drawingRemovalsOwed.delete(key);
         const group = this.drawingLinks.get(key);
         if (!group) return;
         this.drawingLinks.delete(key);
@@ -2519,11 +2682,15 @@ export class VelaWorkspace {
         if (this.drawingSyncBusy) return;
         const setting = this.syncOpts.drawings;
         if (!setting) return;
+        const present = new Set(this.drawingSyncTargets(originId, setting));
         this.drawingSyncBusy = true;
         try {
-            for (const id of this.drawingSyncTargets(originId, setting)) {
+            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
                 const peerId = group.get(id);
-                if (peerId != null) this.cellsById.get(id)?.chart.drawings.remove(peerId);
+                if (peerId == null) continue;
+                const peer = this.cellsById.get(id);
+                if (present.has(id)) peer?.chart.drawings.remove(peerId);
+                else if (peer?.chart.drawings.getClearOnSymbolChange()) this.drawingRemovalsOwed.add(this.drawingLinkKey(market, id, peerId));
             }
         } finally {
             this.drawingSyncBusy = false;
