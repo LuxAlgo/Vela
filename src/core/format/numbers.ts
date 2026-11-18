@@ -80,6 +80,16 @@ export function localizeDigits(text: string, settings: Pick<FormatSettings, 'loc
 
 const clampDecimals = (d: number): number => (Number.isFinite(d) ? Math.max(0, Math.min(20, Math.trunc(d))) : 2);
 
+/** Decimal places needed to write a tick size, including increments like 0.25.
+ * Round-trip within a tolerance for floating-point noise. Capped at eight. */
+export function tickDecimals(tick: number): number {
+    if (!(tick > 0) || !Number.isFinite(tick)) return 2;
+    for (let d = 0; d <= 8; d += 1) {
+        if (Math.abs(Number(tick.toFixed(d)) - tick) <= tick * 1e-6) return d;
+    }
+    return 8;
+}
+
 /** A fixed-decimals number without grouping. `toFixed` decides the rounding in every
  *  locale, so a price rounds the same whatever the language. */
 export function formatFixed(value: number, decimals: number, settings: FormatSettings): string {
