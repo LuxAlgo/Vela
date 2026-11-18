@@ -2223,7 +2223,8 @@ export class VelaWorkspace {
             if (preexisting.has(id)) continue;
             const cell = this.cellsById.get(id);
             if (!cell?.chart.drawings.supported) continue;
-            const peers = syncTargets(id, setting, ids).filter((p) => preexisting.has(p));
+            // Only a peer on the arriving chart's market has drawings that belong on it.
+            const peers = this.drawingSyncTargets(id, setting).filter((p) => preexisting.has(p));
             if (peers.length === 0) continue; // an unlinked or all-new group has no source to inherit
             const sourceId = this.activeId && peers.includes(this.activeId) ? this.activeId : peers[0]!;
             const source = this.cellsById.get(sourceId);
@@ -2285,13 +2286,28 @@ export class VelaWorkspace {
      * here, drawings with identical content ({@link pairIdenticalDrawings}) on charts of
      * the same link group become one linked set again, so documents saved by any earlier
      * session relink without a stored pairing. A copy edited while the link was off no
-     * longer matches and stays independent. Drawings already linked keep their links;
-     * runs whenever the link is established — a restore with it on, and turning it on.
+     * longer matches and stays independent. Charts on different markets never relink: a
+     * copy the link once put on another symbol stays that chart's own. Drawings already
+     * linked keep their links; runs whenever the link is established — a restore with it
+     * on, and turning it on.
      */
     private relinkIdenticalDrawings(): void {
         const setting = this.syncOpts.drawings;
         if (!setting) return;
+        const byMarket: string[][] = [];
         for (const group of syncGroups(setting, this.cells().map((c) => c.id))) {
+            const split = new Map<string, string[]>();
+            for (const cellId of group) {
+                const cell = this.cellsById.get(cellId);
+                if (!cell) continue;
+                const market = this.drawingMarketOf(cell);
+                const members = split.get(market);
+                if (members) members.push(cellId);
+                else split.set(market, [cellId]);
+            }
+            for (const members of split.values()) if (members.length > 1) byMarket.push(members);
+        }
+        for (const group of byMarket) {
             const cells = group.map((cellId) => ({
                 cellId,
                 drawings: (this.cellsById.get(cellId)?.chart.drawings.all() ?? []).filter((d) => !this.drawingLinks.has(`${cellId}\u0000${d.id}`)),
@@ -2384,11 +2400,42 @@ export class VelaWorkspace {
     }
 
     /**
-     * Copy a freshly created drawing onto the origin's same-group followers (fresh ids
-     * through `drawings.add` — anchors are time+price, so the copy lands at the same
-     * spot whatever the follower shows) and register the whole set as LINKED: edits
-     * and removals of any member follow while the link is on ({@link drawingLinks}).
-     * The busy guard stops the copies' own `drawing:created` events from fanning out.
+     * The market a cell shows, as the drawings link compares it: the canonical
+     * `PREFIX:TICKER` form, so `BTCUSDT` and `binance:BTCUSDT` are one market, or the
+     * symbol as written while nothing resolves it yet.
+     */
+    private drawingMarketOf(cell: ChartCell): string {
+        const symbol = cell.symbol;
+        if (!symbol) return '';
+        try {
+            return cell.chart.data.canonicalSymbol(symbol) ?? symbol;
+        } catch {
+            return symbol;
+        }
+    }
+
+    /**
+     * The origin's drawings-link followers that show the origin's market. A drawing's
+     * anchors are a time and a price on ONE instrument, so the link never carries a
+     * drawing, its placement ghost, an edit or a removal to a chart on another symbol,
+     * whatever its link group says.
+     */
+    private drawingSyncTargets(originId: string, setting: SyncSetting): string[] {
+        const origin = this.cellsById.get(originId);
+        if (!origin) return [];
+        const market = this.drawingMarketOf(origin);
+        return syncTargets(originId, setting, [...this.cellsById.keys()]).filter((id) => {
+            const cell = this.cellsById.get(id);
+            return cell != null && this.drawingMarketOf(cell) === market;
+        });
+    }
+
+    /**
+     * Copy a freshly created drawing onto the origin's same-group followers on the same
+     * market ({@link drawingSyncTargets}; fresh ids through `drawings.add`) and register
+     * the whole set as LINKED: edits and removals of any member follow while the link is
+     * on ({@link drawingLinks}). The busy guard stops the copies' own `drawing:created`
+     * events from fanning out.
      */
     private propagateDrawing(originId: string, drawingId: string): void {
         if (this.drawingSyncBusy || this.destroyed) return;
@@ -2399,7 +2446,7 @@ export class VelaWorkspace {
         this.drawingSyncBusy = true;
         try {
             const group = new Map([[originId, drawingId]]);
-            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+            for (const id of this.drawingSyncTargets(originId, setting)) {
                 const copy = this.cellsById.get(id)?.chart.drawings.add(doc.type, {
                     paneId: doc.paneId,
                     anchors: doc.anchors,
@@ -2418,20 +2465,21 @@ export class VelaWorkspace {
     }
 
     /** Mirror an in-progress placement (its current ghost, `null` = placement ended)
-     *  onto the origin's same-group followers — the live half of the drawings link;
-     *  the created copy replaces the ghosts when the placement completes. One-way by
-     *  contract (an external ghost never re-emits drafts), so no busy guard needed. */
+     *  onto the origin's same-group followers on the same market — the live half of the
+     *  drawings link; the created copy replaces the ghosts when the placement completes.
+     *  One-way by contract (an external ghost never re-emits drafts), so no busy guard. */
     private propagateDraft(originId: string, doc: SerializedDrawing | null): void {
         if (this.destroyed) return;
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+        for (const id of this.drawingSyncTargets(originId, setting)) {
             this.cellsById.get(id)?.chart.drawings.setExternalGhost(doc);
         }
     }
 
     /** Push a linked drawing's edited CONTENT (anchors, style, text, per-type props)
-     *  onto its same-group peers — any member propagates, not just the original. */
+     *  onto its same-group peers on the same market — any member propagates, not just
+     *  the original. A peer whose chart moved to another symbol keeps its copy as it is. */
     private propagateDrawingEdit(originId: string, drawingId: string): void {
         if (this.drawingSyncBusy || this.destroyed) return;
         const setting = this.syncOpts.drawings;
@@ -2442,7 +2490,7 @@ export class VelaWorkspace {
         if (!doc) return;
         this.drawingSyncBusy = true;
         try {
-            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+            for (const id of this.drawingSyncTargets(originId, setting)) {
                 const peerId = group.get(id);
                 if (peerId == null) continue;
                 this.cellsById.get(id)?.chart.drawings.update(peerId, {
@@ -2458,9 +2506,9 @@ export class VelaWorkspace {
     }
 
     /** Remove a linked drawing's peers with it. The removed member always leaves its
-     *  link group (whatever the setting); peers are only deleted while the link is on.
-     *  A propagated peer removal re-enters here under the busy guard and just cleans
-     *  its own link key. */
+     *  link group (whatever the setting); peers are only deleted while the link is on,
+     *  and only on charts that show the same market. A propagated peer removal
+     *  re-enters here under the busy guard and just cleans its own link key. */
     private propagateDrawingRemoval(originId: string, drawingId: string): void {
         if (this.destroyed) return;
         const key = `${originId}\u0000${drawingId}`;
@@ -2473,7 +2521,7 @@ export class VelaWorkspace {
         if (!setting) return;
         this.drawingSyncBusy = true;
         try {
-            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+            for (const id of this.drawingSyncTargets(originId, setting)) {
                 const peerId = group.get(id);
                 if (peerId != null) this.cellsById.get(id)?.chart.drawings.remove(peerId);
             }

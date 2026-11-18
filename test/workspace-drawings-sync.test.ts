@@ -336,3 +336,76 @@ describe('drawings link after a reload', () => {
         expect(ws.cell('c2')!.chart.drawings.all()).toHaveLength(1);
     });
 });
+
+// A drawing's anchors are a time and a price on ONE instrument: the link only joins charts
+// that show the same market, whatever their link group says.
+describe('drawings link between charts on different symbols', () => {
+    function grid(): VelaWorkspace {
+        const ws = mountWorkspace({ layout: '4', sync: { drawings: true } });
+        for (const id of ['c1', 'c3', 'c4']) ws.cell(id)!.setSymbol('BTCUSDT');
+        ws.cell('c2')!.setSymbol('ETHUSDT');
+        return ws;
+    }
+
+    it('a new drawing is copied onto the charts on its symbol only', () => {
+        const ws = grid();
+        ws.cell('c1')!.chart.drawings.add('fixedrangevp', { anchors: ANCHORS });
+        expect(ws.cell('c2')!.chart.drawings.all()).toHaveLength(0);
+        for (const id of ['c3', 'c4']) expect(ws.cell(id)!.chart.drawings.all().map((d) => d.type)).toEqual(['fixedrangevp']);
+    });
+
+    it('a placement in progress shows its ghost on the charts on its symbol only', () => {
+        const ws = grid();
+        const ghosts = new Map<string, unknown>();
+        for (const id of ['c2', 'c3']) {
+            const drawings = ws.cell(id)!.chart.drawings;
+            const set = drawings.setExternalGhost.bind(drawings);
+            drawings.setExternalGhost = (doc) => {
+                ghosts.set(id, doc);
+                return set(doc);
+            };
+        }
+        (ws as unknown as { propagateDraft(origin: string, doc: unknown): void }).propagateDraft('c1', { type: 'trendline', paneId: 'price', anchors: ANCHORS });
+        expect(ghosts.has('c2')).toBe(false);
+        expect(ghosts.get('c3')).not.toBeUndefined();
+    });
+
+    it('a linked copy left on a chart that moved to another symbol no longer follows', () => {
+        const ws = mountWorkspace({ layout: '2h', sync: { drawings: true } });
+        ws.cell('c1')!.setSymbol('BTCUSDT');
+        ws.cell('c2')!.setSymbol('BTCUSDT');
+        const original = ws.cell('c1')!.chart.drawings.add('trendline', { anchors: ANCHORS })!;
+        expect(ws.cell('c2')!.chart.drawings.all()).toHaveLength(1);
+
+        ws.cell('c2')!.setSymbol('ETHUSDT');
+        const moved = [ANCHORS[0]!, { time: Date.UTC(2024, 0, 16), price: 140 }];
+        ws.cell('c1')!.chart.drawings.update(original.id, { anchors: moved });
+        expect(ws.cell('c2')!.chart.drawings.all()[0]!.anchors).toEqual(ANCHORS);
+        ws.cell('c1')!.chart.drawings.remove(original.id);
+        expect(ws.cell('c2')!.chart.drawings.all()).toHaveLength(1);
+    });
+
+    it('a chart a layout switch brings back on another symbol does not receive the group drawings', () => {
+        const ws = mountWorkspace({ layout: '2h', sync: { drawings: true } });
+        ws.cell('c1')!.setSymbol('BTCUSDT');
+        ws.cell('c2')!.setSymbol('ETHUSDT');
+        ws.setLayout('1'); // c2 waits in the pool, still on ETHUSDT
+        ws.cell('c1')!.chart.drawings.add('trendline', { anchors: ANCHORS });
+        ws.setLayout('2h');
+        const c2 = ws.cell('c2')!;
+        expect(c2.symbol).toBe('ETHUSDT');
+        expect(c2.chart.drawings.all()).toHaveLength(0);
+    });
+
+    it('identical drawings on charts of different symbols do not relink', () => {
+        const ws = mountWorkspace({ layout: '2h' });
+        ws.cell('c1')!.setSymbol('BTCUSDT');
+        ws.cell('c2')!.setSymbol('ETHUSDT');
+        const a = ws.cell('c1')!.chart.drawings.add('trendline', { anchors: ANCHORS })!;
+        ws.cell('c2')!.chart.drawings.add('trendline', { anchors: ANCHORS });
+        ws.sync.set('drawings', true); // relinks identical copies — never across symbols
+        const moved = [ANCHORS[0]!, { time: Date.UTC(2024, 0, 16), price: 140 }];
+        ws.cell('c1')!.chart.drawings.update(a.id, { anchors: moved });
+        expect(ws.cell('c2')!.chart.drawings.all()[0]!.anchors).toEqual(ANCHORS);
+    });
+});
