@@ -32,6 +32,7 @@ export function createProjector(
     paneIdAtY: (y: number) => string | null,
     barsInRange?: (from: number, to: number) => ReadonlyArray<ProjectorBar>,
     seriesInRange?: (timeframe: string, from: number, to: number) => DrawingSeriesState,
+    priceDecimals?: (paneId: string) => number | undefined,
 ): Projector {
     return {
         xOf: (time: number): number => coords.timeToX(time),
@@ -54,6 +55,7 @@ export function createProjector(
         barsBetween: (t1: number, t2: number): number => Math.abs(coords.timeToLogical(t2) - coords.timeToLogical(t1)),
         barsInRange: barsInRange ? (from: number, to: number): ReadonlyArray<ProjectorBar> => barsInRange(from, to) : undefined,
         seriesInRange,
+        priceDecimals,
         width: coords.width,
         height: coords.height,
     };

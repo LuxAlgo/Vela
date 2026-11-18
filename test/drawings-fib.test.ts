@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDrawing, deserializeDrawing, DrawingStore, FibLevels, FibRetracement, FibFan, FibTimeZones, type Projector } from '../src/core/drawings';
+import { createDrawing, deserializeDrawing, DrawingStore, FibLevels, FibRetracement, FibExtensionTrend, FibFan, FibTimeZones, type Projector } from '../src/core/drawings';
 
 /** Linear projector: x = time, y = 100 − price, single pane 'price'. */
 function fakeProjector(): Projector {
@@ -17,6 +17,12 @@ describe('drawings/FibRetracement', () => {
     const proj = fakeProjector();
     // anchors (0,0) → (50,100): price range 0..100; level 0 sits on the second anchor (price 100)
     const make = () => createDrawing('fibretracement', { paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 50, price: 100 }] })!;
+
+    it('uses the price pane precision for level labels, with a two-decimal fallback', () => {
+        const fib = createDrawing('fibretracement', { paneId: 'price', anchors: [{ time: 0, price: 1.10123 }, { time: 50, price: 1.10228 }] }) as FibLevels;
+        expect(fib.entryLines(proj)?.[0]?.numberText).toBe('0 (1.10)');
+        expect(fib.entryLines({ ...proj, priceDecimals: () => 5 })?.[0]?.numberText).toBe('0 (1.10228)');
+    });
 
     it('places a horizontal level at each fib ratio, level 0 on the second anchor', () => {
         const d = make();
@@ -163,6 +169,14 @@ describe('drawings/FibExtensionTrend', () => {
     const proj = fakeProjector();
     // A(0,0) B(10,50) C(20,100): move = B−A = 50; level price = C.price + ratio·50
     const make = () => createDrawing('fibextensiontrend', { paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 10, price: 50 }, { time: 20, price: 100 }] })!;
+
+    it('formats trend extension prices with the same precision as the pane', () => {
+        const fib = createDrawing('fibextensiontrend', {
+            paneId: 'price',
+            anchors: [{ time: 0, price: 1.10123 }, { time: 10, price: 1.10765 }, { time: 20, price: 1.10228 }],
+        }) as FibExtensionTrend;
+        expect(fib.entryLines({ ...proj, priceDecimals: () => 5 })?.[0]?.numberText).toBe('0 (1.10228)');
+    });
 
     it('projects the A→B move from C across three anchors', () => {
         const d = make();

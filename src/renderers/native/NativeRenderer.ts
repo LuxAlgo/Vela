@@ -78,7 +78,8 @@ import { IndicatorDrawingSlices, mergeSlices } from './drawings/IndicatorDrawing
 import { createProjector } from './drawings/Projector';
 import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
-import { formatPriceLabel, tickDecimals } from './chrome/ticks';
+import { formatPriceLabel } from './chrome/ticks';
+import { tickDecimals } from '../../core/format/numbers';
 import { displayZone, zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
@@ -3733,6 +3734,7 @@ export class NativeRenderer implements IChartRenderer {
             this.userDrawings?.seriesGateway
                 ? (tf, from, to) => this.userDrawings!.seriesGateway!.seriesInRange(tf, from, to)
                 : undefined,
+            (paneId) => paneId === PRICE_PANE_ID && this.scene.priceMintick ? tickDecimals(this.scene.priceMintick) || 2 : undefined,
         );
     }
 

@@ -239,6 +239,7 @@ describe('numeric readouts inside a right-to-left page', () => {
         let move: (e: { ohlc: { open: number; high: number; low: number; close: number } | null }) => void = () => {};
         line.onChart({
             on: () => () => {},
+            symbolFacts: () => null,
             renderer: {
                 onCrosshairMove: (cb: typeof move) => {
                     move = cb;

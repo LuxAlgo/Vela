@@ -4,7 +4,7 @@
 // keeping the chosen style (what a save keeps, what comes back on the next symbol), and the
 // style pickers grey those styles out. Unknown facts grey nothing; a plugin chart type gates
 // itself through `supports`.
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 
 // This jsdom build ships no `CSS` global; the style injector only needs `escape`.
 (globalThis as { CSS?: unknown }).CSS ??= { escape: (v: string) => v };
@@ -212,6 +212,60 @@ describe('a bare chart on a symbol with one value per bar', () => {
         await settle();
         expect(chart.symbolFacts()).toBeNull();
         expect(chart.renderer.get('shownPriceStyle')).toBe('bars');
+    });
+
+    it('updates price precision when an expired metadata entry refreshes after the bars', async () => {
+        const clock = vi.spyOn(Date, 'now');
+        const now = Date.now();
+        const v = venue();
+        let mintick = 0.25;
+        let releaseRefresh!: () => void;
+        const refresh = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+        v.provider.getSymbolInfo = async (ticker) => {
+            if (mintick !== 0.25) await refresh;
+            return { ticker, mintick };
+        };
+        try {
+            const chart = chartOn('BTC', v);
+            await chart.ready();
+            await until(() => chart.symbolFacts()?.mintick === 0.25, 'initial price precision');
+
+            clock.mockReturnValue(now + 11 * 60_000);
+            mintick = 0.001;
+            await chart.setMarket({ timeframe: '15' });
+            expect(chart.symbolFacts()?.mintick).toBe(0.25);
+            releaseRefresh();
+            await until(() => chart.symbolFacts()?.mintick === 0.001, 'refreshed price precision');
+        } finally {
+            releaseRefresh();
+            clock.mockRestore();
+        }
+    });
+
+    it('ignores precision from a superseded market and drops it for invalid metadata', async () => {
+        const v = venue();
+        let releaseLate!: () => void;
+        const late = new Promise<void>((resolve) => { releaseLate = resolve; });
+        v.provider.getSymbolInfo = async (ticker) => {
+            if (ticker === 'CPI') {
+                await late;
+                return { ticker, mintick: 0.00001 };
+            }
+            return { ticker, mintick: ticker === 'BTC' ? 0.25 : Infinity };
+        };
+        const chart = chartOn('CPI', v);
+        await chart.ready();
+        expect(chart.symbolFacts()).toBeNull();
+
+        await chart.setMarket({ symbol: 'BTC' });
+        await until(() => chart.symbolFacts()?.mintick === 0.25, 'new market price precision');
+        releaseLate();
+        await chart.data.symbolInfo('CPI');
+        expect(chart.symbolFacts()?.mintick).toBe(0.25);
+
+        await chart.setMarket({ symbol: 'RAW' });
+        await until(() => chart.symbolFacts() !== null, 'invalid tick metadata');
+        expect(chart.symbolFacts()).toEqual({});
     });
 });
 

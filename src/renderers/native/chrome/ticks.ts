@@ -6,6 +6,7 @@
  */
 import type { PctScale } from '../core/SceneGraph';
 import { ENGLISH_FORMAT } from '../../../core/format/formatters';
+import { tickDecimals } from '../../../core/format/numbers';
 import type { FormatSurface, ResolvedFormatters, TimeTickUnit } from '../../../core/format/types';
 import { displayZone } from './tz';
 
@@ -66,19 +67,6 @@ export function valueDecimals(v: number): number {
     if (a >= 1) return 2;
     if (a >= 0.01) return 4;
     return 6;
-}
-
-/**
- * Decimal places needed to render a tick size exactly (0.01 → 2, 0.5 → 1, 1 → 0).
- * Probes increasing precision until the value round-trips, so it's robust to float
- * noise and to non-power-of-10 ticks (0.25, 0.5). Capped at 8.
- */
-export function tickDecimals(tick: number): number {
-    if (!(tick > 0) || !Number.isFinite(tick)) return 2;
-    for (let d = 0; d <= 8; d += 1) {
-        if (Math.abs(Number(tick.toFixed(d)) - tick) <= tick * 1e-6) return d;
-    }
-    return 8;
 }
 
 /**

@@ -2,6 +2,13 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Candle readouts and Fibonacci price labels show the symbol's price precision.**
+  On a pair such as EURUSD, the OHLC readout and price levels show all five decimals.
+
 ## [0.10.13]
 
 ### Added

@@ -39,6 +39,7 @@ export class FibExtensionTrend extends FibRatios {
         const xs = [proj.xOf(a.time), proj.xOf(b.time), proj.xOf(c.time)];
         const x1 = Math.min(...xs);
         const x2 = Math.max(...xs);
+        const decimals = proj.priceDecimals?.(this.paneId) ?? 2;
         const out: FibEntryLine[] = [];
         for (const lv of this.levels) {
             if (!lv.enabled) continue;
@@ -52,7 +53,7 @@ export class FibExtensionTrend extends FibRatios {
                 y1: y,
                 x2,
                 y2: y,
-                numberText: `${lv.ratio} (${price.toFixed(2)})`,
+                numberText: `${lv.ratio} (${price.toFixed(decimals)})`,
                 numberX: x1 + 4,
                 numberY: y - 7,
                 numberAlign: 'left',
