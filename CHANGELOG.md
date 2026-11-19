@@ -22,6 +22,11 @@ All notable changes to Vela, newest first.
 
 - **Candle readouts and Fibonacci price labels show the symbol's price precision.**
   On a pair such as EURUSD, the OHLC readout and price levels show all five decimals.
+- **The measure ruler stays on its candles while you place it.** After the first click
+  of a measurement, panning or zooming the chart left the ruler's start at the same
+  spot on screen, over another bar and price, and the label measured from there. The
+  start now stays on the time and price you clicked, through a pan, a zoom, a new bar
+  or a price-scale change.
 
 ## [0.10.13]
 

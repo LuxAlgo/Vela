@@ -14,7 +14,6 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 
 import { VelaWorkspace } from '../src/workspace/VelaWorkspace';
 import { encodeState, type WorkspaceState } from '../src/workspace/persist';
-import { drawingsMarket } from '../src/workspace/sync';
 import type { DataProvider } from '../src/core/ports/DataProvider';
 import type { OHLCV } from '../src/core/model/ohlcv';
 import { drawingTypeEntries } from '../src/core/drawings/registry';
@@ -423,8 +422,6 @@ describe('drawings link between charts on different symbols', () => {
     });
 
     it('one market written with and without its venue is one market', () => {
-        expect(drawingsMarket('binance:BTCUSDT')).toBe(drawingsMarket('BTCUSDT'));
-        expect(drawingsMarket('venue:group:TICKER')).toBe('group:TICKER');
         const ws = mountWorkspace({ layout: '2h', sync: { drawings: true } });
         ws.cell('c1')!.setSymbol('BTCUSDT');
         ws.cell('c2')!.setSymbol('binance:BTCUSDT');
@@ -453,13 +450,18 @@ describe('drawings link between charts on different symbols', () => {
 // with the charts already on the market.
 describe('drawings link where a chart keeps its drawings per symbol', () => {
     const MINUTE = 60_000;
+    /** A symbol whose bars never answer: a switch to it never lands. */
+    const PARKED = 'SLOWUSDT';
     const provider: DataProvider = {
-        getBars(_ticker, _tf, range) {
+        getBars(ticker, tf, range) {
+            if (ticker === PARKED) return new Promise(() => {});
             const n = Math.min(range.limit ?? 50, 50);
             const start = Date.now() - n * MINUTE;
-            return Promise.resolve(Array.from({ length: n }, (_, i): OHLCV => ({ time: start + i * MINUTE, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 })));
+            const bars = Array.from({ length: n }, (_, i): OHLCV => ({ time: start + i * MINUTE, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 }));
+            // The 4h bars take a moment: a switch can start while they load.
+            return tf === '240' ? new Promise((resolve) => setTimeout(() => resolve(bars), 20)) : Promise.resolve(bars);
         },
-        listSymbols: () => Promise.resolve(['BTCUSDT', 'ETHUSDT', 'SOLUSDT'].map((ticker) => ({ ticker }))),
+        listSymbols: () => Promise.resolve(['BTCUSDT', 'ETHUSDT', 'SOLUSDT', PARKED].map((ticker) => ({ ticker }))),
     };
 
     /** Two charts side by side, landed on `symbols`, their drawings belonging to their symbol. */
@@ -641,5 +643,135 @@ describe('drawings link where a chart keeps its drawings per symbol', () => {
         await landed;
         await new Promise((r) => setTimeout(r, 0));
         expect(drawingsOf(ws, 'c2').all()).toHaveLength(0);
+    });
+
+    // A switch that never lands still took the symbol's drawings off the chart as it
+    // started: the chart that comes back missed what the link did in between.
+    it('a chart back from a switch that never landed catches up with what it missed', async () => {
+        const ws = await mount(['BTCUSDT', 'BTCUSDT']);
+        const edited = drawingsOf(ws, 'c1').add('trendline', { anchors: ANCHORS })!;
+        const removed = drawingsOf(ws, 'c1').add('hline', { anchors: [ANCHORS[0]!] })!;
+        expect(drawingsOf(ws, 'c2').all()).toHaveLength(2);
+
+        ws.cell('c2')!.setSymbol(PARKED);
+        await new Promise((r) => setTimeout(r, 0));
+        expect(drawingsOf(ws, 'c2').all()).toHaveLength(0);
+        drawingsOf(ws, 'c1').update(edited.id, { anchors: MOVED });
+        drawingsOf(ws, 'c1').remove(removed.id);
+        drawingsOf(ws, 'c1').add('ray', { anchors: ANCHORS });
+
+        await show(ws, 'c2', 'BTCUSDT');
+        expect(drawingsOf(ws, 'c2').all().map((d) => d.type).sort()).toEqual(['ray', 'trendline']);
+        expect(drawingsOf(ws, 'c2').all().find((d) => d.type === 'trendline')!.anchors).toEqual(MOVED);
+        expect(drawingsOf(ws, 'c1').all().map((d) => d.type).sort()).toEqual(['ray', 'trendline']);
+    });
+
+    it('a chart back from a symbol nothing serves catches up with what it missed', async () => {
+        const ws = await mount(['BTCUSDT', 'BTCUSDT']);
+        ws.cell('c2')!.setSymbol('NOPEUSDT');
+        await new Promise((r) => setTimeout(r, 0));
+        drawingsOf(ws, 'c1').add('trendline', { anchors: ANCHORS });
+        expect(drawingsOf(ws, 'c2').all()).toHaveLength(0);
+
+        await show(ws, 'c2', 'BTCUSDT');
+        expect(drawingsOf(ws, 'c2').all().map((d) => d.anchors)).toEqual([ANCHORS]);
+    });
+
+    it('a switch that never landed, started while a timeframe change was loading, is still a switch', async () => {
+        const ws = await mount(['BTCUSDT', 'BTCUSDT']);
+        const cell = ws.cell('c2')!;
+        cell.setTimeframe('240'); // still loading when the symbol changes
+        cell.setSymbol(PARKED);
+        await new Promise((r) => setTimeout(r, 0));
+        drawingsOf(ws, 'c1').add('trendline', { anchors: ANCHORS });
+
+        await show(ws, 'c2', 'BTCUSDT');
+        expect(drawingsOf(ws, 'c2').all().map((d) => d.anchors)).toEqual([ANCHORS]);
+    });
+
+    // From the start of a switch until it has landed, the chart is empty: its saved document
+    // is not back yet. The link leaves it alone meanwhile, and the arrival catches it up.
+    it('a drawing made on a peer while a chart is still loading the symbol reaches it with its saved drawings', async () => {
+        const ws = await mount(['BTCUSDT', 'BTCUSDT'], { sync: {} });
+        drawingsOf(ws, 'c2').add('ray', { anchors: ANCHORS }); // c2's own: the link is off
+        ws.sync.set('drawings', true);
+        drawingsOf(ws, 'c1').add('trendline', { anchors: ANCHORS });
+        await show(ws, 'c2', 'ETHUSDT');
+
+        const back = show(ws, 'c2', 'BTCUSDT');
+        drawingsOf(ws, 'c1').add('hline', { anchors: [ANCHORS[0]!] }); // before c2's bars are in
+        expect(drawingsOf(ws, 'c2').all()).toHaveLength(0);
+        await back;
+        expect(drawingsOf(ws, 'c2').all().map((d) => d.type).sort()).toEqual(['hline', 'ray', 'trendline']);
+        expect(drawingsOf(ws, 'c1').all().map((d) => d.type).sort()).toEqual(['hline', 'trendline']);
+    });
+
+    it('a linked drawing removed on a peer while a chart is still loading the symbol does not come back with it', async () => {
+        const ws = await mount(['BTCUSDT', 'BTCUSDT']);
+        const original = drawingsOf(ws, 'c1').add('trendline', { anchors: ANCHORS })!;
+        await show(ws, 'c2', 'ETHUSDT');
+
+        const back = show(ws, 'c2', 'BTCUSDT');
+        drawingsOf(ws, 'c1').remove(original.id);
+        await back;
+        expect(drawingsOf(ws, 'c2').all()).toHaveLength(0);
+    });
+
+    it('a drawing made on a chart that is still loading the symbol is not taken for a linked copy it had saved', async () => {
+        const ws = await mount(['BTCUSDT', 'BTCUSDT']);
+        const original = drawingsOf(ws, 'c1').add('trendline', { anchors: ANCHORS })!;
+        const copyId = drawingsOf(ws, 'c2').all()[0]!.id;
+        await show(ws, 'c2', 'ETHUSDT');
+
+        const back = show(ws, 'c2', 'BTCUSDT');
+        // Before the saved document is back: the ids start over, and this one takes the copy's.
+        const fresh = drawingsOf(ws, 'c2').add('hline', { anchors: [ANCHORS[0]!] })!;
+        expect(fresh.id).toBe(copyId);
+        await back;
+        for (const id of ['c1', 'c2']) {
+            const all = drawingsOf(ws, id).all();
+            expect(all.map((d) => d.type).sort()).toEqual(['hline', 'trendline']);
+            expect(all.find((d) => d.type === 'hline')!.anchors).toEqual([ANCHORS[0]]);
+            expect(all.find((d) => d.type === 'trendline')!.anchors).toEqual(ANCHORS);
+        }
+        drawingsOf(ws, 'c1').update(original.id, { anchors: MOVED });
+        expect(drawingsOf(ws, 'c2').all().find((d) => d.type === 'trendline')!.anchors).toEqual(MOVED);
+        expect(drawingsOf(ws, 'c2').all().find((d) => d.type === 'hline')!.anchors).toEqual([ANCHORS[0]]);
+    });
+
+    it('charts that switch to a symbol together each catch up with the chart already on it', async () => {
+        const ws = mountWorkspace({
+            layout: '4',
+            symbol: 'SOLUSDT',
+            volume: false,
+            persist: false,
+            providers: { binance: () => provider },
+            drawings: { clearOnSymbolChange: true },
+            sync: { drawings: true },
+        });
+        await Promise.all([show(ws, 'c1', 'ETHUSDT'), show(ws, 'c2', 'ETHUSDT'), show(ws, 'c3', 'BTCUSDT')]);
+        const original = drawingsOf(ws, 'c3').add('trendline', { anchors: ANCHORS })!;
+
+        // As a symbol link moves them: each is empty and loading while the other lands.
+        await Promise.all([show(ws, 'c1', 'BTCUSDT'), show(ws, 'c2', 'BTCUSDT')]);
+        expect(drawingsOf(ws, 'c1').all().map((d) => d.anchors)).toEqual([ANCHORS]);
+        expect(drawingsOf(ws, 'c2').all().map((d) => d.anchors)).toEqual([ANCHORS]);
+        drawingsOf(ws, 'c3').update(original.id, { anchors: MOVED });
+        expect(drawingsOf(ws, 'c1').all().map((d) => d.anchors)).toEqual([MOVED]);
+        expect(drawingsOf(ws, 'c2').all().map((d) => d.anchors)).toEqual([MOVED]);
+    });
+
+    it('after a restored document, the next arrival on its market is brought in line again', async () => {
+        const ws = await mount(['BTCUSDT', 'ETHUSDT']);
+        drawingsOf(ws, 'c1').add('trendline', { anchors: ANCHORS });
+        const state = JSON.parse(JSON.stringify(ws.getState())) as WorkspaceState;
+        state.charts[1] = { ...state.charts[1]!, symbol: 'BTCUSDT', drawings: { version: 1, drawings: [] } as never };
+        ws.applyState(state);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(drawingsOf(ws, 'c2').all()).toHaveLength(0);
+        // The restore is spent: the next arrival on the market is an arrival again.
+        await show(ws, 'c2', 'ETHUSDT');
+        await show(ws, 'c2', 'BTCUSDT');
+        expect(drawingsOf(ws, 'c2').all().map((d) => d.anchors)).toEqual([ANCHORS]);
     });
 });

@@ -61,7 +61,7 @@ import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
 import { PRICE_STYLE_UNAVAILABLE } from '../chart-types/labels';
 import { parseSymbol } from '../data/ProviderRegistry';
-import { syncTargets, syncGroups, pairIdenticalDrawings, drawingLinkContent, drawingsMarket, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
+import { syncTargets, syncGroups, pairIdenticalDrawings, drawingLinkContent, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type DrawingToolsState, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { localStorageAdapter } from '../widget/persist';
 import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
@@ -474,8 +474,11 @@ export class VelaWorkspace {
      *  {@link drawingLinkKey}: the removal reaches them when the chart is back on the
      *  market ({@link alignCellDrawings}). Session-scoped, like the links. */
     private readonly drawingRemovalsOwed = new Set<string>();
-    /** The market each cell's drawings were last brought in line on ({@link onCellMarketLanded}). */
-    private readonly drawingMarketSeen = new Map<string, string>();
+    /** The symbol, as its chart writes it, each cell's drawings are the ones of: set when
+     *  the chart has landed on it and its document is in place, dropped as the chart
+     *  leaves it. A chart whose drawings belong to its symbol is in the link only while
+     *  settled ({@link drawingsSettledOn}). */
+    private readonly drawingsSettled = new Map<string, string>();
     /** The market each cell's links are keyed under ({@link drawingMarketOf}). */
     private readonly drawingLinkMarket = new Map<string, string>();
     /** Per linked set, the edit each member's copy stands at (cellId → a count the link
@@ -1358,9 +1361,11 @@ export class VelaWorkspace {
                     const cell = this.cellsById.get(id);
                     if (!cell) continue;
                     cell.rehydrate(cs);
-                    // The document's drawings are the ones of the market it names: its
-                    // symbol switch is not an arrival to bring in line with the peers.
-                    this.drawingMarketSeen.set(id, this.drawingMarketOf(cell));
+                    // The document's drawings are the ones of the market it names, in
+                    // place as its switch starts: nothing to wait for, and no arrival to
+                    // bring in line with the peers. A document that names no drawings
+                    // leaves the chart to its host, like any other symbol switch.
+                    if (cs.drawings != null) this.drawingsSettled.set(id, this.chartSymbolOf(cell));
                 }
             } finally {
                 this.styleSyncBusy = false;
@@ -2090,10 +2095,12 @@ export class VelaWorkspace {
         // cells and the set stays LINKED: edits and removals of any member follow
         // (the guard stops the propagated mutations from fanning out again).
         chart.on('drawing:created', ({ id }) => {
-            // A removal is owed to a copy in the document the chart had saved for this
-            // market. A drawing made here before that document is back starts the ids
-            // over, and one of them must not be taken for the copy.
-            if (this.drawingRemovalsOwed.size > 0) this.forgetDrawingRemovalsOwed(this.drawingMarketOf(cell), cell.id);
+            // A drawing made on a chart whose saved document is not back yet starts that
+            // document's ids over. What the link knows of the chart on this market (its
+            // linked copies, the removals owed to them) is of ids that now name other
+            // drawings: none of them must be taken for a copy.
+            const market = this.drawingMarketOf(cell);
+            if (!this.drawingsSettledOn(cell)) this.forgetDrawingLinks(market, cell.id);
             this.propagateDrawing(cell.id, id);
             this.markStateDirty();
         });
@@ -2112,8 +2119,12 @@ export class VelaWorkspace {
         // of the three above: unreported, the saved state keeps the drawings as they were.
         chart.on('drawing:history', () => this.markStateDirty());
         chart.on('drawing:replaced', () => this.markStateDirty());
-        // A chart that lands on another symbol joins the charts already on it.
-        this.drawingMarketSeen.set(cell.id, this.drawingMarketOf(cell));
+        // A chart that lands on another symbol joins the charts already on it, and is out
+        // of the link from the start of the switch until then.
+        this.drawingsSettled.set(cell.id, this.chartSymbolOf(cell));
+        chart.on('load:start', () => {
+            if (this.chartSymbolOf(cell) !== this.drawingsSettled.get(cell.id)) this.drawingsSettled.delete(cell.id);
+        });
         chart.on('market:changed', () => this.onCellMarketLanded(cell));
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
@@ -2269,23 +2280,54 @@ export class VelaWorkspace {
      *
      * Runs once the event's listeners are done: a host that keeps drawings per symbol
      * puts the symbol's saved document back from one of them, and what the chart is
-     * brought in line with must be that document, not the empty chart before it. A
+     * brought in line with must be that document, not the empty chart before it. The
+     * chart joins the link at that point, not before ({@link drawingsSettled}). A
      * timeframe or session change, and the switch a restored document makes, land on the
-     * market already seen and bring nothing in line.
+     * symbol the chart's drawings are already settled on and bring nothing in line.
      */
     private onCellMarketLanded(cell: ChartCell): void {
         if (this.destroyed || this.cellsById.get(cell.id) !== cell) return;
-        const market = this.drawingMarketOf(cell);
-        if (this.drawingMarketSeen.get(cell.id) === market) return;
-        this.drawingMarketSeen.set(cell.id, market);
-        if (!cell.chart.drawings.getClearOnSymbolChange()) return;
+        const symbol = this.chartSymbolOf(cell);
+        if (this.drawingsSettled.get(cell.id) === symbol) return;
+        if (!cell.chart.drawings.getClearOnSymbolChange()) {
+            this.drawingsSettled.set(cell.id, symbol);
+            return;
+        }
         queueMicrotask(() => {
             if (this.destroyed || this.cellsById.get(cell.id) !== cell) return;
-            if (this.drawingMarketOf(cell) !== market) return; // already on its way elsewhere
+            if (this.chartSymbolOf(cell) !== symbol) return; // already on its way elsewhere
+            this.drawingsSettled.set(cell.id, symbol);
             const setting = this.syncOpts.drawings;
             if (!setting) return;
             this.alignCellDrawings(cell.id, this.drawingSyncTargets(cell.id, setting));
         });
+    }
+
+    /**
+     * Whether a cell's drawings are the ones of the symbol its chart is on. Always, for a
+     * chart that carries its drawings across symbols. A chart whose drawings belong to the
+     * symbol is empty from the start of a switch until the switch has landed and its host
+     * has put the symbol's saved document back: the link leaves it alone meanwhile, and
+     * {@link onCellMarketLanded} brings it in line with what it missed. A copy sent to it
+     * sooner would land on the empty chart, where the host takes it for the symbol's
+     * whole document and its ids for those of the saved one.
+     */
+    private drawingsSettledOn(cell: ChartCell): boolean {
+        try {
+            if (!cell.chart.drawings.getClearOnSymbolChange()) return true;
+        } catch {
+            return false; // destroyed
+        }
+        return this.drawingsSettled.get(cell.id) === this.chartSymbolOf(cell);
+    }
+
+    /** The symbol a cell's chart is on, as written: it changes as a switch starts. */
+    private chartSymbolOf(cell: ChartCell): string {
+        try {
+            return cell.chart.market.symbol ?? cell.symbol;
+        } catch {
+            return cell.symbol; // a destroyed cell names the symbol it last showed
+        }
     }
 
     /**
@@ -2497,25 +2539,34 @@ export class VelaWorkspace {
     }
 
     /**
-     * The market a cell shows, as the drawings link compares it ({@link drawingsMarket}).
+     * The market a cell shows, as the drawings link compares it: its symbol's ticker,
+     * without the venue in front, so `BTCUSDT` and `binance:BTCUSDT` are one market. Read
+     * off the symbol as written, never off what resolves it: which venue serves a bare
+     * symbol is known only once its index has loaded and can differ from one page load to
+     * the next, and two charts must not link on one load and stay apart on the other. The
+     * cost: the same ticker on two venues is one market here.
+     *
      * Read off the CHART: its symbol changes as a switch starts, in the same step that
      * takes a symbol's drawings off it, while the cell follows only once the switch has
      * landed when a host switched the chart itself. A drawing made in between must not
      * be taken for one of the market the cell still names.
      *
      * Every link operation reads its cells' markets here, so this is also where a cell's
-     * link keys catch up with a market it moved to ({@link drawingLinkMarket}).
+     * link keys catch up with a market it moved to ({@link drawingLinkMarket}), and where
+     * a cell seen off the symbol its drawings were settled on stops being settled
+     * ({@link drawingsSettled}): it stays out of the link until it lands, also when the
+     * switch it is on brings it back to that symbol without landing anywhere else.
      */
     private drawingMarketOf(cell: ChartCell): string {
-        let symbol = cell.symbol;
+        const symbol = this.chartSymbolOf(cell);
         let carries = false;
         try {
-            symbol = cell.chart.market.symbol ?? symbol;
             carries = !cell.chart.drawings.getClearOnSymbolChange();
         } catch {
-            // A destroyed cell names the market it last showed.
+            // A destroyed cell carries nothing anywhere.
         }
-        const market = drawingsMarket(symbol);
+        if (this.drawingsSettled.get(cell.id) !== symbol) this.drawingsSettled.delete(cell.id);
+        const market = parseSymbol(symbol).ticker;
         const keyed = this.drawingLinkMarket.get(cell.id);
         if (keyed !== market) {
             this.drawingLinkMarket.set(cell.id, market);
@@ -2551,6 +2602,17 @@ export class VelaWorkspace {
         for (const key of [...this.drawingRemovalsOwed]) if (key.startsWith(prefix)) this.drawingRemovalsOwed.delete(key);
     }
 
+    /** Take one cell out of every linked set on one market, with the removals owed to it there. */
+    private forgetDrawingLinks(market: string, cellId: string): void {
+        const prefix = this.drawingLinkKey(market, cellId, '');
+        for (const [key, group] of [...this.drawingLinks]) {
+            if (!key.startsWith(prefix)) continue;
+            this.drawingLinks.delete(key);
+            group.delete(cellId);
+        }
+        this.forgetDrawingRemovalsOwed(market, cellId);
+    }
+
     /** Re-key one cell's linked drawings from one market to another. */
     private moveDrawingLinks(cellId: string, from: string, to: string): void {
         const prefix = this.drawingLinkKey(from, cellId, '');
@@ -2573,7 +2635,7 @@ export class VelaWorkspace {
         const market = this.drawingMarketOf(origin);
         return syncTargets(originId, setting, [...this.cellsById.keys()]).filter((id) => {
             const cell = this.cellsById.get(id);
-            return cell != null && this.drawingMarketOf(cell) === market;
+            return cell != null && this.drawingMarketOf(cell) === market && this.drawingsSettledOn(cell);
         });
     }
 

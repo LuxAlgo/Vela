@@ -42,19 +42,6 @@ export function syncGroups(setting: SyncSetting | undefined, cellIds: readonly s
 }
 
 /**
- * The market a symbol names, as the drawings link compares charts — PURE: its ticker,
- * without the venue in front, so `BTCUSDT` and `binance:BTCUSDT` are one market. Read off
- * the symbol as written, never off what resolves it: which venue serves a bare symbol is
- * known only once its index has loaded and can differ from one page load to the next,
- * and two charts must not link on one load and stay apart on the other. The cost: the
- * same ticker on two venues is one market here.
- */
-export function drawingsMarket(symbol: string): string {
-    const at = symbol.indexOf(':');
-    return at >= 0 ? symbol.slice(at + 1) : symbol;
-}
-
-/**
  * The content a drawings-link copy shares with its original — exactly what a linked
  * copy is created with and what a linked edit pushes (type, pane, anchors, style, text,
  * per-type props). Lock, visibility, draw order and timeframe limits stay per chart, so

@@ -246,9 +246,17 @@ it arrives on. What happens to its drawings follows the chart's own setting:
   and one whose set was deleted in the meantime is deleted. The cell keeps the other
   drawings it had saved for the symbol, and never sends them to the group. A restored
   document (`applyState`) is not brought in line: its drawings are the ones it
-  carries. The host's restore must run from a `market:changed` listener, before it
-  returns; a restore that answers later finds the chart already holding the group's
-  drawings.
+  carries.
+
+  From the start of the switch until it has landed, the cell is out of the link: it is
+  empty, and its saved drawings are not back yet. A drawing made, edited or deleted on
+  another cell meanwhile does not reach it then; the cell catches up when it lands. The
+  same holds for a cell that comes back from a symbol whose bars never arrived.
+
+  The host's restore must run from a `market:changed` listener, before it returns. A
+  restore that answers later finds the chart already holding the group's drawings, and
+  a host that only fills an empty chart then never puts the saved ones back: keep the
+  restore synchronous where the link is offered.
 
 Which edits and deletions a cell missed is known for the session only. After a reload,
 a copy that was edited while its cell showed another symbol no longer matches the
@@ -280,7 +288,7 @@ host-set group record with plain on/off — group records stay an API-only shape
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
-ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
+ws.sync.set('drawings', true); // draw on any cell → the same drawing on the others showing its symbol
 ws.sync.set('style', true); // every look in the settings dialog mirrors on all the others
 ws.sync.get('viewport'); // true
 ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true, style: true }
