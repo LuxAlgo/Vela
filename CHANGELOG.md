@@ -4,10 +4,29 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- **Sync drawings on all charts links the charts that show the same symbol.** A drawing
+  made on one chart used to be copied onto every linked chart, whatever each one
+  showed: a volume profile drawn on BTCUSDT appeared on an ETHUSDT chart beside it.
+  A drawing, the preview of one being placed, an edit and a deletion now reach only
+  the charts on the same symbol, written with or without its venue (`BTCUSDT` and
+  `binance:BTCUSDT` are one symbol). A copy an earlier version put on another symbol
+  stays there as a drawing of its own. Where drawings belong to the symbol
+  (`clearOnSymbolChange`), a chart that switches to a symbol also catches up with the
+  charts already on it: it shows their drawings, takes the edits made while it showed
+  something else, and loses the drawings deleted in the meantime.
+  _(Breaking: a drawing is no longer copied to linked charts on other symbols.)_
+
 ### Fixed
 
 - **Candle readouts and Fibonacci price labels show the symbol's price precision.**
   On a pair such as EURUSD, the OHLC readout and price levels show all five decimals.
+- **The measure ruler stays on its candles while you place it.** After the first click
+  of a measurement, panning or zooming the chart left the ruler's start at the same
+  spot on screen, over another bar and price, and the label measured from there. The
+  start now stays on the time and price you clicked, through a pan, a zoom, a new bar
+  or a price-scale change.
 
 ## [0.10.13]
 

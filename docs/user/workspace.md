@@ -199,10 +199,13 @@ leaving the origin clears every ghost. The ghost needs the renderer's optional
 `setExternalCrosshair` seam — the native renderer has it; a custom renderer without it
 simply never shows one (enabling warns only when NO cell could).
 
-`drawings` copies each **newly created** drawing onto its same-group cells — the
-anchors are time+price, so the copy lands at the same spot whatever each follower
-shows — and keeps the set **linked**: moving/restyling/deleting any member follows on
-its peers (while the link stays on). Placement itself mirrors **live**: while you are
+`drawings` copies each **newly created** drawing onto the same-group cells that show
+the **same market** — a drawing's anchors are a time and a price on one instrument, so
+a cell on another symbol never receives it — and keeps the set **linked**:
+moving/restyling/deleting any member follows on its peers (while the link stays on).
+Two cells show the same market when their symbols name the same ticker, with or without
+a venue in front (`BTCUSDT` and `binance:BTCUSDT`), so the same ticker on two venues is
+one market here. Placement itself mirrors **live**: while you are
 still clicking anchors, the followers show the in-progress shape as a reduced-opacity
 ghost (the same seam as crosshair ghosts — a custom renderer without it simply syncs
 at completion). Link membership is session-scoped and survives a toggle-off: turning
@@ -227,6 +230,37 @@ including drawings made while the link was off or on a one-chart layout. The cop
 are linked like any synced drawing and add no undo steps on the new cell. A cell
 returning to the grid refreshes the linked copies it already holds instead of
 duplicating them; copies it restored from a saved document link by content first.
+
+A cell that changes symbol leaves the link of the market it showed and joins the one
+it arrives on. What happens to its drawings follows the chart's own setting:
+
+- **Drawings stay on the chart across symbols** (the default). The cell carries its
+  drawings with it. A linked copy it carries stops following the cells it left; copies
+  that several cells carry to the same symbol stay linked to each other.
+- **Drawings belong to the symbol** (`drawings: { clearOnSymbolChange: true }`, with a
+  host that puts each symbol's saved drawings back). Once the switch has landed and
+  the host has restored the symbol's drawings, the cell is brought in line with the
+  cells already on that market, the same way a cell added by a layout change is: it
+  receives their drawings, linked. A linked copy it already holds takes the edits made
+  while it showed another symbol, or passes on its own when it holds the later edit,
+  and one whose set was deleted in the meantime is deleted. The cell keeps the other
+  drawings it had saved for the symbol, and never sends them to the group. A restored
+  document (`applyState`) is not brought in line: its drawings are the ones it
+  carries.
+
+  From the start of the switch until it has landed, the cell is out of the link: it is
+  empty, and its saved drawings are not back yet. A drawing made, edited or deleted on
+  another cell meanwhile does not reach it then; the cell catches up when it lands. The
+  same holds for a cell that comes back from a symbol whose bars never arrived.
+
+  The host's restore must run from a `market:changed` listener, before it returns. A
+  restore that answers later finds the chart already holding the group's drawings, and
+  a host that only fills an empty chart then never puts the saved ones back: keep the
+  restore synchronous where the link is offered.
+
+Which edits and deletions a cell missed is known for the session only. After a reload,
+a copy that was edited while its cell showed another symbol no longer matches the
+original: it stays as an independent drawing beside the one the cell receives.
 
 `style` mirrors the chart's presentation across same-group cells: the settings
 dialog's **Symbol** tab looks (candle body, border and wick colors, the bar, line,
@@ -254,7 +288,7 @@ host-set group record with plain on/off — group records stay an API-only shape
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
-ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
+ws.sync.set('drawings', true); // draw on any cell → the same drawing on the others showing its symbol
 ws.sync.set('style', true); // every look in the settings dialog mirrors on all the others
 ws.sync.get('viewport'); // true
 ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true, style: true }
