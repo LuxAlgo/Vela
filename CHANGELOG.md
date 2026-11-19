@@ -20,6 +20,12 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Maximizing one chart of a split layout no longer crashes the page on iPhone.** The
+  other charts used to stretch to full size, hidden under the maximized one, so a 2×2
+  layout drew four full-screen charts at once: four times the canvas memory, enough for
+  iOS Safari to close the tab when the phone bar's maximize button was tapped. The other
+  charts now leave the layout while one chart is maximized and keep the size they had,
+  so restoring the layout is still instant.
 - **Candle readouts and Fibonacci price labels show the symbol's price precision.**
   On a pair such as EURUSD, the OHLC readout and price levels show all five decimals.
 - **The measure ruler stays on its candles while you place it.** After the first click
