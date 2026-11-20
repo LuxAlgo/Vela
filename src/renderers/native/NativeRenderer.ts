@@ -50,7 +50,7 @@ import {
     INTRO_DURATION_DEFAULT_MS,
 } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
-import { SecondClock, type WallClock } from '../../core/util/wall-clock';
+import { SecondClock, clockCorrection, type WallClock } from '../../core/util/wall-clock';
 import { isLineLikeSeries, seriesShownOn, type SeriesSpec, type SeriesSurface } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
@@ -2133,6 +2133,9 @@ export class NativeRenderer implements IChartRenderer {
         this.bars = normalizeBars(bars);
         this.scene.bars = this.bars;
         this.coords.setBars(this.bars.map((b) => b.time));
+        // The newest candle may already prove this device's clock slow (see ClockCorrection).
+        const newest = this.bars[this.bars.length - 1];
+        if (newest) clockCorrection.observeCandle(newest.time, this.coords.barInterval);
         // The bar array's head may have moved (a history-backfill prepend) — re-derive
         // every mounted model's anchor offset against the new indices.
         for (const model of this.scene.indicators.values()) this.refreshAnchorOffset(model);
@@ -2209,6 +2212,9 @@ export class NativeRenderer implements IChartRenderer {
             if (this.coords.barInterval > 0) this.coords.appendBar(bar.time);
             else this.coords.setBars(this.bars.map((b) => b.time));
             if (holdView) this.coords.setViewport({ ...vp, rightOffset: vp.rightOffset - 1 });
+            // A candle landing before the device clock reaches its open proves the clock
+            // slow — learned before this frame paints, so the countdown never reads `01:04`.
+            clockCorrection.observeCandle(bar.time, this.coords.barInterval);
         } else {
             return;
         }
