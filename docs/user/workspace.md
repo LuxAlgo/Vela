@@ -103,8 +103,10 @@ ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also r
 ws.setLocale('de');      // one language, direction and formatting for EVERY cell and the shared chrome (see Localization)
 ws.maximizeCell('sol');  // one cell over the whole grid (null restores) — pure presentation,
 ws.maximizedCell;        //  the other cells keep everything; layout/state changes restore
+ws.setFullscreen(true);  // the charts take the whole shell: the bars hide (false brings them back),
+ws.fullscreen;           //  see Full screen
 ws.swapCells('btc', 'eth'); // the two cells trade SLOTS (arrangement only — cells untouched)
-ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'cell:priceStyle' | 'state:changed' | 'locale:changed', cb);
+ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'fullscreen:changed' | 'cell:created' | 'cell:destroyed' | 'cell:priceStyle' | 'state:changed' | 'locale:changed', cb);
 ```
 
 **Rule of thumb:** hold the cell (or its identity), read `cell.chart` at the point of
@@ -549,6 +551,7 @@ The shell is keyboard-first (bindings act on the **active cell**):
   bare number is minutes, a bare letter means one unit; letters show in capitals).
 - `alt+S` → download a PNG of the visible layout (every chart, or the
   maximized one). `?` → the shortcuts panel.
+- `alt+Enter` → [full screen](#full-screen), and again to leave it. `Esc` leaves it too.
 - `mod+↑/↓` glide-zoom, `mod+←/→` glide-pan with the exact feel and limits of a drag
   (toward now it rests on the newest candle plus the usual empty space). `alt+T` arms
   the trend line tool; `alt+H` / `alt+V` drop a horizontal / vertical line at the
@@ -640,6 +643,37 @@ they work from the very first keystroke, before any click.
   before the settings entry at the bottom of the menu (see [Right-click menu
   actions](../contributing/plugin-sdk.md#right-click-menu-actions)).
 
+### Full screen
+
+Full screen leaves only the charts: the topbar, the drawing toolbar, the bottom bar and the
+sidebar hide, and the open side panel closes. Leaving brings all of it back as it was,
+including the panel. A split layout stays split.
+
+- **The topbar button** enters full screen. It hides with the bar, so a short notice says
+  how to leave.
+- **`alt+Enter`** toggles it. The chord is listed in the `?` panel and can be rebound
+  (`ws.keymap.rebind('chart.fullscreen', …)`).
+- **`Esc`** leaves, once nothing else has a use for it. With a menu, a popover or a dialog
+  open, a drawing selected, or a drawing tool armed, `Esc` closes or cancels that first, and
+  the next press leaves. An armed tool returns to the cursor, because its toolbar is hidden.
+- **In code**, `ws.setFullscreen(true | false)` enters and leaves, `ws.fullscreen` reads the
+  state, and `fullscreen:changed` fires with `{ on }` whichever way it changed.
+
+The shell keeps the size of its container: full screen never resizes the page or asks the
+browser for its own full screen. A host that shows its own interface around the shell
+follows the event to hide it:
+
+```ts
+ws.on('fullscreen:changed', ({ on }) => {
+    document.body.classList.toggle('charts-only', on); // your header, your side columns
+});
+```
+
+Full screen is view state. It is not saved with the workspace, and it applies to the desktop
+layout only: on the [mobile layout](#mobile) the one bar is how the chart is driven, so
+`setFullscreen(true)` does nothing there, and a shell that turns mobile leaves full screen.
+Docked strips a plugin added stay where they are; the plugin that owns them decides.
+
 ### Following menus and panels
 
 Every menu, popover, dialog, drawer and side panel announces itself with a DOM event on its
@@ -715,7 +749,7 @@ option is pure opt-in, and a shell without it behaves exactly as before.
 ```ts
 new VelaWorkspace('#chart', {
     topbar: {
-        // right undeclared ⇒ default right side (actions, alerts, panels, screenshot)
+        // right undeclared ⇒ default right side (actions, alerts, panels, screenshot, fullscreen)
         left: ['symbol', 'timeframes', 'style', 'my-plugin.indicator-menu.open', 'undo-redo'],
     },
 });
@@ -734,6 +768,7 @@ Entries come from one shared vocabulary:
 | `'alerts'` | The alerts bell (badge included). |
 | `'panels'` | The side-panel toggle group (object tree, data window, contributed panels). |
 | `'screenshot'` | The screenshot slot — the built-in download button, or a plugin's override (which then also owns `mod+alt+S` and the mobile drawer button). |
+| `'fullscreen'` | The [full screen](#full-screen) button. Omitting it removes the button and the `alt+Enter` chord; `ws.setFullscreen()` still works. |
 | `'actions'` | The FLOW slot: where contributed actions not named in the lists land, per their declared `align` (may appear once per side). |
 | any other id | A [contributed action](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)'s `id` — naming it PINS the action at that list position, overriding its declared `align`/`order`. |
 
@@ -746,7 +781,7 @@ The rules that make it predictable:
 - **Hiding an entry removes its other entry points too**: the mobile counterpart (the
   more-drawer's undo/redo/screenshot buttons, alerts and panel rows, the mobile-bar
   indicators stop) and the entry's keyboard chord — `mod+alt+S` goes with
-  `'screenshot'`. Ctrl+Z / Ctrl+Y stay regardless of `'undo-redo'`: they belong to
+  `'screenshot'`, `alt+Enter` with `'fullscreen'`. Ctrl+Z / Ctrl+Y stay regardless of `'undo-redo'`: they belong to
   editing, not to the buttons.
 - **Mobile keeps its own arrangement.** The composition decides *visibility* everywhere,
   but only the desktop bar takes the *ordering* — the mobile bar and drawers keep their

@@ -2468,6 +2468,7 @@ export interface VelaCoreMessageCatalog {
     'widget.topbar.currentLayout': string;
     'widget.topbar.currentStyle': string;
     'widget.topbar.currentTimeframe': string;
+    'widget.topbar.fullscreen': string;
     'widget.topbar.indicators': string;
     'widget.topbar.layout': string;
     'widget.topbar.redo': string;
@@ -2485,12 +2486,14 @@ export interface VelaCoreMessageCatalog {
     'workspace.alerts.untitled': string;
     'workspace.data.unavailable': string;
     'workspace.data.unavailableFallback': string;
+    'workspace.fullscreen.hint': string;
     'workspace.indicators.builtIn': string;
     'workspace.keys.category.chart': string;
     'workspace.keys.category.drawings': string;
     'workspace.keys.category.edit': string;
     'workspace.keys.category.help': string;
     'workspace.keys.category.indicators': string;
+    'workspace.keys.fullscreen': string;
     'workspace.keys.hlineCursor': string;
     'workspace.keys.openIndicators': string;
     'workspace.keys.panLeft': string;

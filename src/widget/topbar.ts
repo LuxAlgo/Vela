@@ -213,6 +213,8 @@ export interface TopbarOptions {
     onUndoClick?: () => void;
     onRedoClick?: () => void;
     onScreenshotClick?: () => void;
+    /** Omitted ⇒ no full screen button: the shell has no full screen to enter. */
+    onFullscreenClick?: () => void;
     onAlertsClick?: (anchor: HTMLElement) => void;
     /** Live widget context for contributed actions (topbar target). */
     getContext?: () => WidgetContext;
@@ -231,6 +233,7 @@ const TEXT = {
     undo: msg('widget.topbar.undo', 'Undo'),
     redo: msg('widget.topbar.redo', 'Redo'),
     screenshot: msg('widget.topbar.screenshot', 'Download screenshot'),
+    fullscreen: msg('widget.topbar.fullscreen', 'Full screen'),
     alerts: msg('widget.topbar.alerts', 'Alerts'),
     timeframe: msg('widget.topbar.timeframe', 'Timeframe'),
     chartStyle: msg('widget.topbar.chartStyle', 'Chart style'),
@@ -358,7 +361,7 @@ export class Topbar {
         }
 
         // Right-hand cluster: contributed actions, then icon-only tools — the side-panel
-        // toggles (filled by the dock) and screenshot. Labels live in their tooltips.
+        // toggles (filled by the dock), screenshot and full screen. Labels live in their tooltips.
         this.actionsHost = doc.createElement('span');
         this.actionsHost.className = 'vela-widget-actions';
         this.leftActionsHost = doc.createElement('span');
@@ -380,6 +383,7 @@ export class Topbar {
         }
         this.setHistoryState(false, false);
         const screenshotBtn = vis('screenshot') && !topbarActionOverride('screenshot') ? tool('vela-widget-screenshot', 'camera', TEXT.screenshot, opts.onScreenshotClick) : null;
+        const fullscreenBtn = vis('fullscreen') && opts.onFullscreenClick ? tool('vela-widget-fullscreen', 'maximize', TEXT.fullscreen, opts.onFullscreenClick) : null;
         this.alertsBtn = vis('alerts') ? tool('vela-widget-alerts', 'bell', TEXT.alerts) : doc.createElement('button');
         this.alertsBtn.style.position = 'relative';
         if (opts.onAlertsClick) this.alertsBtn.addEventListener('click', () => opts.onAlertsClick!(this.alertsBtn));
@@ -454,6 +458,8 @@ export class Topbar {
                     return [this.panelsHost];
                 case 'screenshot':
                     return overridden(id, left) ?? (screenshotBtn ? [screenshotBtn] : []);
+                case 'fullscreen':
+                    return fullscreenBtn ? [fullscreenBtn] : [];
                 default:
                     return pinSlot(id, left);
             }

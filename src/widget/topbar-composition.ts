@@ -9,8 +9,8 @@
 // action at the list position, overriding its declared `align`/`order`. An explicit
 // list is the side's complete contract: ids not listed do not render there, and hiding
 // a built-in removes its other entry points too (mobile counterpart, keyboard chord —
-// `mod+alt+S` for `'screenshot'`). Ctrl+Z / Ctrl+Y are NOT tied to `'undo-redo'`:
-// hiding the buttons keeps the editing chords.
+// `mod+alt+S` for `'screenshot'`, `alt+enter` for `'fullscreen'`). Ctrl+Z / Ctrl+Y are
+// NOT tied to `'undo-redo'`: hiding the buttons keeps the editing chords.
 //
 // The trade-off is deliberate and documented: an explicit list FREEZES that side — a
 // built-in a future release adds will not appear for a host that curates. `hidden`-less
@@ -28,13 +28,13 @@ export interface TopbarComposition {
  *  indicator surface exists — the built-in picker (the deprecated `indicatorPicker:
  *  false` still removes it) or a slot OVERRIDE replacing it — so listing them is
  *  necessary but not sufficient. */
-export const TOPBAR_BUILTIN_IDS = ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'actions', 'undo-redo', 'alerts', 'panels', 'screenshot'] as const;
+export const TOPBAR_BUILTIN_IDS = ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'actions', 'undo-redo', 'alerts', 'panels', 'screenshot', 'fullscreen'] as const;
 
 /** The default left side — the current shell composition, verbatim. */
 export const TOPBAR_DEFAULT_LEFT: readonly string[] = ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'actions', 'undo-redo'];
 
 /** The default right side (the `margin-left: auto` cluster). */
-export const TOPBAR_DEFAULT_RIGHT: readonly string[] = ['actions', 'alerts', 'panels', 'screenshot'];
+export const TOPBAR_DEFAULT_RIGHT: readonly string[] = ['actions', 'alerts', 'panels', 'screenshot', 'fullscreen'];
 
 /** A composition with both sides resolved (defaults applied, duplicates dropped). */
 export interface ResolvedTopbarComposition {
