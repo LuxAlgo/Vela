@@ -3,6 +3,7 @@ import type { OHLCV } from './ohlcv';
 import type { SeriesPoint, SeriesSpec, MarkerPoint, CandleBarColor } from './series';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from './drawings';
 import type { TradeExecution } from './trades';
+import type { Fill, Background, PriceLine } from './scene';
 
 export interface DirtyRange {
     from: Millis;
@@ -55,6 +56,20 @@ export interface ValuePatch {
     tables?: DrawingTable[];
     /** Trade executions follow the same full-snapshot-per-tick pattern as the drawings. */
     trades?: TradeExecution[];
+    /**
+     * The run's `fill()` bands. Their per-bar `colors` / `gradient` are index-aligned like the
+     * series points, so a re-run over a different bar window (a deeper history, a page of older
+     * bars) must replace them together with the points: kept, the previous run's colors slide
+     * onto whatever candles now hold their indices, and the bars past them get no fill at all.
+     * Absent keeps the current set.
+     */
+    fills?: Fill[];
+    /** The run's `bgcolor()` spans (time-keyed). Absent keeps the current set. */
+    backgrounds?: Background[];
+    /** The run's `hline()`s. Absent keeps the current set. */
+    priceLines?: PriceLine[];
+    /** The run's `barcolor()` recolors (time-keyed; `[]` clears them). Absent keeps the current set. */
+    barColors?: Array<{ time: Millis; color: string }>;
 }
 
 /**

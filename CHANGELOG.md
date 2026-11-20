@@ -20,6 +20,13 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **An indicator's fill keeps up when it runs again over more history.** When older bars
+  loaded behind the view and an indicator ran again over them (a script that runs on a
+  server, or any engine that hands back a new model), the chart updated its
+  lines but kept the fill colors, bgcolor spans, hlines and barcolors of the first run.
+  The fill then sat on the wrong candles, the newest candles had none, and it stopped
+  following the live bars until the indicator was hidden and shown. A run's update now
+  carries all of them.
 - **Candle readouts and Fibonacci price labels show the symbol's price precision.**
   On a pair such as EURUSD, the OHLC readout and price levels show all five decimals.
 - **The measure ruler stays on its candles while you place it.** After the first click

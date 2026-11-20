@@ -3366,6 +3366,13 @@ function modelToValuePatch(model: IndicatorModel): ValuePatch {
         linefills: model.linefills ?? [],
         tables: model.tables ?? [],
         trades: model.trades ?? [],
+        // ALWAYS stated, like the drawings: a re-run arrives as a NEW model object, and the
+        // renderer keeps what a patch omits, so leaving these out froze a Toolkit's fill and
+        // candle colors at its first run once older bars loaded and it ran again.
+        fills: model.fills,
+        backgrounds: model.backgrounds,
+        priceLines: model.priceLines,
+        barColors: model.barColors ?? [],
     };
 }
 
