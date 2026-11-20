@@ -1020,9 +1020,9 @@ export class VelaWorkspace {
         triggerPngDownload(this.root.ownerDocument, url, 'vela-layout.png');
     }
 
-    /** Live cells the screenshot should include — maximized siblings are `hidden`. */
+    /** Live cells the screenshot should include — a maximize takes its siblings out. */
     private shotCells(): ChartCell[] {
-        return this.cells().filter((c) => c.host.style.visibility !== 'hidden');
+        return this.cells().filter((c) => !this.hiddenByMaximize(c.id));
     }
 
     /** Place every cell's raster onto one canvas the size of the grid. */
@@ -1879,11 +1879,14 @@ export class VelaWorkspace {
         this.splitters.layout();
     }
 
-    /** Overlay the maximize presentation on the freshly applied grid: EVERY cell spans
-     *  the full track grid — the maximized one on top, the siblings invisible beneath
-     *  it (their charts stay alive — restoring is instant). The siblings must span too:
-     *  left in their slots they would auto-flow into implicit zero-height rows, whose
-     *  gaps steal height from the maximized cell and collapse their renderers to 0.
+    /** Overlay the maximize presentation on the freshly applied grid: the maximized cell
+     *  spans the full track grid and its siblings leave the layout (`display: none`).
+     *  Their charts stay alive and keep the canvases they had (the renderer skips a
+     *  0×0 resize), so restoring is instant. They must not span the grid beneath the
+     *  maximized cell: every one of them would resize its canvases to the full grid,
+     *  multiplying the canvas memory by the cell count (a 2×2 phone layout goes past
+     *  iOS Safari's limit and the tab is killed). Out of the layout, they also leave no
+     *  implicit rows behind to steal height from the maximized cell.
      *  The splitter strips and the active ring hide via the `data-maximized` rules. */
     private applyMaximizePresentation(): void {
         const maxId = this.maximizedId;
@@ -1892,10 +1895,15 @@ export class VelaWorkspace {
         for (const [id, cell] of this.cellsById) {
             const style = cell.host.style;
             // applyGrid just re-derived each slot's own gridArea — only override while maximized.
-            if (maxId) style.gridArea = '1 / 1 / -1 / -1';
-            style.zIndex = maxId && id === maxId ? '5' : '';
-            style.visibility = maxId && id !== maxId ? 'hidden' : '';
+            if (maxId === id) style.gridArea = '1 / 1 / -1 / -1';
+            style.zIndex = maxId === id ? '5' : '';
+            style.display = this.hiddenByMaximize(id) ? 'none' : '';
         }
+    }
+
+    /** Whether a maximize has taken this cell out of the layout. */
+    private hiddenByMaximize(id: string): boolean {
+        return this.maximizedId != null && id !== this.maximizedId;
     }
 
     /** Rebuild every cell's view cluster (the maximize gate or state changed). */
@@ -1916,7 +1924,7 @@ export class VelaWorkspace {
      *  maximize has hidden — the drag handle's hit-test. */
     private cellAtPoint(x: number, y: number, excludeId: string): string | null {
         for (const [id, cell] of this.cellsById) {
-            if (id === excludeId || cell.host.style.visibility === 'hidden') continue;
+            if (id === excludeId || this.hiddenByMaximize(id)) continue;
             const r = cell.host.getBoundingClientRect();
             if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return id;
         }

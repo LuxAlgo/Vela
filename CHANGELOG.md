@@ -27,6 +27,12 @@ All notable changes to Vela, newest first.
   The fill then sat on the wrong candles, the newest candles had none, and it stopped
   following the live bars until the indicator was hidden and shown. A run's update now
   carries all of them.
+- **Maximizing one chart of a split layout no longer crashes the page on iPhone.** The
+  other charts used to stretch to full size, hidden under the maximized one, so a 2×2
+  layout drew four full-screen charts at once: four times the canvas memory, enough for
+  iOS Safari to close the tab when the phone bar's maximize button was tapped. The other
+  charts now leave the layout while one chart is maximized and keep the size they had,
+  so restoring the layout is still instant.
 - **The countdown to bar close no longer jumps up a minute on a slow device clock.**
   The countdown and the bottom-bar clock read this device's clock, but candles open on
   the exchange's. On a computer or phone running a few seconds slow, the next candle
