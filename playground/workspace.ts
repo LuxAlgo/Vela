@@ -67,14 +67,14 @@ const ws = new VelaWorkspace("#workspace", {
   // bottombar: true,                // chrome: the range-presets + timezone bar
   // topbar: {                       // COMPOSE the topbar: each side lists its VISIBLE
   //   left: ["symbol", "timeframes", "style", "layout", "indicators", "actions", "undo-redo"],
-  //   right: ["actions", "alerts", "panels", "screenshot"],
+  //   right: ["actions", "alerts", "panels", "screenshot", "fullscreen"],
   // },
   //                                 // These values ARE the defaults — an undeclared side keeps
   //                                 //  them, so the option is pure opt-in. Entries render in
   //                                 //  LIST ORDER; an id you omit disappears WITH its mobile
   //                                 //  entry and its keyboard chord (mod+alt+S goes with
-  //                                 //  'screenshot', `/` with 'indicators' — Ctrl+Z/Y always
-  //                                 //  stay). 'actions' is the slot where contributed actions
+  //                                 //  'screenshot', alt+enter with 'fullscreen', `/` with
+  //                                 //  'indicators' — Ctrl+Z/Y always stay). 'actions' is the slot where contributed actions
   //                                 //  flow; naming a contributed action's ID instead pins it
   //                                 //  at that exact spot (its align/order are then ignored).
   //                                 //  An explicit list is the side's COMPLETE contract: it

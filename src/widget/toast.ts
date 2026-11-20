@@ -61,6 +61,11 @@ export class Toast {
         this.timer = null;
     }
 
+    /** Hide the toast while it still shows `message`. A later one that replaced it stays. */
+    hideIf(message: string): void {
+        if (this.el.dataset.open && this.el.textContent === message) this.hide();
+    }
+
     destroy(): void {
         this.hide();
         this.el.remove();

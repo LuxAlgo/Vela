@@ -338,10 +338,12 @@ registerWidgetAttachment({
 ```
 
 The ids are the built-in composition ids: `'symbol'`, `'timeframes'`, `'style'`,
-`'layout'`, `'indicators'`, `'undo-redo'`, `'alerts'`, `'panels'` and `'screenshot'`.
+`'layout'`, `'indicators'`, `'undo-redo'`, `'alerts'`, `'panels'`, `'screenshot'` and
+`'fullscreen'`.
 Runtime visibility narrows the host's `topbar` composition and follows its rule: hiding an
 item removes its other entry points with it — its row in the mobile three-dots menu, its
-bottom-bar stop, its keyboard chord (`mod+alt+S` for `'screenshot'`). Hiding `'panels'`
+bottom-bar stop, its keyboard chord (`mod+alt+S` for `'screenshot'`, `alt+Enter` for
+`'fullscreen'`). Hiding `'panels'`
 also removes the panel rows from the mobile menu, so a plugin that moves the panel toggles
 elsewhere on the desktop keeps them reachable on a phone by hiding `'panels'` only on the
 desktop layout. `ctx.topbar.isVisible(id)` reads the result. It never shows an item the

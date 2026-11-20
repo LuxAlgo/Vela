@@ -4,6 +4,19 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Full screen.** A new button at the end of the top bar, or Alt+Enter, leaves only the
+  charts on screen: the top bar, the drawing toolbar, the bottom bar and the sidebar
+  hide, and the open side panel closes. Esc or Alt+Enter brings everything back as it
+  was. Esc first closes an open menu or dialog, clears a selected drawing or puts an
+  armed drawing tool down, and leaves on the next press. In code,
+  `workspace.setFullscreen(true)` enters, `workspace.fullscreen` reads the state, and the
+  `fullscreen:changed` event lets a page hide its own interface around the charts at the
+  same moment. The button is the `'fullscreen'` entry of the `topbar` option: a page that
+  lists its own `topbar.right` adds it to get the button and the shortcut, and a page
+  that already uses Alt+Enter for something else leaves it out. Desktop layout only.
+
 ### Changed
 
 - **Sync drawings on all charts links the charts that show the same symbol.** A drawing

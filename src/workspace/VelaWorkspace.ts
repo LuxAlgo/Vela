@@ -19,6 +19,7 @@ import { ensureUIHost, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
 import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
 import { createToaster, toast, type ToasterHandle } from '@luxalgo/vela-ui/toast';
+import { SURFACE_CLOSE_EVENT, SURFACE_OPEN_EVENT, type SurfaceEventDetail } from '@luxalgo/vela-ui/surface-events';
 import type { Vela } from '../Vela';
 import { LocaleState, pickLocalization } from '../core/i18n/translator';
 import type { LocaleChangedEvent, LocalizationOptions, MessageArgs, MessageLike, Translator } from '../core/i18n/types';
@@ -160,6 +161,9 @@ export interface WorkspaceEventMap extends Record<string, unknown> {
     'layout:changed': { layout: string };
     /** A cell was maximized over the whole grid, or the grid restored (`id: null`). */
     'cell:maximized': { id: string | null };
+    /** The shell entered (`on: true`) or left full screen, by any path: the key, the topbar
+     *  button, Esc, `setFullscreen`, or a switch to the mobile layout. */
+    'fullscreen:changed': { on: boolean };
     'cell:created': { id: string };
     'cell:destroyed': { id: string };
     /** The persistable state changed (debounced ~500ms) — re-pull `getState()` if you
@@ -239,6 +243,12 @@ const CSS = css`@layer vela.chrome {
    the active ring would just outline the only visible chart — both are noise here. */
 .vela-ws-grid[data-maximized='1'] .vela-ws-splitter { display: none; }
 .vela-ws-grid[data-maximized='1'] .vela-cell[data-active='1']::after { display: none; }
+/* Full screen: the charts take the whole shell. The bars are hidden rather than removed, so
+   leaving shows them exactly as they were. */
+.vela-workspace[data-fullscreen] > .vela-widget-topbar,
+.vela-workspace[data-fullscreen] > .vela-widget-bottombar,
+.vela-workspace[data-fullscreen] .vela-ws-toolbar,
+.vela-workspace[data-fullscreen] > .vela-ws-edge { display: none; }
 /* Drop-target preview while a cell's drag handle is held: a dashed ring + the same
    soft wash the splitter hover uses, over the chart, inert to the pointer. */
 .vela-cell[data-drop-target='1']::before {
@@ -284,6 +294,8 @@ const TEXT = {
     alertDrawerTitle: msg('workspace.alerts.drawerTitle', '{source} · {title}'),
     noAlerts: msg('workspace.alerts.none', 'No alerts yet'),
     screenshot: msg('workspace.keys.screenshot', 'Download a screenshot of the layout'),
+    fullscreen: msg('workspace.keys.fullscreen', 'Toggle full screen'),
+    fullscreenHint: msg('workspace.fullscreen.hint', 'Press Esc to exit full screen'),
     resetView: msg('workspace.keys.resetView', 'Reset view (all history)'),
     toggleLog: msg('workspace.keys.toggleLog', 'Toggle logarithmic scale'),
     togglePercent: msg('workspace.keys.togglePercent', 'Toggle percent scale'),
@@ -383,6 +395,17 @@ export class VelaWorkspace {
     /** The cell maximized over the whole grid (null = normal grid). TRANSIENT view
      *  state — never persisted; any structural change (layout, applyState) restores. */
     private maximizedId: string | null = null;
+    /** Full screen: the bars hidden so the charts take the whole shell. TRANSIENT view
+     *  state like {@link maximizedId} — never persisted. */
+    private fullscreenOn = false;
+    /** The side panel full screen closed on the way in, reopened on the way out. */
+    private fullscreenPanel: string | null = null;
+    private fullscreenKeyOff: (() => void) | null = null;
+    /** The menus, popovers, dialogs and drawers open inside the shell. Each takes Esc
+     *  before full screen does. */
+    private readonly openSurfaces = new Set<HTMLElement>();
+    /** How many drawings each cell has selected: Esc clears a selection first. */
+    private readonly drawingSelections = new WeakMap<ChartCell, number>();
     private cellBackend: NativeBackend = 'auto';
     /** `layout: false` — the grid is pinned to the one-cell layout, the layout picker
      *  and sync switches never render, and `setLayout` no-ops. */
@@ -538,6 +561,25 @@ export class VelaWorkspace {
     /** The single grid-wide attribution mark — re-inked on a live theme swap. */
     private attributionMark: HTMLElement | null = null;
     private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
+    /** Follows the shell's surfaces as they open and close. Side panels are left out: Esc
+     *  does not close them. */
+    private readonly onSurface = (ev: Event): void => {
+        const el = ev.target as HTMLElement | null;
+        if (!el || (ev as CustomEvent<SurfaceEventDetail>).detail?.kind === 'panel') return;
+        if (ev.type === SURFACE_OPEN_EVENT) this.openSurfaces.add(el);
+        else this.openSurfaces.delete(el);
+    };
+    /** Esc leaves full screen once nothing else has a use for it. Heard at the window,
+     *  ahead of every menu and chart handler, so what is open is judged as the key goes
+     *  down: an Esc that closes a menu, clears a selection or cancels a drawing is spent
+     *  on that alone. */
+    private readonly onFullscreenEscape = (ev: KeyboardEvent): void => {
+        if (!this.fullscreenOn || ev.key !== 'Escape' || ev.repeat || ev.defaultPrevented) return;
+        const target = ev.target as Node | null;
+        // Focus in the shell, or nowhere at all. A key typed elsewhere on the page is the page's.
+        if (target !== this.root.ownerDocument.body && !(target && this.root.contains(target))) return;
+        if (!this.escapeIsSpent(ev)) this.setFullscreen(false);
+    };
     /** The `symbolMenuFromKey` option: a bare letter opens symbol search. */
     private readonly symbolMenuFromKey: boolean;
 
@@ -677,6 +719,7 @@ export class VelaWorkspace {
             onUndoClick: () => this.active.history.undo(),
             onRedoClick: () => this.active.history.redo(),
             onScreenshotClick: () => this.downloadScreenshot(),
+            onFullscreenClick: () => this.toggleFullscreen(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             timeframe: '60',
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
@@ -932,6 +975,8 @@ export class VelaWorkspace {
         // Shortcut hints beside the bound tools in the shared toolbar's flyouts.
         this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap, this.localeState));
         this.root.addEventListener('keydown', this.onRootKeydown);
+        this.root.addEventListener(SURFACE_OPEN_EVENT, this.onSurface);
+        this.root.addEventListener(SURFACE_CLOSE_EVENT, this.onSurface);
         this.root.tabIndex = -1; // focusable host so bare keystrokes land here
 
         this.cellBackend = this.backendFor(this.def);
@@ -1558,6 +1603,81 @@ export class VelaWorkspace {
         this.events.emit('cell:maximized', { id });
     }
 
+    /** Whether the shell is in full screen (see {@link setFullscreen}). */
+    get fullscreen(): boolean {
+        return this.fullscreenOn;
+    }
+
+    /**
+     * Enter or leave full screen: the charts take the whole shell. The topbar, the drawing
+     * toolbar, the bottom bar and the sidebar hide, and the open side panel closes; leaving
+     * brings all of it back as it was. The shell keeps the size of its container: a host
+     * that shows its own interface around the shell hides it on `fullscreen:changed`.
+     * Transient view state, never persisted. Desktop layout only: on the mobile layout the
+     * one bar is how the chart is driven, so entering is ignored there, and a shell that
+     * turns mobile leaves full screen.
+     */
+    setFullscreen(on: boolean): void {
+        if (this.destroyed || on === this.fullscreenOn) return;
+        if (on && this.layoutCtl.current === 'mobile') return;
+        this.fullscreenOn = on;
+        const doc = this.root.ownerDocument;
+        if (on) {
+            // Focus inside the shell may sit on a button about to hide with its bar, and keys
+            // only reach the keymap from inside the shell. Focus elsewhere on the page stays.
+            const focusInside = this.root.contains(doc.activeElement);
+            this.root.dataset.fullscreen = '1';
+            this.fullscreenPanel = this.dock.openId;
+            if (this.fullscreenPanel) this.dock.toggle(this.fullscreenPanel, false);
+            doc.defaultView?.addEventListener('keydown', this.onFullscreenEscape, true);
+            if (focusInside) this.refocusActive();
+        } else {
+            delete this.root.dataset.fullscreen;
+            doc.defaultView?.removeEventListener('keydown', this.onFullscreenEscape, true);
+            this.toastHost.hideIf(this.t(TEXT.fullscreenHint));
+            const panel = this.fullscreenPanel;
+            this.fullscreenPanel = null;
+            // A panel opened during full screen stays the open one.
+            if (panel && this.dock.openId === null) this.dock.toggle(panel, true);
+        }
+        this.events.emit('fullscreen:changed', { on });
+    }
+
+    /** The key and the topbar button. Entering says how to leave: the button hides with its bar. */
+    private toggleFullscreen(): void {
+        const on = !this.fullscreenOn;
+        this.setFullscreen(on);
+        if (on && this.fullscreenOn) this.toastHost.show(this.t(TEXT.fullscreenHint), 'info');
+    }
+
+    /** Whether this Esc belongs to something other than full screen. */
+    private escapeIsSpent(ev: KeyboardEvent): boolean {
+        if (this.openDialogs > 0 || isEditableTarget(ev)) return true;
+        // Focus inside a dialog or a menu the shell does not track (a plugin's own): the key is
+        // its. One AROUND the shell is the page showing the charts in it, and takes nothing.
+        const target = ev.target as Partial<Element> | null;
+        const holder = typeof target?.closest === 'function' ? target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]') : null;
+        if (holder && holder !== this.root && this.root.contains(holder)) return true;
+        // A surface destroyed while open never announced its close.
+        for (const el of this.openSurfaces) if (!el.isConnected) this.openSurfaces.delete(el);
+        if (this.openSurfaces.size > 0) return true;
+        const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
+        if (!cell) return false;
+        const drawings = cell.chart.drawings;
+        const selected = (this.drawingSelections.get(cell) ?? 0) > 0;
+        const tool = drawings.getTool();
+        const mode = drawings.getMode();
+        if (!selected && tool === null && mode === null) return false;
+        // Done here rather than left to the chart, which hears the key only while it holds
+        // the focus (a menu that closes leaves it on the page), and whose own Esc keeps a
+        // tool armed: the toolbar that would disarm it is hidden. This press returns the
+        // chart to rest, the next one leaves.
+        if (selected) drawings.select(null);
+        if (tool !== null) drawings.setTool(null);
+        if (mode !== null) drawings.setMode(null);
+        return true;
+    }
+
     /** The mobile bar's maximize stop: one press isolates the ACTIVE chart over the
      *  grid; while something is already isolated — the chart, or a pane inside it
      *  (mobile's double-tap) — the press restores that instead. Every branch re-syncs
@@ -1651,6 +1771,10 @@ export class VelaWorkspace {
         }
         this.attachmentDisposers.clear();
         this.root.removeEventListener('keydown', this.onRootKeydown);
+        this.root.removeEventListener(SURFACE_OPEN_EVENT, this.onSurface);
+        this.root.removeEventListener(SURFACE_CLOSE_EVENT, this.onSurface);
+        this.root.ownerDocument.defaultView?.removeEventListener('keydown', this.onFullscreenEscape, true);
+        this.openSurfaces.clear();
         this.keymap.destroy();
         this.drawToolbar?.destroy();
         this.topbar.destroy();
@@ -2161,6 +2285,7 @@ export class VelaWorkspace {
             this.drawToolbar?.setMeasureActive(mode === 'measure');
             this.drawToolbar?.setEraserActive(mode === 'eraser');
         });
+        chart.on('drawing:selected', ({ ids }) => this.drawingSelections.set(cell, ids.length));
         // Viewport sync: every applied pan/zoom/fit propagates to the same-group cells.
         chart.on('viewport:changed', (range) => this.propagateViewport(cell.id, range));
         // Style sync: any committed config edit (settings dialog, applyConfig) mirrors
@@ -2861,6 +2986,7 @@ export class VelaWorkspace {
      *  change). Close the open surfaces — a desktop card must not linger over the
      *  mobile chrome (and vice versa) — and re-present every cell's own chrome. */
     private onLayoutModeChange(mode: LayoutMode): void {
+        if (mode === 'mobile') this.setFullscreen(false); // a touch layout has no key to leave with
         this.symbolPicker.close();
         this.indicatorPicker?.close();
         this.tfDrawer?.close();
@@ -2906,6 +3032,13 @@ export class VelaWorkspace {
                 // The binding's own disposer: a user's rebinding of the chord survives the hide.
                 this.screenshotKeyOff?.();
                 this.screenshotKeyOff = null;
+            }
+        }
+        if (id === 'fullscreen') {
+            if (visible) this.registerFullscreenKey();
+            else {
+                this.fullscreenKeyOff?.();
+                this.fullscreenKeyOff = null;
             }
         }
     }
@@ -3111,6 +3244,20 @@ export class VelaWorkspace {
         });
     }
 
+    /** The full screen chord, while the full screen slot shows. `setFullscreen` works either way. */
+    private registerFullscreenKey(): void {
+        if (!this.topbarVisible('fullscreen')) return;
+        this.fullscreenKeyOff = this.keymap.register({
+            id: 'chart.fullscreen',
+            keys: 'alt+enter',
+            label: TEXT.fullscreen,
+            category: TEXT.categoryChart,
+            run: (ev) => {
+                if (!ev.repeat) this.toggleFullscreen();
+            },
+        });
+    }
+
     /** The default shortcut set — every binding acts on the ACTIVE cell. */
     private registerDefaultKeys(): void {
         // The screenshot chord belongs to the screenshot SLOT — a composition that
@@ -3119,6 +3266,7 @@ export class VelaWorkspace {
         // reachable). Ctrl+Z/Y below are editing primitives and stay regardless of the
         // 'undo-redo' buttons.
         this.registerScreenshotKey();
+        this.registerFullscreenKey(); // same rule: the chord goes with its slot
         this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: TEXT.resetView, category: TEXT.categoryChart, run: () => this.active.resetView() });
         this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: TEXT.toggleLog, category: TEXT.categoryChart, run: () => this.active.chart.renderer.set('logScale', !this.active.chart.renderer.get('logScale')) });
         this.keymap.register({
