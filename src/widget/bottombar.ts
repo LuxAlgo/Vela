@@ -7,7 +7,7 @@ import { englishTranslator } from '../core/i18n/translator';
 import type { MessageLike, Translator } from '../core/i18n/types';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { Unsubscribe } from '../core/util/types';
-import { SecondClock, type WallClock } from '../core/util/wall-clock';
+import { SecondClock, clockCorrection, type WallClock } from '../core/util/wall-clock';
 import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
 import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { iconEl } from '@luxalgo/vela-ui/icons';
@@ -336,7 +336,8 @@ export class Bottombar {
         this.tick();
     }
 
+    /** The corrected clock, like the countdown chips beside it, so the two never disagree. */
     private tick(): void {
-        this.clockEl.textContent = (this.i18n ?? englishTranslator()).format.clock(Date.now(), { timeZone: this.displayZone, surface: 'clock' });
+        this.clockEl.textContent = (this.i18n ?? englishTranslator()).format.clock(clockCorrection.now(), { timeZone: this.displayZone, surface: 'clock' });
     }
 }
