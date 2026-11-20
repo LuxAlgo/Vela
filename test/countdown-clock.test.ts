@@ -1,11 +1,12 @@
 // The countdown-to-bar-close chip and the second pulse it ticks on. Two things a user
 // can see go wrong: the chip disagreeing with a whole-second clock next to it (a
 // free-running 1 Hz timer samples a different second part of the time, and flooring
-// the remainder reads one second low all the time), and the chip parking at `00:00`
-// after the bar closed. DOM-free — node env.
+// the remainder reads one second low all the time), the chip parking at `00:00`
+// after the bar closed, and (on a device whose clock runs slow) the chip jumping up a
+// minute as the next candle lands. DOM-free — node env.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { countdownText, formatCountdown } from '../src/renderers/native/chrome/countdown';
-import { SecondClock } from '../src/core/util/wall-clock';
+import { ClockCorrection, SecondClock, clockCorrection } from '../src/core/util/wall-clock';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 8, 9, 14, 44, 0); // a 1-minute bar opening at 14:44:00
@@ -115,5 +116,162 @@ describe('SecondClock', () => {
         expect(seen.length).toBe(1);
         vi.advanceTimersByTime(1);
         expect(seen).toEqual([T0 + 1_700, T0 + 2_005]);
+    });
+});
+
+// A device clock running slow: candles open on the exchange's clock, so the next candle
+// lands while this device still reads the old minute. Reported on MNQ1! and BTCUSDT 1m:
+// the countdown jumped from 00:04 to 01:04 as the candle arrived, then read 4 s high.
+describe('ClockCorrection', () => {
+    const DAY = 24 * 60 * MIN;
+    const NEXT = T0 + MIN; // the 14:45:00 candle
+
+    /** A device clock and a monotonic clock that tick together unless the device clock is set. */
+    function device(startMs: number) {
+        let deviceMs = startMs;
+        let monoMs = 1_000;
+        const correction = new ClockCorrection(
+            () => deviceMs,
+            () => monoMs,
+        );
+        return {
+            correction,
+            get deviceMs() {
+                return deviceMs;
+            },
+            pass(ms: number) {
+                deviceMs += ms;
+                monoMs += ms;
+            },
+            setDeviceClock(ms: number) {
+                deviceMs = ms;
+            },
+        };
+    }
+
+    it('reads the device clock until a candle proves it slow', () => {
+        const d = device(T0 + 30_000);
+        expect(d.correction.offsetMs).toBe(0);
+        expect(d.correction.now()).toBe(T0 + 30_000);
+    });
+
+    it('a candle that lands before the device clock reaches its open shows 01:00, not 01:04', () => {
+        // The 14:45 candle lands 2.2 s after the minute; the device runs 6 s slow, so it reads 14:44:56.2.
+        const d = device(NEXT + 2_200 - 6_000);
+        expect(countdownText(NEXT, MIN, d.deviceMs)).toBe('01:04'); // what the chip read before
+        d.correction.observeCandle(NEXT, MIN);
+        expect(d.correction.offsetMs).toBe(3_800);
+        expect(countdownText(NEXT, MIN, d.correction.now())).toBe('01:00');
+    });
+
+    it('counts the rest of the minute down to 00:01 and hides as the next candle is due', () => {
+        const d = device(NEXT + 2_200 - 6_000);
+        d.correction.observeCandle(NEXT, MIN);
+        d.pass(59_000);
+        expect(countdownText(NEXT, MIN, d.correction.now())).toBe('00:01');
+        d.pass(1_000);
+        expect(countdownText(NEXT, MIN, d.correction.now())).toBeNull();
+    });
+
+    it('keeps the largest lag proven, so a slower feed does not pull it back', () => {
+        const d = device(NEXT - 3_800);
+        d.correction.observeCandle(NEXT, MIN); // a fast feed: 3.8 s ahead
+        d.pass(60_000);
+        d.correction.observeCandle(NEXT + MIN, MIN); // a slow feed proves less this time
+        expect(d.correction.offsetMs).toBe(3_800);
+    });
+
+    it('learns nothing from a candle that lands after its open (a correct or fast clock)', () => {
+        const d = device(NEXT + 300);
+        d.correction.observeCandle(NEXT, MIN);
+        expect(d.correction.offsetMs).toBe(0);
+        expect(d.correction.now()).toBe(NEXT + 300);
+    });
+
+    it('learns nothing from daily candles, which can be dated ahead by trading day', () => {
+        // A futures daily that opens the evening before carries the next date.
+        const d = device(NEXT - 30_000);
+        d.correction.observeCandle(NEXT, DAY);
+        expect(d.correction.offsetMs).toBe(0);
+    });
+
+    it('learns nothing from a gap over 2 minutes: that is the feed, not the device', () => {
+        const d = device(NEXT - 10 * MIN);
+        d.correction.observeCandle(NEXT, MIN);
+        expect(d.correction.offsetMs).toBe(0);
+        d.correction.observeCandle(NEXT, 0); // no known cadence
+        d.correction.observeCandle(Number.NaN, MIN);
+        expect(d.correction.offsetMs).toBe(0);
+    });
+
+    it('keeps the lag as time passes', () => {
+        const d = device(NEXT - 3_800);
+        d.correction.observeCandle(NEXT, MIN);
+        d.pass(45 * MIN);
+        expect(d.correction.offsetMs).toBe(3_800);
+    });
+
+    it('forgets the lag when the device clock is set or the machine sleeps', () => {
+        const d = device(NEXT - 3_800);
+        d.correction.observeCandle(NEXT, MIN);
+        d.setDeviceClock(d.deviceMs + 3_800); // the OS syncs the clock
+        expect(d.correction.offsetMs).toBe(0);
+        expect(d.correction.now()).toBe(NEXT);
+        d.pass(MIN + 150);
+        d.correction.observeCandle(NEXT + MIN, MIN); // a correct clock now: nothing to learn
+        expect(d.correction.offsetMs).toBe(0);
+    });
+
+    it('a sub-second wobble between the clocks is not a clock change', () => {
+        const d = device(NEXT - 3_800);
+        d.correction.observeCandle(NEXT, MIN);
+        d.setDeviceClock(d.deviceMs + 400);
+        expect(d.correction.offsetMs).toBe(3_800);
+    });
+
+    it('reset forgets the lag', () => {
+        const d = device(NEXT - 3_800);
+        d.correction.observeCandle(NEXT, MIN);
+        d.correction.reset();
+        expect(d.correction.offsetMs).toBe(0);
+    });
+});
+
+describe('the second pulse on a corrected clock', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+        clockCorrection.reset();
+    });
+
+    it('ticks on the corrected second, so the countdown and the clock beside it agree', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(T0 + 54_370);
+        // The device runs 3.8 s slow (proven by a candle); its seconds sit 0.8 s off the market's.
+        const correction = new ClockCorrection(
+            () => Date.now(),
+            () => Date.now(),
+        );
+        correction.observeCandle(T0 + 58_170, MIN);
+        expect(correction.offsetMs).toBe(3_800);
+        const clock = new SecondClock(() => correction.now());
+        const seen: number[] = [];
+        const off = clock.onTick((now) => seen.push(now));
+        vi.advanceTimersByTime(3_000);
+        // Corrected time ran from 14:44:58.170; ticks land just past :59, :00, :01.
+        expect(seen).toEqual([T0 + 59_005, T0 + 60_005, T0 + 61_005]);
+        expect(countdownText(T0, MIN, seen[0]!)).toBe('00:01');
+        expect(new Date(seen[0]!).getUTCSeconds()).toBe(59);
+        off();
+    });
+
+    it('a pulse made without a clock of its own reads the corrected clock', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(T0 + 54_370);
+        const read = vi.spyOn(clockCorrection, 'now');
+        const off = new SecondClock().onTick(() => undefined);
+        vi.advanceTimersByTime(1_000);
+        expect(read).toHaveBeenCalled();
+        off();
+        read.mockRestore();
     });
 });
