@@ -20,6 +20,13 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **An indicator's fill keeps up when it runs again over more history.** When older bars
+  loaded behind the view and an indicator ran again over them (a script that runs on a
+  server, or any engine that hands back a new model), the chart updated its
+  lines but kept the fill colors, bgcolor spans, hlines and barcolors of the first run.
+  The fill then sat on the wrong candles, the newest candles had none, and it stopped
+  following the live bars until the indicator was hidden and shown. A run's update now
+  carries all of them.
 - **Maximizing one chart of a split layout no longer crashes the page on iPhone.** The
   other charts used to stretch to full size, hidden under the maximized one, so a 2×2
   layout drew four full-screen charts at once: four times the canvas memory, enough for

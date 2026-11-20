@@ -4699,6 +4699,10 @@ function applyPatch(model: IndicatorModel, patch: ScenePatch): void {
         if (patch.linefills) model.linefills = patch.linefills;
         if (patch.tables) model.tables = patch.tables;
         if (patch.trades) model.trades = patch.trades;
+        if (patch.fills) model.fills = patch.fills;
+        if (patch.backgrounds) model.backgrounds = patch.backgrounds;
+        if (patch.priceLines) model.priceLines = patch.priceLines;
+        if (patch.barColors) model.barColors = patch.barColors;
         return;
     }
     for (const id of patch.removed) {
