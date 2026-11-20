@@ -103,8 +103,10 @@ ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also r
 ws.setLocale('de');      // one language, direction and formatting for EVERY cell and the shared chrome (see Localization)
 ws.maximizeCell('sol');  // one cell over the whole grid (null restores) — pure presentation,
 ws.maximizedCell;        //  the other cells keep everything; layout/state changes restore
+ws.setFullscreen(true);  // the charts take the whole shell: the bars hide (false brings them back),
+ws.fullscreen;           //  see Full screen
 ws.swapCells('btc', 'eth'); // the two cells trade SLOTS (arrangement only — cells untouched)
-ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'cell:priceStyle' | 'state:changed' | 'locale:changed', cb);
+ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'fullscreen:changed' | 'cell:created' | 'cell:destroyed' | 'cell:priceStyle' | 'state:changed' | 'locale:changed', cb);
 ```
 
 **Rule of thumb:** hold the cell (or its identity), read `cell.chart` at the point of
@@ -199,10 +201,13 @@ leaving the origin clears every ghost. The ghost needs the renderer's optional
 `setExternalCrosshair` seam — the native renderer has it; a custom renderer without it
 simply never shows one (enabling warns only when NO cell could).
 
-`drawings` copies each **newly created** drawing onto its same-group cells — the
-anchors are time+price, so the copy lands at the same spot whatever each follower
-shows — and keeps the set **linked**: moving/restyling/deleting any member follows on
-its peers (while the link stays on). Placement itself mirrors **live**: while you are
+`drawings` copies each **newly created** drawing onto the same-group cells that show
+the **same market** — a drawing's anchors are a time and a price on one instrument, so
+a cell on another symbol never receives it — and keeps the set **linked**:
+moving/restyling/deleting any member follows on its peers (while the link stays on).
+Two cells show the same market when their symbols name the same ticker, with or without
+a venue in front (`BTCUSDT` and `binance:BTCUSDT`), so the same ticker on two venues is
+one market here. Placement itself mirrors **live**: while you are
 still clicking anchors, the followers show the in-progress shape as a reduced-opacity
 ghost (the same seam as crosshair ghosts — a custom renderer without it simply syncs
 at completion). Link membership is session-scoped and survives a toggle-off: turning
@@ -227,6 +232,37 @@ including drawings made while the link was off or on a one-chart layout. The cop
 are linked like any synced drawing and add no undo steps on the new cell. A cell
 returning to the grid refreshes the linked copies it already holds instead of
 duplicating them; copies it restored from a saved document link by content first.
+
+A cell that changes symbol leaves the link of the market it showed and joins the one
+it arrives on. What happens to its drawings follows the chart's own setting:
+
+- **Drawings stay on the chart across symbols** (the default). The cell carries its
+  drawings with it. A linked copy it carries stops following the cells it left; copies
+  that several cells carry to the same symbol stay linked to each other.
+- **Drawings belong to the symbol** (`drawings: { clearOnSymbolChange: true }`, with a
+  host that puts each symbol's saved drawings back). Once the switch has landed and
+  the host has restored the symbol's drawings, the cell is brought in line with the
+  cells already on that market, the same way a cell added by a layout change is: it
+  receives their drawings, linked. A linked copy it already holds takes the edits made
+  while it showed another symbol, or passes on its own when it holds the later edit,
+  and one whose set was deleted in the meantime is deleted. The cell keeps the other
+  drawings it had saved for the symbol, and never sends them to the group. A restored
+  document (`applyState`) is not brought in line: its drawings are the ones it
+  carries.
+
+  From the start of the switch until it has landed, the cell is out of the link: it is
+  empty, and its saved drawings are not back yet. A drawing made, edited or deleted on
+  another cell meanwhile does not reach it then; the cell catches up when it lands. The
+  same holds for a cell that comes back from a symbol whose bars never arrived.
+
+  The host's restore must run from a `market:changed` listener, before it returns. A
+  restore that answers later finds the chart already holding the group's drawings, and
+  a host that only fills an empty chart then never puts the saved ones back: keep the
+  restore synchronous where the link is offered.
+
+Which edits and deletions a cell missed is known for the session only. After a reload,
+a copy that was edited while its cell showed another symbol no longer matches the
+original: it stays as an independent drawing beside the one the cell receives.
 
 `style` mirrors the chart's presentation across same-group cells: the settings
 dialog's **Symbol** tab looks (candle body, border and wick colors, the bar, line,
@@ -254,7 +290,7 @@ host-set group record with plain on/off — group records stay an API-only shape
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
-ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
+ws.sync.set('drawings', true); // draw on any cell → the same drawing on the others showing its symbol
 ws.sync.set('style', true); // every look in the settings dialog mirrors on all the others
 ws.sync.get('viewport'); // true
 ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true, style: true }
@@ -515,6 +551,7 @@ The shell is keyboard-first (bindings act on the **active cell**):
   bare number is minutes, a bare letter means one unit; letters show in capitals).
 - `alt+S` → download a PNG of the visible layout (every chart, or the
   maximized one). `?` → the shortcuts panel.
+- `alt+Enter` → [full screen](#full-screen), and again to leave it. `Esc` leaves it too.
 - `mod+↑/↓` glide-zoom, `mod+←/→` glide-pan with the exact feel and limits of a drag
   (toward now it rests on the newest candle plus the usual empty space). `alt+T` arms
   the trend line tool; `alt+H` / `alt+V` drop a horizontal / vertical line at the
@@ -606,6 +643,38 @@ they work from the very first keystroke, before any click.
   before the settings entry at the bottom of the menu (see [Right-click menu
   actions](../contributing/plugin-sdk.md#right-click-menu-actions)).
 
+### Full screen
+
+Full screen leaves only the charts: the topbar, the drawing toolbar, the bottom bar and the
+sidebar hide, and the open side panel closes. Leaving brings all of it back as it was,
+including the panel. A split layout stays split.
+
+- **The topbar button** enters full screen. It hides with the bar, so a short notice says
+  how to leave.
+- **`alt+Enter`** toggles it. The chord is listed in the `?` panel and can be rebound
+  (`ws.keymap.rebind('chart.fullscreen', …)`).
+- **`Esc`** leaves, once nothing else has a use for it. With a menu, a popover or a dialog
+  open, a drawing selected, or a drawing tool armed, `Esc` closes or cancels that first, and
+  the next press leaves. An armed tool returns to the cursor, because its toolbar is hidden.
+- **In code**, `ws.setFullscreen(true | false)` enters and leaves, `ws.fullscreen` reads the
+  state, and `fullscreen:changed` fires with `{ on }` whichever way it changed.
+
+The shell keeps the size of its container: full screen never resizes the page or asks the
+browser for its own full screen. A host that shows its own interface around the shell
+follows the event to hide it:
+
+```ts
+ws.on('fullscreen:changed', ({ on }) => {
+    document.body.classList.toggle('charts-only', on); // your header, your side columns
+});
+```
+
+Full screen is view state. It is not saved with the workspace, and it applies to the desktop
+layout only: on the [mobile layout](#mobile) the one bar is how the chart is driven, so
+`setFullscreen(true)` does nothing there, and a shell that turns mobile leaves full screen.
+Docked strips a plugin added stay where they are: the plugin that owns one decides, and
+follows full screen through [`ctx.fullscreen`](../contributing/plugin-sdk.md#full-screen--ctxfullscreen).
+
 ### Following menus and panels
 
 Every menu, popover, dialog, drawer and side panel announces itself with a DOM event on its
@@ -681,7 +750,7 @@ option is pure opt-in, and a shell without it behaves exactly as before.
 ```ts
 new VelaWorkspace('#chart', {
     topbar: {
-        // right undeclared ⇒ default right side (actions, alerts, panels, screenshot)
+        // right undeclared ⇒ default right side (actions, alerts, panels, screenshot, fullscreen)
         left: ['symbol', 'timeframes', 'style', 'my-plugin.indicator-menu.open', 'undo-redo'],
     },
 });
@@ -700,6 +769,7 @@ Entries come from one shared vocabulary:
 | `'alerts'` | The alerts bell (badge included). |
 | `'panels'` | The side-panel toggle group (object tree, data window, contributed panels). |
 | `'screenshot'` | The screenshot slot — the built-in download button, or a plugin's override (which then also owns `mod+alt+S` and the mobile drawer button). |
+| `'fullscreen'` | The [full screen](#full-screen) button. Omitting it removes the button and the `alt+Enter` chord; `ws.setFullscreen()` still works. |
 | `'actions'` | The FLOW slot: where contributed actions not named in the lists land, per their declared `align` (may appear once per side). |
 | any other id | A [contributed action](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)'s `id` — naming it PINS the action at that list position, overriding its declared `align`/`order`. |
 
@@ -712,7 +782,7 @@ The rules that make it predictable:
 - **Hiding an entry removes its other entry points too**: the mobile counterpart (the
   more-drawer's undo/redo/screenshot buttons, alerts and panel rows, the mobile-bar
   indicators stop) and the entry's keyboard chord — `mod+alt+S` goes with
-  `'screenshot'`. Ctrl+Z / Ctrl+Y stay regardless of `'undo-redo'`: they belong to
+  `'screenshot'`, `alt+Enter` with `'fullscreen'`. Ctrl+Z / Ctrl+Y stay regardless of `'undo-redo'`: they belong to
   editing, not to the buttons.
 - **Mobile keeps its own arrangement.** The composition decides *visibility* everywhere,
   but only the desktop bar takes the *ordering* — the mobile bar and drawers keep their

@@ -73,6 +73,7 @@ export abstract class FibLevels extends FibRatios {
         const lines = this.levelLines(proj);
         if (!lines) return null;
         const right = this.labelSide === 'right';
+        const decimals = proj.priceDecimals?.(this.paneId) ?? 2;
         return lines.map((l) => ({
             color: l.color,
             label: l.label,
@@ -80,7 +81,7 @@ export abstract class FibLevels extends FibRatios {
             y1: l.y,
             x2: l.x2,
             y2: l.y,
-            numberText: this.levelText(l.ratio, l.price),
+            numberText: this.levelText(l.ratio, l.price, decimals),
             numberX: right ? l.x2 - 4 : l.x1 + 4,
             numberY: l.y - 7,
             numberAlign: right ? 'right' : 'left',
@@ -90,8 +91,8 @@ export abstract class FibLevels extends FibRatios {
     }
 
     /** The text beside a level: its ratio, its price, both, or nothing. */
-    private levelText(ratio: number, price: number): string {
-        const p = price.toFixed(2);
+    private levelText(ratio: number, price: number, decimals: number): string {
+        const p = price.toFixed(decimals);
         if (this.showRatios && this.showPrices) return `${ratio} (${p})`;
         if (this.showRatios) return String(ratio);
         return this.showPrices ? p : '';

@@ -19,6 +19,7 @@ import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
 import { DARK_THEME } from '../../../core/theme';
 import { displayZone, tzOffsetMs } from './tz';
 import { countdownText } from './countdown';
+import { clockCorrection } from '../../../core/util/wall-clock';
 import { tagTextColor } from './contrast';
 import { markGroupVisible } from '../../shared/marks-state';
 import { clusterTooltip, layoutMarkLane, markGlyphAt, markStackAt, type MarkLaneLayout, type PlacedGlyph } from './marks/layout';
@@ -387,7 +388,9 @@ export class ChromeRenderer {
         }
 
         // ── axis chips: last-price label and/or countdown ──
-        const cdText = scene.showCountdown ? countdownText(last.time, coords.barInterval, Date.now(), scene.format) : null;
+        // The corrected clock, not the device's: on a slow device the next candle lands
+        // while the device clock still reads before its open, and the chip read `01:04`.
+        const cdText = scene.showCountdown ? countdownText(last.time, coords.barInterval, clockCorrection.now(), scene.format) : null;
         const showCountdown = cdText !== null;
         const showLabel = scene.showPriceLabel;
         if (!showLabel && !showCountdown) return;

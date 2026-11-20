@@ -133,7 +133,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private seriesGwUnsub: Unsubscribe | null = null;
     /** Last draft fingerprint reported upstream — gates the per-render emission to actual changes. */
     private lastDraftKey: string | null = null;
-    private readonly measure = new MeasureOverlay(); // transient ruler — not a persistent drawing
+    // Transient ruler — not a persistent drawing. It reads the live projector lazily
+    // (never during construction), so its ends stay on their time and price as the chart moves.
+    private readonly measure = new MeasureOverlay(() => this.deps.projector());
     private toolbarVisible = false; // mirrors showToolbar (drives the gutter reservation)
     private toolbarCollapsed = false; // the bar is a slim expand-strip (narrower gutter)
     /** Mobile chrome: the docked bar is suppressed (the shell provides its own tool

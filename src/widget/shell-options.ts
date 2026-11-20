@@ -40,13 +40,13 @@ export interface VelaShellOptions {
     /** Declarative topbar composition: `{ left, right }` lists of the VISIBLE entries,
      *  in render order — built-in ids (`'symbol'`, `'timeframes'`, `'style'`,
      *  `'layout'`, `'indicators'`, `'actions'`, `'undo-redo'`, `'alerts'`, `'panels'`,
-     *  `'screenshot'`) and/or contributed-action ids (naming one PINS it there,
-     *  overriding its `align`/`order`; `'actions'` is where the unlisted ones flow).
+     *  `'screenshot'`, `'fullscreen'`) and/or contributed-action ids (naming one PINS it
+     *  there, overriding its `align`/`order`; `'actions'` is where the unlisted ones flow).
      *  An undeclared side keeps its default. An explicit list is that side's complete
      *  contract — it also FREEZES it: chrome a future release adds will not appear.
      *  Hiding a built-in removes its mobile entry and keyboard chord too (`mod+alt+S`
-     *  for `'screenshot'`); Ctrl+Z / Ctrl+Y stay — they belong to editing, not to the
-     *  `'undo-redo'` buttons. */
+     *  for `'screenshot'`, `alt+enter` for `'fullscreen'`); Ctrl+Z / Ctrl+Y stay — they
+     *  belong to editing, not to the `'undo-redo'` buttons. */
     topbar?: TopbarComposition;
     /** A toolbar along the shell's right edge, beside the topbar, the charts and the bottom
      *  bar (default off). It takes over the side-panel toggles from the topbar and hosts

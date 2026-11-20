@@ -2,6 +2,71 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.14]
+
+### Added
+
+- **Full screen.** A new button at the end of the top bar, or Alt+Enter, leaves only the
+  charts on screen: the top bar, the drawing toolbar, the bottom bar and the sidebar
+  hide, and the open side panel closes. Esc or Alt+Enter brings everything back as it
+  was. Esc first closes an open menu or dialog, clears a selected drawing or puts an
+  armed drawing tool down, and leaves on the next press. In code,
+  `workspace.setFullscreen(true)` enters, `workspace.fullscreen` reads the state, and the
+  `fullscreen:changed` event lets a page hide its own interface around the charts at the
+  same moment. The button is the `'fullscreen'` entry of the `topbar` option: a page that
+  lists its own `topbar.right` adds it to get the button and the shortcut, and a page
+  that already uses Alt+Enter for something else leaves it out. A plugin reads, follows
+  and drives it through `ctx.fullscreen`, so a panel it docked under the charts can step
+  aside too. Desktop layout only.
+
+### Changed
+
+- **Sync drawings on all charts links the charts that show the same symbol.** A drawing
+  made on one chart used to be copied onto every linked chart, whatever each one
+  showed: a volume profile drawn on BTCUSDT appeared on an ETHUSDT chart beside it.
+  A drawing, the preview of one being placed, an edit and a deletion now reach only
+  the charts on the same symbol, written with or without its venue (`BTCUSDT` and
+  `binance:BTCUSDT` are one symbol). A copy an earlier version put on another symbol
+  stays there as a drawing of its own. Where drawings belong to the symbol
+  (`clearOnSymbolChange`), a chart that switches to a symbol also catches up with the
+  charts already on it: it shows their drawings, takes the edits made while it showed
+  something else, and loses the drawings deleted in the meantime.
+  _(Breaking: a drawing is no longer copied to linked charts on other symbols.)_
+
+### Fixed
+
+- **An indicator's fill keeps up when it runs again over more history.** When older bars
+  loaded behind the view and an indicator ran again over them (a script that runs on a
+  server, or any engine that hands back a new model), the chart updated its
+  lines but kept the fill colors, bgcolor spans, hlines and barcolors of the first run.
+  The fill then sat on the wrong candles, the newest candles had none, and it stopped
+  following the live bars until the indicator was hidden and shown. A run's update now
+  carries all of them.
+- **Maximizing one chart of a split layout no longer crashes the page on iPhone.** The
+  other charts used to stretch to full size, hidden under the maximized one, so a 2×2
+  layout drew four full-screen charts at once: four times the canvas memory, enough for
+  iOS Safari to close the tab when the phone bar's maximize button was tapped. The other
+  charts now leave the layout while one chart is maximized and keep the size they had,
+  so restoring the layout is still instant.
+- **The countdown to bar close no longer jumps up a minute on a slow device clock.**
+  The countdown and the bottom-bar clock read this device's clock, but candles open on
+  the exchange's. On a computer or phone running a few seconds slow, the next candle
+  landed while the countdown still showed a few seconds left, and a 1-minute countdown
+  jumped to `01:04`, then stayed those seconds high all minute. A candle can't arrive
+  before it opens, so one that arrives before the device clock reaches its open time
+  proves the clock is slow by at least the gap: the countdown and the clock now add it
+  (`clockCorrection`, exported for a host clock display). Only intraday candles teach
+  it, at most 2 minutes, and it resets when the device clock is set or the machine
+  sleeps. A fast clock reads as before, hiding the countdown a moment early until the
+  next candle arrives.
+- **Candle readouts and Fibonacci price labels show the symbol's price precision.**
+  On a pair such as EURUSD, the OHLC readout and price levels show all five decimals.
+- **The measure ruler stays on its candles while you place it.** After the first click
+  of a measurement, panning or zooming the chart left the ruler's start at the same
+  spot on screen, over another bar and price, and the label measured from there. The
+  start now stays on the time and price you clicked, through a pan, a zoom, a new bar
+  or a price-scale change.
+
 ## [0.10.13]
 
 ### Added

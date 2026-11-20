@@ -338,10 +338,12 @@ registerWidgetAttachment({
 ```
 
 The ids are the built-in composition ids: `'symbol'`, `'timeframes'`, `'style'`,
-`'layout'`, `'indicators'`, `'undo-redo'`, `'alerts'`, `'panels'` and `'screenshot'`.
+`'layout'`, `'indicators'`, `'undo-redo'`, `'alerts'`, `'panels'`, `'screenshot'` and
+`'fullscreen'`.
 Runtime visibility narrows the host's `topbar` composition and follows its rule: hiding an
 item removes its other entry points with it — its row in the mobile three-dots menu, its
-bottom-bar stop, its keyboard chord (`mod+alt+S` for `'screenshot'`). Hiding `'panels'`
+bottom-bar stop, its keyboard chord (`mod+alt+S` for `'screenshot'`, `alt+Enter` for
+`'fullscreen'`). Hiding `'panels'`
 also removes the panel rows from the mobile menu, so a plugin that moves the panel toggles
 elsewhere on the desktop keeps them reachable on a phone by hiding `'panels'` only on the
 desktop layout. `ctx.topbar.isVisible(id)` reads the result. It never shows an item the
@@ -906,6 +908,35 @@ registerWidgetAttachment({
 
 A shell that uses none of these keeps its plain column layout; the first one in use switches
 the shell to a grid with these regions for the rest of its life.
+
+### Full screen — `ctx.fullscreen`
+
+[Full screen](../user/workspace.md#full-screen) leaves only the charts. The shell hides what
+is its own: the topbar, the drawing toolbar, the bottom bar and the right edge (the sidebar,
+and anything docked with `ctx.dockEdge`), and it closes the open side panel. **A docked strip
+stays**, because only its owner knows whether it belongs with the charts (the controls of a
+replay under way) or around them (a panel of orders). A plugin that steps aside follows
+`ctx.fullscreen`:
+
+```ts
+registerWidgetAttachment({
+    id: 'mytool.orders',
+    mount: (ctx) => {
+        const dock = ctx.dockStrip(ordersPanel, { position: 'below-bottombar' });
+        const show = (): void => { ordersPanel.hidden = ctx.fullscreen.isOn(); };
+        const off = ctx.fullscreen.onDidChange(show);
+        show(); // the shell may already be in full screen when this mounts
+        return () => { off(); dock(); };
+    },
+});
+```
+
+- **`isOn()`** reads the state, **`onDidChange(cb)`** follows it whichever way it changed (the
+  key, the topbar button, Esc, code) and returns the unsubscribe.
+- **`set(on)`** enters and leaves, for a plugin that offers its own way in. Entering is
+  ignored on the mobile layout.
+- Hide, rather than undock or close: what you hid then comes back exactly as it was, and
+  nothing in the saved layout changes.
 
 ## The sidebar
 

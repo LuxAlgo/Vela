@@ -50,7 +50,7 @@ import {
     INTRO_DURATION_DEFAULT_MS,
 } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
-import { SecondClock, type WallClock } from '../../core/util/wall-clock';
+import { SecondClock, clockCorrection, type WallClock } from '../../core/util/wall-clock';
 import { isLineLikeSeries, seriesShownOn, type SeriesSpec, type SeriesSurface } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
@@ -78,7 +78,8 @@ import { IndicatorDrawingSlices, mergeSlices } from './drawings/IndicatorDrawing
 import { createProjector } from './drawings/Projector';
 import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
-import { formatPriceLabel, tickDecimals } from './chrome/ticks';
+import { formatPriceLabel } from './chrome/ticks';
+import { tickDecimals } from '../../core/format/numbers';
 import { displayZone, zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
@@ -2132,6 +2133,9 @@ export class NativeRenderer implements IChartRenderer {
         this.bars = normalizeBars(bars);
         this.scene.bars = this.bars;
         this.coords.setBars(this.bars.map((b) => b.time));
+        // The newest candle may already prove this device's clock slow (see ClockCorrection).
+        const newest = this.bars[this.bars.length - 1];
+        if (newest) clockCorrection.observeCandle(newest.time, this.coords.barInterval);
         // The bar array's head may have moved (a history-backfill prepend) — re-derive
         // every mounted model's anchor offset against the new indices.
         for (const model of this.scene.indicators.values()) this.refreshAnchorOffset(model);
@@ -2208,6 +2212,9 @@ export class NativeRenderer implements IChartRenderer {
             if (this.coords.barInterval > 0) this.coords.appendBar(bar.time);
             else this.coords.setBars(this.bars.map((b) => b.time));
             if (holdView) this.coords.setViewport({ ...vp, rightOffset: vp.rightOffset - 1 });
+            // A candle landing before the device clock reaches its open proves the clock
+            // slow — learned before this frame paints, so the countdown never reads `01:04`.
+            clockCorrection.observeCandle(bar.time, this.coords.barInterval);
         } else {
             return;
         }
@@ -3733,6 +3740,7 @@ export class NativeRenderer implements IChartRenderer {
             this.userDrawings?.seriesGateway
                 ? (tf, from, to) => this.userDrawings!.seriesGateway!.seriesInRange(tf, from, to)
                 : undefined,
+            (paneId) => paneId === PRICE_PANE_ID && this.scene.priceMintick ? tickDecimals(this.scene.priceMintick) || 2 : undefined,
         );
     }
 
@@ -4691,6 +4699,10 @@ function applyPatch(model: IndicatorModel, patch: ScenePatch): void {
         if (patch.linefills) model.linefills = patch.linefills;
         if (patch.tables) model.tables = patch.tables;
         if (patch.trades) model.trades = patch.trades;
+        if (patch.fills) model.fills = patch.fills;
+        if (patch.backgrounds) model.backgrounds = patch.backgrounds;
+        if (patch.priceLines) model.priceLines = patch.priceLines;
+        if (patch.barColors) model.barColors = patch.barColors;
         return;
     }
     for (const id of patch.removed) {

@@ -3,6 +3,7 @@
 // a crosshair move that changes digits alone rewrites the values in place, unmeasured.
 import { describe, it, expect } from 'vitest';
 import { Statusline } from '../src/widget/statusline';
+import { LocaleState } from '../src/core/i18n/translator';
 import type { Vela } from '../src/Vela';
 
 // jsdom ships no CSS.escape; the kit's style injection needs it for its id lookup.
@@ -15,13 +16,19 @@ interface Bar {
     close: number;
 }
 
-function make() {
+function make(mintick?: number, i18n?: LocaleState) {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const line = new Statusline(host, 'BINANCE:BTCUSDT');
     let move: (e: { ohlc: Bar | null }) => void = () => {};
+    let symbolFacts: (e: { facts: { mintick?: number } | null }) => void = () => {};
     const chart = {
-        on: () => () => {},
+        on: (event: string, cb: typeof symbolFacts) => {
+            if (event === 'symbol:facts') symbolFacts = cb;
+            return () => {};
+        },
+        symbolFacts: () => ({ mintick }),
+        i18n,
         renderer: {
             onCrosshairMove: (cb: typeof move) => {
                 move = cb;
@@ -40,10 +47,30 @@ function make() {
         },
     });
     const close = () => line.el.querySelectorAll('.vela-sl-ohlc b')[3]?.textContent;
-    return { line, hover: (ohlc: Bar | null) => move({ ohlc }), measures: () => measures, close };
+    return { line, hover: (ohlc: Bar | null) => move({ ohlc }), symbolFacts, measures: () => measures, close };
 }
 
 describe('Statusline fit', () => {
+    it('uses the instrument tick size and re-fits when late metadata arrives or clears', () => {
+        const { line, hover, symbolFacts, measures, close } = make(0.00001);
+        hover({ open: 1.10123, high: 1.10346, low: 1.10111, close: 1.10228 });
+        expect([...line.el.querySelectorAll('.vela-sl-ohlc b')].map((el) => el.textContent)).toEqual(['1.10123', '1.10346', '1.10111', '1.10228']);
+        const after = measures();
+        symbolFacts({ facts: null });
+        expect(close()).toBe('1.10');
+        expect(measures()).toBeGreaterThan(after);
+        symbolFacts({ facts: { mintick: 0.0001 } });
+        expect(close()).toBe('1.1023');
+        line.destroy();
+    });
+
+    it('uses two localized decimals for a quarter-point futures tick', () => {
+        const { line, hover, close } = make(0.25, new LocaleState({ locale: 'de-DE' }));
+        hover({ open: 1234.25, high: 1235, low: 1234, close: 1234.5 });
+        expect(close()).toBe('1.234,50');
+        line.destroy();
+    });
+
     it('rewrites a digits-only change in place, without measuring', () => {
         const { line, hover, measures, close } = make();
         hover({ open: 61234.5, high: 61300.25, low: 61200, close: 61250.75 });

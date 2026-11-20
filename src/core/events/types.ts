@@ -69,10 +69,8 @@ export interface VelaEventMap extends Record<string, unknown> {
   /**
    * The facts the chart applies about its symbol changed (`chart.symbolFacts()`): they
    * landed for the symbol on screen (`facts`), or a symbol switch reset them to unknown
-   * (`null`) until the new symbol's land. They decide which price styles can draw the
-   * symbol: by the time it fires the chart already draws its fallback for a style they
-   * rule out (`chart.renderer.get('shownPriceStyle')`), so a host's style picker re-reads
-   * here which styles to grey.
+   * (`null`) until the new symbol's land. The renderer has already received the new
+   * tick size and applied the fallback for any style these facts rule out.
    */
   "symbol:facts": { symbol: string; facts: SymbolFacts | null };
   /** An indicator was moved/merged to another pane (`chart.panes` / legend / object tree). */

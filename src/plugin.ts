@@ -167,6 +167,7 @@ export {
     type DockStripOptions,
     type DockedStrip,
     type SidebarControl,
+    type FullscreenControl,
 } from './widget/contributions';
 export { composeSidebar, SIDEBAR_DEFAULT_TOP, SIDEBAR_DEFAULT_BOTTOM, type SidebarComposition } from './widget/sidebar-composition';
 // Where the built-in right-click rows sit in the sort `context:*` actions share with them.

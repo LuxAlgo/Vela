@@ -16,6 +16,7 @@ import { SESSION_PRE, SESSION_POST, SESSION_OFF } from '../core/palette';
 import { withAlpha } from '../core/color';
 import { iconAt } from '../core/icons';
 import { decimalsFor } from './format';
+import { tickDecimals } from '../core/format/numbers';
 import { timeframeLabel } from './timeframe';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
@@ -328,6 +329,8 @@ export class Statusline {
     private chartHidden = false;
     private lastBar: BarLike | null = null;
     private hoverBar: BarLike | null = null;
+    private mintick: number | undefined;
+    private priceDecimals: number | undefined;
     private unsubs: Array<() => void> = [];
     /** Up/down ink for the OHLC + change values — the ACTIVE price style's configured
      *  colors (candle bodies, bar ticks, the line color, …); null falls back to the theme
@@ -655,10 +658,16 @@ export class Statusline {
         if (relabel) this.relocalize();
         this.lastBar = null;
         this.hoverBar = null;
+        this.setPriceTick(chart.symbolFacts()?.mintick);
         this.unsubs.push(
             chart.on('bar', (b: OHLCV) => {
                 this.lastBar = b;
                 if (!this.hoverBar) this.render();
+            }),
+            chart.on('symbol:facts', ({ facts }) => {
+                if (this.mintick === facts?.mintick) return;
+                this.setPriceTick(facts?.mintick);
+                this.render();
             }),
             // A replay cut or restore replaces the newest bar without a `bar` event.
             chart.on('replay:start', () => {
@@ -699,6 +708,12 @@ export class Statusline {
         this.unsubs = [];
     }
 
+    private setPriceTick(mintick: number | undefined): void {
+        this.mintick = mintick;
+        this.priceDecimals = mintick === undefined ? undefined : tickDecimals(mintick) || 2;
+        this.fitKey = null;
+    }
+
     private render(): void {
         // Chart visibility has no change event of its own — re-derive it from the live
         // renderer on every readout refresh (bar ticks, crosshair moves), so a toggle
@@ -718,7 +733,7 @@ export class Statusline {
     private widthKey(): string {
         const bar = this.hoverBar ?? this.lastBar;
         if (!bar) return this.readout;
-        const dp = decimalsFor(bar.close);
+        const dp = this.priceDecimals ?? decimalsFor(bar.close);
         const diff = bar.close - bar.open;
         const text = [bar.open, bar.high, bar.low, bar.close, diff].map((v) => v.toFixed(dp));
         text.push(((diff / bar.open) * 100).toFixed(2));
@@ -733,7 +748,7 @@ export class Statusline {
             this.changeEl.textContent = '';
             return;
         }
-        const dp = decimalsFor(bar.close);
+        const dp = this.priceDecimals ?? decimalsFor(bar.close);
         const doc = this.el.ownerDocument;
         const up = this.isUp ? this.isUp(bar) : bar.close >= bar.open;
         // ONE ink for the whole readout — OHLC values and the change share it, so the
@@ -742,7 +757,7 @@ export class Statusline {
         const format = this.i18n?.format;
         // Grouped like a price readout (`1,234.50`); English when no chart is bound yet.
         const price = (v: number): string =>
-            !Number.isFinite(v) ? EM_DASH : format ? format.price(v, { decimals: dp, grouping: true, surface: 'statusLine' }) : v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+            !Number.isFinite(v) ? EM_DASH : format ? format.price(v, { decimals: dp, mintick: this.mintick, grouping: true, surface: 'statusLine' }) : v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
         const percent = (v: number): string => (format ? format.percent(v, { surface: 'statusLine' }) : `${v >= 0 ? '+' : '-'}${Math.abs(v).toFixed(2)}%`);
         const cell = (k: string, v: number) => {
             const s = doc.createElement('span');
