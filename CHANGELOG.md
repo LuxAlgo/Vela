@@ -20,6 +20,17 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **The countdown to bar close no longer jumps up a minute on a slow device clock.**
+  The countdown and the bottom-bar clock read this device's clock, but candles open on
+  the exchange's. On a computer or phone running a few seconds slow, the next candle
+  landed while the countdown still showed a few seconds left, and a 1-minute countdown
+  jumped to `01:04`, then stayed those seconds high all minute. A candle can't arrive
+  before it opens, so one that arrives before the device clock reaches its open time
+  proves the clock is slow by at least the gap: the countdown and the clock now add it
+  (`clockCorrection`, exported for a host clock display). Only intraday candles teach
+  it, at most 2 minutes, and it resets when the device clock is set or the machine
+  sleeps. A fast clock reads as before, hiding the countdown a moment early until the
+  next candle arrives.
 - **Candle readouts and Fibonacci price labels show the symbol's price precision.**
   On a pair such as EURUSD, the OHLC readout and price levels show all five decimals.
 - **The measure ruler stays on its candles while you place it.** After the first click
