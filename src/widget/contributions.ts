@@ -79,9 +79,29 @@ export interface WidgetContext {
      *  entries hidden or shown at runtime, and a redraw after a sidebar action's `active` or
      *  `when` changed. See {@link SidebarControl}. */
     sidebar: SidebarControl;
+    /** The shell's full screen: whether it is on, entering and leaving it, and a change
+     *  event — for a plugin that docked something around the charts and steps aside with
+     *  the shell's bars. See {@link FullscreenControl}. */
+    fullscreen: FullscreenControl;
     /** Where the right-click that opened a context menu landed. Set on the context handed
      *  to `context:*` actions (`when` and `run`); absent everywhere else. */
     pointer?: ContextMenuPointer;
+}
+
+/**
+ * The shell's full screen ({@link WidgetContext.fullscreen}): the charts alone, the shell's
+ * bars hidden and its open side panel closed. The shell hides only what is its own. What a
+ * plugin docked around the charts (a strip, an edge element) stays until the plugin that
+ * owns it steps aside, which this is for.
+ */
+export interface FullscreenControl {
+    /** Whether the shell is in full screen right now. */
+    isOn(): boolean;
+    /** Enter (`true`) or leave (`false`). Entering is ignored on the mobile layout. */
+    set(on: boolean): void;
+    /** Called after the shell enters or leaves full screen, by any path: its key, its topbar
+     *  button, Esc, code. Returns the unsubscribe. */
+    onDidChange(cb: (on: boolean) => void): () => void;
 }
 
 /**
