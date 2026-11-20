@@ -102,6 +102,47 @@ describe('setFullscreen', () => {
     );
 });
 
+describe('ctx.fullscreen', () => {
+    it(
+        'reads the state and follows it whichever way it changed, until unsubscribed',
+        () => {
+            const { ws, root } = mount();
+            const fullscreen = ws.context().fullscreen;
+            const seen: boolean[] = [];
+            const off = fullscreen.onDidChange((on) => seen.push(on));
+            expect(fullscreen.isOn()).toBe(false);
+
+            ws.setFullscreen(true); // the host
+            expect(fullscreen.isOn()).toBe(true);
+            escape(root); // the user
+            expect(fullscreen.isOn()).toBe(false);
+            chord(root);
+            expect(seen).toEqual([true, false, true]);
+
+            off();
+            ws.setFullscreen(false);
+            expect(seen).toEqual([true, false, true]);
+        },
+        WORKSPACE_TIMEOUT,
+    );
+
+    it(
+        'enters and leaves for a plugin that offers its own way in',
+        () => {
+            const { ws, root, changes } = mount();
+            // A context built before the change still reads the truth: the control is live.
+            const fullscreen = ws.context().fullscreen;
+            fullscreen.set(true);
+            expect(ws.fullscreen).toBe(true);
+            expect(root.hasAttribute('data-fullscreen')).toBe(true);
+            fullscreen.set(false);
+            expect(ws.fullscreen).toBe(false);
+            expect(changes).toEqual([true, false]);
+        },
+        WORKSPACE_TIMEOUT,
+    );
+});
+
 describe("the 'fullscreen' topbar slot", () => {
     it(
         'shows a button and a chord by default, and both toggle full screen',

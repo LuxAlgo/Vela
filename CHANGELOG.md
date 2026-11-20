@@ -15,7 +15,9 @@ All notable changes to Vela, newest first.
   `fullscreen:changed` event lets a page hide its own interface around the charts at the
   same moment. The button is the `'fullscreen'` entry of the `topbar` option: a page that
   lists its own `topbar.right` adds it to get the button and the shortcut, and a page
-  that already uses Alt+Enter for something else leaves it out. Desktop layout only.
+  that already uses Alt+Enter for something else leaves it out. A plugin reads, follows
+  and drives it through `ctx.fullscreen`, so a panel it docked under the charts can step
+  aside too. Desktop layout only.
 
 ### Changed
 

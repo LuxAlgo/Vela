@@ -672,7 +672,8 @@ ws.on('fullscreen:changed', ({ on }) => {
 Full screen is view state. It is not saved with the workspace, and it applies to the desktop
 layout only: on the [mobile layout](#mobile) the one bar is how the chart is driven, so
 `setFullscreen(true)` does nothing there, and a shell that turns mobile leaves full screen.
-Docked strips a plugin added stay where they are; the plugin that owns them decides.
+Docked strips a plugin added stay where they are: the plugin that owns one decides, and
+follows full screen through [`ctx.fullscreen`](../contributing/plugin-sdk.md#full-screen--ctxfullscreen).
 
 ### Following menus and panels
 

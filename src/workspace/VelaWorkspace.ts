@@ -39,7 +39,7 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { drawingActionsProviderFor, legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
+import { drawingActionsProviderFor, legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type FullscreenControl, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { Sidebar, sidebarActions, sidebarControl } from '../widget/sidebar';
@@ -532,6 +532,12 @@ export class VelaWorkspace {
     private toolbarHost: HTMLElement | null = null;
     private mainEl: HTMLElement | null = null;
     private readonly sidebarCtl = sidebarControl(() => this.sidebar);
+    /** `ctx.fullscreen`: full screen as plugins read and drive it. */
+    private readonly fullscreenCtl: FullscreenControl = {
+        isOn: () => this.fullscreenOn,
+        set: (on) => this.setFullscreen(on),
+        onDidChange: (cb) => this.events.on('fullscreen:changed', ({ on }) => cb(on)),
+    };
     private screenshotKeyOff: (() => void) | null = null;
     // ── mobile chrome (same components as the widget shell; CSS keys off data-layout
     // on the root, the drawers build lazily on first open and act on the ACTIVE cell) ──
@@ -1210,6 +1216,7 @@ export class VelaWorkspace {
             topbar: this.topbarItems,
             panels: () => (this.dockView ??= this.dock.view()),
             sidebar: this.sidebarCtl,
+            fullscreen: this.fullscreenCtl,
         });
     }
 
