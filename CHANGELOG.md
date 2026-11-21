@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Opening a Binance perpetual no longer downloads the futures list again.** The
+  provider reads each perpetual's details from the futures list it already has, instead
+  of downloading the whole list for every new perpetual you open.
+
 ## [0.10.14]
 
 ### Added
