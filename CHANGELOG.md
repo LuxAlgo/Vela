@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Indicators from a script list appear sooner.** When the `indicators` option lists
+  scripts by URL, the workspace now downloads them all at once instead of one after
+  another. The indicators that start switched on no longer wait for every other script
+  in the list: with 13 scripts, they appear in about half a second instead of nearly two.
+
 ## [0.10.14]
 
 ### Added
