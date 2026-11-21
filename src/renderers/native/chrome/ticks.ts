@@ -206,8 +206,8 @@ export interface TimeTick {
     time: number;
     label: string;
     major: boolean;
-    /** A gap date added by the grid. Give the axis's own ticks first choice of space. */
-    fromGrid?: boolean;
+    /** A date representing a compressed gap. Give the other axis labels first choice of space. */
+    gapDate?: boolean;
 }
 
 interface TimeTickCandidate {
@@ -217,6 +217,7 @@ interface TimeTickCandidate {
 }
 
 const DEFAULT_TIME_TICK_TARGET = 8;
+const TIME_LABEL_EDGE_INSET = 20;
 const SEC = 1000;
 const MIN = 60 * SEC;
 const HOUR = 60 * MIN;
@@ -254,6 +255,10 @@ function pickStep(targetMs: number): number {
     return STEP_LADDER[STEP_LADDER.length - 1]!;
 }
 
+export function isTimeLabelWithinAxis(x: number, width: number): boolean {
+    return x >= TIME_LABEL_EDGE_INSET && x <= width - TIME_LABEL_EDGE_INSET;
+}
+
 /** Shared time-tick selection for vertical gridlines and axis labels. */
 export function viewportTimeTicks(
     coords: CoordinateSystem,
@@ -266,27 +271,62 @@ export function viewportTimeTicks(
     const firstBar = coords.logicalToTime(0);
     const inGap = (time: number) => coords.isInCompressedGap(time);
     const ticks = timeTickCandidates(from, to, target, offset, firstBar, inGap);
+    const format = (tick: TimeTickCandidate) => formatTimeTick(tick, offset, fmt);
+    if (coords.barInterval <= 0 || coords.barInterval >= DAY) return ticks.map(format);
+
     const gridTicks = target === DEFAULT_TIME_TICK_TARGET
         ? ticks
         : timeTickCandidates(from, to, DEFAULT_TIME_TICK_TARGET, offset, firstBar, inGap);
+    const ordinaryDate = (tick: TimeTickCandidate) => tick.unit === 'day' && new Date(tick.time + offset).getUTCDate() !== 1;
+    const replacements = coalescedGapDates(coords, gridTicks, ordinaryDate);
+    if (replacements.size === 0) return ticks.map(format);
 
-    // Both surfaces use the grid's last date in each gap. The logical slot identifies
-    // the adjacent bars independently of how their interval rounds to pixels.
-    const datesByGap = new Map<number, TimeTickCandidate>();
-    for (const tick of gridTicks) {
-        if (inGap(tick.time)) datesByGap.set(Math.floor(coords.timeToLogical(tick.time)), tick);
-    }
-
-    const selected = ticks.filter((tick) => !inGap(tick.time)).map((tick) => formatTimeTick(tick, offset, fmt));
-    for (const date of datesByGap.values()) {
-        // Keep the axis step's format when it has this timestamp. A grid-only date can
-        // label the gap when it fits alongside existing axis labels.
+    // The grid and axis share the replacement in affected gaps. Each keeps its own
+    // tick density everywhere else, including gaps with no repeated dates.
+    const selected = ticks.filter((tick) => !ordinaryDate(tick) || !inGap(tick.time) ||
+        !replacements.has(Math.floor(coords.timeToLogical(tick.time)))).map(format);
+    for (const date of replacements.values()) {
+        if (selected.some((tick) => tick.time === date.time)) continue;
         const axisDate = ticks.find((tick) => tick.time === date.time);
-        const tick = formatTimeTick(axisDate ?? date, offset, fmt);
-        if (!axisDate) tick.fromGrid = true;
+        const tick = format(axisDate ?? date);
+        if (!axisDate || inGap(date.time)) tick.gapDate = true;
         selected.push(tick);
     }
     return selected.sort((a, b) => a.time - b.time);
+}
+
+function coalescedGapDates(
+    coords: CoordinateSystem,
+    gridTicks: readonly TimeTickCandidate[],
+    ordinaryDate: (tick: TimeTickCandidate) => boolean,
+): Map<number, TimeTickCandidate> {
+    const datesByGap = new Map<number, TimeTickCandidate[]>();
+    const datesOnBars = new Map<number, TimeTickCandidate>();
+    for (const tick of gridTicks) {
+        if (tick.unit !== 'day' && tick.unit !== 'month' && tick.unit !== 'year') continue;
+        const slot = Math.floor(coords.timeToLogical(tick.time));
+        if (!coords.isInCompressedGap(tick.time)) {
+            datesOnBars.set(slot, tick);
+            continue;
+        }
+        const dates = datesByGap.get(slot);
+        if (dates) dates.push(tick);
+        else datesByGap.set(slot, [tick]);
+    }
+
+    const replacements = new Map<number, TimeTickCandidate>();
+    for (const [slot, dates] of datesByGap) {
+        const ordinary = dates.filter(ordinaryDate);
+        if (ordinary.length < 2) continue;
+        // Prefer the reopening date, then calendar landmarks, then the latest
+        // ordinary date. Near an edge, use the first date the axis can display.
+        const reopening = datesOnBars.get(slot + 1);
+        const landmarks = dates.filter((tick) => !ordinaryDate(tick)).reverse();
+        const ranked = [...(reopening ? [reopening] : []), ...landmarks, ...ordinary.reverse()];
+        const visible = ranked.find((tick) => isTimeLabelWithinAxis(coords.timeToX(tick.time), coords.width));
+        replacements.set(slot, visible ?? ranked[0]!);
+    }
+    return replacements;
 }
 
 function formatTimeTick({ time, unit, major }: TimeTickCandidate, offsetMs: number, fmt: ResolvedFormatters): TimeTick {

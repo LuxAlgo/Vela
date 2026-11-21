@@ -13,7 +13,7 @@ export { percentScaleFor } from '../core/SceneGraph';
 import { DrawingSceneRenderer, modelDrawingSet, type DrawingSet } from '../../shared/DrawingSceneRenderer';
 import { renderTradeMarkers } from '../../shared/trade-markers';
 import type { TradeExecution } from '../../../core/model/trades';
-import { paneAxisTicks, formatAxisValue, viewportTimeTicks } from './ticks';
+import { paneAxisTicks, formatAxisValue, isTimeLabelWithinAxis, viewportTimeTicks } from './ticks';
 import { PriceAxisTickSource } from './priceAxisTicks';
 import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
 import { DARK_THEME } from '../../../core/theme';
@@ -448,7 +448,7 @@ export class ChromeRenderer {
         const target = Math.max(3, Math.min(8, Math.floor(dataW / 64)));
         const ticks = viewportTimeTicks(coords, scene.timezone, target, scene.format)
             .map((tick) => ({ ...tick, x: coords.timeToX(tick.time), half: ctx.measureText(tick.label).width / 2 }))
-            .filter((tick) => tick.x >= 20 && tick.x <= dataW - 20);
+            .filter((tick) => isTimeLabelWithinAxis(tick.x, dataW));
         // Measured collision pass on top: label pitch in PIXELS isn't uniform (bar-index
         // mapping, session gaps), so overlapping labels are SKIPPED, majors placed first
         // (a date beats the 12:00 beside it).
@@ -461,9 +461,9 @@ export class ChromeRenderer {
             placed.push({ l, r });
             ctx.fillText(tick.label, tick.x, y);
         };
-        for (const tick of ticks) if (!tick.fromGrid && tick.major) put(tick);
-        for (const tick of ticks) if (!tick.fromGrid && !tick.major) put(tick);
-        for (const tick of ticks) if (tick.fromGrid) put(tick);
+        for (const tick of ticks) if (!tick.gapDate && tick.major) put(tick);
+        for (const tick of ticks) if (!tick.gapDate && !tick.major) put(tick);
+        for (const tick of ticks) if (tick.gapDate) put(tick);
         ctx.textAlign = 'start';
     }
 }
