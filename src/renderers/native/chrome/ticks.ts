@@ -4,11 +4,12 @@
  *  - `timeTicks`: a UTC-aligned ladder for the time axis (crypto/24-7 friendly;
  *    DST/session-aware ticks are a later refinement — see the plan's risk list).
  */
+import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { PctScale } from '../core/SceneGraph';
 import { ENGLISH_FORMAT } from '../../../core/format/formatters';
 import { tickDecimals } from '../../../core/format/numbers';
 import type { FormatSurface, ResolvedFormatters, TimeTickUnit } from '../../../core/format/types';
-import { displayZone } from './tz';
+import { displayZone, tzOffsetMs } from './tz';
 
 export function priceTicks(min: number, max: number, target = 6): number[] {
     if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return [];
@@ -244,6 +245,13 @@ function pickStep(targetMs: number): number {
     return STEP_LADDER[STEP_LADDER.length - 1]!;
 }
 
+/** Shared time-tick selection for vertical gridlines and axis labels. */
+export function viewportTimeTicks(coords: CoordinateSystem, timeZone: string, target = 8, fmt = ENGLISH_FORMAT): TimeTick[] {
+    const { from, to } = coords.visibleTimeRange();
+    const offset = tzOffsetMs((from + to) / 2, displayZone(timeZone, coords.barInterval));
+    return timeTicks(from, to, target, offset, fmt, coords.logicalToTime(0), (time) => coords.isInCompressedGap(time));
+}
+
 /**
  * UTC-aligned tick ladder for the time axis. `offsetMs` shifts alignment + labels into
  * a chosen time zone (0 ⇒ UTC): ticks land on local midnights/hours and the returned
@@ -252,7 +260,15 @@ function pickStep(targetMs: number): number {
  * carries no dates. The step still follows the whole span, so the ticks that remain keep
  * the density of the view.
  */
-export function timeTicks(fromMs: number, toMs: number, target = 8, offsetMs = 0, fmt: ResolvedFormatters = ENGLISH_FORMAT, notBeforeMs = -Infinity): TimeTick[] {
+export function timeTicks(
+    fromMs: number,
+    toMs: number,
+    target = 8,
+    offsetMs = 0,
+    fmt: ResolvedFormatters = ENGLISH_FORMAT,
+    notBeforeMs = -Infinity,
+    isInCompressedGap?: (time: number) => boolean,
+): TimeTick[] {
     const span = toMs - fromMs;
     if (!(span > 0)) return [];
     const step = pickStep(span / Math.max(1, target));
@@ -271,6 +287,8 @@ export function timeTicks(fromMs: number, toMs: number, target = 8, offsetMs = 0
         let major = false;
         if (step < DAY) {
             major = d.getUTCHours() === 0 && d.getUTCMinutes() === 0;
+            // Keep exact calendar boundaries across closed sessions, including on seconds charts.
+            if (zt % DAY !== 0 && isInCompressedGap?.(t)) continue;
             unit = major ? 'day' : clockUnit;
         } else if (step < YEAR) {
             major = d.getUTCDate() === 1;

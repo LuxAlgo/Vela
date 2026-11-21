@@ -166,6 +166,71 @@ describe('time axis and grid on a daily chart', () => {
     });
 });
 
+describe('time axis and grid across a compressed intraday gap', () => {
+    it('skips the clock ticks inside a break while keeping the bar positions and neighboring ticks', () => {
+        const minute = HOUR / 60;
+        const lastMorning = Date.UTC(2026, 10, 20, 3, 30); // 11:30 in the display zone
+        const firstAfternoon = Date.UTC(2026, 10, 20, 5, 1);
+        const bars = [
+            ...Array.from({ length: 120 }, (_, i) => lastMorning - (119 - i) * minute),
+            ...Array.from({ length: 120 }, (_, i) => firstAfternoon + i * minute),
+        ];
+        const zone = 'Asia/Shanghai';
+        const { coords, texts } = axisLabels(bars, 960, 4, zone);
+        const lines = gridLines(bars, 960, 4, zone);
+        expect(coords.timeToX(firstAfternoon) - coords.timeToX(lastMorning)).toBe(4);
+
+        const labels = texts.map(({ text }) => text);
+        const gridX = (hour: number) => Math.round(coords.timeToX(Date.UTC(2026, 10, 20, hour - 8))) + 0.5;
+        for (const [hour, label] of [[11, '11:00'], [14, '14:00']] as const) {
+            expect(labels).toContain(label);
+            expect(lines).toContain(gridX(hour));
+        }
+        for (const [hour, label] of [[12, '12:00'], [13, '13:00']] as const) {
+            expect(labels).not.toContain(label);
+            expect(lines).not.toContain(gridX(hour));
+        }
+    });
+
+    it('skips a break shorter than one bar while keeping ticks inside ordinary bars', () => {
+        const day = Date.UTC(2026, 10, 20);
+        const bars = [9, 10, 11, 12.5, 13.5, 14.5].map((hour) => day + hour * HOUR);
+        const { coords, texts } = axisLabels(bars, 720, 120, 'UTC');
+        const lines = gridLines(bars, 720, 120, 'UTC');
+        const gridX = (hour: number) => Math.round(coords.timeToX(day + hour * HOUR)) + 0.5;
+        expect(texts.map(({ text }) => text)).not.toContain('12:00');
+        expect(lines).not.toContain(gridX(12));
+        expect(texts.map(({ text }) => text)).toContain('13:00');
+        expect(lines).toContain(gridX(13));
+    });
+
+    it('keeps exactly midnight as the calendar boundary on a seconds chart', () => {
+        const midnight = Date.UTC(2026, 10, 21);
+        const bars = [-40, -35, -30, -25, -20, 45, 50, 55, 60, 65].map((seconds) => midnight + 1000 * seconds);
+        const { coords, texts } = axisLabels(bars, 800, 80, 'UTC');
+        const lines = gridLines(bars, 800, 80, 'UTC');
+        const gridX = (seconds: number) => Math.round(coords.timeToX(midnight + 1000 * seconds)) + 0.5;
+        expect(lines).toContain(gridX(0));
+        expect(lines).not.toContain(gridX(15));
+        expect(lines).not.toContain(gridX(30));
+        expect(texts.some(({ x }) => x === coords.timeToX(midnight))).toBe(true);
+    });
+
+    it('keeps calendar boundaries while dropping clock ticks in a weekend break', () => {
+        const friday = Date.UTC(2026, 10, 20, 12);
+        const monday = Date.UTC(2026, 10, 23, 9);
+        const bars = [friday, monday].flatMap((first) => Array.from({ length: 6 }, (_, i) => first + i * HOUR));
+        const { coords, texts } = axisLabels(bars, 720, 60, 'UTC');
+        const lines = gridLines(bars, 720, 60, 'UTC');
+        const gridX = (time: number) => Math.round(coords.timeToX(time)) + 0.5;
+        const saturdayMidnight = Date.UTC(2026, 10, 21);
+        const saturdayNoon = saturdayMidnight + 12 * HOUR;
+        expect(texts.map(({ text }) => text)).toContain('Nov 21');
+        expect(lines).toContain(gridX(saturdayMidnight));
+        expect(lines).not.toContain(gridX(saturdayNoon));
+    });
+});
+
 describe('crosshair time chip on a daily chart', () => {
     function chip(zone: string, barInterval: number, time: number): string | undefined {
         const rec = recorder();

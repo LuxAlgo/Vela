@@ -1,9 +1,8 @@
 import type { VelaTheme } from '../../../core/options';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph } from '../core/SceneGraph';
-import { timeTicks } from '../chrome/ticks';
+import { viewportTimeTicks } from '../chrome/ticks';
 import { PriceAxisTickSource } from '../chrome/priceAxisTicks';
-import { displayZone, tzOffsetMs } from '../chrome/tz';
 import { beginPlotFrame } from '../core/plotDirection';
 
 /** Clip one time-band rectangle to its permitted horizontal paint interval. */
@@ -112,10 +111,8 @@ export class BackdropRenderer {
         if (scene.showGrid && gridVert.visible) {
             ctx.globalAlpha = gridAlpha; // fade the grid out as a reveal-under style opens up
             ctx.strokeStyle = vertColor;
-            const tr = coords.visibleTimeRange();
-            const offset = tzOffsetMs((tr.from + tr.to) / 2, displayZone(scene.timezone, coords.barInterval));
             ctx.beginPath();
-            for (const tick of timeTicks(tr.from, tr.to, 8, offset, undefined, coords.logicalToTime(0))) {
+            for (const tick of viewportTimeTicks(coords, scene.timezone)) {
                 const x = Math.round(coords.timeToX(tick.time)) + 0.5;
                 if (x < 0 || x > dataW) continue;
                 ctx.moveTo(x, 0);

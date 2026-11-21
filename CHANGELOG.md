@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Clock ticks stay out of compressed trading breaks.** The time axis and grid skip
+  clock ticks inside a break, where several lines could appear between two adjacent
+  candles. Candle spacing and calendar landmarks are preserved.
+
 ## [0.10.14]
 
 ### Added
