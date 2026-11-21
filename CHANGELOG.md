@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Charts on the same market load their candles once.** When several charts in a
+  workspace open the same symbol and timeframe together, on first load or when synced
+  charts switch, they now share one download instead of each asking for the same
+  candles. The last chart fills in as fast as the first.
+
 ## [0.10.14]
 
 ### Added
